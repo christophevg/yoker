@@ -56,7 +56,7 @@ Repository = "https://github.com/christophevg/yoker"
 Issues = "https://github.com/christophevg/yoker/issues"
 
 [project.scripts]
-yoker = "yoker.main:cli"
+yoker = "yoker.__main__:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
