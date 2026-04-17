@@ -7,6 +7,7 @@
 [![Documentation Status](https://readthedocs.org/projects/yoker/badge/?version=latest)](https://yoker.readthedocs.io/en/latest/?badge=latest)
 [![Tests](https://github.com/christophevg/yoker/actions/workflows/tests.yml/badge.svg)](https://github.com/christophevg/yoker/actions/workflows/tests.yml)
 [![Coverage Status](https://coveralls.io/repos/github/christophevg/yoker/badge.svg?branch=master)](https://coveralls.io/github/christophevg/yoker?branch=master)
+[![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-7c85a3.svg)](https://docs.astral.sh/ruff/)
 
 A Python-based agent harness with configurable tools, guardrails, and Ollama backend integration.
 
