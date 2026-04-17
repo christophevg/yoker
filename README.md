@@ -1,5 +1,13 @@
 # Yoker
 
+[![PyPI version](https://badge.fury.io/py/yoker.svg)](https://badge.fury.io/py/yoker)
+[![PyPI downloads](https://img.shields.io/pypi/dm/yoker.svg)](https://pypistats.org/packages/yoker)
+[![License](https://img.shields.io/github/license/christophevg/yoker.svg)](https://github.com/christophevg/yoker/blob/master/LICENSE)
+[![Python versions](https://img.shields.io/pypi/pyversions/yoker.svg)](https://pypi.org/project/yoker/)
+[![Documentation Status](https://readthedocs.org/projects/yoker/badge/?version=latest)](https://yoker.readthedocs.io/en/latest/?badge=latest)
+[![Tests](https://github.com/christophevg/yoker/actions/workflows/tests.yml/badge.svg)](https://github.com/christophevg/yoker/actions/workflows/tests.yml)
+[![Coverage Status](https://coveralls.io/repos/github/christophevg/yoker/badge.svg?branch=master)](https://coveralls.io/github/christophevg/yoker?branch=master)
+
 A Python-based agent harness with configurable tools, guardrails, and Ollama backend integration.
 
 ## Current Status

@@ -7,7 +7,8 @@ name = "yoker"
 version = "0.1.0"
 description = "A Python agent harness with configurable tools and guardrails - one who yokes agents together"
 readme = "README.md"
-license = {text = "MIT"}
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.10"
 authors = [
   {name = "Christophe VG", email = "contact@christophe.vg"}
@@ -15,7 +16,6 @@ authors = [
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Developers",
-  "License :: OSI Approved :: MIT License",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
