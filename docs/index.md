@@ -2,9 +2,18 @@
 
 A Python agent harness with configurable tools and guardrails.
 
+## Current Status
+
+**Minimal prototype available!** Basic chat loop with tool calling is working.
+
+```bash
+pip install -e .
+python -m yoker
+```
+
 ## Overview
 
-**yoker** - One who yokes. The harness coordinates multiple agents for coordinated work.
+**yoker** - One who yokes. The harness coordinates agents with structured tool access.
 
 ```{toctree}
 :maxdepth: 2
@@ -12,6 +21,7 @@ A Python agent harness with configurable tools and guardrails.
 
 installation
 quickstart
+NAME
 api/index
 ```
 
@@ -23,6 +33,10 @@ api/index
 - **Transparency**: Clear logging of all agent actions
 - **Extensibility**: Easy to add new guarded tools
 - **Compatibility**: Agent definitions compatible with Claude Code format
+
+## Architecture
+
+The full architecture definition is available in `analysis/architecture.md` in the repository.
 
 ## Indices and Tables
 

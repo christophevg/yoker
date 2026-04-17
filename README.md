@@ -2,6 +2,26 @@
 
 A Python-based agent harness with configurable tools, guardrails, and Ollama backend integration.
 
+## Current Status
+
+**Minimal prototype available!** The basic chat loop with tool calling is working:
+
+```bash
+# Install (requires Python 3.10+)
+pip install -e .
+
+# Run interactive chat
+python -m yoker
+```
+
+The prototype includes:
+- Interactive chat loop with Ollama
+- Basic `read` tool for file reading
+- Streaming responses
+- Structured logging
+
+See [Quick Start](#quick-start) below for details.
+
 ## Name
 
 **"yoker"** - One who yokes. A person or device that joins or attaches things together, specifically one who yokes oxen or links things together.
@@ -116,7 +136,39 @@ yoker/
 └── README.md
 ```
 
-## Quick Start (Planned)
+## Quick Start
+
+### Minimal Prototype
+
+The current prototype provides a basic interactive chat with tool calling:
+
+```bash
+# Install
+pip install -e .
+
+# Run
+python -m yoker
+```
+
+Example session:
+```
+Yoker v0.1.0 - Using model: glm-5:cloud
+Type your message and press Enter. Press Ctrl+D to quit.
+
+> What's in the README.md file?
+
+I'll read the README.md file for you.
+
+[13:49:49] INFO yoker.agent - Tool call: read({'path': 'README.md'})
+[13:49:49] INFO yoker.agent - Tool result: # Yoker...
+
+The README.md file describes **Yoker**, a Python-based agent harness...
+
+> ^D
+Goodbye!
+```
+
+### Planned Full Usage
 
 ```bash
 # Create config
@@ -151,7 +203,7 @@ tools: List, Read, Write, Update, Search, Agent
 You are a helpful assistant.
 EOF
 
-# Run harness
+# Run harness (planned)
 yoker --config yoker.toml
 ```
 
