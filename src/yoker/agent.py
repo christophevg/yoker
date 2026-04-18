@@ -1,6 +1,7 @@
 """Minimal Agent implementation for Yoker prototype."""
 
 import logging
+from typing import Any
 
 from ollama import Client
 
@@ -19,7 +20,7 @@ class Agent:
 
   def start(self) -> None:
     """Start the interactive chat loop."""
-    messages: list[dict] = [
+    messages: list[dict[str, Any]] = [
       {"role": "system", "content": "You are a helpful assistant."},
     ]
 

@@ -4,7 +4,7 @@
 
 ### Phase 1: Core Infrastructure
 
-- [ ] **1.1 Project Setup**
+- [x] **1.1 Project Setup**
   - Create Python package structure (src/yoker/)
   - Set up pyproject.toml with dependencies (following clitic template)
   - Configure development environment (ruff, mypy, pytest)
@@ -171,4 +171,12 @@
 
 ## Done
 
-(none yet)
+### Phase 1: Core Infrastructure
+
+- [x] **1.1 Project Setup**
+  - Create Python package structure (src/yoker/)
+  - Set up pyproject.toml with dependencies (following clitic template)
+  - Configure development environment (ruff, mypy, pytest)
+  - Create basic CLI entry point
+  - Set up Sphinx documentation structure
+  - Create .readthedocs.yaml
