@@ -42,3 +42,7 @@ logs/
 
 # Local configuration
 yoker.toml
+
+# Generated session files (keep latest symlinked versions)
+media/session-*.svg
+media/session.jsonl
