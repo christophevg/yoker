@@ -192,6 +192,52 @@ And verify it starts correctly.
 - `analysis/architecture.md` - Architecture definition and roadmap
 - `analysis/interview.md` - Requirements interview notes
 
+## Session Screenshot & Documentation Maintenance
+
+**IMPORTANT**: When making changes that affect visible features or documentation, follow these steps:
+
+### Session Screenshot Workflow
+
+The project maintains a visual record of improvements in `media/`:
+
+1. **Generate timestamped screenshots:**
+   ```bash
+   python scripts/demo_session.py          # Real LLM session
+   python scripts/demo_session.py --log     # Real LLM + log conversation
+   python scripts/demo_session.py --replay  # Replay from log (no LLM)
+   ```
+
+2. **Output files:**
+   - `media/session-YYYYMMDD-HHMMSS.svg` - Timestamped history
+   - `media/session.svg` - Symlink to latest (used in README)
+   - `media/session.jsonl` - Conversation log (with `--log`)
+
+3. **Update documentation when features change:**
+   - Regenerate session screenshot: `python scripts/demo_session.py --replay`
+   - Update `docs/_static/session.svg` for Sphinx docs
+   - Ensure README.md and docs reflect current capabilities
+
+### Documentation Update Checklist
+
+When adding or modifying features, update:
+
+- [ ] `README.md` - Add to features table, update examples
+- [ ] `docs/quickstart.md` - Update usage examples
+- [ ] `docs/installation.md` - Add new dependencies
+- [ ] `CLAUDE.md` - Update current state, package structure
+- [ ] `media/session.svg` - Regenerate if UI/output changes
+- [ ] `docs/_static/session.svg` - Copy from media for docs
+
+### Demo Script Features
+
+| Flag | Description |
+|------|-------------|
+| (no flag) | Real LLM session |
+| `--log` | Log conversation to `session.jsonl` |
+| `--replay` | Replay from `session.jsonl` (no LLM calls) |
+
+Use `--log` when making non-LLL improvements to capture conversation for replay.
+
 ## Related Projects
 
 - **clitic**: CLI/TUI framework for interactive applications (../clitic)
