@@ -10,16 +10,22 @@ yoker is a Python agent harness with configurable tools, guardrails, and Ollama 
 
 **PyPI**: https://pypi.org/project/yoker/
 
-## Current State: Minimal Prototype
+## Current State: Working Prototype
 
-The project currently has a **minimal working prototype** that must remain functional at all times:
+The project has a **working prototype** with configuration system and interactive chat:
 
 ```
 src/yoker/
-  __init__.py    # Version info
-  __main__.py    # Entry point: python -m yoker
-  agent.py       # Agent class with chat loop + tool calling
-  tools.py       # read() tool
+  __init__.py          # Public API exports
+  __main__.py          # Entry point with prompt_toolkit
+  agent.py             # Agent class with chat loop + tool calling
+  config/
+    __init__.py        # Config public API
+    loader.py          # TOML configuration loading
+    schema.py          # Frozen dataclass configuration schema
+    validator.py       # Configuration validation
+  exceptions.py        # Custom exception hierarchy
+  tools.py             # read() tool
 ```
 
 **Running the prototype:**
@@ -29,8 +35,30 @@ pyenv activate yoker
 
 # Run interactive chat
 python -m yoker
-# or
-yoker
+
+# Run with configuration file
+python -m yoker --config yoker.toml
+
+# Run with specific model
+python -m yoker --model llama3.2:latest
+```
+
+**Interactive Features:**
+- Multiline input: `Shift+Enter` adds newlines, `Enter` submits
+- Command history: Up/Down arrows navigate previous messages
+- History search: `Ctrl+R` to search through history
+- Mouse support: Click to position cursor
+
+**Demo Script:**
+```bash
+# Generate terminal screenshot
+python scripts/demo_session.py
+
+# With logging (for replay)
+python scripts/demo_session.py --log
+
+# Replay from log (no LLM)
+python scripts/demo_session.py --replay
 ```
 
 **IMPORTANT: Development Approach**
@@ -147,6 +175,7 @@ And verify it starts correctly.
 **Core:**
 - `httpx>=0.25.0` - HTTP client (async, streaming)
 - `ollama>=0.6.0` - Ollama Python client
+- `prompt_toolkit>=3.0.0` - Interactive input with multiline support
 - `rich>=14.0.0` - Rich terminal output
 - `structlog>=23.0.0` - Structured logging
 - `pyyaml>=6.0` - Frontmatter parsing

@@ -27,19 +27,63 @@ Example session:
 
 ![Yoker Session](media/session.svg)
 
-Run `python scripts/demo_session.py` to regenerate this screenshot with your configuration.
-
 ## Features
 
 | Feature | Description |
 |---------|-------------|
-| Chat loop | Interactive conversation with Ollama |
-| Tool calling | Structured tool execution with parameters |
-| Streaming | Real-time response streaming |
-| Logging | Structured logging for observability |
-| Read tool | File reading with path validation |
+| **Chat loop** | Interactive conversation with Ollama |
+| **Tool calling** | Structured tool execution with parameters |
+| **Configuration** | TOML-based configuration system |
+| **Multiline input** | Shift+Enter for multiline, command history |
+| **Rich output** | Styled terminal output with Rich |
+| **Read tool** | File reading with path validation |
 
-**Planned features**: Configuration system, context persistence, additional tools (list, write, update, search, agent), guardrails, permissions.
+### Interactive Input
+
+The interactive session supports:
+
+- **Multiline input**: Press `Shift+Enter` to add newlines, `Enter` to submit
+- **Command history**: Up/Down arrows navigate previous messages
+- **History search**: `Ctrl+R` to search through history
+- **Mouse support**: Click to position cursor
+
+### Demo Session Script
+
+Generate terminal screenshots for documentation:
+
+```bash
+# Real LLM session
+python scripts/demo_session.py
+
+# Real LLM + log conversation
+python scripts/demo_session.py --log
+
+# Replay from log (no LLM calls)
+python scripts/demo_session.py --replay
+```
+
+## Configuration
+
+Create a `yoker.toml` file to configure Yoker:
+
+```toml
+[harness]
+name = "my-yoke"
+log_level = "INFO"
+
+[backend]
+provider = "ollama"
+
+[backend.ollama]
+base_url = "http://localhost:11434"
+model = "llama3.2:latest"
+
+[tools.read]
+enabled = true
+allowed_extensions = [".txt", ".md", ".py"]
+```
+
+See `examples/yoker.toml` for the full configuration reference.
 
 ## Architecture
 
@@ -61,6 +105,8 @@ Run `python scripts/demo_session.py` to regenerate this screenshot with your con
 │  └─────────────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────┘
 ```
+
+**Planned features**: Context persistence, additional tools (list, write, update, search, agent), agent definitions, guardrails, permissions.
 
 ## Documentation
 

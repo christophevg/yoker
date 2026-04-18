@@ -1,8 +1,8 @@
 # Quick Start
 
-## Minimal Prototype
+## Getting Started
 
-The current prototype provides a basic interactive chat with Ollama and tool calling.
+Yoker provides an interactive chat interface with Ollama and tool calling capabilities.
 
 ### Prerequisites
 
@@ -15,13 +15,25 @@ The current prototype provides a basic interactive chat with Ollama and tool cal
 pip install -e .
 ```
 
+Or from PyPI:
+
+```bash
+pip install yoker
+```
+
 ### Run
 
 ```bash
 python -m yoker
 ```
 
-### Example Session
+Or with a configuration file:
+
+```bash
+python -m yoker --config yoker.toml
+```
+
+### Interactive Session
 
 ```
 Yoker v0.1.0 - Using model: glm-5:cloud
@@ -31,18 +43,95 @@ Type your message and press Enter. Press Ctrl+D to quit.
 
 I'll read the README.md file for you.
 
-[13:49:49] INFO yoker.agent - Tool call: read({'path': 'README.md'})
-[13:49:49] INFO yoker.agent - Tool result: # Yoker...
-
 The README.md file describes **Yoker**, a Python-based agent harness...
 
 > ^D
 Goodbye!
 ```
 
-### Available Tools
+### Interactive Input Features
 
-The prototype includes:
+The session supports:
+
+| Feature | How to use |
+|---------|------------|
+| Multiline input | `Shift+Enter` adds newlines, `Enter` submits |
+| Command history | `Up`/`Down` arrows navigate previous messages |
+| History search | `Ctrl+R` searches through history |
+| Mouse support | Click to position cursor |
+
+### Command Line Options
+
+```bash
+python -m yoker --help
+
+Options:
+  -c, --config PATH    Path to configuration file (default: yoker.toml)
+  -m, --model MODEL    Model to use (overrides config)
+```
+
+## Configuration
+
+### Configuration File
+
+Create a `yoker.toml` file in your project directory:
+
+```toml
+[harness]
+name = "my-yoke"
+log_level = "INFO"
+
+[backend]
+provider = "ollama"
+
+[backend.ollama]
+base_url = "http://localhost:11434"
+model = "llama3.2:latest"
+timeout_seconds = 60
+
+[backend.ollama.parameters]
+temperature = 0.7
+top_p = 0.9
+
+[tools.read]
+enabled = true
+allowed_extensions = [".txt", ".md", ".py", ".json"]
+
+[logging]
+format = "json"
+include_tool_calls = true
+```
+
+See `examples/yoker.toml` for the full configuration reference.
+
+### Environment Variables
+
+Yoker automatically loads `yoker.toml` from the current directory if it exists.
+
+## Demo Session Script
+
+Generate terminal screenshots for documentation:
+
+```bash
+# Run with real LLM
+python scripts/demo_session.py
+
+# Run with LLM and log conversation to session.jsonl
+python scripts/demo_session.py --log
+
+# Replay from log (no LLM calls - useful for regenerating screenshots)
+python scripts/demo_session.py --replay
+```
+
+### Output Files
+
+| File | Description |
+|------|-------------|
+| `media/session-YYYYMMDD-HHMMSS.svg` | Timestamped session screenshot |
+| `media/session.svg` | Symlink to latest screenshot |
+| `media/session.jsonl` | Conversation log (with `--log`) |
+
+## Available Tools
 
 | Tool | Purpose |
 |------|---------|
@@ -52,57 +141,7 @@ More tools (list, write, update, search, agent) will be added in future releases
 
 ---
 
-## Planned Full Usage
+## Next Steps
 
-### Create Configuration
-
-Create a `yoker.toml` file:
-
-```toml
-[ollama]
-model = "llama3.2"
-base_url = "http://localhost:11434"
-
-[tools.list]
-allowed_paths = ["/workspace"]
-max_depth = 5
-
-[tools.read]
-allowed_paths = ["/workspace"]
-max_size_kb = 100
-
-[tools.agent]
-max_recursion_depth = 3
-
-[agents]
-directory = "./agents"
-```
-
-### Create Agent Definition
-
-Create `agents/main.md`:
-
-```markdown
----
-name: main
-description: Default assistant
-tools: List, Read, Write, Update, Search, Agent
----
-
-You are a helpful assistant that can work within the allowed directories.
-```
-
-### Run Yoker
-
-```bash
-yoker --config yoker.toml
-```
-
-### Guardrails
-
-Each tool will have configurable guardrails:
-
-- **Path restrictions**: Only operate within allowed directories
-- **Size limits**: Prevent reading/writing large files
-- **Recursion limits**: Control subagent depth
-- **Pattern filters**: Limit search complexity
+- {doc}`installation` - Detailed installation guide
+- [Architecture](https://github.com/christophevg/yoker/blob/master/analysis/architecture.md) - System design

@@ -1,14 +1,21 @@
 # Yoker Documentation
 
-A Python agent harness with configurable tools and guardrails.
+A Python agent harness with configurable tools, guardrails, and Ollama backend integration.
 
 ## Current Status
 
-**Minimal prototype available!** Basic chat loop with tool calling is working.
+**Working prototype with configuration system!** Interactive chat with multiline input, command history, and tool calling.
 
 ```bash
-pip install -e .
+pip install yoker
 python -m yoker
+```
+
+## Example Session
+
+```{image} _static/session.svg
+:alt: Yoker Session Example
+:width: 100%
 ```
 
 ## Overview
@@ -27,10 +34,11 @@ api/index
 
 ## Key Features
 
+- **Configuration System**: TOML-based configuration for all aspects
+- **Multiline Input**: Shift+Enter for multiline, command history support
+- **Rich Output**: Styled terminal output with Rich
+- **Tool Calling**: Structured tool execution with parameters
 - **Safety First**: Guardrails prevent unintended operations
-- **Configurability**: All aspects configurable via TOML
-- **Simplicity**: Specific tools instead of generic shell access
-- **Transparency**: Clear logging of all agent actions
 - **Extensibility**: Easy to add new guarded tools
 - **Compatibility**: Agent definitions compatible with Claude Code format
 
