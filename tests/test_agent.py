@@ -23,11 +23,7 @@ class TestAgent:
 
   def test_agent_with_config(self) -> None:
     """Test that Agent accepts config."""
-    config = Config(
-      backend=BackendConfig(
-        ollama=OllamaConfig(model="test-model")
-      )
-    )
+    config = Config(backend=BackendConfig(ollama=OllamaConfig(model="test-model")))
     agent = Agent(config=config)
     assert agent.model == "test-model"
 

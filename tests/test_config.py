@@ -75,7 +75,7 @@ class TestConfigLoader:
   def test_load_config_minimal(self, tmp_path: Path) -> None:
     """Test loading minimal configuration."""
     config_file = tmp_path / "yoker.toml"
-    config_file.write_text('')
+    config_file.write_text("")
 
     config = load_config(config_file)
     assert isinstance(config, Config)
@@ -84,7 +84,7 @@ class TestConfigLoader:
   def test_load_config_full(self, tmp_path: Path) -> None:
     """Test loading full configuration."""
     config_file = tmp_path / "yoker.toml"
-    config_file.write_text('''
+    config_file.write_text("""
 [harness]
 name = "test-harness"
 version = "2.0"
@@ -124,7 +124,7 @@ max_entries = 5000
 [logging]
 format = "text"
 include_tool_calls = false
-''')
+""")
 
     config = load_config(config_file)
     assert config.harness.name == "test-harness"
@@ -147,7 +147,7 @@ include_tool_calls = false
   def test_load_config_invalid_toml(self, tmp_path: Path) -> None:
     """Test loading invalid TOML file."""
     config_file = tmp_path / "yoker.toml"
-    config_file.write_text('invalid toml [content')
+    config_file.write_text("invalid toml [content")
 
     with pytest.raises(ConfigurationError) as exc_info:
       load_config(config_file)
@@ -178,60 +178,42 @@ class TestConfigValidator:
   def test_validate_invalid_url(self) -> None:
     """Test validation catches invalid URL."""
     config = Config()
-    config = Config(
-      backend=BackendConfig(
-        ollama=OllamaConfig(base_url="not-a-valid-url")
-      )
-    )
+    config = Config(backend=BackendConfig(ollama=OllamaConfig(base_url="not-a-valid-url")))
     with pytest.raises(ValidationError) as exc_info:
       validate_config(config)
     assert "backend.ollama.base_url" in str(exc_info.value)
 
   def test_validate_empty_model(self) -> None:
     """Test validation catches empty model."""
-    config = Config(
-      backend=BackendConfig(
-        ollama=OllamaConfig(model="")
-      )
-    )
+    config = Config(backend=BackendConfig(ollama=OllamaConfig(model="")))
     with pytest.raises(ValidationError) as exc_info:
       validate_config(config)
     assert "backend.ollama.model" in str(exc_info.value)
 
   def test_validate_negative_timeout(self) -> None:
     """Test validation catches negative timeout."""
-    config = Config(
-      backend=BackendConfig(
-        ollama=OllamaConfig(timeout_seconds=-1)
-      )
-    )
+    config = Config(backend=BackendConfig(ollama=OllamaConfig(timeout_seconds=-1)))
     with pytest.raises(ValidationError) as exc_info:
       validate_config(config)
     assert "timeout_seconds" in str(exc_info.value)
 
   def test_validate_invalid_log_level(self) -> None:
     """Test validation catches invalid log level."""
-    config = Config(
-      harness=HarnessConfig(log_level="INVALID")
-    )
+    config = Config(harness=HarnessConfig(log_level="INVALID"))
     with pytest.raises(ValidationError) as exc_info:
       validate_config(config)
     assert "harness.log_level" in str(exc_info.value)
 
   def test_validate_invalid_context_manager(self) -> None:
     """Test validation catches invalid context manager."""
-    config = Config(
-      context=ContextConfig(manager="invalid")
-    )
+    config = Config(context=ContextConfig(manager="invalid"))
     with pytest.raises(ValidationError) as exc_info:
       validate_config(config)
     assert "context.manager" in str(exc_info.value)
 
   def test_validate_invalid_network_access(self) -> None:
     """Test validation catches invalid network access."""
-    config = Config(
-      permissions=PermissionsConfig(network_access="invalid")
-    )
+    config = Config(permissions=PermissionsConfig(network_access="invalid"))
     with pytest.raises(ValidationError) as exc_info:
       validate_config(config)
     assert "permissions.network_access" in str(exc_info.value)

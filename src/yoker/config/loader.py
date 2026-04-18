@@ -329,9 +329,7 @@ def _parse_logging(data: dict[str, object]) -> LoggingConfig:
   return LoggingConfig(
     format=logging.get("format", "json"),  # type: ignore
     include_tool_calls=logging.get("include_tool_calls", True),  # type: ignore
-    include_permission_checks=logging.get(
-      "include_permission_checks", True
-    ),  # type: ignore
+    include_permission_checks=logging.get("include_permission_checks", True),  # type: ignore
   )
 
 

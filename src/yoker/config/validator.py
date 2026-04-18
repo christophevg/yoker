@@ -207,17 +207,23 @@ def validate_config(config: Config) -> list[str]:
     ("none", "local", "all"),
   )
   validate_positive_int(config.permissions.max_file_size_kb, "permissions.max_file_size_kb")
-  validate_non_negative_int(config.permissions.max_recursion_depth, "permissions.max_recursion_depth")
+  validate_non_negative_int(
+    config.permissions.max_recursion_depth, "permissions.max_recursion_depth"
+  )
 
   # Validate tool configurations
   tools_path = "tools"
   validate_positive_int(config.tools.list.max_depth, f"{tools_path}.list.max_depth")
   validate_positive_int(config.tools.list.max_entries, f"{tools_path}.list.max_entries")
   validate_positive_int(config.tools.write.max_size_kb, f"{tools_path}.write.max_size_kb")
-  validate_positive_int(config.tools.update.max_diff_size_kb, f"{tools_path}.update.max_diff_size_kb")
+  validate_positive_int(
+    config.tools.update.max_diff_size_kb, f"{tools_path}.update.max_diff_size_kb"
+  )
   validate_positive_int(config.tools.search.max_results, f"{tools_path}.search.max_results")
   validate_positive_int(config.tools.search.timeout_ms, f"{tools_path}.search.timeout_ms")
-  validate_positive_int(config.tools.agent.max_recursion_depth, f"{tools_path}.agent.max_recursion_depth")
+  validate_positive_int(
+    config.tools.agent.max_recursion_depth, f"{tools_path}.agent.max_recursion_depth"
+  )
   validate_positive_int(config.tools.agent.timeout_seconds, f"{tools_path}.agent.timeout_seconds")
 
   # Validate regex patterns
