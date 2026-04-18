@@ -10,9 +10,11 @@ Options:
 
 import argparse
 import logging
-import readline  # noqa: F401 - Enables arrow keys and history in input()
 from pathlib import Path
 
+from prompt_toolkit.history import FileHistory
+from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.shortcuts import PromptSession
 from rich.logging import RichHandler
 
 from yoker import __version__
@@ -21,6 +23,45 @@ from yoker.config import Config
 
 # Default configuration file name
 DEFAULT_CONFIG = "yoker.toml"
+
+# History file for prompt_toolkit
+HISTORY_FILE = Path.home() / ".yoker_history"
+
+
+def create_prompt_session() -> PromptSession[str]:
+  """Create a prompt session with multiline support.
+
+  Returns:
+    PromptSession configured for multiline input.
+  """
+  # Key bindings for multiline input
+  kb = KeyBindings()
+
+  # Ensure history directory exists
+  HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
+
+  session: PromptSession[str] = PromptSession(
+    history=FileHistory(str(HISTORY_FILE)),
+    multiline=True,
+    mouse_support=True,
+    key_bindings=kb,
+  )
+
+  return session
+
+
+def prompt_input(prompt: str, session: PromptSession[str]) -> str:
+  """Get user input with prompt_toolkit.
+
+  Args:
+    prompt: The prompt string to display.
+    session: PromptSession to use.
+
+  Returns:
+    User input string.
+  """
+  result: str = session.prompt(prompt)
+  return result
 
 
 def setup_logging(config: Config) -> None:
@@ -91,8 +132,18 @@ def main() -> None:
   print(f"Yoker v{__version__}")
   print("=" * 40)
 
+  # Create prompt session for interactive input
+  session = create_prompt_session()
+
+  # Create input function using prompt_toolkit
+  def get_input(prompt_text: str) -> str:
+    try:
+      return prompt_input(prompt_text, session)
+    except KeyboardInterrupt:
+      raise EOFError from None
+
   agent = Agent(model=args.model, config=config)
-  agent.start()
+  agent.start(get_input=get_input)
 
 
 if __name__ == "__main__":
