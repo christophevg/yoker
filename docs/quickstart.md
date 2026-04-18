@@ -37,7 +37,18 @@ python -m yoker --config yoker.toml
 
 ```
 Yoker v0.1.0 - Using model: glm-5:cloud
-Type your message and press Enter. Press Ctrl+D to quit.
+Thinking mode: enabled (use /think on|off to toggle)
+Type /help for available commands.
+Press Ctrl+D (or Ctrl+Z on Windows) to quit.
+
+> /help
+
+Available commands:
+
+  /help - Show available commands
+  /think - Enable/disable thinking mode: /think [on|off]
+
+Type a message without / prefix to chat with the LLM.
 
 > What's in the README.md file?
 
@@ -55,10 +66,30 @@ The session supports:
 
 | Feature | How to use |
 |---------|------------|
-| Multiline input | `Shift+Enter` adds newlines, `Enter` submits |
+| Multiline input | `Esc+Enter` adds newlines, `Enter` submits |
 | Command history | `Up`/`Down` arrows navigate previous messages |
 | History search | `Ctrl+R` searches through history |
 | Mouse support | Click to position cursor |
+
+### Slash Commands
+
+| Command | Description |
+|---------|-------------|
+| `/help` | Show available commands |
+| `/think on\|off` | Enable/disable LLM thinking trace |
+
+### Thinking Mode
+
+When enabled, the LLM shows its reasoning process in gray:
+
+```
+[Thinking]
+Let me analyze this request...
+I should check the file structure first...
+
+[Response]
+Based on my analysis, here's what I found...
+```
 
 ### Command Line Options
 

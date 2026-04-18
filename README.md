@@ -33,8 +33,11 @@ Example session:
 |---------|-------------|
 | **Chat loop** | Interactive conversation with Ollama |
 | **Tool calling** | Structured tool execution with parameters |
+| **Slash commands** | Built-in commands: `/help`, `/think on\|off` |
+| **Thinking mode** | LLM reasoning trace with gray output |
+| **Streaming** | Real-time token streaming from Ollama |
 | **Configuration** | TOML-based configuration system |
-| **Multiline input** | Shift+Enter for multiline, command history |
+| **Multiline input** | `Esc+Enter` for newlines, `Enter` to submit |
 | **Rich output** | Styled terminal output with Rich |
 | **Read tool** | File reading with path validation |
 
@@ -42,10 +45,30 @@ Example session:
 
 The interactive session supports:
 
-- **Multiline input**: Press `Shift+Enter` to add newlines, `Enter` to submit
+- **Multiline input**: Press `Esc+Enter` to add newlines, `Enter` to submit
 - **Command history**: Up/Down arrows navigate previous messages
 - **History search**: `Ctrl+R` to search through history
 - **Mouse support**: Click to position cursor
+
+### Slash Commands
+
+| Command | Description |
+|---------|-------------|
+| `/help` | Show available commands |
+| `/think on\|off` | Enable/disable LLM thinking trace |
+
+### Thinking Mode
+
+When thinking is enabled, the LLM shows its reasoning process:
+
+```
+[Thinking]
+Let me analyze this step by step...
+First, I need to understand the file structure...
+
+[Response]
+Based on my analysis, here's what I found...
+```
 
 ### Demo Session Script
 

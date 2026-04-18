@@ -24,10 +24,14 @@ from typing import Iterator
 from rich.console import Console
 
 from yoker.agent import Agent
+from yoker.commands import CommandRegistry, create_help_command, create_think_command
 from yoker.config import load_config_with_defaults
 
 # Media directory for session screenshots
 MEDIA_DIR = Path("media")
+
+# Wrap width for SVG output
+WRAP_WIDTH = 80
 
 
 class PredefinedInput:
@@ -97,6 +101,14 @@ class LoggingAgent:
   def model(self) -> str:
     return self.agent.model
 
+  @property
+  def thinking_enabled(self) -> bool:
+    return self.agent.thinking_enabled
+
+  @thinking_enabled.setter
+  def thinking_enabled(self, value: bool) -> None:
+    self.agent.thinking_enabled = value
+
   def process(self, message: str) -> str:
     """Process message and log conversation."""
     self.logger.log("user", message)
@@ -112,6 +124,7 @@ class MockAgent:
     self.console = console
     self.responses: list[str] = []
     self.index = 0
+    self.thinking_enabled = True
 
     # Load assistant responses from JSONL
     with open(jsonl_path) as f:
@@ -151,7 +164,8 @@ def run_demo_session(
     Path to the generated SVG file.
   """
   # Create console with recording enabled
-  console = Console(record=True)
+  # Use width=80 for consistent line wrapping in SVG output
+  console = Console(record=True, width=WRAP_WIDTH)
 
   # Create media directory
   MEDIA_DIR.mkdir(parents=True, exist_ok=True)
@@ -165,7 +179,8 @@ def run_demo_session(
   else:
     # Real LLM mode
     config = load_config_with_defaults(config_path)
-    agent = Agent(config=config, console=console)
+    # Pass wrap_width to enable line wrapping in streaming output
+    agent = Agent(config=config, console=console, wrap_width=WRAP_WIDTH)
 
     # Wrap with logger if requested
     if log:
@@ -175,25 +190,46 @@ def run_demo_session(
     # Create input function from messages
     if messages is None:
       messages = [
-        "What files are in this directory?",
-        "Read the README.md file",
+        "/help",
+        "Summarize the README.md file in one sentence.",
       ]
     get_input = PredefinedInput(messages)
 
+  # Create command registry
+  command_registry = CommandRegistry()
+  command_registry.register(create_help_command(command_registry))
+  command_registry.register(
+    create_think_command(
+      get_thinking_state=lambda: agent.thinking_enabled,
+      set_thinking_state=lambda enabled: setattr(agent, "thinking_enabled", enabled),
+    )
+  )
+
   # Print session header
   console.print(f"[bold cyan]Yoker v0.1.0[/] - Using model: [green]{agent.model}[/]")
+  thinking_status = "enabled" if agent.thinking_enabled else "disabled"
+  console.print(f"[dim]Thinking mode: {thinking_status} (use /think on|off to toggle)[/]")
+  console.print("[dim]Type /help for available commands.[/]")
   if replay:
     console.print("[dim]Replay mode - using logged conversation[/]")
   elif log:
     console.print("[dim]Logging conversation to session.jsonl[/]")
-  console.print("[dim]Demo session with predefined messages[/]\n")
+  console.print("")
 
   # Process each message
   for message in get_input.messages if hasattr(get_input, "messages") else []:
     console.print(f"[bold blue]>[/] {message}")
+
+    # Check if this is a command
+    if message.startswith("/"):
+      result = command_registry.dispatch(message)
+      if result:
+        console.print(f"{result}\n")
+      continue
+
     response = agent.process(message)
     if response:
-      console.print(f"\n{response}\n")
+      console.print()
 
   # Print session footer
   console.print("\n[bold cyan]Session complete.[/]")

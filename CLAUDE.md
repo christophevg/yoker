@@ -19,6 +19,12 @@ src/yoker/
   __init__.py          # Public API exports
   __main__.py          # Entry point with prompt_toolkit
   agent.py             # Agent class with chat loop + tool calling
+  commands/
+    __init__.py        # Commands public API
+    base.py            # Command dataclass
+    registry.py        # Command registry
+    help.py            # /help command
+    think.py           # /think command
   config/
     __init__.py        # Config public API
     loader.py          # TOML configuration loading
@@ -44,10 +50,13 @@ python -m yoker --model llama3.2:latest
 ```
 
 **Interactive Features:**
-- Multiline input: `Shift+Enter` adds newlines, `Enter` submits
+- Multiline input: `Esc+Enter` adds newlines, `Enter` submits
 - Command history: Up/Down arrows navigate previous messages
 - History search: `Ctrl+R` to search through history
 - Mouse support: Click to position cursor
+- Slash commands: `/help`, `/think on|off`
+- Thinking mode: LLM reasoning trace in gray
+- Streaming: Real-time token output from Ollama
 
 **Demo Script:**
 ```bash
