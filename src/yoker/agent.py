@@ -1,6 +1,7 @@
 """Minimal Agent implementation for Yoker prototype."""
 
 import logging
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +15,20 @@ logger = logging.getLogger(__name__)
 
 # Default system prompt
 DEFAULT_SYSTEM_PROMPT = "You are a helpful assistant."
+
+# Default input prompt function
+def default_prompt(prompt: str) -> str:
+  """Default input prompt using built-in input().
+
+  This works with readline for arrow keys and history.
+
+  Args:
+    prompt: The prompt string to display.
+
+  Returns:
+    User input string.
+  """
+  return input(prompt)
 
 
 class Agent:
@@ -130,15 +145,26 @@ class Agent:
           "content": str(result),
         })
 
-  def start(self) -> None:
-    """Start the interactive chat loop."""
+  def start(self, get_input: Callable[[str], str] | None = None) -> None:
+    """Start the interactive chat loop.
+
+    Args:
+      get_input: Optional function to get user input. Defaults to built-in
+        input() which works with readline for arrow keys and history.
+    """
+    if get_input is None:
+      get_input = default_prompt
+
     self.console.print(f"Yoker v0.1.0 - Using model: {self.model}")
     self.console.print("Type your message and press Enter. Press Ctrl+D (or Ctrl+Z on Windows) to quit.\n")
 
     while True:
       try:
-        user_input = input("> ")
+        user_input = get_input("> ")
       except EOFError:
+        self.console.print("\nGoodbye!")
+        break
+      except KeyboardInterrupt:
         self.console.print("\nGoodbye!")
         break
 

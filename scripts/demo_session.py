@@ -12,6 +12,7 @@ Output:
 """
 
 from pathlib import Path
+from typing import Iterator
 
 from rich.console import Console
 
@@ -21,6 +22,32 @@ from yoker.config import load_config_with_defaults
 # Media directory for session screenshots
 MEDIA_DIR = Path("media")
 OUTPUT_FILE = MEDIA_DIR / "session.svg"
+
+
+class PredefinedInput:
+  """Iterator that yields predefined messages and raises EOFError when done."""
+
+  def __init__(self, messages: list[str]) -> None:
+    self.messages = messages
+    self.index = 0
+
+  def __call__(self, prompt: str) -> str:
+    """Return next message from the list.
+
+    Args:
+      prompt: The prompt string (ignored, messages are predefined).
+
+    Returns:
+      Next message from the list.
+
+    Raises:
+      EOFError: When all messages have been consumed.
+    """
+    if self.index >= len(self.messages):
+      raise EOFError()
+    message = self.messages[self.index]
+    self.index += 1
+    return message
 
 
 def run_demo_session(
@@ -49,12 +76,11 @@ def run_demo_session(
   console.print(f"[bold cyan]Yoker v0.1.0[/] - Using model: [green]{agent.model}[/]")
   console.print("[dim]Demo session with predefined messages[/]\n")
 
-  # Process each message
-  for message in messages:
-    console.print(f"[bold blue]>[/] {message}")
-    response = agent.process(message)
-    if response:
-      console.print(f"\n{response}\n")
+  # Create input function that yields messages
+  get_input = PredefinedInput(messages)
+
+  # Run the interactive loop (will exit when messages are exhausted)
+  agent.start(get_input=get_input)
 
   # Print session footer
   console.print("\n[bold cyan]Session complete.[/]")

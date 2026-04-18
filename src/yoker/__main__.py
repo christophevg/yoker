@@ -10,6 +10,7 @@ Options:
 
 import argparse
 import logging
+import readline  # noqa: F401 - Enables arrow keys and history in input()
 from pathlib import Path
 
 from rich.logging import RichHandler
