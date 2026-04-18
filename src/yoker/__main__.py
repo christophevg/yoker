@@ -19,6 +19,7 @@ from rich.logging import RichHandler
 
 from yoker import __version__
 from yoker.agent import Agent
+from yoker.commands import CommandRegistry, create_help_command, create_think_command
 from yoker.config import Config
 
 # Default configuration file name
@@ -33,9 +34,26 @@ def create_prompt_session() -> PromptSession[str]:
 
   Returns:
     PromptSession configured for multiline input.
+    - Enter submits the input
+    - Meta+Enter (Esc+Enter) adds a newline
+
+  Note: Shift+Enter is not distinguishable from Enter in most terminals,
+  so we use Meta+Enter for multiline input instead.
   """
+  from prompt_toolkit.key_binding import KeyPressEvent
+
   # Key bindings for multiline input
   kb = KeyBindings()
+
+  @kb.add("enter")
+  def _handle_enter(event: KeyPressEvent) -> None:
+    """Enter submits the input."""
+    event.current_buffer.validate_and_handle()
+
+  @kb.add("escape", "enter")
+  def _handle_meta_enter(event: KeyPressEvent) -> None:
+    """Meta+Enter (Esc+Enter) adds a newline."""
+    event.current_buffer.insert_text("\n")
 
   # Ensure history directory exists
   HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -82,6 +100,29 @@ def setup_logging(config: Config) -> None:
   # Silence noisy modules
   for module in ["httpx", "httpcore", "ollama"]:
     logging.getLogger(module).setLevel(logging.WARNING)
+
+
+def create_command_registry(agent: Agent) -> CommandRegistry:
+  """Create and populate the command registry.
+
+  Args:
+    agent: The agent instance (for state access).
+
+  Returns:
+    Populated CommandRegistry.
+  """
+  registry = CommandRegistry()
+
+  # Register built-in commands
+  registry.register(create_help_command(registry))
+  registry.register(
+    create_think_command(
+      get_thinking_state=lambda: agent.thinking_enabled,
+      set_thinking_state=lambda enabled: setattr(agent, "thinking_enabled", enabled),
+    )
+  )
+
+  return registry
 
 
 def main() -> None:
@@ -142,7 +183,15 @@ def main() -> None:
     except KeyboardInterrupt:
       raise EOFError from None
 
+  # Create agent
   agent = Agent(model=args.model, config=config)
+
+  # Create command registry with agent access
+  command_registry = create_command_registry(agent)
+
+  # Pass command registry to agent
+  agent.command_registry = command_registry
+
   agent.start(get_input=get_input)
 
 
