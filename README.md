@@ -24,21 +24,10 @@ python -m yoker
 ```
 
 Example session:
-```
-Yoker v0.1.0 - Using model: glm-5:cloud
-Type your message and press Enter. Press Ctrl+D to quit.
 
-> What's in the README.md file?
+![Yoker Session](media/session.svg)
 
-I'll read the README.md file for you.
-
-[13:49:49] INFO yoker.agent - Tool call: read({'path': 'README.md'})
-
-The README.md file describes **Yoker**, a Python-based agent harness...
-
-> ^D
-Goodbye!
-```
+Run `python scripts/demo_session.py` to regenerate this screenshot with your configuration.
 
 ## Features
 

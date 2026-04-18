@@ -8,7 +8,7 @@ Usage:
     python scripts/demo_session.py
 
 Output:
-    session.svg - Terminal screenshot of the session
+    media/session.svg - Terminal screenshot of the session
 """
 
 from pathlib import Path
@@ -18,18 +18,23 @@ from rich.console import Console
 from yoker.agent import Agent
 from yoker.config import load_config_with_defaults
 
+# Media directory for session screenshots
+MEDIA_DIR = Path("media")
+OUTPUT_FILE = MEDIA_DIR / "session.svg"
+
 
 def run_demo_session(
   messages: list[str],
-  output_path: str = "session.svg",
   config_path: str | None = None,
-) -> None:
+) -> Path:
   """Run a demo session and save as SVG.
 
   Args:
     messages: List of user messages to send to the agent.
-    output_path: Path to save the SVG output.
     config_path: Path to configuration file (default: yoker.toml).
+
+  Returns:
+    Path to the generated SVG file.
   """
   # Load configuration
   config = load_config_with_defaults(config_path)
@@ -54,11 +59,15 @@ def run_demo_session(
   # Print session footer
   console.print("\n[bold cyan]Session complete.[/]")
 
-  # Save as SVG
-  output_file = Path(output_path)
-  output_file.parent.mkdir(parents=True, exist_ok=True)
-  console.save_svg(str(output_file))
-  console.print(f"\n[dim]Saved session to: {output_file}[/]")
+  # Create media directory
+  MEDIA_DIR.mkdir(parents=True, exist_ok=True)
+
+  # Save SVG
+  console.save_svg(str(OUTPUT_FILE))
+
+  console.print(f"\n[dim]Saved session to: {OUTPUT_FILE}[/]")
+
+  return OUTPUT_FILE
 
 
 def main() -> None:
@@ -77,7 +86,6 @@ def main() -> None:
   # Run the demo
   run_demo_session(
     messages=messages,
-    output_path="session.svg",
     config_path=str(config_path) if config_path else None,
   )
 
