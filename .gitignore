@@ -42,3 +42,6 @@ logs/
 
 # Local configuration
 yoker.toml
+
+# Generated artifacts
+session.svg
