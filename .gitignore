@@ -39,3 +39,6 @@ docs/_build/
 context/
 logs/
 *.jsonl
+
+# Local configuration
+yoker.toml

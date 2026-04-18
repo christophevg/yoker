@@ -1,21 +1,56 @@
 """Minimal Agent implementation for Yoker prototype."""
 
 import logging
+from pathlib import Path
 from typing import Any
 
 from ollama import Client
 
+from yoker.config import Config
 from yoker.tools import AVAILABLE_TOOLS
 
 logger = logging.getLogger(__name__)
 
 
 class Agent:
-  """Minimal agent that chats with Ollama and uses tools."""
+  """Minimal agent that chats with Ollama and uses tools.
 
-  def __init__(self, model: str = "glm-5:cloud"):
-    self.client = Client()
-    self.model = model
+  Attributes:
+    client: Ollama client for API communication.
+    model: Model to use for chat.
+    config: Configuration object (or defaults if not provided).
+  """
+
+  def __init__(
+    self,
+    model: str | None = None,
+    config: Config | None = None,
+    config_path: Path | str | None = None,
+  ) -> None:
+    """Initialize the agent.
+
+    Args:
+      model: Model to use (overrides config if provided).
+      config: Configuration object (takes precedence over config_path).
+      config_path: Path to configuration file (loaded if config not provided).
+    """
+    # Load configuration
+    if config is not None:
+      self.config = config
+    elif config_path is not None:
+      from yoker.config import load_config
+
+      self.config = load_config(config_path)
+    else:
+      self.config = Config()
+
+    # Initialize client
+    self.client = Client(host=self.config.backend.ollama.base_url)
+
+    # Use provided model or config model
+    self.model = model if model is not None else self.config.backend.ollama.model
+
+    # Use available tools (TODO: filter by config.tools)
     self.tools = AVAILABLE_TOOLS
 
   def start(self) -> None:

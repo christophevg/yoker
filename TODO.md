@@ -12,7 +12,7 @@
   - Set up Sphinx documentation structure
   - Create .readthedocs.yaml
 
-- [ ] **1.2 Configuration System**
+- [x] **1.2 Configuration System**
   - Implement TOML config loader
   - Define configuration schema (dataclasses or pydantic)
   - Implement config validator (schema + semantic checks)
@@ -180,3 +180,10 @@
   - Create basic CLI entry point
   - Set up Sphinx documentation structure
   - Create .readthedocs.yaml
+
+- [x] **1.2 Configuration System**
+  - Implement TOML config loader
+  - Define configuration schema (dataclasses)
+  - Implement config validator (schema + semantic checks)
+  - Add error handling for invalid configs
+  - Create example configuration files
