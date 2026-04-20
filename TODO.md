@@ -1,18 +1,41 @@
 # TODO
 
-## Inbox Input (2026-04-20)
-
-*Unstructured input from inbox processing session. To be refined and integrated.*
-
-- yoker: remove "[thinking]" and "[response]" headers
-- yoker: update docs/ folder — not up-to-date with current implementation
-- yoker: add rationale (interview me after presenting a proposal based on current knowledge about it)
-- yoker: in interactive mode, can't select text using mouse cursor
-- yoker: in interactive mode, tool usage should be included: "# Read(<filename>)"
-- yoker: demo: chat room with multiple individual agents chatting, spawn command in current TUI to spawn agent from folder with agent and skills
-- Research: Hermes Agent - compare to Yoker + C3 Agentic Harness + Assistant
-
 ## Backlog
+
+### Phase 1.5: UI/UX Fixes (High Priority)
+
+- [ ] **1.5.1 Remove Thinking Headers**
+  - Remove "[thinking]" and "[response]" text headers from console output
+  - Use visual styling (gray/muted color) to distinguish thinking sections
+  - Ensure thinking sections remain readable but visually distinct from content
+  - Verify the change works in both interactive and demo modes
+
+- [ ] **1.5.2 Fix Mouse Selection in Interactive Mode**
+  - Fix mouse selection in terminal output area (scrollback buffer)
+  - Fix mouse selection in input area
+  - Test that text can be selected and copied correctly
+  - Verify no conflicts with existing keybindings
+
+- [ ] **1.5.3 Update Demo Session Script for Tool Display**
+  - Update demo_session.py to work with new Agent structure
+  - Show tool use information when tools are invoked
+  - Display tool name and filepath (e.g., "Read tool: <filepath>")
+  - Ensure tool display is styled consistently with other output
+
+### Phase 1.6: Documentation (Medium Priority)
+
+- [ ] **1.6.1 Update Documentation Folder**
+  - Review all files in docs/ folder against current implementation
+  - Update outdated content to reflect current architecture
+  - Ensure consistency with README.md and CLAUDE.md
+  - Update code examples where necessary
+
+- [ ] **1.6.2 Define Project Rationale**
+  - Research existing coding agent solutions and their approaches
+  - Interview user to understand goals and vision
+  - Document unique selling factors of yoker
+  - Create rationale document explaining why yoker should exist and what it offers
+  - Identify gaps in existing solutions that yoker addresses
 
 ### Phase 1: Core Infrastructure
 
@@ -50,6 +73,25 @@
   - Add file and console handlers
   - Log tool calls and guardrail decisions
   - Add timing information for performance tracking
+
+### Research Tasks (Medium Priority)
+
+- [ ] **R.1 Hermes Agent Comparison**
+  - Research Hermes Agent architecture and capabilities
+  - Compare Hermes to Yoker architecture
+  - Compare Hermes to C3 Agentic Harness approach
+  - Compare Hermes to Assistant pattern
+  - Document findings in research folder
+  - Identify features worth incorporating
+
+### Future Features (Low Priority)
+
+- [ ] **F.1 Multi-Agent Chat Room Demo**
+  - Design multi-agent chat room architecture
+  - Implement spawn command in TUI to spawn agent from folder
+  - Create agent folder structure for spawned agents
+  - Implement agent-to-agent communication protocol
+  - Create demonstration scenario
 
 ### Phase 2: Tool Implementation
 
