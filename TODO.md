@@ -1,5 +1,17 @@
 # TODO
 
+## Inbox Input (2026-04-20)
+
+*Unstructured input from inbox processing session. To be refined and integrated.*
+
+- yoker: remove "[thinking]" and "[response]" headers
+- yoker: docs (API) aren't up-to-date — question: what specifically is outdated? which endpoints/modules?
+- yoker: add rationale (interview me after presenting a proposal based on current knowledge about it)
+- yoker: in interactive mode, can't select text using mouse cursor
+- yoker: in interactive mode, tool usage should be included: "# Read(<filename>)"
+- yoker: demo: chat room with multiple individual agents chatting, spawn command in current TUI to spawn agent from folder with agent and skills
+- Research: Hermes Agent - compare to Yoker + C3 Agentic Harness + Assistant
+
 ## Backlog
 
 ### Phase 1: Core Infrastructure
@@ -171,19 +183,10 @@
 
 ## Done
 
-### Phase 1: Core Infrastructure
-
-- [x] **1.1 Project Setup**
-  - Create Python package structure (src/yoker/)
-  - Set up pyproject.toml with dependencies (following clitic template)
-  - Configure development environment (ruff, mypy, pytest)
-  - Create basic CLI entry point
-  - Set up Sphinx documentation structure
-  - Create .readthedocs.yaml
-
-- [x] **1.2 Configuration System**
-  - Implement TOML config loader
-  - Define configuration schema (dataclasses)
-  - Implement config validator (schema + semantic checks)
-  - Add error handling for invalid configs
-  - Create example configuration files
+- [x] **1.2.5 Event-Driven Architecture Refactor**
+  - Refactor Agent class to emit events instead of console output
+  - Define event types (thinking_start, thinking_chunk, content_chunk, tool_call, etc.)
+  - Create event emitter/callback system in library
+  - Move all Rich console logic to __main__.py (application layer)
+  - Ensure library is headless and reusable in different contexts
+  - Write unit tests for event emission

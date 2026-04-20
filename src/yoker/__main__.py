@@ -21,6 +21,7 @@ from yoker import __version__
 from yoker.agent import Agent
 from yoker.commands import CommandRegistry, create_help_command, create_think_command
 from yoker.config import Config
+from yoker.events import ConsoleEventHandler
 
 # Default configuration file name
 DEFAULT_CONFIG = "yoker.toml"
@@ -169,7 +170,7 @@ def main() -> None:
   # Setup logging with config
   setup_logging(config)
 
-  # Create and start agent
+  # Print startup info
   print(f"Yoker v{__version__}")
   print("=" * 40)
 
@@ -192,6 +193,15 @@ def main() -> None:
   # Pass command registry to agent
   agent.command_registry = command_registry
 
+  # Create and attach console handler
+  console_handler = ConsoleEventHandler(
+    show_thinking=True,
+    show_tool_calls=True,
+    version=__version__,
+  )
+  agent.add_event_handler(console_handler)
+
+  # Start agent
   agent.start(get_input=get_input)
 
 

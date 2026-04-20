@@ -6,10 +6,25 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from ollama import Client
-from rich.console import Console
-from rich.style import Style
 
 from yoker.config import Config
+from yoker.events import (
+  ContentChunkEvent,
+  ContentEndEvent,
+  ContentStartEvent,
+  ErrorEvent,
+  Event,
+  EventType,
+  SessionEndEvent,
+  SessionStartEvent,
+  ThinkingChunkEvent,
+  ThinkingEndEvent,
+  ThinkingStartEvent,
+  ToolCallEvent,
+  ToolResultEvent,
+  TurnEndEvent,
+  TurnStartEvent,
+)
 from yoker.tools import AVAILABLE_TOOLS
 
 if TYPE_CHECKING:
@@ -17,11 +32,11 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Type alias for event callbacks
+EventCallback = Callable[[Event], None]
+
 # Default system prompt
 DEFAULT_SYSTEM_PROMPT = "You are a helpful assistant."
-
-# Style for thinking output
-THINKING_STYLE = Style(color="bright_black", dim=True)
 
 
 # Default input prompt function
@@ -46,8 +61,8 @@ class Agent:
     client: Ollama client for API communication.
     model: Model to use for chat.
     config: Configuration object (or defaults if not provided).
-    console: Rich console for output.
     messages: Conversation history.
+    thinking_enabled: Whether thinking mode is enabled.
   """
 
   def __init__(
@@ -55,10 +70,8 @@ class Agent:
     model: str | None = None,
     config: Config | None = None,
     config_path: Path | str | None = None,
-    console: Console | None = None,
     thinking_enabled: bool = True,
     command_registry: "CommandRegistry | None" = None,
-    wrap_width: int | None = None,
   ) -> None:
     """Initialize the agent.
 
@@ -66,10 +79,8 @@ class Agent:
       model: Model to use (overrides config if provided).
       config: Configuration object (takes precedence over config_path).
       config_path: Path to configuration file (loaded if config not provided).
-      console: Rich console for output (default console if not provided).
       thinking_enabled: Whether to enable thinking mode (default: True).
       command_registry: Optional command registry for slash-commands.
-      wrap_width: Optional width for wrapping streaming output (default: None = no wrapping).
     """
     # Load configuration
     if config is not None:
@@ -90,54 +101,51 @@ class Agent:
     # Use available tools (TODO: filter by config.tools)
     self.tools = AVAILABLE_TOOLS
 
-    # Use provided console or default
-    self.console = console if console is not None else Console()
-
     # Thinking mode state
     self.thinking_enabled = thinking_enabled
 
     # Command registry for slash-commands
     self.command_registry = command_registry
 
-    # Wrap width for streaming output
-    self.wrap_width = wrap_width
-
     # Initialize conversation history
     self.messages: list[dict[str, Any]] = [
       {"role": "system", "content": DEFAULT_SYSTEM_PROMPT},
     ]
 
-    # Column tracking for wrap_width
-    self._column = 0
+    # Event handlers storage
+    self._event_handlers: list[EventCallback] = []
 
-  def _print_wrapped(self, text: str, style: Style | None = None, end: str = "") -> None:
-    """Print text with optional wrapping at wrap_width.
+  def add_event_handler(self, handler: EventCallback) -> None:
+    """Register an event handler.
 
     Args:
-      text: Text to print.
-      style: Optional Rich style.
-      end: String to append at the end (default: "").
+      handler: Callable that receives Event objects.
+
+    Example:
+      def my_handler(event: Event):
+        if isinstance(event, ContentChunkEvent):
+          print(event.text, end='', flush=True)
+
+      agent.add_event_handler(my_handler)
     """
-    if self.wrap_width is None:
-      # No wrapping, use standard print
-      self.console.print(text, style=style, end=end)
-      return
+    self._event_handlers.append(handler)
 
-    # Wrap at width boundary
-    for char in text:
-      if char == "\n":
-        self._column = 0
-      elif char == "\r":
-        self._column = 0
-      elif self._column >= self.wrap_width:
-        self.console.print()
-        self._column = 0
+  def remove_event_handler(self, handler: EventCallback) -> None:
+    """Remove a registered event handler.
 
-      self.console.print(char, style=style, end="")
-      self._column += 1
+    Args:
+      handler: The handler to remove.
+    """
+    self._event_handlers.remove(handler)
 
-    if end:
-      self.console.print(end, style=style, end="")
+  def _emit(self, event: Event) -> None:
+    """Emit an event to all registered handlers.
+
+    Args:
+      event: The event to emit.
+    """
+    for handler in self._event_handlers:
+      handler(event)
 
   def process(self, message: str) -> str:
     """Process a single message and return the response.
@@ -145,12 +153,20 @@ class Agent:
     Handles tool calls internally until a final response is ready.
     Uses streaming when thinking is enabled.
 
+    Emits events during processing:
+    - TURN_START
+    - THINKING_START/CHUNK/END (if enabled)
+    - CONTENT_START/CHUNK/END
+    - TOOL_CALL/RESULT (if tools called)
+    - TURN_END
+
     Args:
       message: User message to process.
 
     Returns:
       Assistant's response text.
     """
+    self._emit(TurnStartEvent(type=EventType.TURN_START, message=message))
     self.messages.append({"role": "user", "content": message})
 
     # Process with model, handling tool calls in a loop
@@ -169,32 +185,64 @@ class Agent:
       thinking = ""
       tool_calls: list[Any] = []
       in_thinking = False
+      in_content = False
 
       for chunk in stream:
         # Handle thinking output
         if chunk.message.thinking:
           if not in_thinking and self.thinking_enabled:
             in_thinking = True
-            self._print_wrapped("\n[Thinking]\n", style=THINKING_STYLE)
+            self._emit(ThinkingStartEvent(type=EventType.THINKING_START))
           thinking += chunk.message.thinking
           if self.thinking_enabled:
-            self._print_wrapped(chunk.message.thinking, style=THINKING_STYLE)
+            self._emit(
+              ThinkingChunkEvent(
+                type=EventType.THINKING_CHUNK,
+                text=chunk.message.thinking,
+              )
+            )
 
         # Handle content output
         if chunk.message.content:
           if in_thinking and self.thinking_enabled:
             in_thinking = False
-            self._print_wrapped("\n\n[Response]\n")
+            self._emit(
+              ThinkingEndEvent(
+                type=EventType.THINKING_END,
+                total_length=len(thinking),
+              )
+            )
+          if not in_content:
+            in_content = True
+            self._emit(ContentStartEvent(type=EventType.CONTENT_START))
           content += chunk.message.content
-          self._print_wrapped(chunk.message.content)
+          self._emit(
+            ContentChunkEvent(
+              type=EventType.CONTENT_CHUNK,
+              text=chunk.message.content,
+            )
+          )
 
         # Handle tool calls
         if chunk.message.tool_calls:
           tool_calls.extend(chunk.message.tool_calls)
 
-      # End output with newline
-      if content or thinking:
-        self.console.print()  # Final newline
+      # End content if we were streaming
+      if in_content:
+        self._emit(
+          ContentEndEvent(
+            type=EventType.CONTENT_END,
+            total_length=len(content),
+          )
+        )
+      elif in_thinking and self.thinking_enabled:
+        # No content, but thinking ended
+        self._emit(
+          ThinkingEndEvent(
+            type=EventType.THINKING_END,
+            total_length=len(thinking),
+          )
+        )
 
       # Build assistant message for history
       assistant_message: dict[str, Any] = {"role": "assistant"}
@@ -209,6 +257,13 @@ class Agent:
 
       # If no tool calls, we're done with this turn
       if not tool_calls:
+        self._emit(
+          TurnEndEvent(
+            type=EventType.TURN_END,
+            response=content,
+            tool_calls_count=len(tool_calls),
+          )
+        )
         return content
 
       # Process tool calls
@@ -216,16 +271,36 @@ class Agent:
         tool_name = call.function.name
         tool_args = call.function.arguments
 
+        self._emit(
+          ToolCallEvent(
+            type=EventType.TOOL_CALL,
+            tool_name=tool_name,
+            arguments=tool_args,
+          )
+        )
+
         logger.info(f"Tool call: {tool_name}({tool_args})")
 
         try:
           result = self.tools[tool_name](**tool_args)
+          success = True
         except KeyError:
           result = f"Error: Unknown tool '{tool_name}'"
+          success = False
         except Exception as e:
           result = f"Error executing tool: {e}"
+          success = False
 
         logger.info(f"Tool result: {result[:100]}...")
+
+        self._emit(
+          ToolResultEvent(
+            type=EventType.TOOL_RESULT,
+            tool_name=tool_name,
+            result=str(result),
+            success=success,
+          )
+        )
 
         # Add tool result to messages
         self.messages.append(
@@ -239,6 +314,11 @@ class Agent:
   def start(self, get_input: Callable[[str], str] | None = None) -> None:
     """Start the interactive chat loop.
 
+    Emits:
+    - SESSION_START at the beginning
+    - SESSION_END when quitting
+    - All events from process() during each turn
+
     Args:
       get_input: Optional function to get user input. Defaults to built-in
         input() which works with readline for arrow keys and history.
@@ -246,33 +326,64 @@ class Agent:
     if get_input is None:
       get_input = default_prompt
 
-    self.console.print(f"Yoker v0.1.0 - Using model: {self.model}")
-    thinking_status = "enabled" if self.thinking_enabled else "disabled"
-    self.console.print(f"Thinking mode: {thinking_status} (use /think on|off to toggle)")
-    self.console.print("Type /help for available commands.")
-    self.console.print("Press Ctrl+D (or Ctrl+Z on Windows) to quit.\n")
+    self._emit(
+      SessionStartEvent(
+        type=EventType.SESSION_START,
+        model=self.model,
+        thinking_enabled=self.thinking_enabled,
+      )
+    )
 
-    while True:
-      try:
-        user_input = get_input("> ")
-      except EOFError:
-        self.console.print("\nGoodbye!")
-        break
-      except KeyboardInterrupt:
-        self.console.print("\nGoodbye!")
-        break
+    try:
+      while True:
+        try:
+          user_input = get_input("> ")
+        except EOFError:
+          self._emit(
+            SessionEndEvent(
+              type=EventType.SESSION_END,
+              reason="quit",
+            )
+          )
+          break
+        except KeyboardInterrupt:
+          self._emit(
+            SessionEndEvent(
+              type=EventType.SESSION_END,
+              reason="interrupt",
+            )
+          )
+          break
 
-      if not user_input.strip():
-        continue
+        if not user_input.strip():
+          continue
 
-      # Check if this is a command
-      if self.command_registry and user_input.startswith("/"):
-        result = self.command_registry.dispatch(user_input)
-        if result:
-          self.console.print(f"{result}\n")
-        continue
+        # Check if this is a command
+        if self.command_registry and user_input.startswith("/"):
+          result = self.command_registry.dispatch(user_input)
+          if result:
+            # For command results, we still need to output them
+            # This will be handled by the event handler if it's registered
+            # For now, emit as a content event for command output
+            self._emit(ContentStartEvent(type=EventType.CONTENT_START))
+            self._emit(
+              ContentChunkEvent(
+                type=EventType.CONTENT_CHUNK,
+                text=f"{result}\n",
+              )
+            )
+            self._emit(ContentEndEvent(type=EventType.CONTENT_END, total_length=len(result)))
+          continue
 
-      # Process message (output is streamed during processing)
-      self.process(user_input)
-      # Add blank line after response for readability
-      self.console.print()
+        # Process message (output is streamed via events)
+        self.process(user_input)
+
+    except Exception as e:
+      self._emit(
+        ErrorEvent(
+          type=EventType.ERROR,
+          error_type=type(e).__name__,
+          message=str(e),
+        )
+      )
+      raise
