@@ -122,7 +122,7 @@ class ConsoleEventHandler:
   def _handle_thinking_start(self, event: ThinkingStartEvent) -> None:
     """Handle thinking start event."""
     if self.show_thinking:
-      self._print_wrapped("\n[Thinking]\n", style=THINKING_STYLE)
+      self._print_wrapped("\n", style=THINKING_STYLE)
 
   def _handle_thinking_chunk(self, event: ThinkingChunkEvent) -> None:
     """Handle thinking chunk event."""
@@ -132,7 +132,7 @@ class ConsoleEventHandler:
   def _handle_thinking_end(self, event: ThinkingEndEvent) -> None:
     """Handle thinking end event."""
     if self.show_thinking:
-      self._print_wrapped("\n\n[Response]\n")
+      self._print_wrapped("\n\n")
 
   def _handle_content_start(self, event: ContentStartEvent) -> None:
     """Handle content start event."""
