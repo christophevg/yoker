@@ -21,7 +21,14 @@ from yoker import __version__
 from yoker.agent import Agent
 from yoker.commands import CommandRegistry, create_help_command, create_think_command
 from yoker.config import Config
-from yoker.events import ConsoleEventHandler
+from yoker.events import (
+  ConsoleEventHandler,
+  ContentChunkEvent,
+  ContentEndEvent,
+  ContentStartEvent,
+  ErrorEvent,
+  EventType,
+)
 
 # Default configuration file name
 DEFAULT_CONFIG = "yoker.toml"
@@ -170,28 +177,14 @@ def main() -> None:
   # Setup logging with config
   setup_logging(config)
 
-  # Print startup info
-  print(f"Yoker v{__version__}")
-  print("=" * 40)
-
   # Create prompt session for interactive input
   session = create_prompt_session()
-
-  # Create input function using prompt_toolkit
-  def get_input(prompt_text: str) -> str:
-    try:
-      return prompt_input(prompt_text, session)
-    except KeyboardInterrupt:
-      raise EOFError from None
 
   # Create agent
   agent = Agent(model=args.model, config=config)
 
   # Create command registry with agent access
   command_registry = create_command_registry(agent)
-
-  # Pass command registry to agent
-  agent.command_registry = command_registry
 
   # Create and attach console handler
   console_handler = ConsoleEventHandler(
@@ -201,8 +194,53 @@ def main() -> None:
   )
   agent.add_event_handler(console_handler)
 
-  # Start agent
-  agent.start(get_input=get_input)
+  # Begin session
+  agent.begin_session()
+
+  try:
+    while True:
+      try:
+        user_input = prompt_input("> ", session)
+      except EOFError:
+        agent.end_session(reason="quit")
+        break
+      except KeyboardInterrupt:
+        print()  # Newline after ^C
+        agent.end_session(reason="interrupt")
+        break
+
+      if not user_input.strip():
+        continue
+
+      # Handle commands
+      if user_input.startswith("/"):
+        result = command_registry.dispatch(user_input)
+        if result:
+          # Emit command output as content events
+          agent._emit(ContentStartEvent(type=EventType.CONTENT_START))
+          agent._emit(
+            ContentChunkEvent(
+              type=EventType.CONTENT_CHUNK,
+              text=f"{result}\n",
+            )
+          )
+          agent._emit(
+            ContentEndEvent(type=EventType.CONTENT_END, total_length=len(result))
+          )
+        continue
+
+      # Process message (output is streamed via events)
+      agent.process(user_input)
+
+  except Exception as e:
+    agent._emit(
+      ErrorEvent(
+        type=EventType.ERROR,
+        error_type=type(e).__name__,
+        message=str(e),
+      )
+    )
+    raise
 
 
 if __name__ == "__main__":

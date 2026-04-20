@@ -5,7 +5,7 @@
 *Unstructured input from inbox processing session. To be refined and integrated.*
 
 - yoker: remove "[thinking]" and "[response]" headers
-- yoker: docs (API) aren't up-to-date — question: what specifically is outdated? which endpoints/modules?
+- yoker: update docs/ folder — not up-to-date with current implementation
 - yoker: add rationale (interview me after presenting a proposal based on current knowledge about it)
 - yoker: in interactive mode, can't select text using mouse cursor
 - yoker: in interactive mode, tool usage should be included: "# Read(<filename>)"

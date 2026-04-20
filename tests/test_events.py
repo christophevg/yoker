@@ -1,7 +1,6 @@
 """Tests for yoker events module."""
 
 from io import StringIO
-from typing import Any
 
 import pytest
 from pytest_mock import MockerFixture
@@ -247,7 +246,7 @@ class TestAgentEventEmission:
     mock_chunk = mocker.MagicMock()
     mock_chunk.message.thinking = None
     mock_chunk.message.content = "Hello there"
-    mock_chunk.message.tool_calls: list[Any] = []
+    mock_chunk.message.tool_calls: list = []
     mock_client.chat.return_value = [mock_chunk]
 
     mocker.patch("yoker.agent.Client", return_value=mock_client)
@@ -283,34 +282,19 @@ class TestAgentEventEmission:
     agent.remove_event_handler(handler)
     assert handler not in agent._event_handlers
 
-  def test_agent_emits_session_events_on_start(self, mocker: MockerFixture) -> None:
-    """Test that Agent emits session events on start()."""
-    mock_client = mocker.MagicMock()
-    mock_chunk = mocker.MagicMock()
-    mock_chunk.message.thinking = None
-    mock_chunk.message.content = "Response"
-    mock_chunk.message.tool_calls: list[Any] = []
-    mock_client.chat.return_value = [mock_chunk]
-
-    mocker.patch("yoker.agent.Client", return_value=mock_client)
-
+  def test_agent_emits_session_events(self) -> None:
+    """Test that Agent emits session events via begin_session/end_session."""
     from yoker.agent import Agent
 
     agent = Agent(model="test-model")
     collector = TestEventCollector()
     agent.add_event_handler(collector)
 
-    # Create a get_input that returns one message then EOF
-    call_count = 0
+    # Begin session
+    agent.begin_session()
 
-    def get_input(prompt: str) -> str:
-      nonlocal call_count
-      call_count += 1
-      if call_count == 1:
-        raise EOFError()
-      return "test"
-
-    agent.start(get_input=get_input)
+    # End session
+    agent.end_session(reason="quit")
 
     # Check session events
     event_types = [e.type for e in collector.events]

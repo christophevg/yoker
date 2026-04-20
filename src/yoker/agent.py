@@ -12,7 +12,6 @@ from yoker.events import (
   ContentChunkEvent,
   ContentEndEvent,
   ContentStartEvent,
-  ErrorEvent,
   Event,
   EventType,
   SessionEndEvent,
@@ -37,21 +36,6 @@ EventCallback = Callable[[Event], None]
 
 # Default system prompt
 DEFAULT_SYSTEM_PROMPT = "You are a helpful assistant."
-
-
-# Default input prompt function
-def default_prompt(prompt: str) -> str:
-  """Default input prompt using built-in input().
-
-  This works with readline for arrow keys and history.
-
-  Args:
-    prompt: The prompt string to display.
-
-  Returns:
-    User input string.
-  """
-  return input(prompt)
 
 
 class Agent:
@@ -311,21 +295,12 @@ class Agent:
           }
         )
 
-  def start(self, get_input: Callable[[str], str] | None = None) -> None:
-    """Start the interactive chat loop.
+  def begin_session(self) -> None:
+    """Begin an agent session.
 
-    Emits:
-    - SESSION_START at the beginning
-    - SESSION_END when quitting
-    - All events from process() during each turn
-
-    Args:
-      get_input: Optional function to get user input. Defaults to built-in
-        input() which works with readline for arrow keys and history.
+    Emits SESSION_START event with session metadata.
+    Call this before processing messages.
     """
-    if get_input is None:
-      get_input = default_prompt
-
     self._emit(
       SessionStartEvent(
         type=EventType.SESSION_START,
@@ -334,56 +309,18 @@ class Agent:
       )
     )
 
-    try:
-      while True:
-        try:
-          user_input = get_input("> ")
-        except EOFError:
-          self._emit(
-            SessionEndEvent(
-              type=EventType.SESSION_END,
-              reason="quit",
-            )
-          )
-          break
-        except KeyboardInterrupt:
-          self._emit(
-            SessionEndEvent(
-              type=EventType.SESSION_END,
-              reason="interrupt",
-            )
-          )
-          break
+  def end_session(self, reason: str = "quit") -> None:
+    """End an agent session.
 
-        if not user_input.strip():
-          continue
+    Emits SESSION_END event.
+    Call this when done processing messages.
 
-        # Check if this is a command
-        if self.command_registry and user_input.startswith("/"):
-          result = self.command_registry.dispatch(user_input)
-          if result:
-            # For command results, we still need to output them
-            # This will be handled by the event handler if it's registered
-            # For now, emit as a content event for command output
-            self._emit(ContentStartEvent(type=EventType.CONTENT_START))
-            self._emit(
-              ContentChunkEvent(
-                type=EventType.CONTENT_CHUNK,
-                text=f"{result}\n",
-              )
-            )
-            self._emit(ContentEndEvent(type=EventType.CONTENT_END, total_length=len(result)))
-          continue
-
-        # Process message (output is streamed via events)
-        self.process(user_input)
-
-    except Exception as e:
-      self._emit(
-        ErrorEvent(
-          type=EventType.ERROR,
-          error_type=type(e).__name__,
-          message=str(e),
-        )
+    Args:
+      reason: Reason for ending the session (e.g., "quit", "error", "interrupt").
+    """
+    self._emit(
+      SessionEndEvent(
+        type=EventType.SESSION_END,
+        reason=reason,
       )
-      raise
+    )
