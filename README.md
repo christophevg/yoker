@@ -110,24 +110,36 @@ See `examples/yoker.toml` for the full configuration reference.
 
 ## Architecture
 
+Yoker uses an **event-driven architecture** for library-first design. The Agent emits events; application code handles UI.
+
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                        Yoker                             │
-├─────────────────────────────────────────────────────────┤
-│  Configuration │ Context Manager │ Logging/Reporting     │
-│       │              │                   │               │
-│       ▼              ▼                   ▼               │
+│                   Application Layer                      │
+│                      (__main__.py)                       │
 │  ┌─────────────────────────────────────────────────────┐ │
-│  │              Tool Execution Layer                    │ │
-│  │    List  │  Read  │  Write  │  Update  │  Search    │ │
+│  │            ConsoleEventHandler                       │ │
+│  │  - Subscribes to Agent events                       │ │
+│  │  - Renders to Rich console                          │ │
+│  │  - Handles input loop, commands                     │ │
 │  └─────────────────────────────────────────────────────┘ │
-│                          │                               │
-│                          ▼                               │
+└─────────────────────────────────────────────────────────┘
+                          │ events
+                          ▼
+┌─────────────────────────────────────────────────────────┐
+│                    Library Layer                         │
+│                      (agent.py)                          │
 │  ┌─────────────────────────────────────────────────────┐ │
-│  │              Ollama Backend Client                   │ │
+│  │                    Agent                             │ │
+│  │  - Pure event emission (no console)                  │ │
+│  │  - begin_session() / end_session()                   │ │
+│  │  - process(message)                                  │ │
+│  │  - Ollama backend communication                      │ │
+│  │  - Tool execution                                   │ │
 │  └─────────────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────┘
 ```
+
+**Event Types**: Session (start/end), Turn (start/end), Thinking (start/chunk/end), Content (start/chunk/end), Tool (call/result), Error
 
 **Planned features**: Context persistence, additional tools (list, write, update, search, agent), agent definitions, guardrails, permissions.
 

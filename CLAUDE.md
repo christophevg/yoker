@@ -12,13 +12,13 @@ yoker is a Python agent harness with configurable tools, guardrails, and Ollama 
 
 ## Current State: Working Prototype
 
-The project has a **working prototype** with configuration system and interactive chat:
+The project has a **working prototype** with event-driven architecture and interactive chat:
 
 ```
 src/yoker/
   __init__.py          # Public API exports
-  __main__.py          # Entry point with prompt_toolkit
-  agent.py             # Agent class with chat loop + tool calling
+  __main__.py          # Entry point with prompt_toolkit (application layer)
+  agent.py             # Agent class with event emission (library layer)
   commands/
     __init__.py        # Commands public API
     base.py            # Command dataclass
@@ -30,6 +30,10 @@ src/yoker/
     loader.py          # TOML configuration loading
     schema.py          # Frozen dataclass configuration schema
     validator.py       # Configuration validation
+  events/
+    __init__.py        # Events public API
+    types.py           # Event dataclasses (Session, Turn, Thinking, Content, Tool, Error)
+    handlers.py        # EventHandler protocol and ConsoleEventHandler
   exceptions.py        # Custom exception hierarchy
   tools.py             # read() tool
 ```

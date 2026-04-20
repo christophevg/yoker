@@ -4,6 +4,8 @@
 
 Yoker provides an interactive chat interface with Ollama and tool calling capabilities.
 
+**Architecture**: Yoker uses an event-driven, library-first design. The Agent emits events (thinking chunks, content, tool calls) that handlers subscribe to. This makes the library usable in headless, web, and GUI contexts.
+
 ### Prerequisites
 
 - Python 3.10 or higher
@@ -31,6 +33,28 @@ Or with a configuration file:
 
 ```bash
 python -m yoker --config yoker.toml
+```
+
+### Library Usage (Headless)
+
+```python
+from yoker import Agent
+from yoker.events import Event, ContentChunkEvent
+
+# Create a custom event handler
+class MyHandler:
+    def __call__(self, event: Event) -> None:
+        if hasattr(event, 'text'):
+            print(event.text, end='', flush=True)
+
+# Create agent and attach handler
+agent = Agent(model="llama3.2")
+agent.add_event_handler(MyHandler())
+
+# Use the agent programmatically
+agent.begin_session()
+agent.process("What is 2+2?")
+agent.end_session()
 ```
 
 ### Interactive Session
