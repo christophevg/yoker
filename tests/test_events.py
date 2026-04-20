@@ -197,7 +197,7 @@ class TestConsoleEventHandler:
     )
     console_handler(event)
     output = console_handler.console.file.getvalue()  # type: ignore[attr-defined]
-    assert "Tool Call" in output
+    assert "[Tool Call]" in output
     assert "read" in output
 
   def test_handler_hides_tool_calls_when_disabled(self) -> None:

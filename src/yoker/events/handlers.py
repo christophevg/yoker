@@ -150,20 +150,13 @@ class ConsoleEventHandler:
   def _handle_tool_call(self, event: ToolCallEvent) -> None:
     """Handle tool call event."""
     if self.show_tool_calls:
-      self.console.print(
-        f"\n[Tool Call] {event.tool_name}({event.arguments})",
-        style=TOOL_STYLE,
-      )
+      args_str = ", ".join(f"{k}={v!r}" for k, v in event.arguments.items())
+      self.console.print(f"\n[Tool Call] {event.tool_name}({args_str})", style=TOOL_STYLE)
 
   def _handle_tool_result(self, event: ToolResultEvent) -> None:
     """Handle tool result event."""
-    if self.show_tool_calls:
-      status = "success" if event.success else "failed"
-      preview = event.result[:100] + "..." if len(event.result) > 100 else event.result
-      self.console.print(
-        f"[Tool Result] {status}: {preview}",
-        style=TOOL_STYLE,
-      )
+    # Don't show tool result output - only show tool calls
+    pass
 
   def _handle_error(self, event: ErrorEvent) -> None:
     """Handle error event."""

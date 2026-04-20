@@ -26,6 +26,8 @@ from rich.console import Console
 from yoker.agent import Agent
 from yoker.commands import CommandRegistry, create_help_command, create_think_command
 from yoker.config import load_config_with_defaults
+from yoker.agent import EventCallback
+from yoker.events import ConsoleEventHandler
 
 # Media directory for session screenshots
 MEDIA_DIR = Path("media")
@@ -109,6 +111,18 @@ class LoggingAgent:
   def thinking_enabled(self, value: bool) -> None:
     self.agent.thinking_enabled = value
 
+  def add_event_handler(self, handler: "EventCallback") -> None:
+    """Delegate event handler registration to wrapped agent."""
+    self.agent.add_event_handler(handler)
+
+  def begin_session(self) -> None:
+    """Delegate session start to wrapped agent."""
+    self.agent.begin_session()
+
+  def end_session(self, reason: str = "quit") -> None:
+    """Delegate session end to wrapped agent."""
+    self.agent.end_session(reason)
+
   def process(self, message: str) -> str:
     """Process message and log conversation."""
     self.logger.log("user", message)
@@ -132,6 +146,14 @@ class MockAgent:
         entry = json.loads(line)
         if entry["role"] == "assistant":
           self.responses.append(entry["content"])
+
+  def begin_session(self) -> None:
+    """No-op for mock agent."""
+    pass
+
+  def end_session(self, reason: str = "quit") -> None:
+    """No-op for mock agent."""
+    pass
 
   def process(self, message: str) -> str:
     """Return next response from the log."""
@@ -179,8 +201,16 @@ def run_demo_session(
   else:
     # Real LLM mode
     config = load_config_with_defaults(config_path)
-    # Pass wrap_width to enable line wrapping in streaming output
-    agent = Agent(config=config, console=console, wrap_width=WRAP_WIDTH)
+    # Create agent with event-driven architecture
+    agent = Agent(config=config)
+    # Attach console event handler for output
+    handler = ConsoleEventHandler(
+      console=console,
+      show_thinking=True,
+      show_tool_calls=True,
+      wrap_width=WRAP_WIDTH,
+    )
+    agent.add_event_handler(handler)
 
     # Wrap with logger if requested
     if log:
@@ -205,16 +235,17 @@ def run_demo_session(
     )
   )
 
-  # Print session header
-  console.print(f"[bold cyan]Yoker v0.1.0[/] - Using model: [green]{agent.model}[/]")
-  thinking_status = "enabled" if agent.thinking_enabled else "disabled"
-  console.print(f"[dim]Thinking mode: {thinking_status} (use /think on|off to toggle)[/]")
-  console.print("[dim]Type /help for available commands.[/]")
+  # Begin session (emits SESSION_START event for real LLM mode)
+  if not replay:
+    agent.begin_session()
+
+  # Print mode-specific info (for replay mode, or additional info for log mode)
   if replay:
+    console.print(f"[bold cyan]Yoker v0.1.0[/] - Using model: [green]{agent.model}[/]")
     console.print("[dim]Replay mode - using logged conversation[/]")
+    console.print("")
   elif log:
     console.print("[dim]Logging conversation to session.jsonl[/]")
-  console.print("")
 
   # Process each message
   for message in get_input.messages if hasattr(get_input, "messages") else []:
@@ -229,7 +260,16 @@ def run_demo_session(
 
     response = agent.process(message)
     if response:
-      console.print()
+      # In replay mode, MockAgent returns string responses directly
+      # In real LLM mode, events are emitted and printed by ConsoleEventHandler
+      if replay:
+        console.print(f"\n{response}\n")
+      else:
+        console.print()
+
+  # End session (emits SESSION_END event for real LLM mode)
+  if not replay:
+    agent.end_session()
 
   # Print session footer
   console.print("\n[bold cyan]Session complete.[/]")
