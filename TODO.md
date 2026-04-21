@@ -31,12 +31,13 @@
   - See `analysis/ux-demo-session.md` for full UX analysis
   - See `reporting/1.5.3-demo-session/functional-review.md` for review summary
 
-- [ ] **1.5.4 Event Logging System (Future Enhancement)**
+- [x] **1.5.4 Event Logging System**
   - Create `EventLogger` class to log all event types to JSONL
   - Log SESSION_START, TURN_START, THINKING_*, TOOL_*, CONTENT_*, events
   - Enable full visual replay capability
   - Create `EventReplayAgent` that emits events from log
-  - Requires: Event system refactoring
+  - Extracted from demo_session.py into src/yoker/logging/ module
+  - See `reporting/1.5.4-event-logging/summary.md` for implementation summary
 
 ### Phase 1.6: Documentation (Medium Priority)
 

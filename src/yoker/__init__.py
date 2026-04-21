@@ -41,6 +41,7 @@ from yoker.exceptions import (
   ValidationError,
   YokerError,
 )
+from yoker.logging import EventLogger, EventReplayAgent, deserialize_event, serialize_event
 
 __version__ = "0.1.0"
 __author__ = "Christophe VG"
@@ -83,6 +84,11 @@ __all__ = [
   "ContextManager",
   "ContextStatistics",
   "BasicPersistenceContextManager",
+  # Logging
+  "EventLogger",
+  "EventReplayAgent",
+  "serialize_event",
+  "deserialize_event",
   # Exceptions
   "YokerError",
   "ConfigurationError",

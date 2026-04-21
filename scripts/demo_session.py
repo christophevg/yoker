@@ -21,7 +21,6 @@ import argparse
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 
 from rich.console import Console
 
@@ -29,332 +28,14 @@ from yoker.agent import Agent, EventCallback
 from yoker.commands import CommandRegistry, create_help_command, create_think_command
 from yoker.config import load_config_with_defaults
 from yoker.context import BasicPersistenceContextManager
-from yoker.events import ConsoleEventHandler
-from yoker.events.types import (
-  CommandEvent,
-  ContentChunkEvent,
-  ContentEndEvent,
-  ContentStartEvent,
-  ErrorEvent,
-  Event,
-  EventType,
-  SessionEndEvent,
-  SessionStartEvent,
-  ThinkingChunkEvent,
-  ThinkingEndEvent,
-  ThinkingStartEvent,
-  ToolCallEvent,
-  ToolResultEvent,
-  TurnEndEvent,
-  TurnStartEvent,
-)
+from yoker.events import ConsoleEventHandler, Event, EventType
+from yoker.logging import EventLogger, EventReplayAgent, serialize_event
 
 # Media directory for session screenshots
 MEDIA_DIR = Path("media")
 
 # Wrap width for SVG output
 WRAP_WIDTH = 80
-
-
-def _serialize_event(event: Event) -> dict[str, Any]:
-  """Serialize an event to a JSON-serializable dictionary.
-
-  Args:
-    event: The event to serialize.
-
-  Returns:
-    Dictionary with type, timestamp, and event data.
-  """
-  data: dict[str, Any] = {}
-  timestamp = event.timestamp.isoformat()
-
-  match event.type:
-    case EventType.SESSION_START:
-      event = event  # type: ignore
-      data = {
-        "model": event.model,
-        "thinking_enabled": event.thinking_enabled,
-        "config_summary": event.config_summary,
-      }
-    case EventType.SESSION_END:
-      event = event  # type: ignore
-      data = {"reason": event.reason}
-    case EventType.TURN_START:
-      event = event  # type: ignore
-      data = {"message": event.message}
-    case EventType.TURN_END:
-      event = event  # type: ignore
-      data = {"response": event.response, "tool_calls_count": event.tool_calls_count}
-    case EventType.THINKING_START:
-      pass  # No data
-    case EventType.THINKING_CHUNK:
-      event = event  # type: ignore
-      data = {"text": event.text}
-    case EventType.THINKING_END:
-      event = event  # type: ignore
-      data = {"total_length": event.total_length}
-    case EventType.CONTENT_START:
-      pass  # No data
-    case EventType.CONTENT_CHUNK:
-      event = event  # type: ignore
-      data = {"text": event.text}
-    case EventType.CONTENT_END:
-      event = event  # type: ignore
-      data = {"total_length": event.total_length}
-    case EventType.TOOL_CALL:
-      event = event  # type: ignore
-      data = {"tool_name": event.tool_name, "arguments": event.arguments}
-    case EventType.TOOL_RESULT:
-      event = event  # type: ignore
-      data = {"tool_name": event.tool_name, "result": event.result, "success": event.success}
-    case EventType.ERROR:
-      event = event  # type: ignore
-      data = {"error_type": event.error_type, "message": event.message, "details": event.details}
-    case EventType.COMMAND:
-      event = event  # type: ignore
-      data = {"command": event.command, "result": event.result}
-
-  return {"type": event.type.name, "timestamp": timestamp, "data": data}
-
-
-def _deserialize_event(entry: dict[str, Any]) -> Event:
-  """Deserialize a dictionary back to an event object.
-
-  Args:
-    entry: Dictionary with type, timestamp, and event data.
-
-  Returns:
-    Reconstructed event object.
-  """
-  event_type = EventType[entry["type"]]
-  timestamp = datetime.fromisoformat(entry["timestamp"])
-  data = entry.get("data", {})
-
-  match event_type:
-    case EventType.SESSION_START:
-      return SessionStartEvent(
-        type=event_type,
-        timestamp=timestamp,
-        model=data["model"],
-        thinking_enabled=data["thinking_enabled"],
-        config_summary=data.get("config_summary", {}),
-      )
-    case EventType.SESSION_END:
-      return SessionEndEvent(
-        type=event_type,
-        timestamp=timestamp,
-        reason=data["reason"],
-      )
-    case EventType.TURN_START:
-      return TurnStartEvent(
-        type=event_type,
-        timestamp=timestamp,
-        message=data["message"],
-      )
-    case EventType.TURN_END:
-      return TurnEndEvent(
-        type=event_type,
-        timestamp=timestamp,
-        response=data["response"],
-        tool_calls_count=data.get("tool_calls_count", 0),
-      )
-    case EventType.THINKING_START:
-      return ThinkingStartEvent(type=event_type, timestamp=timestamp)
-    case EventType.THINKING_CHUNK:
-      return ThinkingChunkEvent(
-        type=event_type,
-        timestamp=timestamp,
-        text=data["text"],
-      )
-    case EventType.THINKING_END:
-      return ThinkingEndEvent(
-        type=event_type,
-        timestamp=timestamp,
-        total_length=data["total_length"],
-      )
-    case EventType.CONTENT_START:
-      return ContentStartEvent(type=event_type, timestamp=timestamp)
-    case EventType.CONTENT_CHUNK:
-      return ContentChunkEvent(
-        type=event_type,
-        timestamp=timestamp,
-        text=data["text"],
-      )
-    case EventType.CONTENT_END:
-      return ContentEndEvent(
-        type=event_type,
-        timestamp=timestamp,
-        total_length=data["total_length"],
-      )
-    case EventType.TOOL_CALL:
-      return ToolCallEvent(
-        type=event_type,
-        timestamp=timestamp,
-        tool_name=data["tool_name"],
-        arguments=data["arguments"],
-      )
-    case EventType.TOOL_RESULT:
-      return ToolResultEvent(
-        type=event_type,
-        timestamp=timestamp,
-        tool_name=data["tool_name"],
-        result=data["result"],
-        success=data.get("success", True),
-      )
-    case EventType.ERROR:
-      return ErrorEvent(
-        type=event_type,
-        timestamp=timestamp,
-        error_type=data["error_type"],
-        message=data["message"],
-        details=data.get("details", {}),
-      )
-    case EventType.COMMAND:
-      return CommandEvent(
-        type=event_type,
-        timestamp=timestamp,
-        command=data["command"],
-        result=data["result"],
-      )
-
-
-class EventLogger:
-  """Logs all events to a JSONL file for replay."""
-
-  def __init__(self, path: Path) -> None:
-    """Initialize the event logger.
-
-    Args:
-      path: Path to the JSONL file to write.
-    """
-    self.path = path
-    self.file = open(path, "w")  # noqa: SIM115 - will be closed in close()
-
-  def __call__(self, event: Event) -> None:
-    """Handle an event by logging it to the file.
-
-    Args:
-      event: The event to log.
-    """
-    entry = _serialize_event(event)
-    self.file.write(json.dumps(entry) + "\n")
-    self.file.flush()
-
-  def close(self) -> None:
-    """Close the log file."""
-    self.file.close()
-
-
-class EventReplayAgent:
-  """Agent that replays events from a JSONL file."""
-
-  def __init__(self, events_path: Path) -> None:
-    """Initialize the replay agent.
-
-    Args:
-      events_path: Path to the events.jsonl file.
-    """
-    self.events_path = events_path
-    self.events: list[Event] = []
-    self.index = 0
-    self.thinking_enabled = True
-    self._model = "replay"
-    self._handlers: list[EventCallback] = []
-
-    # Load events from JSONL
-    with open(events_path) as f:
-      for line in f:
-        entry = json.loads(line)
-        event = _deserialize_event(entry)
-        self.events.append(event)
-
-    # Extract model from first SESSION_START event
-    for event in self.events:
-      if event.type == EventType.SESSION_START:
-        self._model = event.model  # type: ignore
-        self.thinking_enabled = event.thinking_enabled  # type: ignore
-        break
-
-  @property
-  def model(self) -> str:
-    """Return the model name from the recorded session."""
-    return self._model
-
-  def add_event_handler(self, handler: EventCallback) -> None:
-    """Register an event handler (stored for later replay)."""
-    self._handlers.append(handler)
-
-  def begin_session(self) -> None:
-    """No-op for replay agent - session already in event log."""
-    pass
-
-  def end_session(self, reason: str = "quit") -> None:
-    """No-op for replay agent."""
-    pass
-
-  def process(self, message: str) -> str:
-    """Replay events for one turn.
-
-    Args:
-      message: The user message (used to find matching turn).
-
-    Returns:
-      The response text from the replayed turn.
-    """
-    # Find TURN_START with matching message
-    while self.index < len(self.events):
-      event = self.events[self.index]
-      self.index += 1
-
-      if event.type == EventType.TURN_START:
-        # Check if this matches our message
-        if event.message == message:  # type: ignore
-          break
-      elif self.index == 1:  # No TURN_START found yet, just start from current
-        break
-
-    # Replay events until TURN_END
-    response = ""
-    while self.index < len(self.events):
-      event = self.events[self.index]
-
-      # Emit to handlers
-      for handler in self._handlers:
-        handler(event)
-
-      # Capture response from TURN_END
-      if event.type == EventType.TURN_END:
-        response = event.response  # type: ignore
-        self.index += 1  # Move past TURN_END
-        break
-
-      self.index += 1
-
-    return response
-
-  def replay_command(self, command: str) -> str:
-    """Replay a command event.
-
-    Args:
-      command: The command string (used to find matching event).
-
-    Returns:
-      The command result.
-    """
-    # Find COMMAND event with matching command
-    while self.index < len(self.events):
-      event = self.events[self.index]
-      self.index += 1
-
-      if event.type == EventType.COMMAND:
-        # Check if this matches our command
-        if event.command == command:  # type: ignore
-          # Emit to handlers
-          for handler in self._handlers:
-            handler(event)
-          return event.result  # type: ignore
-
-    return ""  # Command not found
 
 
 class PredefinedInput:
@@ -431,6 +112,9 @@ def run_demo_session(
   event_logger: EventLogger | None = None
 
   # Determine agent and messages
+  # Initialize context manager (used in real LLM mode)
+  context_manager: BasicPersistenceContextManager | None = None
+
   if replay:
     # Replay mode: use EventReplayAgent to replay events
     agent = EventReplayAgent(replay)
@@ -449,7 +133,6 @@ def run_demo_session(
     config = load_config_with_defaults(config_path)
 
     # Create context manager for persistence or resumption
-    context_manager: BasicPersistenceContextManager | None = None
     if persist or resume:
       session_id = resume if resume else "auto"
       context_manager = BasicPersistenceContextManager(

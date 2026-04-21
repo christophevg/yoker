@@ -1,8 +1,6 @@
 """Tests for demo_session.py module."""
 
 import json
-
-# Import from scripts module
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -27,20 +25,23 @@ from yoker.events.types import (
   TurnEndEvent,
   TurnStartEvent,
 )
-
-sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
-from demo_session import (  # noqa: E402
+from yoker.logging import (
   EventLogger,
   EventReplayAgent,
+  deserialize_event,
+  serialize_event,
+)
+
+# Import demo_session specific classes
+sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
+from demo_session import (  # noqa: E402
   PredefinedInput,
   ReplayInput,
-  _deserialize_event,
-  _serialize_event,
 )
 
 
 class TestSerializeEvent:
-  """Tests for _serialize_event function."""
+  """Tests for serialize_event function."""
 
   def test_serialize_session_start_event(self) -> None:
     """Test serializing SessionStartEvent."""
@@ -52,7 +53,7 @@ class TestSerializeEvent:
       thinking_enabled=True,
       config_summary={"key": "value"},
     )
-    result = _serialize_event(event)
+    result = serialize_event(event)
 
     assert result["type"] == "SESSION_START"
     assert result["timestamp"] == "2026-04-21T10:30:00"
@@ -69,7 +70,7 @@ class TestSerializeEvent:
       model="llama3.2",
       thinking_enabled=True,
     )
-    result = _serialize_event(event)
+    result = serialize_event(event)
 
     assert result["data"]["config_summary"] == {}
 
@@ -81,7 +82,7 @@ class TestSerializeEvent:
       timestamp=timestamp,
       reason="quit",
     )
-    result = _serialize_event(event)
+    result = serialize_event(event)
 
     assert result["type"] == "SESSION_END"
     assert result["timestamp"] == "2026-04-21T10:30:00"
@@ -95,7 +96,7 @@ class TestSerializeEvent:
       timestamp=timestamp,
       message="Hello world",
     )
-    result = _serialize_event(event)
+    result = serialize_event(event)
 
     assert result["type"] == "TURN_START"
     assert result["data"]["message"] == "Hello world"
@@ -109,7 +110,7 @@ class TestSerializeEvent:
       response="Hello there",
       tool_calls_count=3,
     )
-    result = _serialize_event(event)
+    result = serialize_event(event)
 
     assert result["type"] == "TURN_END"
     assert result["data"]["response"] == "Hello there"
@@ -123,7 +124,7 @@ class TestSerializeEvent:
       timestamp=timestamp,
       response="Hello there",
     )
-    result = _serialize_event(event)
+    result = serialize_event(event)
 
     assert result["data"]["tool_calls_count"] == 0
 
@@ -134,7 +135,7 @@ class TestSerializeEvent:
       type=EventType.THINKING_START,
       timestamp=timestamp,
     )
-    result = _serialize_event(event)
+    result = serialize_event(event)
 
     assert result["type"] == "THINKING_START"
     assert result["data"] == {}
@@ -147,7 +148,7 @@ class TestSerializeEvent:
       timestamp=timestamp,
       text="reasoning...",
     )
-    result = _serialize_event(event)
+    result = serialize_event(event)
 
     assert result["type"] == "THINKING_CHUNK"
     assert result["data"]["text"] == "reasoning..."
@@ -160,7 +161,7 @@ class TestSerializeEvent:
       timestamp=timestamp,
       total_length=100,
     )
-    result = _serialize_event(event)
+    result = serialize_event(event)
 
     assert result["type"] == "THINKING_END"
     assert result["data"]["total_length"] == 100
@@ -172,7 +173,7 @@ class TestSerializeEvent:
       type=EventType.CONTENT_START,
       timestamp=timestamp,
     )
-    result = _serialize_event(event)
+    result = serialize_event(event)
 
     assert result["type"] == "CONTENT_START"
     assert result["data"] == {}
@@ -185,7 +186,7 @@ class TestSerializeEvent:
       timestamp=timestamp,
       text="Hello world",
     )
-    result = _serialize_event(event)
+    result = serialize_event(event)
 
     assert result["type"] == "CONTENT_CHUNK"
     assert result["data"]["text"] == "Hello world"
@@ -198,7 +199,7 @@ class TestSerializeEvent:
       timestamp=timestamp,
       total_length=200,
     )
-    result = _serialize_event(event)
+    result = serialize_event(event)
 
     assert result["type"] == "CONTENT_END"
     assert result["data"]["total_length"] == 200
@@ -212,7 +213,7 @@ class TestSerializeEvent:
       tool_name="read",
       arguments={"path": "/tmp/test.txt"},
     )
-    result = _serialize_event(event)
+    result = serialize_event(event)
 
     assert result["type"] == "TOOL_CALL"
     assert result["data"]["tool_name"] == "read"
@@ -228,7 +229,7 @@ class TestSerializeEvent:
       result="file contents",
       success=True,
     )
-    result = _serialize_event(event)
+    result = serialize_event(event)
 
     assert result["type"] == "TOOL_RESULT"
     assert result["data"]["tool_name"] == "read"
@@ -245,7 +246,7 @@ class TestSerializeEvent:
       result="File not found",
       success=False,
     )
-    result = _serialize_event(event)
+    result = serialize_event(event)
 
     assert result["data"]["success"] is False
 
@@ -259,7 +260,7 @@ class TestSerializeEvent:
       message="Something went wrong",
       details={"key": "value"},
     )
-    result = _serialize_event(event)
+    result = serialize_event(event)
 
     assert result["type"] == "ERROR"
     assert result["data"]["error_type"] == "ValueError"
@@ -275,7 +276,7 @@ class TestSerializeEvent:
       error_type="ValueError",
       message="Something went wrong",
     )
-    result = _serialize_event(event)
+    result = serialize_event(event)
 
     assert result["data"]["details"] == {}
 
@@ -288,7 +289,7 @@ class TestSerializeEvent:
       command="/help",
       result="Available commands:\n  /help - Show help\n  /think - Toggle thinking",
     )
-    result = _serialize_event(event)
+    result = serialize_event(event)
 
     assert result["type"] == "COMMAND"
     assert result["timestamp"] == "2026-04-21T10:30:00"
@@ -297,7 +298,7 @@ class TestSerializeEvent:
 
 
 class TestDeserializeEvent:
-  """Tests for _deserialize_event function."""
+  """Tests for deserialize_event function."""
 
   def test_deserialize_session_start_event(self) -> None:
     """Test deserializing SessionStartEvent."""
@@ -310,7 +311,7 @@ class TestDeserializeEvent:
         "config_summary": {"key": "value"},
       },
     }
-    event = _deserialize_event(entry)
+    event = deserialize_event(entry)
 
     assert isinstance(event, SessionStartEvent)
     assert event.type == EventType.SESSION_START
@@ -329,7 +330,7 @@ class TestDeserializeEvent:
         "thinking_enabled": True,
       },
     }
-    event = _deserialize_event(entry)
+    event = deserialize_event(entry)
 
     assert event.config_summary == {}
 
@@ -340,7 +341,7 @@ class TestDeserializeEvent:
       "timestamp": "2026-04-21T10:30:00",
       "data": {"reason": "quit"},
     }
-    event = _deserialize_event(entry)
+    event = deserialize_event(entry)
 
     assert isinstance(event, SessionEndEvent)
     assert event.reason == "quit"
@@ -352,7 +353,7 @@ class TestDeserializeEvent:
       "timestamp": "2026-04-21T10:30:00",
       "data": {"message": "Hello world"},
     }
-    event = _deserialize_event(entry)
+    event = deserialize_event(entry)
 
     assert isinstance(event, TurnStartEvent)
     assert event.message == "Hello world"
@@ -364,7 +365,7 @@ class TestDeserializeEvent:
       "timestamp": "2026-04-21T10:30:00",
       "data": {"response": "Hello there", "tool_calls_count": 3},
     }
-    event = _deserialize_event(entry)
+    event = deserialize_event(entry)
 
     assert isinstance(event, TurnEndEvent)
     assert event.response == "Hello there"
@@ -377,7 +378,7 @@ class TestDeserializeEvent:
       "timestamp": "2026-04-21T10:30:00",
       "data": {"response": "Hello there"},
     }
-    event = _deserialize_event(entry)
+    event = deserialize_event(entry)
 
     assert event.tool_calls_count == 0
 
@@ -388,7 +389,7 @@ class TestDeserializeEvent:
       "timestamp": "2026-04-21T10:30:00",
       "data": {},
     }
-    event = _deserialize_event(entry)
+    event = deserialize_event(entry)
 
     assert isinstance(event, ThinkingStartEvent)
 
@@ -399,7 +400,7 @@ class TestDeserializeEvent:
       "timestamp": "2026-04-21T10:30:00",
       "data": {"text": "reasoning..."},
     }
-    event = _deserialize_event(entry)
+    event = deserialize_event(entry)
 
     assert isinstance(event, ThinkingChunkEvent)
     assert event.text == "reasoning..."
@@ -411,7 +412,7 @@ class TestDeserializeEvent:
       "timestamp": "2026-04-21T10:30:00",
       "data": {"total_length": 100},
     }
-    event = _deserialize_event(entry)
+    event = deserialize_event(entry)
 
     assert isinstance(event, ThinkingEndEvent)
     assert event.total_length == 100
@@ -423,7 +424,7 @@ class TestDeserializeEvent:
       "timestamp": "2026-04-21T10:30:00",
       "data": {},
     }
-    event = _deserialize_event(entry)
+    event = deserialize_event(entry)
 
     assert isinstance(event, ContentStartEvent)
 
@@ -434,7 +435,7 @@ class TestDeserializeEvent:
       "timestamp": "2026-04-21T10:30:00",
       "data": {"text": "Hello world"},
     }
-    event = _deserialize_event(entry)
+    event = deserialize_event(entry)
 
     assert isinstance(event, ContentChunkEvent)
     assert event.text == "Hello world"
@@ -446,7 +447,7 @@ class TestDeserializeEvent:
       "timestamp": "2026-04-21T10:30:00",
       "data": {"total_length": 200},
     }
-    event = _deserialize_event(entry)
+    event = deserialize_event(entry)
 
     assert isinstance(event, ContentEndEvent)
     assert event.total_length == 200
@@ -458,7 +459,7 @@ class TestDeserializeEvent:
       "timestamp": "2026-04-21T10:30:00",
       "data": {"tool_name": "read", "arguments": {"path": "/tmp/test.txt"}},
     }
-    event = _deserialize_event(entry)
+    event = deserialize_event(entry)
 
     assert isinstance(event, ToolCallEvent)
     assert event.tool_name == "read"
@@ -475,7 +476,7 @@ class TestDeserializeEvent:
         "success": True,
       },
     }
-    event = _deserialize_event(entry)
+    event = deserialize_event(entry)
 
     assert isinstance(event, ToolResultEvent)
     assert event.tool_name == "read"
@@ -492,7 +493,7 @@ class TestDeserializeEvent:
         "result": "file contents",
       },
     }
-    event = _deserialize_event(entry)
+    event = deserialize_event(entry)
 
     assert event.success is True
 
@@ -507,7 +508,7 @@ class TestDeserializeEvent:
         "details": {"key": "value"},
       },
     }
-    event = _deserialize_event(entry)
+    event = deserialize_event(entry)
 
     assert isinstance(event, ErrorEvent)
     assert event.error_type == "ValueError"
@@ -524,7 +525,7 @@ class TestDeserializeEvent:
         "message": "Something went wrong",
       },
     }
-    event = _deserialize_event(entry)
+    event = deserialize_event(entry)
 
     assert event.details == {}
 
@@ -538,7 +539,7 @@ class TestDeserializeEvent:
         "result": "Available commands:\n  /help - Show help",
       },
     }
-    event = _deserialize_event(entry)
+    event = deserialize_event(entry)
 
     assert isinstance(event, CommandEvent)
     assert event.command == "/help"
@@ -559,8 +560,8 @@ class TestSerializeDeserializeRoundTrip:
       config_summary={"key": "value"},
     )
 
-    serialized = _serialize_event(original)
-    deserialized = _deserialize_event(serialized)
+    serialized = serialize_event(original)
+    deserialized = deserialize_event(serialized)
 
     assert deserialized.type == original.type
     assert deserialized.timestamp == original.timestamp
@@ -577,8 +578,8 @@ class TestSerializeDeserializeRoundTrip:
       reason="quit",
     )
 
-    serialized = _serialize_event(original)
-    deserialized = _deserialize_event(serialized)
+    serialized = serialize_event(original)
+    deserialized = deserialize_event(serialized)
 
     assert deserialized.type == original.type
     assert deserialized.timestamp == original.timestamp
@@ -593,8 +594,8 @@ class TestSerializeDeserializeRoundTrip:
       message="Hello world",
     )
 
-    serialized = _serialize_event(original)
-    deserialized = _deserialize_event(serialized)
+    serialized = serialize_event(original)
+    deserialized = deserialize_event(serialized)
 
     assert deserialized.message == original.message
 
@@ -608,8 +609,8 @@ class TestSerializeDeserializeRoundTrip:
       tool_calls_count=2,
     )
 
-    serialized = _serialize_event(original)
-    deserialized = _deserialize_event(serialized)
+    serialized = serialize_event(original)
+    deserialized = deserialize_event(serialized)
 
     assert deserialized.response == original.response
     assert deserialized.tool_calls_count == original.tool_calls_count
@@ -623,8 +624,8 @@ class TestSerializeDeserializeRoundTrip:
       text="reasoning...",
     )
 
-    serialized = _serialize_event(original)
-    deserialized = _deserialize_event(serialized)
+    serialized = serialize_event(original)
+    deserialized = deserialize_event(serialized)
 
     assert deserialized.text == original.text
 
@@ -637,8 +638,8 @@ class TestSerializeDeserializeRoundTrip:
       text="Hello world",
     )
 
-    serialized = _serialize_event(original)
-    deserialized = _deserialize_event(serialized)
+    serialized = serialize_event(original)
+    deserialized = deserialize_event(serialized)
 
     assert deserialized.text == original.text
 
@@ -652,8 +653,8 @@ class TestSerializeDeserializeRoundTrip:
       arguments={"path": "/tmp/test.txt"},
     )
 
-    serialized = _serialize_event(original)
-    deserialized = _deserialize_event(serialized)
+    serialized = serialize_event(original)
+    deserialized = deserialize_event(serialized)
 
     assert deserialized.tool_name == original.tool_name
     assert deserialized.arguments == original.arguments
@@ -669,8 +670,8 @@ class TestSerializeDeserializeRoundTrip:
       success=True,
     )
 
-    serialized = _serialize_event(original)
-    deserialized = _deserialize_event(serialized)
+    serialized = serialize_event(original)
+    deserialized = deserialize_event(serialized)
 
     assert deserialized.tool_name == original.tool_name
     assert deserialized.result == original.result
@@ -687,8 +688,8 @@ class TestSerializeDeserializeRoundTrip:
       details={"key": "value"},
     )
 
-    serialized = _serialize_event(original)
-    deserialized = _deserialize_event(serialized)
+    serialized = serialize_event(original)
+    deserialized = deserialize_event(serialized)
 
     assert deserialized.error_type == original.error_type
     assert deserialized.message == original.message
@@ -704,8 +705,8 @@ class TestSerializeDeserializeRoundTrip:
       result="Available commands:\n  /help - Show help\n  /think - Toggle thinking",
     )
 
-    serialized = _serialize_event(original)
-    deserialized = _deserialize_event(serialized)
+    serialized = serialize_event(original)
+    deserialized = deserialize_event(serialized)
 
     assert deserialized.command == original.command
     assert deserialized.result == original.result
@@ -852,7 +853,7 @@ class TestEventReplayAgent:
 
     with open(events_path, "w") as f:
       for event in events:
-        f.write(json.dumps(_serialize_event(event)) + "\n")
+        f.write(json.dumps(serialize_event(event)) + "\n")
 
     return events_path
 
@@ -986,7 +987,7 @@ class TestEventReplayAgent:
 
     with open(events_path, "w") as f:
       for event in events:
-        f.write(json.dumps(_serialize_event(event)) + "\n")
+        f.write(json.dumps(serialize_event(event)) + "\n")
 
     agent = EventReplayAgent(events_path)
 
@@ -1031,7 +1032,7 @@ class TestEventReplayAgent:
 
     with open(events_path, "w") as f:
       for event in events:
-        f.write(json.dumps(_serialize_event(event)) + "\n")
+        f.write(json.dumps(serialize_event(event)) + "\n")
 
     agent = EventReplayAgent(events_path)
 
@@ -1068,7 +1069,7 @@ class TestEventReplayAgent:
 
     with open(events_path, "w") as f:
       for event in events:
-        f.write(json.dumps(_serialize_event(event)) + "\n")
+        f.write(json.dumps(serialize_event(event)) + "\n")
 
     agent = EventReplayAgent(events_path)
 
@@ -1116,7 +1117,7 @@ class TestEventReplayAgent:
 
     with open(events_path, "w") as f:
       for event in events:
-        f.write(json.dumps(_serialize_event(event)) + "\n")
+        f.write(json.dumps(serialize_event(event)) + "\n")
 
     agent = EventReplayAgent(events_path)
 
@@ -1186,7 +1187,7 @@ class TestReplayInput:
 
     with open(events_path, "w") as f:
       for event in events:
-        f.write(json.dumps(_serialize_event(event)) + "\n")
+        f.write(json.dumps(serialize_event(event)) + "\n")
 
     input_fn = ReplayInput(events_path)
 
@@ -1203,7 +1204,7 @@ class TestReplayInput:
 
     with open(events_path, "w") as f:
       for event in events:
-        f.write(json.dumps(_serialize_event(event)) + "\n")
+        f.write(json.dumps(serialize_event(event)) + "\n")
 
     input_fn = ReplayInput(events_path)
 
@@ -1220,7 +1221,7 @@ class TestReplayInput:
 
     with open(events_path, "w") as f:
       for event in events:
-        f.write(json.dumps(_serialize_event(event)) + "\n")
+        f.write(json.dumps(serialize_event(event)) + "\n")
 
     input_fn = ReplayInput(events_path)
 
@@ -1259,7 +1260,7 @@ class TestReplayInput:
 
     with open(events_path, "w") as f:
       for event in events:
-        f.write(json.dumps(_serialize_event(event)) + "\n")
+        f.write(json.dumps(serialize_event(event)) + "\n")
 
     input_fn = ReplayInput(events_path)
 
@@ -1283,7 +1284,7 @@ class TestReplayInput:
 
     with open(events_path, "w") as f:
       for event in events:
-        f.write(json.dumps(_serialize_event(event)) + "\n")
+        f.write(json.dumps(serialize_event(event)) + "\n")
 
     input_fn = ReplayInput(events_path)
 
