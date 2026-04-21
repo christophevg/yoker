@@ -23,6 +23,12 @@ pip install yoker
 python -m yoker
 ```
 
+Or with an agent definition:
+
+```bash
+python -m yoker --agent examples/agents/researcher.md
+```
+
 Example session:
 
 ![Yoker Session](media/session.svg)
@@ -37,6 +43,7 @@ Example session:
 | **Thinking mode** | LLM reasoning trace with gray output |
 | **Streaming** | Real-time token streaming from Ollama |
 | **Configuration** | TOML-based configuration system |
+| **Agent definitions** | Load agents from Markdown files with YAML frontmatter |
 | **Multiline input** | `Esc+Enter` for newlines, `Enter` to submit |
 | **Rich output** | Styled terminal output with Rich |
 | **Read tool** | File reading with path validation |
@@ -84,6 +91,9 @@ python scripts/demo_session.py --log
 
 # Replay from log (no LLM calls)
 python scripts/demo_session.py --replay
+
+# With an agent definition
+python scripts/demo_session.py --agent examples/agents/markdown.md -m "Your question"
 ```
 
 ## Configuration
@@ -142,7 +152,7 @@ Yoker uses an **event-driven architecture** for library-first design. The Agent 
 
 **Event Types**: Session (start/end), Turn (start/end), Thinking (start/chunk/end), Content (start/chunk/end), Tool (call/result), Error
 
-**Planned features**: Context persistence, additional tools (list, write, update, search, agent), agent definitions, guardrails, permissions.
+**Planned features**: Context persistence, additional tools (list, write, update, search, agent), guardrails, permissions.
 
 ## Documentation
 

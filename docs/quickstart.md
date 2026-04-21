@@ -123,7 +123,69 @@ python -m yoker --help
 Options:
   -c, --config PATH    Path to configuration file (default: yoker.toml)
   -m, --model MODEL    Model to use (overrides config)
+  -a, --agent PATH     Path to agent definition file (Markdown with frontmatter)
 ```
+
+## Agent Definitions
+
+Yoker supports loading agent definitions from Markdown files with YAML frontmatter. This allows you to define custom system prompts and tool availability.
+
+### Agent Definition Format
+
+Create a file like `examples/agents/researcher.md`:
+
+```markdown
+---
+name: researcher
+description: Research assistant that searches and reads files
+tools: List, Read, Search
+color: blue
+---
+
+# Researcher Agent
+
+You are a research assistant specialized in finding and analyzing information.
+
+## Workflow
+
+1. Use Search to find relevant files
+2. Use Read to examine file contents
+3. Compile findings into a structured report
+```
+
+### Using Agent Definitions
+
+```bash
+# Load an agent definition
+python -m yoker --agent examples/agents/researcher.md
+```
+
+Programmatically:
+
+```python
+from yoker.agent import Agent
+from yoker.agents import load_agent_definition, validate_agent_definition
+from yoker.config import load_config
+
+# Load configuration and agent
+config = load_config("yoker.toml")
+agent_def = load_agent_definition("agents/researcher.md")
+
+# Validate agent tools against config
+warnings = validate_agent_definition(agent_def, config.tools)
+
+# Create agent with definition
+agent = Agent(config=config, agent_definition=agent_def)
+# agent.messages[0] now contains the system prompt from the Markdown body
+```
+
+### Example Agents
+
+| Agent | File | Description |
+|-------|------|-------------|
+| Main | `examples/agents/main.md` | Default assistant with read-only tools |
+| Researcher | `examples/agents/researcher.md` | Research assistant with search capabilities |
+| Markdown | `examples/agents/markdown.md` | Formats all responses as structured Markdown |
 
 ## Configuration
 
@@ -176,7 +238,19 @@ python scripts/demo_session.py --log
 
 # Replay from log (no LLM calls - useful for regenerating screenshots)
 python scripts/demo_session.py --replay
+
+# With an agent definition and custom messages
+python scripts/demo_session.py --agent examples/agents/markdown.md -m "Your question"
 ```
+
+### Demo Script Options
+
+| Option | Description |
+|--------|-------------|
+| `--log` | Log events to `media/events.jsonl` |
+| `--replay [PATH]` | Replay from JSONL file (default: `media/events.jsonl`) |
+| `--agent PATH` | Load agent definition file |
+| `-m, --message TEXT` | Add custom message (can be used multiple times) |
 
 ### Output Files
 

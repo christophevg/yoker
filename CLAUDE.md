@@ -19,6 +19,11 @@ src/yoker/
   __init__.py          # Public API exports
   __main__.py          # Entry point with prompt_toolkit (application layer)
   agent.py             # Agent class with event emission (library layer)
+  agents/
+    __init__.py        # Agents public API
+    schema.py          # AgentDefinition frozen dataclass
+    loader.py          # Markdown + YAML frontmatter parsing
+    validator.py       # Agent definition validation
   commands/
     __init__.py        # Commands public API
     base.py            # Command dataclass
@@ -51,6 +56,9 @@ python -m yoker --config yoker.toml
 
 # Run with specific model
 python -m yoker --model llama3.2:latest
+
+# Run with an agent definition
+python -m yoker --agent examples/agents/researcher.md
 ```
 
 **Interactive Features:**

@@ -98,7 +98,7 @@ class Agent:
     self.command_registry = command_registry
 
     # Load agent definition if path provided
-    self.agent_definition: "AgentDefinition | None" = None
+    self.agent_definition: AgentDefinition | None = None
     system_prompt = DEFAULT_SYSTEM_PROMPT
 
     if agent_definition is not None:
