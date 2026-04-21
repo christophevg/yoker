@@ -12,12 +12,11 @@ Note:
 import json
 import logging
 import os
-import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from yoker.context.interface import ContextManager, ContextStatistics
+from yoker.context.interface import ContextStatistics
 from yoker.context.validator import is_safe_path, validate_session_id, validate_storage_path
 from yoker.exceptions import ContextCorruptionError, SessionNotFoundError
 
@@ -366,7 +365,7 @@ class BasicPersistenceContextManager:
 
     line_num = 0
     try:
-      with open(self._file_path, "r") as f:
+      with open(self._file_path) as f:
         for line_num, line in enumerate(f, start=1):
           line = line.strip()
           if not line:

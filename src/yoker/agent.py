@@ -29,6 +29,7 @@ from yoker.tools import AVAILABLE_TOOLS
 if TYPE_CHECKING:
   from yoker.agents import AgentDefinition
   from yoker.commands import CommandRegistry
+  from yoker.context import ContextManager
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +47,7 @@ class Agent:
     client: Ollama client for API communication.
     model: Model to use for chat.
     config: Configuration object (or defaults if not provided).
-    messages: Conversation history.
+    context: ContextManager for conversation history.
     thinking_enabled: Whether thinking mode is enabled.
     agent_definition: Loaded agent definition (if provided).
   """
@@ -60,6 +61,7 @@ class Agent:
     command_registry: "CommandRegistry | None" = None,
     agent_definition: "AgentDefinition | None" = None,
     agent_path: Path | str | None = None,
+    context_manager: "ContextManager | None" = None,
   ) -> None:
     """Initialize the agent.
 
@@ -71,6 +73,7 @@ class Agent:
       command_registry: Optional command registry for slash-commands.
       agent_definition: Pre-loaded AgentDefinition to use for system prompt.
       agent_path: Path to agent definition file (Markdown with frontmatter).
+      context_manager: Optional ContextManager for conversation persistence.
     """
     # Load configuration
     if config is not None:
@@ -110,10 +113,20 @@ class Agent:
       self.agent_definition = load_agent_definition(agent_path)
       system_prompt = self.agent_definition.system_prompt or DEFAULT_SYSTEM_PROMPT
 
-    # Initialize conversation history
-    self.messages: list[dict[str, Any]] = [
-      {"role": "system", "content": system_prompt},
-    ]
+    # Initialize context manager
+    if context_manager is not None:
+      self.context = context_manager
+    else:
+      # Create default in-memory context manager
+      from yoker.context import BasicPersistenceContextManager
+
+      self.context = BasicPersistenceContextManager(
+        storage_path=Path(self.config.context.storage_path),
+        session_id=self.config.context.session_id,
+      )
+
+    # Add system prompt to context
+    self.context.add_message("system", system_prompt)
 
     # Event handlers storage
     self._event_handlers: list[EventCallback] = []
@@ -170,14 +183,15 @@ class Agent:
       Assistant's response text.
     """
     self._emit(TurnStartEvent(type=EventType.TURN_START, message=message))
-    self.messages.append({"role": "user", "content": message})
+    self.context.start_turn(message)
+    self.context.add_message("user", message)
 
     # Process with model, handling tool calls in a loop
     while True:
       # Use streaming for better UX
       stream = self.client.chat(
         model=self.model,
-        messages=self.messages,
+        messages=self.context.get_context(),
         tools=list(self.tools.values()),
         think=self.thinking_enabled,
         stream=True,
@@ -247,19 +261,12 @@ class Agent:
           )
         )
 
-      # Build assistant message for history
-      assistant_message: dict[str, Any] = {"role": "assistant"}
-      if thinking:
-        assistant_message["thinking"] = thinking
-      if content:
-        assistant_message["content"] = content
-      if tool_calls:
-        assistant_message["tool_calls"] = tool_calls
-
-      self.messages.append(assistant_message)
+      # Add assistant message to context
+      self.context.add_message("assistant", content)
 
       # If no tool calls, we're done with this turn
       if not tool_calls:
+        self.context.end_turn(content)
         self._emit(
           TurnEndEvent(
             type=EventType.TURN_END,
@@ -267,6 +274,11 @@ class Agent:
             tool_calls_count=len(tool_calls),
           )
         )
+
+        # Persist context if configured
+        if self.config.context.persist_after_turn:
+          self.context.save()
+
         return content
 
       # Process tool calls
@@ -305,21 +317,24 @@ class Agent:
           )
         )
 
-        # Add tool result to messages
-        self.messages.append(
-          {
-            "role": "tool",
-            "name": tool_name,
-            "content": str(result),
-          }
+        # Add tool result to context
+        self.context.add_tool_result(
+          tool_name=tool_name,
+          tool_id=call.id,
+          result=str(result),
+          success=success,
         )
 
   def begin_session(self) -> None:
     """Begin an agent session.
 
     Emits SESSION_START event with session metadata.
+    Saves context to persist session state.
     Call this before processing messages.
     """
+    # Save context to ensure session_start record is written
+    self.context.save()
+
     self._emit(
       SessionStartEvent(
         type=EventType.SESSION_START,
@@ -332,11 +347,15 @@ class Agent:
     """End an agent session.
 
     Emits SESSION_END event.
+    Closes context to ensure all data is persisted.
     Call this when done processing messages.
 
     Args:
       reason: Reason for ending the session (e.g., "quit", "error", "interrupt").
     """
+    # Close context to write session_end record
+    self.context.close()
+
     self._emit(
       SessionEndEvent(
         type=EventType.SESSION_END,

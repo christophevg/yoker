@@ -236,6 +236,13 @@
 
 ## Done
 
+- [x] **1.4.1 Context Manager Integration**
+  - Add ContextManager parameter to Agent.__init__
+  - Replace self.messages with self.context
+  - Update process() to use context methods
+  - Add session persistence to CLI
+  - Context now persists after each turn
+
 - [x] **1.4 Context Manager**
   - Define context storage format (JSONL)
   - Implement Context class for conversation history
