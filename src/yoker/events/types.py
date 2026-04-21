@@ -31,6 +31,9 @@ class EventType(Enum):
   TOOL_CALL = auto()
   TOOL_RESULT = auto()
 
+  # Command execution
+  COMMAND = auto()
+
   # Error
   ERROR = auto()
 
@@ -140,3 +143,11 @@ class ErrorEvent(Event):
   error_type: str
   message: str
   details: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class CommandEvent(Event):
+  """Emitted when a slash command is executed."""
+
+  command: str  # The command string (e.g., "/help")
+  result: str  # The command output

@@ -7,6 +7,7 @@ from pytest_mock import MockerFixture
 from rich.console import Console
 
 from yoker.events import (
+  CommandEvent,
   ConsoleEventHandler,
   ContentChunkEvent,
   ErrorEvent,
@@ -46,6 +47,7 @@ class TestEventTypes:
       "CONTENT_END",
       "TOOL_CALL",
       "TOOL_RESULT",
+      "COMMAND",
       "ERROR",
     ]
     actual = [et.name for et in EventType]
@@ -130,6 +132,17 @@ class TestEventClasses:
     assert event.error_type == "ValueError"
     assert event.message == "Something went wrong"
 
+  def test_command_event(self) -> None:
+    """Test CommandEvent creation."""
+    event = CommandEvent(
+      type=EventType.COMMAND,
+      command="/help",
+      result="Available commands:\n  /help - Show help",
+    )
+    assert event.command == "/help"
+    assert event.result == "Available commands:\n  /help - Show help"
+    assert event.type == EventType.COMMAND
+
   def test_events_are_frozen(self) -> None:
     """Test that events are immutable (frozen dataclasses)."""
     event = ContentChunkEvent(type=EventType.CONTENT_CHUNK, text="test")
@@ -197,8 +210,9 @@ class TestConsoleEventHandler:
     )
     console_handler(event)
     output = console_handler.console.file.getvalue()  # type: ignore[attr-defined]
-    assert "[Tool Call]" in output
-    assert "read" in output
+    # New format: "Read tool: test.txt"
+    assert "Read" in output
+    assert "test.txt" in output
 
   def test_handler_hides_tool_calls_when_disabled(self) -> None:
     """Test that tool calls are hidden when show_tool_calls=False."""
@@ -211,7 +225,7 @@ class TestConsoleEventHandler:
       arguments={"path": "/tmp/test.txt"},
     )
     handler(event)
-    assert "Tool Call" not in output.getvalue()
+    assert "read" not in output.getvalue().lower()
 
   def test_handler_handles_error(self, console_handler: ConsoleEventHandler) -> None:
     """Test that ErrorEvent is handled."""
@@ -224,6 +238,75 @@ class TestConsoleEventHandler:
     output = console_handler.console.file.getvalue()  # type: ignore[attr-defined]
     assert "Error" in output
     assert "ValueError" in output
+
+  def test_handler_handles_command(self, console_handler: ConsoleEventHandler) -> None:
+    """Test that CommandEvent is handled."""
+    event = CommandEvent(
+      type=EventType.COMMAND,
+      command="/help",
+      result="Available commands:\n  /help - Show help\n  /think - Toggle thinking",
+    )
+    console_handler(event)
+    output = console_handler.console.file.getvalue()  # type: ignore[attr-defined]
+    assert "Available commands" in output
+    assert "/help" in output
+
+  def test_handler_handles_command_empty_result(self, console_handler: ConsoleEventHandler) -> None:
+    """Test that CommandEvent with empty result doesn't print anything."""
+    event = CommandEvent(
+      type=EventType.COMMAND,
+      command="/unknown",
+      result="",
+    )
+    console_handler(event)
+    output = console_handler.console.file.getvalue()  # type: ignore[attr-defined]
+    # Empty result should not produce output
+    assert output == ""
+
+  def test_handler_extract_filename_with_file_path(self) -> None:
+    """Test _extract_filename with file_path argument."""
+    handler = ConsoleEventHandler()
+    result = handler._extract_filename({"file_path": "/path/to/test.txt"})
+    assert result == "test.txt"
+
+  def test_handler_extract_filename_with_path(self) -> None:
+    """Test _extract_filename with path argument."""
+    handler = ConsoleEventHandler()
+    result = handler._extract_filename({"path": "/tmp/myfile.py"})
+    assert result == "myfile.py"
+
+  def test_handler_extract_filename_fallback(self) -> None:
+    """Test _extract_filename fallback to first argument value."""
+    handler = ConsoleEventHandler()
+    result = handler._extract_filename({"query": "some query"})
+    assert result == "some query"
+
+  def test_handler_extract_filename_empty_args(self) -> None:
+    """Test _extract_filename with empty arguments."""
+    handler = ConsoleEventHandler()
+    result = handler._extract_filename({})
+    assert result == ""
+
+  def test_handler_capitalize(self) -> None:
+    """Test _capitalize helper."""
+    handler = ConsoleEventHandler()
+    assert handler._capitalize("read") == "Read"
+    assert handler._capitalize("Read") == "Read"
+    assert handler._capitalize("") == ""
+
+  def test_handler_tool_call_display_format(self, console_handler: ConsoleEventHandler) -> None:
+    """Test that tool call display shows filename only."""
+    event = ToolCallEvent(
+      type=EventType.TOOL_CALL,
+      tool_name="read",
+      arguments={"file_path": "/long/path/to/some/file.py"},
+    )
+    console_handler(event)
+    output = console_handler.console.file.getvalue()  # type: ignore[attr-defined]
+    # Should show capitalized tool name and filename only
+    assert "Read tool: file.py" in output
+    # Should NOT show full path
+    assert "/long/path" not in output
 
 
 class TestEventCollector:

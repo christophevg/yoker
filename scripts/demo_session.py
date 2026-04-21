@@ -7,33 +7,351 @@ the captured output as an SVG file showing the terminal interaction.
 Usage:
     python scripts/demo_session.py              # Real LLM session
     python scripts/demo_session.py --log       # Real LLM + log conversation
-    python scripts/demo_session.py --replay    # Replay from log (no LLM)
+    python scripts/demo_session.py --replay    # Replay from events (no LLM)
 
 Output:
     media/session-YYYYMMDD-HHMMSS.svg - Timestamped screenshot
     media/session.svg -> latest       - Symlink to latest
-    media/session.jsonl               - Conversation log (if --log used)
+    media/events.jsonl                - Event log (if --log used)
 """
 
 import argparse
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Iterator
+from typing import Any
 
 from rich.console import Console
 
-from yoker.agent import Agent
+from yoker.agent import Agent, EventCallback
 from yoker.commands import CommandRegistry, create_help_command, create_think_command
 from yoker.config import load_config_with_defaults
-from yoker.agent import EventCallback
 from yoker.events import ConsoleEventHandler
+from yoker.events.types import (
+  CommandEvent,
+  ContentChunkEvent,
+  ContentEndEvent,
+  ContentStartEvent,
+  ErrorEvent,
+  Event,
+  EventType,
+  SessionEndEvent,
+  SessionStartEvent,
+  ThinkingChunkEvent,
+  ThinkingEndEvent,
+  ThinkingStartEvent,
+  ToolCallEvent,
+  ToolResultEvent,
+  TurnEndEvent,
+  TurnStartEvent,
+)
 
 # Media directory for session screenshots
 MEDIA_DIR = Path("media")
 
 # Wrap width for SVG output
 WRAP_WIDTH = 80
+
+
+def _serialize_event(event: Event) -> dict[str, Any]:
+  """Serialize an event to a JSON-serializable dictionary.
+
+  Args:
+    event: The event to serialize.
+
+  Returns:
+    Dictionary with type, timestamp, and event data.
+  """
+  data: dict[str, Any] = {}
+  timestamp = event.timestamp.isoformat()
+
+  match event.type:
+    case EventType.SESSION_START:
+      event = event  # type: ignore
+      data = {
+        "model": event.model,
+        "thinking_enabled": event.thinking_enabled,
+        "config_summary": event.config_summary,
+      }
+    case EventType.SESSION_END:
+      event = event  # type: ignore
+      data = {"reason": event.reason}
+    case EventType.TURN_START:
+      event = event  # type: ignore
+      data = {"message": event.message}
+    case EventType.TURN_END:
+      event = event  # type: ignore
+      data = {"response": event.response, "tool_calls_count": event.tool_calls_count}
+    case EventType.THINKING_START:
+      pass  # No data
+    case EventType.THINKING_CHUNK:
+      event = event  # type: ignore
+      data = {"text": event.text}
+    case EventType.THINKING_END:
+      event = event  # type: ignore
+      data = {"total_length": event.total_length}
+    case EventType.CONTENT_START:
+      pass  # No data
+    case EventType.CONTENT_CHUNK:
+      event = event  # type: ignore
+      data = {"text": event.text}
+    case EventType.CONTENT_END:
+      event = event  # type: ignore
+      data = {"total_length": event.total_length}
+    case EventType.TOOL_CALL:
+      event = event  # type: ignore
+      data = {"tool_name": event.tool_name, "arguments": event.arguments}
+    case EventType.TOOL_RESULT:
+      event = event  # type: ignore
+      data = {"tool_name": event.tool_name, "result": event.result, "success": event.success}
+    case EventType.ERROR:
+      event = event  # type: ignore
+      data = {"error_type": event.error_type, "message": event.message, "details": event.details}
+    case EventType.COMMAND:
+      event = event  # type: ignore
+      data = {"command": event.command, "result": event.result}
+
+  return {"type": event.type.name, "timestamp": timestamp, "data": data}
+
+
+def _deserialize_event(entry: dict[str, Any]) -> Event:
+  """Deserialize a dictionary back to an event object.
+
+  Args:
+    entry: Dictionary with type, timestamp, and event data.
+
+  Returns:
+    Reconstructed event object.
+  """
+  event_type = EventType[entry["type"]]
+  timestamp = datetime.fromisoformat(entry["timestamp"])
+  data = entry.get("data", {})
+
+  match event_type:
+    case EventType.SESSION_START:
+      return SessionStartEvent(
+        type=event_type,
+        timestamp=timestamp,
+        model=data["model"],
+        thinking_enabled=data["thinking_enabled"],
+        config_summary=data.get("config_summary", {}),
+      )
+    case EventType.SESSION_END:
+      return SessionEndEvent(
+        type=event_type,
+        timestamp=timestamp,
+        reason=data["reason"],
+      )
+    case EventType.TURN_START:
+      return TurnStartEvent(
+        type=event_type,
+        timestamp=timestamp,
+        message=data["message"],
+      )
+    case EventType.TURN_END:
+      return TurnEndEvent(
+        type=event_type,
+        timestamp=timestamp,
+        response=data["response"],
+        tool_calls_count=data.get("tool_calls_count", 0),
+      )
+    case EventType.THINKING_START:
+      return ThinkingStartEvent(type=event_type, timestamp=timestamp)
+    case EventType.THINKING_CHUNK:
+      return ThinkingChunkEvent(
+        type=event_type,
+        timestamp=timestamp,
+        text=data["text"],
+      )
+    case EventType.THINKING_END:
+      return ThinkingEndEvent(
+        type=event_type,
+        timestamp=timestamp,
+        total_length=data["total_length"],
+      )
+    case EventType.CONTENT_START:
+      return ContentStartEvent(type=event_type, timestamp=timestamp)
+    case EventType.CONTENT_CHUNK:
+      return ContentChunkEvent(
+        type=event_type,
+        timestamp=timestamp,
+        text=data["text"],
+      )
+    case EventType.CONTENT_END:
+      return ContentEndEvent(
+        type=event_type,
+        timestamp=timestamp,
+        total_length=data["total_length"],
+      )
+    case EventType.TOOL_CALL:
+      return ToolCallEvent(
+        type=event_type,
+        timestamp=timestamp,
+        tool_name=data["tool_name"],
+        arguments=data["arguments"],
+      )
+    case EventType.TOOL_RESULT:
+      return ToolResultEvent(
+        type=event_type,
+        timestamp=timestamp,
+        tool_name=data["tool_name"],
+        result=data["result"],
+        success=data.get("success", True),
+      )
+    case EventType.ERROR:
+      return ErrorEvent(
+        type=event_type,
+        timestamp=timestamp,
+        error_type=data["error_type"],
+        message=data["message"],
+        details=data.get("details", {}),
+      )
+    case EventType.COMMAND:
+      return CommandEvent(
+        type=event_type,
+        timestamp=timestamp,
+        command=data["command"],
+        result=data["result"],
+      )
+
+
+class EventLogger:
+  """Logs all events to a JSONL file for replay."""
+
+  def __init__(self, path: Path) -> None:
+    """Initialize the event logger.
+
+    Args:
+      path: Path to the JSONL file to write.
+    """
+    self.path = path
+    self.file = open(path, "w")  # noqa: SIM115 - will be closed in close()
+
+  def __call__(self, event: Event) -> None:
+    """Handle an event by logging it to the file.
+
+    Args:
+      event: The event to log.
+    """
+    entry = _serialize_event(event)
+    self.file.write(json.dumps(entry) + "\n")
+    self.file.flush()
+
+  def close(self) -> None:
+    """Close the log file."""
+    self.file.close()
+
+
+class EventReplayAgent:
+  """Agent that replays events from a JSONL file."""
+
+  def __init__(self, events_path: Path) -> None:
+    """Initialize the replay agent.
+
+    Args:
+      events_path: Path to the events.jsonl file.
+    """
+    self.events_path = events_path
+    self.events: list[Event] = []
+    self.index = 0
+    self.thinking_enabled = True
+    self._model = "replay"
+    self._handlers: list[EventCallback] = []
+
+    # Load events from JSONL
+    with open(events_path) as f:
+      for line in f:
+        entry = json.loads(line)
+        event = _deserialize_event(entry)
+        self.events.append(event)
+
+    # Extract model from first SESSION_START event
+    for event in self.events:
+      if event.type == EventType.SESSION_START:
+        self._model = event.model  # type: ignore
+        self.thinking_enabled = event.thinking_enabled  # type: ignore
+        break
+
+  @property
+  def model(self) -> str:
+    """Return the model name from the recorded session."""
+    return self._model
+
+  def add_event_handler(self, handler: EventCallback) -> None:
+    """Register an event handler (stored for later replay)."""
+    self._handlers.append(handler)
+
+  def begin_session(self) -> None:
+    """No-op for replay agent - session already in event log."""
+    pass
+
+  def end_session(self, reason: str = "quit") -> None:
+    """No-op for replay agent."""
+    pass
+
+  def process(self, message: str) -> str:
+    """Replay events for one turn.
+
+    Args:
+      message: The user message (used to find matching turn).
+
+    Returns:
+      The response text from the replayed turn.
+    """
+    # Find TURN_START with matching message
+    while self.index < len(self.events):
+      event = self.events[self.index]
+      self.index += 1
+
+      if event.type == EventType.TURN_START:
+        # Check if this matches our message
+        if event.message == message:  # type: ignore
+          break
+      elif self.index == 1:  # No TURN_START found yet, just start from current
+        break
+
+    # Replay events until TURN_END
+    response = ""
+    while self.index < len(self.events):
+      event = self.events[self.index]
+
+      # Emit to handlers
+      for handler in self._handlers:
+        handler(event)
+
+      # Capture response from TURN_END
+      if event.type == EventType.TURN_END:
+        response = event.response  # type: ignore
+        self.index += 1  # Move past TURN_END
+        break
+
+      self.index += 1
+
+    return response
+
+  def replay_command(self, command: str) -> str:
+    """Replay a command event.
+
+    Args:
+      command: The command string (used to find matching event).
+
+    Returns:
+      The command result.
+    """
+    # Find COMMAND event with matching command
+    while self.index < len(self.events):
+      event = self.events[self.index]
+      self.index += 1
+
+      if event.type == EventType.COMMAND:
+        # Check if this matches our command
+        if event.command == command:  # type: ignore
+          # Emit to handlers
+          for handler in self._handlers:
+            handler(event)
+          return event.result  # type: ignore
+
+    return ""  # Command not found
 
 
 class PredefinedInput:
@@ -53,16 +371,18 @@ class PredefinedInput:
 
 
 class ReplayInput:
-  """Iterator that replays conversation from a JSONL file."""
+  """Iterator that extracts user messages from events.jsonl."""
 
-  def __init__(self, jsonl_path: Path) -> None:
+  def __init__(self, events_path: Path) -> None:
     self.messages: list[str] = []
-    # Load user messages from JSONL
-    with open(jsonl_path) as f:
+    # Load user messages from TURN_START events and CommandEvent events
+    with open(events_path) as f:
       for line in f:
         entry = json.loads(line)
-        if entry["role"] == "user":
-          self.messages.append(entry["content"])
+        if entry["type"] == "TURN_START":
+          self.messages.append(entry["data"]["message"])
+        elif entry["type"] == "COMMAND":
+          self.messages.append(entry["data"]["command"])
     self.index = 0
 
   def __call__(self, prompt: str) -> str:
@@ -72,100 +392,6 @@ class ReplayInput:
     message = self.messages[self.index]
     self.index += 1
     return message
-
-
-class ConversationLogger:
-  """Logs conversation to a JSONL file."""
-
-  def __init__(self, path: Path) -> None:
-    self.path = path
-    self.file = open(path, "w")  # noqa: SIM115 - will be closed in close()
-
-  def log(self, role: str, content: str) -> None:
-    """Log a message to the JSONL file."""
-    entry = {"role": role, "content": content}
-    self.file.write(json.dumps(entry) + "\n")
-    self.file.flush()
-
-  def close(self) -> None:
-    """Close the log file."""
-    self.file.close()
-
-
-class LoggingAgent:
-  """Agent wrapper that logs conversation."""
-
-  def __init__(self, agent: Agent, logger: ConversationLogger) -> None:
-    self.agent = agent
-    self.logger = logger
-
-  @property
-  def model(self) -> str:
-    return self.agent.model
-
-  @property
-  def thinking_enabled(self) -> bool:
-    return self.agent.thinking_enabled
-
-  @thinking_enabled.setter
-  def thinking_enabled(self, value: bool) -> None:
-    self.agent.thinking_enabled = value
-
-  def add_event_handler(self, handler: "EventCallback") -> None:
-    """Delegate event handler registration to wrapped agent."""
-    self.agent.add_event_handler(handler)
-
-  def begin_session(self) -> None:
-    """Delegate session start to wrapped agent."""
-    self.agent.begin_session()
-
-  def end_session(self, reason: str = "quit") -> None:
-    """Delegate session end to wrapped agent."""
-    self.agent.end_session(reason)
-
-  def process(self, message: str) -> str:
-    """Process message and log conversation."""
-    self.logger.log("user", message)
-    response = self.agent.process(message)
-    self.logger.log("assistant", response)
-    return response
-
-
-class MockAgent:
-  """Mock agent that returns responses from a JSONL file."""
-
-  def __init__(self, jsonl_path: Path, console: Console) -> None:
-    self.console = console
-    self.responses: list[str] = []
-    self.index = 0
-    self.thinking_enabled = True
-
-    # Load assistant responses from JSONL
-    with open(jsonl_path) as f:
-      for line in f:
-        entry = json.loads(line)
-        if entry["role"] == "assistant":
-          self.responses.append(entry["content"])
-
-  def begin_session(self) -> None:
-    """No-op for mock agent."""
-    pass
-
-  def end_session(self, reason: str = "quit") -> None:
-    """No-op for mock agent."""
-    pass
-
-  def process(self, message: str) -> str:
-    """Return next response from the log."""
-    if self.index >= len(self.responses):
-      return ""
-    response = self.responses[self.index]
-    self.index += 1
-    return response
-
-  @property
-  def model(self) -> str:
-    return "mock (replay)"
 
 
 def run_demo_session(
@@ -179,8 +405,8 @@ def run_demo_session(
   Args:
     messages: List of user messages (ignored if replay is set).
     config_path: Path to configuration file.
-    log: Whether to log conversation to session.jsonl.
-    replay: Path to JSONL file to replay (if set, no LLM calls).
+    log: Whether to log events to events.jsonl.
+    replay: Path to events.jsonl file to replay (if set, no LLM calls).
 
   Returns:
     Path to the generated SVG file.
@@ -192,10 +418,21 @@ def run_demo_session(
   # Create media directory
   MEDIA_DIR.mkdir(parents=True, exist_ok=True)
 
+  # Event logger for --log mode
+  event_logger: EventLogger | None = None
+
   # Determine agent and messages
   if replay:
-    # Replay mode: use mock agent
-    agent = MockAgent(replay, console)
+    # Replay mode: use EventReplayAgent to replay events
+    agent = EventReplayAgent(replay)
+    # Attach console event handler for output
+    handler = ConsoleEventHandler(
+      console=console,
+      show_thinking=agent.thinking_enabled,
+      show_tool_calls=True,
+      wrap_width=WRAP_WIDTH,
+    )
+    agent.add_event_handler(handler)
     get_input = ReplayInput(replay)
     messages = []  # Will be read from file
   else:
@@ -212,10 +449,10 @@ def run_demo_session(
     )
     agent.add_event_handler(handler)
 
-    # Wrap with logger if requested
+    # Add event logger if requested
     if log:
-      logger = ConversationLogger(MEDIA_DIR / "session.jsonl")
-      agent = LoggingAgent(agent, logger)  # type: ignore
+      event_logger = EventLogger(MEDIA_DIR / "events.jsonl")
+      agent.add_event_handler(event_logger)
 
     # Create input function from messages
     if messages is None:
@@ -242,10 +479,10 @@ def run_demo_session(
   # Print mode-specific info (for replay mode, or additional info for log mode)
   if replay:
     console.print(f"[bold cyan]Yoker v0.1.0[/] - Using model: [green]{agent.model}[/]")
-    console.print("[dim]Replay mode - using logged conversation[/]")
+    console.print("[dim]Replay mode - using logged events[/]")
     console.print("")
   elif log:
-    console.print("[dim]Logging conversation to session.jsonl[/]")
+    console.print("[dim]Logging events to events.jsonl[/]")
 
   # Process each message
   for message in get_input.messages if hasattr(get_input, "messages") else []:
@@ -253,19 +490,28 @@ def run_demo_session(
 
     # Check if this is a command
     if message.startswith("/"):
-      result = command_registry.dispatch(message)
-      if result:
-        console.print(f"{result}\n")
+      if replay:
+        # Replay mode: emit CommandEvent from event log
+        agent.replay_command(message)  # type: ignore
+      else:
+        # Real LLM mode: execute command and log it
+        result = command_registry.dispatch(message)
+        if result:
+          console.print(f"{result}\n")
+        # Log command event if logging is enabled
+        if event_logger is not None:
+          command_event = CommandEvent(
+            type=EventType.COMMAND,
+            command=message,
+            result=result or "",
+          )
+          event_logger(command_event)
       continue
 
     response = agent.process(message)
-    if response:
-      # In replay mode, MockAgent returns string responses directly
-      # In real LLM mode, events are emitted and printed by ConsoleEventHandler
-      if replay:
-        console.print(f"\n{response}\n")
-      else:
-        console.print()
+    # In replay mode, events are emitted by EventReplayAgent
+    # In real LLM mode, events are emitted by Agent
+    # ConsoleEventHandler prints the output in both cases
 
   # End session (emits SESSION_END event for real LLM mode)
   if not replay:
@@ -290,9 +536,9 @@ def run_demo_session(
   console.print(f"\n[dim]Saved session to: {timestamped_file}[/]")
   console.print(f"[dim]Latest: {current_link}[/]")
 
-  # Close logger if it was opened
-  if log and not replay:
-    logger.close()
+  # Close event logger if it was opened
+  if event_logger is not None:
+    event_logger.close()
 
   return timestamped_file
 
@@ -305,15 +551,15 @@ def main() -> None:
   parser.add_argument(
     "--log",
     action="store_true",
-    help="Log conversation to media/session.jsonl",
+    help="Log events to media/events.jsonl",
   )
   parser.add_argument(
     "--replay",
     type=Path,
     nargs="?",
-    const=MEDIA_DIR / "session.jsonl",
+    const=MEDIA_DIR / "events.jsonl",
     default=None,
-    help="Replay conversation from JSONL file (default: media/session.jsonl)",
+    help="Replay events from JSONL file (default: media/events.jsonl)",
   )
   args = parser.parse_args()
 

@@ -20,11 +20,23 @@
   - See `analysis/ux-mouse-selection.md` for full UX analysis
   - See `reporting/1.5.2-mouse-selection/summary.md` for implementation summary
 
-- [ ] **1.5.3 Update Demo Session Script for Tool Display**
-  - Update demo_session.py to work with new Agent structure
-  - Show tool use information when tools are invoked
-  - Display tool name and filepath (e.g., "Read tool: <filepath>")
-  - Ensure tool display is styled consistently with other output
+- [x] **1.5.3 Update Demo Session Script**
+  - Update tool display format: `[Tool Call] read(file_path=...)` → `Read tool: <filename>`
+  - Use cyan color for tool name (matches session header style)
+  - Display filename only (not full path) for better readability
+  - Ensure tool display is visually distinct but harmonious with other output
+  - Create new session log for replay with tool calls
+  - Improve replay to include commands and thinking events
+  - Test replay mode produces same visual output as live session
+  - See `analysis/ux-demo-session.md` for full UX analysis
+  - See `reporting/1.5.3-demo-session/functional-review.md` for review summary
+
+- [ ] **1.5.4 Event Logging System (Future Enhancement)**
+  - Create `EventLogger` class to log all event types to JSONL
+  - Log SESSION_START, TURN_START, THINKING_*, TOOL_*, CONTENT_*, events
+  - Enable full visual replay capability
+  - Create `EventReplayAgent` that emits events from log
+  - Requires: Event system refactoring
 
 ### Phase 1.6: Documentation (Medium Priority)
 

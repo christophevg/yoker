@@ -2,6 +2,7 @@
 
 from yoker.events.handlers import ConsoleEventHandler, EventHandler
 from yoker.events.types import (
+  CommandEvent,
   ContentChunkEvent,
   ContentEndEvent,
   ContentStartEvent,
@@ -43,6 +44,8 @@ __all__ = [
   "ToolResultEvent",
   # Error
   "ErrorEvent",
+  # Command
+  "CommandEvent",
   # Handlers
   "ConsoleEventHandler",
 ]

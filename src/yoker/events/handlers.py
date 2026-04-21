@@ -1,11 +1,13 @@
 """Event handlers for the Yoker event system."""
 
-from typing import Protocol, runtime_checkable
+from pathlib import Path
+from typing import Any, Protocol, runtime_checkable
 
 from rich.console import Console
 from rich.style import Style
 
 from yoker.events.types import (
+  CommandEvent,
   ContentChunkEvent,
   ContentEndEvent,
   ContentStartEvent,
@@ -26,7 +28,7 @@ from yoker.events.types import (
 # Styles for console output
 THINKING_STYLE = Style(color="bright_black", dim=True)
 ERROR_STYLE = Style(color="red", bold=True)
-TOOL_STYLE = Style(color="yellow")
+TOOL_STYLE = Style(color="cyan")
 
 
 @runtime_checkable
@@ -96,6 +98,8 @@ class ConsoleEventHandler:
         self._handle_tool_result(event)  # type: ignore[arg-type]
       case EventType.ERROR:
         self._handle_error(event)  # type: ignore[arg-type]
+      case EventType.COMMAND:
+        self._handle_command(event)  # type: ignore[arg-type]
 
   def _handle_session_start(self, event: SessionStartEvent) -> None:
     """Handle session start event."""
@@ -147,11 +151,48 @@ class ConsoleEventHandler:
     """Handle content end event."""
     self.console.print()  # Final newline
 
+  @staticmethod
+  def _extract_filename(arguments: dict[str, Any]) -> str:
+    """Extract filename from tool arguments.
+
+    Args:
+      arguments: Tool arguments dictionary.
+
+    Returns:
+      Filename (basename) of the path argument, or first arg value if no path.
+    """
+    # Look for common path argument names
+    for key in ("file_path", "path", "filepath"):
+      if key in arguments:
+        return Path(arguments[key]).name
+
+    # Fallback: use first argument value
+    if arguments:
+      first_value = next(iter(arguments.values()))
+      return str(first_value)
+
+    return ""
+
+  @staticmethod
+  def _capitalize(name: str) -> str:
+    """Capitalize first letter of name for display.
+
+    Args:
+      name: Tool name to capitalize.
+
+    Returns:
+      Name with first letter capitalized.
+    """
+    if name:
+      return name[0].upper() + name[1:]
+    return name
+
   def _handle_tool_call(self, event: ToolCallEvent) -> None:
     """Handle tool call event."""
     if self.show_tool_calls:
-      args_str = ", ".join(f"{k}={v!r}" for k, v in event.arguments.items())
-      self.console.print(f"\n[Tool Call] {event.tool_name}({args_str})", style=TOOL_STYLE)
+      filename = self._extract_filename(event.arguments)
+      tool_name = self._capitalize(event.tool_name)
+      self.console.print(f"\n{tool_name} tool: {filename}", style=TOOL_STYLE)
 
   def _handle_tool_result(self, event: ToolResultEvent) -> None:
     """Handle tool result event."""
@@ -164,6 +205,11 @@ class ConsoleEventHandler:
       f"\n[Error] {event.error_type}: {event.message}",
       style=ERROR_STYLE,
     )
+
+  def _handle_command(self, event: CommandEvent) -> None:
+    """Handle command event."""
+    if event.result:
+      self.console.print(f"{event.result}\n")
 
   def _print_wrapped(
     self,
