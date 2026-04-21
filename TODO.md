@@ -242,6 +242,9 @@
   - Update process() to use context methods
   - Add session persistence to CLI
   - Context now persists after each turn
+  - Added --persist and --resume flags to demo_session.py
+  - Fixed duplicate message bug (user and assistant added twice)
+  - Fixed system message re-added on resume
 
 - [x] **1.4 Context Manager**
   - Define context storage format (JSONL)

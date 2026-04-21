@@ -125,8 +125,11 @@ class Agent:
         session_id=self.config.context.session_id,
       )
 
-    # Add system prompt to context
-    self.context.add_message("system", system_prompt)
+    # Add system prompt to context (skip if already exists, e.g., on resume)
+    messages = self.context.get_messages()
+    has_system = any(m.get("role") == "system" for m in messages)
+    if not has_system:
+      self.context.add_message("system", system_prompt)
 
     # Event handlers storage
     self._event_handlers: list[EventCallback] = []
@@ -184,7 +187,6 @@ class Agent:
     """
     self._emit(TurnStartEvent(type=EventType.TURN_START, message=message))
     self.context.start_turn(message)
-    self.context.add_message("user", message)
 
     # Process with model, handling tool calls in a loop
     while True:
@@ -260,9 +262,6 @@ class Agent:
             total_length=len(thinking),
           )
         )
-
-      # Add assistant message to context
-      self.context.add_message("assistant", content)
 
       # If no tool calls, we're done with this turn
       if not tool_calls:

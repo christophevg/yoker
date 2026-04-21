@@ -8,6 +8,8 @@ Usage:
     python scripts/demo_session.py              # Real LLM session
     python scripts/demo_session.py --log       # Real LLM + log conversation
     python scripts/demo_session.py --replay    # Replay from events (no LLM)
+    python scripts/demo_session.py --persist  # Save session for resumption
+    python scripts/demo_session.py --resume <session_id>  # Resume session
 
 Output:
     media/session-YYYYMMDD-HHMMSS.svg - Timestamped screenshot
@@ -26,6 +28,7 @@ from rich.console import Console
 from yoker.agent import Agent, EventCallback
 from yoker.commands import CommandRegistry, create_help_command, create_think_command
 from yoker.config import load_config_with_defaults
+from yoker.context import BasicPersistenceContextManager
 from yoker.events import ConsoleEventHandler
 from yoker.events.types import (
   CommandEvent,
@@ -400,6 +403,8 @@ def run_demo_session(
   log: bool = False,
   replay: Path | None = None,
   agent_path: Path | None = None,
+  persist: bool = False,
+  resume: str | None = None,
 ) -> Path:
   """Run a demo session and save as SVG.
 
@@ -409,6 +414,8 @@ def run_demo_session(
     log: Whether to log events to events.jsonl.
     replay: Path to events.jsonl file to replay (if set, no LLM calls).
     agent_path: Path to agent definition file (Markdown with frontmatter).
+    persist: Whether to persist session for resumption.
+    resume: Session ID to resume (if set, loads previous session).
 
   Returns:
     Path to the generated SVG file.
@@ -440,8 +447,26 @@ def run_demo_session(
   else:
     # Real LLM mode
     config = load_config_with_defaults(config_path)
+
+    # Create context manager for persistence or resumption
+    context_manager: BasicPersistenceContextManager | None = None
+    if persist or resume:
+      session_id = resume if resume else "auto"
+      context_manager = BasicPersistenceContextManager(
+        storage_path=Path(config.context.storage_path),
+        session_id=session_id,
+      )
+      if resume:
+        loaded = context_manager.load()
+        if not loaded:
+          console.print(f"[yellow]Warning: Session {resume} not found. Starting fresh.[/]\n")
+
     # Create agent with event-driven architecture
-    agent = Agent(config=config, agent_path=agent_path)
+    agent = Agent(
+      config=config,
+      agent_path=agent_path,
+      context_manager=context_manager,
+    )
     # Attach console event handler for output
     handler = ConsoleEventHandler(
       console=console,
@@ -456,6 +481,16 @@ def run_demo_session(
       print(f"Loaded agent: {agent.agent_definition.name}")
       print(f"  Description: {agent.agent_definition.description}")
       print()
+
+    # Show session info
+    if context_manager:
+      stats = context_manager.get_statistics()
+      console.print(f"[dim]Session ID: {context_manager.get_session_id()}[/]")
+      if resume and stats.turn_count > 0:
+        console.print(
+          f"[dim]Resumed: {stats.turn_count} turns, {stats.tool_call_count} tool calls[/]"
+        )
+      console.print("")
 
     # Add event logger if requested
     if log:
@@ -528,6 +563,15 @@ def run_demo_session(
   # Print session footer
   console.print("\n[bold cyan]Session complete.[/]")
 
+  # Show statistics if context manager was used
+  if context_manager is not None:
+    stats = context_manager.get_statistics()
+    console.print(f"[dim]Session: {context_manager.get_session_id()}[/]")
+    console.print(
+      f"[dim]Statistics: {stats.turn_count} turns, "
+      f"{stats.message_count} messages, {stats.tool_call_count} tool calls[/]"
+    )
+
   # Generate timestamped filename
   timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
   timestamped_file = MEDIA_DIR / f"session-{timestamp}.svg"
@@ -584,6 +628,17 @@ def main() -> None:
     default=None,
     help="Add a message to send (can be used multiple times)",
   )
+  parser.add_argument(
+    "--persist",
+    action="store_true",
+    help="Persist session for later resumption",
+  )
+  parser.add_argument(
+    "--resume",
+    type=str,
+    default=None,
+    help="Resume a previous session by ID",
+  )
   args = parser.parse_args()
 
   # Look for local config file
@@ -601,6 +656,8 @@ def main() -> None:
     replay=args.replay,
     agent_path=args.agent,
     messages=messages,
+    persist=args.persist,
+    resume=args.resume,
   )
 
 
