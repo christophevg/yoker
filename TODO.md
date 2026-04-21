@@ -10,11 +10,15 @@
   - Ensure thinking sections remain readable but visually distinct from content
   - Verify the change works in both interactive and demo modes
 
-- [ ] **1.5.2 Fix Mouse Selection in Interactive Mode**
-  - Fix mouse selection in terminal output area (scrollback buffer)
-  - Fix mouse selection in input area
-  - Test that text can be selected and copied correctly
-  - Verify no conflicts with existing keybindings
+- [x] **1.5.2 Fix Mouse Selection in Interactive Mode**
+  - Set `mouse_support=False` in `PromptSession` (recommended fix from UX analysis)
+  - Verify text selection works in terminal output area (scrollback buffer)
+  - Verify text can be copied correctly (Ctrl+Shift+C / Cmd+C)
+  - Verify keyboard navigation still works (arrows, Home, End, Ctrl+A, Ctrl+E)
+  - Verify no conflicts with existing keybindings (multiline, history, search)
+  - Update README.md to document keyboard navigation
+  - See `analysis/ux-mouse-selection.md` for full UX analysis
+  - See `reporting/1.5.2-mouse-selection/summary.md` for implementation summary
 
 - [ ] **1.5.3 Update Demo Session Script for Tool Display**
   - Update demo_session.py to work with new Agent structure

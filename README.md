@@ -48,7 +48,8 @@ The interactive session supports:
 - **Multiline input**: Press `Esc+Enter` to add newlines, `Enter` to submit
 - **Command history**: Up/Down arrows navigate previous messages
 - **History search**: `Ctrl+R` to search through history
-- **Mouse support**: Click to position cursor
+- **Keyboard navigation**: Arrow keys, Ctrl+A/E for cursor positioning
+- **Text selection**: Click and drag to select output, copy with Ctrl+Shift+C or Cmd+C
 
 ### Slash Commands
 

@@ -69,7 +69,7 @@ def create_prompt_session() -> PromptSession[str]:
   session: PromptSession[str] = PromptSession(
     history=FileHistory(str(HISTORY_FILE)),
     multiline=True,
-    mouse_support=True,
+    mouse_support=False,  # Disable to allow terminal text selection
     key_bindings=kb,
   )
 
