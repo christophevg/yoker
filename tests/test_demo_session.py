@@ -1,7 +1,9 @@
 """Tests for demo_session.py module."""
 
 import json
-import tempfile
+
+# Import from scripts module
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -26,8 +28,6 @@ from yoker.events.types import (
   TurnStartEvent,
 )
 
-# Import from scripts module
-import sys
 sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 from demo_session import (  # noqa: E402
   EventLogger,

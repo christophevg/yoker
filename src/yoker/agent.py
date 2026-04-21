@@ -27,6 +27,7 @@ from yoker.events import (
 from yoker.tools import AVAILABLE_TOOLS
 
 if TYPE_CHECKING:
+  from yoker.agents import AgentDefinition
   from yoker.commands import CommandRegistry
 
 logger = logging.getLogger(__name__)
@@ -47,6 +48,7 @@ class Agent:
     config: Configuration object (or defaults if not provided).
     messages: Conversation history.
     thinking_enabled: Whether thinking mode is enabled.
+    agent_definition: Loaded agent definition (if provided).
   """
 
   def __init__(
@@ -56,6 +58,8 @@ class Agent:
     config_path: Path | str | None = None,
     thinking_enabled: bool = True,
     command_registry: "CommandRegistry | None" = None,
+    agent_definition: "AgentDefinition | None" = None,
+    agent_path: Path | str | None = None,
   ) -> None:
     """Initialize the agent.
 
@@ -65,6 +69,8 @@ class Agent:
       config_path: Path to configuration file (loaded if config not provided).
       thinking_enabled: Whether to enable thinking mode (default: True).
       command_registry: Optional command registry for slash-commands.
+      agent_definition: Pre-loaded AgentDefinition to use for system prompt.
+      agent_path: Path to agent definition file (Markdown with frontmatter).
     """
     # Load configuration
     if config is not None:
@@ -91,9 +97,22 @@ class Agent:
     # Command registry for slash-commands
     self.command_registry = command_registry
 
+    # Load agent definition if path provided
+    self.agent_definition: "AgentDefinition | None" = None
+    system_prompt = DEFAULT_SYSTEM_PROMPT
+
+    if agent_definition is not None:
+      self.agent_definition = agent_definition
+      system_prompt = agent_definition.system_prompt or DEFAULT_SYSTEM_PROMPT
+    elif agent_path is not None:
+      from yoker.agents import load_agent_definition
+
+      self.agent_definition = load_agent_definition(agent_path)
+      system_prompt = self.agent_definition.system_prompt or DEFAULT_SYSTEM_PROMPT
+
     # Initialize conversation history
     self.messages: list[dict[str, Any]] = [
-      {"role": "system", "content": DEFAULT_SYSTEM_PROMPT},
+      {"role": "system", "content": system_prompt},
     ]
 
     # Event handlers storage

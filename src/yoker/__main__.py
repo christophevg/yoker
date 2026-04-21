@@ -153,6 +153,13 @@ def main() -> None:
     default=None,
     help="Model to use (overrides config)",
   )
+  parser.add_argument(
+    "-a",
+    "--agent",
+    type=Path,
+    default=None,
+    help="Path to agent definition file (Markdown with YAML frontmatter)",
+  )
 
   args = parser.parse_args()
 
@@ -180,8 +187,19 @@ def main() -> None:
   # Create prompt session for interactive input
   session = create_prompt_session()
 
-  # Create agent
-  agent = Agent(model=args.model, config=config)
+  # Create agent with optional agent definition
+  agent = Agent(
+    model=args.model,
+    config=config,
+    agent_path=args.agent,
+  )
+
+  # Show agent info if loaded
+  if agent.agent_definition:
+    print(f"Loaded agent: {agent.agent_definition.name}")
+    print(f"  Description: {agent.agent_definition.description}")
+    print(f"  Tools: {', '.join(agent.agent_definition.tools)}")
+    print()
 
   # Create command registry with agent access
   command_registry = create_command_registry(agent)

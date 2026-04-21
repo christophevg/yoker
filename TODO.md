@@ -70,12 +70,14 @@
   - Add error handling for invalid configs
   - Create example configuration files
 
-- [ ] **1.3 Agent Definition Loader**
+- [x] **1.3 Agent Definition Loader**
   - Implement Markdown file parser
   - Parse YAML frontmatter
   - Validate agent definitions against schema
   - Handle missing or invalid frontmatter
   - Create example agent definitions
+  - See `analysis/agent-definition-loader.md` for design
+  - See `reporting/1.3-agent-definition-loader/summary.md` for implementation summary
 
 - [ ] **1.4 Context Manager**
   - Define context storage format (JSONL)
@@ -240,6 +242,15 @@
   - Write tutorial documentation
 
 ## Done
+
+- [x] **1.3 Agent Definition Loader**
+  - Implement Markdown file parser
+  - Parse YAML frontmatter
+  - Validate agent definitions against schema
+  - Handle missing or invalid frontmatter
+  - Create example agent definitions
+  - See `analysis/agent-definition-loader.md` for design
+  - See `reporting/1.3-agent-definition-loader/summary.md` for implementation summary
 
 - [x] **1.2.5 Event-Driven Architecture Refactor**
   - Refactor Agent class to emit events instead of console output

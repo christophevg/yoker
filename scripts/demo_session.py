@@ -399,6 +399,7 @@ def run_demo_session(
   config_path: str | None = None,
   log: bool = False,
   replay: Path | None = None,
+  agent_path: Path | None = None,
 ) -> Path:
   """Run a demo session and save as SVG.
 
@@ -407,6 +408,7 @@ def run_demo_session(
     config_path: Path to configuration file.
     log: Whether to log events to events.jsonl.
     replay: Path to events.jsonl file to replay (if set, no LLM calls).
+    agent_path: Path to agent definition file (Markdown with frontmatter).
 
   Returns:
     Path to the generated SVG file.
@@ -439,7 +441,7 @@ def run_demo_session(
     # Real LLM mode
     config = load_config_with_defaults(config_path)
     # Create agent with event-driven architecture
-    agent = Agent(config=config)
+    agent = Agent(config=config, agent_path=agent_path)
     # Attach console event handler for output
     handler = ConsoleEventHandler(
       console=console,
@@ -448,6 +450,12 @@ def run_demo_session(
       wrap_width=WRAP_WIDTH,
     )
     agent.add_event_handler(handler)
+
+    # Show agent info if loaded
+    if agent.agent_definition:
+      print(f"Loaded agent: {agent.agent_definition.name}")
+      print(f"  Description: {agent.agent_definition.description}")
+      print()
 
     # Add event logger if requested
     if log:
@@ -458,7 +466,7 @@ def run_demo_session(
     if messages is None:
       messages = [
         "/help",
-        "Summarize the README.md file in one sentence.",
+        "Summarize the README.md file in less than 10 lines.",
       ]
     get_input = PredefinedInput(messages)
 
@@ -561,6 +569,21 @@ def main() -> None:
     default=None,
     help="Replay events from JSONL file (default: media/events.jsonl)",
   )
+  parser.add_argument(
+    "--agent",
+    "-a",
+    type=Path,
+    default=None,
+    help="Path to agent definition file (Markdown with YAML frontmatter)",
+  )
+  parser.add_argument(
+    "--message",
+    "-m",
+    type=str,
+    action="append",
+    default=None,
+    help="Add a message to send (can be used multiple times)",
+  )
   args = parser.parse_args()
 
   # Look for local config file
@@ -568,11 +591,16 @@ def main() -> None:
   if not config_path.exists():
     config_path = None
 
+  # Build messages if provided
+  messages = args.message if args.message else None
+
   # Run the demo
   run_demo_session(
     config_path=str(config_path) if config_path else None,
     log=args.log,
     replay=args.replay,
+    agent_path=args.agent,
+    messages=messages,
   )
 
 
