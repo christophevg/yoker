@@ -88,9 +88,45 @@ class FileNotFoundError(YokerError):
     return f"{self.file_type.capitalize()} not found: {self.path}"
 
 
+class SessionNotFoundError(YokerError):
+  """Exception when a session is not found in storage.
+
+  Attributes:
+    session_id: The session ID that was not found.
+  """
+
+  def __init__(self, session_id: str) -> None:
+    self.session_id = session_id
+    super().__init__(str(self))
+
+  def __str__(self) -> str:
+    return f"Session not found: {self.session_id}"
+
+
+class ContextCorruptionError(YokerError):
+  """Exception when context file is corrupted.
+
+  Attributes:
+    path: Path to the corrupted file.
+    line_num: Line number where corruption was detected.
+    message: Description of the corruption.
+  """
+
+  def __init__(self, path: str, line_num: int, message: str) -> None:
+    self.path = path
+    self.line_num = line_num
+    self._message = message
+    super().__init__(str(self))
+
+  def __str__(self) -> str:
+    return f"Corrupted context at {self.path}:{self.line_num}: {self._message}"
+
+
 __all__ = [
   "YokerError",
   "ConfigurationError",
   "ValidationError",
   "FileNotFoundError",
+  "SessionNotFoundError",
+  "ContextCorruptionError",
 ]

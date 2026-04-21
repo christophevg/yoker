@@ -13,6 +13,7 @@ from yoker.config import (
   load_config_with_defaults,
   validate_config,
 )
+from yoker.context import BasicPersistenceContextManager, ContextManager, ContextStatistics
 from yoker.events import (
   ConsoleEventHandler,
   ContentChunkEvent,
@@ -34,7 +35,9 @@ from yoker.events import (
 )
 from yoker.exceptions import (
   ConfigurationError,
+  ContextCorruptionError,
   FileNotFoundError,
+  SessionNotFoundError,
   ValidationError,
   YokerError,
 )
@@ -76,9 +79,15 @@ __all__ = [
   "ToolCallEvent",
   "ToolResultEvent",
   "ErrorEvent",
+  # Context
+  "ContextManager",
+  "ContextStatistics",
+  "BasicPersistenceContextManager",
   # Exceptions
   "YokerError",
   "ConfigurationError",
   "ValidationError",
   "FileNotFoundError",
+  "SessionNotFoundError",
+  "ContextCorruptionError",
 ]

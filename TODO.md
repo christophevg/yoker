@@ -79,13 +79,6 @@
   - See `analysis/agent-definition-loader.md` for design
   - See `reporting/1.3-agent-definition-loader/summary.md` for implementation summary
 
-- [ ] **1.4 Context Manager**
-  - Define context storage format (JSONL)
-  - Implement Context class for conversation history
-  - Implement context persistence (append to JSONL)
-  - Add session ID management
-  - Implement context isolation for subagents
-
 - [ ] **1.5 Logging System**
   - Integrate structlog for structured logging
   - Add file and console handlers
@@ -242,6 +235,16 @@
   - Write tutorial documentation
 
 ## Done
+
+- [x] **1.4 Context Manager**
+  - Define context storage format (JSONL)
+  - Implement Context class for conversation history
+  - Implement context persistence (append to JSONL)
+  - Add session ID management
+  - Implement context isolation for subagents (clear method)
+  - Fix atomic write implementation (file locking with fcntl)
+  - Fix get_context() ordering (single sequence list)
+  - See `reporting/1.4-context-manager/summary.md` for implementation summary
 
 - [x] **1.3 Agent Definition Loader**
   - Implement Markdown file parser
