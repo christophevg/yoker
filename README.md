@@ -33,20 +33,41 @@ Example session:
 
 ![Yoker Session](media/session.svg)
 
+## Why Yoker?
+
+Yoker fills a unique gap in the coding agent ecosystem: a **library-first, transparent agent harness** designed for developers who want full control, visibility, and simplicity.
+
+**Key Differentiators:**
+- **Library-first** - Embed in your applications, not locked into a CLI
+- **LLM-neutral** - Choose your provider, your model, your cost model
+- **No hidden manipulation** - All prompts visible, editable, configurable
+- **Static permissions** - Deterministic boundaries, not runtime prompts
+- **Full transparency** - Event-driven, everything inspectable
+
+See [docs/rationale.md](docs/rationale.md) for the full rationale and comparison with other solutions.
+
 ## Features
 
-| Feature | Description |
-|---------|-------------|
-| **Chat loop** | Interactive conversation with Ollama |
-| **Tool calling** | Structured tool execution with parameters |
-| **Slash commands** | Built-in commands: `/help`, `/think on\|off` |
-| **Thinking mode** | LLM reasoning trace with gray output |
-| **Streaming** | Real-time token streaming from Ollama |
-| **Configuration** | TOML-based configuration system |
-| **Agent definitions** | Load agents from Markdown files with YAML frontmatter |
-| **Multiline input** | `Esc+Enter` for newlines, `Enter` to submit |
-| **Rich output** | Styled terminal output with Rich |
-| **Read tool** | File reading with path validation |
+**Current Features:**
+- [x] Chat loop - Interactive conversation with Ollama
+- [x] Tool calling - Structured tool execution with parameters
+- [x] Slash commands - Built-in commands: `/help`, `/think on|off`
+- [x] Thinking mode - LLM reasoning trace with gray output
+- [x] Streaming - Real-time token streaming from Ollama
+- [x] Configuration - TOML-based configuration system
+- [x] Agent definitions - Load agents from Markdown files with YAML frontmatter
+- [x] Multiline input - `Esc+Enter` for newlines, `Enter` to submit
+- [x] Rich output - Styled terminal output with Rich
+- [x] Event-driven architecture - Library-first design with event emission
+- [x] Context persistence - Session resumption with JSONL storage
+- [x] Event logging - Full session replay capability
+
+**Planned Features:**
+- [ ] Additional tools (list, write, update, search)
+- [ ] Guardrails - Static permissions for tool execution
+- [ ] Permissions - TOML-based access control
+- [ ] Sub-agents - Hierarchical agent spawning
+- [ ] Multi-agent orchestration
 
 ### Interactive Input
 
@@ -124,41 +145,51 @@ See `examples/yoker.toml` for the full configuration reference.
 Yoker uses an **event-driven architecture** for library-first design. The Agent emits events; application code handles UI.
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                   Application Layer                      │
-│                      (__main__.py)                       │
-│  ┌─────────────────────────────────────────────────────┐ │
-│  │            ConsoleEventHandler                       │ │
-│  │  - Subscribes to Agent events                       │ │
-│  │  - Renders to Rich console                          │ │
-│  │  - Handles input loop, commands                     │ │
-│  └─────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────┘
-                          │ events
-                          ▼
-┌─────────────────────────────────────────────────────────┐
-│                    Library Layer                         │
-│                      (agent.py)                          │
-│  ┌─────────────────────────────────────────────────────┐ │
-│  │                    Agent                             │ │
-│  │  - Pure event emission (no console)                  │ │
-│  │  - begin_session() / end_session()                   │ │
-│  │  - process(message)                                  │ │
-│  │  - Ollama backend communication                      │ │
-│  │  - Tool execution                                   │ │
-│  └─────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                              Your Application                            │
+│                                                                          │
+│    ┌─────────────────────────────────────────────────────────────────┐  │
+│    │                      Your Custom UI (optional)                   │  │
+│    └─────────────────────────────────────────────────────────────────┘  │
+│                                  │                                       │
+│                    ┌─────────────┴─────────────┐                        │
+│                    │     Event Handlers        │                        │
+│                    │  ┌─────┐ ┌─────┐ ┌─────┐  │                        │
+│                    │  │ CLI │ │ TUI │ │ ... │  │  ← Built-in or custom   │
+│                    │  └─────┘ └─────┘ └─────┘  │                        │
+│                    └───────────────────────────┘                        │
+│                                  │                                       │
+│    ┌─────────────────────────────┴─────────────────────────────────────┐ │
+│    │                        Yoker Library                               │ │
+│    │                                                                    │ │
+│    │   ┌────────────┐    ┌────────────────┐    ┌───────────────────┐   │ │
+│    │   │   Agent    │←──→│ Tools Registry │←──→│ Context Manager   │   │ │
+│    │   │            │    │                │    │                   │   │ │
+│    │   │            │    │  • read        │    │  • Basic (JSONL)  │   │ │
+│    │   │            │    │  • write       │    │  • Your custom... │   │ │
+│    │   │            │    │  • Your tools  │    │                   │   │ │
+│    │   │            │    │    plug in!    │    │    plug in!        │   │ │
+│    │   └────────────┘    └────────────────┘    └───────────────────┘   │ │
+│    │          │                                                       │ │
+│    │          ▼                                                       │ │
+│    │   Event Emission                                                  │ │
+│    │   (session, turn, thinking, content, tool, error...)              │ │
+│    └────────────────────────────────────────────────────────────────────┘ │
+│                                  │                                       │
+│                                  ▼                                       │
+│                    Your Custom Handler                                   │
+│                    (Console, File, API, Database...)                     │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Event Types**: Session (start/end), Turn (start/end), Thinking (start/chunk/end), Content (start/chunk/end), Tool (call/result), Error
-
-**Planned features**: Context persistence, additional tools (list, write, update, search, agent), guardrails, permissions.
+**Event Types**: Session (start/end), Turn (start/end), Thinking (start/chunk/end), Content (start/chunk/end), Tool (call/result), Error, Command
 
 ## Documentation
 
 - [Full documentation](https://yoker.readthedocs.io/)
 - [Installation guide](https://yoker.readthedocs.io/en/latest/installation.html)
 - [Quick start](https://yoker.readthedocs.io/en/latest/quickstart.html)
+- [Why Yoker?](docs/rationale.md) - Project rationale and comparison
 - [Architecture](https://github.com/christophevg/yoker/blob/master/analysis/architecture.md)
 
 ## Development

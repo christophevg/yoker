@@ -6,6 +6,44 @@ Yoker provides an interactive chat interface with Ollama and tool calling capabi
 
 **Architecture**: Yoker uses an event-driven, library-first design. The Agent emits events (thinking chunks, content, tool calls) that handlers subscribe to. This makes the library usable in headless, web, and GUI contexts.
 
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                              Your Application                            │
+│                                                                          │
+│    ┌─────────────────────────────────────────────────────────────────┐  │
+│    │                      Your Custom UI (optional)                   │  │
+│    └─────────────────────────────────────────────────────────────────┘  │
+│                                  │                                       │
+│                    ┌─────────────┴─────────────┐                        │
+│                    │     Event Handlers        │                        │
+│                    │  ┌─────┐ ┌─────┐ ┌─────┐  │                        │
+│                    │  │ CLI │ │ TUI │ │ ... │  │  ← Built-in or custom   │
+│                    │  └─────┘ └─────┘ └─────┘  │                        │
+│                    └───────────────────────────┘                        │
+│                                  │                                       │
+│    ┌─────────────────────────────┴─────────────────────────────────────┐ │
+│    │                        Yoker Library                               │ │
+│    │                                                                    │ │
+│    │   ┌────────────┐    ┌────────────────┐    ┌───────────────────┐   │ │
+│    │   │   Agent    │←──→│ Tools Registry │←──→│ Context Manager   │   │ │
+│    │   │            │    │                │    │                   │   │ │
+│    │   │            │    │  • read        │    │  • Basic (JSONL)  │   │ │
+│    │   │            │    │  • write       │    │  • Your custom... │   │ │
+│    │   │            │    │  • Your tools  │    │                   │   │ │
+│    │   │            │    │    plug in!    │    │    plug in!        │   │ │
+│    │   └────────────┘    └────────────────┘    └───────────────────┘   │ │
+│    │          │                                                       │ │
+│    │          ▼                                                       │ │
+│    │   Event Emission                                                  │ │
+│    │   (session, turn, thinking, content, tool, error...)              │ │
+│    └────────────────────────────────────────────────────────────────────┘ │
+│                                  │                                       │
+│                                  ▼                                       │
+│                    Your Custom Handler                                   │
+│                    (Console, File, API, Database...)                     │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
 ### Prerequisites
 
 - Python 3.10 or higher
@@ -126,6 +164,50 @@ Options:
   -a, --agent PATH     Path to agent definition file (Markdown with frontmatter)
 ```
 
+### Session Persistence
+
+Yoker supports session persistence for resuming conversations:
+
+```bash
+# Start a session with persistence
+python scripts/demo_session.py --persist
+
+# Resume a previous session
+python scripts/demo_session.py --resume <session_id>
+```
+
+When using `--persist`, the session is saved after each turn. Use `--resume` to continue a previous session with full context restored.
+
+**Programmatic usage:**
+
+```python
+from pathlib import Path
+from yoker.agent import Agent
+from yoker.context import BasicPersistenceContextManager
+
+# Create context manager for persistence
+context = BasicPersistenceContextManager(
+  storage_path=Path(".yoker/sessions"),
+  session_id="my-session"
+)
+
+# Create agent with context
+agent = Agent(context_manager=context)
+
+# Use the agent
+agent.begin_session()
+agent.process("What is 2+2?")
+agent.end_session()
+
+# Later, resume the session
+context = BasicPersistenceContextManager(
+  storage_path=Path(".yoker/sessions"),
+  session_id="my-session"
+)
+agent = Agent(context_manager=context)
+# Context is automatically loaded
+```
+
 ## Agent Definitions
 
 Yoker supports loading agent definitions from Markdown files with YAML frontmatter. This allows you to define custom system prompts and tool availability.
@@ -241,6 +323,9 @@ python scripts/demo_session.py --replay
 
 # With an agent definition and custom messages
 python scripts/demo_session.py --agent examples/agents/markdown.md -m "Your question"
+
+# Save to a specific output path (single-use screenshot)
+python scripts/demo_session.py --replay --output media/custom.svg
 ```
 
 ### Demo Script Options
@@ -251,6 +336,9 @@ python scripts/demo_session.py --agent examples/agents/markdown.md -m "Your ques
 | `--replay [PATH]` | Replay from JSONL file (default: `media/events.jsonl`) |
 | `--agent PATH` | Load agent definition file |
 | `-m, --message TEXT` | Add custom message (can be used multiple times) |
+| `--persist` | Persist session for later resumption |
+| `--resume ID` | Resume a previous session by ID |
+| `-o, --output PATH` | Output path for SVG (default: timestamped) |
 
 ### Output Files
 
@@ -258,7 +346,7 @@ python scripts/demo_session.py --agent examples/agents/markdown.md -m "Your ques
 |------|-------------|
 | `media/session-YYYYMMDD-HHMMSS.svg` | Timestamped session screenshot |
 | `media/session.svg` | Symlink to latest screenshot |
-| `media/session.jsonl` | Conversation log (with `--log`) |
+| `media/events.jsonl` | Event log (with `--log`) |
 
 ## Available Tools
 

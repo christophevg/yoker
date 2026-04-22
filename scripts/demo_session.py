@@ -29,6 +29,7 @@ from yoker.commands import CommandRegistry, create_help_command, create_think_co
 from yoker.config import load_config_with_defaults
 from yoker.context import BasicPersistenceContextManager
 from yoker.events import (
+  CommandEvent,
   ConsoleEventHandler,
   Event,
   EventRecorder,
@@ -91,6 +92,7 @@ def run_demo_session(
   agent_path: Path | None = None,
   persist: bool = False,
   resume: str | None = None,
+  output: Path | None = None,
 ) -> Path:
   """Run a demo session and save as SVG.
 
@@ -102,6 +104,7 @@ def run_demo_session(
     agent_path: Path to agent definition file (Markdown with frontmatter).
     persist: Whether to persist session for resumption.
     resume: Session ID to resume (if set, loads previous session).
+    output: Output path for SVG (if set, no timestamp or symlink).
 
   Returns:
     Path to the generated SVG file.
@@ -260,27 +263,40 @@ def run_demo_session(
       f"{stats.message_count} messages, {stats.tool_call_count} tool calls[/]"
     )
 
-  # Generate timestamped filename
-  timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-  timestamped_file = MEDIA_DIR / f"session-{timestamp}.svg"
-  current_link = MEDIA_DIR / "session.svg"
+  # Determine output path
+  if output:
+    # Use specified output path directly
+    svg_path = output
+    # Ensure parent directory exists
+    svg_path.parent.mkdir(parents=True, exist_ok=True)
+  else:
+    # Generate timestamped filename and symlink
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    timestamped_file = MEDIA_DIR / f"session-{timestamp}.svg"
+    current_link = MEDIA_DIR / "session.svg"
 
-  # Save timestamped SVG
-  console.save_svg(str(timestamped_file))
+    # Save timestamped SVG
+    svg_path = timestamped_file
 
-  # Update symlink to latest
-  if current_link.exists():
-    current_link.unlink()
-  current_link.symlink_to(timestamped_file.name)
+    # Update symlink to latest
+    if current_link.exists():
+      current_link.unlink()
+    current_link.symlink_to(timestamped_file.name)
 
-  console.print(f"\n[dim]Saved session to: {timestamped_file}[/]")
-  console.print(f"[dim]Latest: {current_link}[/]")
+    console.print(f"\n[dim]Saved session to: {timestamped_file}[/]")
+    console.print(f"[dim]Latest: {current_link}[/]")
+
+  # Save SVG
+  console.save_svg(str(svg_path))
+
+  if output:
+    console.print(f"\n[dim]Saved session to: {svg_path}[/]")
 
   # Close event recorder if it was opened
   if event_recorder is not None:
     event_recorder.close()
 
-  return timestamped_file
+  return svg_path
 
 
 def main() -> None:
@@ -327,6 +343,13 @@ def main() -> None:
     default=None,
     help="Resume a previous session by ID",
   )
+  parser.add_argument(
+    "--output",
+    "-o",
+    type=Path,
+    default=None,
+    help="Output path for SVG (default: media/session-TIMESTAMP.svg)",
+  )
   args = parser.parse_args()
 
   # Look for local config file
@@ -346,6 +369,7 @@ def main() -> None:
     messages=messages,
     persist=args.persist,
     resume=args.resume,
+    output=args.output,
   )
 
 

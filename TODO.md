@@ -41,11 +41,15 @@
 
 ### Phase 1.6: Documentation (Medium Priority)
 
-- [ ] **1.6.1 Update Documentation Folder**
+- [x] **1.6.1 Update Documentation Folder**
   - Review all files in docs/ folder against current implementation
   - Update outdated content to reflect current architecture
   - Ensure consistency with README.md and CLAUDE.md
   - Update code examples where necessary
+  - Add feature checkboxes (current vs planned)
+  - Add "Why Yoker?" section with rationale links
+  - Add `--output` option to demo_session.py for single-use screenshots
+  - See `reporting/1.6.1-documentation/summary.md` for implementation summary
 
 - [x] **1.6.2 Define Project Rationale**
   - Research existing coding agent solutions and their approaches
