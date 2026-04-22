@@ -35,42 +35,8 @@ Yoker believes developers should:
 
 Yoker is a **library**, not an application:
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                              Your Application                            │
-│                                                                          │
-│    ┌─────────────────────────────────────────────────────────────────┐  │
-│    │                      Your Custom UI (optional)                   │  │
-│    └─────────────────────────────────────────────────────────────────┘  │
-│                                  │                                       │
-│                    ┌─────────────┴─────────────┐                        │
-│                    │     Event Handlers        │                        │
-│                    │  ┌─────┐ ┌─────┐ ┌─────┐  │                        │
-│                    │  │ CLI │ │ TUI │ │ ... │  │  ← Built-in or custom   │
-│                    │  └─────┘ └─────┘ └─────┘  │                        │
-│                    └───────────────────────────┘                        │
-│                                  │                                       │
-│    ┌─────────────────────────────┴─────────────────────────────────────┐ │
-│    │                        Yoker Library                               │ │
-│    │                                                                    │ │
-│    │   ┌────────────┐    ┌────────────────┐    ┌───────────────────┐   │ │
-│    │   │   Agent    │←──→│ Tools Registry │←──→│ Context Manager   │   │ │
-│    │   │            │    │                │    │                   │   │ │
-│    │   │            │    │  • read        │    │  • Basic (JSONL)  │   │ │
-│    │   │            │    │  • write       │    │  • Your custom... │   │ │
-│    │   │            │    │  • Your tools  │    │                   │   │ │
-│    │   │            │    │    plug in!    │    │    plug in!        │   │ │
-│    │   └────────────┘    └────────────────┘    └───────────────────┘   │ │
-│    │          │                                                       │ │
-│    │          ▼                                                       │ │
-│    │   Event Emission                                                  │ │
-│    │   (session, turn, thinking, content, tool, error...)              │ │
-│    └────────────────────────────────────────────────────────────────────┘ │
-│                                  │                                       │
-│                                  ▼                                       │
-│                    Your Custom Handler                                   │
-│                    (Console, File, API, Database...)                     │
-└─────────────────────────────────────────────────────────────────────────┘
+```{image} _static/architecture-diagram.svg
+:alt: Architecture Diagram
 ```
 
 **Key difference**: Other solutions are applications (CLI/IDE) that you use. Yoker is a library you embed.
@@ -226,26 +192,8 @@ sub_agent = Agent(
 
 Yoker enables a unique workflow: develop collections interactively, deploy autonomously, return for refinement.
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                     Yoker Workflow Model                        │
-│                                                                 │
-│    ┌─────────────────────┐       ┌─────────────────────┐       │
-│    │   Interactive Mode  │       │  Autonomous Mode    │       │
-│    │                     │       │                     │       │
-│    │   • Breed & grow    │ ←───→ │ • Deploy ready      │       │
-│    │   • Refine prompts  │       │ • No human in loop  │       │
-│    │   • Test behaviors  │       │ • Execute mission   │       │
-│    │   • Debug with      │       │ • Same artifacts    │       │
-│    │     full visibility │       │                     │       │
-│    │                     │       │                     │       │
-│    │   Your UI on Yoker  │       │   Yoker Library     │       │
-│    └─────────────────────┘       └─────────────────────┘       │
-│                                                                 │
-│    One collection, two deployment modes, seamless round-trip.  │
-│    Build once, run in either mode, switch at will.             │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
+```{image} _static/workflow-model.svg
+:alt: Workflow Model
 ```
 
 **This changes how you build agent systems:**
@@ -253,34 +201,6 @@ Yoker enables a unique workflow: develop collections interactively, deploy auton
 - Build once in interactive mode, deploy to autonomous
 - The UI becomes your development environment, not your runtime constraint
 - Return to interactive anytime for refinement and bug fixes
-
-## Positioning in the Ecosystem
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                      Layer Analysis                          │
-├─────────────────────────────────────────────────────────────┤
-│                                                              │
-│  APPLICATION LAYER (CLI/IDE)                                 │
-│  ├── Claude Code ←──── You use these                         │
-│  ├── Cursor                                                  │
-│  ├── Aider                                                   │
-│  └── Windsurf, Cline, Continue                               │
-│                                                              │
-│  FRAMEWORK LAYER (Generic)                                   │
-│  ├── OpenAI Agents SDK ←──── You build on these             │
-│  ├── Microsoft Agent Framework                               │
-│  └── LangGraph, AutoGen                                      │
-│                                                              │
-│  LIBRARY LAYER (Coding-Specific)                             │
-│  └── Yoker ←──── The gap we fill                            │
-│       • Event-driven library                                  │
-│       • Static permissions                                    │
-│       • LLM-neutral (choice by design)                        │
-│       • Full transparency                                     │
-│                                                              │
-└─────────────────────────────────────────────────────────────┘
-```
 
 ## Key Differentiators Summary
 

@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 200" width="700" height="200">
+  <defs>
+    <style>
+      .title { font: bold 14px sans-serif; fill: #333; }
+      .subtitle { font: 12px sans-serif; fill: #666; }
+      .label { font: 11px sans-serif; fill: #333; }
+      .small { font: 10px sans-serif; fill: #555; }
+      .interactive { fill: #e3f2fd; stroke: #1976d2; stroke-width: 2; rx: 8; }
+      .autonomous { fill: #e8f5e9; stroke: #388e3c; stroke-width: 2; rx: 8; }
+      .arrow-bi { stroke: #666; stroke-width: 2; fill: none; }
+      .arrowhead { fill: #666; }
+    </style>
+    <marker id="arrowhead-left" markerWidth="10" markerHeight="7" refX="1" refY="3.5" orient="auto">
+      <polygon points="10 0, 0 3.5, 10 7" fill="#666"/>
+    </marker>
+    <marker id="arrowhead-right" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#666"/>
+    </marker>
+  </defs>
+
+  <!-- Interactive Mode Box -->
+  <rect x="20" y="30" width="200" height="150" class="interactive"/>
+  <text x="120" y="55" text-anchor="middle" class="title">Interactive Mode</text>
+
+  <text x="40" y="80" class="label">• Breed &amp; grow</text>
+  <text x="40" y="98" class="label">• Refine prompts</text>
+  <text x="40" y="116" class="label">• Test behaviors</text>
+  <text x="40" y="134" class="label">• Debug with</text>
+  <text x="50" y="150" class="small">full visibility</text>
+  <text x="120" y="170" text-anchor="middle" class="small" fill="#888">Your UI on Yoker</text>
+
+  <!-- Autonomous Mode Box -->
+  <rect x="480" y="30" width="200" height="150" class="autonomous"/>
+  <text x="580" y="55" text-anchor="middle" class="title">Autonomous Mode</text>
+
+  <text x="500" y="80" class="label">• Deploy ready</text>
+  <text x="500" y="98" class="label">• No human in loop</text>
+  <text x="500" y="116" class="label">• Execute mission</text>
+  <text x="500" y="134" class="label">• Same artifacts</text>
+  <text x="580" y="170" text-anchor="middle" class="small" fill="#888">Yoker Library</text>
+
+  <!-- Bidirectional Arrow -->
+  <line x1="230" y1="105" x2="470" y2="105" class="arrow-bi" marker-start="url(#arrowhead-left)" marker-end="url(#arrowhead-right)"/>
+  <text x="350" y="100" text-anchor="middle" class="small">seamless</text>
+  <text x="350" y="115" text-anchor="middle" class="small">round-trip</text>
+
+  <!-- Footer note -->
+  <text x="350" y="195" text-anchor="middle" class="small" fill="#888">One collection, two deployment modes, switch at will</text>
+</svg>

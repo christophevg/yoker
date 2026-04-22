@@ -6,42 +6,8 @@ Yoker provides an interactive chat interface with Ollama and tool calling capabi
 
 **Architecture**: Yoker uses an event-driven, library-first design. The Agent emits events (thinking chunks, content, tool calls) that handlers subscribe to. This makes the library usable in headless, web, and GUI contexts.
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                              Your Application                            │
-│                                                                          │
-│    ┌─────────────────────────────────────────────────────────────────┐  │
-│    │                      Your Custom UI (optional)                   │  │
-│    └─────────────────────────────────────────────────────────────────┘  │
-│                                  │                                       │
-│                    ┌─────────────┴─────────────┐                        │
-│                    │     Event Handlers        │                        │
-│                    │  ┌─────┐ ┌─────┐ ┌─────┐  │                        │
-│                    │  │ CLI │ │ TUI │ │ ... │  │  ← Built-in or custom   │
-│                    │  └─────┘ └─────┘ └─────┘  │                        │
-│                    └───────────────────────────┘                        │
-│                                  │                                       │
-│    ┌─────────────────────────────┴─────────────────────────────────────┐ │
-│    │                        Yoker Library                               │ │
-│    │                                                                    │ │
-│    │   ┌────────────┐    ┌────────────────┐    ┌───────────────────┐   │ │
-│    │   │   Agent    │←──→│ Tools Registry │←──→│ Context Manager   │   │ │
-│    │   │            │    │                │    │                   │   │ │
-│    │   │            │    │  • read        │    │  • Basic (JSONL)  │   │ │
-│    │   │            │    │  • write       │    │  • Your custom... │   │ │
-│    │   │            │    │  • Your tools  │    │                   │   │ │
-│    │   │            │    │    plug in!    │    │    plug in!        │   │ │
-│    │   └────────────┘    └────────────────┘    └───────────────────┘   │ │
-│    │          │                                                       │ │
-│    │          ▼                                                       │ │
-│    │   Event Emission                                                  │ │
-│    │   (session, turn, thinking, content, tool, error...)              │ │
-│    └────────────────────────────────────────────────────────────────────┘ │
-│                                  │                                       │
-│                                  ▼                                       │
-│                    Your Custom Handler                                   │
-│                    (Console, File, API, Database...)                     │
-└─────────────────────────────────────────────────────────────────────────┘
+```{image} _static/architecture-diagram.svg
+:alt: Architecture Diagram
 ```
 
 ### Prerequisites

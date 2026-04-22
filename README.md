@@ -64,10 +64,15 @@ See [docs/rationale.md](docs/rationale.md) for the full rationale and comparison
 
 **Planned Features:**
 - [ ] Additional tools (list, write, update, search)
-- [ ] Guardrails - Static permissions for tool execution
-- [ ] Permissions - TOML-based access control
-- [ ] Sub-agents - Hierarchical agent spawning
-- [ ] Multi-agent orchestration
+- [ ] Guardrails - Tool parameter validation
+- [ ] Permissions - Static TOML-based access control
+- [ ] Sub-agents - Hierarchical agent spawning with isolated context
+- [ ] Multi-agent orchestration - Run coordinated agent teams
+- [ ] Backend providers - OpenAI, Anthropic, custom backends
+- [ ] Tool timing metrics - Performance tracking
+- [ ] Token usage tracking - Cost monitoring
+- [ ] Tool result caching - Reduce redundant calls
+- [ ] Parallel tool execution - Concurrent read operations
 
 ### Interactive Input
 
@@ -144,43 +149,7 @@ See `examples/yoker.toml` for the full configuration reference.
 
 Yoker uses an **event-driven architecture** for library-first design. The Agent emits events; application code handles UI.
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                              Your Application                            │
-│                                                                          │
-│    ┌─────────────────────────────────────────────────────────────────┐  │
-│    │                      Your Custom UI (optional)                   │  │
-│    └─────────────────────────────────────────────────────────────────┘  │
-│                                  │                                       │
-│                    ┌─────────────┴─────────────┐                        │
-│                    │     Event Handlers        │                        │
-│                    │  ┌─────┐ ┌─────┐ ┌─────┐  │                        │
-│                    │  │ CLI │ │ TUI │ │ ... │  │  ← Built-in or custom   │
-│                    │  └─────┘ └─────┘ └─────┘  │                        │
-│                    └───────────────────────────┘                        │
-│                                  │                                       │
-│    ┌─────────────────────────────┴─────────────────────────────────────┐ │
-│    │                        Yoker Library                               │ │
-│    │                                                                    │ │
-│    │   ┌────────────┐    ┌────────────────┐    ┌───────────────────┐   │ │
-│    │   │   Agent    │←──→│ Tools Registry │←──→│ Context Manager   │   │ │
-│    │   │            │    │                │    │                   │   │ │
-│    │   │            │    │  • read        │    │  • Basic (JSONL)  │   │ │
-│    │   │            │    │  • write       │    │  • Your custom... │   │ │
-│    │   │            │    │  • Your tools  │    │                   │   │ │
-│    │   │            │    │    plug in!    │    │    plug in!        │   │ │
-│    │   └────────────┘    └────────────────┘    └───────────────────┘   │ │
-│    │          │                                                       │ │
-│    │          ▼                                                       │ │
-│    │   Event Emission                                                  │ │
-│    │   (session, turn, thinking, content, tool, error...)              │ │
-│    └────────────────────────────────────────────────────────────────────┘ │
-│                                  │                                       │
-│                                  ▼                                       │
-│                    Your Custom Handler                                   │
-│                    (Console, File, API, Database...)                     │
-└─────────────────────────────────────────────────────────────────────────┘
-```
+![Architecture Diagram](media/architecture-diagram.svg)
 
 **Event Types**: Session (start/end), Turn (start/end), Thinking (start/chunk/end), Content (start/chunk/end), Tool (call/result), Error, Command
 
