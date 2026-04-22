@@ -47,12 +47,14 @@
   - Ensure consistency with README.md and CLAUDE.md
   - Update code examples where necessary
 
-- [ ] **1.6.2 Define Project Rationale**
+- [x] **1.6.2 Define Project Rationale**
   - Research existing coding agent solutions and their approaches
   - Interview user to understand goals and vision
   - Document unique selling factors of yoker
   - Create rationale document explaining why yoker should exist and what it offers
   - Identify gaps in existing solutions that yoker addresses
+  - See `docs/rationale.md` for the rationale document
+  - See `research/2026-04-22-coding-agent-rationale/` for research findings
 
 ### Phase 1: Core Infrastructure
 

@@ -27,6 +27,28 @@ This index tracks all research topics investigated for the yoker project.
 
 ---
 
+## Coding Agent Rationale
+
+**Folder**: `2026-04-22-coding-agent-rationale/`
+**Date**: 2026-04-22
+**Status**: Complete
+
+**Summary**: Research to define yoker's unique value proposition, identifying gaps in existing coding agent solutions (library-first design, static permissions, offline operation, recursive composition) and positioning yoker as an embeddable coding agent harness.
+
+**Key Findings**:
+- No existing solution combines library-first design with coding-specific capabilities
+- Static permissions enable non-interrupted autonomous operation (0.00% violation rate)
+- Ollama-first design eliminates API costs and enables offline operation
+- Recursive composition (sub-agents as full instances) is unique to yoker
+- Event-driven architecture allows consumers full control over UI
+- 2026 research emphasizes deterministic guardrails and hierarchical architectures
+
+**Sources**: 20 sources (5 searches, prior research reference)
+
+**Keywords**: rationale, value proposition, library-first, static permissions, ollama, offline, recursive composition, event-driven, embeddable
+
+---
+
 <!-- Template for new research entries -->
 <!--
 ### {Topic Name}
