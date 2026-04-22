@@ -10,7 +10,6 @@ Note:
 """
 
 import json
-import logging
 import os
 from datetime import datetime
 from pathlib import Path
@@ -19,8 +18,9 @@ from typing import Any
 from yoker.context.interface import ContextStatistics
 from yoker.context.validator import is_safe_path, validate_session_id, validate_storage_path
 from yoker.exceptions import ContextCorruptionError, SessionNotFoundError
+from yoker.logging import get_logger
 
-logger = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 # File permissions
 DIR_MODE = 0o700  # Owner-only for directories
@@ -77,9 +77,10 @@ class BasicPersistenceContextManager:
     # File path
     self._file_path = self._storage_path / f"{self._session_id}.jsonl"
 
-    logger.debug(
-      f"Context manager initialized: session_id={self._session_id}, "
-      f"storage_path={self._storage_path}"
+    log.debug(
+      "context_initialized",
+      session_id=self._session_id,
+      storage_path=str(self._storage_path),
     )
 
   def get_session_id(self) -> str:
@@ -238,9 +239,9 @@ class BasicPersistenceContextManager:
 
     try:
       self._file_path.unlink()
-      logger.debug(f"Deleted context file: {self._file_path}")
+      log.debug("context_deleted", path=str(self._file_path))
     except OSError as e:
-      logger.error(f"Failed to delete context file: {e}")
+      log.error("context_delete_failed", path=str(self._file_path), error=str(e))
       raise
 
   def get_statistics(self) -> ContextStatistics:
@@ -269,7 +270,7 @@ class BasicPersistenceContextManager:
     """Create storage directory with secure permissions if it doesn't exist."""
     if not self._storage_path.exists():
       self._storage_path.mkdir(parents=True, mode=DIR_MODE)
-      logger.debug(f"Created storage directory: {self._storage_path}")
+      log.debug("storage_created", path=str(self._storage_path))
     else:
       # Ensure correct permissions
       try:
@@ -436,8 +437,10 @@ class BasicPersistenceContextManager:
       pass
 
     else:
-      logger.warning(
-        f"Unknown record type '{record_type}' at line {line_num}"
+      log.warning(
+        "unknown_record_type",
+        record_type=record_type,
+        line=line_num,
       )
 
 

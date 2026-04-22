@@ -1,6 +1,8 @@
 """Event system for Yoker agents."""
 
 from yoker.events.handlers import ConsoleEventHandler, EventHandler
+from yoker.events.recorder import EventRecorder, deserialize_event, serialize_event
+from yoker.events.replay import EventReplayAgent
 from yoker.events.types import (
   CommandEvent,
   ContentChunkEvent,
@@ -48,4 +50,9 @@ __all__ = [
   "CommandEvent",
   # Handlers
   "ConsoleEventHandler",
+  # Recording and Replay
+  "EventRecorder",
+  "EventReplayAgent",
+  "serialize_event",
+  "deserialize_event",
 ]

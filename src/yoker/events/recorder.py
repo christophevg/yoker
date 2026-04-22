@@ -1,7 +1,10 @@
-"""Event serialization and logging for Yoker sessions.
+"""Event serialization and recording for Yoker sessions.
 
 Provides functions to serialize/deserialize events to/from JSON-serializable
-dictionaries and an EventLogger class for writing events to JSONL files.
+dictionaries and an EventRecorder class for writing events to JSONL files.
+
+This module is part of the Event System (domain layer), providing
+session persistence for replay, debugging, and testing.
 """
 
 import json
@@ -9,7 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from yoker.events import (
+from yoker.events.types import (
   CommandEvent,
   ContentChunkEvent,
   ContentEndEvent,
@@ -187,8 +190,8 @@ def deserialize_event(entry: dict[str, Any]) -> Event:
       )
 
 
-class EventLogger:
-  """Logs all events to a JSONL file for replay.
+class EventRecorder:
+  """Records all events to a JSONL file for replay.
 
   This class is an event handler that can be registered with an Agent
   to capture all events to a JSONL file. The file can later be replayed
@@ -196,14 +199,14 @@ class EventLogger:
 
   Example:
     agent = Agent(config=config)
-    logger = EventLogger(Path("session.jsonl"))
-    agent.add_event_handler(logger)
+    recorder = EventRecorder(Path("session.jsonl"))
+    agent.add_event_handler(recorder)
     # ... run session ...
-    logger.close()
+    recorder.close()
   """
 
   def __init__(self, path: Path) -> None:
-    """Initialize the event logger.
+    """Initialize the event recorder.
 
     Args:
       path: Path to the JSONL file to write.
@@ -212,22 +215,22 @@ class EventLogger:
     self.file = open(path, "w")  # noqa: SIM115 - will be closed in close()
 
   def __call__(self, event: Event) -> None:
-    """Handle an event by logging it to the file.
+    """Handle an event by recording it to the file.
 
     Args:
-      event: The event to log.
+      event: The event to record.
     """
     entry = serialize_event(event)
     self.file.write(json.dumps(entry) + "\n")
     self.file.flush()
 
   def close(self) -> None:
-    """Close the log file."""
+    """Close the recording file."""
     self.file.close()
 
 
 __all__ = [
   "serialize_event",
   "deserialize_event",
-  "EventLogger",
+  "EventRecorder",
 ]

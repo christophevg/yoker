@@ -9,13 +9,11 @@ Options:
 """
 
 import argparse
-import logging
 from pathlib import Path
 
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.shortcuts import PromptSession
-from rich.logging import RichHandler
 
 from yoker import __version__
 from yoker.agent import Agent
@@ -29,12 +27,16 @@ from yoker.events import (
   ErrorEvent,
   EventType,
 )
+from yoker.logging import configure_logging, get_logger
 
 # Default configuration file name
 DEFAULT_CONFIG = "yoker.toml"
 
 # History file for prompt_toolkit
 HISTORY_FILE = Path.home() / ".yoker_history"
+
+# Logger for this module
+log = get_logger(__name__)
 
 
 def create_prompt_session() -> PromptSession[str]:
@@ -96,18 +98,17 @@ def setup_logging(config: Config) -> None:
   Args:
     config: Configuration object.
   """
-  log_level = getattr(logging, config.harness.log_level.upper(), logging.INFO)
+  log_file = None
+  if config.logging.file:
+    log_file = Path(config.logging.file)
 
-  logging.basicConfig(
-    level=log_level,
-    format="%(name)s - %(message)s",
-    datefmt="[%X]",
-    handlers=[RichHandler()],
+  configure_logging(
+    level=config.logging.level,
+    log_file=log_file,
+    format=config.logging.format,
   )
 
-  # Silence noisy modules
-  for module in ["httpx", "httpcore", "ollama"]:
-    logging.getLogger(module).setLevel(logging.WARNING)
+  log.info("logging_configured", level=config.logging.level)
 
 
 def create_command_registry(agent: Agent) -> CommandRegistry:

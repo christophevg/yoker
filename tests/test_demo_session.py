@@ -8,6 +8,12 @@ from typing import Any
 
 import pytest
 
+from yoker.events import (
+  EventRecorder,
+  EventReplayAgent,
+  deserialize_event,
+  serialize_event,
+)
 from yoker.events.types import (
   CommandEvent,
   ContentChunkEvent,
@@ -24,12 +30,6 @@ from yoker.events.types import (
   ToolResultEvent,
   TurnEndEvent,
   TurnStartEvent,
-)
-from yoker.logging import (
-  EventLogger,
-  EventReplayAgent,
-  deserialize_event,
-  serialize_event,
 )
 
 # Import demo_session specific classes
@@ -712,53 +712,53 @@ class TestSerializeDeserializeRoundTrip:
     assert deserialized.result == original.result
 
 
-class TestEventLogger:
-  """Tests for EventLogger class."""
+class TestEventRecorder:
+  """Tests for EventRecorder class."""
 
-  def test_logger_creates_file(self, tmp_path: Path) -> None:
-    """Test that EventLogger creates a file."""
+  def test_recorder_creates_file(self, tmp_path: Path) -> None:
+    """Test that EventRecorder creates a file."""
     log_path = tmp_path / "events.jsonl"
-    logger = EventLogger(log_path)
+    recorder = EventRecorder(log_path)
 
     assert log_path.exists()
-    logger.close()
+    recorder.close()
 
-  def test_logger_writes_event(self, tmp_path: Path) -> None:
-    """Test that EventLogger writes events to file."""
+  def test_recorder_writes_event(self, tmp_path: Path) -> None:
+    """Test that EventRecorder writes events to file."""
     log_path = tmp_path / "events.jsonl"
-    logger = EventLogger(log_path)
+    recorder = EventRecorder(log_path)
 
     event = SessionStartEvent(
       type=EventType.SESSION_START,
       model="llama3.2",
       thinking_enabled=True,
     )
-    logger(event)
-    logger.close()
+    recorder(event)
+    recorder.close()
 
     content = log_path.read_text()
     assert "SESSION_START" in content
     assert "llama3.2" in content
 
-  def test_logger_writes_multiple_events(self, tmp_path: Path) -> None:
-    """Test that EventLogger writes multiple events."""
+  def test_recorder_writes_multiple_events(self, tmp_path: Path) -> None:
+    """Test that EventRecorder writes multiple events."""
     log_path = tmp_path / "events.jsonl"
-    logger = EventLogger(log_path)
+    recorder = EventRecorder(log_path)
 
-    logger(SessionStartEvent(
+    recorder(SessionStartEvent(
       type=EventType.SESSION_START,
       model="llama3.2",
       thinking_enabled=True,
     ))
-    logger(TurnStartEvent(
+    recorder(TurnStartEvent(
       type=EventType.TURN_START,
       message="Hello",
     ))
-    logger(TurnEndEvent(
+    recorder(TurnEndEvent(
       type=EventType.TURN_END,
       response="Hi there",
     ))
-    logger.close()
+    recorder.close()
 
     lines = log_path.read_text().strip().split("\n")
     assert len(lines) == 3
@@ -768,42 +768,42 @@ class TestEventLogger:
     assert entries[1]["type"] == "TURN_START"
     assert entries[2]["type"] == "TURN_END"
 
-  def test_logger_flushes_after_write(self, tmp_path: Path) -> None:
-    """Test that EventLogger flushes after each write."""
+  def test_recorder_flushes_after_write(self, tmp_path: Path) -> None:
+    """Test that EventRecorder flushes after each write."""
     log_path = tmp_path / "events.jsonl"
-    logger = EventLogger(log_path)
+    recorder = EventRecorder(log_path)
 
     event = ContentChunkEvent(
       type=EventType.CONTENT_CHUNK,
       text="test",
     )
-    logger(event)
+    recorder(event)
     # File should be flushed immediately (no need to close)
     content = log_path.read_text()
     assert "test" in content
-    logger.close()
+    recorder.close()
 
-  def test_logger_close_cleanup(self, tmp_path: Path) -> None:
+  def test_recorder_close_cleanup(self, tmp_path: Path) -> None:
     """Test that close() properly closes the file."""
     log_path = tmp_path / "events.jsonl"
-    logger = EventLogger(log_path)
+    recorder = EventRecorder(log_path)
 
-    logger.close()
+    recorder.close()
 
     # Should be able to delete the file after close
     log_path.unlink()
 
-  def test_logger_jsonl_format(self, tmp_path: Path) -> None:
+  def test_recorder_jsonl_format(self, tmp_path: Path) -> None:
     """Test that each event is on a separate line (JSONL format)."""
     log_path = tmp_path / "events.jsonl"
-    logger = EventLogger(log_path)
+    recorder = EventRecorder(log_path)
 
     for i in range(5):
-      logger(ContentChunkEvent(
+      recorder(ContentChunkEvent(
         type=EventType.CONTENT_CHUNK,
         text=f"chunk {i}",
       ))
-    logger.close()
+    recorder.close()
 
     lines = log_path.read_text().strip().split("\n")
     assert len(lines) == 5

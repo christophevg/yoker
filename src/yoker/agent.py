@@ -1,6 +1,5 @@
 """Minimal Agent implementation for Yoker prototype."""
 
-import logging
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -24,6 +23,7 @@ from yoker.events import (
   TurnEndEvent,
   TurnStartEvent,
 )
+from yoker.logging import get_logger, log_timing
 from yoker.tools import AVAILABLE_TOOLS
 
 if TYPE_CHECKING:
@@ -31,7 +31,7 @@ if TYPE_CHECKING:
   from yoker.commands import CommandRegistry
   from yoker.context import ContextManager
 
-logger = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 # Type alias for event callbacks
 EventCallback = Callable[[Event], None]
@@ -134,6 +134,13 @@ class Agent:
     # Event handlers storage
     self._event_handlers: list[EventCallback] = []
 
+    log.info(
+      "agent_initialized",
+      model=self.model,
+      thinking_enabled=self.thinking_enabled,
+      has_agent_definition=self.agent_definition is not None,
+    )
+
   def add_event_handler(self, handler: EventCallback) -> None:
     """Register an event handler.
 
@@ -185,6 +192,7 @@ class Agent:
     Returns:
       Assistant's response text.
     """
+    log.info("turn_started", message_preview=message[:50])
     self._emit(TurnStartEvent(type=EventType.TURN_START, message=message))
     self.context.start_turn(message)
 
@@ -274,6 +282,12 @@ class Agent:
           )
         )
 
+        log.info(
+          "turn_completed",
+          response_length=len(content),
+          tool_calls_count=len(tool_calls),
+        )
+
         # Persist context if configured
         if self.config.context.persist_after_turn:
           self.context.save()
@@ -293,19 +307,22 @@ class Agent:
           )
         )
 
-        logger.info(f"Tool call: {tool_name}({tool_args})")
+        log.debug("tool_call", tool=tool_name, args=tool_args)
 
         try:
-          result = self.tools[tool_name](**tool_args)
+          with log_timing("tool_execution", tool=tool_name):
+            result = self.tools[tool_name](**tool_args)
           success = True
         except KeyError:
           result = f"Error: Unknown tool '{tool_name}'"
           success = False
+          log.warning("tool_not_found", tool=tool_name)
         except Exception as e:
           result = f"Error executing tool: {e}"
           success = False
+          log.error("tool_error", tool=tool_name, error=str(e))
 
-        logger.info(f"Tool result: {result[:100]}...")
+        log.debug("tool_result", tool=tool_name, success=success)
 
         self._emit(
           ToolResultEvent(
@@ -334,6 +351,13 @@ class Agent:
     # Save context to ensure session_start record is written
     self.context.save()
 
+    log.info(
+      "session_started",
+      model=self.model,
+      session_id=self.context.get_session_id(),
+      thinking_enabled=self.thinking_enabled,
+    )
+
     self._emit(
       SessionStartEvent(
         type=EventType.SESSION_START,
@@ -354,6 +378,8 @@ class Agent:
     """
     # Close context to write session_end record
     self.context.close()
+
+    log.info("session_ended", reason=reason)
 
     self._emit(
       SessionEndEvent(

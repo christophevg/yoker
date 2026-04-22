@@ -28,8 +28,13 @@ from yoker.agent import Agent, EventCallback
 from yoker.commands import CommandRegistry, create_help_command, create_think_command
 from yoker.config import load_config_with_defaults
 from yoker.context import BasicPersistenceContextManager
-from yoker.events import ConsoleEventHandler, Event, EventType
-from yoker.logging import EventLogger, EventReplayAgent, serialize_event
+from yoker.events import (
+  ConsoleEventHandler,
+  Event,
+  EventRecorder,
+  EventReplayAgent,
+  EventType,
+)
 
 # Media directory for session screenshots
 MEDIA_DIR = Path("media")
@@ -108,8 +113,8 @@ def run_demo_session(
   # Create media directory
   MEDIA_DIR.mkdir(parents=True, exist_ok=True)
 
-  # Event logger for --log mode
-  event_logger: EventLogger | None = None
+  # Event recorder for --log mode
+  event_recorder: EventRecorder | None = None
 
   # Determine agent and messages
   # Initialize context manager (used in real LLM mode)
@@ -175,10 +180,10 @@ def run_demo_session(
         )
       console.print("")
 
-    # Add event logger if requested
+    # Add event recorder if requested
     if log:
-      event_logger = EventLogger(MEDIA_DIR / "events.jsonl")
-      agent.add_event_handler(event_logger)
+      event_recorder = EventRecorder(MEDIA_DIR / "events.jsonl")
+      agent.add_event_handler(event_recorder)
 
     # Create input function from messages
     if messages is None:
@@ -225,13 +230,13 @@ def run_demo_session(
         if result:
           console.print(f"{result}\n")
         # Log command event if logging is enabled
-        if event_logger is not None:
+        if event_recorder is not None:
           command_event = CommandEvent(
             type=EventType.COMMAND,
             command=message,
             result=result or "",
           )
-          event_logger(command_event)
+          event_recorder(command_event)
       continue
 
     response = agent.process(message)
@@ -271,9 +276,9 @@ def run_demo_session(
   console.print(f"\n[dim]Saved session to: {timestamped_file}[/]")
   console.print(f"[dim]Latest: {current_link}[/]")
 
-  # Close event logger if it was opened
-  if event_logger is not None:
-    event_logger.close()
+  # Close event recorder if it was opened
+  if event_recorder is not None:
+    event_recorder.close()
 
   return timestamped_file
 

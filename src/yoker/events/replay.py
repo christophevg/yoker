@@ -2,20 +2,23 @@
 
 Provides EventReplayAgent for replaying recorded sessions from JSONL files
 without requiring LLM calls.
+
+This module is part of the Event System (domain layer), enabling
+session replay for demos, testing, and debugging.
 """
 
 import json
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from yoker.events import (
+from yoker.events.recorder import deserialize_event
+from yoker.events.types import (
   CommandEvent,
   Event,
   SessionStartEvent,
   TurnEndEvent,
   TurnStartEvent,
 )
-from yoker.logging.event_logger import deserialize_event
 
 if TYPE_CHECKING:
   from yoker.agent import EventCallback

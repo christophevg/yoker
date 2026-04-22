@@ -5,6 +5,7 @@ Following clitic patterns for immutable configuration objects.
 """
 
 from dataclasses import dataclass, field
+from typing import Literal
 
 
 @dataclass(frozen=True)
@@ -283,12 +284,16 @@ class LoggingConfig:
   """Logging configuration.
 
   Attributes:
+    level: Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL).
     format: Log format ('json' or 'text').
+    file: Optional file path for log output.
     include_tool_calls: Whether to include tool calls in logs.
     include_permission_checks: Whether to include permission checks in logs.
   """
 
-  format: str = "json"
+  level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
+  format: Literal["json", "text"] = "text"
+  file: str | None = None
   include_tool_calls: bool = True
   include_permission_checks: bool = True
 

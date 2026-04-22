@@ -54,7 +54,8 @@ class TestConfigSchema:
     assert config.permissions.network_access == "none"
     assert config.tools.list.enabled is True
     assert config.agents.directory == "./agents"
-    assert config.logging.format == "json"
+    assert config.logging.format == "text"
+    assert config.logging.level == "INFO"
 
   def test_frozen_dataclass(self) -> None:
     """Test that config classes are frozen (immutable)."""

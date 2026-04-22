@@ -22,6 +22,8 @@ from yoker.events import (
   ErrorEvent,
   Event,
   EventHandler,
+  EventRecorder,
+  EventReplayAgent,
   EventType,
   SessionEndEvent,
   SessionStartEvent,
@@ -32,6 +34,8 @@ from yoker.events import (
   ToolResultEvent,
   TurnEndEvent,
   TurnStartEvent,
+  deserialize_event,
+  serialize_event,
 )
 from yoker.exceptions import (
   ConfigurationError,
@@ -41,7 +45,7 @@ from yoker.exceptions import (
   ValidationError,
   YokerError,
 )
-from yoker.logging import EventLogger, EventReplayAgent, deserialize_event, serialize_event
+from yoker.logging import LoggingContext, configure_logging, get_logger, log_timing
 
 __version__ = "0.1.0"
 __author__ = "Christophe VG"
@@ -85,10 +89,14 @@ __all__ = [
   "ContextStatistics",
   "BasicPersistenceContextManager",
   # Logging
-  "EventLogger",
+  "EventRecorder",
   "EventReplayAgent",
   "serialize_event",
   "deserialize_event",
+  "LoggingContext",
+  "configure_logging",
+  "get_logger",
+  "log_timing",
   # Exceptions
   "YokerError",
   "ConfigurationError",

@@ -80,11 +80,13 @@
   - See `analysis/agent-definition-loader.md` for design
   - See `reporting/1.3-agent-definition-loader/summary.md` for implementation summary
 
-- [ ] **1.5 Logging System**
+- [x] **1.5 Logging System**
   - Integrate structlog for structured logging
   - Add file and console handlers
   - Log tool calls and guardrail decisions
   - Add timing information for performance tracking
+  - See `analysis/api-logging-system.md` for API design
+  - See `reporting/1.5-logging-system/summary.md` for implementation summary
 
 ### Research Tasks (Medium Priority)
 
