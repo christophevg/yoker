@@ -122,6 +122,23 @@ class ContextCorruptionError(YokerError):
     return f"Corrupted context at {self.path}:{self.line_num}: {self._message}"
 
 
+class PermissionViolationError(YokerError):
+  """Exception when a tool operation violates permission guardrails.
+
+  Attributes:
+    operation: The operation that was blocked (e.g., 'read').
+    reason: Explanation of why the operation was blocked.
+  """
+
+  def __init__(self, operation: str, reason: str) -> None:
+    self.operation = operation
+    self.reason = reason
+    super().__init__(str(self))
+
+  def __str__(self) -> str:
+    return f"Permission violation for '{self.operation}': {self.reason}"
+
+
 __all__ = [
   "YokerError",
   "ConfigurationError",
@@ -129,4 +146,5 @@ __all__ = [
   "FileNotFoundError",
   "SessionNotFoundError",
   "ContextCorruptionError",
+  "PermissionViolationError",
 ]

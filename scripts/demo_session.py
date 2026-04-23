@@ -278,8 +278,8 @@ def run_demo_session(
     # Save timestamped SVG
     svg_path = timestamped_file
 
-    # Update symlink to latest
-    if current_link.exists():
+    # Update symlink to latest (handles broken symlinks)
+    if current_link.exists() or current_link.is_symlink():
       current_link.unlink()
     current_link.symlink_to(timestamped_file.name)
 

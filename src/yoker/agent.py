@@ -24,7 +24,7 @@ from yoker.events import (
   TurnStartEvent,
 )
 from yoker.logging import get_logger, log_timing
-from yoker.tools import AVAILABLE_TOOLS
+from yoker.tools import AVAILABLE_TOOLS, ToolRegistry
 
 if TYPE_CHECKING:
   from yoker.agents import AgentDefinition
@@ -91,9 +91,6 @@ class Agent:
     # Use provided model or config model
     self.model = model if model is not None else self.config.backend.ollama.model
 
-    # Use available tools (TODO: filter by config.tools)
-    self.tools = AVAILABLE_TOOLS
-
     # Thinking mode state
     self.thinking_enabled = thinking_enabled
 
@@ -112,6 +109,9 @@ class Agent:
 
       self.agent_definition = load_agent_definition(agent_path)
       system_prompt = self.agent_definition.system_prompt or DEFAULT_SYSTEM_PROMPT
+
+    # Build tool registry filtered by agent definition
+    self.tool_registry = self._build_tool_registry()
 
     # Initialize context manager
     if context_manager is not None:
@@ -139,7 +139,28 @@ class Agent:
       model=self.model,
       thinking_enabled=self.thinking_enabled,
       has_agent_definition=self.agent_definition is not None,
+      available_tools=self.tool_registry.names,
     )
+
+  def _build_tool_registry(self) -> ToolRegistry:
+    """Build a tool registry filtered by agent definition.
+
+    If an agent definition is loaded, only registers tools listed in
+    the agent's tools field. Otherwise, registers all default tools.
+
+    Returns:
+      ToolRegistry with available tools for this agent.
+    """
+    registry = ToolRegistry()
+    if self.agent_definition is not None:
+      allowed_tools = {t.lower() for t in self.agent_definition.tools}
+      for tool in AVAILABLE_TOOLS.list_tools():
+        if tool.name.lower() in allowed_tools:
+          registry.register(tool)
+    else:
+      for tool in AVAILABLE_TOOLS.list_tools():
+        registry.register(tool)
+    return registry
 
   def add_event_handler(self, handler: EventCallback) -> None:
     """Register an event handler.
@@ -202,7 +223,7 @@ class Agent:
       stream = self.client.chat(
         model=self.model,
         messages=self.context.get_context(),
-        tools=list(self.tools.values()),
+        tools=self.tool_registry.get_schemas(),
         think=self.thinking_enabled,
         stream=True,
       )
@@ -309,18 +330,21 @@ class Agent:
 
         log.debug("tool_call", tool=tool_name, args=tool_args)
 
-        try:
-          with log_timing("tool_execution", tool=tool_name):
-            result = self.tools[tool_name](**tool_args)
-          success = True
-        except KeyError:
+        tool = self.tool_registry.get(tool_name)
+        if tool is None:
           result = f"Error: Unknown tool '{tool_name}'"
           success = False
           log.warning("tool_not_found", tool=tool_name)
-        except Exception as e:
-          result = f"Error executing tool: {e}"
-          success = False
-          log.error("tool_error", tool=tool_name, error=str(e))
+        else:
+          try:
+            with log_timing("tool_execution", tool=tool_name):
+              tool_result = tool.execute(**tool_args)
+            success = tool_result.success
+            result = tool_result.result if success else f"Error: {tool_result.error}"
+          except Exception as e:
+            result = f"Error executing tool: {e}"
+            success = False
+            log.error("tool_error", tool=tool_name, error=str(e))
 
         log.debug("tool_result", tool=tool_name, success=success)
 
@@ -336,7 +360,7 @@ class Agent:
         # Add tool result to context
         self.context.add_tool_result(
           tool_name=tool_name,
-          tool_id=call.id,
+          tool_id=getattr(call, "id", tool_name),
           result=str(result),
           success=success,
         )

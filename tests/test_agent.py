@@ -12,8 +12,8 @@ class TestAgent:
     agent = Agent()
     # Default model comes from Config
     assert agent.model == Config().backend.ollama.model
-    assert agent.tools is not None
-    assert "read" in agent.tools
+    assert agent.tool_registry is not None
+    assert agent.tool_registry.get("read") is not None
     assert agent.config is not None
 
   def test_agent_custom_model(self) -> None:
@@ -31,5 +31,4 @@ class TestAgent:
     """Test that tools are available."""
     from yoker.tools import AVAILABLE_TOOLS
 
-    assert "read" in AVAILABLE_TOOLS
-    assert callable(AVAILABLE_TOOLS["read"])
+    assert AVAILABLE_TOOLS.get("read") is not None
