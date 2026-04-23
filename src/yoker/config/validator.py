@@ -210,6 +210,12 @@ def validate_config(config: Config) -> list[str]:
   validate_non_negative_int(
     config.permissions.max_recursion_depth, "permissions.max_recursion_depth"
   )
+  if not config.permissions.filesystem_paths:
+    raise ValidationError(
+      "permissions.filesystem_paths",
+      config.permissions.filesystem_paths,
+      "must not be empty for security",
+    )
 
   # Validate tool configurations
   tools_path = "tools"

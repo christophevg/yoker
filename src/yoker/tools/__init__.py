@@ -6,6 +6,7 @@ and concrete tool implementations.
 
 from .base import Tool, ToolResult, ValidationResult
 from .guardrails import Guardrail
+from .path_guardrail import PathGuardrail
 from .read import ReadTool
 from .registry import ToolRegistry
 
@@ -29,6 +30,7 @@ __all__ = [
   "ToolResult",
   "ValidationResult",
   "Guardrail",
+  "PathGuardrail",
   "ToolRegistry",
   "ReadTool",
   "AVAILABLE_TOOLS",

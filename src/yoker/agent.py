@@ -85,6 +85,13 @@ class Agent:
     else:
       self.config = Config()
 
+    # Validate configuration
+    from yoker.config.validator import validate_config
+
+    warnings = validate_config(self.config)
+    for warning in warnings:
+      log.warning("config_validation_warning", warning=warning)
+
     # Initialize client
     self.client = Client(host=self.config.backend.ollama.base_url)
 
@@ -112,6 +119,11 @@ class Agent:
 
     # Build tool registry filtered by agent definition
     self.tool_registry = self._build_tool_registry()
+
+    # Initialize path guardrail for filesystem tool validation
+    from yoker.tools.path_guardrail import PathGuardrail
+
+    self._guardrail = PathGuardrail(self.config)
 
     # Initialize context manager
     if context_manager is not None:
@@ -336,15 +348,28 @@ class Agent:
           success = False
           log.warning("tool_not_found", tool=tool_name)
         else:
-          try:
-            with log_timing("tool_execution", tool=tool_name):
-              tool_result = tool.execute(**tool_args)
-            success = tool_result.success
-            result = tool_result.result if success else f"Error: {tool_result.error}"
-          except Exception as e:
-            result = f"Error executing tool: {e}"
+          # Validate tool parameters through guardrail
+          validation = self._guardrail.validate(tool_name, tool_args)
+          if not validation.valid:
+            log.info("guardrail_blocked", tool=tool_name, reason=validation.reason)
+            result = f"Error: {validation.reason}"
             success = False
-            log.error("tool_error", tool=tool_name, error=str(e))
+          else:
+            if self.config.logging.include_permission_checks:
+              log.info(
+                "guardrail_allowed",
+                tool=tool_name,
+                path=tool_args.get("path"),
+              )
+            try:
+              with log_timing("tool_execution", tool=tool_name):
+                tool_result = tool.execute(**tool_args)
+              success = tool_result.success
+              result = tool_result.result if success else f"Error: {tool_result.error}"
+            except Exception as e:
+              result = f"Error executing tool: {e}"
+              success = False
+              log.error("tool_error", tool=tool_name, error=str(e))
 
         log.debug("tool_result", tool=tool_name, success=success)
 

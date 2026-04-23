@@ -52,6 +52,7 @@ class TestConfigSchema:
     assert config.backend.ollama.model == "llama3.2:latest"
     assert config.context.manager == "basic_persistence"
     assert config.permissions.network_access == "none"
+    assert config.permissions.filesystem_paths == (".",)
     assert config.tools.list.enabled is True
     assert config.agents.directory == "./agents"
     assert config.logging.format == "text"
@@ -218,6 +219,14 @@ class TestConfigValidator:
     with pytest.raises(ValidationError) as exc_info:
       validate_config(config)
     assert "permissions.network_access" in str(exc_info.value)
+
+  def test_validate_empty_filesystem_paths(self) -> None:
+    """Test validation catches empty filesystem_paths."""
+    config = Config(permissions=PermissionsConfig(filesystem_paths=()))
+    with pytest.raises(ValidationError) as exc_info:
+      validate_config(config)
+    assert "permissions.filesystem_paths" in str(exc_info.value)
+    assert "must not be empty" in str(exc_info.value).lower()
 
 
 class TestExampleConfig:

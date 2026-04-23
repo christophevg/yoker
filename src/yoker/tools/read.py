@@ -50,7 +50,7 @@ class ReadTool(Tool):
       },
     }
 
-  def execute(self, **kwargs: str) -> ToolResult:
+  def execute(self, **kwargs: Any) -> ToolResult:
     """Read a file and return its contents.
 
     Args:

@@ -119,12 +119,38 @@
   - Implement tool registry
   - Create guardrail enforcer interface
 
-- [ ] **2.2 List Tool**
+- [x] **2.1.5 Shared PathGuardrail Implementation**
+  - Implement PathGuardrail concrete class using config permissions
+  - Resolve paths with os.path.realpath() to prevent traversal
+  - Validate paths against config.permissions.filesystem_paths
+  - Add blocked pattern matching (regex)
+  - Add file size limit enforcement
+  - Add extension filtering for read tool
+  - Wire guardrail validation into Agent.process() before tool.execute()
+  - Add structured logging for allow/block decisions
+  - Harden ReadTool to use the guardrail
+  - Write unit tests for traversal, symlinks, blocked patterns
+  - See analysis/security-list-tool.md for threat model
+  - See analysis/api-list-tool.md for API design
+
+- [x] **2.2 List Tool**
   - Implement directory listing functionality
   - Add path restriction guardrails
   - Add max_depth and max_entries limits
   - Add pattern filtering support
   - Write unit tests
+  - API design: `analysis/api-list-tool.md`
+    - Tool name: `list`, schema follows ReadTool patterns
+    - Parameters: `path` (required), `max_depth` (default 1), `max_entries` (default 1000), `pattern` (optional glob)
+    - Returns tree-formatted text with directory/file counts
+    - Limits are self-enforced (clamped); guardrails focus on path security
+    - PathGuardrail should be shared with ReadTool (task 2.3) and other filesystem tools
+    - Update `src/yoker/tools/__init__.py` to register ListTool in default registry
+  - **Security**: Must use shared `PathGuardrail` (see `analysis/security-list-tool.md`)
+  - **Security**: Do not follow symlinks during recursion (`followlinks=False`)
+  - **Security**: Resolve and validate path against `config.permissions.filesystem_paths`
+  - **Security**: Enforce `max_depth` and `max_entries` with early termination
+  - **Security**: Add tests for path traversal (`../../../etc`), symlink bypass, and blocked patterns
 
 - [ ] **2.3 Read Tool**
   - Implement file reading functionality
@@ -133,6 +159,8 @@
   - Add size limit enforcement
   - Add blocked pattern matching (e.g., .env files)
   - Write unit tests
+  - **Security**: Must use shared `PathGuardrail` (see `analysis/security-list-tool.md`)
+  - **Security**: Current `ReadTool` is critically vulnerable (zero validation); harden via guardrail
 
 - [ ] **2.4 Write Tool**
   - Implement file writing functionality

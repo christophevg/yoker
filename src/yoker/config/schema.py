@@ -112,7 +112,7 @@ class PermissionsConfig:
     handlers: Permission handler configurations.
   """
 
-  filesystem_paths: tuple[str, ...] = field(default_factory=tuple)
+  filesystem_paths: tuple[str, ...] = (".",)
   network_access: str = "none"
   max_file_size_kb: int = 500
   max_recursion_depth: int = 3
