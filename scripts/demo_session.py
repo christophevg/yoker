@@ -192,7 +192,10 @@ def run_demo_session(
     if messages is None:
       messages = [
         "/help",
-        "Summarize the README.md file in less than 10 lines.",
+        "/think off",
+        "Show files in the current folder whose name starts with an 'R'.",
+        "/think on",
+        "Summarize the README.md file in less than 5 lines.",
       ]
     get_input = PredefinedInput(messages)
 
