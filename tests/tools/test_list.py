@@ -46,7 +46,7 @@ class TestListTool:
     assert "alpha.txt" in result.result
     assert "beta.py" in result.result
     assert "subdir/" in result.result
-    assert "4 entries total (2 files, 2 directories)" in result.result
+    assert "3 entries total (2 files, 1 directories)" in result.result
 
   def test_list_recursive(self, tmp_path: Path) -> None:
     """ListTool respects max_depth for recursion."""
@@ -74,9 +74,9 @@ class TestListTool:
     tool = ListTool()
     result = tool.execute(path=str(tmp_path), max_depth=0)
     assert result.success is True
-    assert tmp_path.name + "/" in result.result
+    assert str(tmp_path).rstrip("/") + "/" in result.result
     assert "file.txt" not in result.result
-    assert "1 entries total (0 files, 1 directories)" in result.result
+    assert "0 entries total (0 files, 0 directories)" in result.result
 
   def test_list_max_entries_truncation(self, tmp_path: Path) -> None:
     """ListTool truncates when max_entries exceeded."""
@@ -166,7 +166,7 @@ class TestListTool:
     tool = ListTool()
     result = tool.execute(path=str(tmp_path))
     assert result.success is True
-    assert "1 entries total (0 files, 1 directories)" in result.result
+    assert "0 entries total (0 files, 0 directories)" in result.result
 
   def test_list_does_not_follow_symlinks(self, tmp_path: Path) -> None:
     """ListTool does not follow symlinks into directories."""
@@ -192,7 +192,7 @@ class TestListTool:
     result = tool.execute(path=str(tmp_path))
     lines = result.result.split("\n")
     names = [line.strip() for line in lines if line.strip() and not line.startswith(".")]
-    assert names[0] == tmp_path.name + "/"
+    assert names[0] == str(tmp_path).rstrip("/") + "/"
     # Entries should be sorted alphabetically
     assert names.index("alpha.txt") < names.index("beta.txt")
     assert names.index("beta.txt") < names.index("zebra.txt")

@@ -196,7 +196,6 @@ class ConsoleEventHandler:
 
   def _handle_tool_result(self, event: ToolResultEvent) -> None:
     """Handle tool result event."""
-    # Don't show tool result output - only show tool calls
     pass
 
   def _handle_error(self, event: ErrorEvent) -> None:

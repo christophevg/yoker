@@ -174,10 +174,10 @@ class ListTool(Tool):
     Returns:
       Tuple of (lines, file_count, dir_count, truncated_count).
     """
-    lines: list[str] = [root.name + "/"]
+    lines: list[str] = [str(root).rstrip("/") + "/"]
     file_count = 0
-    dir_count = 1  # Count root directory
-    entry_count = 1
+    dir_count = 0
+    entry_count = 0
     truncated = 0
 
     if max_depth == 0:
