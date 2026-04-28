@@ -6,7 +6,10 @@ that all concrete tools must implement.
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+  from yoker.tools.guardrails import Guardrail
 
 
 @dataclass(frozen=True)
@@ -43,6 +46,10 @@ class Tool(ABC):
   Each tool must define its name, description, JSON schema for the LLM,
   and an execute method that returns a ToolResult.
 
+  Tools may optionally accept a Guardrail instance for defense-in-depth
+  validation. When a guardrail is provided, the tool validates parameters
+  in execute() before performing any I/O.
+
   Example:
     class MyTool(Tool):
       @property
@@ -72,6 +79,14 @@ class Tool(ABC):
       def execute(self, arg: str) -> ToolResult:
         return ToolResult(success=True, result=f"Got: {arg}")
   """
+
+  def __init__(self, guardrail: "Guardrail | None" = None) -> None:
+    """Initialize the tool with an optional guardrail.
+
+    Args:
+      guardrail: Optional guardrail for defense-in-depth validation.
+    """
+    self._guardrail = guardrail
 
   @property
   @abstractmethod

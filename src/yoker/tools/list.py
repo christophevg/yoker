@@ -6,9 +6,16 @@ depth, entry limits, and glob pattern filtering.
 
 import fnmatch
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+from yoker.logging import get_logger
 
 from .base import Tool, ToolResult
+
+if TYPE_CHECKING:
+  from yoker.tools.guardrails import Guardrail
+
+log = get_logger(__name__)
 
 
 class ListTool(Tool):
@@ -17,12 +24,22 @@ class ListTool(Tool):
   Lists files and directories with optional recursion depth control,
   entry limits, and glob pattern filtering. Returns a tree-formatted
   string for LLM consumption.
+
+  When a guardrail is provided, validates parameters before listing.
   """
 
   DEFAULT_MAX_DEPTH: int = 1
   DEFAULT_MAX_ENTRIES: int = 1000
   ABSOLUTE_MAX_DEPTH: int = 10
   ABSOLUTE_MAX_ENTRIES: int = 5000
+
+  def __init__(self, guardrail: "Guardrail | None" = None) -> None:
+    """Initialize ListTool with optional guardrail.
+
+    Args:
+      guardrail: Optional guardrail for parameter validation.
+    """
+    super().__init__(guardrail=guardrail)
 
   @property
   def name(self) -> str:
@@ -96,6 +113,21 @@ class ListTool(Tool):
       return ToolResult(
         success=False, result="", error="Missing required parameter: path"
       )
+
+    # Defense-in-depth: validate via guardrail if provided
+    if self._guardrail is not None:
+      validation = self._guardrail.validate(self.name, kwargs)
+      if not validation.valid:
+        log.info(
+          "list_guardrail_blocked",
+          path=path_str,
+          reason=validation.reason,
+        )
+        return ToolResult(
+          success=False,
+          result="",
+          error=validation.reason,
+        )
 
     # Parse and clamp parameters
     try:

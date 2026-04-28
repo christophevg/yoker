@@ -24,7 +24,9 @@ from yoker.events import (
   TurnStartEvent,
 )
 from yoker.logging import get_logger, log_timing
-from yoker.tools import AVAILABLE_TOOLS, ToolRegistry
+from yoker.tools import Tool, ToolRegistry
+from yoker.tools.list import ListTool
+from yoker.tools.read import ReadTool
 
 if TYPE_CHECKING:
   from yoker.agents import AgentDefinition
@@ -117,13 +119,13 @@ class Agent:
       self.agent_definition = load_agent_definition(agent_path)
       system_prompt = self.agent_definition.system_prompt or DEFAULT_SYSTEM_PROMPT
 
-    # Build tool registry filtered by agent definition
-    self.tool_registry = self._build_tool_registry()
-
     # Initialize path guardrail for filesystem tool validation
     from yoker.tools.path_guardrail import PathGuardrail
 
     self._guardrail = PathGuardrail(self.config)
+
+    # Build tool registry filtered by agent definition
+    self.tool_registry = self._build_tool_registry()
 
     # Initialize context manager
     if context_manager is not None:
@@ -160,17 +162,27 @@ class Agent:
     If an agent definition is loaded, only registers tools listed in
     the agent's tools field. Otherwise, registers all default tools.
 
+    All filesystem tools are created with the agent's guardrail injected
+    for defense-in-depth validation.
+
     Returns:
       ToolRegistry with available tools for this agent.
     """
     registry = ToolRegistry()
+
+    # Create tools with guardrail injected for defense-in-depth
+    tools: list[Tool] = [
+      ReadTool(guardrail=self._guardrail),
+      ListTool(guardrail=self._guardrail),
+    ]
+
     if self.agent_definition is not None:
       allowed_tools = {t.lower() for t in self.agent_definition.tools}
-      for tool in AVAILABLE_TOOLS.list_tools():
+      for tool in tools:
         if tool.name.lower() in allowed_tools:
           registry.register(tool)
     else:
-      for tool in AVAILABLE_TOOLS.list_tools():
+      for tool in tools:
         registry.register(tool)
     return registry
 
