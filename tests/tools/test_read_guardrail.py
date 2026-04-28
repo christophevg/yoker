@@ -51,7 +51,9 @@ class TestReadToolGuardrailIntegration:
           enabled=True, max_regex_complexity="medium", max_results=500, timeout_ms=10000
         ),
         agent=AgentToolConfig(enabled=True, max_recursion_depth=3, timeout_seconds=300),
-        git=GitToolConfig(enabled=True, allowed_commands=("status",), requires_permission=("commit",)),
+        git=GitToolConfig(
+          enabled=True, allowed_commands=("status",), requires_permission=("commit",)
+        ),
       ),
     )
 

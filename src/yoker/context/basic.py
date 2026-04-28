@@ -58,9 +58,7 @@ class BasicPersistenceContextManager:
       ValidationError: If storage_path or session_id is invalid.
     """
     # Validate and resolve storage path
-    self._storage_path = validate_storage_path(
-      Path(storage_path), "context.storage_path"
-    )
+    self._storage_path = validate_storage_path(Path(storage_path), "context.storage_path")
 
     # Validate session ID
     self._session_id = validate_session_id(session_id, "context.session_id")
@@ -136,17 +134,21 @@ class BasicPersistenceContextManager:
     for item in self._sequence:
       if item["type"] == "message":
         msg = item["data"]
-        context.append({
-          "role": msg["role"],
-          "content": msg["content"],
-        })
+        context.append(
+          {
+            "role": msg["role"],
+            "content": msg["content"],
+          }
+        )
       elif item["type"] == "tool_result":
         tr = item["data"]
-        context.append({
-          "role": "tool",
-          "name": tr["tool_name"],
-          "content": tr["result"],
-        })
+        context.append(
+          {
+            "role": "tool",
+            "name": tr["tool_name"],
+            "content": tr["result"],
+          }
+        )
 
     return context
 
@@ -178,9 +180,12 @@ class BasicPersistenceContextManager:
     self.add_message("assistant", assistant_message)
 
     # Append turn end record
-    self._append_record("turn_end", {
-      "assistant_message": assistant_message,
-    })
+    self._append_record(
+      "turn_end",
+      {
+        "assistant_message": assistant_message,
+      },
+    )
 
   def save(self) -> None:
     """Persist context to storage.
@@ -260,9 +265,12 @@ class BasicPersistenceContextManager:
 
   def close(self) -> None:
     """Release resources and flush any pending writes."""
-    self._append_record("session_end", {
-      "end_time": datetime.now().isoformat(),
-    })
+    self._append_record(
+      "session_end",
+      {
+        "end_time": datetime.now().isoformat(),
+      },
+    )
 
   # Private methods
 

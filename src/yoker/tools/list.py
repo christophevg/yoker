@@ -79,8 +79,7 @@ class ListTool(Tool):
             "max_entries": {
               "type": "integer",
               "description": (
-                "Maximum total entries to return. "
-                f"Defaults to {self.DEFAULT_MAX_ENTRIES}."
+                f"Maximum total entries to return. Defaults to {self.DEFAULT_MAX_ENTRIES}."
               ),
               "minimum": 1,
               "maximum": self.ABSOLUTE_MAX_ENTRIES,
@@ -88,8 +87,7 @@ class ListTool(Tool):
             "pattern": {
               "type": "string",
               "description": (
-                "Optional glob pattern to filter entries "
-                '(e.g., "*.py" for Python files)'
+                'Optional glob pattern to filter entries (e.g., "*.py" for Python files)'
               ),
             },
           },
@@ -110,9 +108,7 @@ class ListTool(Tool):
     """
     path_str = kwargs.get("path", "")
     if not path_str:
-      return ToolResult(
-        success=False, result="", error="Missing required parameter: path"
-      )
+      return ToolResult(success=False, result="", error="Missing required parameter: path")
 
     # Defense-in-depth: validate via guardrail if provided
     if self._guardrail is not None:
@@ -142,9 +138,7 @@ class ListTool(Tool):
         self.ABSOLUTE_MAX_ENTRIES,
       )
     except (ValueError, TypeError):
-      return ToolResult(
-        success=False, result="", error="Invalid numeric parameter"
-      )
+      return ToolResult(success=False, result="", error="Invalid numeric parameter")
 
     pattern = kwargs.get("pattern", "")
     if pattern is None:
@@ -153,9 +147,7 @@ class ListTool(Tool):
     try:
       path = Path(path_str)
       if not path.exists():
-        return ToolResult(
-          success=False, result="", error=f"Path not found: {path_str}"
-        )
+        return ToolResult(success=False, result="", error=f"Path not found: {path_str}")
 
       # If path is a file, return it as a single entry
       if not path.is_dir():
@@ -171,24 +163,16 @@ class ListTool(Tool):
 
       total = file_count + dir_count
       lines.append("")
-      lines.append(
-        f"{total} entries total ({file_count} files, {dir_count} directories)"
-      )
+      lines.append(f"{total} entries total ({file_count} files, {dir_count} directories)")
       if truncated:
-        lines.append(
-          f"... ({truncated} more entries truncated, max_entries={max_entries})"
-        )
+        lines.append(f"... ({truncated} more entries truncated, max_entries={max_entries})")
 
       return ToolResult(success=True, result="\n".join(lines))
 
     except PermissionError:
-      return ToolResult(
-        success=False, result="", error=f"Permission denied: {path_str}"
-      )
+      return ToolResult(success=False, result="", error=f"Permission denied: {path_str}")
     except Exception as e:
-      return ToolResult(
-        success=False, result="", error=f"Error listing directory: {e}"
-      )
+      return ToolResult(success=False, result="", error=f"Error listing directory: {e}")
 
   def _clamp(self, value: int, minimum: int, maximum: int) -> int:
     """Clamp a value to a range."""

@@ -74,9 +74,7 @@ class TestUpdateTool:
     """UpdateTool rejects ambiguous match when require_exact_match=True."""
     file_path = tmp_path / "test.txt"
     file_path.write_text("hello hello world")
-    config = Config(
-      tools=ToolsConfig(update=UpdateToolConfig(require_exact_match=True))
-    )
+    config = Config(tools=ToolsConfig(update=UpdateToolConfig(require_exact_match=True)))
     tool = UpdateTool(config=config)
     result = tool.execute(
       path=str(file_path),
@@ -92,9 +90,7 @@ class TestUpdateTool:
     """UpdateTool allows replacement when match is unique."""
     file_path = tmp_path / "test.txt"
     file_path.write_text("hello world")
-    config = Config(
-      tools=ToolsConfig(update=UpdateToolConfig(require_exact_match=True))
-    )
+    config = Config(tools=ToolsConfig(update=UpdateToolConfig(require_exact_match=True)))
     tool = UpdateTool(config=config)
     result = tool.execute(
       path=str(file_path),
@@ -123,9 +119,7 @@ class TestUpdateTool:
     """When require_exact_match=False, replaces first occurrence."""
     file_path = tmp_path / "test.txt"
     file_path.write_text("hello hello world")
-    config = Config(
-      tools=ToolsConfig(update=UpdateToolConfig(require_exact_match=False))
-    )
+    config = Config(tools=ToolsConfig(update=UpdateToolConfig(require_exact_match=False)))
     tool = UpdateTool(config=config)
     result = tool.execute(
       path=str(file_path),
@@ -277,9 +271,7 @@ class TestUpdateTool:
     """UpdateTool rejects ambiguous delete when require_exact_match=True."""
     file_path = tmp_path / "test.txt"
     file_path.write_text("hello hello world")
-    config = Config(
-      tools=ToolsConfig(update=UpdateToolConfig(require_exact_match=True))
-    )
+    config = Config(tools=ToolsConfig(update=UpdateToolConfig(require_exact_match=True)))
     tool = UpdateTool(config=config)
     result = tool.execute(
       path=str(file_path),
@@ -432,9 +424,7 @@ class TestUpdateTool:
     """UpdateTool rejects when diff size exceeds limit."""
     file_path = tmp_path / "test.txt"
     file_path.write_text("x")
-    config = Config(
-      tools=ToolsConfig(update=UpdateToolConfig(max_diff_size_kb=1))
-    )
+    config = Config(tools=ToolsConfig(update=UpdateToolConfig(max_diff_size_kb=1)))
     tool = UpdateTool(config=config)
     # 2048 bytes = 2KB, exceeds 1KB limit
     large_string = "a" * 2048
@@ -451,9 +441,7 @@ class TestUpdateTool:
     """UpdateTool allows when diff size within limit."""
     file_path = tmp_path / "test.txt"
     file_path.write_text("x")
-    config = Config(
-      tools=ToolsConfig(update=UpdateToolConfig(max_diff_size_kb=100))
-    )
+    config = Config(tools=ToolsConfig(update=UpdateToolConfig(max_diff_size_kb=100)))
     tool = UpdateTool(config=config)
     result = tool.execute(
       path=str(file_path),
@@ -489,9 +477,7 @@ class TestUpdateTool:
     """UpdateTool handles empty old_string as search for empty string."""
     file_path = tmp_path / "test.txt"
     file_path.write_text("hello")
-    config = Config(
-      tools=ToolsConfig(update=UpdateToolConfig(require_exact_match=False))
-    )
+    config = Config(tools=ToolsConfig(update=UpdateToolConfig(require_exact_match=False)))
     tool = UpdateTool(config=config)
     result = tool.execute(
       path=str(file_path),
@@ -549,9 +535,7 @@ class TestUpdateTool:
     )
     assert isinstance(result, ToolResult)
 
-  def test_update_symlink_inside_allowed_with_guardrail(
-    self, tmp_path: Path
-  ) -> None:
+  def test_update_symlink_inside_allowed_with_guardrail(self, tmp_path: Path) -> None:
     """UpdateTool rejects symlinks even when guardrail allows."""
     target = tmp_path / "target.txt"
     target.write_text("allowed target")
@@ -568,9 +552,7 @@ class TestUpdateTool:
     assert result.success is False
     assert "symlink" in result.error.lower()
 
-  def test_delete_requires_old_string_or_line_number(
-    self, tmp_path: Path
-  ) -> None:
+  def test_delete_requires_old_string_or_line_number(self, tmp_path: Path) -> None:
     """UpdateTool delete requires either old_string or line_number."""
     file_path = tmp_path / "test.txt"
     file_path.write_text("hello world")

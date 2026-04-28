@@ -111,9 +111,7 @@ class PathGuardrail(Guardrail):
     # Check allowed roots first (security boundary)
     root_check = self._is_within_allowed_paths(resolved)
     if not root_check:
-      return ValidationResult(
-        valid=False, reason=f"Path outside allowed directories: {path_param}"
-      )
+      return ValidationResult(valid=False, reason=f"Path outside allowed directories: {path_param}")
 
     # Check blocked patterns
     blocked_reason = self._check_blocked_patterns(resolved)
@@ -148,13 +146,9 @@ class PathGuardrail(Guardrail):
     if tool_name == "update":
       # File must exist
       if not resolved.exists():
-        return ValidationResult(
-          valid=False, reason=f"File not found: {path_param}"
-        )
+        return ValidationResult(valid=False, reason=f"File not found: {path_param}")
       if not resolved.is_file():
-        return ValidationResult(
-          valid=False, reason=f"Path is not a file: {path_param}"
-        )
+        return ValidationResult(valid=False, reason=f"Path is not a file: {path_param}")
 
       # Apply read extension checks (can only update allowed file types)
       ext_reason = self._check_read_extension(resolved)
@@ -269,9 +263,7 @@ class PathGuardrail(Guardrail):
 
     size_kb = size_bytes / 1024
     if size_kb > max_size_kb:
-      return (
-        f"File exceeds size limit: {size_kb:.1f}KB > {max_size_kb}KB"
-      )
+      return f"File exceeds size limit: {size_kb:.1f}KB > {max_size_kb}KB"
     return None
 
   def _check_write_extension(self, resolved: Path) -> str | None:
@@ -319,9 +311,7 @@ class PathGuardrail(Guardrail):
 
     size_kb = len(content.encode("utf-8")) / 1024
     if size_kb > max_size_kb:
-      return (
-        f"Content exceeds size limit: {size_kb:.1f}KB > {max_size_kb}KB"
-      )
+      return f"Content exceeds size limit: {size_kb:.1f}KB > {max_size_kb}KB"
     return None
 
   def _check_update_diff_size(self, params: dict[str, Any]) -> str | None:
@@ -347,9 +337,7 @@ class PathGuardrail(Guardrail):
 
     size_kb = len(new_string.encode("utf-8")) / 1024
     if size_kb > max_size_kb:
-      return (
-        f"Diff size exceeds limit: {size_kb:.1f}KB > {max_size_kb}KB"
-      )
+      return f"Diff size exceeds limit: {size_kb:.1f}KB > {max_size_kb}KB"
     return None
 
   def _get_tool_config(self, tool_name: str) -> ToolConfig | None:

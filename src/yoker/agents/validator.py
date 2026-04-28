@@ -92,9 +92,7 @@ def validate_agent_definition(
   if not definition.tools:
     raise ValidationError("agent.tools", definition.tools, "must specify at least one tool")
 
-  warnings.extend(
-    validate_tools(definition.tools, tools_config, "agent.tools")
-  )
+  warnings.extend(validate_tools(definition.tools, tools_config, "agent.tools"))
 
   # Check uniqueness
   if existing_names and definition.name in existing_names:

@@ -50,9 +50,7 @@ class TestPathGuardrail:
 
   def test_path_traversal_blocked(self, tmp_path: Path) -> None:
     """Blocks path traversal attempts."""
-    config = Config(
-      permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),))
-    )
+    config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
     guardrail = PathGuardrail(config)
     malicious = str(tmp_path / ".." / ".." / "etc" / "passwd")
     result = guardrail.validate("read", {"path": malicious})
@@ -63,9 +61,7 @@ class TestPathGuardrail:
     """Allows paths within allowed directories."""
     test_file = tmp_path / "test.txt"
     test_file.write_text("hello")
-    config = Config(
-      permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),))
-    )
+    config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
     guardrail = PathGuardrail(config)
     result = guardrail.validate("read", {"path": str(test_file)})
     assert result.valid is True
@@ -94,9 +90,7 @@ class TestPathGuardrail:
     exe_file.write_text("bad")
     config = Config(
       permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)),
-      tools=ToolsConfig(
-        read=ReadToolConfig(allowed_extensions=(".txt", ".md"))
-      ),
+      tools=ToolsConfig(read=ReadToolConfig(allowed_extensions=(".txt", ".md"))),
     )
     guardrail = PathGuardrail(config)
     result = guardrail.validate("read", {"path": str(exe_file)})
@@ -109,9 +103,7 @@ class TestPathGuardrail:
     txt_file.write_text("hello")
     config = Config(
       permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)),
-      tools=ToolsConfig(
-        read=ReadToolConfig(allowed_extensions=(".txt", ".md"))
-      ),
+      tools=ToolsConfig(read=ReadToolConfig(allowed_extensions=(".txt", ".md"))),
     )
     guardrail = PathGuardrail(config)
     result = guardrail.validate("read", {"path": str(txt_file)})
@@ -148,9 +140,7 @@ class TestPathGuardrail:
 
   def test_nonexistent_read_blocked(self, tmp_path: Path) -> None:
     """Blocks read of nonexistent files."""
-    config = Config(
-      permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),))
-    )
+    config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
     guardrail = PathGuardrail(config)
     missing = str(tmp_path / "missing.txt")
     result = guardrail.validate("read", {"path": missing})
@@ -163,9 +153,7 @@ class TestPathGuardrail:
     outside.write_text("secret")
     symlink = tmp_path / "link.txt"
     os.symlink(str(outside), str(symlink))
-    config = Config(
-      permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),))
-    )
+    config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
     guardrail = PathGuardrail(config)
     result = guardrail.validate("read", {"path": str(symlink)})
     assert result.valid is False
@@ -177,27 +165,21 @@ class TestPathGuardrail:
     target.write_text("hello")
     symlink = tmp_path / "link.txt"
     os.symlink(str(target), str(symlink))
-    config = Config(
-      permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),))
-    )
+    config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
     guardrail = PathGuardrail(config)
     result = guardrail.validate("read", {"path": str(symlink)})
     assert result.valid is True
 
   def test_list_tool_allowed(self, tmp_path: Path) -> None:
     """List tool is validated for path access."""
-    config = Config(
-      permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),))
-    )
+    config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
     guardrail = PathGuardrail(config)
     result = guardrail.validate("list", {"path": str(tmp_path)})
     assert result.valid is True
 
   def test_write_tool_allowed(self, tmp_path: Path) -> None:
     """Write tool is validated for path access."""
-    config = Config(
-      permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),))
-    )
+    config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
     guardrail = PathGuardrail(config)
     result = guardrail.validate("write", {"path": str(tmp_path / "new.txt")})
     assert result.valid is True
@@ -207,14 +189,10 @@ class TestPathGuardrail:
     exe_file = tmp_path / "malware.exe"
     config = Config(
       permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)),
-      tools=ToolsConfig(
-        write=WriteToolConfig(blocked_extensions=(".exe", ".sh"))
-      ),
+      tools=ToolsConfig(write=WriteToolConfig(blocked_extensions=(".exe", ".sh"))),
     )
     guardrail = PathGuardrail(config)
-    result = guardrail.validate(
-      "write", {"path": str(exe_file), "content": "bad"}
-    )
+    result = guardrail.validate("write", {"path": str(exe_file), "content": "bad"})
     assert result.valid is False
     assert "extension blocked" in result.reason.lower()
 
@@ -223,14 +201,10 @@ class TestPathGuardrail:
     txt_file = tmp_path / "readme.txt"
     config = Config(
       permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)),
-      tools=ToolsConfig(
-        write=WriteToolConfig(blocked_extensions=(".exe", ".sh"))
-      ),
+      tools=ToolsConfig(write=WriteToolConfig(blocked_extensions=(".exe", ".sh"))),
     )
     guardrail = PathGuardrail(config)
-    result = guardrail.validate(
-      "write", {"path": str(txt_file), "content": "hello"}
-    )
+    result = guardrail.validate("write", {"path": str(txt_file), "content": "hello"})
     assert result.valid is True
 
   def test_write_content_size_limit(self, tmp_path: Path) -> None:
@@ -241,9 +215,7 @@ class TestPathGuardrail:
       tools=ToolsConfig(write=WriteToolConfig(max_size_kb=1)),
     )
     guardrail = PathGuardrail(config)
-    result = guardrail.validate(
-      "write", {"path": str(file_path), "content": "x" * 2048}
-    )
+    result = guardrail.validate("write", {"path": str(file_path), "content": "x" * 2048})
     assert result.valid is False
     assert "exceeds size limit" in result.reason.lower()
 
@@ -255,18 +227,14 @@ class TestPathGuardrail:
       tools=ToolsConfig(write=WriteToolConfig(max_size_kb=1)),
     )
     guardrail = PathGuardrail(config)
-    result = guardrail.validate(
-      "write", {"path": str(file_path), "content": "x" * 512}
-    )
+    result = guardrail.validate("write", {"path": str(file_path), "content": "x" * 512})
     assert result.valid is True
 
   def test_update_tool_allowed(self, tmp_path: Path) -> None:
     """Update tool is validated for path access."""
     target = tmp_path / "existing.txt"
     target.write_text("hello")
-    config = Config(
-      permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),))
-    )
+    config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
     guardrail = PathGuardrail(config)
     result = guardrail.validate("update", {"path": str(target)})
     assert result.valid is True
@@ -274,9 +242,7 @@ class TestPathGuardrail:
   def test_update_nonexistent_file_blocked(self, tmp_path: Path) -> None:
     """Update tool blocked when file does not exist."""
     target = tmp_path / "missing.txt"
-    config = Config(
-      permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),))
-    )
+    config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
     guardrail = PathGuardrail(config)
     result = guardrail.validate("update", {"path": str(target)})
     assert result.valid is False
@@ -286,9 +252,7 @@ class TestPathGuardrail:
     """Update tool blocked when path is a directory."""
     subdir = tmp_path / "subdir"
     subdir.mkdir()
-    config = Config(
-      permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),))
-    )
+    config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
     guardrail = PathGuardrail(config)
     result = guardrail.validate("update", {"path": str(subdir)})
     assert result.valid is False
@@ -298,9 +262,7 @@ class TestPathGuardrail:
     """Update tool blocked for write-blocked extensions."""
     target = tmp_path / "script.exe"
     target.write_text("hello")
-    config = Config(
-      permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),))
-    )
+    config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
     guardrail = PathGuardrail(config)
     result = guardrail.validate("update", {"path": str(target)})
     assert result.valid is False
@@ -344,9 +306,7 @@ class TestPathGuardrail:
     subdir.mkdir()
     test_file = subdir / "test.txt"
     test_file.write_text("hello")
-    config = Config(
-      permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),))
-    )
+    config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
     guardrail = PathGuardrail(config)
     # Use relative path from within allowed root
     result = guardrail.validate("read", {"path": str(test_file)})

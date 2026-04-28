@@ -77,10 +77,7 @@ class WriteTool(Tool):
             },
             "create_parents": {
               "type": "boolean",
-              "description": (
-                "If true, create missing parent directories. "
-                "Defaults to false."
-              ),
+              "description": ("If true, create missing parent directories. Defaults to false."),
             },
           },
           "required": ["path", "content"],
@@ -129,12 +126,8 @@ class WriteTool(Tool):
 
     # Ensure path is a non-empty string
     if not isinstance(path_str, str) or not path_str.strip():
-      log.warning(
-        "write_invalid_path_type", path_type=type(path_str).__name__
-      )
-      return ToolResult(
-        success=False, result="", error="Invalid path parameter"
-      )
+      log.warning("write_invalid_path_type", path_type=type(path_str).__name__)
+      return ToolResult(success=False, result="", error="Invalid path parameter")
 
     # Ensure content is a string (empty content is valid)
     if not isinstance(content, str):
@@ -142,9 +135,7 @@ class WriteTool(Tool):
         "write_invalid_content_type",
         content_type=type(content).__name__,
       )
-      return ToolResult(
-        success=False, result="", error="Invalid content parameter"
-      )
+      return ToolResult(success=False, result="", error="Invalid content parameter")
 
     # Reject symlinks before resolving to prevent traversal via symlinks
     original_path = Path(path_str)
@@ -161,9 +152,7 @@ class WriteTool(Tool):
       resolved = Path(os.path.realpath(path_str))
     except (OSError, ValueError):
       log.warning("write_invalid_path", path=path_str)
-      return ToolResult(
-        success=False, result="", error="Invalid path"
-      )
+      return ToolResult(success=False, result="", error="Invalid path")
 
     # Check overwrite protection
     if resolved.exists():
@@ -219,11 +208,7 @@ class WriteTool(Tool):
       return ToolResult(success=True, result="File written successfully")
     except PermissionError:
       log.warning("write_permission_denied", path=str(resolved))
-      return ToolResult(
-        success=False, result="", error="Permission denied"
-      )
+      return ToolResult(success=False, result="", error="Permission denied")
     except OSError as e:
       log.error("write_os_error", path=str(resolved), error=str(e))
-      return ToolResult(
-        success=False, result="", error="Error writing file"
-      )
+      return ToolResult(success=False, result="", error="Error writing file")

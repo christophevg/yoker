@@ -59,11 +59,7 @@ class TestLoadDemoScript:
   def test_load_no_frontmatter(self, tmp_path: Path) -> None:
     """Script without frontmatter is invalid (no title)."""
     script_file = tmp_path / "nofront.md"
-    script_file.write_text(
-      "## Messages\n"
-      "\n"
-      "- Hello\n"
-    )
+    script_file.write_text("## Messages\n\n- Hello\n")
     with pytest.raises(ConfigurationError) as exc_info:
       load_demo_script(script_file)
     assert "title" in str(exc_info.value)
@@ -71,15 +67,7 @@ class TestLoadDemoScript:
   def test_load_no_messages_section(self, tmp_path: Path) -> None:
     """Script without Messages section raises error."""
     script_file = tmp_path / "nomsg.md"
-    script_file.write_text(
-      "---\n"
-      "title: No Messages\n"
-      "---\n"
-      "\n"
-      "## Other\n"
-      "\n"
-      "Some content\n"
-    )
+    script_file.write_text("---\ntitle: No Messages\n---\n\n## Other\n\nSome content\n")
     with pytest.raises(ConfigurationError) as exc_info:
       load_demo_script(script_file)
     assert "messages" in str(exc_info.value)
@@ -87,13 +75,7 @@ class TestLoadDemoScript:
   def test_load_empty_messages(self, tmp_path: Path) -> None:
     """Script with empty Messages section raises error."""
     script_file = tmp_path / "emptymsg.md"
-    script_file.write_text(
-      "---\n"
-      "title: Empty Messages\n"
-      "---\n"
-      "\n"
-      "## Messages\n"
-    )
+    script_file.write_text("---\ntitle: Empty Messages\n---\n\n## Messages\n")
     with pytest.raises(ConfigurationError) as exc_info:
       load_demo_script(script_file)
     assert "messages" in str(exc_info.value)
@@ -107,15 +89,7 @@ class TestLoadDemoScript:
     """Support asterisk bullet lists."""
     script_file = tmp_path / "asterisk.md"
     script_file.write_text(
-      "---\n"
-      "title: Asterisk\n"
-      "output: out.svg\n"
-      "---\n"
-      "\n"
-      "## Messages\n"
-      "\n"
-      "* Hello\n"
-      "* World\n"
+      "---\ntitle: Asterisk\noutput: out.svg\n---\n\n## Messages\n\n* Hello\n* World\n"
     )
     script = load_demo_script(script_file)
     assert script.messages == ("Hello", "World")
@@ -123,15 +97,7 @@ class TestLoadDemoScript:
   def test_load_defaults(self, tmp_path: Path) -> None:
     """Optional fields default to empty strings."""
     script_file = tmp_path / "defaults.md"
-    script_file.write_text(
-      "---\n"
-      "title: Defaults\n"
-      "---\n"
-      "\n"
-      "## Messages\n"
-      "\n"
-      "- Hello\n"
-    )
+    script_file.write_text("---\ntitle: Defaults\n---\n\n## Messages\n\n- Hello\n")
     script = load_demo_script(script_file)
     assert script.description == ""
     assert script.output == ""
@@ -143,12 +109,8 @@ class TestLoadDemoScripts:
 
   def test_load_directory(self, tmp_path: Path) -> None:
     """Load all scripts from directory."""
-    (tmp_path / "a.md").write_text(
-      "---\ntitle: Alpha\n---\n\n## Messages\n\n- Hello\n"
-    )
-    (tmp_path / "b.md").write_text(
-      "---\ntitle: Beta\n---\n\n## Messages\n\n- World\n"
-    )
+    (tmp_path / "a.md").write_text("---\ntitle: Alpha\n---\n\n## Messages\n\n- Hello\n")
+    (tmp_path / "b.md").write_text("---\ntitle: Beta\n---\n\n## Messages\n\n- World\n")
     scripts = load_demo_scripts(tmp_path)
     assert len(scripts) == 2
     assert "Alpha" in scripts
@@ -161,12 +123,8 @@ class TestLoadDemoScripts:
 
   def test_load_duplicate_titles(self, tmp_path: Path) -> None:
     """Duplicate titles raise ConfigurationError."""
-    (tmp_path / "a.md").write_text(
-      "---\ntitle: Same\n---\n\n## Messages\n\n- Hello\n"
-    )
-    (tmp_path / "b.md").write_text(
-      "---\ntitle: Same\n---\n\n## Messages\n\n- World\n"
-    )
+    (tmp_path / "a.md").write_text("---\ntitle: Same\n---\n\n## Messages\n\n- Hello\n")
+    (tmp_path / "b.md").write_text("---\ntitle: Same\n---\n\n## Messages\n\n- World\n")
     with pytest.raises(ConfigurationError) as exc_info:
       load_demo_scripts(tmp_path)
     assert "Duplicate" in str(exc_info.value)

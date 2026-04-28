@@ -64,9 +64,7 @@ class TestWriteTool:
     """WriteTool blocks overwrite when allow_overwrite=False."""
     file_path = tmp_path / "existing.txt"
     file_path.write_text("old content")
-    config = Config(
-      tools=ToolsConfig(write=WriteToolConfig(allow_overwrite=False))
-    )
+    config = Config(tools=ToolsConfig(write=WriteToolConfig(allow_overwrite=False)))
     tool = WriteTool(config=config)
     result = tool.execute(path=str(file_path), content="new content")
     assert result.success is False
@@ -77,9 +75,7 @@ class TestWriteTool:
     """WriteTool allows overwrite when allow_overwrite=True."""
     file_path = tmp_path / "existing.txt"
     file_path.write_text("old content")
-    config = Config(
-      tools=ToolsConfig(write=WriteToolConfig(allow_overwrite=True))
-    )
+    config = Config(tools=ToolsConfig(write=WriteToolConfig(allow_overwrite=True)))
     tool = WriteTool(config=config)
     result = tool.execute(path=str(file_path), content="new content")
     assert result.success is True
@@ -92,9 +88,7 @@ class TestWriteTool:
     result = tool.execute(path="/etc/passwd", content="data")
     assert result.success is False
     assert result.error == "outside allowed"
-    assert guardrail.calls == [
-      ("write", {"path": "/etc/passwd", "content": "data"})
-    ]
+    assert guardrail.calls == [("write", {"path": "/etc/passwd", "content": "data"})]
 
   def test_write_with_guardrail_allows(self, tmp_path: Path) -> None:
     """WriteTool with guardrail allows authorized paths."""
@@ -104,9 +98,7 @@ class TestWriteTool:
     result = tool.execute(path=str(file_path), content="allowed content")
     assert result.success is True
     assert file_path.read_text(encoding="utf-8") == "allowed content"
-    assert guardrail.calls == [
-      ("write", {"path": str(file_path), "content": "allowed content"})
-    ]
+    assert guardrail.calls == [("write", {"path": str(file_path), "content": "allowed content"})]
 
   def test_write_rejects_symlink(self, tmp_path: Path) -> None:
     """WriteTool rejects writing to symlinks."""
@@ -123,9 +115,7 @@ class TestWriteTool:
     """WriteTool returns error when parent missing and create_parents=False."""
     file_path = tmp_path / "missing" / "test.txt"
     tool = WriteTool()
-    result = tool.execute(
-      path=str(file_path), content="data", create_parents=False
-    )
+    result = tool.execute(path=str(file_path), content="data", create_parents=False)
     assert result.success is False
     assert "parent directory" in result.error.lower()
 
@@ -133,9 +123,7 @@ class TestWriteTool:
     """WriteTool creates parents when create_parents=True."""
     file_path = tmp_path / "missing" / "test.txt"
     tool = WriteTool()
-    result = tool.execute(
-      path=str(file_path), content="data", create_parents=True
-    )
+    result = tool.execute(path=str(file_path), content="data", create_parents=True)
     assert result.success is True
     assert file_path.read_text(encoding="utf-8") == "data"
 
@@ -178,9 +166,7 @@ class TestWriteTool:
       raise PermissionError("Access denied")
 
     monkeypatch.setattr(Path, "write_text", mock_write_text)
-    config = Config(
-      tools=ToolsConfig(write=WriteToolConfig(allow_overwrite=True))
-    )
+    config = Config(tools=ToolsConfig(write=WriteToolConfig(allow_overwrite=True)))
     tool = WriteTool(config=config)
     result = tool.execute(path=str(file_path), content="new data")
     assert result.success is False
@@ -215,9 +201,7 @@ class TestWriteTool:
       raise OSError("device error")
 
     monkeypatch.setattr(Path, "write_text", mock_write_text)
-    config = Config(
-      tools=ToolsConfig(write=WriteToolConfig(allow_overwrite=True))
-    )
+    config = Config(tools=ToolsConfig(write=WriteToolConfig(allow_overwrite=True)))
     tool = WriteTool(config=config)
     result = tool.execute(path=str(file_path), content="new data")
     assert result.success is False
@@ -259,9 +243,7 @@ class TestWriteTool:
       )
     ]
 
-  def test_write_symlink_inside_allowed_with_guardrail(
-    self, tmp_path: Path
-  ) -> None:
+  def test_write_symlink_inside_allowed_with_guardrail(self, tmp_path: Path) -> None:
     """WriteTool rejects symlinks even when guardrail allows."""
     target = tmp_path / "target.txt"
     target.write_text("allowed target")
@@ -278,9 +260,7 @@ class TestWriteTool:
     """WriteTool returns error when path is an existing directory."""
     subdir = tmp_path / "existing_dir"
     subdir.mkdir()
-    config = Config(
-      tools=ToolsConfig(write=WriteToolConfig(allow_overwrite=True))
-    )
+    config = Config(tools=ToolsConfig(write=WriteToolConfig(allow_overwrite=True)))
     tool = WriteTool(config=config)
     result = tool.execute(path=str(subdir), content="data")
     assert result.success is False

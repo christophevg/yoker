@@ -90,9 +90,7 @@ class UpdateTool(Tool):
             },
             "new_string": {
               "type": "string",
-              "description": (
-                "Replacement or insertion text (required for replace and insert)."
-              ),
+              "description": ("Replacement or insertion text (required for replace and insert)."),
             },
             "line_number": {
               "type": "integer",
@@ -152,20 +150,14 @@ class UpdateTool(Tool):
 
     # Validate path parameter
     if not isinstance(path_str, str) or not path_str.strip():
-      log.warning(
-        "update_invalid_path_type", path_type=type(path_str).__name__
-      )
-      return ToolResult(
-        success=False, result="", error="Invalid path parameter"
-      )
+      log.warning("update_invalid_path_type", path_type=type(path_str).__name__)
+      return ToolResult(success=False, result="", error="Invalid path parameter")
 
     # Validate operation
     valid_operations = {"replace", "insert_before", "insert_after", "delete"}
     if operation not in valid_operations:
       log.warning("update_invalid_operation", operation=operation)
-      return ToolResult(
-        success=False, result="", error="Invalid operation"
-      )
+      return ToolResult(success=False, result="", error="Invalid operation")
 
     # Validate content parameters
     if not isinstance(old_string, str):
@@ -173,17 +165,13 @@ class UpdateTool(Tool):
         "update_invalid_old_string_type",
         old_string_type=type(old_string).__name__,
       )
-      return ToolResult(
-        success=False, result="", error="Invalid old_string parameter"
-      )
+      return ToolResult(success=False, result="", error="Invalid old_string parameter")
     if not isinstance(new_string, str):
       log.warning(
         "update_invalid_new_string_type",
         new_string_type=type(new_string).__name__,
       )
-      return ToolResult(
-        success=False, result="", error="Invalid new_string parameter"
-      )
+      return ToolResult(success=False, result="", error="Invalid new_string parameter")
 
     # Reject symlinks before resolving to prevent traversal via symlinks
     try:
@@ -197,44 +185,32 @@ class UpdateTool(Tool):
         )
     except (OSError, PermissionError):
       log.warning("update_path_access_error", path=path_str)
-      return ToolResult(
-        success=False, result="", error="Invalid path"
-      )
+      return ToolResult(success=False, result="", error="Invalid path")
 
     # Resolve the path to prevent traversal and normalize
     try:
       resolved = Path(os.path.realpath(path_str))
     except (OSError, ValueError):
       log.warning("update_invalid_path", path=path_str)
-      return ToolResult(
-        success=False, result="", error="Invalid path"
-      )
+      return ToolResult(success=False, result="", error="Invalid path")
 
     # File must exist
     if not resolved.exists():
       log.info("update_file_not_found", path=str(resolved))
-      return ToolResult(
-        success=False, result="", error="File not found"
-      )
+      return ToolResult(success=False, result="", error="File not found")
     if not resolved.is_file():
       log.info("update_not_a_file", path=str(resolved))
-      return ToolResult(
-        success=False, result="", error="Path is not a file"
-      )
+      return ToolResult(success=False, result="", error="Path is not a file")
 
     # Read file fresh to prevent TOCTOU race conditions
     try:
       content = resolved.read_text(encoding="utf-8")
     except PermissionError:
       log.warning("update_permission_denied", path=str(resolved))
-      return ToolResult(
-        success=False, result="", error="Permission denied"
-      )
+      return ToolResult(success=False, result="", error="Permission denied")
     except OSError:
       log.error("update_read_error", path=str(resolved))
-      return ToolResult(
-        success=False, result="", error="Error reading file"
-      )
+      return ToolResult(success=False, result="", error="Error reading file")
 
     # Validate diff size against config limit
     update_config = self._config.tools.update
@@ -258,16 +234,12 @@ class UpdateTool(Tool):
       if operation == "replace":
         result_content = self._do_replace(content, old_string, new_string)
       elif operation in ("insert_before", "insert_after"):
-        result_content = self._do_insert(
-          content, operation, line_number, new_string
-        )
+        result_content = self._do_insert(content, operation, line_number, new_string)
       elif operation == "delete":
         result_content = self._do_delete(content, old_string, line_number)
       else:
         # Should not reach here due to earlier validation
-        return ToolResult(
-          success=False, result="", error="Invalid operation"
-        )
+        return ToolResult(success=False, result="", error="Invalid operation")
     except ValueError as e:
       log.info("update_validation_error", error=str(e))
       return ToolResult(success=False, result="", error=str(e))
@@ -285,18 +257,12 @@ class UpdateTool(Tool):
       return ToolResult(success=True, result="File updated successfully")
     except PermissionError:
       log.warning("update_permission_denied_write", path=str(resolved))
-      return ToolResult(
-        success=False, result="", error="Permission denied"
-      )
+      return ToolResult(success=False, result="", error="Permission denied")
     except OSError as e:
       log.error("update_write_error", path=str(resolved), error=str(e))
-      return ToolResult(
-        success=False, result="", error="Error updating file"
-      )
+      return ToolResult(success=False, result="", error="Error updating file")
 
-  def _do_replace(
-    self, content: str, old_string: str, new_string: str
-  ) -> str:
+  def _do_replace(self, content: str, old_string: str, new_string: str) -> str:
     """Replace old_string with new_string in content.
 
     When require_exact_match is True (default), old_string must appear
@@ -321,9 +287,7 @@ class UpdateTool(Tool):
       raise ValueError("Search text not found")
 
     if require_exact and occurrences > 1:
-      raise ValueError(
-        "Search text appears multiple times; ambiguous match"
-      )
+      raise ValueError("Search text appears multiple times; ambiguous match")
 
     return content.replace(old_string, new_string, 1)
 
@@ -362,15 +326,11 @@ class UpdateTool(Tool):
     if total_lines == 0:
       # Empty file: line_number must be 1
       if line_num != 1:
-        raise ValueError(
-          f"Line number {line_num} out of range (file has 0 lines)"
-        )
+        raise ValueError(f"Line number {line_num} out of range (file has 0 lines)")
       return new_string + "\n"
 
     if line_num < 1 or line_num > total_lines:
-      raise ValueError(
-        f"Line number {line_num} out of range (file has {total_lines} lines)"
-      )
+      raise ValueError(f"Line number {line_num} out of range (file has {total_lines} lines)")
 
     # Ensure each line has a newline at the end for correct insertion
     # If the last line doesn't end with newline, add one
@@ -384,9 +344,7 @@ class UpdateTool(Tool):
 
     return "".join(lines)
 
-  def _do_delete(
-    self, content: str, old_string: str, line_number: Any
-  ) -> str:
+  def _do_delete(self, content: str, old_string: str, line_number: Any) -> str:
     """Delete content by old_string or by line number.
 
     If old_string is provided and non-empty, searches for and removes it.
@@ -416,14 +374,10 @@ class UpdateTool(Tool):
       total_lines = len(lines)
 
       if total_lines == 0:
-        raise ValueError(
-          f"Line number {line_num} out of range (file has 0 lines)"
-        )
+        raise ValueError(f"Line number {line_num} out of range (file has 0 lines)")
 
       if line_num < 1 or line_num > total_lines:
-        raise ValueError(
-          f"Line number {line_num} out of range (file has {total_lines} lines)"
-        )
+        raise ValueError(f"Line number {line_num} out of range (file has {total_lines} lines)")
 
       del lines[line_num - 1]
       return "".join(lines)
@@ -436,12 +390,8 @@ class UpdateTool(Tool):
         raise ValueError("Search text not found")
 
       if require_exact and occurrences > 1:
-        raise ValueError(
-          "Search text appears multiple times; ambiguous match"
-        )
+        raise ValueError("Search text appears multiple times; ambiguous match")
 
       return content.replace(old_string, "", 1)
 
-    raise ValueError(
-      "Either old_string or line_number is required for delete"
-    )
+    raise ValueError("Either old_string or line_number is required for delete")
