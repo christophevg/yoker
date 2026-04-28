@@ -271,11 +271,11 @@ class AgentsConfig:
   """Agent definition settings.
 
   Attributes:
-    directory: Directory containing agent definition files.
+    directory: Directory containing agent definition files (empty = no directory).
     default_type: Default agent type.
   """
 
-  directory: str = "./agents"
+  directory: str = ""
   default_type: str = "main"
 
 

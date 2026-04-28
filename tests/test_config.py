@@ -54,7 +54,7 @@ class TestConfigSchema:
     assert config.permissions.network_access == "none"
     assert config.permissions.filesystem_paths == (".",)
     assert config.tools.list.enabled is True
-    assert config.agents.directory == "./agents"
+    assert config.agents.directory == ""
     assert config.logging.format == "text"
     assert config.logging.level == "INFO"
 
