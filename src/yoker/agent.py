@@ -27,6 +27,7 @@ from yoker.logging import get_logger, log_timing
 from yoker.tools import Tool, ToolRegistry
 from yoker.tools.list import ListTool
 from yoker.tools.read import ReadTool
+from yoker.tools.write import WriteTool
 
 if TYPE_CHECKING:
   from yoker.agents import AgentDefinition
@@ -174,6 +175,7 @@ class Agent:
     tools: list[Tool] = [
       ReadTool(guardrail=self._guardrail),
       ListTool(guardrail=self._guardrail),
+      WriteTool(guardrail=self._guardrail),
     ]
 
     if self.agent_definition is not None:
