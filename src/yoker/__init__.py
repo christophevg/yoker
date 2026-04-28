@@ -46,6 +46,7 @@ from yoker.exceptions import (
   YokerError,
 )
 from yoker.logging import LoggingContext, configure_logging, get_logger, log_timing
+from yoker.thinking import ThinkingMode
 
 __version__ = "0.1.0"
 __author__ = "Christophe VG"
@@ -56,6 +57,8 @@ __all__ = [
   "__author__",
   # Core classes
   "Agent",
+  # Thinking
+  "ThinkingMode",
   # Commands
   "Command",
   "CommandRegistry",

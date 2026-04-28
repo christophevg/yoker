@@ -6,6 +6,7 @@ from typing import Any, Protocol, runtime_checkable
 from rich.console import Console
 from rich.style import Style
 
+from yoker.events.spinner import LiveDisplay
 from yoker.events.types import (
   CommandEvent,
   ContentChunkEvent,
@@ -50,6 +51,7 @@ class ConsoleEventHandler:
     show_tool_calls: bool = True,
     wrap_width: int | None = None,
     version: str = "0.1.0",
+    live_display: LiveDisplay | None = None,
   ) -> None:
     """Initialize the console handler.
 
@@ -59,15 +61,18 @@ class ConsoleEventHandler:
       show_tool_calls: Whether to display tool call info.
       wrap_width: Optional width for wrapping streaming output.
       version: Version string to display in session start.
+      live_display: Optional live display for interactive sessions.
     """
     self.console = console if console is not None else Console()
     self.show_thinking = show_thinking
     self.show_tool_calls = show_tool_calls
     self.wrap_width = wrap_width
     self.version = version
+    self.live_display = live_display
 
-    # State for wrapping
+    # State for wrapping and thinking tracking
     self._column = 0
+    self._thinking_shown = False  # Track if thinking was displayed
 
   def __call__(self, event: Event) -> None:
     """Handle an event by dispatching to the appropriate handler method."""
@@ -115,41 +120,70 @@ class ConsoleEventHandler:
 
   def _handle_turn_start(self, event: TurnStartEvent) -> None:
     """Handle turn start event."""
-    # User input is already displayed by the input function
-    pass
+    # Reset thinking flag for new turn
+    self._thinking_shown = False
 
   def _handle_turn_end(self, event: TurnEndEvent) -> None:
     """Handle turn end event."""
-    # Add blank line after response
-    self.console.print()
+    # Show stats and stop live display if active
+    if self.live_display:
+      self.live_display.show_stats(
+        prompt_tokens=event.prompt_eval_count,
+        eval_tokens=event.eval_count,
+        duration_ms=event.total_duration_ms,
+      )
+      self.live_display = None
+      # Note: Don't print anything inside Live context - it will be handled
+      # by the Live context exiting and printing the final renderable
+    else:
+      # Without live display, add blank line after response
+      self.console.print()
 
   def _handle_thinking_start(self, event: ThinkingStartEvent) -> None:
     """Handle thinking start event."""
     if self.show_thinking:
-      self._print_wrapped("\n", style=THINKING_STYLE)
+      self._thinking_shown = True
+      if not self.live_display:
+        # Without live display, add newline before thinking
+        self._print_wrapped("\n", style=THINKING_STYLE)
 
   def _handle_thinking_chunk(self, event: ThinkingChunkEvent) -> None:
     """Handle thinking chunk event."""
     if self.show_thinking:
-      self._print_wrapped(event.text, style=THINKING_STYLE)
+      if self.live_display:
+        self.live_display.append_thinking(event.text)
+      else:
+        self._print_wrapped(event.text, style=THINKING_STYLE)
 
   def _handle_thinking_end(self, event: ThinkingEndEvent) -> None:
     """Handle thinking end event."""
     if self.show_thinking:
-      self._print_wrapped("\n\n")
+      if not self.live_display:
+        # Without live display, add newlines after thinking
+        self._print_wrapped("\n\n")
 
   def _handle_content_start(self, event: ContentStartEvent) -> None:
     """Handle content start event."""
-    # Content starts immediately
-    pass
+    # Add blank line between thinking and response if thinking was shown
+    if self._thinking_shown:
+      if self.live_display:
+        self.live_display.append_response("\n")
+      else:
+        self.console.print()
+      self._thinking_shown = False  # Reset for next turn
 
   def _handle_content_chunk(self, event: ContentChunkEvent) -> None:
     """Handle content chunk event."""
-    self._print_wrapped(event.text)
+    if self.live_display:
+      self.live_display.append_response(event.text)
+    else:
+      self._print_wrapped(event.text)
 
   def _handle_content_end(self, event: ContentEndEvent) -> None:
     """Handle content end event."""
-    self.console.print()  # Final newline
+    # Final newline - only needed without live display
+    if not self.live_display:
+      self.console.print()
 
   @staticmethod
   def _extract_filename(arguments: dict[str, Any]) -> str:

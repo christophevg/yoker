@@ -3,6 +3,7 @@
 from yoker.events.handlers import ConsoleEventHandler, EventHandler
 from yoker.events.recorder import EventRecorder, deserialize_event, serialize_event
 from yoker.events.replay import EventReplayAgent
+from yoker.events.spinner import LiveDisplay, live_display
 from yoker.events.types import (
   CommandEvent,
   ContentChunkEvent,
@@ -55,4 +56,7 @@ __all__ = [
   "EventReplayAgent",
   "serialize_event",
   "deserialize_event",
+  # Live Display
+  "LiveDisplay",
+  "live_display",
 ]

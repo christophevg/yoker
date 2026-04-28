@@ -121,6 +121,7 @@ def configure_logging(
   level: str = "INFO",
   log_file: Path | None = None,
   format: Literal["json", "text"] = "text",
+  console: bool = True,
 ) -> None:
   """Configure structlog for the application.
 
@@ -131,6 +132,7 @@ def configure_logging(
     level: Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL).
     log_file: Optional file path for log output.
     format: Output format (json for production, text for development).
+    console: Whether to output to console (default True).
 
   Example:
     configure_logging(
@@ -145,10 +147,11 @@ def configure_logging(
   # Configure standard library logging
   handlers: list[logging.Handler] = []
 
-  # Console handler
-  console_handler = logging.StreamHandler(sys.stderr)
-  console_handler.setLevel(log_level)
-  handlers.append(console_handler)
+  # Console handler (optional)
+  if console:
+    console_handler = logging.StreamHandler(sys.stderr)
+    console_handler.setLevel(log_level)
+    handlers.append(console_handler)
 
   # File handler (if specified)
   if log_file is not None:
@@ -185,13 +188,25 @@ def configure_logging(
     final_processors = [structlog.dev.ConsoleRenderer(colors=True)]
 
   # Configure structlog
-  structlog.configure(
-    processors=shared_processors + final_processors,
-    wrapper_class=structlog.make_filtering_bound_logger(log_level),
-    context_class=dict,
-    logger_factory=structlog.PrintLoggerFactory(),
-    cache_logger_on_first_use=True,
-  )
+  # If no handlers and console disabled, use minimal configuration (no output)
+  if not handlers:
+    # No output - configure with minimal processors and CRITICAL level
+    structlog.configure(
+      processors=[],
+      wrapper_class=structlog.make_filtering_bound_logger(logging.CRITICAL),
+      context_class=dict,
+      logger_factory=structlog.stdlib.LoggerFactory(),
+      cache_logger_on_first_use=True,
+    )
+  else:
+    # Normal configuration with output
+    structlog.configure(
+      processors=shared_processors + final_processors,
+      wrapper_class=structlog.make_filtering_bound_logger(log_level),
+      context_class=dict,
+      logger_factory=structlog.PrintLoggerFactory(),
+      cache_logger_on_first_use=True,
+    )
 
 
 def get_logger(name: str | None = None) -> structlog.stdlib.BoundLogger:

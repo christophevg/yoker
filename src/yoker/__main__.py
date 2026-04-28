@@ -32,6 +32,7 @@ from yoker.events import (
   ContentStartEvent,
   ErrorEvent,
   EventType,
+  LiveDisplay,
 )
 from yoker.logging import configure_logging, get_logger
 
@@ -101,6 +102,9 @@ def prompt_input(prompt: str, session: PromptSession[str]) -> str:
 def setup_logging(config: Config) -> None:
   """Configure logging based on configuration.
 
+  Disables console output for interactive CLI to avoid interfering with
+  the chat interface. Logs are only written to file if configured.
+
   Args:
     config: Configuration object.
   """
@@ -112,6 +116,7 @@ def setup_logging(config: Config) -> None:
     level=config.logging.level,
     log_file=log_file,
     format=config.logging.format,
+    console=False,  # Disable console output for interactive CLI
   )
 
   log.info("logging_configured", level=config.logging.level)
@@ -132,8 +137,8 @@ def create_command_registry(agent: Agent) -> CommandRegistry:
   registry.register(create_help_command(registry))
   registry.register(
     create_think_command(
-      get_thinking_state=lambda: agent.thinking_enabled,
-      set_thinking_state=lambda enabled: setattr(agent, "thinking_enabled", enabled),
+      get_thinking_mode=lambda: agent.thinking_mode,
+      set_thinking_mode=lambda mode: setattr(agent, "thinking_mode", mode),
     )
   )
   registry.register(
@@ -263,7 +268,18 @@ def main() -> None:
 
       # Process message (output is streamed via events)
       try:
-        agent.process(user_input)
+        # Create live display for this turn
+        display = LiveDisplay()
+        console_handler.live_display = display
+
+        # Add blank line after user input
+        print()
+
+        with display:
+          agent.process(user_input)
+
+        # Add blank line after Live context exits
+        print()
       except ResponseError as e:
         # Handle Ollama API errors gracefully - allow retry
         if e.status_code == 503:

@@ -75,6 +75,11 @@ class TurnEndEvent(Event):
 
   response: str
   tool_calls_count: int = 0
+  # Token statistics (from Ollama response)
+  prompt_eval_count: int = 0
+  eval_count: int = 0
+  # Duration in milliseconds
+  total_duration_ms: int = 0
 
 
 @dataclass(frozen=True)

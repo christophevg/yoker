@@ -24,6 +24,7 @@ from yoker.events import (
   TurnStartEvent,
 )
 from yoker.logging import get_logger, log_timing
+from yoker.thinking import ThinkingMode
 from yoker.tools import Tool, ToolRegistry
 from yoker.tools.list import ListTool
 from yoker.tools.read import ReadTool
@@ -52,7 +53,7 @@ class Agent:
     model: Model to use for chat.
     config: Configuration object (or defaults if not provided).
     context: ContextManager for conversation history.
-    thinking_enabled: Whether thinking mode is enabled.
+    thinking_mode: Current thinking mode (on/off/silent).
     agent_definition: Loaded agent definition (if provided).
   """
 
@@ -61,7 +62,7 @@ class Agent:
     model: str | None = None,
     config: Config | None = None,
     config_path: Path | str | None = None,
-    thinking_enabled: bool = True,
+    thinking_mode: ThinkingMode = ThinkingMode.ON,
     command_registry: "CommandRegistry | None" = None,
     agent_definition: "AgentDefinition | None" = None,
     agent_path: Path | str | None = None,
@@ -73,7 +74,7 @@ class Agent:
       model: Model to use (overrides config if provided).
       config: Configuration object (takes precedence over config_path).
       config_path: Path to configuration file (loaded if config not provided).
-      thinking_enabled: Whether to enable thinking mode (default: True).
+      thinking_mode: Thinking mode (on/off/silent, default: ON).
       command_registry: Optional command registry for slash-commands.
       agent_definition: Pre-loaded AgentDefinition to use for system prompt.
       agent_path: Path to agent definition file (Markdown with frontmatter).
@@ -103,7 +104,7 @@ class Agent:
     self.model = model if model is not None else self.config.backend.ollama.model
 
     # Thinking mode state
-    self.thinking_enabled = thinking_enabled
+    self.thinking_mode = thinking_mode
 
     # Command registry for slash-commands
     self.command_registry = command_registry
@@ -153,7 +154,7 @@ class Agent:
     log.info(
       "agent_initialized",
       model=self.model,
-      thinking_enabled=self.thinking_enabled,
+      thinking_mode=self.thinking_mode.value,
       has_agent_definition=self.agent_definition is not None,
       available_tools=self.tool_registry.names,
     )
@@ -252,7 +253,7 @@ class Agent:
         model=self.model,
         messages=self.context.get_context(),
         tools=self.tool_registry.get_schemas(),
-        think=self.thinking_enabled,
+        think=self.thinking_mode.is_enabled,
         stream=True,
       )
 
@@ -263,14 +264,25 @@ class Agent:
       in_thinking = False
       in_content = False
 
+      # Track stats from last chunk
+      prompt_eval_count = 0
+      eval_count = 0
+      total_duration_ms = 0
+
       for chunk in stream:
+        # Capture stats from done chunk
+        if chunk.done:
+          prompt_eval_count = chunk.prompt_eval_count or 0
+          eval_count = chunk.eval_count or 0
+          total_duration_ms = (chunk.total_duration or 0) // 1_000_000  # ns to ms
+
         # Handle thinking output
         if chunk.message.thinking:
-          if not in_thinking and self.thinking_enabled:
+          if not in_thinking and self.thinking_mode.is_visible:
             in_thinking = True
             self._emit(ThinkingStartEvent(type=EventType.THINKING_START))
           thinking += chunk.message.thinking
-          if self.thinking_enabled:
+          if self.thinking_mode.is_visible:
             self._emit(
               ThinkingChunkEvent(
                 type=EventType.THINKING_CHUNK,
@@ -280,7 +292,7 @@ class Agent:
 
         # Handle content output
         if chunk.message.content:
-          if in_thinking and self.thinking_enabled:
+          if in_thinking and self.thinking_mode.is_visible:
             in_thinking = False
             self._emit(
               ThinkingEndEvent(
@@ -311,7 +323,7 @@ class Agent:
             total_length=len(content),
           )
         )
-      elif in_thinking and self.thinking_enabled:
+      elif in_thinking and self.thinking_mode.is_visible:
         # No content, but thinking ended
         self._emit(
           ThinkingEndEvent(
@@ -328,6 +340,9 @@ class Agent:
             type=EventType.TURN_END,
             response=content,
             tool_calls_count=len(tool_calls),
+            prompt_eval_count=prompt_eval_count,
+            eval_count=eval_count,
+            total_duration_ms=total_duration_ms,
           )
         )
 
@@ -420,14 +435,14 @@ class Agent:
       "session_started",
       model=self.model,
       session_id=self.context.get_session_id(),
-      thinking_enabled=self.thinking_enabled,
+      thinking_mode=self.thinking_mode.value,
     )
 
     self._emit(
       SessionStartEvent(
         type=EventType.SESSION_START,
         model=self.model,
-        thinking_enabled=self.thinking_enabled,
+        thinking_enabled=self.thinking_mode.is_enabled,
       )
     )
 
