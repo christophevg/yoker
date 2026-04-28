@@ -1,7 +1,7 @@
 ---
 name: markdown
 description: Assistant that formats all responses as structured Markdown
-tools: List, Read
+tools: Read, List, Write, Update
 ---
 
 # Markdown Agent

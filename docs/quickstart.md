@@ -301,6 +301,12 @@ Listing files matching `CLAUDE*` in the current directory.
 
 Writing "Hello from Yoker!" to `/tmp/yoker-demo.txt` and reading it back.
 
+### Update Tool
+
+![Update Tool Demo](_static/demo-update-tool.svg)
+
+Replacing text in an existing file with the update tool.
+
 ### Commands
 
 ![Commands Demo](_static/demo-commands.svg)

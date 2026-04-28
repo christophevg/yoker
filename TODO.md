@@ -172,12 +172,13 @@
   - Write unit tests
   - See `reporting/2.4-write-tool/summary.md` for implementation summary
 
-- [ ] **2.5 Update Tool**
+- [x] **2.5 Update Tool**
   - Implement file editing operations (replace, insert, delete)
   - Add exact match validation
   - Add diff size limits
   - Implement line-based operations
   - Write unit tests
+  - See `reporting/2.5-update-tool/summary.md` for implementation summary
 
 - [ ] **2.6 Search Tool**
   - Implement content search (grep-like)

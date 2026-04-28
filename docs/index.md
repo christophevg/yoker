@@ -51,6 +51,7 @@ api/index
 - [x] `read` tool - Read file contents with guardrails
 - [x] `list` tool - Directory listing with pattern filtering
 - [x] `write` tool - Write files with overwrite protection
+- [x] `update` tool - Edit files with replace, insert, and delete operations
 - [x] Slash commands - Built-in commands: `/help`, `/think on|off`
 - [x] Thinking mode - LLM reasoning trace with gray output
 - [x] Streaming - Real-time token streaming from Ollama

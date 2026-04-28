@@ -40,7 +40,16 @@ src/yoker/
     types.py           # Event dataclasses (Session, Turn, Thinking, Content, Tool, Error)
     handlers.py        # EventHandler protocol and ConsoleEventHandler
   exceptions.py        # Custom exception hierarchy
-  tools.py             # read() tool
+  tools/
+    __init__.py        # Tools public API
+    base.py            # Tool ABC and ToolResult
+    guardrails.py      # Guardrail protocol
+    path_guardrail.py  # PathGuardrail implementation
+    registry.py        # ToolRegistry
+    read.py            # ReadTool
+    list.py            # ListTool
+    write.py           # WriteTool
+    update.py          # UpdateTool
 ```
 
 **Running the prototype:**

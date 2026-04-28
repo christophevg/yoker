@@ -65,9 +65,9 @@ See [docs/rationale.md](docs/rationale.md) for the full rationale and comparison
 - [x] Context persistence - Session resumption with JSONL storage
 - [x] Event logging - Full session replay capability
 - [x] Demo scripts - Generate documentation screenshots from Markdown scripts
+- [x] Update tool - Edit existing files with replace, insert, and delete operations
 
 **Planned Features:**
-- [ ] `update` tool - Modify existing files
 - [ ] `search` tool - Search file contents
 - [ ] Guardrails - Tool parameter validation
 - [ ] Permissions - Static TOML-based access control
