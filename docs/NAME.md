@@ -38,10 +38,6 @@ A yoker is literally "one who yokes" - the agent noun from "yoke". In the contex
 - clitic joins words; yoker joins agents
 - Both are short, memorable names
 
-### PyPI Available
-
-The name "yoker" is available on PyPI (confirmed 2026-04-14).
-
 ## Dictionary Meanings
 
 1. **Primary meaning**: One who yokes - an occupational term for someone who yokes animals. Historical example: "the Buzygae (yokers of oxen)" from 1871.
@@ -57,9 +53,8 @@ The name "yoker" is available on PyPI (confirmed 2026-04-14).
 1. **Agent noun**: "one who yokes" - fits the agent harness concept
 2. **Etymology**: Strong PIE root meaning "to join"
 3. **Pairs with clitic**: Both are joining tools
-4. **PyPI available**: Confirmed available
-5. **No conflicts**: No negative connotations or trademark issues
-6. **Short and memorable**: Five letters, two syllables
+4. **No conflicts**: No negative connotations or trademark issues
+5. **Short and memorable**: Five letters, two syllables
 
 ---
 
