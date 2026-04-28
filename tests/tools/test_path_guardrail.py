@@ -8,6 +8,7 @@ from yoker.config.schema import (
   PermissionsConfig,
   ReadToolConfig,
   ToolsConfig,
+  UpdateToolConfig,
   WriteToolConfig,
 )
 from yoker.tools.path_guardrail import PathGuardrail
@@ -268,6 +269,73 @@ class TestPathGuardrail:
     )
     guardrail = PathGuardrail(config)
     result = guardrail.validate("update", {"path": str(target)})
+    assert result.valid is True
+
+  def test_update_nonexistent_file_blocked(self, tmp_path: Path) -> None:
+    """Update tool blocked when file does not exist."""
+    target = tmp_path / "missing.txt"
+    config = Config(
+      permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),))
+    )
+    guardrail = PathGuardrail(config)
+    result = guardrail.validate("update", {"path": str(target)})
+    assert result.valid is False
+    assert "not found" in result.reason.lower()
+
+  def test_update_directory_blocked(self, tmp_path: Path) -> None:
+    """Update tool blocked when path is a directory."""
+    subdir = tmp_path / "subdir"
+    subdir.mkdir()
+    config = Config(
+      permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),))
+    )
+    guardrail = PathGuardrail(config)
+    result = guardrail.validate("update", {"path": str(subdir)})
+    assert result.valid is False
+    assert "not a file" in result.reason.lower()
+
+  def test_update_blocked_extension(self, tmp_path: Path) -> None:
+    """Update tool blocked for write-blocked extensions."""
+    target = tmp_path / "script.exe"
+    target.write_text("hello")
+    config = Config(
+      permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),))
+    )
+    guardrail = PathGuardrail(config)
+    result = guardrail.validate("update", {"path": str(target)})
+    assert result.valid is False
+    assert ".exe" in result.reason.lower()
+
+  def test_update_diff_size_exceeded(self, tmp_path: Path) -> None:
+    """Update tool blocked when diff size exceeds limit."""
+    target = tmp_path / "test.txt"
+    target.write_text("hello")
+    config = Config(
+      permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)),
+      tools=ToolsConfig(update=UpdateToolConfig(max_diff_size_kb=1)),
+    )
+    guardrail = PathGuardrail(config)
+    large_string = "a" * 2048
+    result = guardrail.validate(
+      "update",
+      {"path": str(target), "new_string": large_string},
+    )
+    assert result.valid is False
+    assert "exceeds limit" in result.reason.lower()
+
+  def test_update_diff_size_within_limit(self, tmp_path: Path) -> None:
+    """Update tool allowed when diff size within limit."""
+    target = tmp_path / "test.txt"
+    target.write_text("hello")
+    config = Config(
+      permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)),
+      tools=ToolsConfig(update=UpdateToolConfig(max_diff_size_kb=100)),
+    )
+    guardrail = PathGuardrail(config)
+    result = guardrail.validate(
+      "update",
+      {"path": str(target), "new_string": "replacement"},
+    )
     assert result.valid is True
 
   def test_relative_path_resolved(self, tmp_path: Path) -> None:

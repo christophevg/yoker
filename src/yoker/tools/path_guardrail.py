@@ -15,6 +15,7 @@ from yoker.config.schema import (
   PermissionsConfig,
   ReadToolConfig,
   ToolConfig,
+  UpdateToolConfig,
   WriteToolConfig,
 )
 from yoker.logging import get_logger
@@ -140,6 +141,33 @@ class PathGuardrail(Guardrail):
         return ValidationResult(valid=False, reason=ext_reason)
 
       size_reason = self._check_write_content_size(params)
+      if size_reason:
+        return ValidationResult(valid=False, reason=size_reason)
+
+    # Update-specific checks
+    if tool_name == "update":
+      # File must exist
+      if not resolved.exists():
+        return ValidationResult(
+          valid=False, reason=f"File not found: {path_param}"
+        )
+      if not resolved.is_file():
+        return ValidationResult(
+          valid=False, reason=f"Path is not a file: {path_param}"
+        )
+
+      # Apply read extension checks (can only update allowed file types)
+      ext_reason = self._check_read_extension(resolved)
+      if ext_reason:
+        return ValidationResult(valid=False, reason=ext_reason)
+
+      # Apply write blocked extension checks
+      ext_reason = self._check_write_extension(resolved)
+      if ext_reason:
+        return ValidationResult(valid=False, reason=ext_reason)
+
+      # Check diff size
+      size_reason = self._check_update_diff_size(params)
       if size_reason:
         return ValidationResult(valid=False, reason=size_reason)
 
@@ -293,6 +321,34 @@ class PathGuardrail(Guardrail):
     if size_kb > max_size_kb:
       return (
         f"Content exceeds size limit: {size_kb:.1f}KB > {max_size_kb}KB"
+      )
+    return None
+
+  def _check_update_diff_size(self, params: dict[str, Any]) -> str | None:
+    """Check if update diff size exceeds the maximum allowed.
+
+    Args:
+      params: Tool parameters dictionary with old_string and new_string.
+
+    Returns:
+      Error message if diff too large, None if within limits.
+    """
+    update_config = self._get_tool_config("update")
+    if not isinstance(update_config, UpdateToolConfig):
+      return None
+
+    max_size_kb = update_config.max_diff_size_kb
+    if max_size_kb <= 0:
+      return None
+
+    new_string = params.get("new_string", "")
+    if not isinstance(new_string, str):
+      return None
+
+    size_kb = len(new_string.encode("utf-8")) / 1024
+    if size_kb > max_size_kb:
+      return (
+        f"Diff size exceeds limit: {size_kb:.1f}KB > {max_size_kb}KB"
       )
     return None
 
