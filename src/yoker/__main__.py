@@ -11,13 +11,19 @@ Options:
 import argparse
 from pathlib import Path
 
+from ollama import ResponseError
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.shortcuts import PromptSession
 
 from yoker import __version__
 from yoker.agent import Agent
-from yoker.commands import CommandRegistry, create_help_command, create_think_command
+from yoker.commands import (
+  CommandRegistry,
+  create_context_command,
+  create_help_command,
+  create_think_command,
+)
 from yoker.config import Config
 from yoker.events import (
   ConsoleEventHandler,
@@ -128,6 +134,13 @@ def create_command_registry(agent: Agent) -> CommandRegistry:
     create_think_command(
       get_thinking_state=lambda: agent.thinking_enabled,
       set_thinking_state=lambda enabled: setattr(agent, "thinking_enabled", enabled),
+    )
+  )
+  registry.register(
+    create_context_command(
+      get_session_id=lambda: agent.context.get_session_id(),
+      get_statistics=lambda: agent.context.get_statistics(),
+      get_messages=lambda: agent.context.get_messages(),
     )
   )
 
@@ -249,7 +262,21 @@ def main() -> None:
         continue
 
       # Process message (output is streamed via events)
-      agent.process(user_input)
+      try:
+        agent.process(user_input)
+      except ResponseError as e:
+        # Handle Ollama API errors gracefully - allow retry
+        if e.status_code == 503:
+          print("\n[Error] Ollama server is overloaded. Please wait a moment and try again.")
+        elif e.status_code == 404:
+          print("\n[Error] Model not found. Check that the model is available.")
+        elif e.status_code in (401, 403):
+          print("\n[Error] Authentication failed. Check your Ollama configuration.")
+        elif e.status_code == 500:
+          print(f"\n[Error] Ollama internal error: {e}")
+        else:
+          print(f"\n[Error] Ollama error ({e.status_code}): {e}")
+        continue
 
   except Exception as e:
     agent._emit(
