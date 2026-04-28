@@ -136,10 +136,10 @@ Yoker supports session persistence for resuming conversations:
 
 ```bash
 # Start a session with persistence
-python scripts/demo_session.py --script demos/session.md --persist
+python -m yoker --persist
 
 # Resume a previous session
-python scripts/demo_session.py --script demos/session.md --resume <session_id>
+python -m yoker --resume <session_id>
 ```
 
 When using `--persist`, the session is saved after each turn. Use `--resume` to continue a previous session with full context restored.
@@ -272,72 +272,6 @@ See `examples/yoker.toml` for the full configuration reference.
 ### Environment Variables
 
 Yoker automatically loads `yoker.toml` from the current directory if it exists.
-
-## Demo Session Script
-
-Generate terminal screenshots for documentation from Markdown script files. Demo scripts define a sequence of messages and an output path in YAML frontmatter.
-
-```bash
-# Run default demo script (demos/session.md)
-python scripts/demo_session.py
-
-# Run a specific demo script
-python scripts/demo_session.py --script demos/list-tool.md
-
-# Run all demo scripts in a directory
-python scripts/demo_session.py --scripts-dir demos/
-
-# Log events for later replay
-python scripts/demo_session.py --script demos/session.md --log
-
-# Replay from log (no LLM calls)
-python scripts/demo_session.py --script demos/session.md --replay
-
-# With an agent definition
-python scripts/demo_session.py --script demos/session.md --agent examples/agents/markdown.md
-
-# Save to a specific output path
-python scripts/demo_session.py --script demos/session.md --output media/custom.svg
-```
-
-### Demo Script Format
-
-Create demo scripts as Markdown files with YAML frontmatter:
-
-```markdown
----
-title: List Tool Demo
-description: Demonstrates the list tool with pattern filtering
-output: media/demo-list-tool.svg
-events: media/events-list-tool.jsonl
----
-
-## Messages
-
-- /help
-- List all Python files in the src directory.
-```
-
-### Demo Script Options
-
-| Option | Description |
-|--------|-------------|
-| `-s, --script PATH` | Path to demo script Markdown file |
-| `-d, --scripts-dir PATH` | Run all demo scripts in directory |
-| `--log` | Log events to script's events file |
-| `--replay [PATH]` | Replay from JSONL file |
-| `--agent PATH` | Load agent definition file |
-| `--persist` | Persist session for later resumption |
-| `--resume ID` | Resume a previous session by ID |
-| `-o, --output PATH` | Output path for SVG (overrides script default) |
-
-### Output Files
-
-| File | Description |
-|------|-------------|
-| `media/demo-{feature}.svg` | Feature-specific screenshots |
-| `media/session.svg` | Main session screenshot |
-| `media/events-{feature}.jsonl` | Event log (with `--log`) |
 
 ## Available Tools
 
