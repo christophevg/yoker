@@ -82,6 +82,16 @@ docs-view: docs ## Build and open documentation in browser
 	  xdg-open docs/_build/html/index.html; \
 	fi
 
+## Demo Screenshots
+
+demo: ## Generate main session screenshot (media/session.svg)
+	$(check_venv)
+	python scripts/demo_session.py --script demos/session.md
+
+demos: ## Generate all demo screenshots
+	$(check_venv)
+	python scripts/demo_session.py --scripts-dir demos/
+
 ## Code Quality
 
 typecheck: ## Run mypy type checking

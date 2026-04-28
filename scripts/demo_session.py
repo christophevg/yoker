@@ -6,15 +6,16 @@ Each script specifies a sequence of user messages and an output path.
 Multiple scripts can be defined for different features/tools.
 
 Usage:
-    python scripts/demo_session.py                    # Run default script (demos/basic.md)
+    python scripts/demo_session.py                    # Run default script (demos/session.md)
     python scripts/demo_session.py --script demos/list-tool.md
     python scripts/demo_session.py --scripts-dir demos/
-    python scripts/demo_session.py --log              # Log events for replay
-    python scripts/demo_session.py --replay           # Replay from events
+    python scripts/demo_session.py --script demos/session.md --log
+    python scripts/demo_session.py --script demos/session.md --replay
     python scripts/demo_session.py --output media/custom.svg
 
 Output:
     Per-script SVG files defined in each demo script's frontmatter.
+    Default script generates media/session.svg (with timestamped backup).
 """
 
 import argparse
@@ -42,7 +43,7 @@ from yoker.events import (
 MEDIA_DIR = Path("media")
 
 # Default demo script path
-DEFAULT_SCRIPT = Path("demos/basic.md")
+DEFAULT_SCRIPT = Path("demos/session.md")
 
 # Wrap width for SVG output
 WRAP_WIDTH = 80
@@ -124,9 +125,17 @@ def run_demo_session(
   if output:
     svg_path = output
     svg_path.parent.mkdir(parents=True, exist_ok=True)
-  else:
+  elif script.output:
     svg_path = Path(script.output)
     svg_path.parent.mkdir(parents=True, exist_ok=True)
+  else:
+    # Fallback: timestamped file + symlink (old behavior)
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    svg_path = MEDIA_DIR / f"session-{timestamp}.svg"
+    current_link = MEDIA_DIR / "session.svg"
+    if current_link.exists() or current_link.is_symlink():
+      current_link.unlink()
+    current_link.symlink_to(svg_path.name)
 
   # Determine events path
   events_path = replay if replay else (Path(script.events) if script.events else None)

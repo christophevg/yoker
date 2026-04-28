@@ -1,8 +1,8 @@
 ---
-title: Basic Session
-description: A simple session showing basic interaction, commands, and tool calls.
-output: media/demo-basic.svg
-events: media/events-basic.jsonl
+title: Session
+description: Full session showing commands, tool calls, and thinking mode.
+output: media/session.svg
+events: media/events-session.jsonl
 ---
 
 ## Messages

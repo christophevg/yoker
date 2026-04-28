@@ -136,10 +136,10 @@ Yoker supports session persistence for resuming conversations:
 
 ```bash
 # Start a session with persistence
-python scripts/demo_session.py --script demos/basic.md --persist
+python scripts/demo_session.py --script demos/session.md --persist
 
 # Resume a previous session
-python scripts/demo_session.py --script demos/basic.md --resume <session_id>
+python scripts/demo_session.py --script demos/session.md --resume <session_id>
 ```
 
 When using `--persist`, the session is saved after each turn. Use `--resume` to continue a previous session with full context restored.
@@ -278,7 +278,7 @@ Yoker automatically loads `yoker.toml` from the current directory if it exists.
 Generate terminal screenshots for documentation from Markdown script files. Demo scripts define a sequence of messages and an output path in YAML frontmatter.
 
 ```bash
-# Run default demo script (demos/basic.md)
+# Run default demo script (demos/session.md)
 python scripts/demo_session.py
 
 # Run a specific demo script
@@ -288,16 +288,16 @@ python scripts/demo_session.py --script demos/list-tool.md
 python scripts/demo_session.py --scripts-dir demos/
 
 # Log events for later replay
-python scripts/demo_session.py --script demos/basic.md --log
+python scripts/demo_session.py --script demos/session.md --log
 
 # Replay from log (no LLM calls)
-python scripts/demo_session.py --script demos/basic.md --replay
+python scripts/demo_session.py --script demos/session.md --replay
 
 # With an agent definition
-python scripts/demo_session.py --script demos/basic.md --agent examples/agents/markdown.md
+python scripts/demo_session.py --script demos/session.md --agent examples/agents/markdown.md
 
 # Save to a specific output path
-python scripts/demo_session.py --script demos/basic.md --output media/custom.svg
+python scripts/demo_session.py --script demos/session.md --output media/custom.svg
 ```
 
 ### Demo Script Format

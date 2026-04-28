@@ -1,6 +1,6 @@
 ---
 title: List Tool
-description: Demonstrates the list tool with pattern filtering and depth control.
+description: Demonstrates the list tool for directory listings.
 output: media/demo-list-tool.svg
 events: media/events-list-tool.jsonl
 ---

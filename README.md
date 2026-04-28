@@ -109,7 +109,7 @@ Based on my analysis, here's what I found...
 Generate terminal screenshots for documentation from Markdown script files:
 
 ```bash
-# Run default demo script (demos/basic.md)
+# Run default demo script (demos/session.md)
 python scripts/demo_session.py
 
 # Run a specific demo script
@@ -119,13 +119,13 @@ python scripts/demo_session.py --script demos/list-tool.md
 python scripts/demo_session.py --scripts-dir demos/
 
 # Real LLM + log conversation for replay
-python scripts/demo_session.py --script demos/basic.md --log
+python scripts/demo_session.py --script demos/session.md --log
 
 # Replay from log (no LLM calls)
-python scripts/demo_session.py --script demos/basic.md --replay
+python scripts/demo_session.py --script demos/session.md --replay
 
 # With an agent definition
-python scripts/demo_session.py --script demos/basic.md --agent examples/agents/markdown.md
+python scripts/demo_session.py --script demos/session.md --agent examples/agents/markdown.md
 ```
 
 ## Configuration
