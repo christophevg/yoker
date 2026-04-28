@@ -7,5 +7,4 @@ events: media/events-read-tool.jsonl
 
 ## Messages
 
-- Read the first 10 lines of README.md.
-- Show me the content of pyproject.toml.
+- Read the first 3 lines of README.md. Output only those lines, no commentary.

@@ -160,6 +160,8 @@ For automatic activation, a `.python-version` file is already present.
 | `make build` | Build package distributions |
 | `make publish` | Build and publish to PyPI |
 | `make clean` | Remove build artifacts |
+| `make demo` | Generate main session screenshot (`media/session.svg`) |
+| `make demos` | Generate all demo screenshots in `demos/` |
 
 ## Pre-Commit Requirements
 
@@ -221,22 +223,35 @@ And verify it starts correctly.
 
 The project maintains a visual record of improvements in `media/`:
 
-1. **Generate timestamped screenshots:**
+1. **Generate screenshots from demo scripts:**
    ```bash
-   python scripts/demo_session.py          # Real LLM session
-   python scripts/demo_session.py --log     # Real LLM + log conversation
-   python scripts/demo_session.py --replay  # Replay from log (no LLM)
+   make demo                                # Generate main session screenshot
+   make demos                               # Generate all demo screenshots
+   python scripts/demo_session.py --script demos/session.md --log
+   python scripts/demo_session.py --script demos/session.md --replay
    ```
 
 2. **Output files:**
-   - `media/session-YYYYMMDD-HHMMSS.svg` - Timestamped history
-   - `media/session.svg` - Symlink to latest (used in README)
-   - `media/session.jsonl` - Conversation log (with `--log`)
+   - `media/demo-{feature}.svg` - Feature-specific screenshots (used in docs)
+   - `media/session.svg` - Main session screenshot (used in README)
+   - `media/events-{feature}.jsonl` - Conversation logs (with `--log`)
 
 3. **Update documentation when features change:**
-   - Regenerate session screenshot: `python scripts/demo_session.py --replay`
+   - Regenerate screenshots: `make demos`
    - Update `docs/_static/session.svg` for Sphinx docs
    - Ensure README.md and docs reflect current capabilities
+
+### Demo Script Writing Strategy
+
+Each feature/tool gets its own focused demo script in `demos/`:
+
+- **One feature per script** — keep screenshots small and focused
+- **Explicit brevity constraints** — add instructions like "Reply in 2 lines or less" or "Output only those lines, no commentary" to keep images concise
+- **Single-message scripts preferred** — avoid multi-turn demos unless necessary to show interaction
+- **Avoid unconstrained questions** — never ask open-ended questions that trigger long LLM responses
+- **Use pattern-based file queries** — e.g. `List files matching "CLAUDE*"` instead of broad directory listings
+
+See existing scripts (`demos/list-tool.md`, `demos/write-tool.md`) for examples.
 
 ### Documentation Update Checklist
 
@@ -253,11 +268,13 @@ When adding or modifying features, update:
 
 | Flag | Description |
 |------|-------------|
-| (no flag) | Real LLM session |
-| `--log` | Log conversation to `session.jsonl` |
-| `--replay` | Replay from `session.jsonl` (no LLM calls) |
+| `--script PATH` | Run a specific demo script |
+| `--scripts-dir PATH` | Run all demo scripts in directory |
+| `--log` | Log conversation to script's events file |
+| `--replay` | Replay from events file (no LLM calls) |
+| `--output PATH` | Override output SVG path |
 
-Use `--log` when making non-LLL improvements to capture conversation for replay.
+Use `--log` when making non-LLM improvements to capture conversation for replay.
 
 ## Related Projects
 

@@ -4,7 +4,7 @@
 VENV_NAME := yoker
 PYTHON_VERSION := 3.11
 
-.PHONY: setup activate install test test-all test-3.10 test-3.11 test-3.12 test-file typecheck lint format build publish clean clean-all help docs docs-view
+.PHONY: setup activate install test test-all test-3.10 test-3.11 test-3.12 test-file typecheck lint format build publish clean clean-all help docs docs-view demo demos
 
 # Guard to ensure virtual environment is active
 define check_venv

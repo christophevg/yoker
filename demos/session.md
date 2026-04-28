@@ -8,7 +8,6 @@ events: media/events-session.jsonl
 ## Messages
 
 - /help
-- /think off
-- Show files in the current folder whose name starts with an 'R'.
+- List files matching "CLAUDE*" in the current directory. Answer in 1 line.
 - /think on
-- Summarize the README.md file in less than 5 lines.
+- What is this project? Answer in 1 sentence.

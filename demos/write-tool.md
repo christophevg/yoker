@@ -7,5 +7,5 @@ events: media/events-write-tool.jsonl
 
 ## Messages
 
-- Write "Hello from Yoker!" to /tmp/yoker-demo.txt.
-- Read the file /tmp/yoker-demo.txt back to me.
+- Write "Hello from Yoker!" to /tmp/yoker-demo.txt. Reply "Done" and nothing else.
+- Read /tmp/yoker-demo.txt. Output the content with no extra text.

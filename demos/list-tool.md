@@ -7,6 +7,4 @@ events: media/events-list-tool.jsonl
 
 ## Messages
 
-- List the files in the current directory.
-- Show only Python files in the src directory.
-- List the src directory with depth 2.
+- List files matching "CLAUDE*" in the current directory. Reply in 2 lines or less.

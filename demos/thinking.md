@@ -8,4 +8,4 @@ events: media/events-thinking.jsonl
 ## Messages
 
 - /think on
-- Explain step by step how you would find all Python files in a project.
+- What is 7 times 8? Answer in 3 words or less.
