@@ -51,6 +51,9 @@ See [docs/rationale.md](docs/rationale.md) for the full rationale and comparison
 **Current Features:**
 - [x] Chat loop - Interactive conversation with Ollama
 - [x] Tool calling - Structured tool execution with parameters
+- [x] `read` tool - Read file contents with guardrails
+- [x] `list` tool - Directory listing with pattern filtering
+- [x] `write` tool - Write files with overwrite protection
 - [x] Slash commands - Built-in commands: `/help`, `/think on|off`
 - [x] Thinking mode - LLM reasoning trace with gray output
 - [x] Streaming - Real-time token streaming from Ollama
@@ -61,9 +64,11 @@ See [docs/rationale.md](docs/rationale.md) for the full rationale and comparison
 - [x] Event-driven architecture - Library-first design with event emission
 - [x] Context persistence - Session resumption with JSONL storage
 - [x] Event logging - Full session replay capability
+- [x] Demo scripts - Generate documentation screenshots from Markdown scripts
 
 **Planned Features:**
-- [ ] Additional tools (list, write, update, search)
+- [ ] `update` tool - Modify existing files
+- [ ] `search` tool - Search file contents
 - [ ] Guardrails - Tool parameter validation
 - [ ] Permissions - Static TOML-based access control
 - [ ] Sub-agents - Hierarchical agent spawning with isolated context

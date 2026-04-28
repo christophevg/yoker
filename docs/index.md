@@ -48,6 +48,9 @@ api/index
 
 - [x] Chat loop - Interactive conversation with Ollama
 - [x] Tool calling - Structured tool execution with parameters
+- [x] `read` tool - Read file contents with guardrails
+- [x] `list` tool - Directory listing with pattern filtering
+- [x] `write` tool - Write files with overwrite protection
 - [x] Slash commands - Built-in commands: `/help`, `/think on|off`
 - [x] Thinking mode - LLM reasoning trace with gray output
 - [x] Streaming - Real-time token streaming from Ollama
@@ -58,6 +61,7 @@ api/index
 - [x] Event-driven architecture - Library-first design
 - [x] Context persistence - Session resumption
 - [x] Event logging - Full session replay
+- [x] Demo scripts - Generate documentation screenshots from Markdown scripts
 
 ## Architecture
 

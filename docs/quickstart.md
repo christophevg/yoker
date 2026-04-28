@@ -335,17 +335,25 @@ events: media/events-list-tool.jsonl
 
 | File | Description |
 |------|-------------|
-| `media/session-YYYYMMDD-HHMMSS.svg` | Timestamped session screenshot |
-| `media/session.svg` | Symlink to latest screenshot |
-| `media/events.jsonl` | Event log (with `--log`) |
+| `media/demo-{feature}.svg` | Feature-specific screenshots |
+| `media/session.svg` | Main session screenshot |
+| `media/events-{feature}.jsonl` | Event log (with `--log`) |
 
 ## Available Tools
 
-| Tool | Purpose |
-|------|---------|
-| `read` | Read file contents |
+| Tool | Purpose | Demo |
+|------|---------|------|
+| `read` | Read file contents | ![Read Tool](_static/demo-read-tool.svg) |
+| `list` | List directory contents with pattern filtering | ![List Tool](_static/demo-list-tool.svg) |
+| `write` | Write content to files with overwrite protection | ![Write Tool](_static/demo-write-tool.svg) |
 
-More tools (list, write, update, search, agent) will be added in future releases.
+### Commands Demo
+
+![Commands](_static/demo-commands.svg)
+
+### Thinking Mode Demo
+
+![Thinking Mode](_static/demo-thinking.svg)
 
 ---
 
