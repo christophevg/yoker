@@ -275,19 +275,43 @@ Yoker automatically loads `yoker.toml` from the current directory if it exists.
 
 ## Available Tools
 
-| Tool | Purpose | Demo |
-|------|---------|------|
-| `read` | Read file contents | ![Read Tool](_static/demo-read-tool.svg) |
-| `list` | List directory contents with pattern filtering | ![List Tool](_static/demo-list-tool.svg) |
-| `write` | Write content to files with overwrite protection | ![Write Tool](_static/demo-write-tool.svg) |
+| Tool | Purpose |
+|------|---------|
+| `read` | Read file contents |
+| `list` | List directory contents with pattern filtering |
+| `write` | Write content to files with overwrite protection |
 
-### Commands Demo
+## Tool Examples
 
-![Commands](_static/demo-commands.svg)
+### Read Tool
 
-### Thinking Mode Demo
+![Read Tool Demo](_static/demo-read-tool.svg)
 
-![Thinking Mode](_static/demo-thinking.svg)
+Reading the first 3 lines of `README.md`.
+
+### List Tool
+
+![List Tool Demo](_static/demo-list-tool.svg)
+
+Listing files matching `CLAUDE*` in the current directory.
+
+### Write Tool
+
+![Write Tool Demo](_static/demo-write-tool.svg)
+
+Writing "Hello from Yoker!" to `/tmp/yoker-demo.txt` and reading it back.
+
+### Commands
+
+![Commands Demo](_static/demo-commands.svg)
+
+Using `/help`, `/think on`, and `/think off` slash commands.
+
+### Thinking Mode
+
+![Thinking Mode Demo](_static/demo-thinking.svg)
+
+Thinking mode enabled shows the LLM reasoning process in gray before the response.
 
 ---
 
