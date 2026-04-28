@@ -8,6 +8,7 @@ from yoker.config.schema import (
   PermissionsConfig,
   ReadToolConfig,
   ToolsConfig,
+  WriteToolConfig,
 )
 from yoker.tools.path_guardrail import PathGuardrail
 
@@ -198,6 +199,64 @@ class TestPathGuardrail:
     )
     guardrail = PathGuardrail(config)
     result = guardrail.validate("write", {"path": str(tmp_path / "new.txt")})
+    assert result.valid is True
+
+  def test_write_blocked_extension(self, tmp_path: Path) -> None:
+    """Blocks write of files with blocked extensions."""
+    exe_file = tmp_path / "malware.exe"
+    config = Config(
+      permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)),
+      tools=ToolsConfig(
+        write=WriteToolConfig(blocked_extensions=(".exe", ".sh"))
+      ),
+    )
+    guardrail = PathGuardrail(config)
+    result = guardrail.validate(
+      "write", {"path": str(exe_file), "content": "bad"}
+    )
+    assert result.valid is False
+    assert "extension blocked" in result.reason.lower()
+
+  def test_write_allowed_extension(self, tmp_path: Path) -> None:
+    """Allows write of files with non-blocked extensions."""
+    txt_file = tmp_path / "readme.txt"
+    config = Config(
+      permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)),
+      tools=ToolsConfig(
+        write=WriteToolConfig(blocked_extensions=(".exe", ".sh"))
+      ),
+    )
+    guardrail = PathGuardrail(config)
+    result = guardrail.validate(
+      "write", {"path": str(txt_file), "content": "hello"}
+    )
+    assert result.valid is True
+
+  def test_write_content_size_limit(self, tmp_path: Path) -> None:
+    """Blocks write when content exceeds size limit."""
+    file_path = tmp_path / "big.txt"
+    config = Config(
+      permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)),
+      tools=ToolsConfig(write=WriteToolConfig(max_size_kb=1)),
+    )
+    guardrail = PathGuardrail(config)
+    result = guardrail.validate(
+      "write", {"path": str(file_path), "content": "x" * 2048}
+    )
+    assert result.valid is False
+    assert "exceeds size limit" in result.reason.lower()
+
+  def test_write_content_within_limit(self, tmp_path: Path) -> None:
+    """Allows write when content is within size limit."""
+    file_path = tmp_path / "small.txt"
+    config = Config(
+      permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)),
+      tools=ToolsConfig(write=WriteToolConfig(max_size_kb=1)),
+    )
+    guardrail = PathGuardrail(config)
+    result = guardrail.validate(
+      "write", {"path": str(file_path), "content": "x" * 512}
+    )
     assert result.valid is True
 
   def test_update_tool_allowed(self, tmp_path: Path) -> None:

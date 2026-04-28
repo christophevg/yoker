@@ -163,13 +163,14 @@
   - **Security**: Current `ReadTool` is critically vulnerable (zero validation); harden via guardrail
   - See `reporting/2.3-read-tool/summary.md` for implementation summary
 
-- [ ] **2.4 Write Tool**
+- [x] **2.4 Write Tool**
   - Implement file writing functionality
   - Add path restriction guardrails
   - Implement overwrite protection
   - Add size limit enforcement
   - Add blocked extension filtering
   - Write unit tests
+  - See `reporting/2.4-write-tool/summary.md` for implementation summary
 
 - [ ] **2.5 Update Tool**
   - Implement file editing operations (replace, insert, delete)

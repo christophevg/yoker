@@ -10,7 +10,13 @@ import re
 from pathlib import Path
 from typing import Any
 
-from yoker.config.schema import Config, PermissionsConfig, ReadToolConfig, ToolConfig
+from yoker.config.schema import (
+  Config,
+  PermissionsConfig,
+  ReadToolConfig,
+  ToolConfig,
+  WriteToolConfig,
+)
 from yoker.logging import get_logger
 from yoker.tools.base import ValidationResult
 from yoker.tools.guardrails import Guardrail
@@ -127,6 +133,16 @@ class PathGuardrail(Guardrail):
       if size_reason:
         return ValidationResult(valid=False, reason=size_reason)
 
+    # Write-specific checks
+    if tool_name == "write":
+      ext_reason = self._check_write_extension(resolved)
+      if ext_reason:
+        return ValidationResult(valid=False, reason=ext_reason)
+
+      size_reason = self._check_write_content_size(params)
+      if size_reason:
+        return ValidationResult(valid=False, reason=size_reason)
+
     # Log allowed decision
     if self._config.logging.include_permission_checks:
       log.info("guardrail_allowed", tool=tool_name, path=str(resolved))
@@ -227,6 +243,56 @@ class PathGuardrail(Guardrail):
     if size_kb > max_size_kb:
       return (
         f"File exceeds size limit: {size_kb:.1f}KB > {max_size_kb}KB"
+      )
+    return None
+
+  def _check_write_extension(self, resolved: Path) -> str | None:
+    """Check if a file extension is blocked for writing.
+
+    Args:
+      resolved: The resolved file path.
+
+    Returns:
+      Error message if extension is blocked, None if allowed.
+    """
+    write_config = self._get_tool_config("write")
+    if not isinstance(write_config, WriteToolConfig):
+      return None
+
+    blocked = write_config.blocked_extensions
+    if not blocked:
+      return None
+
+    ext = resolved.suffix.lower()
+    if ext in blocked:
+      return f"Extension blocked for writing: {ext}"
+    return None
+
+  def _check_write_content_size(self, params: dict[str, Any]) -> str | None:
+    """Check if write content exceeds the maximum allowed size.
+
+    Args:
+      params: Tool parameters dictionary.
+
+    Returns:
+      Error message if content too large, None if within limits.
+    """
+    write_config = self._get_tool_config("write")
+    if not isinstance(write_config, WriteToolConfig):
+      return None
+
+    max_size_kb = write_config.max_size_kb
+    if max_size_kb <= 0:
+      return None
+
+    content = params.get("content", "")
+    if not isinstance(content, str):
+      return None
+
+    size_kb = len(content.encode("utf-8")) / 1024
+    if size_kb > max_size_kb:
+      return (
+        f"Content exceeds size limit: {size_kb:.1f}KB > {max_size_kb}KB"
       )
     return None
 

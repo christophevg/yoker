@@ -10,6 +10,7 @@ from .list import ListTool
 from .path_guardrail import PathGuardrail
 from .read import ReadTool
 from .registry import ToolRegistry
+from .write import WriteTool
 
 
 def create_default_registry() -> ToolRegistry:
@@ -21,6 +22,7 @@ def create_default_registry() -> ToolRegistry:
   registry = ToolRegistry()
   registry.register(ReadTool())
   registry.register(ListTool())
+  registry.register(WriteTool())
   return registry
 
 
@@ -36,6 +38,7 @@ __all__ = [
   "ToolRegistry",
   "ReadTool",
   "ListTool",
+  "WriteTool",
   "AVAILABLE_TOOLS",
   "create_default_registry",
 ]
