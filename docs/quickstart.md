@@ -136,10 +136,10 @@ Yoker supports session persistence for resuming conversations:
 
 ```bash
 # Start a session with persistence
-python scripts/demo_session.py --persist
+python scripts/demo_session.py --script demos/basic.md --persist
 
 # Resume a previous session
-python scripts/demo_session.py --resume <session_id>
+python scripts/demo_session.py --script demos/basic.md --resume <session_id>
 ```
 
 When using `--persist`, the session is saved after each turn. Use `--resume` to continue a previous session with full context restored.
@@ -275,36 +275,61 @@ Yoker automatically loads `yoker.toml` from the current directory if it exists.
 
 ## Demo Session Script
 
-Generate terminal screenshots for documentation:
+Generate terminal screenshots for documentation from Markdown script files. Demo scripts define a sequence of messages and an output path in YAML frontmatter.
 
 ```bash
-# Run with real LLM
+# Run default demo script (demos/basic.md)
 python scripts/demo_session.py
 
-# Run with LLM and log conversation to session.jsonl
-python scripts/demo_session.py --log
+# Run a specific demo script
+python scripts/demo_session.py --script demos/list-tool.md
 
-# Replay from log (no LLM calls - useful for regenerating screenshots)
-python scripts/demo_session.py --replay
+# Run all demo scripts in a directory
+python scripts/demo_session.py --scripts-dir demos/
 
-# With an agent definition and custom messages
-python scripts/demo_session.py --agent examples/agents/markdown.md -m "Your question"
+# Log events for later replay
+python scripts/demo_session.py --script demos/basic.md --log
 
-# Save to a specific output path (single-use screenshot)
-python scripts/demo_session.py --replay --output media/custom.svg
+# Replay from log (no LLM calls)
+python scripts/demo_session.py --script demos/basic.md --replay
+
+# With an agent definition
+python scripts/demo_session.py --script demos/basic.md --agent examples/agents/markdown.md
+
+# Save to a specific output path
+python scripts/demo_session.py --script demos/basic.md --output media/custom.svg
+```
+
+### Demo Script Format
+
+Create demo scripts as Markdown files with YAML frontmatter:
+
+```markdown
+---
+title: List Tool Demo
+description: Demonstrates the list tool with pattern filtering
+output: media/demo-list-tool.svg
+events: media/events-list-tool.jsonl
+---
+
+## Messages
+
+- /help
+- List all Python files in the src directory.
 ```
 
 ### Demo Script Options
 
 | Option | Description |
 |--------|-------------|
-| `--log` | Log events to `media/events.jsonl` |
-| `--replay [PATH]` | Replay from JSONL file (default: `media/events.jsonl`) |
+| `-s, --script PATH` | Path to demo script Markdown file |
+| `-d, --scripts-dir PATH` | Run all demo scripts in directory |
+| `--log` | Log events to script's events file |
+| `--replay [PATH]` | Replay from JSONL file |
 | `--agent PATH` | Load agent definition file |
-| `-m, --message TEXT` | Add custom message (can be used multiple times) |
 | `--persist` | Persist session for later resumption |
 | `--resume ID` | Resume a previous session by ID |
-| `-o, --output PATH` | Output path for SVG (default: timestamped) |
+| `-o, --output PATH` | Output path for SVG (overrides script default) |
 
 ### Output Files
 

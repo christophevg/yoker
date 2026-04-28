@@ -106,20 +106,26 @@ Based on my analysis, here's what I found...
 
 ### Demo Session Script
 
-Generate terminal screenshots for documentation:
+Generate terminal screenshots for documentation from Markdown script files:
 
 ```bash
-# Real LLM session
+# Run default demo script (demos/basic.md)
 python scripts/demo_session.py
 
-# Real LLM + log conversation
-python scripts/demo_session.py --log
+# Run a specific demo script
+python scripts/demo_session.py --script demos/list-tool.md
+
+# Run all demo scripts in a directory
+python scripts/demo_session.py --scripts-dir demos/
+
+# Real LLM + log conversation for replay
+python scripts/demo_session.py --script demos/basic.md --log
 
 # Replay from log (no LLM calls)
-python scripts/demo_session.py --replay
+python scripts/demo_session.py --script demos/basic.md --replay
 
 # With an agent definition
-python scripts/demo_session.py --agent examples/agents/markdown.md -m "Your question"
+python scripts/demo_session.py --script demos/basic.md --agent examples/agents/markdown.md
 ```
 
 ## Configuration

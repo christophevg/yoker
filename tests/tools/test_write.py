@@ -178,7 +178,10 @@ class TestWriteTool:
       raise PermissionError("Access denied")
 
     monkeypatch.setattr(Path, "write_text", mock_write_text)
-    tool = WriteTool()
+    config = Config(
+      tools=ToolsConfig(write=WriteToolConfig(allow_overwrite=True))
+    )
+    tool = WriteTool(config=config)
     result = tool.execute(path=str(file_path), content="new data")
     assert result.success is False
     assert "permission denied" in result.error.lower()
@@ -212,7 +215,10 @@ class TestWriteTool:
       raise OSError("device error")
 
     monkeypatch.setattr(Path, "write_text", mock_write_text)
-    tool = WriteTool()
+    config = Config(
+      tools=ToolsConfig(write=WriteToolConfig(allow_overwrite=True))
+    )
+    tool = WriteTool(config=config)
     result = tool.execute(path=str(file_path), content="new data")
     assert result.success is False
     assert "error writing file" in result.error.lower()

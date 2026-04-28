@@ -1,20 +1,20 @@
 #!/usr/bin/env python
-"""Generate a terminal screenshot of a Yoker session.
+"""Generate terminal screenshots of Yoker sessions from demo scripts.
 
-This script runs a demo session with predefined messages and exports
-the captured output as an SVG file showing the terminal interaction.
+Demo scripts are defined as Markdown files with YAML frontmatter.
+Each script specifies a sequence of user messages and an output path.
+Multiple scripts can be defined for different features/tools.
 
 Usage:
-    python scripts/demo_session.py              # Real LLM session
-    python scripts/demo_session.py --log       # Real LLM + log conversation
-    python scripts/demo_session.py --replay    # Replay from events (no LLM)
-    python scripts/demo_session.py --persist  # Save session for resumption
-    python scripts/demo_session.py --resume <session_id>  # Resume session
+    python scripts/demo_session.py                    # Run default script (demos/basic.md)
+    python scripts/demo_session.py --script demos/list-tool.md
+    python scripts/demo_session.py --scripts-dir demos/
+    python scripts/demo_session.py --log              # Log events for replay
+    python scripts/demo_session.py --replay           # Replay from events
+    python scripts/demo_session.py --output media/custom.svg
 
 Output:
-    media/session-YYYYMMDD-HHMMSS.svg - Timestamped screenshot
-    media/session.svg -> latest       - Symlink to latest
-    media/events.jsonl                - Event log (if --log used)
+    Per-script SVG files defined in each demo script's frontmatter.
 """
 
 import argparse
@@ -28,6 +28,7 @@ from yoker.agent import Agent, EventCallback
 from yoker.commands import CommandRegistry, create_help_command, create_think_command
 from yoker.config import load_config_with_defaults
 from yoker.context import BasicPersistenceContextManager
+from yoker.demo import DemoScript, load_demo_script, load_demo_scripts
 from yoker.events import (
   CommandEvent,
   ConsoleEventHandler,
@@ -39,6 +40,9 @@ from yoker.events import (
 
 # Media directory for session screenshots
 MEDIA_DIR = Path("media")
+
+# Default demo script path
+DEFAULT_SCRIPT = Path("demos/basic.md")
 
 # Wrap width for SVG output
 WRAP_WIDTH = 80
@@ -85,7 +89,7 @@ class ReplayInput:
 
 
 def run_demo_session(
-  messages: list[str] | None = None,
+  script: DemoScript,
   config_path: str | None = None,
   log: bool = False,
   replay: Path | None = None,
@@ -94,17 +98,17 @@ def run_demo_session(
   resume: str | None = None,
   output: Path | None = None,
 ) -> Path:
-  """Run a demo session and save as SVG.
+  """Run a demo session from a script and save as SVG.
 
   Args:
-    messages: List of user messages (ignored if replay is set).
+    script: DemoScript with messages and output path.
     config_path: Path to configuration file.
-    log: Whether to log events to events.jsonl.
-    replay: Path to events.jsonl file to replay (if set, no LLM calls).
+    log: Whether to log events to the script's events file.
+    replay: Path to events.jsonl file to replay (overrides script.events).
     agent_path: Path to agent definition file (Markdown with frontmatter).
     persist: Whether to persist session for resumption.
     resume: Session ID to resume (if set, loads previous session).
-    output: Output path for SVG (if set, no timestamp or symlink).
+    output: Output path for SVG (overrides script.output).
 
   Returns:
     Path to the generated SVG file.
@@ -116,16 +120,26 @@ def run_demo_session(
   # Create media directory
   MEDIA_DIR.mkdir(parents=True, exist_ok=True)
 
+  # Determine output path
+  if output:
+    svg_path = output
+    svg_path.parent.mkdir(parents=True, exist_ok=True)
+  else:
+    svg_path = Path(script.output)
+    svg_path.parent.mkdir(parents=True, exist_ok=True)
+
+  # Determine events path
+  events_path = replay if replay else (Path(script.events) if script.events else None)
+
   # Event recorder for --log mode
   event_recorder: EventRecorder | None = None
 
-  # Determine agent and messages
   # Initialize context manager (used in real LLM mode)
   context_manager: BasicPersistenceContextManager | None = None
 
-  if replay:
+  if events_path and events_path.exists():
     # Replay mode: use EventReplayAgent to replay events
-    agent = EventReplayAgent(replay)
+    agent = EventReplayAgent(events_path)
     # Attach console event handler for output
     handler = ConsoleEventHandler(
       console=console,
@@ -134,7 +148,7 @@ def run_demo_session(
       wrap_width=WRAP_WIDTH,
     )
     agent.add_event_handler(handler)
-    get_input = ReplayInput(replay)
+    get_input = ReplayInput(events_path)
     messages = []  # Will be read from file
   else:
     # Real LLM mode
@@ -184,19 +198,14 @@ def run_demo_session(
       console.print("")
 
     # Add event recorder if requested
-    if log:
-      event_recorder = EventRecorder(MEDIA_DIR / "events.jsonl")
+    if log and script.events:
+      events_file = Path(script.events)
+      events_file.parent.mkdir(parents=True, exist_ok=True)
+      event_recorder = EventRecorder(events_file)
       agent.add_event_handler(event_recorder)
 
-    # Create input function from messages
-    if messages is None:
-      messages = [
-        "/help",
-        "/think off",
-        "Show files in the current folder whose name starts with an 'R'.",
-        "/think on",
-        "Summarize the README.md file in less than 5 lines.",
-      ]
+    # Create input function from script messages
+    messages = list(script.messages)
     get_input = PredefinedInput(messages)
 
   # Create command registry
@@ -210,16 +219,16 @@ def run_demo_session(
   )
 
   # Begin session (emits SESSION_START event for real LLM mode)
-  if not replay:
+  if not (events_path and events_path.exists()):
     agent.begin_session()
 
-  # Print mode-specific info (for replay mode, or additional info for log mode)
-  if replay:
+  # Print mode-specific info
+  if events_path and events_path.exists():
     console.print(f"[bold cyan]Yoker v0.1.0[/] - Using model: [green]{agent.model}[/]")
     console.print("[dim]Replay mode - using logged events[/]")
     console.print("")
   elif log:
-    console.print("[dim]Logging events to events.jsonl[/]")
+    console.print("[dim]Logging events to {script.events}[/]")
 
   # Process each message
   for message in get_input.messages if hasattr(get_input, "messages") else []:
@@ -227,7 +236,7 @@ def run_demo_session(
 
     # Check if this is a command
     if message.startswith("/"):
-      if replay:
+      if events_path and events_path.exists():
         # Replay mode: emit CommandEvent from event log
         agent.replay_command(message)  # type: ignore
       else:
@@ -251,7 +260,7 @@ def run_demo_session(
     # ConsoleEventHandler prints the output in both cases
 
   # End session (emits SESSION_END event for real LLM mode)
-  if not replay:
+  if not (events_path and events_path.exists()):
     agent.end_session()
 
   # Print session footer
@@ -266,34 +275,9 @@ def run_demo_session(
       f"{stats.message_count} messages, {stats.tool_call_count} tool calls[/]"
     )
 
-  # Determine output path
-  if output:
-    # Use specified output path directly
-    svg_path = output
-    # Ensure parent directory exists
-    svg_path.parent.mkdir(parents=True, exist_ok=True)
-  else:
-    # Generate timestamped filename and symlink
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    timestamped_file = MEDIA_DIR / f"session-{timestamp}.svg"
-    current_link = MEDIA_DIR / "session.svg"
-
-    # Save timestamped SVG
-    svg_path = timestamped_file
-
-    # Update symlink to latest (handles broken symlinks)
-    if current_link.exists() or current_link.is_symlink():
-      current_link.unlink()
-    current_link.symlink_to(timestamped_file.name)
-
-    console.print(f"\n[dim]Saved session to: {timestamped_file}[/]")
-    console.print(f"[dim]Latest: {current_link}[/]")
-
   # Save SVG
   console.save_svg(str(svg_path))
-
-  if output:
-    console.print(f"\n[dim]Saved session to: {svg_path}[/]")
+  console.print(f"\n[dim]Saved session to: {svg_path}[/]")
 
   # Close event recorder if it was opened
   if event_recorder is not None:
@@ -302,23 +286,60 @@ def run_demo_session(
   return svg_path
 
 
+def _resolve_script(args: argparse.Namespace) -> DemoScript:
+  """Resolve which demo script to run from CLI arguments.
+
+  Args:
+    args: Parsed CLI arguments.
+
+  Returns:
+    DemoScript to run.
+
+  Raises:
+    SystemExit: If script cannot be resolved.
+  """
+  if args.script:
+    return load_demo_script(args.script)
+
+  if DEFAULT_SCRIPT.exists():
+    return load_demo_script(DEFAULT_SCRIPT)
+
+  print(f"Error: No script specified and default {DEFAULT_SCRIPT} not found.")
+  print("Use --script to specify a demo script.")
+  raise SystemExit(1)
+
+
 def main() -> None:
-  """Run the demo session with example messages."""
+  """Run demo session(s) from script files."""
   parser = argparse.ArgumentParser(
-    description="Generate a terminal screenshot of a Yoker session.",
+    description="Generate terminal screenshots of Yoker sessions from demo scripts.",
+  )
+  parser.add_argument(
+    "--script",
+    "-s",
+    type=Path,
+    default=None,
+    help="Path to demo script Markdown file",
+  )
+  parser.add_argument(
+    "--scripts-dir",
+    "-d",
+    type=Path,
+    default=None,
+    help="Run all demo scripts in directory",
   )
   parser.add_argument(
     "--log",
     action="store_true",
-    help="Log events to media/events.jsonl",
+    help="Log events to script's events file",
   )
   parser.add_argument(
     "--replay",
     type=Path,
     nargs="?",
-    const=MEDIA_DIR / "events.jsonl",
+    const=None,
     default=None,
-    help="Replay events from JSONL file (default: media/events.jsonl)",
+    help="Replay events from JSONL file (default: script's events path)",
   )
   parser.add_argument(
     "--agent",
@@ -326,14 +347,6 @@ def main() -> None:
     type=Path,
     default=None,
     help="Path to agent definition file (Markdown with YAML frontmatter)",
-  )
-  parser.add_argument(
-    "--message",
-    "-m",
-    type=str,
-    action="append",
-    default=None,
-    help="Add a message to send (can be used multiple times)",
   )
   parser.add_argument(
     "--persist",
@@ -351,7 +364,7 @@ def main() -> None:
     "-o",
     type=Path,
     default=None,
-    help="Output path for SVG (default: media/session-TIMESTAMP.svg)",
+    help="Output path for SVG (overrides script default)",
   )
   args = parser.parse_args()
 
@@ -360,20 +373,36 @@ def main() -> None:
   if not config_path.exists():
     config_path = None
 
-  # Build messages if provided
-  messages = args.message if args.message else None
-
-  # Run the demo
-  run_demo_session(
-    config_path=str(config_path) if config_path else None,
-    log=args.log,
-    replay=args.replay,
-    agent_path=args.agent,
-    messages=messages,
-    persist=args.persist,
-    resume=args.resume,
-    output=args.output,
-  )
+  if args.scripts_dir:
+    # Run all scripts in directory
+    scripts = load_demo_scripts(args.scripts_dir)
+    for title, script in scripts.items():
+      print(f"\n{'=' * 60}")
+      print(f"Running demo: {title}")
+      print(f"{'=' * 60}")
+      run_demo_session(
+        script=script,
+        config_path=str(config_path) if config_path else None,
+        log=args.log,
+        replay=args.replay,
+        agent_path=args.agent,
+        persist=args.persist,
+        resume=args.resume,
+        output=args.output,
+      )
+  else:
+    # Run single script
+    script = _resolve_script(args)
+    run_demo_session(
+      script=script,
+      config_path=str(config_path) if config_path else None,
+      log=args.log,
+      replay=args.replay,
+      agent_path=args.agent,
+      persist=args.persist,
+      resume=args.resume,
+      output=args.output,
+    )
 
 
 if __name__ == "__main__":
