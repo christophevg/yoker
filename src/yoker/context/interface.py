@@ -54,6 +54,7 @@ class ContextManager(Protocol):
     role: str,
     content: str,
     metadata: dict[str, Any] | None = None,
+    thinking: str | None = None,
   ) -> None:
     """Add a message to the context.
 
@@ -61,6 +62,7 @@ class ContextManager(Protocol):
       role: Message role ("user", "assistant", "system").
       content: Message content.
       metadata: Optional metadata (e.g., images, files).
+      thinking: Optional thinking/reasoning content (for assistant messages).
     """
     ...
 
@@ -78,6 +80,21 @@ class ContextManager(Protocol):
       tool_id: Unique identifier for the tool call.
       result: Tool execution result (typically JSON string).
       success: Whether the tool call succeeded.
+    """
+    ...
+
+  def add_tool_calls(
+    self,
+    tool_calls: list[dict[str, Any]],
+    thinking: str | None = None,
+  ) -> None:
+    """Add an assistant message with tool calls to the context.
+
+    This must be called BEFORE add_tool_result() for each tool call.
+
+    Args:
+      tool_calls: List of tool call dictionaries with 'name' and 'arguments'.
+      thinking: Optional thinking/reasoning content from the assistant.
     """
     ...
 
@@ -105,11 +122,12 @@ class ContextManager(Protocol):
     """
     ...
 
-  def end_turn(self, assistant_message: str) -> None:
+  def end_turn(self, assistant_message: str, thinking: str | None = None) -> None:
     """End the current conversation turn.
 
     Args:
       assistant_message: The assistant's complete response.
+      thinking: Optional thinking/reasoning content from the assistant.
     """
     ...
 

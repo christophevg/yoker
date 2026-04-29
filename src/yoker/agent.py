@@ -1,5 +1,6 @@
 """Minimal Agent implementation for Yoker prototype."""
 
+import json
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -336,7 +337,8 @@ class Agent:
 
       # If no tool calls, we're done with this turn
       if not tool_calls:
-        self.context.end_turn(content)
+        # Include thinking in context if present
+        self.context.end_turn(content, thinking=thinking if thinking else None)
         self._emit(
           TurnEndEvent(
             type=EventType.TURN_END,
@@ -360,8 +362,60 @@ class Agent:
 
         return content
 
-      # Process tool calls
+      # Deduplicate tool calls (LLM may send duplicates in streaming)
+      # Use tool call ID if available, otherwise use name+args
+      seen_calls: set[str] = set()
+      unique_calls: list[Any] = []
       for call in tool_calls:
+        # Prefer tool call ID for deduplication
+        call_id = getattr(call, "id", None)
+        if call_id:
+          call_key = call_id
+        else:
+          # Fallback to tool name + arguments
+          args_str = json.dumps(call.function.arguments, sort_keys=True)
+          call_key = f"{call.function.name}:{args_str}"
+        if call_key not in seen_calls:
+          seen_calls.add(call_key)
+          unique_calls.append(call)
+        else:
+          # Log when a duplicate is detected
+          log.info(
+            "tool_call_duplicate_detected",
+            tool=call.function.name,
+            call_key=call_key,
+          )
+
+      # Log summary if duplicates were found
+      if len(tool_calls) != len(unique_calls):
+        log.info(
+          "tool_calls_deduplicated",
+          original_count=len(tool_calls),
+          unique_count=len(unique_calls),
+        )
+
+      # Add assistant message with tool_calls to context BEFORE executing
+      # This is required for the LLM to understand what tools were called
+      if unique_calls:
+        # Format tool_calls for Ollama API
+        formatted_calls = [
+          {
+            "id": getattr(call, "id", f"call_{i}"),
+            "function": {
+              "name": call.function.name,
+              "arguments": call.function.arguments,
+            },
+          }
+          for i, call in enumerate(unique_calls)
+        ]
+        # Include thinking content if present
+        self.context.add_tool_calls(
+          formatted_calls,
+          thinking=thinking if thinking else None,
+        )
+
+      # Process tool calls
+      for call in unique_calls:
         tool_name = call.function.name
         tool_args = call.function.arguments
 

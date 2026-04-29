@@ -90,14 +90,24 @@ class BasicPersistenceContextManager:
     role: str,
     content: str,
     metadata: dict[str, Any] | None = None,
+    thinking: str | None = None,
   ) -> None:
-    """Add a message to the context."""
+    """Add a message to the context.
+
+    Args:
+      role: Message role ("user", "assistant", "system").
+      content: Message content.
+      metadata: Optional metadata (e.g., images, files).
+      thinking: Optional thinking/reasoning content (for assistant messages).
+    """
     message: dict[str, Any] = {
       "role": role,
       "content": content,
     }
     if metadata:
       message["metadata"] = metadata
+    if thinking:
+      message["thinking"] = thinking
 
     self._sequence.append({"type": "message", "data": message})
     self._append_record("message", message)
@@ -121,12 +131,39 @@ class BasicPersistenceContextManager:
     self._tool_call_count += 1
     self._append_record("tool_result", tool_result)
 
+  def add_tool_calls(
+    self,
+    tool_calls: list[dict[str, Any]],
+    thinking: str | None = None,
+  ) -> None:
+    """Add an assistant message with tool calls to the context.
+
+    This must be called BEFORE add_tool_result() for each tool call.
+    The assistant message with tool_calls is required by the LLM API
+    to understand what tools were called before receiving results.
+
+    Args:
+      tool_calls: List of tool call dictionaries with 'name' and 'arguments'.
+      thinking: Optional thinking/reasoning content from the assistant.
+    """
+    # Store as a special assistant message with tool_calls
+    assistant_msg: dict[str, Any] = {
+      "role": "assistant",
+      "tool_calls": tool_calls,
+      "content": "",  # Empty content when only tool calls
+    }
+    if thinking:
+      assistant_msg["thinking"] = thinking
+
+    self._sequence.append({"type": "message", "data": assistant_msg})
+    self._append_record("tool_call_message", {"tool_calls": tool_calls, "thinking": thinking})
+
   def get_context(self) -> list[dict[str, Any]]:
     """Get the full context for backend submission.
 
     Returns messages and tool results in the correct order for the LLM API:
     - User messages
-    - Assistant messages (with tool_calls)
+    - Assistant messages (with tool_calls if present)
     - Tool result messages (after the assistant message)
     """
     context: list[dict[str, Any]] = []
@@ -134,12 +171,18 @@ class BasicPersistenceContextManager:
     for item in self._sequence:
       if item["type"] == "message":
         msg = item["data"]
-        context.append(
-          {
-            "role": msg["role"],
-            "content": msg["content"],
-          }
-        )
+        # Build message dict, including tool_calls and thinking if present
+        message: dict[str, Any] = {
+          "role": msg["role"],
+          "content": msg.get("content", ""),
+        }
+        # Include tool_calls for assistant messages
+        if msg["role"] == "assistant" and "tool_calls" in msg:
+          message["tool_calls"] = msg["tool_calls"]
+        # Include thinking for assistant messages
+        if msg["role"] == "assistant" and "thinking" in msg:
+          message["thinking"] = msg["thinking"]
+        context.append(message)
       elif item["type"] == "tool_result":
         tr = item["data"]
         context.append(
@@ -172,12 +215,17 @@ class BasicPersistenceContextManager:
     # Add user message
     self.add_message("user", user_message)
 
-  def end_turn(self, assistant_message: str) -> None:
-    """End the current conversation turn."""
+  def end_turn(self, assistant_message: str, thinking: str | None = None) -> None:
+    """End the current conversation turn.
+
+    Args:
+      assistant_message: The assistant's response content.
+      thinking: Optional thinking/reasoning content from the assistant.
+    """
     self._last_turn_time = datetime.now()
 
-    # Add assistant message
-    self.add_message("assistant", assistant_message)
+    # Add assistant message with optional thinking
+    self.add_message("assistant", assistant_message, thinking=thinking)
 
     # Append turn end record
     self._append_record(
@@ -432,6 +480,26 @@ class BasicPersistenceContextManager:
         )
       self._sequence.append({"type": "tool_result", "data": data})
       self._tool_call_count += 1
+
+    elif record_type == "tool_call_message":
+      # Record containing assistant message with tool_calls
+      if "tool_calls" not in data:
+        raise ContextCorruptionError(
+          str(self._file_path),
+          line_num,
+          "Missing tool_calls",
+        )
+      # Convert to message format
+      self._sequence.append(
+        {
+          "type": "message",
+          "data": {
+            "role": "assistant",
+            "tool_calls": data["tool_calls"],
+            "content": "",
+          },
+        }
+      )
 
     elif record_type == "turn_start":
       self._sequence.append({"type": "turn", "data": data})
