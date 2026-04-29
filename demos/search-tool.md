@@ -7,6 +7,7 @@ events: media/events-search-tool.jsonl
 
 ## Messages
 
-- Write "def hello():\n    print('Hello')\n\ndef goodbye():\n    print('Goodbye')" to /tmp/yoker-search-demo.py. Reply "Created" and nothing else.
-- Search for "def" in /tmp using type="content". Reply in 2 lines or less.
-- Search for "*.py" in /tmp using type="filename". Reply in 2 lines or less.
+- /think off
+- Write "def hello():\n    print('Hello')\n\ndef goodbye():\n    print('Goodbye')" to /tmp/yoker-demo/search.py. Reply "Created" only.
+- Search for "def" in /tmp/yoker-demo using type="content". Reply in 1 line.
+- Search for "*.py" in /tmp/yoker-demo using type="filename". Reply in 1 line.

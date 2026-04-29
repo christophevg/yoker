@@ -28,6 +28,7 @@ from yoker.thinking import ThinkingMode
 from yoker.tools import Tool, ToolRegistry
 from yoker.tools.list import ListTool
 from yoker.tools.read import ReadTool
+from yoker.tools.search import SearchTool
 from yoker.tools.update import UpdateTool
 from yoker.tools.write import WriteTool
 
@@ -179,6 +180,7 @@ class Agent:
       ListTool(guardrail=self._guardrail),
       WriteTool(guardrail=self._guardrail),
       UpdateTool(guardrail=self._guardrail),
+      SearchTool(guardrail=self._guardrail),
     ]
 
     if self.agent_definition is not None:
