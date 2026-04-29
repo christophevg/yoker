@@ -222,8 +222,8 @@ def run_demo_session(
   command_registry.register(create_help_command(command_registry))
   command_registry.register(
     create_think_command(
-      get_thinking_state=lambda: agent.thinking_enabled,
-      set_thinking_state=lambda enabled: setattr(agent, "thinking_enabled", enabled),
+      get_thinking_mode=lambda: agent.thinking_mode,
+      set_thinking_mode=lambda mode: setattr(agent, "thinking_mode", mode),
     )
   )
 
