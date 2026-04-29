@@ -25,7 +25,7 @@ from yoker.tools.guardrails import Guardrail
 log = get_logger(__name__)
 
 # Tools that operate on filesystem paths
-_FILESYSTEM_TOOLS = frozenset({"read", "list", "write", "update", "search"})
+_FILESYSTEM_TOOLS = frozenset({"read", "list", "write", "update", "search", "existence"})
 
 
 class PathGuardrail(Guardrail):

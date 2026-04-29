@@ -185,6 +185,7 @@ Yoker provides several tools for file operations and subagent spawning:
 | `write` | Write files with overwrite protection |
 | `update` | Edit existing files with replace/insert/delete |
 | `search` | Search file contents or filenames |
+| `existence` | Check if files or folders exist |
 | `agent` | Spawn subagents with isolated context |
 
 ### Agent Tool

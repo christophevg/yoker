@@ -7,6 +7,7 @@ and concrete tool implementations.
 from typing import TYPE_CHECKING
 
 from .base import Tool, ToolResult, ValidationResult
+from .existence import ExistenceTool
 from .guardrails import Guardrail
 from .list import ListTool
 from .path_guardrail import PathGuardrail
@@ -27,7 +28,7 @@ def create_default_registry(parent_agent: "Agent | None" = None) -> ToolRegistry
     parent_agent: Optional parent agent for AgentTool (required for subagent spawning).
 
   Returns:
-    ToolRegistry with default tools (read, list, write, update, search, agent).
+    ToolRegistry with default tools (read, list, write, update, search, existence, agent).
   """
   from .agent import AgentTool
 
@@ -37,6 +38,7 @@ def create_default_registry(parent_agent: "Agent | None" = None) -> ToolRegistry
   registry.register(WriteTool())
   registry.register(UpdateTool())
   registry.register(SearchTool())
+  registry.register(ExistenceTool())
   registry.register(AgentTool(parent_agent=parent_agent))
   return registry
 
@@ -56,6 +58,7 @@ __all__ = [
   "WriteTool",
   "UpdateTool",
   "SearchTool",
+  "ExistenceTool",
   "AgentTool",
   "AVAILABLE_TOOLS",
   "create_default_registry",

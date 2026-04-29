@@ -1,5 +1,9 @@
 # TODO
 
+## Unsorted Input
+
+- Tool needed: AskUserQuestion, PyTest, Tox, Ruff, MyPy, Make, PyPi
+
 ## Backlog
 
 ### Standard Project Setup
@@ -214,13 +218,17 @@
   - See `analysis/security-agent-tool.md` for security analysis
   - See `reporting/2.7-agent-tool/consensus.md` for consensus report
 
-- [ ] **2.8 File Existence Tool**
+- [x] **2.8 File Existence Tool**
   - Implement file existence check functionality
   - Implement folder existence check functionality
   - Add path restriction guardrails (use shared PathGuardrail)
-  - Return boolean result or error message
-  - Write unit tests
-  - See `analysis/api-existence-tool.md` for API design (to be created)
+  - Return structured result with exists, type, and path
+  - Symlink rejection for security
+  - Generic error messages (security hardening)
+  - Write unit tests (28 test cases)
+  - See `analysis/api-existence-tool.md` for API design
+  - See `analysis/security-existence-tool.md` for security analysis
+  - See `reporting/2.8-existence-tool/summary.md` for implementation summary
 
 - [ ] **2.9 Folder Creation Tool**
   - Implement folder creation functionality (mkdir -p equivalent)
@@ -373,6 +381,23 @@
   - Write tutorial documentation
 
 ## Done
+
+- [x] **2.8 File Existence Tool** (2026-04-29)
+  - Implement file existence check functionality
+  - Implement folder existence check functionality
+  - Add path restriction guardrails (use shared PathGuardrail)
+  - Return structured result with exists, type, and path
+  - Symlink rejection for security
+  - Generic error messages (security hardening)
+  - Expanded default blocked patterns in config
+  - Write unit tests (28 test cases, including error handling)
+  - All acceptance criteria verified:
+    - `make lint` ✓
+    - `make typecheck` ✓
+    - `make test` (516 tests) ✓
+  - See `analysis/api-existence-tool.md` for API design
+  - See `analysis/security-existence-tool.md` for security analysis
+  - See `reporting/2.8-existence-tool/summary.md` for implementation summary
 
 - [x] **migrate-to-hatchling** (2026-04-29)
   - Migrate from setuptools.build_meta to hatchling

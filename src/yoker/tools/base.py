@@ -18,12 +18,12 @@ class ToolResult:
 
   Attributes:
     success: Whether the tool executed successfully.
-    result: The result string (content on success, empty on failure).
+    result: The result data (string content or dict for structured results).
     error: Error message if success is False.
   """
 
   success: bool
-  result: str
+  result: str | dict[str, Any]
   error: str | None = None
 
 

@@ -462,7 +462,10 @@ class Agent:
               with log_timing("tool_execution", tool=tool_name):
                 tool_result = tool.execute(**tool_args)
               success = tool_result.success
-              result = tool_result.result if success else f"Error: {tool_result.error}"
+              if success:
+                result = str(tool_result.result)
+              else:
+                result = f"Error: {tool_result.error}"
             except Exception as e:
               result = f"Error executing tool: {e}"
               success = False
