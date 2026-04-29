@@ -252,6 +252,9 @@ class ConsoleEventHandler:
   ) -> None:
     """Print text with optional wrapping at wrap_width.
 
+    Uses word-aware wrapping - breaks at word boundaries when possible,
+    only breaking mid-word when a single word exceeds the wrap width.
+
     Args:
       text: Text to print.
       style: Optional Rich style.
@@ -262,18 +265,46 @@ class ConsoleEventHandler:
       self.console.print(text, style=style, end=end)
       return
 
-    # Wrap at width boundary
+    # Track current position in line
+    current_line: list[str] = []
+
+    def flush_line() -> None:
+      """Print current line and reset."""
+      nonlocal current_line
+      if current_line:
+        self.console.print("".join(current_line), style=style, end="")
+        current_line = []
+
     for char in text:
       if char == "\n":
+        flush_line()
+        self.console.print(style=style)
         self._column = 0
       elif char == "\r":
+        flush_line()
         self._column = 0
-      elif self._column >= self.wrap_width:
-        self.console.print()
-        self._column = 0
+      elif char == " ":
+        # Space: check if adding it would exceed width
+        if self._column + 1 > self.wrap_width:
+          # Line break at word boundary
+          flush_line()
+          self.console.print(style=style)
+          self._column = 0
+        else:
+          current_line.append(char)
+          self._column += 1
+      else:
+        # Regular character
+        if self._column >= self.wrap_width:
+          # Break before this character if line is full
+          flush_line()
+          self.console.print(style=style)
+          self._column = 0
+        current_line.append(char)
+        self._column += 1
 
-      self.console.print(char, style=style, end="")
-      self._column += 1
+    # Flush remaining content
+    flush_line()
 
     if end:
       self.console.print(end, style=style, end="")

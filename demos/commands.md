@@ -10,3 +10,4 @@ events: media/events-commands.jsonl
 - /help
 - /think on
 - /think off
+- /think silent

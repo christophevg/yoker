@@ -45,8 +45,9 @@ MEDIA_DIR = Path("media")
 # Default demo script path
 DEFAULT_SCRIPT = Path("demos/session.md")
 
-# Wrap width for SVG output
-WRAP_WIDTH = 80
+# Console width for SVG output (Rich handles word-aware wrapping automatically)
+# Set to 120 for wider output that fits modern displays
+CONSOLE_WIDTH = 120
 
 
 class PredefinedInput:
@@ -89,6 +90,30 @@ class ReplayInput:
     return message
 
 
+def _cleanup_temp_files() -> None:
+  """Clean up temp files and directories created by demo scripts."""
+  import shutil
+
+  # Temp directories created by demos
+  temp_dirs = [
+    Path("/tmp/yoker-demo"),
+    Path("/tmp/yoker-search-demo"),
+  ]
+  for temp_dir in temp_dirs:
+    if temp_dir.exists():
+      shutil.rmtree(temp_dir)
+
+  # Temp files created by demos
+  temp_files = [
+    Path("/tmp/yoker-update-demo.txt"),
+    Path("/tmp/yoker-demo.txt"),
+    Path("/tmp/yoker-search-demo.py"),
+  ]
+  for temp_file in temp_files:
+    if temp_file.exists():
+      temp_file.unlink()
+
+
 def run_demo_session(
   script: DemoScript,
   config_path: str | None = None,
@@ -114,9 +139,12 @@ def run_demo_session(
   Returns:
     Path to the generated SVG file.
   """
+  # Clean up temp files/directories before starting (ensure clean state)
+  _cleanup_temp_files()
+
   # Create console with recording enabled
-  # Use width=80 for consistent line wrapping in SVG output
-  console = Console(record=True, width=WRAP_WIDTH)
+  # Rich handles word-aware wrapping automatically at this width
+  console = Console(record=True, width=CONSOLE_WIDTH)
 
   # Create media directory
   MEDIA_DIR.mkdir(parents=True, exist_ok=True)
@@ -154,7 +182,7 @@ def run_demo_session(
       console=console,
       show_thinking=agent.thinking_enabled,
       show_tool_calls=True,
-      wrap_width=WRAP_WIDTH,
+      # No wrap_width - use Rich's natural word-aware wrapping
     )
     agent.add_event_handler(handler)
     get_input = ReplayInput(events_path)
@@ -186,7 +214,7 @@ def run_demo_session(
       console=console,
       show_thinking=True,
       show_tool_calls=True,
-      wrap_width=WRAP_WIDTH,
+      # No wrap_width - use Rich's natural word-aware wrapping
     )
     agent.add_event_handler(handler)
 
@@ -241,7 +269,9 @@ def run_demo_session(
 
   # Process each message
   for message in get_input.messages if hasattr(get_input, "messages") else []:
-    console.print(f"[bold blue]>[/] {message}")
+    # User input should be plain text in the SVG recording
+    # Use console.print with all Rich features disabled
+    console.print(f"> {message}", style="none", markup=False, highlight=False)
 
     # Check if this is a command
     if message.startswith("/"):
@@ -287,6 +317,9 @@ def run_demo_session(
   # Save SVG
   console.save_svg(str(svg_path))
   console.print(f"\n[dim]Saved session to: {svg_path}[/]")
+
+  # Clean up temp files and directories after demo
+  _cleanup_temp_files()
 
   # Close event recorder if it was opened
   if event_recorder is not None:
