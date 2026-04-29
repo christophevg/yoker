@@ -1,3 +1,9 @@
+#MODEL=qwen3.5:397b-cloud
+#ARGS += --plugin-dir ./
+ARGS += --plugin-dir ../c3
+ARGS += --agent c3:project-manager
+ARGS += "manage the project!"
+
 -include ~/.claude/Makefile
 
 # Virtual environment configuration
