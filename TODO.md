@@ -180,13 +180,16 @@
   - Write unit tests
   - See `reporting/2.5-update-tool/summary.md` for implementation summary
 
-- [ ] **2.6 Search Tool**
+- [x] **2.6 Search Tool**
   - Implement content search (grep-like)
   - Implement filename search (glob-like)
   - Add regex complexity limits
   - Add result count limits
   - Add timeout enforcement
   - Write unit tests
+  - See `analysis/api-search-tool.md` for API design
+  - See `analysis/security-search-tool.md` for security analysis
+  - See `reporting/2.6-search-tool/summary.md` for implementation summary
 
 - [ ] **2.7 Agent Tool**
   - Implement subagent spawning
@@ -343,6 +346,17 @@
   - Write tutorial documentation
 
 ## Done
+
+- [x] **2.6 Search Tool**
+  - Implement content search (grep-like)
+  - Implement filename search (glob-like)
+  - Add regex complexity limits (ReDoS prevention)
+  - Add result count limits (max_results parameter)
+  - Add timeout enforcement (time.monotonic tracking)
+  - Write unit tests (comprehensive error handling tests)
+  - See `analysis/api-search-tool.md` for API design
+  - See `analysis/security-search-tool.md` for security analysis
+  - See `reporting/2.6-search-tool/summary.md` for implementation summary
 
 - [x] **1.4.1 Context Manager Integration**
   - Add ContextManager parameter to Agent.__init__
