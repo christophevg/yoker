@@ -2,6 +2,17 @@
 
 ## Backlog
 
+### Standard Project Setup
+
+- [ ] **migrate-to-hatchling** (2026-04-29)
+  - Migrate from setuptools.build_meta to hatchling
+  - Update pyproject.toml: change build-backend to "hatchling.build"
+  - Replace `[tool.setuptools.*]` sections with `[tool.hatch.build.*]`
+  - Update packages config: `[tool.hatch.build.targets.wheel] packages = ["src/yoker"]`
+  - Verify all tool configs remain in pyproject.toml
+  - Acceptance: `pip install -e ".[dev]"` works, `make test` passes, `python -m build` succeeds
+  - See: c3 skill `python-project` for hatchling configuration
+
 ### Phase 1.5: UI/UX Fixes (High Priority)
 
 - [x] **1.5.1 Remove Thinking Headers**
@@ -271,6 +282,18 @@
   - Add timeout and resource limits
   - Write unit tests
   - See `analysis/api-python-tool.md` for API design (to be created)
+
+- [ ] **2.16 Pytest Tool**
+  - Implement test execution functionality via pytest
+  - Support running all tests, a single test file, or a selection of tests
+  - Add optional `activate_venv` parameter to activate pyenv virtual environment before running
+  - Add optional `filter` parameter for simple grep pattern filtering of results
+  - Add optional `max_lines` parameter to return only the top N lines of output
+  - Apply concise output format (summary-focused, not verbose)
+  - Add path restriction guardrails (use shared PathGuardrail for test file paths)
+  - Add timeout enforcement for long-running test suites
+  - Write unit tests
+  - See `analysis/api-pytest-tool.md` for API design (to be created)
 
 ### Phase 3: Backend Integration
 
