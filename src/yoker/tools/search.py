@@ -359,10 +359,7 @@ class SearchTool(Tool):
 
         file_path = Path(dirpath) / filename
 
-        # Skip symlinks
-        if file_path.is_symlink():
-          continue
-
+        # Note: symlink check moved to _search_content to handle PermissionError
         yield file_path
 
   def _search_content(
@@ -405,6 +402,10 @@ class SearchTool(Tool):
       files_searched += 1
 
       try:
+        # Skip symlinks (check here to catch PermissionError)
+        if file_path.is_symlink():
+          continue
+
         # Skip large files
         if file_path.stat().st_size > max_size:
           continue

@@ -221,10 +221,13 @@ class TestSearchToolFilenameSearch:
 
   def test_glob_pattern_question_mark(self, temp_search_dir: Path) -> None:
     """Test glob pattern with question mark wildcard."""
+    # Add file with 4-char name to match ???? pattern
+    (temp_search_dir / "core.py").write_text("def core(): pass\n")
+
     tool = SearchTool()
     result = tool.execute(
       path=str(temp_search_dir),
-      pattern="????.py",  # Matches main.py, utils.py (4 chars)
+      pattern="????.py",  # Matches main.py, core.py (4 chars)
       type="filename",
     )
 
@@ -672,13 +675,14 @@ class TestSearchToolErrorHandling:
 
     tool = SearchTool()
 
-    # Mock Path.stat to raise PermissionError for file2
+    # Mock Path.stat to raise PermissionError for file2.txt only
     original_stat = Path.stat
 
-    def mock_stat(self):
-      if "file2" in str(self):
+    def mock_stat(self, follow_symlinks=True):
+      # Only raise for the exact file2.txt path
+      if str(self).endswith("file2.txt"):
         raise PermissionError("Access denied")
-      return original_stat(self)
+      return original_stat(self, follow_symlinks=follow_symlinks)
 
     with patch.object(Path, "stat", mock_stat):
       result = tool.execute(path=str(tmp_path), pattern="TODO", type="content")
@@ -727,13 +731,14 @@ class TestSearchToolErrorHandling:
 
     tool = SearchTool()
 
-    # Mock Path.stat to raise OSError for file2
+    # Mock Path.stat to raise OSError for file2.txt only
     original_stat = Path.stat
 
-    def mock_stat(self):
-      if "file2" in str(self):
+    def mock_stat(self, follow_symlinks=True):
+      # Only raise for the exact file2.txt path
+      if str(self).endswith("file2.txt"):
         raise OSError("File system error")
-      return original_stat(self)
+      return original_stat(self, follow_symlinks=follow_symlinks)
 
     with patch.object(Path, "stat", mock_stat):
       result = tool.execute(path=str(tmp_path), pattern="TODO", type="content")

@@ -21,7 +21,7 @@ class TestPathGuardrail:
     """Non-filesystem tools pass through without path validation."""
     config = Config()
     guardrail = PathGuardrail(config)
-    result = guardrail.validate("search", {"query": "hello"})
+    result = guardrail.validate("agent", {"prompt": "hello"})
     assert result.valid is True
 
   def test_missing_path_parameter(self) -> None:
