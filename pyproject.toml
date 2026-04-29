@@ -1,14 +1,13 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
 name = "yoker"
 version = "0.1.0"
 description = "A Python agent harness with configurable tools and guardrails - one who yokes agents together"
 readme = "README.md"
-license = "MIT"
-license-files = ["LICENSE"]
+license = {text = "MIT"}
 requires-python = ">=3.10"
 authors = [
   {name = "Christophe VG", email = "contact@christophe.vg"}
@@ -61,11 +60,11 @@ Issues = "https://github.com/christophevg/yoker/issues"
 [project.scripts]
 yoker = "yoker.__main__:main"
 
-[tool.setuptools.packages.find]
-where = ["src"]
+[tool.hatch.build]
+sources = ["src"]
 
-[tool.setuptools.package-data]
-yoker = ["py.typed"]
+[tool.hatch.build.targets.wheel]
+packages = ["src/yoker"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -4,7 +4,7 @@
 
 ### Standard Project Setup
 
-- [ ] **migrate-to-hatchling** (2026-04-29)
+- [x] **migrate-to-hatchling** (2026-04-29)
   - Migrate from setuptools.build_meta to hatchling
   - Update pyproject.toml: change build-backend to "hatchling.build"
   - Replace `[tool.setuptools.*]` sections with `[tool.hatch.build.*]`
@@ -12,6 +12,7 @@
   - Verify all tool configs remain in pyproject.toml
   - Acceptance: `pip install -e ".[dev]"` works, `make test` passes, `python -m build` succeeds
   - See: c3 skill `python-project` for hatchling configuration
+  - See: `reporting/migrate-to-hatchling/summary.md` for implementation summary
 
 ### Phase 1.5: UI/UX Fixes (High Priority)
 
@@ -372,6 +373,18 @@
   - Write tutorial documentation
 
 ## Done
+
+- [x] **migrate-to-hatchling** (2026-04-29)
+  - Migrate from setuptools.build_meta to hatchling
+  - Updated pyproject.toml: build-backend to "hatchling.build"
+  - Replaced `[tool.setuptools.*]` sections with `[tool.hatch.build.*]`
+  - Updated license format to PEP 639: `license = {text = "MIT"}`
+  - All acceptance criteria verified:
+    - `pip install -e ".[dev]"` ✓
+    - `make test` (487 tests) ✓
+    - `python -m build` ✓
+    - `twine check dist/*` ✓
+  - See `reporting/migrate-to-hatchling/summary.md` for implementation summary
 
 - [x] **2.6 Search Tool**
   - Implement content search (grep-like)
