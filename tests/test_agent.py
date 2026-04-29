@@ -32,3 +32,19 @@ class TestAgent:
     from yoker.tools import AVAILABLE_TOOLS
 
     assert AVAILABLE_TOOLS.get("read") is not None
+
+  def test_recursion_depth_default(self) -> None:
+    """Test that recursion depth starts at 0 by default."""
+    agent = Agent()
+    assert agent._recursion_depth == 0
+    assert agent._max_recursion_depth == agent.config.tools.agent.max_recursion_depth
+
+  def test_recursion_depth_custom(self) -> None:
+    """Test that recursion depth can be set via internal parameter."""
+    agent = Agent(_recursion_depth=2)
+    assert agent._recursion_depth == 2
+
+  def test_agent_tool_available(self) -> None:
+    """Test that agent tool is available in tool registry."""
+    agent = Agent()
+    assert agent.tool_registry.get("agent") is not None

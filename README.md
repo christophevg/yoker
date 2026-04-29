@@ -55,6 +55,7 @@ See [docs/rationale.md](docs/rationale.md) for the full rationale and comparison
 - [x] `list` tool - Directory listing with pattern filtering
 - [x] `write` tool - Write files with overwrite protection
 - [x] `search` tool - Search file contents with regex or filenames with glob
+- [x] `agent` tool - Spawn subagents with isolated context and recursion limits
 - [x] Slash commands - Built-in commands: `/help`, `/think on|off`
 - [x] Thinking mode - LLM reasoning trace with gray output
 - [x] Streaming - Real-time token streaming from Ollama
@@ -71,7 +72,6 @@ See [docs/rationale.md](docs/rationale.md) for the full rationale and comparison
 **Planned Features:**
 - [ ] Guardrails - Tool parameter validation
 - [ ] Permissions - Static TOML-based access control
-- [ ] Sub-agents - Hierarchical agent spawning with isolated context
 - [ ] Multi-agent orchestration - Run coordinated agent teams
 - [ ] Backend providers - OpenAI, Anthropic, custom backends
 - [ ] Tool timing metrics - Performance tracking

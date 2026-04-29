@@ -261,9 +261,7 @@ def main() -> None:
               text=f"{result}\n",
             )
           )
-          agent._emit(
-            ContentEndEvent(type=EventType.CONTENT_END, total_length=len(result))
-          )
+          agent._emit(ContentEndEvent(type=EventType.CONTENT_END, total_length=len(result)))
         continue
 
       # Process message (output is streamed via events)

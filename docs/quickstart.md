@@ -174,6 +174,41 @@ agent = Agent(context_manager=context)
 # Context is automatically loaded
 ```
 
+## Tools
+
+Yoker provides several tools for file operations and subagent spawning:
+
+| Tool | Description |
+|------|-------------|
+| `read` | Read file contents with guardrails |
+| `list` | Directory listing with pattern filtering |
+| `write` | Write files with overwrite protection |
+| `update` | Edit existing files with replace/insert/delete |
+| `search` | Search file contents or filenames |
+| `agent` | Spawn subagents with isolated context |
+
+### Agent Tool
+
+The `agent` tool allows spawning subagents for specialized tasks:
+
+```{image} _static/demo-agent-tool.svg
+:alt: Agent Tool Demo
+```
+
+```
+> Use the agent tool to spawn a researcher agent to find all TODO comments
+
+[Tool Call] agent(agent_path="examples/agents/researcher.md", prompt="Find all TODO comments")
+
+The researcher agent found 15 TODO items across the codebase...
+```
+
+Key features:
+- **Isolated context**: Subagents start with fresh context
+- **Recursion limits**: Maximum depth of 3 by default
+- **Timeout**: 5-minute default execution limit
+- **Tool filtering**: Subagents use only their defined tools
+
 ## Agent Definitions
 
 Yoker supports loading agent definitions from Markdown files with YAML frontmatter. This allows you to define custom system prompts and tool availability.

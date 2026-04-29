@@ -135,11 +135,17 @@ def load_agent_definition(path: Path | str) -> AgentDefinition:
   if color is not None:
     color = str(color)
 
+  # Extract optional model
+  model = frontmatter.get("model")
+  if model is not None:
+    model = str(model)
+
   return AgentDefinition(
     name=str(name),
     description=str(description),
     tools=tools,
     color=color,
+    model=model,
     system_prompt=body.strip(),
     source_path=str(file_path),
   )

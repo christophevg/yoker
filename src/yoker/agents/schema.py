@@ -15,6 +15,7 @@ class AgentDefinition:
     description: Short description for LLM tool definition.
     tools: Tuple of tool names available to this agent.
     color: Optional display color for UI integrations.
+    model: Optional model override for this agent.
     system_prompt: The Markdown body content (agent's system prompt).
     source_path: Path to the source Markdown file.
   """
@@ -23,6 +24,7 @@ class AgentDefinition:
   description: str
   tools: tuple[str, ...]
   color: str | None = None
+  model: str | None = None
   system_prompt: str = ""
   source_path: str = ""
 

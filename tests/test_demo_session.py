@@ -745,19 +745,25 @@ class TestEventRecorder:
     log_path = tmp_path / "events.jsonl"
     recorder = EventRecorder(log_path)
 
-    recorder(SessionStartEvent(
-      type=EventType.SESSION_START,
-      model="llama3.2",
-      thinking_enabled=True,
-    ))
-    recorder(TurnStartEvent(
-      type=EventType.TURN_START,
-      message="Hello",
-    ))
-    recorder(TurnEndEvent(
-      type=EventType.TURN_END,
-      response="Hi there",
-    ))
+    recorder(
+      SessionStartEvent(
+        type=EventType.SESSION_START,
+        model="llama3.2",
+        thinking_enabled=True,
+      )
+    )
+    recorder(
+      TurnStartEvent(
+        type=EventType.TURN_START,
+        message="Hello",
+      )
+    )
+    recorder(
+      TurnEndEvent(
+        type=EventType.TURN_END,
+        response="Hi there",
+      )
+    )
     recorder.close()
 
     lines = log_path.read_text().strip().split("\n")
@@ -799,10 +805,12 @@ class TestEventRecorder:
     recorder = EventRecorder(log_path)
 
     for i in range(5):
-      recorder(ContentChunkEvent(
-        type=EventType.CONTENT_CHUNK,
-        text=f"chunk {i}",
-      ))
+      recorder(
+        ContentChunkEvent(
+          type=EventType.CONTENT_CHUNK,
+          text=f"chunk {i}",
+        )
+      )
     recorder.close()
 
     lines = log_path.read_text().strip().split("\n")

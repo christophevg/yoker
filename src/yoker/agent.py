@@ -27,6 +27,7 @@ from yoker.events import (
 from yoker.logging import get_logger, log_timing
 from yoker.thinking import ThinkingMode
 from yoker.tools import Tool, ToolRegistry
+from yoker.tools.agent import AgentTool
 from yoker.tools.list import ListTool
 from yoker.tools.read import ReadTool
 from yoker.tools.search import SearchTool
@@ -57,6 +58,8 @@ class Agent:
     context: ContextManager for conversation history.
     thinking_mode: Current thinking mode (on/off/silent).
     agent_definition: Loaded agent definition (if provided).
+    _recursion_depth: Current recursion depth (internal, for subagent tracking).
+    _max_recursion_depth: Maximum allowed recursion depth (internal).
   """
 
   def __init__(
@@ -69,6 +72,7 @@ class Agent:
     agent_definition: "AgentDefinition | None" = None,
     agent_path: Path | str | None = None,
     context_manager: "ContextManager | None" = None,
+    _recursion_depth: int = 0,
   ) -> None:
     """Initialize the agent.
 
@@ -81,6 +85,7 @@ class Agent:
       agent_definition: Pre-loaded AgentDefinition to use for system prompt.
       agent_path: Path to agent definition file (Markdown with frontmatter).
       context_manager: Optional ContextManager for conversation persistence.
+      _recursion_depth: Internal parameter for subagent recursion tracking.
     """
     # Load configuration
     if config is not None:
@@ -150,6 +155,10 @@ class Agent:
     if not has_system:
       self.context.add_message("system", system_prompt)
 
+    # Track recursion depth (internal, not exposed to LLM)
+    self._recursion_depth = _recursion_depth
+    self._max_recursion_depth = self.config.tools.agent.max_recursion_depth
+
     # Event handlers storage
     self._event_handlers: list[EventCallback] = []
 
@@ -182,6 +191,7 @@ class Agent:
       WriteTool(guardrail=self._guardrail),
       UpdateTool(guardrail=self._guardrail),
       SearchTool(guardrail=self._guardrail),
+      AgentTool(guardrail=self._guardrail, parent_agent=self),
     ]
 
     if self.agent_definition is not None:

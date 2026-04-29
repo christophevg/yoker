@@ -4,6 +4,8 @@ Provides the tool framework including base classes, registry, guardrails,
 and concrete tool implementations.
 """
 
+from typing import TYPE_CHECKING
+
 from .base import Tool, ToolResult, ValidationResult
 from .guardrails import Guardrail
 from .list import ListTool
@@ -14,19 +16,28 @@ from .search import SearchTool
 from .update import UpdateTool
 from .write import WriteTool
 
+if TYPE_CHECKING:
+  from yoker.agent import Agent
 
-def create_default_registry() -> ToolRegistry:
+
+def create_default_registry(parent_agent: "Agent | None" = None) -> ToolRegistry:
   """Create a registry with all built-in tools registered.
+
+  Args:
+    parent_agent: Optional parent agent for AgentTool (required for subagent spawning).
 
   Returns:
     ToolRegistry with default tools (read, list, write, update, search, agent).
   """
+  from .agent import AgentTool
+
   registry = ToolRegistry()
   registry.register(ReadTool())
   registry.register(ListTool())
   registry.register(WriteTool())
   registry.register(UpdateTool())
   registry.register(SearchTool())
+  registry.register(AgentTool(parent_agent=parent_agent))
   return registry
 
 
@@ -45,6 +56,7 @@ __all__ = [
   "WriteTool",
   "UpdateTool",
   "SearchTool",
+  "AgentTool",
   "AVAILABLE_TOOLS",
   "create_default_registry",
 ]

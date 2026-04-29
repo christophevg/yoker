@@ -8,8 +8,9 @@ import fnmatch
 import os
 import re
 import time
+from collections.abc import Iterator
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Iterator
+from typing import TYPE_CHECKING, Any
 
 from yoker.logging import get_logger
 from yoker.tools.base import Tool, ToolResult
@@ -57,21 +58,23 @@ class SearchTool(Tool):
   )
 
   # Directories to skip during search
-  SKIP_DIRS: frozenset[str] = frozenset({
-    ".git",
-    "__pycache__",
-    "node_modules",
-    ".venv",
-    "venv",
-    "build",
-    "dist",
-    ".mypy_cache",
-    ".pytest_cache",
-    "htmlcov",
-    ".tox",
-    ".eggs",
-    "*.egg-info",
-  })
+  SKIP_DIRS: frozenset[str] = frozenset(
+    {
+      ".git",
+      "__pycache__",
+      "node_modules",
+      ".venv",
+      "venv",
+      "build",
+      "dist",
+      ".mypy_cache",
+      ".pytest_cache",
+      "htmlcov",
+      ".tox",
+      ".eggs",
+      "*.egg-info",
+    }
+  )
 
   def __init__(self, guardrail: "Guardrail | None" = None) -> None:
     """Initialize SearchTool with optional guardrail.
@@ -347,9 +350,7 @@ class SearchTool(Tool):
     """
     for dirpath, dirnames, filenames in os.walk(root):
       # Skip hidden and binary directories
-      dirnames[:] = [
-        d for d in dirnames if not d.startswith(".") and d not in self.SKIP_DIRS
-      ]
+      dirnames[:] = [d for d in dirnames if not d.startswith(".") and d not in self.SKIP_DIRS]
 
       for filename in filenames:
         # Skip hidden files
@@ -416,11 +417,13 @@ class SearchTool(Tool):
           if regex.search(line):
             total_count += 1
             if len(matches) < max_results:
-              matches.append({
-                "file": str(file_path),
-                "line": line_num,
-                "content": line.strip(),
-              })
+              matches.append(
+                {
+                  "file": str(file_path),
+                  "line": line_num,
+                  "content": line.strip(),
+                }
+              )
 
       except (UnicodeDecodeError, PermissionError, OSError):
         # Skip binary files and permission-denied files

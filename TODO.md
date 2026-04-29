@@ -191,13 +191,16 @@
   - See `analysis/security-search-tool.md` for security analysis
   - See `reporting/2.6-search-tool/summary.md` for implementation summary
 
-- [ ] **2.7 Agent Tool**
+- [x] **2.7 Agent Tool**
   - Implement subagent spawning
   - Implement recursion depth tracking (internal)
   - Return error when max depth exceeded
   - Add subagent timeout handling
   - Implement clean context creation for subagents
   - Write unit tests
+  - See `analysis/api-agent-tool.md` for API design
+  - See `analysis/security-agent-tool.md` for security analysis
+  - See `reporting/2.7-agent-tool/consensus.md` for consensus report
 
 - [ ] **2.8 File Existence Tool**
   - Implement file existence check functionality

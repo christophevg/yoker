@@ -1,6 +1,5 @@
 """Tests for SearchTool implementation."""
 
-import os
 from pathlib import Path
 
 import pytest
@@ -43,21 +42,15 @@ class TestSearchToolContentSearch:
   def temp_search_dir(self, tmp_path: Path) -> Path:
     """Create a temporary directory with files for searching."""
     # Python files
-    (tmp_path / "main.py").write_text(
-      "def main():\n    # TODO: implement main\n    pass\n"
-    )
-    (tmp_path / "utils.py").write_text(
-      "# TODO: add docstrings\ndef helper():\n    pass\n"
-    )
+    (tmp_path / "main.py").write_text("def main():\n    # TODO: implement main\n    pass\n")
+    (tmp_path / "utils.py").write_text("# TODO: add docstrings\ndef helper():\n    pass\n")
 
     # Markdown file
     (tmp_path / "README.md").write_text("# Project\n\nTODO: write docs\n")
 
     # Nested directory
     (tmp_path / "src").mkdir()
-    (tmp_path / "src" / "app.py").write_text(
-      "def app():\n    # TODO: refactor\n    return True\n"
-    )
+    (tmp_path / "src" / "app.py").write_text("def app():\n    # TODO: refactor\n    return True\n")
 
     # Hidden file (should be skipped)
     (tmp_path / ".hidden").write_text("TODO: this should be ignored")
@@ -492,9 +485,7 @@ class TestSearchToolWithGuardrail:
 
     # Create a mock guardrail that blocks all paths
     mock_guardrail = MagicMock(spec=Guardrail)
-    mock_guardrail.validate.return_value = ValidationResult(
-      valid=False, reason="Path not allowed"
-    )
+    mock_guardrail.validate.return_value = ValidationResult(valid=False, reason="Path not allowed")
 
     tool = SearchTool(guardrail=mock_guardrail)
     result = tool.execute(path=str(tmp_path), pattern="test", type="content")
@@ -778,7 +769,9 @@ class TestSearchToolErrorHandling:
     # Create a file with invalid UTF-8 bytes
     invalid_utf8_file = tmp_path / "invalid.txt"
     # Write bytes that form invalid UTF-8 sequences
-    invalid_utf8_file.write_bytes(b"Valid UTF-8\n" + b"\xff\xfe Invalid UTF-8\n" + b"More valid text\n")
+    invalid_utf8_file.write_bytes(
+      b"Valid UTF-8\n" + b"\xff\xfe Invalid UTF-8\n" + b"More valid text\n"
+    )
 
     # Create a valid file
     (tmp_path / "valid.txt").write_text("TODO: valid\n")
