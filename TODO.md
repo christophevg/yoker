@@ -196,6 +196,76 @@
   - Implement clean context creation for subagents
   - Write unit tests
 
+- [ ] **2.8 File Existence Tool**
+  - Implement file existence check functionality
+  - Implement folder existence check functionality
+  - Add path restriction guardrails (use shared PathGuardrail)
+  - Return boolean result or error message
+  - Write unit tests
+  - See `analysis/api-existence-tool.md` for API design (to be created)
+
+- [ ] **2.9 Folder Creation Tool**
+  - Implement folder creation functionality (mkdir -p equivalent)
+  - Add path restriction guardrails (use shared PathGuardrail)
+  - Support recursive parent creation
+  - Handle existing folder gracefully (no error if already exists)
+  - Write unit tests
+  - See `analysis/api-folder-creation-tool.md` for API design (to be created)
+
+- [ ] **2.10 Git Tool**
+  - Research security implications of Git operations
+  - Implement Git operations (status, log, diff, commit, branch)
+  - Define allowed commands filter in configuration
+  - Add permission handlers for destructive operations (commit, push)
+  - Implement command sanitization to prevent injection
+  - Write unit tests
+  - See architecture document section 2.5 for tool interface
+  - See architecture document section 2.4 for permission system
+
+- [ ] **2.11 WebSearch and WebFetch Tools Research**
+  - Research Ollama's WebSearch/WebFetch implementation capabilities
+  - Compare Ollama approach with own HTTP client implementation
+  - Document trade-offs: control vs. dependency, feature parity, maintenance
+  - Evaluate guardrail implementation options for each approach
+  - Recommend implementation strategy with justification
+  - Create analysis document with findings
+
+- [ ] **2.12 WebSearch Tool**
+  - Depends on: 2.11 WebSearch and WebFetch Tools Research
+  - Implement WebSearch functionality based on research findings
+  - Define guardrails for search queries (max length, allowed domains)
+  - Add result count limits and timeout enforcement
+  - Write unit tests
+  - See `analysis/api-websearch-tool.md` for API design (to be created)
+
+- [ ] **2.13 WebFetch Tool**
+  - Depends on: 2.11 WebSearch and WebFetch Tools Research
+  - Implement WebFetch functionality based on research findings
+  - Define guardrails for URLs and domains (whitelist/blacklist)
+  - Add timeout enforcement and content size limits
+  - Implement content type filtering
+  - Write unit tests
+  - See `analysis/api-webfetch-tool.md` for API design (to be created)
+
+- [ ] **2.14 Python Tool Research**
+  - Research safe Python code execution approaches (subprocess, sandbox, AST validation)
+  - Investigate uv integration for virtual environment management
+  - Define security model for code execution (what operations are allowed)
+  - Document guardrails and permissions approach
+  - Research pyenv environment activation integration
+  - Recommend implementation strategy with justification
+  - Create analysis document with findings
+
+- [ ] **2.15 Python Tool**
+  - Depends on: 2.14 Python Tool Research
+  - Implement Python script execution functionality
+  - Support virtual environment activation (uv, pyenv, venv)
+  - Implement code validation guardrails based on research
+  - Define allowed operations and permissions
+  - Add timeout and resource limits
+  - Write unit tests
+  - See `analysis/api-python-tool.md` for API design (to be created)
+
 ### Phase 3: Backend Integration
 
 - [ ] **3.1 Ollama Client**
