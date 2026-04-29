@@ -54,6 +54,7 @@ See [docs/rationale.md](docs/rationale.md) for the full rationale and comparison
 - [x] `read` tool - Read file contents with guardrails
 - [x] `list` tool - Directory listing with pattern filtering
 - [x] `write` tool - Write files with overwrite protection
+- [x] `search` tool - Search file contents with regex or filenames with glob
 - [x] Slash commands - Built-in commands: `/help`, `/think on|off`
 - [x] Thinking mode - LLM reasoning trace with gray output
 - [x] Streaming - Real-time token streaming from Ollama
@@ -68,7 +69,6 @@ See [docs/rationale.md](docs/rationale.md) for the full rationale and comparison
 - [x] Update tool - Edit existing files with replace, insert, and delete operations
 
 **Planned Features:**
-- [ ] `search` tool - Search file contents
 - [ ] Guardrails - Tool parameter validation
 - [ ] Permissions - Static TOML-based access control
 - [ ] Sub-agents - Hierarchical agent spawning with isolated context

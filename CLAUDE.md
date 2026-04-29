@@ -50,6 +50,7 @@ src/yoker/
     list.py            # ListTool
     write.py           # WriteTool
     update.py          # UpdateTool
+    search.py          # SearchTool
 ```
 
 **Running the prototype:**

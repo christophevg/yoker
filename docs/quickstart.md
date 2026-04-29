@@ -280,6 +280,8 @@ Yoker automatically loads `yoker.toml` from the current directory if it exists.
 | `read` | Read file contents |
 | `list` | List directory contents with pattern filtering |
 | `write` | Write content to files with overwrite protection |
+| `update` | Edit existing files with replace, insert, and delete |
+| `search` | Search file contents with regex or filenames with glob |
 
 ## Tool Examples
 
@@ -306,6 +308,12 @@ Writing "Hello from Yoker!" to `/tmp/yoker-demo.txt` and reading it back.
 ![Update Tool Demo](_static/demo-update-tool.svg)
 
 Replacing text in an existing file with the update tool.
+
+### Search Tool
+
+![Search Tool Demo](_static/demo-search-tool.svg)
+
+Searching for content with regex patterns or filenames with glob patterns.
 
 ### Commands
 
