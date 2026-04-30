@@ -226,14 +226,6 @@
   - See `analysis/security-existence-tool.md` for security analysis
   - See `reporting/2.8-existence-tool/summary.md` for implementation summary
 
-- [ ] **2.9 Folder Creation Tool**
-  - Implement folder creation functionality (mkdir -p equivalent)
-  - Add path restriction guardrails (use shared PathGuardrail)
-  - Support recursive parent creation
-  - Handle existing folder gracefully (no error if already exists)
-  - Write unit tests
-  - See `analysis/api-folder-creation-tool.md` for API design (to be created)
-
 - [ ] **2.10 Git Tool**
   - Research security implications of Git operations
   - Implement Git operations (status, log, diff, commit, branch)
@@ -320,6 +312,22 @@
   - Write unit tests for each tool
   - See `analysis/api-dev-tools.md` for API design (to be created)
 
+- [ ] **2.19 GitHub Tool**
+  - Implement GitHub CLI wrapper tool for repository operations
+  - Support read-only operations: repo_view, issue_list/view, pr_list/view, workflow_list/view, release_list/view
+  - Use `gh` CLI with `--json` output for structured responses
+  - Add operation allowlist guardrail (config.controls allowed_operations)
+  - Add timeout enforcement (default 30 seconds)
+  - Add result count limits (max 100 for lists)
+  - Handle authentication errors (gh not installed, not authenticated)
+  - Handle rate limit errors gracefully
+  - Subprocess execution with list args (no shell=True for security)
+  - Write unit tests (mock subprocess, test injection attempts)
+  - See `analysis/api-github-tool.md` for API design
+  - See `analysis/security-github-tool.md` for security analysis
+  - **Security**: MVP excludes destructive operations (pr_merge, branch_delete, issue_create)
+  - **Security**: Phase 2 will add write operations with explicit configuration
+
 ### Phase 3: Backend Integration
 
 - [ ] **3.1 Ollama Client**
@@ -397,6 +405,22 @@
   - Write tutorial documentation
 
 ## Done
+
+- [x] **2.9 Folder Creation Tool** (2026-04-30)
+  - Implement folder creation functionality (mkdir -p equivalent)
+  - Add path restriction guardrails (use shared PathGuardrail)
+  - Support recursive parent creation
+  - Handle existing folder gracefully (no error if already exists)
+  - Depth limit enforcement (max 20 levels from allowed root)
+  - Generic error messages for security
+  - Write unit tests (56 tests)
+  - All acceptance criteria verified:
+    - `make test` (572 tests) ✓
+    - `make lint` ✓
+    - `make typecheck` ✓
+  - See `analysis/api-folder-creation-tool.md` for API design
+  - See `analysis/security-folder-creation-tool.md` for security analysis
+  - See `reporting/2.9-mkdir-tool/summary.md` for implementation summary
 
 - [x] **migrate-to-uv** (2026-04-30)
   - Migrated from pyenv virtualenv to uv for unified dependency management

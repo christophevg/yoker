@@ -12,6 +12,7 @@ from typing import Any
 
 from yoker.config.schema import (
   Config,
+  MkdirToolConfig,
   PermissionsConfig,
   ReadToolConfig,
   ToolConfig,
@@ -25,7 +26,7 @@ from yoker.tools.guardrails import Guardrail
 log = get_logger(__name__)
 
 # Tools that operate on filesystem paths
-_FILESYSTEM_TOOLS = frozenset({"read", "list", "write", "update", "search", "existence"})
+_FILESYSTEM_TOOLS = frozenset({"read", "list", "write", "update", "search", "existence", "mkdir"})
 
 
 class PathGuardrail(Guardrail):
@@ -117,6 +118,12 @@ class PathGuardrail(Guardrail):
     blocked_reason = self._check_blocked_patterns(resolved)
     if blocked_reason:
       return ValidationResult(valid=False, reason=blocked_reason)
+
+    # Mkdir-specific checks
+    if tool_name == "mkdir":
+      depth_reason = self._check_mkdir_depth(resolved)
+      if depth_reason:
+        return ValidationResult(valid=False, reason=depth_reason)
 
     # Read-specific checks
     if tool_name == "read":
@@ -358,5 +365,38 @@ class PathGuardrail(Guardrail):
       "search": tools.search,
       "agent": tools.agent,
       "git": tools.git,
+      "mkdir": tools.mkdir,
     }
     return mapping.get(tool_name)
+
+  def _check_mkdir_depth(self, resolved: Path) -> str | None:
+    """Check if path depth exceeds maximum allowed from allowed root.
+
+    Args:
+      resolved: The resolved absolute path to check.
+
+    Returns:
+      Error message if depth exceeds limit, None if within limits.
+    """
+    mkdir_config = self._get_tool_config("mkdir")
+    if not isinstance(mkdir_config, MkdirToolConfig):
+      return None
+
+    max_depth = mkdir_config.max_depth
+    if max_depth <= 0:
+      return None
+
+    # Find the allowed root that contains this path
+    for root in self._allowed_roots:
+      try:
+        relative = resolved.relative_to(root)
+        # Count path components (depth from root)
+        depth = len(relative.parts)
+        if depth >= max_depth:
+          return f"Path depth exceeds limit: {depth} >= {max_depth}"
+        return None
+      except ValueError:
+        continue
+
+    # Path is not under any allowed root (shouldn't happen if _is_within_allowed_paths passed)
+    return None

@@ -10,6 +10,7 @@ from .base import Tool, ToolResult, ValidationResult
 from .existence import ExistenceTool
 from .guardrails import Guardrail
 from .list import ListTool
+from .mkdir import MkdirTool
 from .path_guardrail import PathGuardrail
 from .read import ReadTool
 from .registry import ToolRegistry
@@ -28,7 +29,7 @@ def create_default_registry(parent_agent: "Agent | None" = None) -> ToolRegistry
     parent_agent: Optional parent agent for AgentTool (required for subagent spawning).
 
   Returns:
-    ToolRegistry with default tools (read, list, write, update, search, existence, agent).
+    ToolRegistry with default tools (read, list, write, update, search, existence, mkdir, agent).
   """
   from .agent import AgentTool
 
@@ -39,6 +40,7 @@ def create_default_registry(parent_agent: "Agent | None" = None) -> ToolRegistry
   registry.register(UpdateTool())
   registry.register(SearchTool())
   registry.register(ExistenceTool())
+  registry.register(MkdirTool())
   registry.register(AgentTool(parent_agent=parent_agent))
   return registry
 
@@ -59,6 +61,7 @@ __all__ = [
   "UpdateTool",
   "SearchTool",
   "ExistenceTool",
+  "MkdirTool",
   "AgentTool",
   "AVAILABLE_TOOLS",
   "create_default_registry",

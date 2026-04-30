@@ -258,6 +258,17 @@ class GitToolConfig(ToolConfig):
 
 
 @dataclass(frozen=True)
+class MkdirToolConfig(ToolConfig):
+  """Mkdir tool configuration.
+
+  Attributes:
+    max_depth: Maximum directory depth from allowed root.
+  """
+
+  max_depth: int = 20
+
+
+@dataclass(frozen=True)
 class ToolsConfig:
   """All tool configurations.
 
@@ -269,6 +280,7 @@ class ToolsConfig:
     search: Search tool config.
     agent: Agent tool config.
     git: Git tool config.
+    mkdir: Mkdir tool config.
   """
 
   list: ListToolConfig = field(default_factory=ListToolConfig)
@@ -278,6 +290,7 @@ class ToolsConfig:
   search: SearchToolConfig = field(default_factory=SearchToolConfig)
   agent: AgentToolConfig = field(default_factory=AgentToolConfig)
   git: GitToolConfig = field(default_factory=GitToolConfig)
+  mkdir: MkdirToolConfig = field(default_factory=MkdirToolConfig)
 
 
 @dataclass(frozen=True)
@@ -351,6 +364,7 @@ __all__ = [
   "SearchToolConfig",
   "AgentToolConfig",
   "GitToolConfig",
+  "MkdirToolConfig",
   "ToolsConfig",
   "AgentsConfig",
   "LoggingConfig",
