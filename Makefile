@@ -4,24 +4,18 @@ ARGS += --plugin-dir ../c3   # always use the local C3 plugin - latest version
 
 -include ~/.claude/Makefile
 
-# Python version for documentation purposes
-PYTHON_VERSION := 3.11
-
-.PHONY: setup install test test-all test-3.10 test-3.11 test-3.12 test-file test-one typecheck lint format build publish publish-test clean clean-all help docs docs-view demo demos
+.PHONY: install install-pythons sync test test-all test-3.10 test-3.11 test-3.12 test-file test-one typecheck lint format check build publish publish-test clean clean-all help docs docs-view demo demos
 
 ## Setup
 
-setup: ## Create virtual environment and install dependencies
-	@echo "Creating virtual environment with Python $(PYTHON_VERSION)..."
-	uv venv --python $(PYTHON_VERSION)
-	@echo ""
-	@echo "Installing dependencies..."
-	uv sync
-	@echo ""
-	@echo "Setup complete. Run 'make install' to reinstall dependencies."
+install: ## Install package in development mode with all extras
+	uv sync --all-extras
 
-install: ## Install package in development mode with dev dependencies
-	uv sync
+install-pythons: ## Install all supported Python versions for tox
+	uv python install 3.10 3.11 3.12
+
+sync: ## Sync dependencies from lock file
+	uv sync --frozen --all-extras
 
 ## Testing
 
@@ -49,7 +43,7 @@ test-3.12: ## Run tests against Python 3.12 only
 ## Documentation
 
 docs: ## Build HTML documentation
-	cd docs && uv run make html
+	cd docs; uv run sphinx-build -M html . _build
 
 docs-view: docs ## Build and open documentation in browser
 	@echo "Opening documentation..."
@@ -108,7 +102,7 @@ clean-all: clean ## Remove virtual environment and lock file
 	rm -f uv.lock
 	@echo "Virtual environment and lock file removed."
 	@echo ""
-	@echo "Run 'make setup' to recreate the environment."
+	@echo "Run 'make install' to recreate the environment."
 
 ## Help
 
@@ -116,12 +110,13 @@ help: ## Show this help message
 	@echo "Usage: make [target]"
 	@echo ""
 	@echo "Virtual Environment:"
-	@echo "  make setup        - Create virtual environment and install dependencies"
-	@echo "  make install      - Install/update dependencies"
+	@echo "  make install        - Install/update dependencies"
+	@echo "  make install-pythons - Install Python 3.10, 3.11, 3.12 for tox"
+	@echo "  make sync           - Sync from lock file (frozen)"
 	@echo ""
 	@echo "Documentation:"
-	@echo "  make docs         - Build HTML documentation"
-	@echo "  make docs-view    - Build and open documentation in browser"
+	@echo "  make docs           - Build HTML documentation"
+	@echo "  make docs-view      - Build and open documentation in browser"
 	@echo ""
 	@echo "Targets:"
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' Makefile | grep -v "setup\|install\|docs" | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' Makefile | grep -v "install-pythons\|sync\|docs" | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
