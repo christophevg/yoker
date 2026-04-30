@@ -174,7 +174,10 @@ def run_demo_session(
   # Initialize context manager (used in real LLM mode)
   context_manager: BasicPersistenceContextManager | None = None
 
-  if events_path and events_path.exists():
+  # Check replay mode BEFORE any file creation from --log
+  is_replay_mode = events_path and events_path.exists()
+
+  if is_replay_mode:
     # Replay mode: use EventReplayAgent to replay events
     agent = EventReplayAgent(events_path)
     # Attach console event handler for output
@@ -256,16 +259,16 @@ def run_demo_session(
   )
 
   # Begin session (emits SESSION_START event for real LLM mode)
-  if not (events_path and events_path.exists()):
+  if not is_replay_mode:
     agent.begin_session()
 
   # Print mode-specific info
-  if events_path and events_path.exists():
+  if is_replay_mode:
     console.print(f"[bold cyan]Yoker v0.1.0[/] - Using model: [green]{agent.model}[/]")
     console.print("[dim]Replay mode - using logged events[/]")
     console.print("")
   elif log:
-    console.print("[dim]Logging events to {script.events}[/]")
+    console.print(f"[dim]Logging events to {script.events}[/]")
 
   # Process each message
   for message in get_input.messages if hasattr(get_input, "messages") else []:
@@ -275,7 +278,7 @@ def run_demo_session(
 
     # Check if this is a command
     if message.startswith("/"):
-      if events_path and events_path.exists():
+      if is_replay_mode:
         # Replay mode: emit CommandEvent from event log
         agent.replay_command(message)  # type: ignore
       else:

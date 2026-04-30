@@ -28,7 +28,9 @@ from yoker.logging import get_logger, log_timing
 from yoker.thinking import ThinkingMode
 from yoker.tools import Tool, ToolRegistry
 from yoker.tools.agent import AgentTool
+from yoker.tools.existence import ExistenceTool
 from yoker.tools.list import ListTool
+from yoker.tools.mkdir import MkdirTool
 from yoker.tools.read import ReadTool
 from yoker.tools.search import SearchTool
 from yoker.tools.update import UpdateTool
@@ -191,6 +193,8 @@ class Agent:
       WriteTool(guardrail=self._guardrail),
       UpdateTool(guardrail=self._guardrail),
       SearchTool(guardrail=self._guardrail),
+      ExistenceTool(guardrail=self._guardrail),
+      MkdirTool(guardrail=self._guardrail),
       AgentTool(guardrail=self._guardrail, parent_agent=self),
     ]
 
