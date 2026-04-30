@@ -1,7 +1,10 @@
 """Tests for ListTool."""
 
 import os
+import platform
 from pathlib import Path
+
+import pytest
 
 from yoker.tools import ListTool
 from yoker.tools.base import ToolResult
@@ -122,6 +125,9 @@ class TestListTool:
     assert "single.txt" in result.result
     assert "1 entry total (1 file, 0 directories)" in result.result
 
+  @pytest.mark.skipif(
+    platform.system() == "Windows", reason="Unix permission model differs on Windows"
+  )
   def test_list_permission_denied(self, tmp_path: Path) -> None:
     """ListTool handles permission errors gracefully."""
     restricted = tmp_path / "restricted"

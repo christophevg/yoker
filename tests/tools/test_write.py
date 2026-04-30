@@ -1,6 +1,9 @@
 """Tests for WriteTool."""
 
+import platform
 from pathlib import Path
+
+import pytest
 
 from yoker.config.schema import Config, ToolsConfig, WriteToolConfig
 from yoker.tools import WriteTool
@@ -256,6 +259,9 @@ class TestWriteTool:
     assert result.success is False
     assert "symlink" in result.error.lower()
 
+  @pytest.mark.skipif(
+    platform.system() == "Windows", reason="Unix permission model differs on Windows"
+  )
   def test_write_over_existing_directory(self, tmp_path: Path) -> None:
     """WriteTool returns error when path is an existing directory."""
     subdir = tmp_path / "existing_dir"
