@@ -166,19 +166,19 @@ class ReadToolConfig(ToolConfig):
     ".css",
   )
   blocked_patterns: tuple[str, ...] = (
-    r"\.env",      # Environment files
-    r"\.git",      # Git directories
-    r"\.ssh",      # SSH directories
-    r"\.aws",      # AWS credentials
-    r"\.gnupg",    # GPG keys
-    "credentials", # Credential files
-    r"secrets?",   # Secret files (singular/plural)
-    r"\.pem$",     # Certificate files
-    r"\.key$",     # Key files
-    "id_rsa",      # SSH private keys
+    r"\.env",  # Environment files
+    r"\.git",  # Git directories
+    r"\.ssh",  # SSH directories
+    r"\.aws",  # AWS credentials
+    r"\.gnupg",  # GPG keys
+    "credentials",  # Credential files
+    r"secrets?",  # Secret files (singular/plural)
+    r"\.pem$",  # Certificate files
+    r"\.key$",  # Key files
+    "id_rsa",  # SSH private keys
     "id_ed25519",  # Ed25519 keys
-    r"\.bak$",     # Backup files
-    r"\.old$",     # Old files
+    r"\.bak$",  # Backup files
+    r"\.old$",  # Old files
   )
 
 

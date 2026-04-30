@@ -241,9 +241,7 @@ class TestExistenceToolWithGuardrail:
 
     # Create a mock guardrail that blocks all paths
     mock_guardrail = MagicMock(spec=Guardrail)
-    mock_guardrail.validate.return_value = ValidationResult(
-      valid=False, reason="Path not allowed"
-    )
+    mock_guardrail.validate.return_value = ValidationResult(valid=False, reason="Path not allowed")
 
     tool = ExistenceTool(guardrail=mock_guardrail)
     result = tool.execute(path=str(tmp_path / "test.txt"))
