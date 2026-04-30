@@ -3,6 +3,7 @@
 Provides validation for session IDs and storage paths with security controls.
 """
 
+import platform
 import re
 import secrets
 from pathlib import Path
@@ -14,7 +15,7 @@ SESSION_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
 
 # Forbidden path prefixes to prevent access to system directories
 # Be specific to avoid blocking legitimate temp directories
-FORBIDDEN_PATH_PREFIXES = (
+FORBIDDEN_PATH_PREFIXES_UNIX = (
   "/etc",
   "/sys",
   "/proc",
@@ -32,6 +33,21 @@ FORBIDDEN_PATH_PREFIXES = (
   "/private/var/db",
   "/private/var/lib",
 )
+
+# Windows forbidden paths
+FORBIDDEN_PATH_PREFIXES_WINDOWS: tuple[str, ...] = (
+  "C:\\Windows",
+  "C:\\Program Files",
+  "C:\\Program Files (x86)",
+  "C:\\ProgramData",
+  "C:\\System Volume Information",
+)
+
+# Select appropriate forbidden paths based on platform
+if platform.system() == "Windows":
+  FORBIDDEN_PATH_PREFIXES: tuple[str, ...] = FORBIDDEN_PATH_PREFIXES_WINDOWS
+else:
+  FORBIDDEN_PATH_PREFIXES = FORBIDDEN_PATH_PREFIXES_UNIX
 
 # Maximum session ID length
 MAX_SESSION_ID_LENGTH = 128

@@ -11,9 +11,16 @@ Note:
 
 import json
 import os
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+# Unix-only file locking
+if sys.platform != "win32":
+  import fcntl
+else:
+  fcntl = None  # type: ignore[assignment]
 
 from yoker.context.interface import ContextStatistics
 from yoker.context.validator import is_safe_path, validate_session_id, validate_storage_path
@@ -357,12 +364,11 @@ class BasicPersistenceContextManager:
     """Write a record atomically to the JSONL file.
 
     Uses file locking for atomic appends with secure permissions.
+    On Windows, file writes proceed without inter-process locking.
 
     Args:
       record: The record dictionary to write.
     """
-    import fcntl
-
     # Ensure storage directory exists
     self._ensure_storage_directory()
 
@@ -376,17 +382,24 @@ class BasicPersistenceContextManager:
       except OSError:
         pass
 
-    # Write with file locking for atomic append
+    # Write with file locking for atomic append (Unix only)
     with open(self._file_path, "a") as f:
-      # Acquire exclusive lock
-      fcntl.flock(f.fileno(), fcntl.LOCK_EX)
-      try:
+      if fcntl is not None:
+        # Acquire exclusive lock (Unix only)
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+        try:
+          json.dump(record, f)
+          f.write("\n")
+          f.flush()
+          os.fsync(f.fileno())
+        finally:
+          fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+      else:
+        # Windows: write without locking
         json.dump(record, f)
         f.write("\n")
         f.flush()
         os.fsync(f.fileno())
-      finally:
-        fcntl.flock(f.fileno(), fcntl.LOCK_UN)
 
   def _write_session_start(self) -> None:
     """Write session_start record."""

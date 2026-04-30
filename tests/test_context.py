@@ -2,6 +2,7 @@
 
 import json
 import os
+import platform
 from pathlib import Path
 
 import pytest
@@ -115,12 +116,14 @@ class TestStoragePathValidation:
     result = validate_storage_path(relative)
     assert result.is_absolute()
 
+  @pytest.mark.skipif(platform.system() == "Windows", reason="Unix-specific path restrictions")
   def test_forbidden_path_etc(self) -> None:
     """Test forbidden path under /etc."""
     with pytest.raises(ValidationError) as exc_info:
       validate_storage_path(Path("/etc/yoker"))
     assert "/etc" in str(exc_info.value)
 
+  @pytest.mark.skipif(platform.system() == "Windows", reason="Unix-specific path restrictions")
   def test_forbidden_path_sys(self) -> None:
     """Test forbidden path under /sys."""
     with pytest.raises(ValidationError) as exc_info:
