@@ -55,9 +55,6 @@ src/yoker/
 
 **Running the prototype:**
 ```bash
-# Activate virtual environment
-pyenv activate yoker
-
 # Run interactive chat
 python -m yoker
 
@@ -137,28 +134,24 @@ src/yoker/
 
 ## Development Setup
 
-Uses pyenv for virtual environment management. A virtual environment is required for all development operations.
+Uses uv for unified dependency management. A virtual environment is created automatically by uv.
 
 ```bash
-# Create pyenv virtualenv
+# Create virtual environment and install dependencies
 make setup
 
-# Activate the virtual environment
-pyenv activate yoker
-
-# Install dependencies (includes dev dependencies)
-make install
+# Or manually:
+uv sync
 ```
 
-For automatic activation, a `.python-version` file is already present.
+For pyenv users, the `.python-version` file contains the Python version (3.11) for automatic version selection.
 
 ## Makefile Targets
 
 | Target | Description |
 |--------|-------------|
-| `make setup` | Create pyenv virtualenv |
-| `make activate` | Show activation instructions |
-| `make install` | Install dev dependencies (venv required) |
+| `make setup` | Create virtual environment and install dependencies |
+| `make install` | Install/update dependencies |
 | `make test` | Run tests with coverage |
 | `make test-all` | Run tests against all Python versions |
 | `make docs` | Build HTML documentation |

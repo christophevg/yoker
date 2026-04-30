@@ -179,14 +179,14 @@ Yoker uses an **event-driven architecture** for library-first design. The Agent 
 ```bash
 git clone https://github.com/christophevg/yoker.git
 cd yoker
-pip install -e ".[dev]"
+make setup    # Create virtual environment and install dependencies
 
 make test     # Run tests with coverage
 make check    # Type checking + linting
 make docs     # Build documentation
 ```
 
-Requires Python 3.10+. See [CLAUDE.md](CLAUDE.md) for project conventions.
+Requires Python 3.10+. Uses [uv](https://docs.astral.sh/uv/) for dependency management. See [CLAUDE.md](CLAUDE.md) for project conventions.
 
 ## Contributing
 

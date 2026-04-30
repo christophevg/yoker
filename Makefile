@@ -1,84 +1,55 @@
-#MODEL=qwen3.5:397b-cloud
-#ARGS += --plugin-dir ./
-ARGS += --plugin-dir ../c3
-ARGS += --agent c3:project-manager
-ARGS += "manage the project!"
+#MODEL=qwen3.5:397b-cloud    # sometimes qwen is better
+#ARGS += --plugin-dir ./		 # future: when we expose a baseweb: plugin
+ARGS += --plugin-dir ../c3   # always use the local C3 plugin - latest version
 
 -include ~/.claude/Makefile
 
-# Virtual environment configuration
-VENV_NAME := yoker
+# Python version for documentation purposes
 PYTHON_VERSION := 3.11
 
-.PHONY: setup activate install test test-all test-3.10 test-3.11 test-3.12 test-file typecheck lint format build publish clean clean-all help docs docs-view demo demos
-
-# Guard to ensure virtual environment is active
-define check_venv
-  @if [ -z "$(VIRTUAL_ENV)" ] && [ "$(shell pyenv version-name 2>/dev/null)" != "$(VENV_NAME)" ]; then \
-    echo "Error: No virtual environment detected. Run 'pyenv activate $(VENV_NAME)' or 'source .venv/bin/activate' first."; \
-    exit 1; \
-  fi
-endef
+.PHONY: setup install test test-all test-3.10 test-3.11 test-3.12 test-file test-one typecheck lint format build publish publish-test clean clean-all help docs docs-view demo demos
 
 ## Setup
 
-setup: ## Create pyenv virtualenv and install dependencies
-	@echo "Creating pyenv virtualenv '$(VENV_NAME)' with Python $(PYTHON_VERSION)..."
-	@if pyenv versions | grep -q "$(VENV_NAME)"; then \
-	  echo "Virtualenv '$(VENV_NAME)' already exists."; \
-	else \
-	  pyenv virtualenv $(PYTHON_VERSION) $(VENV_NAME); \
-	  echo "Created virtualenv '$(VENV_NAME)'."; \
-	fi
+setup: ## Create virtual environment and install dependencies
+	@echo "Creating virtual environment with Python $(PYTHON_VERSION)..."
+	uv venv --python $(PYTHON_VERSION)
 	@echo ""
-	@echo "To activate, run:"
-	@echo "  pyenv activate $(VENV_NAME)"
+	@echo "Installing dependencies..."
+	uv sync
 	@echo ""
-	@echo "Then install dependencies:"
-	@echo "  make install"
-
-activate: ## Show instructions to activate the virtual environment
-	@echo "Activate the virtual environment:"
-	@echo "  pyenv activate $(VENV_NAME)"
-	@echo ""
-	@echo "Or add to .python-version for automatic activation:"
-	@echo "  echo '$(VENV_NAME)' > .python-version"
+	@echo "Setup complete. Run 'make install' to reinstall dependencies."
 
 install: ## Install package in development mode with dev dependencies
-	$(check_venv)
-	pip install -e ".[dev]"
+	uv sync
 
 ## Testing
 
 test: ## Run all tests with coverage
-	$(check_venv)
-	pytest
+	uv run pytest
 
 test-file: ## Run specific test file (usage: make test-file FILE=tests/test_package.py)
-	$(check_venv)
-	pytest $(FILE)
+	uv run pytest $(FILE)
 
 test-one: ## Run specific test function (usage: make test-one TEST=tests/test_package.py::test_import)
-	$(check_venv)
-	pytest $(TEST)
+	uv run pytest $(TEST)
 
 test-all: ## Run tests against all supported Python versions (3.10, 3.11, 3.12)
-	tox
+	uv run tox
 
 test-3.10: ## Run tests against Python 3.10 only
-	tox -e py310
+	uv run tox -e py310
 
 test-3.11: ## Run tests against Python 3.11 only
-	tox -e py311
+	uv run tox -e py311
 
 test-3.12: ## Run tests against Python 3.12 only
-	tox -e py312
+	uv run tox -e py312
 
 ## Documentation
 
 docs: ## Build HTML documentation
-	$(check_venv)
-	cd docs && make html
+	cd docs && uv run make html
 
 docs-view: docs ## Build and open documentation in browser
 	@echo "Opening documentation..."
@@ -91,42 +62,34 @@ docs-view: docs ## Build and open documentation in browser
 ## Demo Screenshots
 
 demo: ## Generate main session screenshot (media/session.svg)
-	$(check_venv)
-	python scripts/demo_session.py --script demos/session.md
+	uv run python scripts/demo_session.py --script demos/session.md
 
 demos: ## Generate all demo screenshots
-	$(check_venv)
-	python scripts/demo_session.py --scripts-dir demos/
+	uv run python scripts/demo_session.py --scripts-dir demos/
 
 ## Code Quality
 
 typecheck: ## Run mypy type checking
-	$(check_venv)
-	mypy --strict src
+	uv run mypy --strict src
 
 lint: ## Run ruff linting
-	$(check_venv)
-	ruff check src tests
+	uv run ruff check src tests
 
 format: ## Format code with ruff
-	$(check_venv)
-	ruff format src tests
+	uv run ruff format src tests
 
 check: typecheck lint ## Run all checks (typecheck + lint)
 
 ## Build & Publish
 
 build: ## Build package distributions
-	$(check_venv)
-	python -m build
+	uv build
 
 publish: build ## Build and publish to PyPI
-	$(check_venv)
-	twine upload dist/*
+	uv run twine upload dist/*
 
 publish-test: build ## Build and publish to TestPyPI
-	$(check_venv)
-	twine upload --repository testpypi dist/*
+	uv run twine upload --repository testpypi dist/*
 
 ## Cleanup
 
@@ -139,11 +102,13 @@ clean: ## Remove build artifacts
 	find . -type d -name ".pytest_cache" -exec rm -rf {} + 2>/dev/null || true
 	find . -type d -name ".mypy_cache" -exec rm -rf {} + 2>/dev/null || true
 
-clean-all: clean ## Remove virtualenv as well
-	@echo "Removing pyenv virtualenv '$(VENV_NAME)'..."
-	-pyenv deactivate 2>/dev/null || true
-	-pyenv virtualenv-delete -f $(VENV_NAME) 2>/dev/null || true
-	@echo "Virtualenv removed."
+clean-all: clean ## Remove virtual environment and lock file
+	@echo "Removing virtual environment..."
+	rm -rf .venv
+	rm -f uv.lock
+	@echo "Virtual environment and lock file removed."
+	@echo ""
+	@echo "Run 'make setup' to recreate the environment."
 
 ## Help
 
@@ -151,13 +116,12 @@ help: ## Show this help message
 	@echo "Usage: make [target]"
 	@echo ""
 	@echo "Virtual Environment:"
-	@echo "  make setup        - Create pyenv virtualenv '$(VENV_NAME)'"
-	@echo "  make activate     - Show activation instructions"
-	@echo "  make install      - Install dependencies (requires venv)"
+	@echo "  make setup        - Create virtual environment and install dependencies"
+	@echo "  make install      - Install/update dependencies"
 	@echo ""
 	@echo "Documentation:"
 	@echo "  make docs         - Build HTML documentation"
 	@echo "  make docs-view    - Build and open documentation in browser"
 	@echo ""
 	@echo "Targets:"
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' Makefile | grep -v "setup\|activate\|install\|docs" | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' Makefile | grep -v "setup\|install\|docs" | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'

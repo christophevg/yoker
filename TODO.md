@@ -1,10 +1,40 @@
 # TODO
 
-## Unsorted Input
-
-- Tool needed: AskUserQuestion, PyTest, Tox, Ruff, MyPy, Make, PyPi
-
 ## Backlog
+
+### Verification Tasks
+
+- [ ] **verify-c3-python-compliance**
+  - Verify project follows c3:python coding standards
+  - Check two-space indentation throughout codebase
+  - Verify pytest patterns (monkeypatch, mock, autouse fixtures)
+  - Check error handling patterns
+  - Verify file organization (analysis/, reporting/, TODO.md)
+  - Confirm all pre-commit checks pass
+  - Acceptance: All c3:python conventions documented and verified
+  - Note: Project appears compliant; this is a verification pass
+
+- [ ] **migrate-to-uv**
+  - Migrate from pyenv virtualenv to uv for unified dependency management
+  - See `/Users/xtof/Workspace/agentic/yoker/analysis/uv-migration-checklist.md` for detailed checklist
+  - Acceptance:
+    - `.python-version` contains version number only (e.g., "3.11")
+    - `uv.lock` file exists with locked dependencies
+    - `uv sync` creates virtual environment and installs dependencies
+    - `make test` runs via `uv run pytest` and all tests pass
+    - `make lint` runs via `uv run ruff check` and passes
+    - `make typecheck` runs via `uv run mypy` and passes
+    - `make build` runs via `uv build` and produces dist/
+    - `make docs` runs via `uv run` and builds documentation
+    - `make demo` and `make demos` work with `uv run python scripts/demo_session.py`
+    - CI/CD workflow uses `uv` for dependency management
+    - README.md reflects uv installation instructions
+    - CLAUDE.md reflects uv development workflow
+  - Breaking changes to identify and document:
+    - `make setup` behavior change (no longer creates pyenv venv)
+    - `make activate` removal or behavior change
+    - `make install` replaced by `uv sync`
+    - tox may need uv integration or alternative approach
 
 ### Standard Project Setup
 
@@ -303,6 +333,26 @@
   - Add timeout enforcement for long-running test suites
   - Write unit tests
   - See `analysis/api-pytest-tool.md` for API design (to be created)
+
+- [ ] **2.17 AskUserQuestion Tool**
+  - Implement interactive question asking capability
+  - Support choice-based questions with predefined options
+  - Support open-ended questions
+  - Add timeout and default value handling
+  - Integrate with TUI for interactive sessions
+  - Write unit tests
+  - See `analysis/api-askuserquestion-tool.md` for API design (to be created)
+
+- [ ] **2.18 Development Workflow Tools**
+  - Implement RuffTool for linting/formatting operations
+  - Implement MyPyTool for type checking
+  - Implement ToxTool for multi-version testing
+  - Implement MakeTool for Makefile target execution
+  - Implement PyPiTool for package publishing
+  - All tools should use PathGuardrail for path validation
+  - All tools should have timeout enforcement
+  - Write unit tests for each tool
+  - See `analysis/api-dev-tools.md` for API design (to be created)
 
 ### Phase 3: Backend Integration
 
