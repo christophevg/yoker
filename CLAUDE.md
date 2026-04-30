@@ -180,6 +180,24 @@ python -m yoker
 ```
 And verify it starts correctly.
 
+## New Tool Checklist
+
+When adding a new tool to yoker, these files must be updated:
+
+| File | Purpose |
+|------|---------|
+| `src/yoker/tools/<tool>.py` | Tool implementation |
+| `src/yoker/tools/__init__.py` | Export and register in `create_default_registry()` |
+| `src/yoker/agent.py` | Add to `_build_tool_registry()` ⚠️ **Often missed!** |
+| `src/yoker/tools/path_guardrail.py` | Add to `_FILESYSTEM_TOOLS` (if applicable) |
+| `tests/test_tools/test_<tool>.py` | Unit tests |
+| `README.md` | Add to features list |
+| `demos/<tool>.md` | Demo script (explicitly name the tool!) |
+
+**Verification:** After implementation, check `agent_initialized` log shows tool in `available_tools`.
+
+**Demo Scripts:** Must explicitly name the tool to prevent LLM shortcuts. See memory for details.
+
 ## Code Style
 
 - Two-space indentation
