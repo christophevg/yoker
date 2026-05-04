@@ -193,8 +193,15 @@ When adding a new tool to yoker, these files must be updated:
 | `tests/test_tools/test_<tool>.py` | Unit tests |
 | `README.md` | Add to features list |
 | `demos/<tool>.md` | Demo script (explicitly name the tool!) |
+| `media/demo-<tool>.svg` | Screenshot generated from demo script |
 
 **Verification:** After implementation, check `agent_initialized` log shows tool in `available_tools`.
+
+**Screenshot Generation:**
+```bash
+uv run python scripts/demo_session.py --script demos/<tool>.md
+```
+Output saved to path specified in demo script frontmatter.
 
 **Demo Scripts:** Must explicitly name the tool to prevent LLM shortcuts. See memory for details.
 
