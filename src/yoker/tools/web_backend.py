@@ -4,9 +4,12 @@ Provides pluggable backend architecture for web search.
 """
 
 import logging
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from .web_types import SearchResult, WebSearchError
+
+if TYPE_CHECKING:
+  from ollama import Client
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +45,7 @@ class OllamaWebSearchBackend:
   """Web search backend using Ollama's native web_search function.
 
   Uses the Ollama Python SDK's built-in web_search capability.
-  No model selection required - Ollama handles the search directly.
+  Requires an authenticated Client for cloud-based web search.
 
   Features:
     - Native Ollama SDK integration
@@ -50,24 +53,26 @@ class OllamaWebSearchBackend:
     - Built-in result formatting
 
   Limitations:
-    - Requires Ollama server running
+    - Requires OLLAMA_API_KEY for cloud-based search
     - Limited to 10 results
     - No domain filtering on client side
   """
 
-  def __init__(self, timeout_seconds: int = 30) -> None:
+  def __init__(self, client: "Client", timeout_seconds: int = 30) -> None:
     """Initialize backend.
 
     Args:
+      client: Authenticated Ollama Client instance.
       timeout_seconds: Request timeout in seconds.
     """
+    self._client = client
     self._timeout_seconds = timeout_seconds
     self._backend_name = "ollama"
 
   def search(self, query: str, max_results: int = 10) -> list[SearchResult]:
     """Execute search via Ollama web_search function.
 
-    Uses ollama.web_search() which returns structured results directly.
+    Uses client.web_search() which returns structured results directly.
 
     Args:
       query: Search query string.
@@ -83,11 +88,9 @@ class OllamaWebSearchBackend:
     capped_results = min(max_results, 10)
 
     try:
-      import ollama
-
-      # Use Ollama's native web_search function
+      # Use client's web_search method
       # Returns WebSearchResponse with .results attribute
-      response = ollama.web_search(query, max_results=capped_results)
+      response = self._client.web_search(query, max_results=capped_results)
 
       # Parse the response into SearchResult objects
       results: list[SearchResult] = []
@@ -103,13 +106,6 @@ class OllamaWebSearchBackend:
       # Slice to ensure we don't return more than requested
       return results[:capped_results]
 
-    except ImportError as e:
-      logger.error(f"ollama package not installed: {e}")
-      raise WebSearchError(
-        "ollama package not installed",
-        backend=self._backend_name,
-        cause=e,
-      ) from e
     except ConnectionError as e:
       logger.error(f"Ollama connection error: {e}")
       raise WebSearchError(

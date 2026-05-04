@@ -261,6 +261,13 @@ class ConsoleEventHandler:
 
       return " ".join(parts) if parts else str(arguments)
 
+    # Special formatting for web_search: show query
+    if tool_name == "web_search":
+      query = arguments.get("query", "")
+      if query:
+        return str(query)
+      return str(arguments)
+
     # For other tools: show filename/path
     return self._extract_filename(arguments)
 
