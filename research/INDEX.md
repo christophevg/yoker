@@ -10,7 +10,7 @@ This index tracks all research topics investigated for the yoker project.
 **Date**: 2026-04-17
 **Status**: Complete
 
-**Summary**: Comprehensive analysis of coding agent harness architectures, examining top 5 implementations (Cursor, Claude Code, Aider, Windsurf, Cline) and distilling common architectural patterns across seven core components.
+**Summary**: Comprehensive analysis of coding agent harness architectures, examining top 5 implementations (Cursor, Claude Code, Aider, Windsorf, Cline) and distilling common architectural patterns across seven core components.
 
 **Key Findings**:
 - Brain-hands-session decoupling is the most robust architecture pattern
@@ -46,6 +46,27 @@ This index tracks all research topics investigated for the yoker project.
 **Sources**: 20 sources (5 searches, prior research reference)
 
 **Keywords**: rationale, value proposition, library-first, static permissions, ollama, offline, recursive composition, event-driven, embeddable
+
+---
+
+## WebSearch and WebFetch Tool Implementation
+
+**Folder**: `2026-05-04-websearch-webfetch-tools/`
+**Date**: 2026-05-04
+**Status**: Complete
+
+**Summary**: Research comparing Ollama native WebSearch/WebFetch capabilities versus custom implementations using DDGS and Trafilatura, with comprehensive security guardrail patterns.
+
+**Key Findings**:
+- Ollama 0.18.1 provides native web_search and web_fetch tools but requires cloud API key
+- DDGS library offers free multi-backend search (bing, brave, duckduckgo, google) without API keys
+- Trafilatura achieves 0.958 F1 score on content extraction with configurable output formats
+- Custom implementation recommended for yoker's offline-first, library-first architecture
+- SSRF guardrails essential: domain whitelisting, private IP blocking, redirect validation (5 hops), size limits (2MB), timeouts (10s)
+
+**Sources**: 5 searches, 4 fetched articles (9 total sources)
+
+**Keywords**: websearch, webfetch, ddgs, trafilatura, httpx, ssrf, guardrails, domain whitelist, content extraction
 
 ---
 
