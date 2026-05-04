@@ -161,10 +161,10 @@ def _parse_permissions(data: dict[str, object]) -> PermissionsConfig:
   network_access = str(network_val) if network_val is not None else "none"
 
   max_file = perms.get("max_file_size_kb", 500)
-  max_file_size_kb = int(max_file) if isinstance(max_file, (int, float)) else 500
+  max_file_size_kb = int(max_file) if isinstance(max_file, int | float) else 500
 
   max_rec = perms.get("max_recursion_depth", 3)
-  max_recursion_depth = int(max_rec) if isinstance(max_rec, (int, float)) else 3
+  max_recursion_depth = int(max_rec) if isinstance(max_rec, int | float) else 3
 
   return PermissionsConfig(
     filesystem_paths=paths,

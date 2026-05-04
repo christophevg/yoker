@@ -17,6 +17,10 @@ from .read import ReadTool
 from .registry import ToolRegistry
 from .search import SearchTool
 from .update import UpdateTool
+from .web_backend import OllamaWebSearchBackend, WebSearchBackend
+from .web_guardrail import WebGuardrail, WebGuardrailConfig
+from .web_types import SearchResult, WebSearchError
+from .websearch import WebSearchTool
 from .write import WriteTool
 
 if TYPE_CHECKING:
@@ -66,6 +70,13 @@ __all__ = [
   "MkdirTool",
   "GitTool",
   "AgentTool",
+  "WebSearchTool",
+  "WebSearchBackend",
+  "OllamaWebSearchBackend",
+  "WebGuardrail",
+  "WebGuardrailConfig",
+  "SearchResult",
+  "WebSearchError",
   "AVAILABLE_TOOLS",
   "create_default_registry",
 ]

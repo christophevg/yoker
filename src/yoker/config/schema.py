@@ -269,6 +269,33 @@ class MkdirToolConfig(ToolConfig):
 
 
 @dataclass(frozen=True)
+class WebSearchToolConfig(ToolConfig):
+  """Web search tool configuration.
+
+  Attributes:
+    backend: Backend to use ("ollama" or "local").
+    max_results: Maximum results per search.
+    max_query_length: Maximum query string length.
+    timeout_seconds: Search timeout in seconds.
+    requests_per_minute: Rate limit per minute (0 = unlimited).
+    requests_per_hour: Rate limit per hour (0 = unlimited).
+    domain_allowlist: Domains to allow (empty = all allowed).
+    domain_blocklist: Domains to block (empty = none blocked).
+    block_private_cidrs: Whether to block private IP ranges.
+  """
+
+  backend: str = "ollama"
+  max_results: int = 10
+  max_query_length: int = 500
+  timeout_seconds: int = 30
+  requests_per_minute: int = 60
+  requests_per_hour: int = 1000
+  domain_allowlist: tuple[str, ...] = ()
+  domain_blocklist: tuple[str, ...] = ()
+  block_private_cidrs: bool = True
+
+
+@dataclass(frozen=True)
 class ToolsConfig:
   """All tool configurations.
 
@@ -281,6 +308,7 @@ class ToolsConfig:
     agent: Agent tool config.
     git: Git tool config.
     mkdir: Mkdir tool config.
+    websearch: Web search tool config.
   """
 
   list: ListToolConfig = field(default_factory=ListToolConfig)
@@ -291,6 +319,7 @@ class ToolsConfig:
   agent: AgentToolConfig = field(default_factory=AgentToolConfig)
   git: GitToolConfig = field(default_factory=GitToolConfig)
   mkdir: MkdirToolConfig = field(default_factory=MkdirToolConfig)
+  websearch: WebSearchToolConfig = field(default_factory=WebSearchToolConfig)
 
 
 @dataclass(frozen=True)
@@ -365,6 +394,7 @@ __all__ = [
   "AgentToolConfig",
   "GitToolConfig",
   "MkdirToolConfig",
+  "WebSearchToolConfig",
   "ToolsConfig",
   "AgentsConfig",
   "LoggingConfig",

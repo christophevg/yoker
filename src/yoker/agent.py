@@ -1,10 +1,12 @@
 """Minimal Agent implementation for Yoker prototype."""
 
 import json
+import os
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from dotenv import load_dotenv
 from ollama import Client
 
 from yoker.config import Config
@@ -35,6 +37,9 @@ from yoker.tools.mkdir import MkdirTool
 from yoker.tools.read import ReadTool
 from yoker.tools.search import SearchTool
 from yoker.tools.update import UpdateTool
+from yoker.tools.web_backend import OllamaWebSearchBackend
+from yoker.tools.web_guardrail import WebGuardrail
+from yoker.tools.websearch import WebSearchTool
 from yoker.tools.write import WriteTool
 
 if TYPE_CHECKING:
@@ -90,6 +95,11 @@ class Agent:
       context_manager: Optional ContextManager for conversation persistence.
       _recursion_depth: Internal parameter for subagent recursion tracking.
     """
+    # Load environment variables from .env and .env.local
+    # .env.local takes precedence over .env
+    load_dotenv(Path(".env"))
+    load_dotenv(Path(".env.local"))
+
     # Load configuration
     if config is not None:
       self.config = config
@@ -108,7 +118,19 @@ class Agent:
       log.warning("config_validation_warning", warning=warning)
 
     # Initialize client
-    self.client = Client(host=self.config.backend.ollama.base_url)
+    # Check for API key for direct ollama.com connection
+    api_key = os.environ.get("OLLAMA_API_KEY")
+    if api_key:
+      # Use ollama.com with API key authentication
+      self.client = Client(
+        host="https://ollama.com",
+        headers={"Authorization": f"Bearer {api_key}"}
+      )
+      log.info("ollama_client_initialized", host="ollama.com", auth="api_key")
+    else:
+      # Use local Ollama server
+      self.client = Client(host=self.config.backend.ollama.base_url)
+      log.info("ollama_client_initialized", host=self.config.backend.ollama.base_url, auth="none")
 
     # Use provided model or config model
     self.model = model if model is not None else self.config.backend.ollama.model
@@ -202,7 +224,19 @@ class Agent:
         permission_handlers=self.config.permissions.handlers,
       ),
       AgentTool(guardrail=self._guardrail, parent_agent=self),
+      # WebSearchTool requires OLLAMA_API_KEY - added conditionally below
     ]
+
+    # Add WebSearchTool only if API key is available
+    if os.environ.get("OLLAMA_API_KEY"):
+      tools.append(
+        WebSearchTool(
+          backend=OllamaWebSearchBackend(client=self.client),
+          guardrail=WebGuardrail(),
+        )
+      )
+    else:
+      log.warning("web_search_unavailable", reason="OLLAMA_API_KEY not set")
 
     if self.agent_definition is not None:
       allowed_tools = {t.lower() for t in self.agent_definition.tools}
