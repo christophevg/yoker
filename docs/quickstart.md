@@ -186,6 +186,8 @@ Yoker provides several tools for file operations and subagent spawning:
 | `update` | Edit existing files with replace/insert/delete |
 | `search` | Search file contents or filenames |
 | `existence` | Check if files or folders exist |
+| `mkdir` | Create directories with parent creation |
+| `git` | Git operations with permission-controlled commit/push |
 | `agent` | Spawn subagents with isolated context |
 
 ### Agent Tool
@@ -318,6 +320,7 @@ Yoker automatically loads `yoker.toml` from the current directory if it exists.
 | `write` | Write content to files with overwrite protection |
 | `update` | Edit existing files with replace, insert, and delete |
 | `search` | Search file contents with regex or filenames with glob |
+| `git` | Git operations (status, log, diff, branch, show) |
 
 ## Tool Examples
 
@@ -350,6 +353,12 @@ Replacing text in an existing file with the update tool.
 ![Search Tool Demo](_static/demo-search-tool.svg)
 
 Searching for content with regex patterns or filenames with glob patterns.
+
+### Git Tool
+
+![Git Tool Demo](_static/demo-git-tool.svg)
+
+Running Git operations (status, log, diff) on a repository.
 
 ### Commands
 

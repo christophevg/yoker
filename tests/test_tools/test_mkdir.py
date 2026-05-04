@@ -8,7 +8,6 @@ and error handling.
 import os
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock
 
 import pytest
 
@@ -19,8 +18,6 @@ from yoker.config.schema import (
   ReadToolConfig,
   ToolsConfig,
 )
-from yoker.tools.base import ValidationResult
-from yoker.tools.guardrails import Guardrail
 from yoker.tools.mkdir import MkdirTool
 from yoker.tools.path_guardrail import PathGuardrail
 

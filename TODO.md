@@ -226,16 +226,6 @@
   - See `analysis/security-existence-tool.md` for security analysis
   - See `reporting/2.8-existence-tool/summary.md` for implementation summary
 
-- [ ] **2.10 Git Tool**
-  - Research security implications of Git operations
-  - Implement Git operations (status, log, diff, commit, branch)
-  - Define allowed commands filter in configuration
-  - Add permission handlers for destructive operations (commit, push)
-  - Implement command sanitization to prevent injection
-  - Write unit tests
-  - See architecture document section 2.5 for tool interface
-  - See architecture document section 2.4 for permission system
-
 - [ ] **2.11 WebSearch and WebFetch Tools Research**
   - Research Ollama's WebSearch/WebFetch implementation capabilities
   - Compare Ollama approach with own HTTP client implementation
@@ -405,6 +395,23 @@
   - Write tutorial documentation
 
 ## Done
+
+- [x] **2.10 Git Tool** (2026-05-04)
+  - Implement Git operations (status, log, diff, branch, show) - read-only
+  - Implement permission-required operations (commit, push)
+  - Add permission handlers (allow, block, ask_user modes)
+  - Implement command sanitization to prevent injection
+  - Add dangerous option blocking (--exec, --upload-pack, etc.)
+  - Add credential redaction in output
+  - Integrate with PathGuardrail for repository path validation
+  - Write unit tests
+  - All acceptance criteria verified:
+    - `make test` passes
+    - `make lint` passes
+    - `make typecheck` passes
+  - See `analysis/api-git-tool.md` for API design
+  - See `analysis/security-git-tool.md` for security analysis
+  - See `reporting/2.10-git-tool/summary.md` for implementation summary
 
 - [x] **2.9 Folder Creation Tool** (2026-04-30)
   - Implement folder creation functionality (mkdir -p equivalent)

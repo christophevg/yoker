@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 from .base import Tool, ToolResult, ValidationResult
 from .existence import ExistenceTool
+from .git import GitTool
 from .guardrails import Guardrail
 from .list import ListTool
 from .mkdir import MkdirTool
@@ -29,7 +30,7 @@ def create_default_registry(parent_agent: "Agent | None" = None) -> ToolRegistry
     parent_agent: Optional parent agent for AgentTool (required for subagent spawning).
 
   Returns:
-    ToolRegistry with default tools (read, list, write, update, search, existence, mkdir, agent).
+    ToolRegistry with default tools (read, list, write, update, search, existence, mkdir, git, agent).
   """
   from .agent import AgentTool
 
@@ -42,6 +43,7 @@ def create_default_registry(parent_agent: "Agent | None" = None) -> ToolRegistry
   registry.register(ExistenceTool())
   registry.register(MkdirTool())
   registry.register(AgentTool(parent_agent=parent_agent))
+  # GitTool requires config - added separately when config is available
   return registry
 
 
@@ -62,6 +64,7 @@ __all__ = [
   "SearchTool",
   "ExistenceTool",
   "MkdirTool",
+  "GitTool",
   "AgentTool",
   "AVAILABLE_TOOLS",
   "create_default_registry",

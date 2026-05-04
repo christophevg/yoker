@@ -26,7 +26,7 @@ from yoker.tools.guardrails import Guardrail
 log = get_logger(__name__)
 
 # Tools that operate on filesystem paths
-_FILESYSTEM_TOOLS = frozenset({"read", "list", "write", "update", "search", "existence", "mkdir"})
+_FILESYSTEM_TOOLS = frozenset({"read", "list", "write", "update", "search", "existence", "mkdir", "git"})
 
 
 class PathGuardrail(Guardrail):
@@ -95,8 +95,14 @@ class PathGuardrail(Guardrail):
 
     # Extract path parameter
     path_param = params.get("path")
+
+    # Git tool allows missing path (defaults to ".")
     if path_param is None:
+      if tool_name == "git":
+        # Git tool will default to "."
+        return ValidationResult(valid=True)
       return ValidationResult(valid=False, reason="Missing required parameter: path")
+
     if not isinstance(path_param, str):
       return ValidationResult(
         valid=False, reason=f"Parameter 'path' must be a string, got {type(path_param).__name__}"

@@ -29,6 +29,7 @@ from yoker.thinking import ThinkingMode
 from yoker.tools import Tool, ToolRegistry
 from yoker.tools.agent import AgentTool
 from yoker.tools.existence import ExistenceTool
+from yoker.tools.git import GitTool
 from yoker.tools.list import ListTool
 from yoker.tools.mkdir import MkdirTool
 from yoker.tools.read import ReadTool
@@ -195,6 +196,11 @@ class Agent:
       SearchTool(guardrail=self._guardrail),
       ExistenceTool(guardrail=self._guardrail),
       MkdirTool(guardrail=self._guardrail),
+      GitTool(
+        config=self.config.tools.git,
+        guardrail=self._guardrail,
+        permission_handlers=self.config.permissions.handlers,
+      ),
       AgentTool(guardrail=self._guardrail, parent_agent=self),
     ]
 

@@ -58,6 +58,7 @@ See [docs/rationale.md](docs/rationale.md) for the full rationale and comparison
 - [x] `search` tool - Search file contents with regex or filenames with glob
 - [x] `existence` tool - Check if files or folders exist with security hardening
 - [x] `mkdir` tool - Create directories with recursive parent creation and depth limits
+- [x] `git` tool - Git operations (status, log, diff, branch, show) with permission-controlled commit/push
 - [x] `agent` tool - Spawn subagents with isolated context and recursion limits
 - [x] Slash commands - Built-in commands: `/help`, `/think on|off`
 - [x] Thinking mode - LLM reasoning trace with gray output

@@ -195,6 +195,10 @@ class ConsoleEventHandler:
     Returns:
       Filename (basename) of the path argument, or first arg value if no path.
     """
+    # Special case: git tool shows operation, not path
+    if "operation" in arguments:
+      return str(arguments["operation"])
+
     # Look for common path argument names
     for key in ("file_path", "path", "filepath"):
       if key in arguments:
@@ -224,13 +228,52 @@ class ConsoleEventHandler:
   def _handle_tool_call(self, event: ToolCallEvent) -> None:
     """Handle tool call event."""
     if self.show_tool_calls:
-      filename = self._extract_filename(event.arguments)
       tool_name = self._capitalize(event.tool_name)
-      self.console.print(f"\n{tool_name} tool: {filename}", style=TOOL_STYLE)
+      details = self._format_tool_details(event.tool_name, event.arguments)
+      self.console.print(f"\n{tool_name} tool: {details}", style=TOOL_STYLE)
+
+  def _format_tool_details(self, tool_name: str, arguments: dict[str, Any]) -> str:
+    """Format tool arguments for display.
+
+    Args:
+      tool_name: Name of the tool.
+      arguments: Tool arguments dictionary.
+
+    Returns:
+      Formatted string showing relevant arguments.
+    """
+    # Special formatting for git tool: show operation, path, and args
+    if tool_name == "git":
+      operation = arguments.get("operation", "")
+      path = arguments.get("path", "")
+      args = arguments.get("args", {})
+
+      # Build details string
+      parts = [operation]
+      if path:
+        parts.append(f"on {path}")
+      if args:
+        # Show key args (first 2 to keep it concise)
+        args_str = ", ".join(f"{k}={v}" for k, v in list(args.items())[:2])
+        if len(args) > 2:
+          args_str += ", ..."
+        parts.append(f"({args_str})")
+
+      return " ".join(parts) if parts else str(arguments)
+
+    # For other tools: show filename/path
+    return self._extract_filename(arguments)
 
   def _handle_tool_result(self, event: ToolResultEvent) -> None:
     """Handle tool result event."""
-    pass
+    if self.show_tool_calls:
+      # Show success/failure indicator
+      if event.success:
+        self.console.print("  ✓ Success", style="dim green")
+      else:
+        # Show first 50 chars of result (error message)
+        error_msg = event.result[:50] if event.result else "Failed"
+        self.console.print(f"  ✗ {error_msg}", style="dim red")
 
   def _handle_error(self, event: ErrorEvent) -> None:
     """Handle error event."""
