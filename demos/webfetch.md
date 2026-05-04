@@ -1,5 +1,11 @@
-# WebFetch Tool Demo
+---
+title: WebFetch Tool
+description: Demonstrates the web fetch tool with SSRF protection.
+output: media/demo-webfetch.svg
+events: media/events-webfetch.jsonl
+---
 
-Fetch content from a web URL. Reply in 2 lines or less.
+## Messages
 
-Fetch the main content from https://example.com and summarize what you found.
+- /think silent
+- Use web_fetch to fetch content from https://example.com and summarize in 1 line what you found.
