@@ -226,17 +226,7 @@
   - See `analysis/security-existence-tool.md` for security analysis
   - See `reporting/2.8-existence-tool/summary.md` for implementation summary
 
-- [ ] **2.12 WebFetch Tool**
-  - Depends on: 2.11 WebSearch and WebFetch Tools Research
-  - Design pluggable backend architecture for fetch implementations
-  - Create WebFetchBackend abstract interface
-  - Implement OllamaWebFetchBackend (uses Ollama's native web_fetch tool with summarization)
-  - Create WebFetchTool with backend selection via configuration
-  - Define guardrails for URLs and domains (whitelist/blacklist)
-  - Add SSRF protection (block private IPs, validate redirects)
-  - Add timeout enforcement and content size limits
-  - Write unit tests with mocked backend
-  - See `analysis/api-webfetch-tool.md` for API design (to be created)
+- [ ] **2.13.1 Local WebSearch Backend**
 
 - [ ] **2.13.1 Local WebSearch Backend**
   - Implement LocalWebSearchBackend using DDGS library
@@ -398,6 +388,23 @@
   - Write tutorial documentation
 
 ## Done
+
+- [x] **2.12 WebFetch Tool** (2026-05-04)
+  - Design pluggable backend architecture for fetch implementations
+  - Create WebFetchBackend abstract interface (Protocol-based)
+  - Implement OllamaWebFetchBackend (uses Ollama's native web_fetch tool)
+  - Create WebFetchTool with backend selection via configuration
+  - Extend WebGuardrail with validate_url() for SSRF protection
+  - Add domain whitelist/blacklist with wildcard matching
+  - Add HTTPS enforcement and private IP blocking
+  - Write unit tests (83 tests)
+  - All acceptance criteria verified:
+    - `make test` (828 tests) ✓
+    - `make lint` ✓
+    - `make typecheck` ✓
+  - See `analysis/api-webfetch-tool.md` for API design
+  - See `analysis/security-webfetch-tool.md` for security analysis
+  - See `reporting/2.12-webfetch-tool/summary.md` for implementation summary
 
 - [x] **2.12 WebSearch Tool** (2026-05-04)
   - Design pluggable backend architecture for search implementations

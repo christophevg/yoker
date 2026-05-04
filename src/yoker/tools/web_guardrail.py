@@ -16,7 +16,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from threading import Lock
 from typing import TYPE_CHECKING, Any
-from urllib.parse import unquote
+from urllib.parse import unquote, urlparse
 
 from .base import ValidationResult
 from .guardrails import Guardrail
@@ -96,6 +96,7 @@ class WebGuardrailConfig:
     max_concurrent_requests: Maximum concurrent requests (0 = unlimited).
     block_private_cidrs: Whether to block private IP ranges.
     timeout_seconds: Search timeout in seconds.
+    require_https: Whether to require HTTPS URLs (block HTTP).
   """
 
   max_query_length: int = 500
@@ -106,6 +107,7 @@ class WebGuardrailConfig:
   max_concurrent_requests: int = 0
   block_private_cidrs: bool = True
   timeout_seconds: int = 30
+  require_https: bool = True
 
 
 class WebGuardrail(Guardrail):
@@ -543,6 +545,88 @@ class WebGuardrail(Guardrail):
         state = self._rate_limits[user_id]
         if state.concurrent_requests > 0:
           state.concurrent_requests -= 1
+
+  def validate_url(self, url: str) -> ValidationResult:
+    """Validate a URL for web fetch.
+
+    Steps:
+      1. Validate URL format (scheme, host, etc.).
+      2. Check for SSRF attempts (private IPs, metadata endpoints).
+      3. Check domain allowlist if configured.
+      4. Check domain blocklist if configured.
+      5. Check HTTPS requirement if configured.
+
+    Args:
+      url: URL string to validate.
+
+    Returns:
+      ValidationResult with success/failure and reason.
+    """
+    # Parse URL
+    try:
+      parsed = urlparse(url)
+    except Exception:
+      return ValidationResult(valid=False, reason="Invalid URL format")
+
+    # Check scheme
+    if self._config.require_https and parsed.scheme != "https":
+      return ValidationResult(valid=False, reason="Only HTTPS URLs are allowed")
+
+    # Extract host
+    host = parsed.hostname
+    if not host:
+      return ValidationResult(valid=False, reason="URL must have a host")
+
+    # Check SSRF (private IPs, metadata endpoints)
+    if self._config.block_private_cidrs:
+      ssrf_error = self._check_ssrf_for_host(host)
+      if ssrf_error:
+        return ValidationResult(valid=False, reason=ssrf_error)
+
+    # Check domain allowlist
+    if self._config.domain_allowlist:
+      if not self._domain_matches_list(host, self._config.domain_allowlist):
+        return ValidationResult(valid=False, reason=f"Domain not in allowlist: {host}")
+
+    # Check domain blocklist
+    if self._config.domain_blocklist:
+      if self._domain_matches_list(host, self._config.domain_blocklist):
+        return ValidationResult(valid=False, reason=f"Domain is blocked: {host}")
+
+    return ValidationResult(valid=True)
+
+  def _check_ssrf_for_host(self, host: str) -> str | None:
+    """Check if a host resolves to a private IP.
+
+    Resolves the hostname and checks against private CIDRs.
+    Also checks for metadata IP addresses.
+
+    Args:
+      host: Hostname or IP address.
+
+    Returns:
+      Error message if SSRF detected, None if safe.
+    """
+    # Check for localhost
+    if host.lower() in ("localhost", "localhost.localdomain"):
+      return "SSRF blocked: localhost detected"
+
+    # Check for IP address patterns
+    try:
+      ip = ipaddress.ip_address(host)
+      # Check against private CIDRs
+      for cidr in PRIVATE_CIDRS:
+        if ip in cidr:
+          return f"SSRF blocked: private IP address detected ({host})"
+      # Check metadata IP
+      if str(ip) in METADATA_IPS:
+        return "SSRF blocked: cloud metadata endpoint detected"
+    except ValueError:
+      # Not an IP, resolve hostname
+      if not self._is_safe_domain(host):
+        return f"SSRF blocked: domain may resolve to private IP ({host})"
+
+    return None
 
 
 __all__ = [

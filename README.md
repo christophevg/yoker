@@ -60,6 +60,7 @@ See [docs/rationale.md](docs/rationale.md) for the full rationale and comparison
 - [x] `mkdir` tool - Create directories with recursive parent creation and depth limits
 - [x] `git` tool - Git operations (status, log, diff, branch, show) with permission-controlled commit/push
 - [x] `web_search` tool - Web search with SSRF protection, domain filtering, and rate limiting
+- [x] `web_fetch` tool - Fetch web content with SSRF protection, URL validation, and size limits
 - [x] `agent` tool - Spawn subagents with isolated context and recursion limits
 - [x] Slash commands - Built-in commands: `/help`, `/think on|off`
 - [x] Thinking mode - LLM reasoning trace with gray output

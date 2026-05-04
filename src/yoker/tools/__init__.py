@@ -17,9 +17,15 @@ from .read import ReadTool
 from .registry import ToolRegistry
 from .search import SearchTool
 from .update import UpdateTool
-from .web_backend import OllamaWebSearchBackend, WebSearchBackend
+from .web_backend import (
+  OllamaWebFetchBackend,
+  OllamaWebSearchBackend,
+  WebFetchBackend,
+  WebSearchBackend,
+)
 from .web_guardrail import WebGuardrail, WebGuardrailConfig
-from .web_types import SearchResult, WebSearchError
+from .web_types import FetchedContent, SearchResult, WebFetchError, WebSearchError
+from .webfetch import WebFetchTool
 from .websearch import WebSearchTool
 from .write import WriteTool
 
@@ -73,10 +79,15 @@ __all__ = [
   "WebSearchTool",
   "WebSearchBackend",
   "OllamaWebSearchBackend",
+  "WebFetchTool",
+  "WebFetchBackend",
+  "OllamaWebFetchBackend",
   "WebGuardrail",
   "WebGuardrailConfig",
   "SearchResult",
   "WebSearchError",
+  "FetchedContent",
+  "WebFetchError",
   "AVAILABLE_TOOLS",
   "create_default_registry",
 ]

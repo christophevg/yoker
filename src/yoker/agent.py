@@ -37,8 +37,9 @@ from yoker.tools.mkdir import MkdirTool
 from yoker.tools.read import ReadTool
 from yoker.tools.search import SearchTool
 from yoker.tools.update import UpdateTool
-from yoker.tools.web_backend import OllamaWebSearchBackend
-from yoker.tools.web_guardrail import WebGuardrail
+from yoker.tools.web_backend import OllamaWebFetchBackend, OllamaWebSearchBackend
+from yoker.tools.web_guardrail import WebGuardrail, WebGuardrailConfig
+from yoker.tools.webfetch import WebFetchTool
 from yoker.tools.websearch import WebSearchTool
 from yoker.tools.write import WriteTool
 
@@ -229,14 +230,38 @@ class Agent:
 
     # Add WebSearchTool only if API key is available
     if os.environ.get("OLLAMA_API_KEY"):
+      # Create guardrails with configuration from tool configs
+      websearch_config = WebGuardrailConfig(
+        max_query_length=self.config.tools.websearch.max_query_length,
+        domain_allowlist=self.config.tools.websearch.domain_allowlist,
+        domain_blocklist=self.config.tools.websearch.domain_blocklist,
+        requests_per_minute=self.config.tools.websearch.requests_per_minute,
+        requests_per_hour=self.config.tools.websearch.requests_per_hour,
+        block_private_cidrs=self.config.tools.websearch.block_private_cidrs,
+        timeout_seconds=self.config.tools.websearch.timeout_seconds,
+      )
       tools.append(
         WebSearchTool(
           backend=OllamaWebSearchBackend(client=self.client),
-          guardrail=WebGuardrail(),
+          guardrail=WebGuardrail(config=websearch_config),
+        )
+      )
+      webfetch_config = WebGuardrailConfig(
+        domain_allowlist=self.config.tools.webfetch.domain_allowlist,
+        domain_blocklist=self.config.tools.webfetch.domain_blocklist,
+        block_private_cidrs=self.config.tools.webfetch.block_private_cidrs,
+        require_https=self.config.tools.webfetch.require_https,
+        timeout_seconds=self.config.tools.webfetch.timeout_seconds,
+      )
+      tools.append(
+        WebFetchTool(
+          backend=OllamaWebFetchBackend(client=self.client),
+          guardrail=WebGuardrail(config=webfetch_config),
         )
       )
     else:
       log.warning("web_search_unavailable", reason="OLLAMA_API_KEY not set")
+      log.warning("web_fetch_unavailable", reason="OLLAMA_API_KEY not set")
 
     if self.agent_definition is not None:
       allowed_tools = {t.lower() for t in self.agent_definition.tools}

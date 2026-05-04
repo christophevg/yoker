@@ -296,6 +296,39 @@ class WebSearchToolConfig(ToolConfig):
 
 
 @dataclass(frozen=True)
+class WebFetchToolConfig(ToolConfig):
+  """Web fetch tool configuration.
+
+  Attributes:
+    backend: Backend to use ("ollama" or "local").
+    timeout_seconds: Fetch timeout in seconds.
+    max_size_kb: Maximum content size in KB.
+    max_redirects: Maximum redirect hops to follow.
+    content_type: Default output format ("markdown", "text", "html").
+    domain_allowlist: Domains to allow (empty = all allowed).
+    domain_blocklist: Domains to block (empty = none blocked).
+    block_private_cidrs: Whether to block private IP ranges.
+    block_metadata_endpoints: Whether to block cloud metadata IPs.
+    require_https: Whether to require HTTPS (block HTTP).
+    follow_redirects: Whether to follow redirects.
+    validate_redirects: Whether to revalidate each redirect URL.
+  """
+
+  backend: str = "ollama"
+  timeout_seconds: int = 30
+  max_size_kb: int = 2048
+  max_redirects: int = 5
+  content_type: str = "markdown"
+  domain_allowlist: tuple[str, ...] = ()
+  domain_blocklist: tuple[str, ...] = ()
+  block_private_cidrs: bool = True
+  block_metadata_endpoints: bool = True
+  require_https: bool = True
+  follow_redirects: bool = True
+  validate_redirects: bool = True
+
+
+@dataclass(frozen=True)
 class ToolsConfig:
   """All tool configurations.
 
@@ -309,6 +342,7 @@ class ToolsConfig:
     git: Git tool config.
     mkdir: Mkdir tool config.
     websearch: Web search tool config.
+    webfetch: Web fetch tool config.
   """
 
   list: ListToolConfig = field(default_factory=ListToolConfig)
@@ -320,6 +354,7 @@ class ToolsConfig:
   git: GitToolConfig = field(default_factory=GitToolConfig)
   mkdir: MkdirToolConfig = field(default_factory=MkdirToolConfig)
   websearch: WebSearchToolConfig = field(default_factory=WebSearchToolConfig)
+  webfetch: WebFetchToolConfig = field(default_factory=WebFetchToolConfig)
 
 
 @dataclass(frozen=True)
@@ -395,6 +430,7 @@ __all__ = [
   "GitToolConfig",
   "MkdirToolConfig",
   "WebSearchToolConfig",
+  "WebFetchToolConfig",
   "ToolsConfig",
   "AgentsConfig",
   "LoggingConfig",
