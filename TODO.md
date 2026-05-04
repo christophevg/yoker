@@ -108,6 +108,22 @@
 
 ### Future Features (Low Priority)
 
+- [ ] **2.13.1 Local WebSearch Backend** (Deferred: Ollama backend working)
+  - Implement LocalWebSearchBackend using DDGS library
+  - Support multiple search backends (bing, brave, ddg, google)
+  - Add rate limiting and error handling
+  - Integrate with WebSearchTool via plugin system
+  - Write unit tests
+  - Note: OllamaWebSearchBackend is working, this is for offline-first operation
+
+- [ ] **2.13.2 Local WebFetch Backend** (Deferred: Ollama backend working)
+  - Implement LocalWebFetchBackend using httpx + Trafilatura
+  - Implement content extraction with Trafilatura
+  - Add SSRF protection and DNS rebinding defense
+  - Integrate with WebFetchTool via plugin system
+  - Write unit tests
+  - Note: OllamaWebFetchBackend is working, this is for full control over SSRF/redirects
+
 - [ ] **R.1 Hermes Agent Comparison**
   - Research Hermes Agent architecture and capabilities
   - Compare Hermes to Yoker architecture
@@ -225,24 +241,6 @@
   - See `analysis/api-existence-tool.md` for API design
   - See `analysis/security-existence-tool.md` for security analysis
   - See `reporting/2.8-existence-tool/summary.md` for implementation summary
-
-- [ ] **2.13.1 Local WebSearch Backend**
-
-- [ ] **2.13.1 Local WebSearch Backend**
-  - Implement LocalWebSearchBackend using DDGS library
-  - Support multiple search backends (bing, brave, ddg, google)
-  - Add rate limiting and error handling
-  - Integrate with WebSearchTool via plugin system
-  - Write unit tests
-  - See `analysis/api-websearch-local.md` for API design (to be created)
-
-- [ ] **2.13.2 Local WebFetch Backend**
-  - Implement LocalWebFetchBackend using httpx + Trafilatura
-  - Implement content extraction with Trafilatura
-  - Add SSRF protection and DNS rebinding defense
-  - Integrate with WebFetchTool via plugin system
-  - Write unit tests
-  - See `analysis/api-webfetch-local.md` for API design (to be created)
 
 - [ ] **2.14 Python Tool Research**
   - Research safe Python code execution approaches (subprocess, sandbox, AST validation)
