@@ -45,3 +45,6 @@ yoker.toml
 
 # Generated session logs
 media/session.jsonl
+
+# Environment files with secrets
+.env.local
