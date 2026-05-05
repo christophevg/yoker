@@ -70,6 +70,29 @@ This index tracks all research topics investigated for the yoker project.
 
 ---
 
+## Python Code Execution Safety
+
+**Folder**: `2026-05-05-python-execution-safety/`
+**Date**: 2026-05-05
+**Status**: Complete
+
+**Summary**: Comprehensive research on safe Python code execution approaches for implementing a Python Tool in yoker, covering sandbox solutions, subprocess isolation, AST validation, and kernel-level security.
+
+**Key Findings**:
+- RestrictedPython is NOT a sandbox—only restricts language subset (multiple CVEs)
+- PyPy sandbox is unmaintained (v2 in development, not production-ready)
+- Sandtrap provides 3-level isolation (none/process/kernel) designed for agent-generated code
+- Defense-in-depth approach required: AST validation + subprocess + resource limits
+- PEP 578 audit hooks are for monitoring/auditing, NOT sandboxing
+- Subprocess isolation with resource limits is the recommended baseline
+- uv is CLI-first; use subprocess to invoke for virtual environment management
+
+**Sources**: 6 searches, 3 fetched articles (9 total sources)
+
+**Keywords**: python execution, sandbox, subprocess isolation, ast validation, restrictedpython, sandtrap, seccomp, landlock, resource limits, bandit, guardrails
+
+---
+
 <!-- Template for new research entries -->
 <!--
 ### {Topic Name}

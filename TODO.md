@@ -257,15 +257,6 @@
   - See `analysis/security-existence-tool.md` for security analysis
   - See `reporting/2.8-existence-tool/summary.md` for implementation summary
 
-- [ ] **2.14 Python Tool Research**
-  - Research safe Python code execution approaches (subprocess, sandbox, AST validation)
-  - Investigate uv integration for virtual environment management
-  - Define security model for code execution (what operations are allowed)
-  - Document guardrails and permissions approach
-  - Research pyenv environment activation integration
-  - Recommend implementation strategy with justification
-  - Create analysis document with findings
-
 - [ ] **2.15 Python Tool**
   - Depends on: 2.14 Python Tool Research
   - Implement Python script execution functionality
@@ -447,6 +438,18 @@
   - Write tutorial documentation
 
 ## Done
+
+- [x] **2.14 Python Tool Research** (2026-05-05)
+  - Research safe Python code execution approaches (subprocess, sandbox, AST validation)
+  - Investigate uv integration for virtual environment management
+  - Define security model for code execution (what operations are allowed)
+  - Document guardrails and permissions approach
+  - Research pyenv environment activation integration
+  - Recommend implementation strategy with justification
+  - **Recommendation**: Subprocess isolation + AST validation + Resource limits (6-layer defense)
+  - **Key insight**: RestrictedPython is NOT a sandbox; defense-in-depth is required
+  - See `research/2026-05-05-python-execution-safety/README.md` for research findings
+  - See `analysis/api-python-tool.md` for API design
 
 - [x] **1.5.5 Show Write/Update Tool Content in CLI** (2026-05-05)
   - Add ToolContentEvent to event types
