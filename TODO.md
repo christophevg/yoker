@@ -51,6 +51,16 @@
   - Extracted from demo_session.py into src/yoker/logging/ module
   - See `reporting/1.5.4-event-logging/summary.md` for implementation summary
 
+- [ ] **1.5.5 Show Write/Update Tool Content in CLI**
+  - Display file content being written or updated in console output
+  - Use visual styling consistent with Read tool output
+  - Show operation type (write/update) and target file
+  - For updates, show the specific changes (before/after for small diffs)
+  - Add configuration option to control verbosity (show content vs. summary only)
+  - Ensure output remains readable for large content (truncation with "... N more lines")
+  - Write unit tests for content display formatting
+  - Update demo scripts to showcase the feature
+
 ### Phase 1.6: Documentation (Medium Priority)
 
 - [x] **1.6.1 Update Documentation Folder**
@@ -309,6 +319,41 @@
   - **Security**: MVP excludes destructive operations (pr_merge, branch_delete, issue_create)
   - **Security**: Phase 2 will add write operations with explicit configuration
 
+- [ ] **2.20 Add [start:stop] Arguments to Output-Heavy Tools**
+  - Extend offset/limit pattern to tools that return large outputs
+  - Add `offset` and `limit` parameters to SearchTool results
+  - Add `offset` and `limit` parameters to ListTool (for deep directory trees)
+  - Add `offset` and `limit` to any tool with paginated results
+  - Use consistent parameter naming across tools (offset/limit, not start/stop)
+  - Add result count metadata (total_matches, shown_matches, has_more)
+  - Update tool descriptions to document pagination parameters
+  - Write unit tests for pagination edge cases
+  - See existing ReadTool implementation as reference
+
+- [ ] **2.21 Skill Tool**
+  - Research C3 skill system integration and invocation patterns
+  - Implement SkillTool for invoking configured skills from agents
+  - Support skill discovery from skill directories
+  - Pass context and parameters to skill execution
+  - Handle skill errors gracefully with meaningful messages
+  - Add skill availability guardrails (configurable allowed skills per agent)
+  - Write unit tests
+  - See `analysis/api-skill-tool.md` for API design (to be created)
+  - See `analysis/skill-system-integration.md` for integration design (to be created)
+
+- [ ] **2.22 uv Tool**
+  - Implement uv CLI wrapper tool for Python package management
+  - Support common operations: install, sync, add, remove, run, venv
+  - Add operation allowlist guardrail (config.controls allowed_operations)
+  - Add timeout enforcement (default 60 seconds for operations)
+  - Use PathGuardrail for virtual environment paths
+  - Handle virtual environment activation within tool execution
+  - Add result parsing for structured output (dependencies installed, errors)
+  - Handle common errors (uv not installed, lock file conflicts)
+  - Subprocess execution with list args (no shell=True for security)
+  - Write unit tests
+  - See `analysis/api-uv-tool.md` for API design (to be created)
+
 ### Phase 3: Backend Integration
 
 - [ ] **3.1 Ollama Client**
@@ -325,6 +370,17 @@
   - Format tool results for LLM
   - Handle tool errors gracefully
   - Implement tool call loop
+
+- [ ] **3.3 Context Management Research**
+  - Analyze logged sessions to identify context patterns
+  - Reverse engineer context content from JSONL event logs
+  - Identify system prompt construction requirements
+  - Document prompt construction patterns for sub-agents
+  - Research skill context injection requirements
+  - Define context inheritance vs. isolation rules
+  - Create analysis document with findings
+  - Prerequisite for: Phase 4 (Agent Runner)
+  - See `analysis/context-management-research.md` (to be created)
 
 ### Phase 4: Agent Runner
 
