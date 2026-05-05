@@ -47,6 +47,7 @@ class TestEventTypes:
       "CONTENT_END",
       "TOOL_CALL",
       "TOOL_RESULT",
+      "TOOL_CONTENT",
       "COMMAND",
       "ERROR",
     ]

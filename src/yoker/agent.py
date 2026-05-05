@@ -22,6 +22,7 @@ from yoker.events import (
   ThinkingEndEvent,
   ThinkingStartEvent,
   ToolCallEvent,
+  ToolContentEvent,
   ToolResultEvent,
   TurnEndEvent,
   TurnStartEvent,
@@ -550,6 +551,20 @@ class Agent:
             success=success,
           )
         )
+
+        # Emit ToolContentEvent if content_metadata is present
+        if success and tool_result.content_metadata is not None:
+          self._emit(
+            ToolContentEvent(
+              type=EventType.TOOL_CONTENT,
+              tool_name=tool_name,
+              operation=tool_result.content_metadata.get("operation", ""),
+              path=tool_result.content_metadata.get("path", ""),
+              content_type=tool_result.content_metadata.get("content_type", "summary"),
+              content=tool_result.content_metadata.get("content"),
+              metadata=tool_result.content_metadata.get("metadata", {}),
+            )
+          )
 
         # Add tool result to context
         self.context.add_tool_result(

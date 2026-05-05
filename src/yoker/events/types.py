@@ -30,6 +30,7 @@ class EventType(Enum):
   # Tool execution
   TOOL_CALL = auto()
   TOOL_RESULT = auto()
+  TOOL_CONTENT = auto()  # Content display event for write/update tools
 
   # Command execution
   COMMAND = auto()
@@ -139,6 +140,30 @@ class ToolResultEvent(Event):
   tool_name: str
   result: str
   success: bool = True
+
+
+@dataclass(frozen=True)
+class ToolContentEvent(Event):
+  """Emitted when a tool has content to display (write/update operations).
+
+  This event is optional - tools can emit it when they have meaningful
+  content to show. The event handler can choose to display or ignore it.
+
+  Attributes:
+    tool_name: Name of the tool (e.g., "write", "update").
+    operation: Operation type (e.g., "write", "replace", "insert_before", "insert_after", "delete").
+    path: Resolved file path.
+    content_type: Type of content ("full", "diff", "summary").
+    content: Content to display (truncated if too large, None for summary type).
+    metadata: Additional metadata (lines, bytes, is_new_file, is_overwrite, etc.).
+  """
+
+  tool_name: str
+  operation: str
+  path: str
+  content_type: str  # "full", "diff", "summary"
+  content: str | None = None
+  metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

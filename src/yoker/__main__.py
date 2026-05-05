@@ -27,12 +27,8 @@ from yoker.commands import (
 from yoker.config import Config
 from yoker.events import (
   ConsoleEventHandler,
-  ContentChunkEvent,
-  ContentEndEvent,
-  ContentStartEvent,
   ErrorEvent,
   EventType,
-  LiveDisplay,
 )
 from yoker.logging import configure_logging, get_logger
 
@@ -253,30 +249,17 @@ def main() -> None:
       if user_input.startswith("/"):
         result = command_registry.dispatch(user_input)
         if result:
-          # Emit command output as content events
-          agent._emit(ContentStartEvent(type=EventType.CONTENT_START))
-          agent._emit(
-            ContentChunkEvent(
-              type=EventType.CONTENT_CHUNK,
-              text=f"{result}\n",
-            )
-          )
-          agent._emit(ContentEndEvent(type=EventType.CONTENT_END, total_length=len(result)))
+          # Print command result directly (no events needed for commands)
+          print(f"{result}\n")
         continue
 
       # Process message (output is streamed via events)
       try:
-        # Create live display for this turn
-        display = LiveDisplay()
-        console_handler.live_display = display
+        # No blank line needed here - user's Enter key already provides separation
 
-        # Add blank line after user input
-        print()
+        agent.process(user_input)
 
-        with display:
-          agent.process(user_input)
-
-        # Add blank line after Live context exits
+        # Add blank line after agent response
         print()
       except ResponseError as e:
         # Handle Ollama API errors gracefully - allow retry

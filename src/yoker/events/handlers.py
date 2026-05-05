@@ -21,6 +21,7 @@ from yoker.events.types import (
   ThinkingEndEvent,
   ThinkingStartEvent,
   ToolCallEvent,
+  ToolContentEvent,
   ToolResultEvent,
   TurnEndEvent,
   TurnStartEvent,
@@ -51,7 +52,6 @@ class ConsoleEventHandler:
     show_tool_calls: bool = True,
     wrap_width: int | None = None,
     version: str = "0.1.0",
-    live_display: LiveDisplay | None = None,
   ) -> None:
     """Initialize the console handler.
 
@@ -61,18 +61,20 @@ class ConsoleEventHandler:
       show_tool_calls: Whether to display tool call info.
       wrap_width: Optional width for wrapping streaming output.
       version: Version string to display in session start.
-      live_display: Optional live display for interactive sessions.
     """
     self.console = console if console is not None else Console()
     self.show_thinking = show_thinking
     self.show_tool_calls = show_tool_calls
     self.wrap_width = wrap_width
     self.version = version
-    self.live_display = live_display
+
+    # Live display - managed internally, not passed from outside
+    self._live_display: LiveDisplay | None = None
 
     # State for wrapping and thinking tracking
     self._column = 0
     self._thinking_shown = False  # Track if thinking was displayed
+    self._content_shown = False  # Track if any content was shown this turn
 
   def __call__(self, event: Event) -> None:
     """Handle an event by dispatching to the appropriate handler method."""
@@ -101,6 +103,8 @@ class ConsoleEventHandler:
         self._handle_tool_call(event)  # type: ignore[arg-type]
       case EventType.TOOL_RESULT:
         self._handle_tool_result(event)  # type: ignore[arg-type]
+      case EventType.TOOL_CONTENT:
+        self._handle_tool_content(event)  # type: ignore[arg-type]
       case EventType.ERROR:
         self._handle_error(event)  # type: ignore[arg-type]
       case EventType.COMMAND:
@@ -120,21 +124,26 @@ class ConsoleEventHandler:
 
   def _handle_turn_start(self, event: TurnStartEvent) -> None:
     """Handle turn start event."""
-    # Reset thinking flag for new turn
+    # Reset flags for new turn
     self._thinking_shown = False
+    self._content_shown = False
+    # Create LiveDisplay for this turn (spinner is active)
+    if self._live_display is None:
+      self._live_display = LiveDisplay(console=self.console)
+      self._live_display.__enter__()
+      self._spinner_active = True  # Track spinner state
 
   def _handle_turn_end(self, event: TurnEndEvent) -> None:
     """Handle turn end event."""
-    # Show stats and stop live display if active
-    if self.live_display:
-      self.live_display.show_stats(
+    # Show stats and exit LiveDisplay if active
+    if self._live_display:
+      self._live_display.show_stats(
         prompt_tokens=event.prompt_eval_count,
         eval_tokens=event.eval_count,
         duration_ms=event.total_duration_ms,
       )
-      self.live_display = None
-      # Note: Don't print anything inside Live context - it will be handled
-      # by the Live context exiting and printing the final renderable
+      self._live_display.__exit__(None, None, None)
+      self._live_display = None
     else:
       # Without live display, add blank line after response
       self.console.print()
@@ -142,47 +151,73 @@ class ConsoleEventHandler:
   def _handle_thinking_start(self, event: ThinkingStartEvent) -> None:
     """Handle thinking start event."""
     if self.show_thinking:
+      # Add separator if there was previous content (e.g., tool calls)
+      # Check BEFORE setting the flag
+      needs_separator = self._content_shown and self._live_display is None
+
       self._thinking_shown = True
-      if not self.live_display:
-        # Without live display, add newline before thinking
+      self._content_shown = True  # Content was shown this turn
+
+      # Create LiveDisplay if not already active
+      if self._live_display is None:
+        if needs_separator:
+          print()
+        self._live_display = LiveDisplay(console=self.console)
+        self._live_display.__enter__()
+        self._spinner_active = True  # Spinner is now active
+      # Without live display, add newline before thinking
+      else:
         self._print_wrapped("\n", style=THINKING_STYLE)
 
   def _handle_thinking_chunk(self, event: ThinkingChunkEvent) -> None:
     """Handle thinking chunk event."""
     if self.show_thinking:
-      if self.live_display:
-        self.live_display.append_thinking(event.text)
+      if self._live_display:
+        self._live_display.append_thinking(event.text)
       else:
         self._print_wrapped(event.text, style=THINKING_STYLE)
 
   def _handle_thinking_end(self, event: ThinkingEndEvent) -> None:
     """Handle thinking end event."""
     if self.show_thinking:
-      if not self.live_display:
+      if not self._live_display:
         # Without live display, add newlines after thinking
         self._print_wrapped("\n\n")
 
   def _handle_content_start(self, event: ContentStartEvent) -> None:
     """Handle content start event."""
-    # Add blank line between thinking and response if thinking was shown
+    # Add separator before response if there was previous content
+    # This includes thinking shown, tool calls, or spinner activity
     if self._thinking_shown:
-      if self.live_display:
-        self.live_display.append_response("\n")
+      # Thinking was shown - add separator in LiveDisplay
+      if self._live_display:
+        self._live_display.append_response("\n")
       else:
         self.console.print()
       self._thinking_shown = False  # Reset for next turn
+    elif self._content_shown or self._spinner_active:
+      # Tool calls were shown or spinner was active - add separator
+      if self._live_display:
+        self._live_display.append_response("\n")
+      else:
+        print()
+
+    # Create new LiveDisplay if not active (e.g., after tool calls)
+    if self._live_display is None:
+      self._live_display = LiveDisplay(console=self.console)
+      self._live_display.__enter__()
 
   def _handle_content_chunk(self, event: ContentChunkEvent) -> None:
     """Handle content chunk event."""
-    if self.live_display:
-      self.live_display.append_response(event.text)
+    if self._live_display:
+      self._live_display.append_response(event.text)
     else:
       self._print_wrapped(event.text)
 
   def _handle_content_end(self, event: ContentEndEvent) -> None:
     """Handle content end event."""
     # Final newline - only needed without live display
-    if not self.live_display:
+    if not self._live_display:
       self.console.print()
 
   @staticmethod
@@ -228,9 +263,19 @@ class ConsoleEventHandler:
   def _handle_tool_call(self, event: ToolCallEvent) -> None:
     """Handle tool call event."""
     if self.show_tool_calls:
+      # Exit current LiveDisplay to freeze buffered content
+      # The content is already visible on screen, we just stop live updating
+      if self._live_display:
+        self._live_display.stop_spinner()  # Remove spinner before exiting
+        self._live_display.__exit__(None, None, None)
+        self._live_display = None
+        self._spinner_active = False  # Spinner is no longer active
+
+      self._content_shown = True  # Content was shown this turn
       tool_name = self._capitalize(event.tool_name)
       details = self._format_tool_details(event.tool_name, event.arguments)
-      self.console.print(f"\n{tool_name} tool: {details}", style=TOOL_STYLE)
+      # Print tool call with newline separator from previous segment
+      print(f"\n⏺ {tool_name} tool: {details}")
 
   def _format_tool_details(self, tool_name: str, arguments: dict[str, Any]) -> str:
     """Format tool arguments for display.
@@ -274,13 +319,179 @@ class ConsoleEventHandler:
   def _handle_tool_result(self, event: ToolResultEvent) -> None:
     """Handle tool result event."""
     if self.show_tool_calls:
-      # Show success/failure indicator
+      # Show success/failure indicator (outside Live context)
+      # LiveDisplay was already exited in _handle_tool_call
       if event.success:
-        self.console.print("  ✓ Success", style="dim green")
+        print("  ✓ Success")
       else:
         # Show first 50 chars of result (error message)
         error_msg = event.result[:50] if event.result else "Failed"
-        self.console.print(f"  ✗ {error_msg}", style="dim red")
+        print(f"  ✗ {error_msg}")
+
+      # Create LiveDisplay with spinner for subsequent processing
+      # This ensures spinner is visible between tool calls and next segment
+      if self._live_display is None:
+        self._live_display = LiveDisplay(console=self.console)
+        self._live_display.__enter__()
+        self._spinner_active = True
+
+  def _handle_tool_content(self, event: ToolContentEvent) -> None:
+    """Handle tool content event.
+
+    Displays content based on content_type:
+    - 'full': Show full content with line numbers
+    - 'diff': Show unified diff with colors
+    - 'summary': Show operation summary only
+    """
+    if not self.show_tool_calls:
+      return
+
+    # Exit LiveDisplay (created in ToolResult) to print content
+    if self._live_display:
+      self._live_display.stop_spinner()
+      self._live_display.__exit__(None, None, None)
+      self._live_display = None
+      self._spinner_active = False
+
+    # Tool content is printed outside Live context
+    # (Live was exited in _handle_tool_call or above)
+
+    # Get operation details
+    operation = event.operation
+    filename = Path(event.path).name
+
+    # Dispatch based on content_type
+    if event.content_type == "summary":
+      self._show_summary(event, filename)
+    elif event.content_type == "diff":
+      self._show_diff_content(event, filename)
+    else:  # content_type == "full"
+      self._show_full_content(event, filename)
+
+    # Create LiveDisplay with spinner for subsequent processing
+    if self._live_display is None:
+      self._live_display = LiveDisplay(console=self.console)
+      self._live_display.__enter__()
+      self._spinner_active = True
+
+  def _show_summary(self, event: ToolContentEvent, filename: str) -> None:
+    """Show operation summary.
+
+    Args:
+      event: ToolContentEvent with summary metadata.
+      filename: Basename of file.
+    """
+    operation = event.operation
+    metadata = event.metadata
+
+    if operation == "write":
+      lines = metadata.get("lines", 0)
+      is_new_file = metadata.get("is_new_file", False)
+      is_binary = metadata.get("is_binary", False)
+
+      if is_binary:
+        byte_size = metadata.get("bytes", 0)
+        print(f"  {filename} ({byte_size // 1024} KB binary)")
+      elif lines == 0:
+        print(f"  {filename} (0 lines, empty)")
+      elif is_new_file:
+        print(f"  Creating new file {filename} ({lines} lines)")
+      else:
+        print(f"  Overwriting {filename} ({lines} lines)")
+
+    elif operation in ("insert_before", "insert_after"):
+      line_number = metadata.get("line_number", 0)
+      inserted_lines = metadata.get("inserted_lines", 1)
+      print(f"  Insert at line {line_number}: {inserted_lines} line(s)")
+
+    elif operation == "replace":
+      print(f"  Replace in {filename}")
+
+    elif operation == "delete":
+      line_number = metadata.get("line_number")
+      if line_number:
+        print(f"  Delete line {line_number} in {filename}")
+      else:
+        print(f"  Delete in {filename}")
+
+  def _show_full_content(self, event: ToolContentEvent, filename: str) -> None:
+    """Show full content with line numbers.
+
+    Args:
+      event: ToolContentEvent with content.
+      filename: Basename of file.
+    """
+    content = event.content
+    metadata = event.metadata
+
+    if content is None:
+      # Fall back to summary
+      self._show_summary(event, filename)
+      return
+
+    # Show header
+    operation = event.operation
+    print(f"\n  {filename}")
+
+    # Show content with line numbers
+    lines = content.splitlines()
+    for i, line in enumerate(lines, start=1):
+      # Escape brackets in user content to prevent Rich markup
+      escaped_line = line.replace("[", "\\[").replace("]", "\\]")
+      print(f"  {i:4d}│{escaped_line}")
+
+    # Show truncation indicator if needed
+    if metadata.get("truncated"):
+      original_lines = metadata.get("original_line_count", 0)
+      remaining = original_lines - len(lines)
+      print(f"  ... ({remaining} more lines)")
+
+  def _show_diff_content(self, event: ToolContentEvent, filename: str) -> None:
+    """Show unified diff with colors.
+
+    Args:
+      event: ToolContentEvent with diff content.
+      filename: Basename of file.
+    """
+    content = event.content
+    metadata = event.metadata
+
+    if content is None:
+      # Fall back to summary
+      self._show_summary(event, filename)
+      return
+
+    # Show header
+    print(f"  {filename}")
+
+    # Show diff with colors (using ANSI codes)
+    lines = content.splitlines()
+    for line in lines:
+      # Skip file header lines
+      if line.startswith("--- ") or line.startswith("+++ "):
+        continue
+      # Skip diff header
+      if line.startswith("diff --"):
+        continue
+
+      # Escape brackets in user content
+      escaped_line = line.replace("[", "\\[").replace("]", "\\]")
+
+      # Color based on prefix (using ANSI codes)
+      if line.startswith("@@"):
+        print(f"  \033[36m{escaped_line}\033[0m")  # Cyan
+      elif line.startswith("-"):
+        print(f"  \033[31m{escaped_line}\033[0m")  # Red
+      elif line.startswith("+"):
+        print(f"  \033[32m{escaped_line}\033[0m")  # Green
+      else:
+        print(f"  {escaped_line}")
+
+    # Show truncation indicator if needed
+    if metadata.get("truncated"):
+      original_lines = metadata.get("original_diff_lines", 0)
+      remaining = original_lines - len(lines)
+      print(f"  ... ({remaining} more lines)")
 
   def _handle_error(self, event: ErrorEvent) -> None:
     """Handle error event."""

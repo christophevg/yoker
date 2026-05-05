@@ -20,11 +20,15 @@ class ToolResult:
     success: Whether the tool executed successfully.
     result: The result data (string content or dict for structured results).
     error: Error message if success is False.
+    content_metadata: Optional metadata for content display events.
+      When provided, the agent emits a ToolContentEvent after ToolResultEvent.
+      Contains operation, path, content_type, content, and metadata dict.
   """
 
   success: bool
   result: str | dict[str, Any]
   error: str | None = None
+  content_metadata: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)

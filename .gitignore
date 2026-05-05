@@ -48,3 +48,6 @@ media/session.jsonl
 
 # Environment files with secrets
 .env.local
+
+# Temporary verification scripts
+verify_fix.py

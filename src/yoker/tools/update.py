@@ -5,6 +5,7 @@ validation, exact match enforcement, diff size limits, and atomic writes.
 Supports replace, insert_before, insert_after, and delete operations.
 """
 
+import difflib
 import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -17,6 +18,30 @@ if TYPE_CHECKING:
   from yoker.tools.guardrails import Guardrail
 
 log = get_logger(__name__)
+
+
+def _truncate_diff(diff_lines: list[str], max_lines: int) -> tuple[str, bool, int]:
+  """Truncate diff output to max_lines.
+
+  Args:
+    diff_lines: Lines from unified_diff.
+    max_lines: Maximum lines to include.
+
+  Returns:
+    Tuple of (truncated_diff, was_truncated, original_line_count).
+  """
+  original_count = len(diff_lines)
+
+  # Ensure each line ends with newline for proper display
+  normalized_lines = [
+    line if line.endswith("\n") else line + "\n" for line in diff_lines
+  ]
+
+  if len(normalized_lines) <= max_lines:
+    return "".join(normalized_lines), False, original_count
+
+  truncated_lines = normalized_lines[:max_lines]
+  return "".join(truncated_lines), True, original_count
 
 
 class UpdateTool(Tool):
@@ -203,8 +228,9 @@ class UpdateTool(Tool):
       return ToolResult(success=False, result="", error="Path is not a file")
 
     # Read file fresh to prevent TOCTOU race conditions
+    # Store original content for content_metadata
     try:
-      content = resolved.read_text(encoding="utf-8")
+      old_content = resolved.read_text(encoding="utf-8")
     except PermissionError:
       log.warning("update_permission_denied", path=str(resolved))
       return ToolResult(success=False, result="", error="Permission denied")
@@ -232,11 +258,11 @@ class UpdateTool(Tool):
     # Perform operation
     try:
       if operation == "replace":
-        result_content = self._do_replace(content, old_string, new_string)
+        result_content = self._do_replace(old_content, old_string, new_string)
       elif operation in ("insert_before", "insert_after"):
-        result_content = self._do_insert(content, operation, line_number, new_string)
+        result_content = self._do_insert(old_content, operation, line_number, new_string)
       elif operation == "delete":
-        result_content = self._do_delete(content, old_string, line_number)
+        result_content = self._do_delete(old_content, old_string, line_number)
       else:
         # Should not reach here due to earlier validation
         return ToolResult(success=False, result="", error="Invalid operation")
@@ -254,7 +280,23 @@ class UpdateTool(Tool):
         path=str(resolved),
         operation=operation,
       )
-      return ToolResult(success=True, result="File updated successfully")
+
+      # Build content_metadata for content display
+      content_metadata = self._build_content_metadata(
+        operation=operation,
+        resolved_path=resolved,
+        old_content=old_content,
+        new_content=result_content,
+        old_string=old_string,
+        new_string=new_string,
+        line_number=line_number,
+      )
+
+      return ToolResult(
+        success=True,
+        result="File updated successfully",
+        content_metadata=content_metadata,
+      )
     except PermissionError:
       log.warning("update_permission_denied_write", path=str(resolved))
       return ToolResult(success=False, result="", error="Permission denied")
@@ -262,14 +304,289 @@ class UpdateTool(Tool):
       log.error("update_write_error", path=str(resolved), error=str(e))
       return ToolResult(success=False, result="", error="Error updating file")
 
-  def _do_replace(self, content: str, old_string: str, new_string: str) -> str:
+  def _build_content_metadata(
+    self,
+    operation: str,
+    resolved_path: Path,
+    old_content: str,
+    new_content: str,
+    old_string: str,
+    new_string: str,
+    line_number: Any,
+  ) -> dict[str, Any] | None:
+    """Build content_metadata for ToolResult.
+
+    Args:
+      operation: Operation type (replace, insert_before, insert_after, delete).
+      resolved_path: Resolved file path.
+      old_content: Original file content.
+      new_content: Updated file content.
+      old_string: String that was replaced (for replace/delete).
+      new_string: String that was inserted (for replace/insert).
+      line_number: Line number for insert/delete operations.
+
+    Returns:
+      Content metadata dict, or None if verbosity is 'silent'.
+    """
+    content_display = self._config.tools.content_display
+
+    # Silent mode: always return None (no content)
+    if content_display.verbosity == "silent":
+      return None
+
+    # If show_diff_for_updates is enabled, generate diffs (overrides verbosity)
+    if content_display.show_diff_for_updates:
+      return self._build_content_or_diff_metadata(
+        operation=operation,
+        resolved_path=resolved_path,
+        old_content=old_content,
+        new_content=new_content,
+        old_string=old_string,
+        new_string=new_string,
+        line_number=line_number,
+      )
+
+    # Otherwise, follow verbosity setting
+    if content_display.verbosity == "summary":
+      return self._build_summary_metadata(
+        operation=operation,
+        resolved_path=resolved_path,
+        old_content=old_content,
+        new_content=new_content,
+        old_string=old_string,
+        new_string=new_string,
+        line_number=line_number,
+      )
+
+    # Content mode with diffs disabled: return full content
+    return self._build_content_or_diff_metadata(
+      operation=operation,
+      resolved_path=resolved_path,
+      old_content=old_content,
+      new_content=new_content,
+      old_string=old_string,
+      new_string=new_string,
+      line_number=line_number,
+      use_diff=False,
+    )
+
+  def _build_summary_metadata(
+    self,
+    operation: str,
+    resolved_path: Path,
+    old_content: str,
+    new_content: str,
+    old_string: str,
+    new_string: str,
+    line_number: Any,
+  ) -> dict[str, Any]:
+    """Build summary metadata for summary verbosity mode."""
+    old_lines = len(old_content.splitlines()) if old_content else 0
+    new_lines = len(new_content.splitlines()) if new_content else 0
+
+    if operation == "replace":
+      return {
+        "operation": operation,
+        "path": str(resolved_path),
+        "content_type": "summary",
+        "content": None,
+        "metadata": {
+          "lines_modified": 1,
+          "old_content_lines": old_lines,
+          "new_content_lines": new_lines,
+          "old_string": old_string,
+          "new_string": new_string,
+        },
+      }
+    elif operation in ("insert_before", "insert_after"):
+      line_num = int(line_number) if line_number is not None else 0
+      return {
+        "operation": operation,
+        "path": str(resolved_path),
+        "content_type": "summary",
+        "content": None,
+        "metadata": {
+          "line_number": line_num,
+          "inserted_lines": len(new_string.splitlines()),
+          "new_content_lines": new_lines,
+          "inserted_content": new_string,
+        },
+      }
+    else:  # delete
+      line_num = int(line_number) if line_number is not None else None
+      return {
+        "operation": operation,
+        "path": str(resolved_path),
+        "content_type": "summary",
+        "content": None,
+        "metadata": {
+          "line_number": line_num,
+          "deleted_lines": len(old_string.splitlines()) if old_string else 1,
+          "deleted_content": old_string,
+        },
+      }
+
+  def _build_content_or_diff_metadata(
+    self,
+    operation: str,
+    resolved_path: Path,
+    old_content: str,
+    new_content: str,
+    old_string: str,
+    new_string: str,
+    line_number: Any,
+    use_diff: bool = True,
+  ) -> dict[str, Any]:
+    """Build content or diff metadata for content verbosity mode.
+
+    Args:
+      operation: Operation type (replace, insert_before, insert_after, delete).
+      resolved_path: Resolved file path.
+      old_content: Original file content.
+      new_content: Updated file content.
+      old_string: String that was replaced (for replace/delete).
+      new_string: String that was inserted (for replace/insert).
+      line_number: Line number for insert/delete operations.
+      use_diff: Whether to generate diffs for replace/delete operations.
+
+    Returns:
+      Metadata dict with content_type and content.
+    """
+    content_display = self._config.tools.content_display
+
+    if operation == "replace":
+      if use_diff and content_display.show_diff_for_updates:
+        # Generate unified diff
+        old_lines = old_content.splitlines(keepends=True)
+        new_lines = new_content.splitlines(keepends=True)
+
+        diff_lines = list(
+          difflib.unified_diff(
+            old_lines,
+            new_lines,
+            fromfile="before",
+            tofile="after",
+          )
+        )
+
+        # Truncate diff if needed
+        diff_content, was_truncated, original_count = _truncate_diff(
+          diff_lines,
+          content_display.max_diff_lines,
+        )
+
+        metadata: dict[str, Any] = {
+          "lines_modified": 1,
+          "old_content_lines": len(old_lines),
+          "new_content_lines": len(new_lines),
+        }
+
+        if was_truncated:
+          metadata["truncated"] = True
+          metadata["original_diff_lines"] = original_count
+
+        return {
+          "operation": operation,
+          "path": str(resolved_path),
+          "content_type": "diff",
+          "content": diff_content,
+          "metadata": metadata,
+        }
+      else:
+        # Return full content when diff is disabled
+        return {
+          "operation": operation,
+          "path": str(resolved_path),
+          "content_type": "full",
+          "content": new_content,
+          "metadata": {
+            "lines_modified": 1,
+            "old_content_lines": len(old_content.splitlines()) if old_content else 0,
+            "new_content_lines": len(new_content.splitlines()) if new_content else 0,
+          },
+        }
+    elif operation in ("insert_before", "insert_after"):
+      line_num = int(line_number) if line_number is not None else 0
+
+      # Return inserted content with context
+      old_lines = old_content.splitlines(keepends=True)
+      context_before = old_lines[max(0, line_num - 3) : line_num]
+      context_after = old_lines[line_num : min(len(old_lines), line_num + 3)]
+
+      return {
+        "operation": operation,
+        "path": str(resolved_path),
+        "content_type": "full",
+        "content": new_string,
+        "metadata": {
+          "line_number": line_num,
+          "inserted_lines": len(new_string.splitlines()),
+          "lines_before": len(context_before),
+          "lines_after": len(context_after),
+          "context_before": "".join(context_before),
+          "context_after": "".join(context_after),
+        },
+      }
+    else:  # delete
+      line_num = int(line_number) if line_number is not None else None
+
+      if use_diff and content_display.show_diff_for_updates:
+        # Show diff for delete
+        old_lines = old_content.splitlines(keepends=True)
+        new_lines = new_content.splitlines(keepends=True)
+
+        diff_lines = list(
+          difflib.unified_diff(
+            old_lines,
+            new_lines,
+            fromfile="before",
+            tofile="after",
+          )
+        )
+
+        diff_content, was_truncated, original_count = _truncate_diff(
+          diff_lines,
+          content_display.max_diff_lines,
+        )
+
+        metadata: dict[str, Any] = {
+          "line_number": line_num,
+          "deleted_lines": len(old_string.splitlines()) if old_string else 1,
+          "deleted_content": old_string,
+        }
+
+        if was_truncated:
+          metadata["truncated"] = True
+          metadata["original_diff_lines"] = original_count
+
+        return {
+          "operation": operation,
+          "path": str(resolved_path),
+          "content_type": "diff",
+          "content": diff_content,
+          "metadata": metadata,
+        }
+      else:
+        # Return deleted content
+        return {
+          "operation": operation,
+          "path": str(resolved_path),
+          "content_type": "full",
+          "content": old_string,
+          "metadata": {
+            "line_number": line_num,
+            "deleted_lines": len(old_string.splitlines()) if old_string else 1,
+          },
+        }
+
+  def _do_replace(self, old_content: str, old_string: str, new_string: str) -> str:
     """Replace old_string with new_string in content.
 
     When require_exact_match is True (default), old_string must appear
     exactly once. Otherwise, replaces the first occurrence.
 
     Args:
-      content: Original file content.
+      old_content: Original file content.
       old_string: Text to search for.
       new_string: Replacement text.
 
@@ -281,7 +598,7 @@ class UpdateTool(Tool):
         when require_exact_match is True.
     """
     require_exact = self._config.tools.update.require_exact_match
-    occurrences = content.count(old_string)
+    occurrences = old_content.count(old_string)
 
     if occurrences == 0:
       raise ValueError("Search text not found")
@@ -289,11 +606,11 @@ class UpdateTool(Tool):
     if require_exact and occurrences > 1:
       raise ValueError("Search text appears multiple times; ambiguous match")
 
-    return content.replace(old_string, new_string, 1)
+    return old_content.replace(old_string, new_string, 1)
 
   def _do_insert(
     self,
-    content: str,
+    old_content: str,
     operation: str,
     line_number: Any,
     new_string: str,
@@ -301,7 +618,7 @@ class UpdateTool(Tool):
     """Insert new_string before or after a specific line.
 
     Args:
-      content: Original file content.
+      old_content: Original file content.
       operation: "insert_before" or "insert_after".
       line_number: 1-indexed line number (required).
       new_string: Text to insert.
@@ -320,7 +637,7 @@ class UpdateTool(Tool):
     except (ValueError, TypeError) as exc:
       raise ValueError("Invalid line_number parameter") from exc
 
-    lines = content.splitlines(keepends=True)
+    lines = old_content.splitlines(keepends=True)
     total_lines = len(lines)
 
     if total_lines == 0:
@@ -344,7 +661,7 @@ class UpdateTool(Tool):
 
     return "".join(lines)
 
-  def _do_delete(self, content: str, old_string: str, line_number: Any) -> str:
+  def _do_delete(self, old_content: str, old_string: str, line_number: Any) -> str:
     """Delete content by old_string or by line number.
 
     If old_string is provided and non-empty, searches for and removes it.
@@ -352,7 +669,7 @@ class UpdateTool(Tool):
     At least one of old_string or line_number must be provided.
 
     Args:
-      content: Original file content.
+      old_content: Original file content.
       old_string: Text to search for and remove.
       line_number: 1-indexed line number to delete.
 
@@ -370,7 +687,7 @@ class UpdateTool(Tool):
       except (ValueError, TypeError) as exc:
         raise ValueError("Invalid line_number parameter") from exc
 
-      lines = content.splitlines(keepends=True)
+      lines = old_content.splitlines(keepends=True)
       total_lines = len(lines)
 
       if total_lines == 0:
@@ -384,7 +701,7 @@ class UpdateTool(Tool):
 
     if old_string:
       require_exact = self._config.tools.update.require_exact_match
-      occurrences = content.count(old_string)
+      occurrences = old_content.count(old_string)
 
       if occurrences == 0:
         raise ValueError("Search text not found")
@@ -392,6 +709,6 @@ class UpdateTool(Tool):
       if require_exact and occurrences > 1:
         raise ValueError("Search text appears multiple times; ambiguous match")
 
-      return content.replace(old_string, "", 1)
+      return old_content.replace(old_string, "", 1)
 
     raise ValueError("Either old_string or line_number is required for delete")

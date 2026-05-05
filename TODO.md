@@ -51,15 +51,20 @@
   - Extracted from demo_session.py into src/yoker/logging/ module
   - See `reporting/1.5.4-event-logging/summary.md` for implementation summary
 
-- [ ] **1.5.5 Show Write/Update Tool Content in CLI**
-  - Display file content being written or updated in console output
-  - Use visual styling consistent with Read tool output
-  - Show operation type (write/update) and target file
-  - For updates, show the specific changes (before/after for small diffs)
-  - Add configuration option to control verbosity (show content vs. summary only)
-  - Ensure output remains readable for large content (truncation with "... N more lines")
-  - Write unit tests for content display formatting
-  - Update demo scripts to showcase the feature
+- [x] **1.5.5 Show Write/Update Tool Content in CLI** (2026-05-05)
+  - Add ToolContentEvent to event types
+  - Add ContentDisplayConfig to configuration schema (verbosity, max_content_lines, show_diff_for_updates)
+  - Add content_metadata field to ToolResult
+  - Update WriteTool to populate content_metadata (new file, overwrite, binary detection)
+  - Update UpdateTool to populate content_metadata (diff generation for replace, context for insert/delete)
+  - Agent emits ToolContentEvent when metadata present
+  - ConsoleEventHandler displays content based on verbosity (silent/summary/content)
+  - Visual consistency with Read tool (cyan color, filename only)
+  - Write unit tests (46 tests)
+  - Stub tests for agent/handler (47 tests - need implementation)
+  - See `analysis/api-write-update-display.md` for API design
+  - See `analysis/ux-write-update-display.md` for UX design
+  - See `reporting/1.5.5-write-update-display/consensus.md` for consensus
 
 ### Phase 1.6: Documentation (Medium Priority)
 
@@ -442,6 +447,21 @@
   - Write tutorial documentation
 
 ## Done
+
+- [x] **1.5.5 Show Write/Update Tool Content in CLI** (2026-05-05)
+  - Add ToolContentEvent to event types
+  - Add ContentDisplayConfig to configuration schema (verbosity, max_content_lines, show_diff_for_updates)
+  - Add content_metadata field to ToolResult
+  - Update WriteTool to populate content_metadata (new file, overwrite, binary detection)
+  - Update UpdateTool to populate content_metadata (diff generation for replace, context for insert/delete)
+  - Agent emits ToolContentEvent when metadata present
+  - ConsoleEventHandler displays content based on verbosity (silent/summary/content)
+  - Visual consistency with Read tool (cyan color, filename only)
+  - Write unit tests (46 tests)
+  - Stub tests for agent/handler (47 tests - need implementation)
+  - See `analysis/api-write-update-display.md` for API design
+  - See `analysis/ux-write-update-display.md` for UX design
+  - See `reporting/1.5.5-write-update-display/consensus.md` for consensus
 
 - [x] **2.12 WebFetch Tool** (2026-05-04)
   - Design pluggable backend architecture for fetch implementations

@@ -211,6 +211,26 @@ class UpdateToolConfig(ToolConfig):
 
 
 @dataclass(frozen=True)
+class ContentDisplayConfig:
+  """Configuration for displaying file content in tool operations.
+
+  Attributes:
+    verbosity: Verbosity level: 'silent' (no content), 'summary' (line counts),
+      'content' (full content with truncation).
+    max_content_lines: Maximum lines to show before truncation.
+    max_content_bytes: Maximum bytes to show before truncation.
+    show_diff_for_updates: Whether to show before/after for update operations.
+    max_diff_lines: Maximum lines in diff display.
+  """
+
+  verbosity: str = "summary"  # "silent", "summary", "content"
+  max_content_lines: int = 50
+  max_content_bytes: int = 4096
+  show_diff_for_updates: bool = True
+  max_diff_lines: int = 30
+
+
+@dataclass(frozen=True)
 class SearchToolConfig(ToolConfig):
   """Search tool configuration.
 
@@ -343,6 +363,7 @@ class ToolsConfig:
     mkdir: Mkdir tool config.
     websearch: Web search tool config.
     webfetch: Web fetch tool config.
+    content_display: Content display configuration for write/update tools.
   """
 
   list: ListToolConfig = field(default_factory=ListToolConfig)
@@ -355,6 +376,7 @@ class ToolsConfig:
   mkdir: MkdirToolConfig = field(default_factory=MkdirToolConfig)
   websearch: WebSearchToolConfig = field(default_factory=WebSearchToolConfig)
   webfetch: WebFetchToolConfig = field(default_factory=WebFetchToolConfig)
+  content_display: ContentDisplayConfig = field(default_factory=ContentDisplayConfig)
 
 
 @dataclass(frozen=True)
@@ -431,6 +453,7 @@ __all__ = [
   "MkdirToolConfig",
   "WebSearchToolConfig",
   "WebFetchToolConfig",
+  "ContentDisplayConfig",
   "ToolsConfig",
   "AgentsConfig",
   "LoggingConfig",

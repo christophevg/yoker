@@ -18,6 +18,60 @@ if TYPE_CHECKING:
 log = get_logger(__name__)
 
 
+def _is_binary(content: str) -> bool:
+  """Check if content appears to be binary.
+
+  Checks for null bytes in the first 8KB of content.
+
+  Args:
+    content: Content to check.
+
+  Returns:
+    True if content appears to be binary, False otherwise.
+  """
+  # Check first 8KB for null bytes
+  check_size = min(len(content), 8192)
+  return "\x00" in content[:check_size]
+
+
+def _truncate_content(
+  content: str,
+  max_lines: int,
+  max_bytes: int,
+) -> tuple[str, bool, int, int]:
+  """Truncate content based on max lines and max bytes.
+
+  Args:
+    content: Content to truncate.
+    max_lines: Maximum lines to include.
+    max_bytes: Maximum bytes to include.
+
+  Returns:
+    Tuple of (truncated_content, was_truncated, original_lines, original_bytes).
+  """
+  original_bytes = len(content.encode("utf-8"))
+  lines = content.splitlines(keepends=True)
+  original_lines_count = len(lines)
+
+  # Truncate by lines first
+  if len(lines) > max_lines:
+    lines = lines[:max_lines]
+    was_truncated = True
+  else:
+    was_truncated = False
+
+  # Truncate by bytes
+  truncated_content = "".join(lines)
+  truncated_bytes = len(truncated_content.encode("utf-8"))
+
+  if truncated_bytes > max_bytes:
+    # Truncate to max_bytes
+    truncated_content = truncated_content[:max_bytes]
+    was_truncated = True
+
+  return truncated_content, was_truncated, original_lines_count, original_bytes
+
+
 class WriteTool(Tool):
   """Tool for writing file contents.
 
@@ -97,6 +151,7 @@ class WriteTool(Tool):
       6. Create parent directories if requested.
       7. Write with UTF-8 encoding.
       8. Log write for audit trail.
+      9. Populate content_metadata for content display.
 
     Args:
       **kwargs: Must contain 'path' and 'content' keys.
@@ -155,7 +210,8 @@ class WriteTool(Tool):
       return ToolResult(success=False, result="", error="Invalid path")
 
     # Check overwrite protection
-    if resolved.exists():
+    is_overwrite = resolved.exists()
+    if is_overwrite:
       allow_overwrite = self._config.tools.write.allow_overwrite
       if not allow_overwrite:
         log.info(
@@ -205,10 +261,115 @@ class WriteTool(Tool):
         path=str(resolved),
         bytes=len(content.encode("utf-8")),
       )
-      return ToolResult(success=True, result="File written successfully")
+
+      # Build content_metadata for content display
+      content_metadata = self._build_content_metadata(
+        content=content,
+        resolved_path=resolved,
+        is_overwrite=is_overwrite,
+      )
+
+      return ToolResult(
+        success=True,
+        result="File written successfully",
+        content_metadata=content_metadata,
+      )
     except PermissionError:
       log.warning("write_permission_denied", path=str(resolved))
       return ToolResult(success=False, result="", error="Permission denied")
     except OSError as e:
       log.error("write_os_error", path=str(resolved), error=str(e))
       return ToolResult(success=False, result="", error="Error writing file")
+
+  def _build_content_metadata(
+    self,
+    content: str,
+    resolved_path: Path,
+    is_overwrite: bool,
+  ) -> dict[str, Any] | None:
+    """Build content_metadata for ToolResult.
+
+    Args:
+      content: Content that was written.
+      resolved_path: Resolved file path.
+      is_overwrite: Whether this was an overwrite operation.
+
+    Returns:
+      Content metadata dict, or None if verbosity is 'silent'.
+    """
+    content_display = self._config.tools.content_display
+
+    # Check verbosity - return None for silent mode
+    if content_display.verbosity == "silent":
+      return None
+
+    # Detect binary content
+    is_binary = _is_binary(content)
+    if is_binary:
+      # Binary content: return summary only
+      byte_size = len(content.encode("utf-8"))
+      return {
+        "operation": "write",
+        "path": str(resolved_path),
+        "content_type": "summary",
+        "content": None,
+        "metadata": {
+          "lines": 0,
+          "bytes": byte_size,
+          "is_new_file": not is_overwrite,
+          "is_overwrite": is_overwrite,
+          "is_binary": True,
+        },
+      }
+
+    # Count lines and bytes
+    lines = content.splitlines()
+    line_count = len(lines)
+    byte_size = len(content.encode("utf-8"))
+
+    # Check if empty
+    is_empty = line_count == 0
+
+    # Determine content type based on verbosity
+    if content_display.verbosity == "summary":
+      # Summary mode: return line count only
+      return {
+        "operation": "write",
+        "path": str(resolved_path),
+        "content_type": "summary",
+        "content": None,
+        "metadata": {
+          "lines": line_count,
+          "bytes": byte_size,
+          "is_new_file": not is_overwrite,
+          "is_overwrite": is_overwrite,
+          "is_empty": is_empty,
+        },
+      }
+
+    # Content mode: return full content (possibly truncated)
+    truncated_content, was_truncated, _, _ = _truncate_content(
+      content,
+      content_display.max_content_lines,
+      content_display.max_content_bytes,
+    )
+
+    metadata: dict[str, Any] = {
+      "lines": line_count,
+      "bytes": byte_size,
+      "is_new_file": not is_overwrite,
+      "is_overwrite": is_overwrite,
+      "is_empty": is_empty,
+    }
+
+    if was_truncated:
+      metadata["truncated"] = True
+      metadata["original_line_count"] = line_count
+
+    return {
+      "operation": "write",
+      "path": str(resolved_path),
+      "content_type": "full",
+      "content": truncated_content,
+      "metadata": metadata,
+    }

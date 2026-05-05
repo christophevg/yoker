@@ -98,6 +98,17 @@ class LiveDisplay:
     if self._live:
       self._live.__exit__(exc_type, exc_val, exc_tb)
 
+  def stop_spinner(self) -> None:
+    """Remove the spinner from the display.
+
+    Called before exiting the Live context to prevent the spinner
+    from showing in the final output.
+    """
+    if self._spinner:
+      self._spinner_active = False
+      self._spinner = None
+      self._update()
+
   def _build_renderable(self) -> Table:
     """Build the renderable for Live display.
 
@@ -136,12 +147,6 @@ class LiveDisplay:
   def start_spinner(self) -> None:
     """Show the spinner (called automatically on context enter)."""
     self._spinner_active = True
-    self._update()
-
-  def stop_spinner(self) -> None:
-    """Stop the spinner (stats should be shown via show_stats instead)."""
-    self._spinner_active = False
-    self._spinner = None
     self._update()
 
   def show_stats(
