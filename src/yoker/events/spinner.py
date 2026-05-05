@@ -172,10 +172,10 @@ class LiveDisplay:
     if total_tokens > 0:
       # Calculate tokens per second
       tokens_per_sec = total_tokens / duration_s if duration_s > 0 else 0
-      stats = f"⏱ {duration_s:.1f}s | {prompt_tokens}+{eval_tokens}={total_tokens} tokens | {tokens_per_sec:.0f} tok/s"
+      stats = f"⏱ {duration_s:.1f}s | {prompt_tokens}+{eval_tokens}={total_tokens} tokens | {tokens_per_sec:.0f} tok/s\n"
     else:
       # Fallback if no token info available
-      stats = f"⏱ {duration_s:.1f}s"
+      stats = f"⏱ {duration_s:.1f}s\n"
 
     self._stats_text = Text(stats, style="dim")
     self._update()

@@ -274,7 +274,7 @@ def run_demo_session(
   for message in get_input.messages if hasattr(get_input, "messages") else []:
     # User input should be plain text in the SVG recording
     # Use console.print with all Rich features disabled
-    console.print(f"> {message}", style="none", markup=False, highlight=False)
+    console.print(f"> {message}", markup=False, highlight=False)
 
     # Check if this is a command
     if message.startswith("/"):

@@ -19,141 +19,131 @@
         font-weight: 700;
     }
 
-    .terminal-3754626904-matrix {
+    .terminal-1592097972-matrix {
         font-family: Fira Code, monospace;
         font-size: 20px;
         line-height: 24.4px;
         font-variant-east-asian: full-width;
     }
 
-    .terminal-3754626904-title {
+    .terminal-1592097972-title {
         font-size: 18px;
         font-weight: bold;
         font-family: arial;
     }
 
-    .terminal-3754626904-r1 { fill: #68a0b3;font-weight: bold }
-.terminal-3754626904-r2 { fill: #c5c8c6 }
-.terminal-3754626904-r3 { fill: #98a84b }
-.terminal-3754626904-r4 { fill: #98a84b;font-weight: bold }
-.terminal-3754626904-r5 { fill: #868887 }
-.terminal-3754626904-r6 { fill: #6c6d6c }
-.terminal-3754626904-r7 { fill: #4e707b;font-weight: bold }
-.terminal-3754626904-r8 { fill: #6c6d6c;font-weight: bold }
-.terminal-3754626904-r9 { fill: #1f5f9c;text-decoration: underline; }
-.terminal-3754626904-r10 { fill: #6b546f }
-.terminal-3754626904-r11 { fill: #a92a59 }
-.terminal-3754626904-r12 { fill: #c5c8c6;font-weight: bold }
-.terminal-3754626904-r13 { fill: #1984e9;text-decoration: underline; }
-.terminal-3754626904-r14 { fill: #98729f }
-.terminal-3754626904-r15 { fill: #ff2c7a }
+    .terminal-1592097972-r1 { fill: #68a0b3;font-weight: bold }
+.terminal-1592097972-r2 { fill: #c5c8c6 }
+.terminal-1592097972-r3 { fill: #98a84b }
+.terminal-1592097972-r4 { fill: #98a84b;font-weight: bold }
+.terminal-1592097972-r5 { fill: #868887 }
     </style>
 
     <defs>
-    <clipPath id="terminal-3754626904-clip-terminal">
+    <clipPath id="terminal-1592097972-clip-terminal">
       <rect x="0" y="0" width="1463.0" height="560.1999999999999" />
     </clipPath>
-    <clipPath id="terminal-3754626904-line-0">
+    <clipPath id="terminal-1592097972-line-0">
     <rect x="0" y="1.5" width="1464" height="24.65"/>
             </clipPath>
-<clipPath id="terminal-3754626904-line-1">
+<clipPath id="terminal-1592097972-line-1">
     <rect x="0" y="25.9" width="1464" height="24.65"/>
             </clipPath>
-<clipPath id="terminal-3754626904-line-2">
+<clipPath id="terminal-1592097972-line-2">
     <rect x="0" y="50.3" width="1464" height="24.65"/>
             </clipPath>
-<clipPath id="terminal-3754626904-line-3">
+<clipPath id="terminal-1592097972-line-3">
     <rect x="0" y="74.7" width="1464" height="24.65"/>
             </clipPath>
-<clipPath id="terminal-3754626904-line-4">
+<clipPath id="terminal-1592097972-line-4">
     <rect x="0" y="99.1" width="1464" height="24.65"/>
             </clipPath>
-<clipPath id="terminal-3754626904-line-5">
+<clipPath id="terminal-1592097972-line-5">
     <rect x="0" y="123.5" width="1464" height="24.65"/>
             </clipPath>
-<clipPath id="terminal-3754626904-line-6">
+<clipPath id="terminal-1592097972-line-6">
     <rect x="0" y="147.9" width="1464" height="24.65"/>
             </clipPath>
-<clipPath id="terminal-3754626904-line-7">
+<clipPath id="terminal-1592097972-line-7">
     <rect x="0" y="172.3" width="1464" height="24.65"/>
             </clipPath>
-<clipPath id="terminal-3754626904-line-8">
+<clipPath id="terminal-1592097972-line-8">
     <rect x="0" y="196.7" width="1464" height="24.65"/>
             </clipPath>
-<clipPath id="terminal-3754626904-line-9">
+<clipPath id="terminal-1592097972-line-9">
     <rect x="0" y="221.1" width="1464" height="24.65"/>
             </clipPath>
-<clipPath id="terminal-3754626904-line-10">
+<clipPath id="terminal-1592097972-line-10">
     <rect x="0" y="245.5" width="1464" height="24.65"/>
             </clipPath>
-<clipPath id="terminal-3754626904-line-11">
+<clipPath id="terminal-1592097972-line-11">
     <rect x="0" y="269.9" width="1464" height="24.65"/>
             </clipPath>
-<clipPath id="terminal-3754626904-line-12">
+<clipPath id="terminal-1592097972-line-12">
     <rect x="0" y="294.3" width="1464" height="24.65"/>
             </clipPath>
-<clipPath id="terminal-3754626904-line-13">
+<clipPath id="terminal-1592097972-line-13">
     <rect x="0" y="318.7" width="1464" height="24.65"/>
             </clipPath>
-<clipPath id="terminal-3754626904-line-14">
+<clipPath id="terminal-1592097972-line-14">
     <rect x="0" y="343.1" width="1464" height="24.65"/>
             </clipPath>
-<clipPath id="terminal-3754626904-line-15">
+<clipPath id="terminal-1592097972-line-15">
     <rect x="0" y="367.5" width="1464" height="24.65"/>
             </clipPath>
-<clipPath id="terminal-3754626904-line-16">
+<clipPath id="terminal-1592097972-line-16">
     <rect x="0" y="391.9" width="1464" height="24.65"/>
             </clipPath>
-<clipPath id="terminal-3754626904-line-17">
+<clipPath id="terminal-1592097972-line-17">
     <rect x="0" y="416.3" width="1464" height="24.65"/>
             </clipPath>
-<clipPath id="terminal-3754626904-line-18">
+<clipPath id="terminal-1592097972-line-18">
     <rect x="0" y="440.7" width="1464" height="24.65"/>
             </clipPath>
-<clipPath id="terminal-3754626904-line-19">
+<clipPath id="terminal-1592097972-line-19">
     <rect x="0" y="465.1" width="1464" height="24.65"/>
             </clipPath>
-<clipPath id="terminal-3754626904-line-20">
+<clipPath id="terminal-1592097972-line-20">
     <rect x="0" y="489.5" width="1464" height="24.65"/>
             </clipPath>
-<clipPath id="terminal-3754626904-line-21">
+<clipPath id="terminal-1592097972-line-21">
     <rect x="0" y="513.9" width="1464" height="24.65"/>
             </clipPath>
     </defs>
 
-    <rect fill="#292929" stroke="rgba(255,255,255,0.35)" stroke-width="1" x="1" y="1" width="1480" height="609.2" rx="8"/><text class="terminal-3754626904-title" fill="#c5c8c6" text-anchor="middle" x="740" y="27">Rich</text>
+    <rect fill="#292929" stroke="rgba(255,255,255,0.35)" stroke-width="1" x="1" y="1" width="1480" height="609.2" rx="8"/><text class="terminal-1592097972-title" fill="#c5c8c6" text-anchor="middle" x="740" y="27">Rich</text>
             <g transform="translate(26,22)">
             <circle cx="0" cy="0" r="7" fill="#ff5f57"/>
             <circle cx="22" cy="0" r="7" fill="#febc2e"/>
             <circle cx="44" cy="0" r="7" fill="#28c840"/>
             </g>
         
-    <g transform="translate(9, 41)" clip-path="url(#terminal-3754626904-clip-terminal)">
+    <g transform="translate(9, 41)" clip-path="url(#terminal-1592097972-clip-terminal)">
     
-    <g class="terminal-3754626904-matrix">
-    <text class="terminal-3754626904-r1" x="0" y="20" textLength="109.8" clip-path="url(#terminal-3754626904-line-0)">Yoker&#160;v0.</text><text class="terminal-3754626904-r1" x="109.8" y="20" textLength="36.6" clip-path="url(#terminal-3754626904-line-0)">1.0</text><text class="terminal-3754626904-r2" x="146.4" y="20" textLength="195.2" clip-path="url(#terminal-3754626904-line-0)">&#160;-&#160;Using&#160;model:&#160;</text><text class="terminal-3754626904-r3" x="341.6" y="20" textLength="48.8" clip-path="url(#terminal-3754626904-line-0)">glm-</text><text class="terminal-3754626904-r4" x="390.4" y="20" textLength="36.6" clip-path="url(#terminal-3754626904-line-0)">5:c</text><text class="terminal-3754626904-r3" x="427" y="20" textLength="48.8" clip-path="url(#terminal-3754626904-line-0)">loud</text><text class="terminal-3754626904-r2" x="1464" y="20" textLength="12.2" clip-path="url(#terminal-3754626904-line-0)">
-</text><text class="terminal-3754626904-r5" x="0" y="44.4" textLength="402.6" clip-path="url(#terminal-3754626904-line-1)">Replay&#160;mode&#160;-&#160;using&#160;logged&#160;events</text><text class="terminal-3754626904-r2" x="1464" y="44.4" textLength="12.2" clip-path="url(#terminal-3754626904-line-1)">
-</text><text class="terminal-3754626904-r2" x="1464" y="68.8" textLength="12.2" clip-path="url(#terminal-3754626904-line-2)">
-</text><text class="terminal-3754626904-r2" x="0" y="93.2" textLength="951.6" clip-path="url(#terminal-3754626904-line-3)">&gt;&#160;Read&#160;the&#160;first&#160;3&#160;lines&#160;of&#160;README.md.&#160;Output&#160;only&#160;those&#160;lines,&#160;no&#160;commentary.</text><text class="terminal-3754626904-r2" x="1464" y="93.2" textLength="12.2" clip-path="url(#terminal-3754626904-line-3)">
-</text><text class="terminal-3754626904-r2" x="1464" y="117.6" textLength="12.2" clip-path="url(#terminal-3754626904-line-4)">
-</text><text class="terminal-3754626904-r6" x="0" y="142" textLength="36.6" clip-path="url(#terminal-3754626904-line-5)">The</text><text class="terminal-3754626904-r6" x="36.6" y="142" textLength="207.4" clip-path="url(#terminal-3754626904-line-5)">&#160;user&#160;wants&#160;me&#160;to</text><text class="terminal-3754626904-r6" x="244" y="142" textLength="183" clip-path="url(#terminal-3754626904-line-5)">&#160;read&#160;the&#160;first</text><text class="terminal-3754626904-r7" x="439.2" y="142" textLength="12.2" clip-path="url(#terminal-3754626904-line-5)">3</text><text class="terminal-3754626904-r6" x="451.4" y="142" textLength="195.2" clip-path="url(#terminal-3754626904-line-5)">&#160;lines&#160;of&#160;README</text><text class="terminal-3754626904-r6" x="646.6" y="142" textLength="48.8" clip-path="url(#terminal-3754626904-line-5)">.md.</text><text class="terminal-3754626904-r6" x="695.4" y="142" textLength="61" clip-path="url(#terminal-3754626904-line-5)">&#160;I&#x27;ll</text><text class="terminal-3754626904-r6" x="756.4" y="142" textLength="48.8" clip-path="url(#terminal-3754626904-line-5)">&#160;use</text><text class="terminal-3754626904-r6" x="805.2" y="142" textLength="256.2" clip-path="url(#terminal-3754626904-line-5)">&#160;the&#160;read&#160;function&#160;to</text><text class="terminal-3754626904-r6" x="1061.4" y="142" textLength="61" clip-path="url(#terminal-3754626904-line-5)">&#160;read</text><text class="terminal-3754626904-r6" x="1122.4" y="142" textLength="122" clip-path="url(#terminal-3754626904-line-5)">&#160;the&#160;file,</text><text class="terminal-3754626904-r6" x="1244.4" y="142" textLength="219.6" clip-path="url(#terminal-3754626904-line-5)">&#160;then&#160;extract&#160;just</text><text class="terminal-3754626904-r2" x="1464" y="142" textLength="12.2" clip-path="url(#terminal-3754626904-line-5)">
-</text><text class="terminal-3754626904-r2" x="1464" y="166.4" textLength="12.2" clip-path="url(#terminal-3754626904-line-6)">
-</text><text class="terminal-3754626904-r2" x="1464" y="190.8" textLength="12.2" clip-path="url(#terminal-3754626904-line-7)">
-</text><text class="terminal-3754626904-r6" x="0" y="215.2" textLength="36.6" clip-path="url(#terminal-3754626904-line-8)">The</text><text class="terminal-3754626904-r6" x="36.6" y="215.2" textLength="231.8" clip-path="url(#terminal-3754626904-line-8)">&#160;user&#160;asked&#160;for&#160;the</text><text class="terminal-3754626904-r6" x="268.4" y="215.2" textLength="85.4" clip-path="url(#terminal-3754626904-line-8)">&#160;first&#160;</text><text class="terminal-3754626904-r7" x="353.8" y="215.2" textLength="12.2" clip-path="url(#terminal-3754626904-line-8)">3</text><text class="terminal-3754626904-r6" x="366" y="215.2" textLength="73.2" clip-path="url(#terminal-3754626904-line-8)">&#160;lines</text><text class="terminal-3754626904-r6" x="439.2" y="215.2" textLength="170.8" clip-path="url(#terminal-3754626904-line-8)">&#160;of&#160;README.md.</text><text class="terminal-3754626904-r6" x="610" y="215.2" textLength="183" clip-path="url(#terminal-3754626904-line-8)">&#160;Let&#160;me&#160;extract</text><text class="terminal-3754626904-r6" x="793" y="215.2" textLength="61" clip-path="url(#terminal-3754626904-line-8)">&#160;them</text><text class="terminal-3754626904-r6" x="854" y="215.2" textLength="12.2" clip-path="url(#terminal-3754626904-line-8)">:</text><text class="terminal-3754626904-r2" x="1464" y="215.2" textLength="12.2" clip-path="url(#terminal-3754626904-line-8)">
-</text><text class="terminal-3754626904-r2" x="1464" y="239.6" textLength="12.2" clip-path="url(#terminal-3754626904-line-9)">
-</text><text class="terminal-3754626904-r6" x="0" y="264" textLength="48.8" clip-path="url(#terminal-3754626904-line-10)">Line</text><text class="terminal-3754626904-r7" x="61" y="264" textLength="12.2" clip-path="url(#terminal-3754626904-line-10)">1</text><text class="terminal-3754626904-r6" x="73.2" y="264" textLength="36.6" clip-path="url(#terminal-3754626904-line-10)">:&#160;#</text><text class="terminal-3754626904-r6" x="109.8" y="264" textLength="73.2" clip-path="url(#terminal-3754626904-line-10)">&#160;Yoker</text><text class="terminal-3754626904-r2" x="1464" y="264" textLength="12.2" clip-path="url(#terminal-3754626904-line-10)">
-</text><text class="terminal-3754626904-r6" x="0" y="288.4" textLength="48.8" clip-path="url(#terminal-3754626904-line-11)">Line</text><text class="terminal-3754626904-r7" x="61" y="288.4" textLength="12.2" clip-path="url(#terminal-3754626904-line-11)">2</text><text class="terminal-3754626904-r6" x="73.2" y="288.4" textLength="24.4" clip-path="url(#terminal-3754626904-line-11)">:&#160;</text><text class="terminal-3754626904-r8" x="97.6" y="288.4" textLength="12.2" clip-path="url(#terminal-3754626904-line-11)">(</text><text class="terminal-3754626904-r6" x="109.8" y="288.4" textLength="122" clip-path="url(#terminal-3754626904-line-11)">empty&#160;line</text><text class="terminal-3754626904-r8" x="231.8" y="288.4" textLength="12.2" clip-path="url(#terminal-3754626904-line-11)">)</text><text class="terminal-3754626904-r2" x="1464" y="288.4" textLength="12.2" clip-path="url(#terminal-3754626904-line-11)">
-</text><text class="terminal-3754626904-r6" x="0" y="312.8" textLength="48.8" clip-path="url(#terminal-3754626904-line-12)">Line</text><text class="terminal-3754626904-r7" x="61" y="312.8" textLength="12.2" clip-path="url(#terminal-3754626904-line-12)">3</text><text class="terminal-3754626904-r6" x="73.2" y="312.8" textLength="24.4" clip-path="url(#terminal-3754626904-line-12)">:&#160;</text><text class="terminal-3754626904-r8" x="97.6" y="312.8" textLength="12.2" clip-path="url(#terminal-3754626904-line-12)">[</text><text class="terminal-3754626904-r6" x="109.8" y="312.8" textLength="12.2" clip-path="url(#terminal-3754626904-line-12)">!</text><text class="terminal-3754626904-r8" x="122" y="312.8" textLength="12.2" clip-path="url(#terminal-3754626904-line-12)">[</text><text class="terminal-3754626904-r6" x="134.2" y="312.8" textLength="146.4" clip-path="url(#terminal-3754626904-line-12)">PyPI&#160;version</text><text class="terminal-3754626904-r8" x="280.6" y="312.8" textLength="12.2" clip-path="url(#terminal-3754626904-line-12)">]</text><text class="terminal-3754626904-r8" x="292.8" y="312.8" textLength="12.2" clip-path="url(#terminal-3754626904-line-12)">(</text><text class="terminal-3754626904-r9" x="305" y="312.8" textLength="134.2" clip-path="url(#terminal-3754626904-line-12)">https://img</text><text class="terminal-3754626904-r6" x="439.2" y="312.8" textLength="158.6" clip-path="url(#terminal-3754626904-line-12)">.shields.io/p</text><text class="terminal-3754626904-r6" x="597.8" y="312.8" textLength="61" clip-path="url(#terminal-3754626904-line-12)">ypi/v</text><text class="terminal-3754626904-r10" x="658.8" y="312.8" textLength="12.2" clip-path="url(#terminal-3754626904-line-12)">/</text><text class="terminal-3754626904-r11" x="671" y="312.8" textLength="61" clip-path="url(#terminal-3754626904-line-12)">yoker</text><text class="terminal-3754626904-r6" x="732" y="312.8" textLength="48.8" clip-path="url(#terminal-3754626904-line-12)">.svg</text><text class="terminal-3754626904-r8" x="780.8" y="312.8" textLength="12.2" clip-path="url(#terminal-3754626904-line-12)">)</text><text class="terminal-3754626904-r8" x="793" y="312.8" textLength="12.2" clip-path="url(#terminal-3754626904-line-12)">]</text><text class="terminal-3754626904-r8" x="805.2" y="312.8" textLength="12.2" clip-path="url(#terminal-3754626904-line-12)">(</text><text class="terminal-3754626904-r6" x="817.4" y="312.8" textLength="61" clip-path="url(#terminal-3754626904-line-12)">https</text><text class="terminal-3754626904-r6" x="878.4" y="312.8" textLength="12.2" clip-path="url(#terminal-3754626904-line-12)">:</text><text class="terminal-3754626904-r10" x="890.6" y="312.8" textLength="12.2" clip-path="url(#terminal-3754626904-line-12)">/</text><text class="terminal-3754626904-r10" x="902.8" y="312.8" textLength="12.2" clip-path="url(#terminal-3754626904-line-12)">/</text><text class="terminal-3754626904-r11" x="915" y="312.8" textLength="97.6" clip-path="url(#terminal-3754626904-line-12)">pypi.org</text><text class="terminal-3754626904-r10" x="1012.6" y="312.8" textLength="183" clip-path="url(#terminal-3754626904-line-12)">/project/yoker/</text><text class="terminal-3754626904-r8" x="1195.6" y="312.8" textLength="12.2" clip-path="url(#terminal-3754626904-line-12)">)</text><text class="terminal-3754626904-r2" x="1464" y="312.8" textLength="12.2" clip-path="url(#terminal-3754626904-line-12)">
-</text><text class="terminal-3754626904-r2" x="1464" y="337.2" textLength="12.2" clip-path="url(#terminal-3754626904-line-13)">
-</text><text class="terminal-3754626904-r6" x="0" y="361.6" textLength="36.6" clip-path="url(#terminal-3754626904-line-14)">Let</text><text class="terminal-3754626904-r6" x="36.6" y="361.6" textLength="256.2" clip-path="url(#terminal-3754626904-line-14)">&#160;me&#160;output&#160;just&#160;those</text><text class="terminal-3754626904-r6" x="292.8" y="361.6" textLength="73.2" clip-path="url(#terminal-3754626904-line-14)">&#160;lines</text><text class="terminal-3754626904-r6" x="366" y="361.6" textLength="36.6" clip-path="url(#terminal-3754626904-line-14)">&#160;as</text><text class="terminal-3754626904-r6" x="402.6" y="361.6" textLength="134.2" clip-path="url(#terminal-3754626904-line-14)">&#160;requested.</text><text class="terminal-3754626904-r2" x="1464" y="361.6" textLength="12.2" clip-path="url(#terminal-3754626904-line-14)">
-</text><text class="terminal-3754626904-r2" x="1464" y="386" textLength="12.2" clip-path="url(#terminal-3754626904-line-15)">
-</text><text class="terminal-3754626904-r2" x="1464" y="410.4" textLength="12.2" clip-path="url(#terminal-3754626904-line-16)">
-</text><text class="terminal-3754626904-r2" x="0" y="434.8" textLength="12.2" clip-path="url(#terminal-3754626904-line-17)">#</text><text class="terminal-3754626904-r2" x="12.2" y="434.8" textLength="73.2" clip-path="url(#terminal-3754626904-line-17)">&#160;Yoker</text><text class="terminal-3754626904-r2" x="1464" y="434.8" textLength="12.2" clip-path="url(#terminal-3754626904-line-17)">
-</text><text class="terminal-3754626904-r2" x="1464" y="459.2" textLength="12.2" clip-path="url(#terminal-3754626904-line-18)">
-</text><text class="terminal-3754626904-r12" x="0" y="483.6" textLength="12.2" clip-path="url(#terminal-3754626904-line-19)">[</text><text class="terminal-3754626904-r2" x="12.2" y="483.6" textLength="12.2" clip-path="url(#terminal-3754626904-line-19)">!</text><text class="terminal-3754626904-r12" x="24.4" y="483.6" textLength="12.2" clip-path="url(#terminal-3754626904-line-19)">[</text><text class="terminal-3754626904-r2" x="36.6" y="483.6" textLength="48.8" clip-path="url(#terminal-3754626904-line-19)">PyPI</text><text class="terminal-3754626904-r2" x="85.4" y="483.6" textLength="97.6" clip-path="url(#terminal-3754626904-line-19)">&#160;version</text><text class="terminal-3754626904-r12" x="183" y="483.6" textLength="12.2" clip-path="url(#terminal-3754626904-line-19)">]</text><text class="terminal-3754626904-r12" x="195.2" y="483.6" textLength="12.2" clip-path="url(#terminal-3754626904-line-19)">(</text><text class="terminal-3754626904-r13" x="207.4" y="483.6" textLength="97.6" clip-path="url(#terminal-3754626904-line-19)">https://</text><text class="terminal-3754626904-r2" x="305" y="483.6" textLength="170.8" clip-path="url(#terminal-3754626904-line-19)">img.shields.io</text><text class="terminal-3754626904-r14" x="475.8" y="483.6" textLength="97.6" clip-path="url(#terminal-3754626904-line-19)">/pypi/v/</text><text class="terminal-3754626904-r15" x="573.4" y="483.6" textLength="12.2" clip-path="url(#terminal-3754626904-line-19)">y</text><text class="terminal-3754626904-r2" x="585.6" y="483.6" textLength="97.6" clip-path="url(#terminal-3754626904-line-19)">oker.svg</text><text class="terminal-3754626904-r12" x="683.2" y="483.6" textLength="12.2" clip-path="url(#terminal-3754626904-line-19)">)</text><text class="terminal-3754626904-r12" x="695.4" y="483.6" textLength="12.2" clip-path="url(#terminal-3754626904-line-19)">]</text><text class="terminal-3754626904-r12" x="707.6" y="483.6" textLength="12.2" clip-path="url(#terminal-3754626904-line-19)">(</text><text class="terminal-3754626904-r13" x="719.8" y="483.6" textLength="146.4" clip-path="url(#terminal-3754626904-line-19)">https://pypi</text><text class="terminal-3754626904-r2" x="866.2" y="483.6" textLength="219.6" clip-path="url(#terminal-3754626904-line-19)">.org/project/yoker</text><text class="terminal-3754626904-r14" x="1085.8" y="483.6" textLength="12.2" clip-path="url(#terminal-3754626904-line-19)">/</text><text class="terminal-3754626904-r12" x="1098" y="483.6" textLength="12.2" clip-path="url(#terminal-3754626904-line-19)">)</text><text class="terminal-3754626904-r2" x="1464" y="483.6" textLength="12.2" clip-path="url(#terminal-3754626904-line-19)">
-</text><text class="terminal-3754626904-r2" x="1464" y="508" textLength="12.2" clip-path="url(#terminal-3754626904-line-20)">
-</text><text class="terminal-3754626904-r2" x="1464" y="532.4" textLength="12.2" clip-path="url(#terminal-3754626904-line-21)">
-</text><text class="terminal-3754626904-r1" x="0" y="556.8" textLength="207.4" clip-path="url(#terminal-3754626904-line-22)">Session&#160;complete.</text><text class="terminal-3754626904-r2" x="1464" y="556.8" textLength="12.2" clip-path="url(#terminal-3754626904-line-22)">
+    <g class="terminal-1592097972-matrix">
+    <text class="terminal-1592097972-r1" x="0" y="20" textLength="109.8" clip-path="url(#terminal-1592097972-line-0)">Yoker&#160;v0.</text><text class="terminal-1592097972-r1" x="109.8" y="20" textLength="36.6" clip-path="url(#terminal-1592097972-line-0)">1.0</text><text class="terminal-1592097972-r2" x="146.4" y="20" textLength="195.2" clip-path="url(#terminal-1592097972-line-0)">&#160;-&#160;Using&#160;model:&#160;</text><text class="terminal-1592097972-r3" x="341.6" y="20" textLength="48.8" clip-path="url(#terminal-1592097972-line-0)">glm-</text><text class="terminal-1592097972-r4" x="390.4" y="20" textLength="36.6" clip-path="url(#terminal-1592097972-line-0)">5:c</text><text class="terminal-1592097972-r3" x="427" y="20" textLength="48.8" clip-path="url(#terminal-1592097972-line-0)">loud</text><text class="terminal-1592097972-r2" x="1464" y="20" textLength="12.2" clip-path="url(#terminal-1592097972-line-0)">
+</text><text class="terminal-1592097972-r5" x="0" y="44.4" textLength="402.6" clip-path="url(#terminal-1592097972-line-1)">Replay&#160;mode&#160;-&#160;using&#160;logged&#160;events</text><text class="terminal-1592097972-r2" x="1464" y="44.4" textLength="12.2" clip-path="url(#terminal-1592097972-line-1)">
+</text><text class="terminal-1592097972-r2" x="1464" y="68.8" textLength="12.2" clip-path="url(#terminal-1592097972-line-2)">
+</text><text class="terminal-1592097972-r2" x="0" y="93.2" textLength="951.6" clip-path="url(#terminal-1592097972-line-3)">&gt;&#160;Read&#160;the&#160;first&#160;3&#160;lines&#160;of&#160;README.md.&#160;Output&#160;only&#160;those&#160;lines,&#160;no&#160;commentary.</text><text class="terminal-1592097972-r2" x="1464" y="93.2" textLength="12.2" clip-path="url(#terminal-1592097972-line-3)">
+</text><text class="terminal-1592097972-r2" x="1464" y="117.6" textLength="12.2" clip-path="url(#terminal-1592097972-line-4)">
+</text><text class="terminal-1592097972-r5" x="24.4" y="142" textLength="1439.6" clip-path="url(#terminal-1592097972-line-5)">The&#160;user&#160;wants&#160;me&#160;to&#160;read&#160;the&#160;first&#160;3&#160;lines&#160;of&#160;README.md.&#160;I&#x27;ll&#160;use&#160;the&#160;read&#160;function&#160;to&#160;read&#160;the&#160;file,&#160;then&#160;extract&#160;&#160;&#160;</text><text class="terminal-1592097972-r2" x="1464" y="142" textLength="12.2" clip-path="url(#terminal-1592097972-line-5)">
+</text><text class="terminal-1592097972-r5" x="24.4" y="166.4" textLength="1439.6" clip-path="url(#terminal-1592097972-line-6)">just&#160;the&#160;first&#160;3&#160;lines.&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;</text><text class="terminal-1592097972-r2" x="1464" y="166.4" textLength="12.2" clip-path="url(#terminal-1592097972-line-6)">
+</text><text class="terminal-1592097972-r2" x="0" y="190.8" textLength="268.4" clip-path="url(#terminal-1592097972-line-7)">⏺&#160;Read&#160;tool:&#160;README.md</text><text class="terminal-1592097972-r2" x="1464" y="190.8" textLength="12.2" clip-path="url(#terminal-1592097972-line-7)">
+</text><text class="terminal-1592097972-r2" x="0" y="215.2" textLength="134.2" clip-path="url(#terminal-1592097972-line-8)">&#160;&#160;✓&#160;Success</text><text class="terminal-1592097972-r2" x="1464" y="215.2" textLength="12.2" clip-path="url(#terminal-1592097972-line-8)">
+</text><text class="terminal-1592097972-r2" x="1464" y="239.6" textLength="12.2" clip-path="url(#terminal-1592097972-line-9)">
+</text><text class="terminal-1592097972-r5" x="24.4" y="264" textLength="1439.6" clip-path="url(#terminal-1592097972-line-10)">The&#160;user&#160;asked&#160;for&#160;the&#160;first&#160;3&#160;lines&#160;of&#160;README.md.&#160;Let&#160;me&#160;extract&#160;them:&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;</text><text class="terminal-1592097972-r2" x="1464" y="264" textLength="12.2" clip-path="url(#terminal-1592097972-line-10)">
+</text><text class="terminal-1592097972-r2" x="1464" y="288.4" textLength="12.2" clip-path="url(#terminal-1592097972-line-11)">
+</text><text class="terminal-1592097972-r5" x="24.4" y="312.8" textLength="1439.6" clip-path="url(#terminal-1592097972-line-12)">Line&#160;1:&#160;#&#160;Yoker&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;</text><text class="terminal-1592097972-r2" x="1464" y="312.8" textLength="12.2" clip-path="url(#terminal-1592097972-line-12)">
+</text><text class="terminal-1592097972-r5" x="24.4" y="337.2" textLength="1439.6" clip-path="url(#terminal-1592097972-line-13)">Line&#160;2:&#160;(empty&#160;line)&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;</text><text class="terminal-1592097972-r2" x="1464" y="337.2" textLength="12.2" clip-path="url(#terminal-1592097972-line-13)">
+</text><text class="terminal-1592097972-r5" x="24.4" y="361.6" textLength="1439.6" clip-path="url(#terminal-1592097972-line-14)">Line&#160;3:&#160;[![PyPI&#160;version](https://img.shields.io/pypi/v/yoker.svg)](https://pypi.org/project/yoker/)&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;</text><text class="terminal-1592097972-r2" x="1464" y="361.6" textLength="12.2" clip-path="url(#terminal-1592097972-line-14)">
+</text><text class="terminal-1592097972-r2" x="1464" y="386" textLength="12.2" clip-path="url(#terminal-1592097972-line-15)">
+</text><text class="terminal-1592097972-r5" x="24.4" y="410.4" textLength="1439.6" clip-path="url(#terminal-1592097972-line-16)">Let&#160;me&#160;output&#160;just&#160;those&#160;lines&#160;as&#160;requested.&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;</text><text class="terminal-1592097972-r2" x="1464" y="410.4" textLength="12.2" clip-path="url(#terminal-1592097972-line-16)">
+</text><text class="terminal-1592097972-r2" x="1464" y="434.8" textLength="12.2" clip-path="url(#terminal-1592097972-line-17)">
+</text><text class="terminal-1592097972-r2" x="24.4" y="459.2" textLength="1439.6" clip-path="url(#terminal-1592097972-line-18)">#&#160;Yoker&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;</text><text class="terminal-1592097972-r2" x="1464" y="459.2" textLength="12.2" clip-path="url(#terminal-1592097972-line-18)">
+</text><text class="terminal-1592097972-r2" x="1464" y="483.6" textLength="12.2" clip-path="url(#terminal-1592097972-line-19)">
+</text><text class="terminal-1592097972-r2" x="24.4" y="508" textLength="1439.6" clip-path="url(#terminal-1592097972-line-20)">[![PyPI&#160;version](https://img.shields.io/pypi/v/yoker.svg)](https://pypi.org/project/yoker/)&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;</text><text class="terminal-1592097972-r2" x="1464" y="508" textLength="12.2" clip-path="url(#terminal-1592097972-line-20)">
+</text><text class="terminal-1592097972-r2" x="1464" y="532.4" textLength="12.2" clip-path="url(#terminal-1592097972-line-21)">
+</text><text class="terminal-1592097972-r1" x="0" y="556.8" textLength="207.4" clip-path="url(#terminal-1592097972-line-22)">Session&#160;complete.</text><text class="terminal-1592097972-r2" x="1464" y="556.8" textLength="12.2" clip-path="url(#terminal-1592097972-line-22)">
 </text>
     </g>
     </g>

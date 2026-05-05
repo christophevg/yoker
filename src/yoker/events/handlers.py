@@ -137,13 +137,20 @@ class ConsoleEventHandler:
     """Handle turn end event."""
     # Show stats and exit LiveDisplay if active
     if self._live_display:
-      self._live_display.show_stats(
-        prompt_tokens=event.prompt_eval_count,
-        eval_tokens=event.eval_count,
-        duration_ms=event.total_duration_ms,
-      )
+      # Stop the spinner and exit Live display
+      self._live_display.stop_spinner()
       self._live_display.__exit__(None, None, None)
       self._live_display = None
+      self._spinner_active = False
+      # Print stats directly to console (outside Live, ensures SVG capture)
+      duration_s = event.total_duration_ms / 1000.0
+      total_tokens = event.prompt_eval_count + event.eval_count
+      if total_tokens > 0:
+        tokens_per_sec = total_tokens / duration_s if duration_s > 0 else 0
+        stats = f"⏱ {duration_s:.1f}s | {event.prompt_eval_count}+{event.eval_count}={total_tokens} tokens | {tokens_per_sec:.0f} tok/s"
+      else:
+        stats = f"⏱ {duration_s:.1f}s"
+      self.console.print(stats, style="dim")
     else:
       # Without live display, add blank line after response
       self.console.print()
@@ -161,7 +168,7 @@ class ConsoleEventHandler:
       # Create LiveDisplay if not already active
       if self._live_display is None:
         if needs_separator:
-          print()
+          self.console.print()
         self._live_display = LiveDisplay(console=self.console)
         self._live_display.__enter__()
         self._spinner_active = True  # Spinner is now active
@@ -200,7 +207,7 @@ class ConsoleEventHandler:
       if self._live_display:
         self._live_display.append_response("\n")
       else:
-        print()
+        self.console.print()
 
     # Create new LiveDisplay if not active (e.g., after tool calls)
     if self._live_display is None:
@@ -275,7 +282,7 @@ class ConsoleEventHandler:
       tool_name = self._capitalize(event.tool_name)
       details = self._format_tool_details(event.tool_name, event.arguments)
       # Print tool call with newline separator from previous segment
-      print(f"\n⏺ {tool_name} tool: {details}")
+      self.console.print(f"\n⏺ {tool_name} tool: {details}")
 
   def _format_tool_details(self, tool_name: str, arguments: dict[str, Any]) -> str:
     """Format tool arguments for display.
@@ -322,11 +329,11 @@ class ConsoleEventHandler:
       # Show success/failure indicator (outside Live context)
       # LiveDisplay was already exited in _handle_tool_call
       if event.success:
-        print("  ✓ Success")
+        self.console.print("  ✓ Success")
       else:
         # Show first 50 chars of result (error message)
         error_msg = event.result[:50] if event.result else "Failed"
-        print(f"  ✗ {error_msg}")
+        self.console.print(f"  ✗ {error_msg}")
 
       # Create LiveDisplay with spinner for subsequent processing
       # This ensures spinner is visible between tool calls and next segment
@@ -391,28 +398,28 @@ class ConsoleEventHandler:
 
       if is_binary:
         byte_size = metadata.get("bytes", 0)
-        print(f"  {filename} ({byte_size // 1024} KB binary)")
+        self.console.print(f"  {filename} ({byte_size // 1024} KB binary)")
       elif lines == 0:
-        print(f"  {filename} (0 lines, empty)")
+        self.console.print(f"  {filename} (0 lines, empty)")
       elif is_new_file:
-        print(f"  Creating new file {filename} ({lines} lines)")
+        self.console.print(f"  Creating new file {filename} ({lines} lines)")
       else:
-        print(f"  Overwriting {filename} ({lines} lines)")
+        self.console.print(f"  Overwriting {filename} ({lines} lines)")
 
     elif operation in ("insert_before", "insert_after"):
       line_number = metadata.get("line_number", 0)
       inserted_lines = metadata.get("inserted_lines", 1)
-      print(f"  Insert at line {line_number}: {inserted_lines} line(s)")
+      self.console.print(f"  Insert at line {line_number}: {inserted_lines} line(s)")
 
     elif operation == "replace":
-      print(f"  Replace in {filename}")
+      self.console.print(f"  Replace in {filename}")
 
     elif operation == "delete":
       line_number = metadata.get("line_number")
       if line_number:
-        print(f"  Delete line {line_number} in {filename}")
+        self.console.print(f"  Delete line {line_number} in {filename}")
       else:
-        print(f"  Delete in {filename}")
+        self.console.print(f"  Delete in {filename}")
 
   def _show_full_content(self, event: ToolContentEvent, filename: str) -> None:
     """Show full content with line numbers.
@@ -431,20 +438,20 @@ class ConsoleEventHandler:
 
     # Show header
     operation = event.operation
-    print(f"\n  {filename}")
+    self.console.print(f"\n  {filename}")
 
     # Show content with line numbers
     lines = content.splitlines()
     for i, line in enumerate(lines, start=1):
       # Escape brackets in user content to prevent Rich markup
       escaped_line = line.replace("[", "\\[").replace("]", "\\]")
-      print(f"  {i:4d}│{escaped_line}")
+      self.console.print(f"  {i:4d}│{escaped_line}")
 
     # Show truncation indicator if needed
     if metadata.get("truncated"):
       original_lines = metadata.get("original_line_count", 0)
       remaining = original_lines - len(lines)
-      print(f"  ... ({remaining} more lines)")
+      self.console.print(f"  ... ({remaining} more lines)")
 
   def _show_diff_content(self, event: ToolContentEvent, filename: str) -> None:
     """Show unified diff with colors.
@@ -462,7 +469,7 @@ class ConsoleEventHandler:
       return
 
     # Show header
-    print(f"  {filename}")
+    self.console.print(f"  {filename}")
 
     # Show diff with colors (using ANSI codes)
     lines = content.splitlines()
@@ -477,21 +484,21 @@ class ConsoleEventHandler:
       # Escape brackets in user content
       escaped_line = line.replace("[", "\\[").replace("]", "\\]")
 
-      # Color based on prefix (using ANSI codes)
+      # Color based on prefix (using Rich styles)
       if line.startswith("@@"):
-        print(f"  \033[36m{escaped_line}\033[0m")  # Cyan
+        self.console.print(f"  [cyan]{escaped_line}[/]")  # Cyan
       elif line.startswith("-"):
-        print(f"  \033[31m{escaped_line}\033[0m")  # Red
+        self.console.print(f"  [red]{escaped_line}[/]")  # Red
       elif line.startswith("+"):
-        print(f"  \033[32m{escaped_line}\033[0m")  # Green
+        self.console.print(f"  [green]{escaped_line}[/]")  # Green
       else:
-        print(f"  {escaped_line}")
+        self.console.print(f"  {escaped_line}")
 
     # Show truncation indicator if needed
     if metadata.get("truncated"):
       original_lines = metadata.get("original_diff_lines", 0)
       remaining = original_lines - len(lines)
-      print(f"  ... ({remaining} more lines)")
+      self.console.print(f"  ... ({remaining} more lines)")
 
   def _handle_error(self, event: ErrorEvent) -> None:
     """Handle error event."""

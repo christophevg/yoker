@@ -1,4 +1,4 @@
-<svg class="rich-terminal" viewBox="0 0 1482 611.1999999999999" xmlns="http://www.w3.org/2000/svg">
+<svg class="rich-terminal" viewBox="0 0 1482 635.5999999999999" xmlns="http://www.w3.org/2000/svg">
     <!-- Generated with Rich https://www.textualize.io -->
     <style>
 
@@ -19,134 +19,137 @@
         font-weight: 700;
     }
 
-    .terminal-3917604015-matrix {
+    .terminal-1530488755-matrix {
         font-family: Fira Code, monospace;
         font-size: 20px;
         line-height: 24.4px;
         font-variant-east-asian: full-width;
     }
 
-    .terminal-3917604015-title {
+    .terminal-1530488755-title {
         font-size: 18px;
         font-weight: bold;
         font-family: arial;
     }
 
-    .terminal-3917604015-r1 { fill: #c5c8c6 }
-.terminal-3917604015-r2 { fill: #68a0b3;font-weight: bold }
-.terminal-3917604015-r3 { fill: #00823d;font-weight: bold }
-.terminal-3917604015-r4 { fill: #c5c8c6;font-weight: bold }
-.terminal-3917604015-r5 { fill: #98729f }
-.terminal-3917604015-r6 { fill: #ff2c7a }
-.terminal-3917604015-r7 { fill: #6c6d6c }
-.terminal-3917604015-r8 { fill: #4e707b;font-weight: bold }
+    .terminal-1530488755-r1 { fill: #c5c8c6 }
+.terminal-1530488755-r2 { fill: #68a0b3;font-weight: bold }
+.terminal-1530488755-r3 { fill: #00823d;font-weight: bold }
+.terminal-1530488755-r4 { fill: #c5c8c6;font-weight: bold }
+.terminal-1530488755-r5 { fill: #98729f }
+.terminal-1530488755-r6 { fill: #ff2c7a }
+.terminal-1530488755-r7 { fill: #868887 }
     </style>
 
     <defs>
-    <clipPath id="terminal-3917604015-clip-terminal">
-      <rect x="0" y="0" width="1463.0" height="560.1999999999999" />
+    <clipPath id="terminal-1530488755-clip-terminal">
+      <rect x="0" y="0" width="1463.0" height="584.5999999999999" />
     </clipPath>
-    <clipPath id="terminal-3917604015-line-0">
+    <clipPath id="terminal-1530488755-line-0">
     <rect x="0" y="1.5" width="1464" height="24.65"/>
             </clipPath>
-<clipPath id="terminal-3917604015-line-1">
+<clipPath id="terminal-1530488755-line-1">
     <rect x="0" y="25.9" width="1464" height="24.65"/>
             </clipPath>
-<clipPath id="terminal-3917604015-line-2">
+<clipPath id="terminal-1530488755-line-2">
     <rect x="0" y="50.3" width="1464" height="24.65"/>
             </clipPath>
-<clipPath id="terminal-3917604015-line-3">
+<clipPath id="terminal-1530488755-line-3">
     <rect x="0" y="74.7" width="1464" height="24.65"/>
             </clipPath>
-<clipPath id="terminal-3917604015-line-4">
+<clipPath id="terminal-1530488755-line-4">
     <rect x="0" y="99.1" width="1464" height="24.65"/>
             </clipPath>
-<clipPath id="terminal-3917604015-line-5">
+<clipPath id="terminal-1530488755-line-5">
     <rect x="0" y="123.5" width="1464" height="24.65"/>
             </clipPath>
-<clipPath id="terminal-3917604015-line-6">
+<clipPath id="terminal-1530488755-line-6">
     <rect x="0" y="147.9" width="1464" height="24.65"/>
             </clipPath>
-<clipPath id="terminal-3917604015-line-7">
+<clipPath id="terminal-1530488755-line-7">
     <rect x="0" y="172.3" width="1464" height="24.65"/>
             </clipPath>
-<clipPath id="terminal-3917604015-line-8">
+<clipPath id="terminal-1530488755-line-8">
     <rect x="0" y="196.7" width="1464" height="24.65"/>
             </clipPath>
-<clipPath id="terminal-3917604015-line-9">
+<clipPath id="terminal-1530488755-line-9">
     <rect x="0" y="221.1" width="1464" height="24.65"/>
             </clipPath>
-<clipPath id="terminal-3917604015-line-10">
+<clipPath id="terminal-1530488755-line-10">
     <rect x="0" y="245.5" width="1464" height="24.65"/>
             </clipPath>
-<clipPath id="terminal-3917604015-line-11">
+<clipPath id="terminal-1530488755-line-11">
     <rect x="0" y="269.9" width="1464" height="24.65"/>
             </clipPath>
-<clipPath id="terminal-3917604015-line-12">
+<clipPath id="terminal-1530488755-line-12">
     <rect x="0" y="294.3" width="1464" height="24.65"/>
             </clipPath>
-<clipPath id="terminal-3917604015-line-13">
+<clipPath id="terminal-1530488755-line-13">
     <rect x="0" y="318.7" width="1464" height="24.65"/>
             </clipPath>
-<clipPath id="terminal-3917604015-line-14">
+<clipPath id="terminal-1530488755-line-14">
     <rect x="0" y="343.1" width="1464" height="24.65"/>
             </clipPath>
-<clipPath id="terminal-3917604015-line-15">
+<clipPath id="terminal-1530488755-line-15">
     <rect x="0" y="367.5" width="1464" height="24.65"/>
             </clipPath>
-<clipPath id="terminal-3917604015-line-16">
+<clipPath id="terminal-1530488755-line-16">
     <rect x="0" y="391.9" width="1464" height="24.65"/>
             </clipPath>
-<clipPath id="terminal-3917604015-line-17">
+<clipPath id="terminal-1530488755-line-17">
     <rect x="0" y="416.3" width="1464" height="24.65"/>
             </clipPath>
-<clipPath id="terminal-3917604015-line-18">
+<clipPath id="terminal-1530488755-line-18">
     <rect x="0" y="440.7" width="1464" height="24.65"/>
             </clipPath>
-<clipPath id="terminal-3917604015-line-19">
+<clipPath id="terminal-1530488755-line-19">
     <rect x="0" y="465.1" width="1464" height="24.65"/>
             </clipPath>
-<clipPath id="terminal-3917604015-line-20">
+<clipPath id="terminal-1530488755-line-20">
     <rect x="0" y="489.5" width="1464" height="24.65"/>
             </clipPath>
-<clipPath id="terminal-3917604015-line-21">
+<clipPath id="terminal-1530488755-line-21">
     <rect x="0" y="513.9" width="1464" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-1530488755-line-22">
+    <rect x="0" y="538.3" width="1464" height="24.65"/>
             </clipPath>
     </defs>
 
-    <rect fill="#292929" stroke="rgba(255,255,255,0.35)" stroke-width="1" x="1" y="1" width="1480" height="609.2" rx="8"/><text class="terminal-3917604015-title" fill="#c5c8c6" text-anchor="middle" x="740" y="27">Rich</text>
+    <rect fill="#292929" stroke="rgba(255,255,255,0.35)" stroke-width="1" x="1" y="1" width="1480" height="633.6" rx="8"/><text class="terminal-1530488755-title" fill="#c5c8c6" text-anchor="middle" x="740" y="27">Rich</text>
             <g transform="translate(26,22)">
             <circle cx="0" cy="0" r="7" fill="#ff5f57"/>
             <circle cx="22" cy="0" r="7" fill="#febc2e"/>
             <circle cx="44" cy="0" r="7" fill="#28c840"/>
             </g>
         
-    <g transform="translate(9, 41)" clip-path="url(#terminal-3917604015-clip-terminal)">
+    <g transform="translate(9, 41)" clip-path="url(#terminal-1530488755-clip-terminal)">
     
-    <g class="terminal-3917604015-matrix">
-    <text class="terminal-3917604015-r1" x="0" y="20" textLength="109.8" clip-path="url(#terminal-3917604015-line-0)">Yoker&#160;v0.</text><text class="terminal-3917604015-r2" x="109.8" y="20" textLength="36.6" clip-path="url(#terminal-3917604015-line-0)">1.0</text><text class="terminal-3917604015-r1" x="146.4" y="20" textLength="244" clip-path="url(#terminal-3917604015-line-0)">&#160;-&#160;Using&#160;model:&#160;glm-</text><text class="terminal-3917604015-r3" x="390.4" y="20" textLength="36.6" clip-path="url(#terminal-3917604015-line-0)">5:c</text><text class="terminal-3917604015-r1" x="427" y="20" textLength="48.8" clip-path="url(#terminal-3917604015-line-0)">loud</text><text class="terminal-3917604015-r1" x="1464" y="20" textLength="12.2" clip-path="url(#terminal-3917604015-line-0)">
-</text><text class="terminal-3917604015-r1" x="0" y="44.4" textLength="280.6" clip-path="url(#terminal-3917604015-line-1)">Thinking&#160;mode:&#160;enabled&#160;</text><text class="terminal-3917604015-r4" x="280.6" y="44.4" textLength="12.2" clip-path="url(#terminal-3917604015-line-1)">(</text><text class="terminal-3917604015-r1" x="292.8" y="44.4" textLength="48.8" clip-path="url(#terminal-3917604015-line-1)">use&#160;</text><text class="terminal-3917604015-r5" x="341.6" y="44.4" textLength="12.2" clip-path="url(#terminal-3917604015-line-1)">/</text><text class="terminal-3917604015-r6" x="353.8" y="44.4" textLength="61" clip-path="url(#terminal-3917604015-line-1)">think</text><text class="terminal-3917604015-r1" x="414.8" y="44.4" textLength="207.4" clip-path="url(#terminal-3917604015-line-1)">&#160;on|off&#160;to&#160;toggle</text><text class="terminal-3917604015-r4" x="622.2" y="44.4" textLength="12.2" clip-path="url(#terminal-3917604015-line-1)">)</text><text class="terminal-3917604015-r1" x="1464" y="44.4" textLength="12.2" clip-path="url(#terminal-3917604015-line-1)">
-</text><text class="terminal-3917604015-r1" x="0" y="68.8" textLength="61" clip-path="url(#terminal-3917604015-line-2)">Type&#160;</text><text class="terminal-3917604015-r5" x="61" y="68.8" textLength="12.2" clip-path="url(#terminal-3917604015-line-2)">/</text><text class="terminal-3917604015-r6" x="73.2" y="68.8" textLength="48.8" clip-path="url(#terminal-3917604015-line-2)">help</text><text class="terminal-3917604015-r1" x="122" y="68.8" textLength="292.8" clip-path="url(#terminal-3917604015-line-2)">&#160;for&#160;available&#160;commands.</text><text class="terminal-3917604015-r1" x="1464" y="68.8" textLength="12.2" clip-path="url(#terminal-3917604015-line-2)">
-</text><text class="terminal-3917604015-r1" x="0" y="93.2" textLength="158.6" clip-path="url(#terminal-3917604015-line-3)">Press&#160;Ctrl+D&#160;</text><text class="terminal-3917604015-r4" x="158.6" y="93.2" textLength="12.2" clip-path="url(#terminal-3917604015-line-3)">(</text><text class="terminal-3917604015-r1" x="170.8" y="93.2" textLength="244" clip-path="url(#terminal-3917604015-line-3)">or&#160;Ctrl+Z&#160;on&#160;Windows</text><text class="terminal-3917604015-r4" x="414.8" y="93.2" textLength="12.2" clip-path="url(#terminal-3917604015-line-3)">)</text><text class="terminal-3917604015-r1" x="427" y="93.2" textLength="109.8" clip-path="url(#terminal-3917604015-line-3)">&#160;to&#160;quit.</text><text class="terminal-3917604015-r1" x="1464" y="93.2" textLength="12.2" clip-path="url(#terminal-3917604015-line-3)">
-</text><text class="terminal-3917604015-r1" x="1464" y="117.6" textLength="12.2" clip-path="url(#terminal-3917604015-line-4)">
-</text><text class="terminal-3917604015-r1" x="0" y="142" textLength="134.2" clip-path="url(#terminal-3917604015-line-5)">&gt;&#160;/think&#160;on</text><text class="terminal-3917604015-r1" x="1464" y="142" textLength="12.2" clip-path="url(#terminal-3917604015-line-5)">
-</text><text class="terminal-3917604015-r1" x="0" y="166.4" textLength="768.6" clip-path="url(#terminal-3917604015-line-6)">Thinking&#160;mode&#160;enabled.&#160;The&#160;LLM&#160;will&#160;show&#160;its&#160;reasoning&#160;process.</text><text class="terminal-3917604015-r1" x="1464" y="166.4" textLength="12.2" clip-path="url(#terminal-3917604015-line-6)">
-</text><text class="terminal-3917604015-r1" x="1464" y="190.8" textLength="12.2" clip-path="url(#terminal-3917604015-line-7)">
-</text><text class="terminal-3917604015-r1" x="0" y="215.2" textLength="573.4" clip-path="url(#terminal-3917604015-line-8)">&gt;&#160;What&#160;is&#160;7&#160;times&#160;8?&#160;Answer&#160;in&#160;3&#160;words&#160;or&#160;less.</text><text class="terminal-3917604015-r1" x="1464" y="215.2" textLength="12.2" clip-path="url(#terminal-3917604015-line-8)">
-</text><text class="terminal-3917604015-r1" x="1464" y="239.6" textLength="12.2" clip-path="url(#terminal-3917604015-line-9)">
-</text><text class="terminal-3917604015-r7" x="0" y="264" textLength="36.6" clip-path="url(#terminal-3917604015-line-10)">The</text><text class="terminal-3917604015-r7" x="36.6" y="264" textLength="207.4" clip-path="url(#terminal-3917604015-line-10)">&#160;user&#160;is&#160;asking&#160;a</text><text class="terminal-3917604015-r7" x="244" y="264" textLength="268.4" clip-path="url(#terminal-3917604015-line-10)">&#160;simple&#160;math&#160;question:</text><text class="terminal-3917604015-r7" x="512.4" y="264" textLength="24.4" clip-path="url(#terminal-3917604015-line-10)">&#160;&quot;</text><text class="terminal-3917604015-r7" x="536.8" y="264" textLength="97.6" clip-path="url(#terminal-3917604015-line-10)">What&#160;is&#160;</text><text class="terminal-3917604015-r8" x="634.4" y="264" textLength="12.2" clip-path="url(#terminal-3917604015-line-10)">7</text><text class="terminal-3917604015-r7" x="646.6" y="264" textLength="85.4" clip-path="url(#terminal-3917604015-line-10)">&#160;times&#160;</text><text class="terminal-3917604015-r8" x="732" y="264" textLength="12.2" clip-path="url(#terminal-3917604015-line-10)">8</text><text class="terminal-3917604015-r7" x="744.2" y="264" textLength="24.4" clip-path="url(#terminal-3917604015-line-10)">?&quot;</text><text class="terminal-3917604015-r1" x="1464" y="264" textLength="12.2" clip-path="url(#terminal-3917604015-line-10)">
-</text><text class="terminal-3917604015-r1" x="1464" y="288.4" textLength="12.2" clip-path="url(#terminal-3917604015-line-11)">
-</text><text class="terminal-3917604015-r8" x="0" y="312.8" textLength="12.2" clip-path="url(#terminal-3917604015-line-12)">7</text><text class="terminal-3917604015-r7" x="12.2" y="312.8" textLength="36.6" clip-path="url(#terminal-3917604015-line-12)">&#160;×&#160;</text><text class="terminal-3917604015-r8" x="48.8" y="312.8" textLength="12.2" clip-path="url(#terminal-3917604015-line-12)">8</text><text class="terminal-3917604015-r7" x="61" y="312.8" textLength="36.6" clip-path="url(#terminal-3917604015-line-12)">&#160;=&#160;</text><text class="terminal-3917604015-r8" x="97.6" y="312.8" textLength="24.4" clip-path="url(#terminal-3917604015-line-12)">56</text><text class="terminal-3917604015-r1" x="1464" y="312.8" textLength="12.2" clip-path="url(#terminal-3917604015-line-12)">
-</text><text class="terminal-3917604015-r1" x="1464" y="337.2" textLength="12.2" clip-path="url(#terminal-3917604015-line-13)">
-</text><text class="terminal-3917604015-r7" x="0" y="361.6" textLength="48.8" clip-path="url(#terminal-3917604015-line-14)">They</text><text class="terminal-3917604015-r7" x="48.8" y="361.6" textLength="109.8" clip-path="url(#terminal-3917604015-line-14)">&#160;want&#160;the</text><text class="terminal-3917604015-r7" x="158.6" y="361.6" textLength="134.2" clip-path="url(#terminal-3917604015-line-14)">&#160;answer&#160;in&#160;</text><text class="terminal-3917604015-r8" x="292.8" y="361.6" textLength="12.2" clip-path="url(#terminal-3917604015-line-14)">3</text><text class="terminal-3917604015-r7" x="305" y="361.6" textLength="183" clip-path="url(#terminal-3917604015-line-14)">&#160;words&#160;or&#160;less.</text><text class="terminal-3917604015-r7" x="488" y="361.6" textLength="24.4" clip-path="url(#terminal-3917604015-line-14)">&#160;&quot;</text><text class="terminal-3917604015-r8" x="512.4" y="361.6" textLength="24.4" clip-path="url(#terminal-3917604015-line-14)">56</text><text class="terminal-3917604015-r7" x="536.8" y="361.6" textLength="48.8" clip-path="url(#terminal-3917604015-line-14)">&quot;&#160;or</text><text class="terminal-3917604015-r7" x="585.6" y="361.6" textLength="36.6" clip-path="url(#terminal-3917604015-line-14)">&#160;&quot;F</text><text class="terminal-3917604015-r7" x="622.2" y="361.6" textLength="183" clip-path="url(#terminal-3917604015-line-14)">ifty-six&quot;&#160;would</text><text class="terminal-3917604015-r7" x="805.2" y="361.6" textLength="61" clip-path="url(#terminal-3917604015-line-14)">&#160;both</text><text class="terminal-3917604015-r7" x="866.2" y="361.6" textLength="280.6" clip-path="url(#terminal-3917604015-line-14)">&#160;be&#160;appropriate&#160;answers</text><text class="terminal-3917604015-r7" x="1146.8" y="361.6" textLength="61" clip-path="url(#terminal-3917604015-line-14)">&#160;that</text><text class="terminal-3917604015-r7" x="1207.8" y="361.6" textLength="61" clip-path="url(#terminal-3917604015-line-14)">&#160;are&#160;</text><text class="terminal-3917604015-r8" x="1268.8" y="361.6" textLength="12.2" clip-path="url(#terminal-3917604015-line-14)">3</text><text class="terminal-3917604015-r7" x="1281" y="361.6" textLength="183" clip-path="url(#terminal-3917604015-line-14)">&#160;words&#160;or&#160;less.</text><text class="terminal-3917604015-r1" x="1464" y="361.6" textLength="12.2" clip-path="url(#terminal-3917604015-line-14)">
-</text><text class="terminal-3917604015-r1" x="1464" y="386" textLength="12.2" clip-path="url(#terminal-3917604015-line-15)">
-</text><text class="terminal-3917604015-r1" x="1464" y="410.4" textLength="12.2" clip-path="url(#terminal-3917604015-line-16)">
-</text><text class="terminal-3917604015-r1" x="0" y="434.8" textLength="12.2" clip-path="url(#terminal-3917604015-line-17)">F</text><text class="terminal-3917604015-r1" x="12.2" y="434.8" textLength="109.8" clip-path="url(#terminal-3917604015-line-17)">ifty-six.</text><text class="terminal-3917604015-r1" x="1464" y="434.8" textLength="12.2" clip-path="url(#terminal-3917604015-line-17)">
-</text><text class="terminal-3917604015-r1" x="1464" y="459.2" textLength="12.2" clip-path="url(#terminal-3917604015-line-18)">
-</text><text class="terminal-3917604015-r1" x="1464" y="483.6" textLength="12.2" clip-path="url(#terminal-3917604015-line-19)">
-</text><text class="terminal-3917604015-r1" x="0" y="508" textLength="97.6" clip-path="url(#terminal-3917604015-line-20)">Goodbye!</text><text class="terminal-3917604015-r1" x="1464" y="508" textLength="12.2" clip-path="url(#terminal-3917604015-line-20)">
-</text><text class="terminal-3917604015-r1" x="1464" y="532.4" textLength="12.2" clip-path="url(#terminal-3917604015-line-21)">
-</text><text class="terminal-3917604015-r2" x="0" y="556.8" textLength="207.4" clip-path="url(#terminal-3917604015-line-22)">Session&#160;complete.</text><text class="terminal-3917604015-r1" x="1464" y="556.8" textLength="12.2" clip-path="url(#terminal-3917604015-line-22)">
+    <g class="terminal-1530488755-matrix">
+    <text class="terminal-1530488755-r1" x="0" y="20" textLength="109.8" clip-path="url(#terminal-1530488755-line-0)">Yoker&#160;v0.</text><text class="terminal-1530488755-r2" x="109.8" y="20" textLength="36.6" clip-path="url(#terminal-1530488755-line-0)">1.0</text><text class="terminal-1530488755-r1" x="146.4" y="20" textLength="244" clip-path="url(#terminal-1530488755-line-0)">&#160;-&#160;Using&#160;model:&#160;glm-</text><text class="terminal-1530488755-r3" x="390.4" y="20" textLength="36.6" clip-path="url(#terminal-1530488755-line-0)">5:c</text><text class="terminal-1530488755-r1" x="427" y="20" textLength="48.8" clip-path="url(#terminal-1530488755-line-0)">loud</text><text class="terminal-1530488755-r1" x="1464" y="20" textLength="12.2" clip-path="url(#terminal-1530488755-line-0)">
+</text><text class="terminal-1530488755-r1" x="0" y="44.4" textLength="280.6" clip-path="url(#terminal-1530488755-line-1)">Thinking&#160;mode:&#160;enabled&#160;</text><text class="terminal-1530488755-r4" x="280.6" y="44.4" textLength="12.2" clip-path="url(#terminal-1530488755-line-1)">(</text><text class="terminal-1530488755-r1" x="292.8" y="44.4" textLength="48.8" clip-path="url(#terminal-1530488755-line-1)">use&#160;</text><text class="terminal-1530488755-r5" x="341.6" y="44.4" textLength="12.2" clip-path="url(#terminal-1530488755-line-1)">/</text><text class="terminal-1530488755-r6" x="353.8" y="44.4" textLength="61" clip-path="url(#terminal-1530488755-line-1)">think</text><text class="terminal-1530488755-r1" x="414.8" y="44.4" textLength="207.4" clip-path="url(#terminal-1530488755-line-1)">&#160;on|off&#160;to&#160;toggle</text><text class="terminal-1530488755-r4" x="622.2" y="44.4" textLength="12.2" clip-path="url(#terminal-1530488755-line-1)">)</text><text class="terminal-1530488755-r1" x="1464" y="44.4" textLength="12.2" clip-path="url(#terminal-1530488755-line-1)">
+</text><text class="terminal-1530488755-r1" x="0" y="68.8" textLength="61" clip-path="url(#terminal-1530488755-line-2)">Type&#160;</text><text class="terminal-1530488755-r5" x="61" y="68.8" textLength="12.2" clip-path="url(#terminal-1530488755-line-2)">/</text><text class="terminal-1530488755-r6" x="73.2" y="68.8" textLength="48.8" clip-path="url(#terminal-1530488755-line-2)">help</text><text class="terminal-1530488755-r1" x="122" y="68.8" textLength="292.8" clip-path="url(#terminal-1530488755-line-2)">&#160;for&#160;available&#160;commands.</text><text class="terminal-1530488755-r1" x="1464" y="68.8" textLength="12.2" clip-path="url(#terminal-1530488755-line-2)">
+</text><text class="terminal-1530488755-r1" x="0" y="93.2" textLength="158.6" clip-path="url(#terminal-1530488755-line-3)">Press&#160;Ctrl+D&#160;</text><text class="terminal-1530488755-r4" x="158.6" y="93.2" textLength="12.2" clip-path="url(#terminal-1530488755-line-3)">(</text><text class="terminal-1530488755-r1" x="170.8" y="93.2" textLength="244" clip-path="url(#terminal-1530488755-line-3)">or&#160;Ctrl+Z&#160;on&#160;Windows</text><text class="terminal-1530488755-r4" x="414.8" y="93.2" textLength="12.2" clip-path="url(#terminal-1530488755-line-3)">)</text><text class="terminal-1530488755-r1" x="427" y="93.2" textLength="109.8" clip-path="url(#terminal-1530488755-line-3)">&#160;to&#160;quit.</text><text class="terminal-1530488755-r1" x="1464" y="93.2" textLength="12.2" clip-path="url(#terminal-1530488755-line-3)">
+</text><text class="terminal-1530488755-r1" x="1464" y="117.6" textLength="12.2" clip-path="url(#terminal-1530488755-line-4)">
+</text><text class="terminal-1530488755-r1" x="0" y="142" textLength="134.2" clip-path="url(#terminal-1530488755-line-5)">&gt;&#160;/think&#160;on</text><text class="terminal-1530488755-r1" x="1464" y="142" textLength="12.2" clip-path="url(#terminal-1530488755-line-5)">
+</text><text class="terminal-1530488755-r1" x="0" y="166.4" textLength="768.6" clip-path="url(#terminal-1530488755-line-6)">Thinking&#160;mode&#160;enabled.&#160;The&#160;LLM&#160;will&#160;show&#160;its&#160;reasoning&#160;process.</text><text class="terminal-1530488755-r1" x="1464" y="166.4" textLength="12.2" clip-path="url(#terminal-1530488755-line-6)">
+</text><text class="terminal-1530488755-r1" x="1464" y="190.8" textLength="12.2" clip-path="url(#terminal-1530488755-line-7)">
+</text><text class="terminal-1530488755-r1" x="0" y="215.2" textLength="573.4" clip-path="url(#terminal-1530488755-line-8)">&gt;&#160;What&#160;is&#160;7&#160;times&#160;8?&#160;Answer&#160;in&#160;3&#160;words&#160;or&#160;less.</text><text class="terminal-1530488755-r1" x="1464" y="215.2" textLength="12.2" clip-path="url(#terminal-1530488755-line-8)">
+</text><text class="terminal-1530488755-r1" x="1464" y="239.6" textLength="12.2" clip-path="url(#terminal-1530488755-line-9)">
+</text><text class="terminal-1530488755-r7" x="24.4" y="264" textLength="1439.6" clip-path="url(#terminal-1530488755-line-10)">The&#160;user&#160;is&#160;asking&#160;me&#160;a&#160;simple&#160;math&#160;question:&#160;7&#160;times&#160;8.&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;</text><text class="terminal-1530488755-r1" x="1464" y="264" textLength="12.2" clip-path="url(#terminal-1530488755-line-10)">
+</text><text class="terminal-1530488755-r1" x="1464" y="288.4" textLength="12.2" clip-path="url(#terminal-1530488755-line-11)">
+</text><text class="terminal-1530488755-r7" x="24.4" y="312.8" textLength="1439.6" clip-path="url(#terminal-1530488755-line-12)">7&#160;×&#160;8&#160;=&#160;56&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;</text><text class="terminal-1530488755-r1" x="1464" y="312.8" textLength="12.2" clip-path="url(#terminal-1530488755-line-12)">
+</text><text class="terminal-1530488755-r1" x="1464" y="337.2" textLength="12.2" clip-path="url(#terminal-1530488755-line-13)">
+</text><text class="terminal-1530488755-r7" x="24.4" y="361.6" textLength="1439.6" clip-path="url(#terminal-1530488755-line-14)">They&#160;want&#160;the&#160;answer&#160;in&#160;3&#160;words&#160;or&#160;less,&#160;so&#160;I&#160;should&#160;just&#160;give&#160;the&#160;answer&#160;directly.&#160;&quot;Fifty-six&quot;&#160;is&#160;two&#160;words,&#160;or&#160;I&#160;&#160;&#160;&#160;</text><text class="terminal-1530488755-r1" x="1464" y="361.6" textLength="12.2" clip-path="url(#terminal-1530488755-line-14)">
+</text><text class="terminal-1530488755-r7" x="24.4" y="386" textLength="1439.6" clip-path="url(#terminal-1530488755-line-15)">could&#160;just&#160;say&#160;&quot;56&quot;&#160;as&#160;one&#160;word/number.&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;</text><text class="terminal-1530488755-r1" x="1464" y="386" textLength="12.2" clip-path="url(#terminal-1530488755-line-15)">
+</text><text class="terminal-1530488755-r1" x="1464" y="410.4" textLength="12.2" clip-path="url(#terminal-1530488755-line-16)">
+</text><text class="terminal-1530488755-r7" x="24.4" y="434.8" textLength="1439.6" clip-path="url(#terminal-1530488755-line-17)">Let&#160;me&#160;just&#160;answer&#160;directly&#160;since&#160;this&#160;is&#160;a&#160;straightforward&#160;math&#160;question&#160;that&#160;doesn&#x27;t&#160;require&#160;any&#160;tools.&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;</text><text class="terminal-1530488755-r1" x="1464" y="434.8" textLength="12.2" clip-path="url(#terminal-1530488755-line-17)">
+</text><text class="terminal-1530488755-r1" x="1464" y="459.2" textLength="12.2" clip-path="url(#terminal-1530488755-line-18)">
+</text><text class="terminal-1530488755-r1" x="24.4" y="483.6" textLength="1439.6" clip-path="url(#terminal-1530488755-line-19)">56.&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;</text><text class="terminal-1530488755-r1" x="1464" y="483.6" textLength="12.2" clip-path="url(#terminal-1530488755-line-19)">
+</text><text class="terminal-1530488755-r1" x="1464" y="508" textLength="12.2" clip-path="url(#terminal-1530488755-line-20)">
+</text><text class="terminal-1530488755-r1" x="0" y="532.4" textLength="97.6" clip-path="url(#terminal-1530488755-line-21)">Goodbye!</text><text class="terminal-1530488755-r1" x="1464" y="532.4" textLength="12.2" clip-path="url(#terminal-1530488755-line-21)">
+</text><text class="terminal-1530488755-r1" x="1464" y="556.8" textLength="12.2" clip-path="url(#terminal-1530488755-line-22)">
+</text><text class="terminal-1530488755-r2" x="0" y="581.2" textLength="207.4" clip-path="url(#terminal-1530488755-line-23)">Session&#160;complete.</text><text class="terminal-1530488755-r1" x="1464" y="581.2" textLength="12.2" clip-path="url(#terminal-1530488755-line-23)">
 </text>
     </g>
     </g>
