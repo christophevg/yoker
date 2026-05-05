@@ -1,7 +1,7 @@
 # Task 1.5.5: Show Write/Update Tool Content in CLI
 
 **Completion Date**: 2026-05-05
-**Status**: Complete (core implementation)
+**Status**: Complete (including display refinements)
 
 ## Summary
 
@@ -26,6 +26,13 @@ Successfully implemented content display for Write and Update tools in the CLI. 
   - Silent mode: No content displayed
   - Summary mode: Line counts, operation type, filename
   - Content mode: Full content or diff with truncation
+
+### Display Refinements (Post-Implementation)
+- **Tool call formatting**: Added bullet (⏺) before tool names for visual clarity
+- **Diff display fix**: Fixed unified_diff line concatenation issue (lines now properly separated)
+- **Consistent spacing**: Added single newline separators between all segments (thinking, tools, response)
+- **Spinner handling**: In silent mode, spinner is visible between tool segments
+- **Command handling**: Commands print directly without stats
 
 ### Tests
 - **Tool tests**: 46 tests for WriteTool and UpdateTool content metadata (`tests/test_tools/test_write_content.py`, `tests/test_tools/test_update_content.py`)
