@@ -37,6 +37,8 @@ from yoker.config.schema import (
   ToolConfig,
   ToolsConfig,
   UpdateToolConfig,
+  WebappConfig,
+  WebSocketConfig,
   WriteToolConfig,
 )
 from yoker.config.validator import validate_config
@@ -69,6 +71,8 @@ __all__ = [
   "ToolsConfig",
   "AgentsConfig",
   "LoggingConfig",
+  "WebappConfig",
+  "WebSocketConfig",
   # Exceptions
   "ConfigurationError",
   "ValidationError",

@@ -412,6 +412,46 @@ class LoggingConfig:
 
 
 @dataclass(frozen=True)
+class WebSocketConfig:
+  """WebSocket configuration for webapp.
+
+  Attributes:
+    ping_interval: Interval between ping messages in seconds.
+    ping_timeout: Timeout for ping response in seconds.
+    max_message_size: Maximum message size in bytes.
+  """
+
+  ping_interval: int = 30
+  ping_timeout: int = 10
+  max_message_size: int = 1048576  # 1MB
+
+
+@dataclass(frozen=True)
+class WebappConfig:
+  """Webapp configuration for Quart application.
+
+  Attributes:
+    host: Host to bind the server to.
+    port: Port to bind the server to.
+    debug: Enable debug mode.
+    cors_origins: Tuple of allowed CORS origins.
+    websocket: WebSocket configuration.
+    max_sessions: Maximum concurrent sessions.
+    session_timeout_seconds: Session timeout in seconds.
+    max_message_length: Maximum message length in characters.
+  """
+
+  host: str = "localhost"
+  port: int = 8000
+  debug: bool = False
+  cors_origins: tuple[str, ...] = ("http://localhost:3000", "http://localhost:8000")
+  websocket: WebSocketConfig = field(default_factory=WebSocketConfig)
+  max_sessions: int = 100
+  session_timeout_seconds: int = 1800  # 30 minutes
+  max_message_length: int = 100_000
+
+
+@dataclass(frozen=True)
 class Config:
   """Root configuration container.
 
@@ -423,6 +463,7 @@ class Config:
     tools: Tool configurations.
     agents: Agent definition settings.
     logging: Logging configuration.
+    webapp: Webapp configuration.
   """
 
   harness: HarnessConfig = field(default_factory=HarnessConfig)
@@ -432,6 +473,7 @@ class Config:
   tools: ToolsConfig = field(default_factory=ToolsConfig)
   agents: AgentsConfig = field(default_factory=AgentsConfig)
   logging: LoggingConfig = field(default_factory=LoggingConfig)
+  webapp: WebappConfig = field(default_factory=WebappConfig)
 
 
 __all__ = [
@@ -457,5 +499,7 @@ __all__ = [
   "ToolsConfig",
   "AgentsConfig",
   "LoggingConfig",
+  "WebSocketConfig",
+  "WebappConfig",
   "Config",
 ]

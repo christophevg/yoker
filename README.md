@@ -33,6 +33,47 @@ Example session:
 
 ![Yoker Session](media/session.svg)
 
+### Web Interface (Experimental)
+
+Yoker also provides a web interface for browser-based interaction:
+
+```bash
+# Start with uvicorn (recommended)
+uv run uvicorn yoker.webapp:app --reload
+
+# Or use the module entry point
+uv run python -m yoker.webapp
+```
+
+By default, the webapp runs on `http://localhost:8000`.
+
+**Note**: Port 5000 is avoided on macOS as it's commonly used by AirPlay.
+
+**Endpoints:**
+- `GET /health` - Health check endpoint
+- `WebSocket /ws/chat` - Real-time chat with agent
+
+**Configuration:**
+
+The webapp can be configured in `yoker.toml`:
+
+```toml
+[webapp]
+host = "localhost"
+port = 5000
+debug = false
+cors_origins = ["http://localhost:3000"]
+max_sessions = 100
+session_timeout_seconds = 1800
+
+[webapp.websocket]
+ping_interval = 30
+ping_timeout = 15
+max_message_size = 2097152  # 2MB
+```
+
+**Note:** The web interface is experimental. Authentication and full agent integration will be added in future tasks (7.2-7.7).
+
 ## Why Yoker?
 
 Yoker fills a unique gap in the coding agent ecosystem: a **library-first, transparent agent harness** designed for developers who want full control, visibility, and simplicity.
