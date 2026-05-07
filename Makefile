@@ -1,8 +1,4 @@
-#MODEL=qwen3.5:397b-cloud    # sometimes qwen is better
-#ARGS += --plugin-dir ./		 # future: when we expose a baseweb: plugin
-ARGS += --plugin-dir ../c3   # always use the local C3 plugin - latest version
-
--include ~/.claude/Makefile
+-include ~/.claude/Makefile # include the global Claude-oriented C3 Makefile
 
 .PHONY: install install-pythons sync test test-all test-3.10 test-3.11 test-3.12 test-file test-one typecheck lint format check build publish publish-test clean clean-all help docs docs-view demo demos
 
