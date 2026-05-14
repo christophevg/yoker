@@ -51,3 +51,4 @@ media/session.jsonl
 
 # Temporary verification scripts
 verify_fix.py
+.env
