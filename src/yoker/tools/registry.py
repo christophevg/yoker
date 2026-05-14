@@ -69,6 +69,25 @@ class ToolRegistry:
     """
     return [tool.get_schema() for tool in self.list_tools()]
 
+  def exists(self, tool_name: str, path: str) -> bool:
+    """Check if a file exists using a tool's guardrail validation.
+
+    Delegates to the tool's exists method which validates through
+    the guardrail before checking file existence.
+
+    Args:
+      tool_name: Name of the tool to use for validation.
+      path: File path to check.
+
+    Returns:
+      True if the tool exists and the path exists after validation,
+      False if tool not found, guardrail rejects, or file doesn't exist.
+    """
+    tool = self.get(tool_name)
+    if tool is None:
+      return False
+    return tool.exists(path)
+
   @property
   def names(self) -> list[str]:
     """Get all registered tool names.

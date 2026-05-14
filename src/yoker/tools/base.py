@@ -6,6 +6,7 @@ that all concrete tools must implement.
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -91,6 +92,28 @@ class Tool(ABC):
       guardrail: Optional guardrail for defense-in-depth validation.
     """
     self._guardrail = guardrail
+
+  def exists(self, path: str) -> bool:
+    """Check if a file exists, validating through the guardrail if available.
+
+    This is a utility method for tools that need to check file existence
+    as part of their operations (e.g., ReadTool before reading).
+
+    Args:
+      path: The file path to check.
+
+    Returns:
+      True if the path exists and passes guardrail validation,
+      False otherwise (including if guardrail rejects the path).
+    """
+    # Validate through guardrail if available
+    if self._guardrail is not None:
+      validation = self._guardrail.validate(self.name, {"path": path})
+      if not validation.valid:
+        return False
+
+    # Check file existence
+    return Path(path).exists()
 
   @property
   @abstractmethod
