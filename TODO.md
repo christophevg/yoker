@@ -370,7 +370,7 @@
   - Implement tool call loop
   - **Note**: Implemented in Agent.process() method with deduplication and error handling
 
-- [ ] **3.3 Context Management Research**
+- [x] **3.3 Context Management Research** (2026-05-14)
   - Analyze logged sessions to identify context patterns
   - Reverse engineer context content from JSONL event logs
   - Identify system prompt construction requirements
@@ -379,7 +379,75 @@
   - Define context inheritance vs. isolation rules
   - Create analysis document with findings
   - Prerequisite for: Phase 4 (Agent Runner)
-  - See `analysis/context-management-research.md` (to be created)
+  - **Findings**: Sub-agents get fresh context (no history), filtered tools (28 vs 37), specialized system prompts (3KB vs 27KB). Skills are loaded on-demand via Skill tool.
+  - See `analysis/context-management-research.md` for full analysis
+
+- [ ] **3.4 Configurable Components Infrastructure**
+  - Create base classes for component sets (SetMetadata, ComponentSet, ComponentLoader)
+  - Implement resolution strategy (additional_dirs override set)
+  - Create directory structure (prompts/sets/, skills/sets/, agents/sets/)
+  - Implement metadata.toml parsing
+  - Add configuration support to Config schema
+  - Write unit tests for loader classes
+  - See `analysis/configurable-components-design.md` for design
+  - See `analysis/component-resolution-strategy.md` for resolution strategy
+
+- [ ] **3.5 Prompt Sets Implementation**
+  - Create prompts/sets/default/ with main.md, general-purpose.md, explore.md, plan.md
+  - Create prompts/sets/minimal/ with shortened prompts
+  - Create prompts/sets/detailed/ with verbose prompts
+  - Implement PromptTemplate with variable rendering
+  - Implement PromptLoader with set support
+  - Integrate with Agent class (get_system_prompt)
+  - Add prompt variants support (concise, verbose)
+  - Write unit tests for prompt loading
+  - See `analysis/prompt-sets-design.md` for design
+
+- [ ] **3.6 Skills Sets Implementation**
+  - Create skills/sets/default/ with core skills (git-commit, project-status, bug-fixing)
+  - Create skills/sets/minimal/ with essential skills only
+  - Implement Skill class with frontmatter parsing
+  - Implement SkillLoader with set support
+  - Integrate with SkillTool (on-demand loading)
+  - Add skill discovery (list available skills)
+  - Add skill invocation from agent
+  - Write unit tests for skill loading
+  - See `analysis/configurable-components-design.md` for design
+
+- [ ] **3.7 Agent Sets Implementation**
+  - Create agents/sets/default/ with main.md, researcher.md, developer.md, reviewer.md
+  - Create agents/sets/research/ with research-focused agents
+  - Create agents/sets/development/ with development-focused agents
+  - Implement AgentDefinition class with frontmatter parsing
+  - Implement AgentLoader with set support
+  - Integrate with existing agent.py
+  - Add tool filtering per agent definition
+  - Add model configuration per agent
+  - Write unit tests for agent loading
+  - See `analysis/configurable-components-design.md` for design
+
+- [ ] **3.8 Context Reminders Implementation**
+  - Implement ContextReminder protocol
+  - Implement SkillsReminder (list available skills)
+  - Implement ClaudeMdReminder (global + project CLAUDE.md)
+  - Implement CurrentDateReminder
+  - Implement WorkingDirectoryReminder
+  - Implement GitContextReminder (branch, status)
+  - Create ReminderComposer class
+  - Integrate with Agent message building
+  - Write unit tests for reminders
+  - See `analysis/context-implementation-plan.md` for design
+
+- [ ] **3.9 Lazy Loading Implementation**
+  - Implement LazyToolRegistry (load tools on first use)
+  - Implement LazySkillLoader (load skills on demand)
+  - Create core tools set (Read, List, Search, Existence)
+  - Add tool caching after first load
+  - Add skill discovery without loading
+  - Implement get_tools_for_request() (core + loaded)
+  - Add configuration for lazy vs eager loading
+  - Write unit tests for lazy loading
+  - See `analysis/context-implementation-plan.md` for design
 
 ### Phase 4: Agent Runner
 
