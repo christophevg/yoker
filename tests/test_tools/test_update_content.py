@@ -3,12 +3,10 @@
 Task: 1.5.5 - Show Write/Update Tool Content in CLI
 """
 
-import pytest
 from pathlib import Path
 
+from yoker.config.schema import Config, ContentDisplayConfig, ToolsConfig
 from yoker.tools.update import UpdateTool, _truncate_diff
-from yoker.tools.base import ToolResult
-from yoker.config.schema import Config, ToolsConfig, UpdateToolConfig, ContentDisplayConfig
 
 
 class TestUpdateToolReplaceOperation:

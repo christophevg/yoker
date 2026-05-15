@@ -413,14 +413,13 @@ class UpdateTool(Tool):
         },
       }
     else:  # delete
-      line_num = int(line_number) if line_number is not None else None
       return {
         "operation": operation,
         "path": str(resolved_path),
         "content_type": "summary",
         "content": None,
         "metadata": {
-          "line_number": line_num,
+          "line_number": int(line_number) if line_number is not None else 0,
           "deleted_lines": len(old_string.splitlines()) if old_string else 1,
           "deleted_content": old_string,
         },
@@ -475,7 +474,7 @@ class UpdateTool(Tool):
           content_display.max_diff_lines,
         )
 
-        metadata: dict[str, Any] = {
+        metadata = {
           "lines_modified": 1,
           "old_content_lines": len(old_lines),
           "new_content_lines": len(new_lines),
@@ -528,8 +527,6 @@ class UpdateTool(Tool):
         },
       }
     else:  # delete
-      line_num = int(line_number) if line_number is not None else None
-
       if use_diff and content_display.show_diff_for_updates:
         # Show diff for delete
         old_lines = old_content.splitlines(keepends=True)
@@ -549,22 +546,22 @@ class UpdateTool(Tool):
           content_display.max_diff_lines,
         )
 
-        metadata: dict[str, Any] = {
-          "line_number": line_num,
+        del_metadata = {
+          "line_number": int(line_number) if line_number is not None else 0,
           "deleted_lines": len(old_string.splitlines()) if old_string else 1,
           "deleted_content": old_string,
         }
 
         if was_truncated:
-          metadata["truncated"] = True
-          metadata["original_diff_lines"] = original_count
+          del_metadata["truncated"] = True
+          del_metadata["original_diff_lines"] = original_count
 
         return {
           "operation": operation,
           "path": str(resolved_path),
           "content_type": "diff",
           "content": diff_content,
-          "metadata": metadata,
+          "metadata": del_metadata,
         }
       else:
         # Return deleted content
@@ -574,7 +571,7 @@ class UpdateTool(Tool):
           "content_type": "full",
           "content": old_string,
           "metadata": {
-            "line_number": line_num,
+            "line_number": int(line_number) if line_number is not None else 0,
             "deleted_lines": len(old_string.splitlines()) if old_string else 1,
           },
         }

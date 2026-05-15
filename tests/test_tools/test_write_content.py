@@ -3,18 +3,15 @@
 Task: 1.5.5 - Show Write/Update Tool Content in CLI
 """
 
-import pytest
 from pathlib import Path
-from unittest.mock import Mock, patch
 
-from yoker.tools.write import WriteTool, _is_binary, _truncate_content
-from yoker.tools.base import ToolResult
 from yoker.config.schema import (
   Config,
+  ContentDisplayConfig,
   ToolsConfig,
   WriteToolConfig,
-  ContentDisplayConfig,
 )
+from yoker.tools.write import WriteTool, _is_binary, _truncate_content
 
 
 class TestWriteToolContentMetadataEmission:

@@ -364,7 +364,7 @@ class ConsoleEventHandler:
     # (Live was exited in _handle_tool_call or above)
 
     # Get operation details
-    operation = event.operation
+    _ = event.operation  # Available for future use
     filename = Path(event.path).name
 
     # Dispatch based on content_type
@@ -437,7 +437,7 @@ class ConsoleEventHandler:
       return
 
     # Show header
-    operation = event.operation
+    _ = event.operation  # Available for future use
     self.console.print(f"\n  {filename}")
 
     # Show content with line numbers

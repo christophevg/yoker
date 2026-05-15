@@ -3,10 +3,11 @@
 Task: 1.5.5 - Show Write/Update Tool Content in CLI
 """
 
-import pytest
 from datetime import datetime
 
-from yoker.events.types import Event, ToolContentEvent, EventType
+import pytest
+
+from yoker.events.types import Event, EventType, ToolContentEvent
 
 
 class TestToolContentEventCreation:

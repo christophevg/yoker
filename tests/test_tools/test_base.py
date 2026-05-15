@@ -3,8 +3,6 @@
 from pathlib import Path
 from unittest.mock import MagicMock
 
-import pytest
-
 from yoker.tools.base import Tool, ToolResult, ValidationResult
 from yoker.tools.registry import ToolRegistry
 

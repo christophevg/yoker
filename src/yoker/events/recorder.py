@@ -26,6 +26,7 @@ from yoker.events.types import (
   ThinkingEndEvent,
   ThinkingStartEvent,
   ToolCallEvent,
+  ToolContentEvent,
   ToolResultEvent,
   TurnEndEvent,
   TurnStartEvent,
@@ -188,6 +189,19 @@ def deserialize_event(entry: dict[str, Any]) -> Event:
         command=data["command"],
         result=data["result"],
       )
+    case EventType.TOOL_CONTENT:
+      return ToolContentEvent(
+        type=event_type,
+        timestamp=timestamp,
+        tool_name=data["tool_name"],
+        operation=data["operation"],
+        path=data["path"],
+        content_type=data.get("content_type", "summary"),
+        content=data.get("content"),
+        metadata=data.get("metadata", {}),
+      )
+    case _:
+      raise ValueError(f"Unknown event type: {event_type}")
 
 
 class EventRecorder:

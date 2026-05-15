@@ -4,12 +4,6 @@ Task: 1.5.5 - Show Write/Update Tool Content in CLI
 """
 
 import pytest
-from unittest.mock import Mock, MagicMock, patch
-from pathlib import Path
-
-from yoker.agent import Agent
-from yoker.events.types import ToolContentEvent, ToolResultEvent, EventType
-from yoker.tools.base import ToolResult
 
 
 class TestAgentContentEventEmission:

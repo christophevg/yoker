@@ -3,7 +3,6 @@
 Task: 1.5.5 - Show Write/Update Tool Content in CLI
 """
 
-import pytest
 
 from yoker.tools.base import ToolResult
 
