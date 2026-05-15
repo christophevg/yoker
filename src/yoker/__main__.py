@@ -30,6 +30,7 @@ from yoker.events import (
   ErrorEvent,
   EventType,
 )
+from yoker.exceptions import NetworkError
 from yoker.logging import configure_logging, get_logger
 
 # Default configuration file name
@@ -261,6 +262,16 @@ def main() -> None:
 
         # Add blank line after agent response
         print()
+      except NetworkError as e:
+        # Handle network errors gracefully - allow retry
+        if e.recoverable:
+          print(f"\n[Network Error] {e}")
+          print("Your message was preserved. You can try again or type a new message.")
+        else:
+          print(f"\n[Fatal Network Error] {e}")
+          print("Unable to recover. Please restart the session.")
+          raise
+        continue
       except ResponseError as e:
         # Handle Ollama API errors gracefully - allow retry
         if e.status_code == 503:

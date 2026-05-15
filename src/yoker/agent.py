@@ -6,6 +6,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+import httpx
 from dotenv import load_dotenv
 from ollama import Client
 
@@ -27,6 +28,7 @@ from yoker.events import (
   TurnEndEvent,
   TurnStartEvent,
 )
+from yoker.exceptions import NetworkError
 from yoker.logging import get_logger, log_timing
 from yoker.thinking import ThinkingMode
 from yoker.tools import Tool, ToolRegistry
@@ -332,13 +334,29 @@ class Agent:
     # Process with model, handling tool calls in a loop
     while True:
       # Use streaming for better UX
-      stream = self.client.chat(
-        model=self.model,
-        messages=self.context.get_context(),
-        tools=self.tool_registry.get_schemas(),
-        think=self.thinking_mode.is_enabled,
-        stream=True,
-      )
+      try:
+        stream = self.client.chat(
+          model=self.model,
+          messages=self.context.get_context(),
+          tools=self.tool_registry.get_schemas(),
+          think=self.thinking_mode.is_enabled,
+          stream=True,
+        )
+      except (
+        httpx.RemoteProtocolError,
+        httpx.ConnectError,
+        httpx.ReadError,
+        httpx.WriteError,
+        httpx.ConnectTimeout,
+        httpx.ReadTimeout,
+      ) as e:
+        # Wrap network errors with recovery information
+        log.error("network_error", error_type=type(e).__name__, message=str(e))
+        raise NetworkError(
+          f"Network error: {e}",
+          original_error=e,
+          recoverable=True,
+        ) from e
 
       # Accumulate partial fields
       content = ""

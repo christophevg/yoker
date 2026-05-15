@@ -139,6 +139,33 @@ class PermissionViolationError(YokerError):
     return f"Permission violation for '{self.operation}': {self.reason}"
 
 
+class NetworkError(YokerError):
+  """Exception for network-related errors.
+
+  Raised when network connectivity issues occur during LLM communication.
+  These errors are typically recoverable by retrying the request.
+
+  Attributes:
+    original_error: The underlying httpx/connection error (if any).
+    recoverable: Whether the error can be retried (default: True).
+  """
+
+  def __init__(
+    self,
+    message: str,
+    original_error: Exception | None = None,
+    recoverable: bool = True,
+  ) -> None:
+    self.original_error = original_error
+    self.recoverable = recoverable
+    super().__init__(message)
+
+  def __str__(self) -> str:
+    if self.original_error:
+      return f"{self.message} (caused by: {self.original_error})"
+    return self.message
+
+
 __all__ = [
   "YokerError",
   "ConfigurationError",
@@ -147,4 +174,5 @@ __all__ = [
   "SessionNotFoundError",
   "ContextCorruptionError",
   "PermissionViolationError",
+  "NetworkError",
 ]
