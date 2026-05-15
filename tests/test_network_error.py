@@ -1,8 +1,9 @@
 """Tests for network error handling in Agent."""
 
+from unittest.mock import patch
+
 import httpx
 import pytest
-from unittest.mock import MagicMock, patch
 
 from yoker.agent import Agent
 from yoker.exceptions import NetworkError
