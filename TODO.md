@@ -52,19 +52,29 @@
   - See `reporting/1.5.4-event-logging/summary.md` for implementation summary
 
 - [x] **1.5.5 Show Write/Update Tool Content in CLI** (2026-05-05)
-  - Add ToolContentEvent to event types
-  - Add ContentDisplayConfig to configuration schema (verbosity, max_content_lines, show_diff_for_updates)
-  - Add content_metadata field to ToolResult
-  - Update WriteTool to populate content_metadata (new file, overwrite, binary detection)
-  - Update UpdateTool to populate content_metadata (diff generation for replace, context for insert/delete)
-  - Agent emits ToolContentEvent when metadata present
-  - ConsoleEventHandler displays content based on verbosity (silent/summary/content)
-  - Visual consistency with Read tool (cyan color, filename only)
-  - Write unit tests (46 tests)
-  - Stub tests for agent/handler (47 tests - need implementation)
+  - Add ToolContentEvent to event types ✅
+  - Add ContentDisplayConfig to configuration schema ✅
+  - Add content_metadata field to ToolResult ✅
+  - Update WriteTool to populate content_metadata ✅
+  - Update UpdateTool to populate content_metadata ✅
+  - Write unit tests for WriteTool/UpdateTool (46 tests) ✅
+  - **Incomplete**: Agent emission and ConsoleEventHandler display moved to Task 1.5.6
   - See `analysis/api-write-update-display.md` for API design
   - See `analysis/ux-write-update-display.md` for UX design
   - See `reporting/1.5.5-write-update-display/consensus.md` for consensus
+
+- [ ] **1.5.6 Complete Tool Content Display** (PRIORITY: High)
+  - Implement Agent emission of ToolContentEvent when metadata present
+  - Add ConsoleEventHandler._handle_tool_content() method
+  - Dispatch TOOL_CONTENT event type to handler
+  - Implement silent mode (tool name + success indicator only)
+  - Implement summary mode (line counts, operation summaries)
+  - Implement content mode (full content with line numbers)
+  - Implement diff display for replace operations (unified diff)
+  - Implement context display for insert/delete operations
+  - Match Read tool visual style (cyan tool name, filename only)
+  - Convert 47 stub tests to real tests
+  - **Depends on**: 1.5.5 (content_metadata already populated by tools)
 
 ### Phase 1.6: Documentation (Medium Priority)
 
@@ -526,16 +536,13 @@
   - See `analysis/api-python-tool.md` for API design
 
 - [x] **1.5.5 Show Write/Update Tool Content in CLI** (2026-05-05)
-  - Add ToolContentEvent to event types
-  - Add ContentDisplayConfig to configuration schema (verbosity, max_content_lines, show_diff_for_updates)
-  - Add content_metadata field to ToolResult
-  - Update WriteTool to populate content_metadata (new file, overwrite, binary detection)
-  - Update UpdateTool to populate content_metadata (diff generation for replace, context for insert/delete)
-  - Agent emits ToolContentEvent when metadata present
-  - ConsoleEventHandler displays content based on verbosity (silent/summary/content)
-  - Visual consistency with Read tool (cyan color, filename only)
-  - Write unit tests (46 tests)
-  - Stub tests for agent/handler (47 tests - need implementation)
+  - Add ToolContentEvent to event types ✅
+  - Add ContentDisplayConfig to configuration schema ✅
+  - Add content_metadata field to ToolResult ✅
+  - Update WriteTool to populate content_metadata ✅
+  - Update UpdateTool to populate content_metadata ✅
+  - Write unit tests for WriteTool/UpdateTool (46 tests) ✅
+  - **Incomplete**: Agent emission and ConsoleEventHandler display moved to Task 1.5.6
   - See `analysis/api-write-update-display.md` for API design
   - See `analysis/ux-write-update-display.md` for UX design
   - See `reporting/1.5.5-write-update-display/consensus.md` for consensus
