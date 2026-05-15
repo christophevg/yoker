@@ -28,9 +28,7 @@ class ConcreteTool(Tool):
 class TestToolExists:
   """Tests for Tool.exists method."""
 
-  def test_exists_without_guardrail_returns_true_for_existing_file(
-    self, tmp_path: Path
-  ) -> None:
+  def test_exists_without_guardrail_returns_true_for_existing_file(self, tmp_path: Path) -> None:
     """Without guardrail, exists() returns True for existing file."""
     test_file = tmp_path / "test.txt"
     test_file.write_text("content")
@@ -52,9 +50,7 @@ class TestToolExists:
     tool = ConcreteTool()
     assert tool.exists(str(tmp_path)) is True
 
-  def test_exists_with_guardrail_validates_before_checking(
-    self, tmp_path: Path
-  ) -> None:
+  def test_exists_with_guardrail_validates_before_checking(self, tmp_path: Path) -> None:
     """With guardrail, exists() validates path before checking existence."""
     test_file = tmp_path / "test.txt"
     test_file.write_text("content")
@@ -71,9 +67,7 @@ class TestToolExists:
     assert tool.exists(str(test_file)) is False
     mock_guardrail.validate.assert_called_once_with("test_tool", {"path": str(test_file)})
 
-  def test_exists_with_guardrail_passes_when_valid(
-    self, tmp_path: Path
-  ) -> None:
+  def test_exists_with_guardrail_passes_when_valid(self, tmp_path: Path) -> None:
     """When guardrail validates, exists() checks file existence."""
     test_file = tmp_path / "test.txt"
     test_file.write_text("content")
@@ -87,9 +81,7 @@ class TestToolExists:
     assert tool.exists(str(test_file)) is True
     mock_guardrail.validate.assert_called_once_with("test_tool", {"path": str(test_file)})
 
-  def test_exists_with_guardrail_rejects_nonexistent_path(
-    self, tmp_path: Path
-  ) -> None:
+  def test_exists_with_guardrail_rejects_nonexistent_path(self, tmp_path: Path) -> None:
     """When guardrail validates but file doesn't exist, returns False."""
     nonexistent = tmp_path / "nonexistent.txt"
 
@@ -121,18 +113,14 @@ class TestToolRegistryExists:
 
     assert registry.exists("test_tool", str(test_file)) is True
 
-  def test_exists_returns_false_when_tool_rejects_path(
-    self, tmp_path: Path
-  ) -> None:
+  def test_exists_returns_false_when_tool_rejects_path(self, tmp_path: Path) -> None:
     """Registry.exists returns False when tool's guardrail rejects."""
     test_file = tmp_path / "test.txt"
     test_file.write_text("content")
 
     # Create mock guardrail that rejects all paths
     mock_guardrail = MagicMock()
-    mock_guardrail.validate.return_value = ValidationResult(
-      valid=False, reason="Path rejected"
-    )
+    mock_guardrail.validate.return_value = ValidationResult(valid=False, reason="Path rejected")
 
     tool = ConcreteTool(guardrail=mock_guardrail)
     registry = ToolRegistry()

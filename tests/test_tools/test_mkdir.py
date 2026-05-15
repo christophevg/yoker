@@ -271,11 +271,7 @@ class TestMkdirToolPathTraversal:
     Then: Path is resolved and guardrail blocks if outside allowed directories
     """
     # Create config with restricted filesystem_paths
-    config = Config(
-      permissions=PermissionsConfig(
-        filesystem_paths=(str(tmp_path),)
-      )
-    )
+    config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
     guardrail = PathGuardrail(config)
     tool = MkdirTool(guardrail=guardrail)
 
@@ -341,7 +337,9 @@ class TestMkdirToolBlockedPatterns:
     )
 
   @pytest.fixture
-  def guardrail_with_blocked_patterns(self, config_with_blocked_patterns: Config, tmp_path: Path) -> PathGuardrail:
+  def guardrail_with_blocked_patterns(
+    self, config_with_blocked_patterns: Config, tmp_path: Path
+  ) -> PathGuardrail:
     """Create a guardrail with blocked patterns."""
     config = config_with_blocked_patterns
     config.permissions.filesystem_paths = (str(tmp_path),)
@@ -355,7 +353,7 @@ class TestMkdirToolBlockedPatterns:
     """
     config = Config(
       permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)),
-      tools=ToolsConfig(read=ReadToolConfig(blocked_patterns=(r"\.git",)))
+      tools=ToolsConfig(read=ReadToolConfig(blocked_patterns=(r"\.git",))),
     )
     guardrail = PathGuardrail(config)
     tool = MkdirTool(guardrail=guardrail)
@@ -373,7 +371,7 @@ class TestMkdirToolBlockedPatterns:
     """
     config = Config(
       permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)),
-      tools=ToolsConfig(read=ReadToolConfig(blocked_patterns=(r"\.ssh",)))
+      tools=ToolsConfig(read=ReadToolConfig(blocked_patterns=(r"\.ssh",))),
     )
     guardrail = PathGuardrail(config)
     tool = MkdirTool(guardrail=guardrail)
@@ -391,7 +389,7 @@ class TestMkdirToolBlockedPatterns:
     """
     config = Config(
       permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)),
-      tools=ToolsConfig(read=ReadToolConfig(blocked_patterns=(r"\.aws",)))
+      tools=ToolsConfig(read=ReadToolConfig(blocked_patterns=(r"\.aws",))),
     )
     guardrail = PathGuardrail(config)
     tool = MkdirTool(guardrail=guardrail)
@@ -409,9 +407,7 @@ class TestMkdirToolBlockedPatterns:
     """
     config = Config(
       permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)),
-      tools=ToolsConfig(
-        read=ReadToolConfig(blocked_patterns=(r"\.env", "credentials"))
-      )
+      tools=ToolsConfig(read=ReadToolConfig(blocked_patterns=(r"\.env", "credentials"))),
     )
     guardrail = PathGuardrail(config)
     tool = MkdirTool(guardrail=guardrail)
@@ -450,7 +446,7 @@ class TestMkdirToolDepthLimit:
     """
     config = Config(
       permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)),
-      tools=ToolsConfig(mkdir=MkdirToolConfig(max_depth=5))
+      tools=ToolsConfig(mkdir=MkdirToolConfig(max_depth=5)),
     )
     guardrail = PathGuardrail(config)
     tool = MkdirTool(guardrail=guardrail)
@@ -474,7 +470,7 @@ class TestMkdirToolDepthLimit:
     """
     config = Config(
       permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)),
-      tools=ToolsConfig(mkdir=MkdirToolConfig(max_depth=5))
+      tools=ToolsConfig(mkdir=MkdirToolConfig(max_depth=5)),
     )
     guardrail = PathGuardrail(config)
     tool = MkdirTool(guardrail=guardrail)
@@ -496,7 +492,7 @@ class TestMkdirToolDepthLimit:
     """
     config = Config(
       permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)),
-      tools=ToolsConfig(mkdir=MkdirToolConfig(max_depth=5))
+      tools=ToolsConfig(mkdir=MkdirToolConfig(max_depth=5)),
     )
     guardrail = PathGuardrail(config)
     tool = MkdirTool(guardrail=guardrail)
@@ -515,9 +511,7 @@ class TestMkdirToolDepthLimit:
     When: Creating deeply nested directories
     Then: Guardrail enforces the default depth limit
     """
-    config = Config(
-      permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),))
-    )
+    config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
     guardrail = PathGuardrail(config)
     tool = MkdirTool(guardrail=guardrail)
 
@@ -607,9 +601,7 @@ class TestMkdirToolWithGuardrail:
     # Create guardrail that only allows specific path
     allowed_path = tmp_path / "allowed"
     allowed_path.mkdir()
-    config = Config(
-      permissions=PermissionsConfig(filesystem_paths=(str(allowed_path),))
-    )
+    config = Config(permissions=PermissionsConfig(filesystem_paths=(str(allowed_path),)))
     guardrail = PathGuardrail(config)
     tool = MkdirTool(guardrail=guardrail)
 
@@ -626,9 +618,7 @@ class TestMkdirToolWithGuardrail:
     When: Calling execute
     Then: Directory is created successfully
     """
-    config = Config(
-      permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),))
-    )
+    config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
     guardrail = PathGuardrail(config)
     tool = MkdirTool(guardrail=guardrail)
 
@@ -659,9 +649,7 @@ class TestMkdirToolWithGuardrail:
     When: Calling execute with guardrail
     Then: Returns error about path outside allowed directories
     """
-    config = Config(
-      permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),))
-    )
+    config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
     guardrail = PathGuardrail(config)
     tool = MkdirTool(guardrail=guardrail)
 
@@ -678,9 +666,7 @@ class TestMkdirToolWithGuardrail:
     When: Calling execute
     Then: Guardrail validation happens before any filesystem operations
     """
-    config = Config(
-      permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),))
-    )
+    config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
     guardrail = PathGuardrail(config)
     tool = MkdirTool(guardrail=guardrail)
 
@@ -704,7 +690,7 @@ class TestMkdirToolErrorHandling:
     tool = MkdirTool()
 
     # Mock mkdir to raise PermissionError
-    with mocker.patch.object(Path, 'mkdir', side_effect=PermissionError("Permission denied")):
+    with mocker.patch.object(Path, "mkdir", side_effect=PermissionError("Permission denied")):
       new_dir = tmp_path / "newdir"
       result = tool.execute(path=str(new_dir))
 
@@ -720,7 +706,7 @@ class TestMkdirToolErrorHandling:
     tool = MkdirTool()
 
     # Mock mkdir to raise OSError
-    with mocker.patch.object(Path, 'mkdir', side_effect=OSError("OS error")):
+    with mocker.patch.object(Path, "mkdir", side_effect=OSError("OS error")):
       new_dir = tmp_path / "newdir"
       result = tool.execute(path=str(new_dir))
 
@@ -736,7 +722,7 @@ class TestMkdirToolErrorHandling:
     tool = MkdirTool()
 
     # Mock os.path.realpath to raise OSError
-    with mocker.patch('os.path.realpath', side_effect=OSError("Resolution failed")):
+    with mocker.patch("os.path.realpath", side_effect=OSError("Resolution failed")):
       result = tool.execute(path="/tmp/test")
 
       assert not result.success
@@ -751,7 +737,7 @@ class TestMkdirToolErrorHandling:
     tool = MkdirTool()
 
     # Mock exists to raise PermissionError
-    with mocker.patch.object(Path, 'exists', side_effect=PermissionError("Permission denied")):
+    with mocker.patch.object(Path, "exists", side_effect=PermissionError("Permission denied")):
       new_dir = tmp_path / "newdir"
       result = tool.execute(path=str(new_dir))
 
@@ -928,9 +914,7 @@ class TestMkdirToolSpecialCases:
     When: Calling execute with guardrail allowing /tmp
     Then: Creates directory successfully
     """
-    config = Config(
-      permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),))
-    )
+    config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
     guardrail = PathGuardrail(config)
     tool = MkdirTool(guardrail=guardrail)
 
@@ -1036,9 +1020,7 @@ class TestMkdirToolIntegration:
     When: Creating directory within allowed path
     Then: Directory is created successfully
     """
-    config = Config(
-      permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),))
-    )
+    config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
     guardrail = PathGuardrail(config)
     tool = MkdirTool(guardrail=guardrail)
 

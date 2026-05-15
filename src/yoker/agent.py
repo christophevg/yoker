@@ -127,8 +127,7 @@ class Agent:
     if api_key:
       # Use ollama.com with API key authentication
       self.client = Client(
-        host="https://ollama.com",
-        headers={"Authorization": f"Bearer {api_key}"}
+        host="https://ollama.com", headers={"Authorization": f"Bearer {api_key}"}
       )
       log.info("ollama_client_initialized", host="ollama.com", auth="api_key")
     else:

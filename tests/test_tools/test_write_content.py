@@ -69,11 +69,7 @@ class TestWriteToolContentMetadataEmission:
     Then: content_metadata.content contains the written content
     """
     # Create WriteTool with verbosity="content"
-    config = Config(
-      tools=ToolsConfig(
-        content_display=ContentDisplayConfig(verbosity="content")
-      )
-    )
+    config = Config(tools=ToolsConfig(content_display=ContentDisplayConfig(verbosity="content")))
     tool = WriteTool(config=config)
 
     # Write file
@@ -93,11 +89,7 @@ class TestWriteToolContentMetadataEmission:
     Then: ToolResult.content_metadata is None
     """
     # Create WriteTool with silent verbosity
-    config = Config(
-      tools=ToolsConfig(
-        content_display=ContentDisplayConfig(verbosity="silent")
-      )
-    )
+    config = Config(tools=ToolsConfig(content_display=ContentDisplayConfig(verbosity="silent")))
     tool = WriteTool(config=config)
 
     # Write file
@@ -121,10 +113,7 @@ class TestWriteToolContentTruncation:
     # Create WriteTool with small max_content_lines
     config = Config(
       tools=ToolsConfig(
-        content_display=ContentDisplayConfig(
-          verbosity="content",
-          max_content_lines=5
-        )
+        content_display=ContentDisplayConfig(verbosity="content", max_content_lines=5)
       )
     )
     tool = WriteTool(config=config)
@@ -152,10 +141,7 @@ class TestWriteToolContentTruncation:
     # Create WriteTool with small max_content_lines
     config = Config(
       tools=ToolsConfig(
-        content_display=ContentDisplayConfig(
-          verbosity="content",
-          max_content_lines=5
-        )
+        content_display=ContentDisplayConfig(verbosity="content", max_content_lines=5)
       )
     )
     tool = WriteTool(config=config)
@@ -178,11 +164,7 @@ class TestWriteToolContentTruncation:
     Then: content_metadata.content contains full content
     """
     # Create WriteTool with content verbosity
-    config = Config(
-      tools=ToolsConfig(
-        content_display=ContentDisplayConfig(verbosity="content")
-      )
-    )
+    config = Config(tools=ToolsConfig(content_display=ContentDisplayConfig(verbosity="content")))
     tool = WriteTool(config=config)
 
     # Write small file
@@ -206,9 +188,7 @@ class TestWriteToolContentTruncation:
     config = Config(
       tools=ToolsConfig(
         content_display=ContentDisplayConfig(
-          verbosity="content",
-          max_content_lines=1000,
-          max_content_bytes=100
+          verbosity="content", max_content_lines=1000, max_content_bytes=100
         )
       )
     )
@@ -279,11 +259,7 @@ class TestWriteToolBinaryDetection:
     Then: content_metadata.content_type is "summary" (not "full")
     """
     # Create WriteTool with content verbosity
-    config = Config(
-      tools=ToolsConfig(
-        content_display=ContentDisplayConfig(verbosity="content")
-      )
-    )
+    config = Config(tools=ToolsConfig(content_display=ContentDisplayConfig(verbosity="content")))
     tool = WriteTool(config=config)
 
     # Write binary content (contains null byte)
@@ -324,11 +300,7 @@ class TestWriteToolBinaryDetection:
     Then: Only size summary is shown, not full content
     """
     # Create WriteTool with content verbosity
-    config = Config(
-      tools=ToolsConfig(
-        content_display=ContentDisplayConfig(verbosity="content")
-      )
-    )
+    config = Config(tools=ToolsConfig(content_display=ContentDisplayConfig(verbosity="content")))
     tool = WriteTool(config=config)
 
     # Write binary content
@@ -353,11 +325,7 @@ class TestWriteToolVerbosityLevels:
     Then: ToolResult.content_metadata is None
     """
     # Create WriteTool with silent verbosity
-    config = Config(
-      tools=ToolsConfig(
-        content_display=ContentDisplayConfig(verbosity="silent")
-      )
-    )
+    config = Config(tools=ToolsConfig(content_display=ContentDisplayConfig(verbosity="silent")))
     tool = WriteTool(config=config)
 
     # Write file
@@ -395,11 +363,7 @@ class TestWriteToolVerbosityLevels:
     Then: content_metadata.content_type="full" with full content
     """
     # Create WriteTool with content verbosity
-    config = Config(
-      tools=ToolsConfig(
-        content_display=ContentDisplayConfig(verbosity="content")
-      )
-    )
+    config = Config(tools=ToolsConfig(content_display=ContentDisplayConfig(verbosity="content")))
     tool = WriteTool(config=config)
 
     # Write file
@@ -427,9 +391,7 @@ class TestWriteToolConfigIntegration:
     config = Config(
       tools=ToolsConfig(
         content_display=ContentDisplayConfig(
-          verbosity="content",
-          max_content_lines=100,
-          show_diff_for_updates=True
+          verbosity="content", max_content_lines=100, show_diff_for_updates=True
         )
       )
     )
@@ -448,10 +410,7 @@ class TestWriteToolConfigIntegration:
     # Create WriteTool with show_diff_for_updates=False
     config = Config(
       tools=ToolsConfig(
-        content_display=ContentDisplayConfig(
-          verbosity="content",
-          show_diff_for_updates=False
-        )
+        content_display=ContentDisplayConfig(verbosity="content", show_diff_for_updates=False)
       )
     )
     tool = WriteTool(config=config)

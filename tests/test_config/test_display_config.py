@@ -3,7 +3,6 @@
 Task: 1.5.5 - Show Write/Update Tool Content in CLI
 """
 
-
 from yoker.config.schema import ContentDisplayConfig, ToolsConfig
 
 

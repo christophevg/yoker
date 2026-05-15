@@ -64,27 +64,31 @@ OPERATION_ARGS: dict[str, dict[str, dict[str, Any]]] = {
 }
 
 # Dangerous options that should be blocked
-DANGEROUS_OPTIONS: frozenset[str] = frozenset({
-  "--upload-pack",
-  "--receive-pack",
-  "--exec",
-  "--git-dir",
-  "--work-tree",
-  "-c",
-  "--config",
-})
+DANGEROUS_OPTIONS: frozenset[str] = frozenset(
+  {
+    "--upload-pack",
+    "--receive-pack",
+    "--exec",
+    "--git-dir",
+    "--work-tree",
+    "-c",
+    "--config",
+  }
+)
 
 # Forbidden characters in argument values
-FORBIDDEN_CHARS: frozenset[str] = frozenset({
-  "\n",
-  "\r",
-  "\x00",
-  "`",
-  "$",
-  "|",
-  ";",
-  "&",
-})
+FORBIDDEN_CHARS: frozenset[str] = frozenset(
+  {
+    "\n",
+    "\r",
+    "\x00",
+    "`",
+    "$",
+    "|",
+    ";",
+    "&",
+  }
+)
 
 # Credential pattern for URL redaction (matches user:pass@host)
 # Note: [^@]* allows empty passwords (user:@host)

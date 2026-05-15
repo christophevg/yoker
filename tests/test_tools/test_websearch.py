@@ -106,7 +106,9 @@ class TestWebSearchToolExecution:
     # Check that backend was called with default max_results=10
     mock_backend.search.assert_called_once()
     call_args = mock_backend.search.call_args
-    assert call_args.kwargs.get("max_results", call_args[1] if len(call_args.args) > 1 else 10) == 10
+    assert (
+      call_args.kwargs.get("max_results", call_args[1] if len(call_args.args) > 1 else 10) == 10
+    )
 
   def test_execute_with_custom_max_results(self, mock_backend: MagicMock) -> None:
     """

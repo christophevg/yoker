@@ -3,7 +3,6 @@
 Task: 1.5.5 - Show Write/Update Tool Content in CLI
 """
 
-
 import pytest
 
 from yoker.events.handlers import ConsoleEventHandler
@@ -41,8 +40,7 @@ class TestConsoleEventHandlerSilentMode:
     Then: Shows error message
     """
     pytest.fail(
-      "Not implemented: ConsoleEventHandler should show error messages "
-      "even in silent mode"
+      "Not implemented: ConsoleEventHandler should show error messages even in silent mode"
     )
 
 
@@ -211,8 +209,7 @@ class TestConsoleEventHandlerDiffDisplay:
     Then: Removed lines shown in red with '-' prefix
     """
     pytest.fail(
-      "Not implemented: ConsoleEventHandler should show removed lines "
-      "in red color with '-' prefix"
+      "Not implemented: ConsoleEventHandler should show removed lines in red color with '-' prefix"
     )
 
   def test_diff_shows_added_lines_in_green(self) -> None:
@@ -222,8 +219,7 @@ class TestConsoleEventHandlerDiffDisplay:
     Then: Added lines shown in green with '+' prefix
     """
     pytest.fail(
-      "Not implemented: ConsoleEventHandler should show added lines "
-      "in green color with '+' prefix"
+      "Not implemented: ConsoleEventHandler should show added lines in green color with '+' prefix"
     )
 
   def test_diff_shows_context_in_cyan(self) -> None:
@@ -233,8 +229,7 @@ class TestConsoleEventHandlerDiffDisplay:
     Then: Context lines (@@ markers) shown in cyan
     """
     pytest.fail(
-      "Not implemented: ConsoleEventHandler should show context lines "
-      "(@@ markers) in cyan color"
+      "Not implemented: ConsoleEventHandler should show context lines (@@ markers) in cyan color"
     )
 
   def test_diff_uses_unified_format(self) -> None:
@@ -307,8 +302,7 @@ class TestConsoleEventHandlerEdgeCases:
     Then: Shows "(0 lines, empty)"
     """
     pytest.fail(
-      "Not implemented: ConsoleEventHandler should show '(0 lines, empty)' "
-      "for empty files"
+      "Not implemented: ConsoleEventHandler should show '(0 lines, empty)' for empty files"
     )
 
   def test_binary_file_display(self) -> None:

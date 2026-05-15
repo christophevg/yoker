@@ -33,9 +33,7 @@ def _truncate_diff(diff_lines: list[str], max_lines: int) -> tuple[str, bool, in
   original_count = len(diff_lines)
 
   # Ensure each line ends with newline for proper display
-  normalized_lines = [
-    line if line.endswith("\n") else line + "\n" for line in diff_lines
-  ]
+  normalized_lines = [line if line.endswith("\n") else line + "\n" for line in diff_lines]
 
   if len(normalized_lines) <= max_lines:
     return "".join(normalized_lines), False, original_count

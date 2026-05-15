@@ -186,8 +186,7 @@ class TestAgentContentEventErrorHandling:
     Then: ToolContentEvent is not emitted
     """
     pytest.fail(
-      "Not implemented: Agent should not emit ToolContentEvent "
-      "when ToolResult.success=False"
+      "Not implemented: Agent should not emit ToolContentEvent when ToolResult.success=False"
     )
 
   def test_content_event_handles_missing_fields(self) -> None:
@@ -208,6 +207,5 @@ class TestAgentContentEventErrorHandling:
     Then: Tool result is still returned to LLM
     """
     pytest.fail(
-      "Not implemented: Agent should not affect tool result if "
-      "ToolContentEvent emission fails"
+      "Not implemented: Agent should not affect tool result if ToolContentEvent emission fails"
     )

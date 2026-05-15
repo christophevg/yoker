@@ -33,7 +33,9 @@ def mock_response(items: list[dict[str, str]]) -> MockWebSearchResponse:
   """Create a mock WebSearchResponse from list of dicts."""
   return MockWebSearchResponse(
     results=[
-      MockWebSearchResult(title=i.get("title", ""), url=i.get("url", ""), content=i.get("content", ""))
+      MockWebSearchResult(
+        title=i.get("title", ""), url=i.get("url", ""), content=i.get("content", "")
+      )
       for i in items
     ]
   )
@@ -94,9 +96,9 @@ class TestOllamaWebSearchBackendSearch:
     When: Calling search() with valid query
     Then: Returns list of SearchResult objects
     """
-    client = create_mock_client(mock_response([
-      {"title": "Result 1", "url": "https://example.com/1", "content": "Content 1"}
-    ]))
+    client = create_mock_client(
+      mock_response([{"title": "Result 1", "url": "https://example.com/1", "content": "Content 1"}])
+    )
     backend = OllamaWebSearchBackend(client=client)
     results = backend.search(query="test query")
 
@@ -109,9 +111,9 @@ class TestOllamaWebSearchBackendSearch:
     When: Getting search results
     Then: Each SearchResult has title, url, snippet, source fields
     """
-    client = create_mock_client(mock_response([
-      {"title": "Test", "url": "https://example.com", "content": "Snippet"}
-    ]))
+    client = create_mock_client(
+      mock_response([{"title": "Test", "url": "https://example.com", "content": "Snippet"}])
+    )
     backend = OllamaWebSearchBackend(client=client)
     results = backend.search(query="test query")
 
@@ -127,9 +129,9 @@ class TestOllamaWebSearchBackendSearch:
     When: Getting search results
     Then: source field is 'ollama' for all results
     """
-    client = create_mock_client(mock_response([
-      {"title": "Test", "url": "https://example.com", "content": "Content"}
-    ]))
+    client = create_mock_client(
+      mock_response([{"title": "Test", "url": "https://example.com", "content": "Content"}])
+    )
     backend = OllamaWebSearchBackend(client=client)
     results = backend.search(query="test query")
 
@@ -142,10 +144,14 @@ class TestOllamaWebSearchBackendSearch:
     When: Calling search() without max_results
     Then: Returns up to 10 results (Ollama default)
     """
-    client = create_mock_client(mock_response([
-      {"title": f"Result {i}", "url": f"https://example.com/{i}", "content": f"Content {i}"}
-      for i in range(15)
-    ]))
+    client = create_mock_client(
+      mock_response(
+        [
+          {"title": f"Result {i}", "url": f"https://example.com/{i}", "content": f"Content {i}"}
+          for i in range(15)
+        ]
+      )
+    )
     backend = OllamaWebSearchBackend(client=client)
     results = backend.search(query="test query")
 
@@ -157,10 +163,14 @@ class TestOllamaWebSearchBackendSearch:
     When: Calling search() with max_results=5
     Then: Returns only 5 results
     """
-    client = create_mock_client(mock_response([
-      {"title": f"Result {i}", "url": f"https://example.com/{i}", "content": f"Content {i}"}
-      for i in range(10)
-    ]))
+    client = create_mock_client(
+      mock_response(
+        [
+          {"title": f"Result {i}", "url": f"https://example.com/{i}", "content": f"Content {i}"}
+          for i in range(10)
+        ]
+      )
+    )
     backend = OllamaWebSearchBackend(client=client)
     results = backend.search(query="test query", max_results=5)
 
@@ -172,10 +182,14 @@ class TestOllamaWebSearchBackendSearch:
     When: Calling search() with max_results=20
     Then: Returns only 10 results (Ollama hard limit)
     """
-    client = create_mock_client(mock_response([
-      {"title": f"Result {i}", "url": f"https://example.com/{i}", "content": f"Content {i}"}
-      for i in range(20)
-    ]))
+    client = create_mock_client(
+      mock_response(
+        [
+          {"title": f"Result {i}", "url": f"https://example.com/{i}", "content": f"Content {i}"}
+          for i in range(20)
+        ]
+      )
+    )
     backend = OllamaWebSearchBackend(client=client)
     results = backend.search(query="test query", max_results=20)
 
@@ -279,13 +293,17 @@ class TestOllamaWebSearchBackendResultParsing:
     When: Calling search()
     Then: Preserves Unicode characters in SearchResult fields
     """
-    client = create_mock_client(mock_response([
-      {
-        "title": "Pythön 中文 文档",
-        "url": "https://example.com/python-中文",
-        "content": "Python异步编程最佳实践 🐍",
-      }
-    ]))
+    client = create_mock_client(
+      mock_response(
+        [
+          {
+            "title": "Pythön 中文 文档",
+            "url": "https://example.com/python-中文",
+            "content": "Python异步编程最佳实践 🐍",
+          }
+        ]
+      )
+    )
     backend = OllamaWebSearchBackend(client=client)
     results = backend.search(query="test")
 
@@ -298,9 +316,11 @@ class TestOllamaWebSearchBackendResultParsing:
     When: Calling search()
     Then: Returns result with empty URL (graceful handling)
     """
-    client = create_mock_client(mock_response([
-      {"title": "Result with empty URL", "url": "", "content": "This result has no URL"}
-    ]))
+    client = create_mock_client(
+      mock_response(
+        [{"title": "Result with empty URL", "url": "", "content": "This result has no URL"}]
+      )
+    )
     backend = OllamaWebSearchBackend(client=client)
     results = backend.search(query="test")
 
@@ -314,9 +334,11 @@ class TestOllamaWebSearchBackendResultParsing:
     Then: Returns results (snippets may be truncated or kept as-is)
     """
     long_content = "A" * 10000
-    client = create_mock_client(mock_response([
-      {"title": "Long Result", "url": "https://example.com", "content": long_content}
-    ]))
+    client = create_mock_client(
+      mock_response(
+        [{"title": "Long Result", "url": "https://example.com", "content": long_content}]
+      )
+    )
     backend = OllamaWebSearchBackend(client=client)
     results = backend.search(query="test")
 
@@ -360,18 +382,22 @@ class TestOllamaWebSearchBackendIntegration:
     Then: Parses results correctly
     """
     # Typical Ollama web_search response format
-    client = create_mock_client(mock_response([
-      {
-        "title": "Python Asyncio Tutorial",
-        "url": "https://docs.python.org/3/library/asyncio.html",
-        "content": "Official Python asyncio documentation",
-      },
-      {
-        "title": "Async IO in Python: A Complete Walkthrough",
-        "url": "https://realpython.com/async-io-python/",
-        "content": "Real Python tutorial on async programming",
-      },
-    ]))
+    client = create_mock_client(
+      mock_response(
+        [
+          {
+            "title": "Python Asyncio Tutorial",
+            "url": "https://docs.python.org/3/library/asyncio.html",
+            "content": "Official Python asyncio documentation",
+          },
+          {
+            "title": "Async IO in Python: A Complete Walkthrough",
+            "url": "https://realpython.com/async-io-python/",
+            "content": "Real Python tutorial on async programming",
+          },
+        ]
+      )
+    )
     backend = OllamaWebSearchBackend(client=client)
     results = backend.search(query="Python asyncio", max_results=2)
 

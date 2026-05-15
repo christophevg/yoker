@@ -21,10 +21,7 @@ class TestUpdateToolReplaceOperation:
     # Create UpdateTool with content verbosity and show_diff_for_updates
     config = Config(
       tools=ToolsConfig(
-        content_display=ContentDisplayConfig(
-          verbosity="content",
-          show_diff_for_updates=True
-        )
+        content_display=ContentDisplayConfig(verbosity="content", show_diff_for_updates=True)
       )
     )
     tool = UpdateTool(config=config)
@@ -35,10 +32,7 @@ class TestUpdateToolReplaceOperation:
 
     # Replace text
     result = tool.execute(
-      path=str(test_file),
-      operation="replace",
-      old_string="Old text",
-      new_string="New text"
+      path=str(test_file), operation="replace", old_string="Old text", new_string="New text"
     )
 
     # Verify result
@@ -59,9 +53,7 @@ class TestUpdateToolReplaceOperation:
     """
     # Create UpdateTool with show_diff_for_updates
     config = Config(
-      tools=ToolsConfig(
-        content_display=ContentDisplayConfig(show_diff_for_updates=True)
-      )
+      tools=ToolsConfig(content_display=ContentDisplayConfig(show_diff_for_updates=True))
     )
     tool = UpdateTool(config=config)
 
@@ -71,10 +63,7 @@ class TestUpdateToolReplaceOperation:
 
     # Replace
     result = tool.execute(
-      path=str(test_file),
-      operation="replace",
-      old_string="Old content",
-      new_string="New content"
+      path=str(test_file), operation="replace", old_string="Old content", new_string="New content"
     )
 
     # Verify result
@@ -97,10 +86,7 @@ class TestUpdateToolReplaceOperation:
 
     # Replace
     result = tool.execute(
-      path=str(test_file),
-      operation="replace",
-      old_string="Old",
-      new_string="New"
+      path=str(test_file), operation="replace", old_string="Old", new_string="New"
     )
 
     # Verify result
@@ -118,9 +104,7 @@ class TestUpdateToolReplaceOperation:
     config = Config(
       tools=ToolsConfig(
         content_display=ContentDisplayConfig(
-          verbosity="content",
-          show_diff_for_updates=True,
-          max_diff_lines=5
+          verbosity="content", show_diff_for_updates=True, max_diff_lines=5
         )
       )
     )
@@ -132,10 +116,7 @@ class TestUpdateToolReplaceOperation:
 
     # Replace large portion
     result = tool.execute(
-      path=str(test_file),
-      operation="replace",
-      old_string="Line 10",
-      new_string="Modified line"
+      path=str(test_file), operation="replace", old_string="Line 10", new_string="Modified line"
     )
 
     # Verify result
@@ -156,11 +137,7 @@ class TestUpdateToolInsertOperation:
     Then: content_metadata includes inserted content and line_number
     """
     # Create UpdateTool with content verbosity
-    config = Config(
-      tools=ToolsConfig(
-        content_display=ContentDisplayConfig(verbosity="content")
-      )
-    )
+    config = Config(tools=ToolsConfig(content_display=ContentDisplayConfig(verbosity="content")))
     tool = UpdateTool(config=config)
 
     # Create file
@@ -169,10 +146,7 @@ class TestUpdateToolInsertOperation:
 
     # Insert before line 2
     result = tool.execute(
-      path=str(test_file),
-      operation="insert_before",
-      line_number=2,
-      new_string="Inserted line"
+      path=str(test_file), operation="insert_before", line_number=2, new_string="Inserted line"
     )
 
     # Verify result
@@ -188,11 +162,7 @@ class TestUpdateToolInsertOperation:
     Then: content_metadata includes inserted content and line_number
     """
     # Create UpdateTool with content verbosity
-    config = Config(
-      tools=ToolsConfig(
-        content_display=ContentDisplayConfig(verbosity="content")
-      )
-    )
+    config = Config(tools=ToolsConfig(content_display=ContentDisplayConfig(verbosity="content")))
     tool = UpdateTool(config=config)
 
     # Create file
@@ -201,10 +171,7 @@ class TestUpdateToolInsertOperation:
 
     # Insert after line 1
     result = tool.execute(
-      path=str(test_file),
-      operation="insert_after",
-      line_number=1,
-      new_string="Inserted line"
+      path=str(test_file), operation="insert_after", line_number=1, new_string="Inserted line"
     )
 
     # Verify result
@@ -220,11 +187,7 @@ class TestUpdateToolInsertOperation:
     Then: content_metadata.content_type="full" (showing inserted content)
     """
     # Create UpdateTool with content verbosity
-    config = Config(
-      tools=ToolsConfig(
-        content_display=ContentDisplayConfig(verbosity="content")
-      )
-    )
+    config = Config(tools=ToolsConfig(content_display=ContentDisplayConfig(verbosity="content")))
     tool = UpdateTool(config=config)
 
     # Create file
@@ -233,10 +196,7 @@ class TestUpdateToolInsertOperation:
 
     # Insert
     result = tool.execute(
-      path=str(test_file),
-      operation="insert_after",
-      line_number=1,
-      new_string="New line"
+      path=str(test_file), operation="insert_after", line_number=1, new_string="New line"
     )
 
     # Verify result
@@ -252,11 +212,7 @@ class TestUpdateToolInsertOperation:
     Then: metadata includes lines_before and lines_after context
     """
     # Create UpdateTool with content verbosity
-    config = Config(
-      tools=ToolsConfig(
-        content_display=ContentDisplayConfig(verbosity="content")
-      )
-    )
+    config = Config(tools=ToolsConfig(content_display=ContentDisplayConfig(verbosity="content")))
     tool = UpdateTool(config=config)
 
     # Create file
@@ -265,10 +221,7 @@ class TestUpdateToolInsertOperation:
 
     # Insert
     result = tool.execute(
-      path=str(test_file),
-      operation="insert_after",
-      line_number=2,
-      new_string="Inserted"
+      path=str(test_file), operation="insert_after", line_number=2, new_string="Inserted"
     )
 
     # Verify result
@@ -288,11 +241,7 @@ class TestUpdateToolDeleteOperation:
     Then: content_metadata includes deleted content
     """
     # Create UpdateTool with content verbosity
-    config = Config(
-      tools=ToolsConfig(
-        content_display=ContentDisplayConfig(verbosity="content")
-      )
-    )
+    config = Config(tools=ToolsConfig(content_display=ContentDisplayConfig(verbosity="content")))
     tool = UpdateTool(config=config)
 
     # Create file
@@ -300,11 +249,7 @@ class TestUpdateToolDeleteOperation:
     test_file.write_text("Line 1\nDelete me\nLine 3\n")
 
     # Delete
-    result = tool.execute(
-      path=str(test_file),
-      operation="delete",
-      old_string="Delete me\n"
-    )
+    result = tool.execute(path=str(test_file), operation="delete", old_string="Delete me\n")
 
     # Verify result
     assert result.success
@@ -321,10 +266,7 @@ class TestUpdateToolDeleteOperation:
     # Create UpdateTool with show_diff_for_updates
     config = Config(
       tools=ToolsConfig(
-        content_display=ContentDisplayConfig(
-          verbosity="content",
-          show_diff_for_updates=True
-        )
+        content_display=ContentDisplayConfig(verbosity="content", show_diff_for_updates=True)
       )
     )
     tool = UpdateTool(config=config)
@@ -334,11 +276,7 @@ class TestUpdateToolDeleteOperation:
     test_file.write_text("Line 1\nTo delete\nLine 3\n")
 
     # Delete
-    result = tool.execute(
-      path=str(test_file),
-      operation="delete",
-      old_string="To delete\n"
-    )
+    result = tool.execute(path=str(test_file), operation="delete", old_string="To delete\n")
 
     # Verify result
     assert result.success
@@ -359,11 +297,7 @@ class TestUpdateToolDeleteOperation:
     test_file.write_text("Line 1\nLine 2\nLine 3\n")
 
     # Delete by line number
-    result = tool.execute(
-      path=str(test_file),
-      operation="delete",
-      line_number=2
-    )
+    result = tool.execute(path=str(test_file), operation="delete", line_number=2)
 
     # Verify result
     assert result.success
@@ -384,9 +318,7 @@ class TestUpdateToolDiffTruncation:
     config = Config(
       tools=ToolsConfig(
         content_display=ContentDisplayConfig(
-          verbosity="content",
-          show_diff_for_updates=True,
-          max_diff_lines=5
+          verbosity="content", show_diff_for_updates=True, max_diff_lines=5
         )
       )
     )
@@ -398,10 +330,7 @@ class TestUpdateToolDiffTruncation:
 
     # Replace
     result = tool.execute(
-      path=str(test_file),
-      operation="replace",
-      old_string="Line 10",
-      new_string="Modified"
+      path=str(test_file), operation="replace", old_string="Line 10", new_string="Modified"
     )
 
     # Verify result
@@ -418,9 +347,7 @@ class TestUpdateToolDiffTruncation:
     config = Config(
       tools=ToolsConfig(
         content_display=ContentDisplayConfig(
-          verbosity="content",
-          show_diff_for_updates=True,
-          max_diff_lines=3
+          verbosity="content", show_diff_for_updates=True, max_diff_lines=3
         )
       )
     )
@@ -432,10 +359,7 @@ class TestUpdateToolDiffTruncation:
 
     # Replace
     result = tool.execute(
-      path=str(test_file),
-      operation="replace",
-      old_string="Line 50",
-      new_string="Changed"
+      path=str(test_file), operation="replace", old_string="Line 50", new_string="Changed"
     )
 
     # Verify result
@@ -453,9 +377,7 @@ class TestUpdateToolDiffTruncation:
     config = Config(
       tools=ToolsConfig(
         content_display=ContentDisplayConfig(
-          verbosity="content",
-          show_diff_for_updates=True,
-          max_diff_lines=50
+          verbosity="content", show_diff_for_updates=True, max_diff_lines=50
         )
       )
     )
@@ -467,10 +389,7 @@ class TestUpdateToolDiffTruncation:
 
     # Replace
     result = tool.execute(
-      path=str(test_file),
-      operation="replace",
-      old_string="Line 2",
-      new_string="Modified"
+      path=str(test_file), operation="replace", old_string="Line 2", new_string="Modified"
     )
 
     # Verify result
@@ -490,9 +409,7 @@ class TestUpdateToolShowDiffFlag:
     """
     # Create UpdateTool with show_diff_for_updates
     config = Config(
-      tools=ToolsConfig(
-        content_display=ContentDisplayConfig(show_diff_for_updates=True)
-      )
+      tools=ToolsConfig(content_display=ContentDisplayConfig(show_diff_for_updates=True))
     )
     tool = UpdateTool(config=config)
 
@@ -502,10 +419,7 @@ class TestUpdateToolShowDiffFlag:
 
     # Replace
     result = tool.execute(
-      path=str(test_file),
-      operation="replace",
-      old_string="Old",
-      new_string="New"
+      path=str(test_file), operation="replace", old_string="Old", new_string="New"
     )
 
     # Verify result
@@ -522,10 +436,7 @@ class TestUpdateToolShowDiffFlag:
     # Create UpdateTool with show_diff_for_updates=False
     config = Config(
       tools=ToolsConfig(
-        content_display=ContentDisplayConfig(
-          verbosity="content",
-          show_diff_for_updates=False
-        )
+        content_display=ContentDisplayConfig(verbosity="content", show_diff_for_updates=False)
       )
     )
     tool = UpdateTool(config=config)
@@ -536,10 +447,7 @@ class TestUpdateToolShowDiffFlag:
 
     # Replace
     result = tool.execute(
-      path=str(test_file),
-      operation="replace",
-      old_string="Old",
-      new_string="New"
+      path=str(test_file), operation="replace", old_string="Old", new_string="New"
     )
 
     # Verify result
@@ -556,10 +464,7 @@ class TestUpdateToolShowDiffFlag:
     # Create UpdateTool with show_diff_for_updates=False
     config = Config(
       tools=ToolsConfig(
-        content_display=ContentDisplayConfig(
-          verbosity="content",
-          show_diff_for_updates=False
-        )
+        content_display=ContentDisplayConfig(verbosity="content", show_diff_for_updates=False)
       )
     )
     tool = UpdateTool(config=config)
@@ -570,10 +475,7 @@ class TestUpdateToolShowDiffFlag:
 
     # Insert
     result = tool.execute(
-      path=str(test_file),
-      operation="insert_after",
-      line_number=1,
-      new_string="New line"
+      path=str(test_file), operation="insert_after", line_number=1, new_string="New line"
     )
 
     # Verify result
@@ -594,11 +496,7 @@ class TestUpdateToolVerbosityLevels:
     Then: ToolResult.content_metadata is None
     """
     # Create UpdateTool with silent verbosity
-    config = Config(
-      tools=ToolsConfig(
-        content_display=ContentDisplayConfig(verbosity="silent")
-      )
-    )
+    config = Config(tools=ToolsConfig(content_display=ContentDisplayConfig(verbosity="silent")))
     tool = UpdateTool(config=config)
 
     # Create file
@@ -607,10 +505,7 @@ class TestUpdateToolVerbosityLevels:
 
     # Replace
     result = tool.execute(
-      path=str(test_file),
-      operation="replace",
-      old_string="Content",
-      new_string="New content"
+      path=str(test_file), operation="replace", old_string="Content", new_string="New content"
     )
 
     # Verify result
@@ -626,10 +521,7 @@ class TestUpdateToolVerbosityLevels:
     # Create UpdateTool with summary verbosity and no diffs
     config = Config(
       tools=ToolsConfig(
-        content_display=ContentDisplayConfig(
-          verbosity="summary",
-          show_diff_for_updates=False
-        )
+        content_display=ContentDisplayConfig(verbosity="summary", show_diff_for_updates=False)
       )
     )
     tool = UpdateTool(config=config)
@@ -640,10 +532,7 @@ class TestUpdateToolVerbosityLevels:
 
     # Replace
     result = tool.execute(
-      path=str(test_file),
-      operation="replace",
-      old_string="Old",
-      new_string="New"
+      path=str(test_file), operation="replace", old_string="Old", new_string="New"
     )
 
     # Verify result
@@ -661,10 +550,7 @@ class TestUpdateToolVerbosityLevels:
     # Create UpdateTool with content verbosity
     config = Config(
       tools=ToolsConfig(
-        content_display=ContentDisplayConfig(
-          verbosity="content",
-          show_diff_for_updates=True
-        )
+        content_display=ContentDisplayConfig(verbosity="content", show_diff_for_updates=True)
       )
     )
     tool = UpdateTool(config=config)
@@ -675,10 +561,7 @@ class TestUpdateToolVerbosityLevels:
 
     # Replace
     result = tool.execute(
-      path=str(test_file),
-      operation="replace",
-      old_string="Old",
-      new_string="New"
+      path=str(test_file), operation="replace", old_string="Old", new_string="New"
     )
 
     # Verify result
@@ -700,10 +583,7 @@ class TestUpdateToolConfigIntegration:
     # Create UpdateTool with custom config
     config = Config(
       tools=ToolsConfig(
-        content_display=ContentDisplayConfig(
-          verbosity="content",
-          max_diff_lines=20
-        )
+        content_display=ContentDisplayConfig(verbosity="content", max_diff_lines=20)
       )
     )
     tool = UpdateTool(config=config)
@@ -722,9 +602,7 @@ class TestUpdateToolConfigIntegration:
     config = Config(
       tools=ToolsConfig(
         content_display=ContentDisplayConfig(
-          verbosity="content",
-          show_diff_for_updates=True,
-          max_diff_lines=10
+          verbosity="content", show_diff_for_updates=True, max_diff_lines=10
         )
       )
     )
@@ -736,10 +614,7 @@ class TestUpdateToolConfigIntegration:
 
     # Replace
     result = tool.execute(
-      path=str(test_file),
-      operation="replace",
-      old_string="Line 25",
-      new_string="Changed"
+      path=str(test_file), operation="replace", old_string="Line 25", new_string="Changed"
     )
 
     # Verify result

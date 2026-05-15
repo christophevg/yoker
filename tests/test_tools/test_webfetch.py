@@ -255,7 +255,9 @@ class TestWebFetchToolBackendIntegration:
     assert not result.success
     assert "timeout" in result.error.lower()
 
-  def test_backend_connection_error_returns_error_result(self, mock_backend_connection_error: MagicMock) -> None:
+  def test_backend_connection_error_returns_error_result(
+    self, mock_backend_connection_error: MagicMock
+  ) -> None:
     """
     Given: A backend that raises connection error
     When: Executing fetch
@@ -486,7 +488,9 @@ class TestWebFetchToolSecurity:
 
   # Scheme Validation Tests
 
-  def test_execute_http_scheme_blocked_when_https_required(self, mock_guardrail_https: MagicMock) -> None:
+  def test_execute_http_scheme_blocked_when_https_required(
+    self, mock_guardrail_https: MagicMock
+  ) -> None:
     """
     Given: A HTTP URL when require_https=True
     When: Executing fetch
@@ -697,6 +701,7 @@ class TestWebFetchBackendProtocol:
     """
     # Verify that OllamaWebFetchBackend implements the protocol
     from yoker.tools.web_backend import OllamaWebFetchBackend
+
     assert hasattr(OllamaWebFetchBackend, "fetch")
 
   def test_backend_protocol_returns_fetched_content(self, mock_backend: MagicMock) -> None:
@@ -726,6 +731,7 @@ class TestOllamaWebFetchBackend:
     Then: Initializes with client and default parameters
     """
     from yoker.tools.web_backend import OllamaWebFetchBackend
+
     mock_client = MagicMock()
     backend = OllamaWebFetchBackend(client=mock_client)
     assert backend._client == mock_client
@@ -739,17 +745,21 @@ class TestOllamaWebFetchBackend:
     Then: Calls client.web_fetch(url)
     """
     from yoker.tools.web_backend import OllamaWebFetchBackend
+
     backend = OllamaWebFetchBackend(client=mock_ollama_client)
     backend.fetch(url="https://example.com")
     mock_ollama_client.web_fetch.assert_called_once_with("https://example.com")
 
-  def test_ollama_backend_fetch_returns_fetched_content(self, mock_ollama_client: MagicMock) -> None:
+  def test_ollama_backend_fetch_returns_fetched_content(
+    self, mock_ollama_client: MagicMock
+  ) -> None:
     """
     Given: An OllamaWebFetchBackend with mocked client returning content
     When: Calling fetch(url)
     Then: Returns FetchedContent with extracted data
     """
     from yoker.tools.web_backend import OllamaWebFetchBackend
+
     backend = OllamaWebFetchBackend(client=mock_ollama_client)
     result = backend.fetch(url="https://example.com")
     assert isinstance(result, FetchedContent)
@@ -763,6 +773,7 @@ class TestOllamaWebFetchBackend:
     Then: Raises WebFetchError with error_type='size_limit'
     """
     from yoker.tools.web_backend import OllamaWebFetchBackend
+
     backend = OllamaWebFetchBackend(client=mock_ollama_client_large)
     with pytest.raises(WebFetchError) as exc_info:
       backend.fetch(url="https://example.com/large", max_size_kb=1)
@@ -775,6 +786,7 @@ class TestOllamaWebFetchBackend:
     Then: Raises WebFetchError with error_type='connection'
     """
     from yoker.tools.web_backend import OllamaWebFetchBackend
+
     backend = OllamaWebFetchBackend(client=mock_ollama_client_error)
     with pytest.raises(WebFetchError) as exc_info:
       backend.fetch(url="https://example.com")
@@ -787,6 +799,7 @@ class TestOllamaWebFetchBackend:
     Then: Raises WebFetchError with error_type='timeout'
     """
     from yoker.tools.web_backend import OllamaWebFetchBackend
+
     backend = OllamaWebFetchBackend(client=mock_ollama_client_timeout)
     with pytest.raises(WebFetchError) as exc_info:
       backend.fetch(url="https://example.com")
@@ -799,6 +812,7 @@ class TestOllamaWebFetchBackend:
     Then: Returns 'ollama'
     """
     from yoker.tools.web_backend import OllamaWebFetchBackend
+
     mock_client = MagicMock()
     backend = OllamaWebFetchBackend(client=mock_client)
     assert backend._backend_name == "ollama"
@@ -810,6 +824,7 @@ class TestOllamaWebFetchBackend:
     Then: Uses default timeout_seconds=30
     """
     from yoker.tools.web_backend import OllamaWebFetchBackend
+
     mock_client = MagicMock()
     backend = OllamaWebFetchBackend(client=mock_client)
     assert backend._timeout_seconds == 30
@@ -821,6 +836,7 @@ class TestOllamaWebFetchBackend:
     Then: Uses default max_size_kb=2048
     """
     from yoker.tools.web_backend import OllamaWebFetchBackend
+
     mock_client = MagicMock()
     backend = OllamaWebFetchBackend(client=mock_client)
     assert backend._max_size_kb == 2048

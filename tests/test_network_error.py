@@ -40,7 +40,7 @@ class TestAgentNetworkErrors:
     agent = Agent()
 
     # Mock the client.chat to raise RemoteProtocolError
-    with patch.object(agent.client, 'chat') as mock_chat:
+    with patch.object(agent.client, "chat") as mock_chat:
       mock_chat.side_effect = httpx.RemoteProtocolError(
         "peer closed connection without sending complete message body"
       )
@@ -56,7 +56,7 @@ class TestAgentNetworkErrors:
     """Test that ConnectError is converted to NetworkError."""
     agent = Agent()
 
-    with patch.object(agent.client, 'chat') as mock_chat:
+    with patch.object(agent.client, "chat") as mock_chat:
       mock_chat.side_effect = httpx.ConnectError("Connection refused")
 
       with pytest.raises(NetworkError) as exc_info:
@@ -69,7 +69,7 @@ class TestAgentNetworkErrors:
     """Test that ReadTimeout is converted to NetworkError."""
     agent = Agent()
 
-    with patch.object(agent.client, 'chat') as mock_chat:
+    with patch.object(agent.client, "chat") as mock_chat:
       mock_chat.side_effect = httpx.ReadTimeout("Read timed out")
 
       with pytest.raises(NetworkError) as exc_info:
@@ -82,7 +82,7 @@ class TestAgentNetworkErrors:
     """Test that ConnectTimeout is converted to NetworkError."""
     agent = Agent()
 
-    with patch.object(agent.client, 'chat') as mock_chat:
+    with patch.object(agent.client, "chat") as mock_chat:
       mock_chat.side_effect = httpx.ConnectTimeout("Connection timed out")
 
       with pytest.raises(NetworkError) as exc_info:
@@ -99,7 +99,7 @@ class TestAgentNetworkErrors:
     agent.context.add_message("user", "First message")
     initial_messages = agent.context.get_messages().copy()
 
-    with patch.object(agent.client, 'chat') as mock_chat:
+    with patch.object(agent.client, "chat") as mock_chat:
       mock_chat.side_effect = httpx.ConnectError("Connection refused")
 
       with pytest.raises(NetworkError):
@@ -130,7 +130,7 @@ class TestNetworkErrorRecovery:
     ]
 
     for error in httpx_errors:
-      with patch.object(agent.client, 'chat') as mock_chat:
+      with patch.object(agent.client, "chat") as mock_chat:
         mock_chat.side_effect = error
 
         with pytest.raises(NetworkError) as exc_info:
