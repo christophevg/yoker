@@ -215,6 +215,14 @@ class MkdirTool(Tool):
         result="",
         error="Permission denied",
       )
+    except ValueError as e:
+      # Windows raises ValueError for paths with null bytes
+      log.warning("mkdir_invalid_path", path=str(resolved), error=str(e))
+      return ToolResult(
+        success=False,
+        result="",
+        error="Invalid path",
+      )
     except OSError as e:
       log.error("mkdir_os_error", path=str(resolved), error=str(e))
       return ToolResult(
