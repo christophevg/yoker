@@ -292,9 +292,7 @@ class TestAgentContentEventEmission:
     assert "myfile.txt" in event.path
     assert event.content_type in ("summary", "full")
 
-  def test_content_event_contains_content(
-    self, tmp_path: Path, mocker: MockerFixture
-  ) -> None:
+  def test_content_event_contains_content(self, tmp_path: Path, mocker: MockerFixture) -> None:
     """
     Given: Agent emits ToolContentEvent for write operation
     When: Event is created
@@ -475,9 +473,7 @@ class TestAgentContentEventConstruction:
     # operation should match update type
     assert event.operation in ("replace", "insert_before", "insert_after", "delete")
 
-  def test_event_type_set_to_tool_content(
-    self, tmp_path: Path, mocker: MockerFixture
-  ) -> None:
+  def test_event_type_set_to_tool_content(self, tmp_path: Path, mocker: MockerFixture) -> None:
     """
     Given: Agent creates ToolContentEvent
     When: Event is constructed
@@ -514,9 +510,7 @@ class TestAgentContentEventConstruction:
 class TestAgentContentEventEmissionOrder:
   """Test event emission order for content events."""
 
-  def test_event_sequence_for_write_operation(
-    self, tmp_path: Path, mocker: MockerFixture
-  ) -> None:
+  def test_event_sequence_for_write_operation(self, tmp_path: Path, mocker: MockerFixture) -> None:
     """
     Given: Agent processes WriteTool result
     When: Emitting events
@@ -556,9 +550,7 @@ class TestAgentContentEventEmissionOrder:
     assert content_idx is not None
     assert result_idx < content_idx
 
-  def test_event_sequence_for_update_operation(
-    self, tmp_path: Path, mocker: MockerFixture
-  ) -> None:
+  def test_event_sequence_for_update_operation(self, tmp_path: Path, mocker: MockerFixture) -> None:
     """
     Given: Agent processes UpdateTool result
     When: Emitting events
@@ -607,9 +599,7 @@ class TestAgentContentEventEmissionOrder:
     assert content_idx is not None
     assert result_idx < content_idx
 
-  def test_event_sequence_for_read_operation(
-    self, tmp_path: Path, mocker: MockerFixture
-  ) -> None:
+  def test_event_sequence_for_read_operation(self, tmp_path: Path, mocker: MockerFixture) -> None:
     """
     Given: Agent processes ReadTool result
     When: Emitting events
@@ -705,9 +695,7 @@ class TestAgentContentEventWithMultipleTools:
     # Second content after second result
     assert content_indices[1] > result_indices[1]
 
-  def test_content_events_for_mixed_operations(
-    self, tmp_path: Path, mocker: MockerFixture
-  ) -> None:
+  def test_content_events_for_mixed_operations(self, tmp_path: Path, mocker: MockerFixture) -> None:
     """
     Given: Agent processes mixed tool results (write, read, update)
     When: Emitting events
@@ -768,9 +756,7 @@ class TestAgentContentEventWithMultipleTools:
 class TestAgentContentEventErrorHandling:
   """Test error handling for content event emission."""
 
-  def test_content_event_not_emitted_on_error(
-    self, tmp_path: Path, mocker: MockerFixture
-  ) -> None:
+  def test_content_event_not_emitted_on_error(self, tmp_path: Path, mocker: MockerFixture) -> None:
     """
     Given: ToolResult with success=False and content_metadata
     When: Agent processes result
