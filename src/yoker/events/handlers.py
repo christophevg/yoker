@@ -409,7 +409,7 @@ class ConsoleEventHandler:
     elif operation in ("insert_before", "insert_after"):
       line_number = metadata.get("line_number", 0)
       inserted_lines = metadata.get("inserted_lines", 1)
-      self.console.print(f"  Insert at line {line_number}: {inserted_lines} line(s)")
+      self.console.print(f"  Insert at line {line_number} in {filename}: {inserted_lines} line(s)")
 
     elif operation == "replace":
       self.console.print(f"  Replace in {filename}")
