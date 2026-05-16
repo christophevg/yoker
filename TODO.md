@@ -63,18 +63,19 @@
   - See `analysis/ux-write-update-display.md` for UX design
   - See `reporting/1.5.5-write-update-display/consensus.md` for consensus
 
-- [ ] **1.5.6 Complete Tool Content Display** (PRIORITY: High)
-  - Implement Agent emission of ToolContentEvent when metadata present
-  - Add ConsoleEventHandler._handle_tool_content() method
-  - Dispatch TOOL_CONTENT event type to handler
-  - Implement silent mode (tool name + success indicator only)
-  - Implement summary mode (line counts, operation summaries)
-  - Implement content mode (full content with line numbers)
-  - Implement diff display for replace operations (unified diff)
-  - Implement context display for insert/delete operations
-  - Match Read tool visual style (cyan tool name, filename only)
-  - Convert 47 stub tests to real tests
+- [x] **1.5.6 Complete Tool Content Display** (2026-05-16)
+  - Implement Agent emission of ToolContentEvent when metadata present ✅
+  - Add ConsoleEventHandler._handle_tool_content() method ✅
+  - Dispatch TOOL_CONTENT event type to handler ✅
+  - Implement silent mode (tool name + success indicator only) ✅
+  - Implement summary mode (line counts, operation summaries) ✅
+  - Implement content mode (full content with line numbers) ✅
+  - Implement diff display for replace operations (unified diff) ✅
+  - Implement context display for insert/delete operations ✅
+  - Match Read tool visual style (cyan tool name, filename only) ✅
+  - Convert 47 stub tests to real tests ✅
   - **Depends on**: 1.5.5 (content_metadata already populated by tools)
+  - See `reporting/1.5.6-tool-content-display/summary.md` for implementation summary
 
 ### Phase 1.6: Documentation (Medium Priority)
 
