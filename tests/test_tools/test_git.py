@@ -99,6 +99,19 @@ class TestGitToolReadOnlyOperations:
     repo = tmp_path / "test_repo"
     repo.mkdir()
     subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
+    # Configure git identity locally for this repo
+    subprocess.run(
+      ["git", "config", "user.name", "Test"],
+      cwd=repo,
+      check=True,
+      capture_output=True,
+    )
+    subprocess.run(
+      ["git", "config", "user.email", "test@test.com"],
+      cwd=repo,
+      check=True,
+      capture_output=True,
+    )
     # Create initial commit
     (repo / "README.md").write_text("# Test Repository\n")
     subprocess.run(["git", "add", "README.md"], cwd=repo, check=True, capture_output=True)
@@ -107,12 +120,6 @@ class TestGitToolReadOnlyOperations:
       cwd=repo,
       check=True,
       capture_output=True,
-      env={
-        "GIT_AUTHOR_NAME": "Test",
-        "GIT_AUTHOR_EMAIL": "test@test.com",
-        "GIT_COMMITTER_NAME": "Test",
-        "GIT_COMMITTER_EMAIL": "test@test.com",
-      },
     )
     return repo
 
@@ -189,12 +196,6 @@ class TestGitToolReadOnlyOperations:
         cwd=git_repo,
         check=True,
         capture_output=True,
-        env={
-          "GIT_AUTHOR_NAME": "Test",
-          "GIT_AUTHOR_EMAIL": "test@test.com",
-          "GIT_COMMITTER_NAME": "Test",
-          "GIT_COMMITTER_EMAIL": "test@test.com",
-        },
       )
 
     config = GitToolConfig()
@@ -335,6 +336,19 @@ class TestGitToolPermissionRequiredOperations:
     repo = tmp_path / "test_repo"
     repo.mkdir()
     subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
+    # Configure git identity locally for this repo (needed for commit operations)
+    subprocess.run(
+      ["git", "config", "user.name", "Test"],
+      cwd=repo,
+      check=True,
+      capture_output=True,
+    )
+    subprocess.run(
+      ["git", "config", "user.email", "test@test.com"],
+      cwd=repo,
+      check=True,
+      capture_output=True,
+    )
     (repo / "README.md").write_text("# Test\n")
     subprocess.run(["git", "add", "README.md"], cwd=repo, check=True, capture_output=True)
     subprocess.run(
@@ -342,12 +356,6 @@ class TestGitToolPermissionRequiredOperations:
       cwd=repo,
       check=True,
       capture_output=True,
-      env={
-        "GIT_AUTHOR_NAME": "Test",
-        "GIT_AUTHOR_EMAIL": "test@test.com",
-        "GIT_COMMITTER_NAME": "Test",
-        "GIT_COMMITTER_EMAIL": "test@test.com",
-      },
     )
     return repo
 
@@ -834,6 +842,19 @@ class TestGitToolOutputSanitization:
     repo = tmp_path / "test_repo"
     repo.mkdir()
     subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
+    # Configure git identity locally for this repo
+    subprocess.run(
+      ["git", "config", "user.name", "Test"],
+      cwd=repo,
+      check=True,
+      capture_output=True,
+    )
+    subprocess.run(
+      ["git", "config", "user.email", "test@test.com"],
+      cwd=repo,
+      check=True,
+      capture_output=True,
+    )
     (repo / "README.md").write_text("# Test\n")
     subprocess.run(["git", "add", "README.md"], cwd=repo, check=True, capture_output=True)
     subprocess.run(
@@ -841,12 +862,6 @@ class TestGitToolOutputSanitization:
       cwd=repo,
       check=True,
       capture_output=True,
-      env={
-        "GIT_AUTHOR_NAME": "Test",
-        "GIT_AUTHOR_EMAIL": "test@test.com",
-        "GIT_COMMITTER_NAME": "Test",
-        "GIT_COMMITTER_EMAIL": "test@test.com",
-      },
     )
 
     config = GitToolConfig()
@@ -1155,6 +1170,19 @@ class TestGitToolReturnFormat:
     repo = tmp_path / "test_repo"
     repo.mkdir()
     subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
+    # Configure git identity locally for this repo
+    subprocess.run(
+      ["git", "config", "user.name", "Test"],
+      cwd=repo,
+      check=True,
+      capture_output=True,
+    )
+    subprocess.run(
+      ["git", "config", "user.email", "test@test.com"],
+      cwd=repo,
+      check=True,
+      capture_output=True,
+    )
     (repo / "README.md").write_text("# Test\n")
     subprocess.run(["git", "add", "README.md"], cwd=repo, check=True, capture_output=True)
     subprocess.run(
@@ -1162,12 +1190,6 @@ class TestGitToolReturnFormat:
       cwd=repo,
       check=True,
       capture_output=True,
-      env={
-        "GIT_AUTHOR_NAME": "Test",
-        "GIT_AUTHOR_EMAIL": "test@test.com",
-        "GIT_COMMITTER_NAME": "Test",
-        "GIT_COMMITTER_EMAIL": "test@test.com",
-      },
     )
     return repo
 
@@ -1288,6 +1310,19 @@ class TestGitToolIntegration:
     repo = tmp_path / "test_repo"
     repo.mkdir()
     subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
+    # Configure git identity locally for this repo
+    subprocess.run(
+      ["git", "config", "user.name", "Test"],
+      cwd=repo,
+      check=True,
+      capture_output=True,
+    )
+    subprocess.run(
+      ["git", "config", "user.email", "test@test.com"],
+      cwd=repo,
+      check=True,
+      capture_output=True,
+    )
     (repo / "README.md").write_text("# Test\n")
     subprocess.run(["git", "add", "README.md"], cwd=repo, check=True, capture_output=True)
     subprocess.run(
@@ -1295,12 +1330,6 @@ class TestGitToolIntegration:
       cwd=repo,
       check=True,
       capture_output=True,
-      env={
-        "GIT_AUTHOR_NAME": "Test",
-        "GIT_AUTHOR_EMAIL": "test@test.com",
-        "GIT_COMMITTER_NAME": "Test",
-        "GIT_COMMITTER_EMAIL": "test@test.com",
-      },
     )
     return repo
 
