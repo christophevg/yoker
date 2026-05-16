@@ -6,13 +6,12 @@ Task: 1.5.6 - Complete Tool Content Display
 from pathlib import Path
 from typing import Any
 
-import pytest
 from pytest_mock import MockerFixture
 
 from yoker.agent import Agent
 from yoker.config import Config
 from yoker.config.schema import PermissionsConfig
-from yoker.events import EventType, ToolContentEvent, ToolResultEvent
+from yoker.events import EventType, ToolContentEvent
 from yoker.events.types import Event
 
 
