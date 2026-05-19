@@ -33,6 +33,9 @@ log = get_logger(__name__)
 DIR_MODE = 0o700  # Owner-only for directories
 FILE_MODE = 0o600  # Owner-only for files
 
+# Default storage path for sessions
+DEFAULT_STORAGE_PATH = Path.home() / ".cache" / "yoker" / "sessions"
+
 
 class BasicPersistenceContextManager:
   """Context manager with JSONL persistence.
@@ -52,18 +55,23 @@ class BasicPersistenceContextManager:
 
   def __init__(
     self,
-    storage_path: Path | str,
+    storage_path: Path | str | None = None,
     session_id: str = "auto",
   ) -> None:
     """Initialize context manager.
 
     Args:
       storage_path: Directory for storing context files.
+                     Defaults to ~/.cache/yoker/sessions.
       session_id: Session ID or "auto" to generate.
 
     Raises:
       ValidationError: If storage_path or session_id is invalid.
     """
+    # Use default storage path if not provided
+    if storage_path is None:
+      storage_path = DEFAULT_STORAGE_PATH
+
     # Validate and resolve storage path
     self._storage_path = validate_storage_path(Path(storage_path), "context.storage_path")
 
@@ -87,6 +95,37 @@ class BasicPersistenceContextManager:
       session_id=self._session_id,
       storage_path=str(self._storage_path),
     )
+
+  @classmethod
+  def resume(
+    cls,
+    session_id: str,
+    storage_path: Path | str | None = None,
+  ) -> "BasicPersistenceContextManager":
+    """Resume an existing session.
+
+    Factory method that creates a context manager and loads an existing session.
+
+    Args:
+      session_id: Session ID to resume.
+      storage_path: Directory for storing context files.
+                    Defaults to ~/.cache/yoker/sessions.
+
+    Returns:
+      Context manager with loaded session.
+
+    Raises:
+      SessionNotFoundError: If session doesn't exist.
+      ContextCorruptionError: If session file is corrupted.
+
+    Example:
+      >>> cm = BasicPersistenceContextManager.resume("my-session-id")
+      >>> print(f"Loaded {cm.get_statistics().message_count} messages")
+    """
+    cm = cls(storage_path=storage_path, session_id=session_id)
+    if not cm.load():
+      raise SessionNotFoundError(session_id)
+    return cm
 
   def get_session_id(self) -> str:
     """Get the unique session identifier."""
@@ -351,6 +390,10 @@ class BasicPersistenceContextManager:
       data: Record data dictionary.
     """
     self._ensure_storage_directory()
+
+    # Write session_start if this is the first record
+    if not self._file_path.exists():
+      self._write_session_start()
 
     record = {
       "type": record_type,

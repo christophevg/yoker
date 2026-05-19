@@ -7,7 +7,12 @@ from pathlib import Path
 
 import pytest
 
-from yoker.context import BasicPersistenceContextManager, ContextManager, ContextStatistics
+from yoker.context import (
+  BasicPersistenceContextManager,
+  ContextManager,
+  ContextStatistics,
+  SessionMetadata,
+)
 from yoker.context.validator import (
   is_safe_path,
   validate_session_id,
@@ -331,3 +336,203 @@ class TestBasicPersistenceContextManager:
     """Test that BasicPersistenceContextManager implements ContextManager protocol."""
     cm = BasicPersistenceContextManager(tmp_path, session_id="test-protocol")
     assert isinstance(cm, ContextManager)
+
+
+class TestListSessions:
+  """Tests for list_sessions function."""
+
+  def test_empty_directory(self, tmp_path: Path) -> None:
+    """Test listing sessions from empty directory."""
+    from yoker.context import list_sessions
+
+    sessions = list_sessions(tmp_path)
+    assert sessions == []
+
+  def test_nonexistent_directory(self, tmp_path: Path) -> None:
+    """Test listing sessions from nonexistent directory."""
+    from yoker.context import list_sessions
+
+    nonexistent = tmp_path / "nonexistent"
+    sessions = list_sessions(nonexistent)
+    assert sessions == []
+
+  def test_single_session(self, tmp_path: Path) -> None:
+    """Test listing a single session."""
+    from yoker.context import list_sessions
+
+    # Create a session with some messages
+    cm = BasicPersistenceContextManager(tmp_path, session_id="test-session-1")
+    cm.start_turn("Hello, how are you?")
+    cm.end_turn("I'm doing well, thank you!")
+    cm.save()
+    cm.close()
+
+    sessions = list_sessions(tmp_path)
+    assert len(sessions) == 1
+    assert sessions[0].session_id == "test-session-1"
+    assert sessions[0].message_count == 2  # user + assistant
+    assert sessions[0].turn_count == 1
+    assert sessions[0].start_time is not None
+
+  def test_multiple_sessions_sorted_newest_first(self, tmp_path: Path) -> None:
+    """Test that sessions are sorted by start_time, newest first."""
+    import time
+
+    from yoker.context import list_sessions
+
+    # Create first session
+    cm1 = BasicPersistenceContextManager(tmp_path, session_id="session-older")
+    cm1.start_turn("First message")
+    cm1.end_turn("First response")
+    cm1.save()
+    cm1.close()
+
+    time.sleep(0.01)  # Ensure different timestamps
+
+    # Create second session
+    cm2 = BasicPersistenceContextManager(tmp_path, session_id="session-newer")
+    cm2.start_turn("Second message")
+    cm2.end_turn("Second response")
+    cm2.save()
+    cm2.close()
+
+    sessions = list_sessions(tmp_path)
+    assert len(sessions) == 2
+    # Newest should be first
+    assert sessions[0].session_id == "session-newer"
+    assert sessions[1].session_id == "session-older"
+
+  def test_session_last_message_preview(self, tmp_path: Path) -> None:
+    """Test that last_message contains preview of last user message."""
+    from yoker.context import list_sessions
+
+    cm = BasicPersistenceContextManager(tmp_path, session_id="test-preview")
+    cm.start_turn("Hello there!")
+    cm.end_turn("Hi! How can I help?")
+    cm.start_turn("What is the weather?")
+    cm.end_turn("I don't have weather data.")
+    cm.save()
+    cm.close()
+
+    sessions = list_sessions(tmp_path)
+    assert len(sessions) == 1
+    # Last user message should be captured
+    assert sessions[0].last_message == "What is the weather?"
+
+  def test_long_message_truncation(self, tmp_path: Path) -> None:
+    """Test that long messages are truncated in preview."""
+    from yoker.context import list_sessions
+
+    long_message = "A" * 200  # 200 characters
+
+    cm = BasicPersistenceContextManager(tmp_path, session_id="test-long")
+    cm.start_turn(long_message)
+    cm.end_turn("Response")
+    cm.save()
+    cm.close()
+
+    sessions = list_sessions(tmp_path)
+    assert len(sessions) == 1
+    # Should be truncated to 100 chars + "..."
+    assert len(sessions[0].last_message) == 103  # 100 + "..."
+    assert sessions[0].last_message.endswith("...")
+
+  def test_corrupted_session_skipped(self, tmp_path: Path) -> None:
+    """Test that corrupted session files are skipped."""
+    from yoker.context import list_sessions
+
+    # Create valid session
+    cm = BasicPersistenceContextManager(tmp_path, session_id="valid-session")
+    cm.start_turn("Hello")
+    cm.end_turn("Hi!")
+    cm.save()
+    cm.close()
+
+    # Create corrupted session file
+    corrupted_file = tmp_path / "corrupted-session.jsonl"
+    corrupted_file.write_text("not valid json\n")
+
+    sessions = list_sessions(tmp_path)
+    assert len(sessions) == 1
+    assert sessions[0].session_id == "valid-session"
+
+  def test_session_metadata_fields(self, tmp_path: Path) -> None:
+    """Test that all SessionMetadata fields are populated correctly."""
+    from yoker.context import list_sessions
+
+    cm = BasicPersistenceContextManager(tmp_path, session_id="full-metadata")
+    cm.start_turn("Message 1")
+    cm.end_turn("Response 1")
+    cm.start_turn("Message 2")
+    cm.end_turn("Response 2")
+    cm.save()
+    cm.close()
+
+    sessions = list_sessions(tmp_path)
+    assert len(sessions) == 1
+
+    metadata = sessions[0]
+    assert isinstance(metadata, SessionMetadata)
+    assert metadata.session_id == "full-metadata"
+    assert metadata.message_count == 4  # 2 turns * 2 messages
+    assert metadata.turn_count == 2
+    assert metadata.start_time is not None
+    assert metadata.last_turn_time is not None
+    assert metadata.last_message == "Message 2"
+    assert metadata.file_path == str(tmp_path / "full-metadata.jsonl")
+
+  def test_default_storage_path(self) -> None:
+    """Test that default storage path is used when not provided."""
+    from yoker.context import DEFAULT_STORAGE_PATH
+
+    cm = BasicPersistenceContextManager()
+    assert cm._storage_path == DEFAULT_STORAGE_PATH
+
+  def test_resume_existing_session(self, tmp_path: Path) -> None:
+    """Test resuming an existing session."""
+    # Create a session
+    cm1 = BasicPersistenceContextManager(tmp_path, session_id="test-resume")
+    cm1.start_turn("Hello")
+    cm1.end_turn("Hi there!")
+    cm1.save()
+    cm1.close()
+
+    # Resume the session
+    cm2 = BasicPersistenceContextManager.resume("test-resume", storage_path=tmp_path)
+
+    # Verify the session was loaded
+    assert cm2.get_statistics().message_count == 2
+    messages = cm2.get_messages()
+    assert len(messages) == 2
+    assert messages[0]["role"] == "user"
+    assert messages[0]["content"] == "Hello"
+
+  def test_resume_nonexistent_session_raises(self, tmp_path: Path) -> None:
+    """Test that resuming a nonexistent session raises SessionNotFoundError."""
+    from yoker.exceptions import SessionNotFoundError
+
+    with pytest.raises(SessionNotFoundError):
+      BasicPersistenceContextManager.resume("nonexistent", storage_path=tmp_path)
+
+  def test_list_sessions_default_path(self, tmp_path: Path, monkeypatch) -> None:
+    """Test list_sessions with default path."""
+
+    from yoker.context import list_sessions
+
+    # Use tmp_path as the default storage path
+    monkeypatch.setattr("yoker.context.session.DEFAULT_STORAGE_PATH", tmp_path)
+    monkeypatch.setattr("yoker.context.basic.DEFAULT_STORAGE_PATH", tmp_path)
+
+    # Create a session
+    cm = BasicPersistenceContextManager(session_id="test-default")
+    cm._storage_path = tmp_path  # Override to use tmp_path
+    cm._file_path = tmp_path / "test-default.jsonl"
+    cm.start_turn("Test")
+    cm.end_turn("Response")
+    cm.save()
+    cm.close()
+
+    # List sessions with default path
+    sessions = list_sessions()
+    assert len(sessions) == 1
+    assert sessions[0].session_id == "test-default"

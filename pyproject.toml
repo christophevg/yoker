@@ -131,7 +131,7 @@ env_list = ["py310", "py311", "py312"]
 description = "run tests with pytest"
 commands_pre = [
   ["uv", "pip", "install", "-e", "."],
-  ["uv", "pip", "install", "pytest", "pytest-cov", "pytest-asyncio"],
+  ["uv", "pip", "install", "pytest", "pytest-cov", "pytest-asyncio", "pytest-mock"],
 ]
 commands = [
   ["pytest", "tests", "-v", "--cov=yoker", "--cov-report=term-missing"],
