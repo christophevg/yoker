@@ -75,7 +75,7 @@ check: typecheck lint ## Run all checks (typecheck + lint)
 build: ## Build package distributions
 	uv build
 
-publish: build ## Build and publish to PyPI
+publish: clean build ## Build and publish to PyPI
 	uv run twine upload dist/*
 
 publish-test: build ## Build and publish to TestPyPI
