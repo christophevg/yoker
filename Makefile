@@ -2,10 +2,18 @@
 
 .PHONY: install install-pythons sync test test-all test-3.10 test-3.11 test-3.12 test-file test-one typecheck lint format check build publish publish-test clean clean-all help docs docs-view demo demos
 
-## Setup
+## environment management
 
-install: ## Install package in development mode with all extras
-	uv sync --all-extras
+env-test:
+	uv sync --extra dev
+
+env-docs:
+	uv sync --extra docs
+
+env-run:
+	uv sync
+
+## Setup
 
 install-pythons: ## Install all supported Python versions for tox
 	uv python install 3.10 3.11 3.12
