@@ -21,7 +21,7 @@ from yoker.events.types import (
 )
 
 if TYPE_CHECKING:
-  from yoker.agent import EventCallback
+  from yoker.agent_base import EventCallback
 
 
 class EventReplayAgent:
