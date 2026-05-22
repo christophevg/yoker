@@ -132,6 +132,106 @@
   - See `analysis/api-logging-system.md` for API design
   - See `reporting/1.5-logging-system/summary.md` for implementation summary
 
+### Phase 1.7: Async-First Agent Architecture (High Priority)
+
+This phase creates two separate Agent classes following the httpx pattern:
+- `yoker.Agent` - Synchronous implementation
+- `yoker.AsyncAgent` - Async-native implementation
+
+Both share identical public interfaces with the same method names.
+
+- [ ] **1.7.1 Extract AgentCore Class**
+  - Create `src/yoker/agent_base.py` with shared state and utilities
+  - Extract: configuration initialization, tool registry building, context manager
+  - Extract: guardrail setup, agent definition loading, event handler storage
+  - Extract: recursion tracking
+  - Ensure sync Agent still works with AgentCore delegation
+  - Write unit tests for AgentCore
+  - **Estimated time:** 1 hour
+  - **Satisfies:** FR4
+
+- [ ] **1.7.2 Refactor Sync Agent**
+  - Update `src/yoker/agent.py` to use AgentCore via composition
+  - Add property delegations to AgentCore (model, tool_registry, context, etc.)
+  - Keep sync `Client` initialization (no asyncio)
+  - Keep sync `_emit()` method
+  - Keep sync `process()` implementation
+  - Keep sync session methods
+  - Verify all existing tests pass
+  - **Estimated time:** 1 hour
+  - **Satisfies:** FR1, NFR3
+
+- [ ] **1.7.3 Create Async Agent Module**
+  - Create `src/yoker/async_agent.py` with AsyncAgent class
+  - Update `src/yoker/__init__.py` to export AsyncAgent
+  - Use AgentCore for shared state (composition)
+  - Use `AsyncClient` from ollama library
+  - Add property delegations to AgentCore (same as sync Agent)
+  - Implement async `_emit()` supporting both sync and async handlers
+  - **Estimated time:** 2 hours
+  - **Satisfies:** FR2, FR5, FR6, FR7
+
+- [ ] **1.7.4 Async Ollama Streaming**
+  - Implement async `process()` in AsyncAgent with async streaming
+  - Use `async for` for chunk iteration
+  - Update all event emission to async (`await self._emit()`)
+  - Handle tool execution in async context
+  - Ensure identical behavior to sync implementation
+  - Write comprehensive async tests
+  - **Estimated time:** 1.5 hours
+  - **Satisfies:** FR2
+
+- [ ] **1.7.5 Async Session Management**
+  - Implement async `begin_session()` and `end_session()` in AsyncAgent
+  - Use async event emission
+  - Ensure proper resource cleanup in async context
+  - Write unit tests for async session lifecycle
+  - **Estimated time:** 30 minutes
+  - **Satisfies:** FR2
+
+- [ ] **1.7.6 Async CLI Integration**
+  - Create `main_async()` function in `__main__.py`
+  - Refactor `main()` to call `asyncio.run(main_async())`
+  - Update prompt_toolkit calls to use `prompt_async()`
+  - Use AsyncAgent in CLI
+  - Handle async session begin/end
+  - Test interactive mode with async implementation
+  - **Estimated time:** 45 minutes
+  - **Satisfies:** FR11
+
+- [ ] **1.7.7 Async Event Handler Support**
+  - Update `ConsoleEventHandler` to support async operation
+  - Make `__call__` method async
+  - Add backward-compatible sync support if needed
+  - Ensure Rich console output works in async context
+  - Write tests for async event handling
+  - **Estimated time:** 45 minutes
+  - **Satisfies:** FR7
+
+- [ ] **1.7.8 Async Test Coverage**
+  - Add pytest-asyncio markers to test files
+  - Create async test fixtures in `conftest.py`
+  - Write tests for sync Agent (existing tests)
+  - Write tests for AsyncAgent basic functionality
+  - Write tests for async event handlers
+  - Write tests for both sync and async session management
+  - Ensure test coverage maintained (>80%)
+  - **Estimated time:** 1 hour
+  - **Satisfies:** FR8
+
+- [ ] **1.7.9 Documentation Updates**
+  - Update README.md with sync and async Agent documentation
+  - Add async code examples to quickstart guide
+  - Document both import paths: `from yoker import Agent` and `from yoker import AsyncAgent`
+  - Add Quart/FastAPI integration examples
+  - Update CLAUDE.md architecture section
+  - Update API documentation (Sphinx)
+  - **Estimated time:** 1 hour
+  - **Satisfies:** FR9, FR10
+
+**Total estimated time:** 9.5 hours (+ 2 hours buffer)
+**See:** `analysis/async-first-architecture.md` for full design document
+
 ### Future Features (Low Priority)
 
 - [ ] **2.13.1 Local WebSearch Backend** (Deferred: Ollama backend working)
