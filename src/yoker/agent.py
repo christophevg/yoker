@@ -2,15 +2,13 @@
 
 import json
 import os
-from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import httpx
-from dotenv import load_dotenv
 from ollama import Client
 
-from yoker.config import Config
+from yoker.agent_base import AgentCore, EventCallback
 from yoker.events import (
   ContentChunkEvent,
   ContentEndEvent,
@@ -31,37 +29,23 @@ from yoker.events import (
 from yoker.exceptions import NetworkError
 from yoker.logging import get_logger, log_timing
 from yoker.thinking import ThinkingMode
-from yoker.tools import Tool, ToolRegistry
+from yoker.tools import ToolRegistry
 from yoker.tools.agent import AgentTool
-from yoker.tools.existence import ExistenceTool
-from yoker.tools.git import GitTool
-from yoker.tools.list import ListTool
-from yoker.tools.mkdir import MkdirTool
-from yoker.tools.read import ReadTool
-from yoker.tools.search import SearchTool
-from yoker.tools.update import UpdateTool
-from yoker.tools.web_backend import OllamaWebFetchBackend, OllamaWebSearchBackend
-from yoker.tools.web_guardrail import WebGuardrail, WebGuardrailConfig
-from yoker.tools.webfetch import WebFetchTool
-from yoker.tools.websearch import WebSearchTool
-from yoker.tools.write import WriteTool
 
 if TYPE_CHECKING:
   from yoker.agents import AgentDefinition
   from yoker.commands import CommandRegistry
+  from yoker.config import Config
   from yoker.context import ContextManager
+  from yoker.tools.path_guardrail import PathGuardrail
 
 log = get_logger(__name__)
 
-# Type alias for event callbacks
-EventCallback = Callable[[Event], None]
-
-# Default system prompt
-DEFAULT_SYSTEM_PROMPT = "You are a helpful assistant."
-
 
 class Agent:
-  """Minimal agent that chats with Ollama and uses tools.
+  """Synchronous agent that chats with Ollama and uses tools.
+
+  This implementation uses composition with AgentCore for shared state.
 
   Attributes:
     client: Ollama client for API communication.
@@ -77,7 +61,7 @@ class Agent:
   def __init__(
     self,
     model: str | None = None,
-    config: Config | None = None,
+    config: "Config | None" = None,
     config_path: Path | str | None = None,
     thinking_mode: ThinkingMode = ThinkingMode.ON,
     command_registry: "CommandRegistry | None" = None,
@@ -99,96 +83,51 @@ class Agent:
       context_manager: Optional ContextManager for conversation persistence.
       _recursion_depth: Internal parameter for subagent recursion tracking.
     """
-    # Load environment variables from .env and .env.local
-    # .env.local takes precedence over .env
-    load_dotenv(Path(".env"))
-    load_dotenv(Path(".env.local"))
+    # Load configuration once (following same precedence as AgentCore)
+    from yoker.config import Config
 
-    # Load configuration
     if config is not None:
-      self.config = config
+      loaded_config = config
     elif config_path is not None:
       from yoker.config import load_config
 
-      self.config = load_config(config_path)
+      loaded_config = load_config(config_path)
     else:
-      self.config = Config()
+      loaded_config = Config()
 
-    # Validate configuration
-    from yoker.config.validator import validate_config
-
-    warnings = validate_config(self.config)
-    for warning in warnings:
-      log.warning("config_validation_warning", warning=warning)
-
-    # Initialize client
-    # Check for API key for direct ollama.com connection
+    # Initialize sync-specific client
     api_key = os.environ.get("OLLAMA_API_KEY")
     if api_key:
-      # Use ollama.com with API key authentication
-      self.client = Client(
+      self._client = Client(
         host="https://ollama.com", headers={"Authorization": f"Bearer {api_key}"}
       )
       log.info("ollama_client_initialized", host="ollama.com", auth="api_key")
     else:
-      # Use local Ollama server
-      self.client = Client(host=self.config.backend.ollama.base_url)
-      log.info("ollama_client_initialized", host=self.config.backend.ollama.base_url, auth="none")
+      base_url = loaded_config.backend.ollama.base_url
+      self._client = Client(host=base_url)
+      log.info("ollama_client_initialized", host=base_url, auth="none")
 
-    # Use provided model or config model
-    self.model = model if model is not None else self.config.backend.ollama.model
+    # Delegate initialization to AgentCore for shared state
+    self._core = AgentCore(
+      model=model,
+      config=loaded_config,
+      thinking_mode=thinking_mode,
+      command_registry=command_registry,
+      agent_definition=agent_definition,
+      agent_path=agent_path,
+      context_manager=context_manager,
+      client=self._client,
+      _recursion_depth=_recursion_depth,
+    )
 
-    # Thinking mode state
-    self.thinking_mode = thinking_mode
-
-    # Command registry for slash-commands
-    self.command_registry = command_registry
-
-    # Load agent definition if path provided
-    self.agent_definition: AgentDefinition | None = None
-    system_prompt = DEFAULT_SYSTEM_PROMPT
-
-    if agent_definition is not None:
-      self.agent_definition = agent_definition
-      system_prompt = agent_definition.system_prompt or DEFAULT_SYSTEM_PROMPT
-    elif agent_path is not None:
-      from yoker.agents import load_agent_definition
-
-      self.agent_definition = load_agent_definition(agent_path)
-      system_prompt = self.agent_definition.system_prompt or DEFAULT_SYSTEM_PROMPT
-
-    # Initialize path guardrail for filesystem tool validation
-    from yoker.tools.path_guardrail import PathGuardrail
-
-    self._guardrail = PathGuardrail(self.config)
-
-    # Build tool registry filtered by agent definition
-    self.tool_registry = self._build_tool_registry()
-
-    # Initialize context manager
-    if context_manager is not None:
-      self.context = context_manager
+    # Register AgentTool (needs reference to parent agent for subagent spawning)
+    # This must happen after AgentCore is initialized but before agent is used
+    if self._core.agent_definition is not None:
+      allowed_tools = {t.lower() for t in self._core.agent_definition.tools}
+      if "agent" in allowed_tools:
+        self._core.tool_registry.register(AgentTool(guardrail=self._core.guardrail, parent_agent=self))
     else:
-      # Create default in-memory context manager
-      from yoker.context import BasicPersistenceContextManager
-
-      self.context = BasicPersistenceContextManager(
-        storage_path=Path(self.config.context.storage_path),
-        session_id=self.config.context.session_id,
-      )
-
-    # Add system prompt to context (skip if already exists, e.g., on resume)
-    messages = self.context.get_messages()
-    has_system = any(m.get("role") == "system" for m in messages)
-    if not has_system:
-      self.context.add_message("system", system_prompt)
-
-    # Track recursion depth (internal, not exposed to LLM)
-    self._recursion_depth = _recursion_depth
-    self._max_recursion_depth = self.config.tools.agent.max_recursion_depth
-
-    # Event handlers storage
-    self._event_handlers: list[EventCallback] = []
+      self._core.tool_registry.register(AgentTool(guardrail=self._core.guardrail, parent_agent=self))
 
     log.info(
       "agent_initialized",
@@ -198,83 +137,69 @@ class Agent:
       available_tools=self.tool_registry.names,
     )
 
-  def _build_tool_registry(self) -> ToolRegistry:
-    """Build a tool registry filtered by agent definition.
+  # Property delegations to AgentCore
+  @property
+  def config(self) -> "Config":
+    """Configuration object."""
+    return self._core.config
 
-    If an agent definition is loaded, only registers tools listed in
-    the agent's tools field. Otherwise, registers all default tools.
+  @property
+  def model(self) -> str:
+    """Model name to use for chat."""
+    return self._core.model
 
-    All filesystem tools are created with the agent's guardrail injected
-    for defense-in-depth validation.
+  @property
+  def thinking_mode(self) -> ThinkingMode:
+    """Current thinking mode state."""
+    return self._core.thinking_mode
 
-    Returns:
-      ToolRegistry with available tools for this agent.
-    """
-    registry = ToolRegistry()
+  @property
+  def agent_definition(self) -> "AgentDefinition | None":
+    """Loaded agent definition, if any."""
+    return self._core.agent_definition
 
-    # Create tools with guardrail injected for defense-in-depth
-    tools: list[Tool] = [
-      ReadTool(guardrail=self._guardrail),
-      ListTool(guardrail=self._guardrail),
-      WriteTool(guardrail=self._guardrail),
-      UpdateTool(guardrail=self._guardrail),
-      SearchTool(guardrail=self._guardrail),
-      ExistenceTool(guardrail=self._guardrail),
-      MkdirTool(guardrail=self._guardrail),
-      GitTool(
-        config=self.config.tools.git,
-        guardrail=self._guardrail,
-        permission_handlers=self.config.permissions.handlers,
-      ),
-      AgentTool(guardrail=self._guardrail, parent_agent=self),
-      # WebSearchTool requires OLLAMA_API_KEY - added conditionally below
-    ]
+  @property
+  def tool_registry(self) -> ToolRegistry:
+    """Registry of available tools."""
+    return self._core.tool_registry
 
-    # Add WebSearchTool only if API key is available
-    if os.environ.get("OLLAMA_API_KEY"):
-      # Create guardrails with configuration from tool configs
-      websearch_config = WebGuardrailConfig(
-        max_query_length=self.config.tools.websearch.max_query_length,
-        domain_allowlist=self.config.tools.websearch.domain_allowlist,
-        domain_blocklist=self.config.tools.websearch.domain_blocklist,
-        requests_per_minute=self.config.tools.websearch.requests_per_minute,
-        requests_per_hour=self.config.tools.websearch.requests_per_hour,
-        block_private_cidrs=self.config.tools.websearch.block_private_cidrs,
-        timeout_seconds=self.config.tools.websearch.timeout_seconds,
-      )
-      tools.append(
-        WebSearchTool(
-          backend=OllamaWebSearchBackend(client=self.client),
-          guardrail=WebGuardrail(config=websearch_config),
-        )
-      )
-      webfetch_config = WebGuardrailConfig(
-        domain_allowlist=self.config.tools.webfetch.domain_allowlist,
-        domain_blocklist=self.config.tools.webfetch.domain_blocklist,
-        block_private_cidrs=self.config.tools.webfetch.block_private_cidrs,
-        require_https=self.config.tools.webfetch.require_https,
-        timeout_seconds=self.config.tools.webfetch.timeout_seconds,
-      )
-      tools.append(
-        WebFetchTool(
-          backend=OllamaWebFetchBackend(client=self.client),
-          guardrail=WebGuardrail(config=webfetch_config),
-        )
-      )
-    else:
-      log.warning("web_search_unavailable", reason="OLLAMA_API_KEY not set")
-      log.warning("web_fetch_unavailable", reason="OLLAMA_API_KEY not set")
+  @property
+  def context(self) -> "ContextManager":
+    """Context manager for conversation history."""
+    return self._core.context
 
-    if self.agent_definition is not None:
-      allowed_tools = {t.lower() for t in self.agent_definition.tools}
-      for tool in tools:
-        if tool.name.lower() in allowed_tools:
-          registry.register(tool)
-    else:
-      for tool in tools:
-        registry.register(tool)
-    return registry
+  @property
+  def command_registry(self) -> "CommandRegistry | None":
+    """Command registry for slash-commands."""
+    return self._core.command_registry
 
+  @property
+  def _recursion_depth(self) -> int:
+    """Current recursion depth (internal)."""
+    return self._core.recursion_depth
+
+  @property
+  def _max_recursion_depth(self) -> int:
+    """Maximum allowed recursion depth."""
+    return self._core.max_recursion_depth
+
+  @property
+  def _event_handlers(self) -> list[EventCallback]:
+    """Event handlers storage (internal, for backward compatibility)."""
+    return self._core._event_handlers
+
+  @property
+  def client(self) -> Client:
+    """Ollama client for API communication."""
+    return self._client
+
+  # Access to guardrail for tool validation
+  @property
+  def _guardrail(self) -> "PathGuardrail":
+    """Path guardrail for filesystem tool validation."""
+    return self._core.guardrail
+
+  # Event handler methods delegate to core
   def add_event_handler(self, handler: EventCallback) -> None:
     """Register an event handler.
 
@@ -288,7 +213,7 @@ class Agent:
 
       agent.add_event_handler(my_handler)
     """
-    self._event_handlers.append(handler)
+    self._core.add_event_handler(handler)
 
   def remove_event_handler(self, handler: EventCallback) -> None:
     """Remove a registered event handler.
@@ -296,7 +221,7 @@ class Agent:
     Args:
       handler: The handler to remove.
     """
-    self._event_handlers.remove(handler)
+    self._core.remove_event_handler(handler)
 
   def _emit(self, event: Event) -> None:
     """Emit an event to all registered handlers.
@@ -304,7 +229,7 @@ class Agent:
     Args:
       event: The event to emit.
     """
-    for handler in self._event_handlers:
+    for handler in self._core.get_event_handlers():
       handler(event)
 
   def process(self, message: str) -> str:
@@ -334,7 +259,7 @@ class Agent:
     while True:
       # Use streaming for better UX
       try:
-        stream = self.client.chat(
+        stream = self._client.chat(
           model=self.model,
           messages=self.context.get_context(),
           tools=self.tool_registry.get_schemas(),
