@@ -53,7 +53,7 @@ class TestAgentToolParameters:
   async def test_missing_agent_path(self) -> None:
     """Test error when agent_path is missing."""
     tool = AgentTool()
-    result = await tool.execute_async(prompt="Test prompt")
+    result = await tool.execute(prompt="Test prompt")
 
     assert not result.success
     assert "Missing required parameter" in result.error
@@ -63,7 +63,7 @@ class TestAgentToolParameters:
   async def test_missing_prompt(self) -> None:
     """Test error when prompt is missing."""
     tool = AgentTool()
-    result = await tool.execute_async(agent_path="/path/to/agent.md")
+    result = await tool.execute(agent_path="/path/to/agent.md")
 
     assert not result.success
     assert "Missing required parameter" in result.error
@@ -73,7 +73,7 @@ class TestAgentToolParameters:
   async def test_missing_both_parameters(self) -> None:
     """Test error when both parameters are missing."""
     tool = AgentTool()
-    result = await tool.execute_async()
+    result = await tool.execute()
 
     assert not result.success
     assert "Missing required parameter" in result.error
@@ -82,7 +82,7 @@ class TestAgentToolParameters:
   async def test_invalid_timeout_string(self) -> None:
     """Test error for invalid timeout_seconds parameter."""
     tool = AgentTool()
-    result = await tool.execute_async(
+    result = await tool.execute(
       agent_path="/tmp/agent.md",
       prompt="Test",
       timeout_seconds="not_a_number",
@@ -103,7 +103,7 @@ class TestAgentToolParameters:
 
     tool = AgentTool()
     # Timeout 0 should be clamped to 1
-    result = await tool.execute_async(
+    result = await tool.execute(
       agent_path=str(agent_file),
       prompt="Test",
       timeout_seconds=0,
@@ -126,7 +126,7 @@ class TestAgentToolParameters:
 
     tool = AgentTool()
     # Timeout 9999 should be clamped to 3600
-    result = await tool.execute_async(
+    result = await tool.execute(
       agent_path=str(agent_file),
       prompt="Test",
       timeout_seconds=9999,
@@ -144,7 +144,7 @@ class TestAgentToolPathValidation:
   async def test_agent_file_not_found(self) -> None:
     """Test error when agent file does not exist."""
     tool = AgentTool()
-    result = await tool.execute_async(
+    result = await tool.execute(
       agent_path="/nonexistent/agent.md",
       prompt="Test prompt",
     )
@@ -156,7 +156,7 @@ class TestAgentToolPathValidation:
   async def test_agent_path_is_directory(self, tmp_path: Path) -> None:
     """Test error when agent path is a directory."""
     tool = AgentTool()
-    result = await tool.execute_async(
+    result = await tool.execute(
       agent_path=str(tmp_path),
       prompt="Test prompt",
     )
@@ -260,7 +260,7 @@ class TestAgentToolRecursionDepth:
       with patch.object(tool, "_run_with_timeout") as mock_run:
         mock_run.return_value = "Test response"
 
-        result = await tool.execute_async(
+        result = await tool.execute(
           agent_path=str(temp_agent_file),
           prompt="Test prompt",
         )
@@ -275,7 +275,7 @@ class TestAgentToolRecursionDepth:
     mock_parent_agent._recursion_depth = 3  # At max depth
 
     tool = AgentTool(parent_agent=mock_parent_agent)
-    result = await tool.execute_async(
+    result = await tool.execute(
       agent_path=str(temp_agent_file),
       prompt="Test prompt",
     )
@@ -292,7 +292,7 @@ class TestAgentToolRecursionDepth:
     mock_parent_agent._recursion_depth = 5  # Beyond max depth
 
     tool = AgentTool(parent_agent=mock_parent_agent)
-    result = await tool.execute_async(
+    result = await tool.execute(
       agent_path=str(temp_agent_file),
       prompt="Test prompt",
     )
@@ -317,7 +317,7 @@ class TestAgentToolRecursionDepth:
       with patch.object(tool, "_run_with_timeout") as mock_run:
         mock_run.return_value = "Test response"
 
-        result = await tool.execute_async(
+        result = await tool.execute(
           agent_path=str(temp_agent_file),
           prompt="Test prompt",
         )
@@ -405,7 +405,7 @@ class TestAgentToolTimeout:
     with patch.object(tool, "_run_with_timeout") as mock_run:
       mock_run.side_effect = TimeoutError("Timed out")
 
-      result = await tool.execute_async(
+      result = await tool.execute(
         agent_path=str(temp_agent_file),
         prompt="Test prompt",
         timeout_seconds=1,
@@ -428,7 +428,7 @@ class TestAgentToolTimeout:
       with patch.object(tool, "_run_with_timeout") as mock_run:
         mock_run.return_value = "Response"
 
-        result = await tool.execute_async(
+        result = await tool.execute(
           agent_path=str(temp_agent_file),
           prompt="Test prompt",
         )
@@ -534,7 +534,7 @@ class TestAgentToolContextIsolation:
         mock_agent.process = AsyncMock(return_value="Response")
         mock_agent_class.return_value = mock_agent
 
-        await tool.execute_async(
+        await tool.execute(
           agent_path=str(temp_agent_file),
           prompt="Test prompt",
         )
@@ -630,7 +630,7 @@ class TestAgentToolAgentDefinition:
     with patch.object(tool, "_run_with_timeout") as mock_run:
       mock_run.return_value = "Response"
 
-      result = await tool.execute_async(
+      result = await tool.execute(
         agent_path=str(agent_file),
         prompt="Test prompt",
       )
@@ -649,7 +649,7 @@ class TestAgentToolAgentDefinition:
     agent_file.write_text("---\nname: [invalid yaml\n---\n\nContent\n")
 
     tool = AgentTool(parent_agent=mock_parent_agent)
-    result = await tool.execute_async(
+    result = await tool.execute(
       agent_path=str(agent_file),
       prompt="Test prompt",
     )
@@ -668,7 +668,7 @@ class TestAgentToolAgentDefinition:
     agent_file.write_text("---\ndescription: Test agent\ntools:\n  - read\n---\n\nContent\n")
 
     tool = AgentTool(parent_agent=mock_parent_agent)
-    result = await tool.execute_async(
+    result = await tool.execute(
       agent_path=str(agent_file),
       prompt="Test prompt",
     )
@@ -686,7 +686,7 @@ class TestAgentToolAgentDefinition:
     agent_file.write_text("---\nname: test\ndescription: Test agent\n---\n\nContent\n")
 
     tool = AgentTool(parent_agent=mock_parent_agent)
-    result = await tool.execute_async(
+    result = await tool.execute(
       agent_path=str(agent_file),
       prompt="Test prompt",
     )
@@ -793,7 +793,7 @@ class TestAgentToolSubagentCreation:
       with patch.object(tool, "_run_with_timeout") as mock_run:
         mock_run.return_value = "Response"
 
-        result = await tool.execute_async(
+        result = await tool.execute(
           agent_path=str(temp_agent_file),
           prompt="Test prompt",
         )
@@ -827,7 +827,7 @@ class TestAgentToolSubagentCreation:
       with patch.object(tool, "_run_with_timeout") as mock_run:
         mock_run.return_value = "Response"
 
-        result = await tool.execute_async(
+        result = await tool.execute(
           agent_path=str(temp_agent_file),
           prompt="Test prompt",
         )
@@ -949,7 +949,7 @@ class TestAgentToolIntegration:
       mock_agent.process = AsyncMock(return_value="Sub-agent response")
       mock_agent_class.return_value = mock_agent
 
-      result = await tool.execute_async(
+      result = await tool.execute(
         agent_path=str(temp_agent_file),
         prompt="Test prompt",
         timeout_seconds=60,

@@ -528,7 +528,7 @@ class Agent:
               )
             try:
               with log_timing("tool_execution", tool=tool_name):
-                tool_result = await tool.execute_async(**tool_args)
+                tool_result = await tool.execute(**tool_args)
               success = tool_result.success
               if success:
                 result = str(tool_result.result)

@@ -68,7 +68,7 @@ class ExistenceTool(Tool):
       },
     }
 
-  async def execute_async(self, **kwargs: Any) -> ToolResult:
+  async def execute(self, **kwargs: Any) -> ToolResult:
     """Check if a file or folder exists.
 
     Steps:

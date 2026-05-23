@@ -27,7 +27,7 @@ class WebFetchTool(Tool):
 
   Example:
     tool = WebFetchTool(backend=OllamaWebFetchBackend(async_client))
-    result = await tool.execute_async(url="https://example.com", content_type="markdown")
+    result = await tool.execute(url="https://example.com", content_type="markdown")
   """
 
   _guardrail: WebGuardrail | None
@@ -94,7 +94,7 @@ class WebFetchTool(Tool):
       },
     }
 
-  async def execute_async(self, **kwargs: Any) -> ToolResult:
+  async def execute(self, **kwargs: Any) -> ToolResult:
     """Execute web fetch with the given parameters asynchronously.
 
     Steps:

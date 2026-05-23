@@ -109,7 +109,7 @@ class AgentTool(Tool):
       },
     }
 
-  async def execute_async(self, **kwargs: Any) -> ToolResult:
+  async def execute(self, **kwargs: Any) -> ToolResult:
     """Spawn a sub-agent and return its response asynchronously.
 
     Args:

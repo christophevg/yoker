@@ -99,7 +99,7 @@ class TestWebFetchToolExecution:
     Then: Returns ToolResult with fetched content
     """
     tool = WebFetchTool(backend=mock_backend)
-    result = await tool.execute_async(url="https://example.com")
+    result = await tool.execute(url="https://example.com")
     assert result.success
     assert "content" in result.result
 
@@ -111,7 +111,7 @@ class TestWebFetchToolExecution:
     Then: Uses default content_type='markdown'
     """
     tool = WebFetchTool(backend=mock_backend)
-    await tool.execute_async(url="https://example.com")
+    await tool.execute(url="https://example.com")
     call_args = mock_backend.fetch.call_args
     assert call_args.kwargs["content_type"] == "markdown"
 
@@ -123,7 +123,7 @@ class TestWebFetchToolExecution:
     Then: Passes content_type='text' to backend
     """
     tool = WebFetchTool(backend=mock_backend)
-    await tool.execute_async(url="https://example.com", content_type="text")
+    await tool.execute(url="https://example.com", content_type="text")
     call_args = mock_backend.fetch.call_args
     assert call_args.kwargs["content_type"] == "text"
 
@@ -135,7 +135,7 @@ class TestWebFetchToolExecution:
     Then: Passes max_size_kb=5120 to backend
     """
     tool = WebFetchTool(backend=mock_backend)
-    await tool.execute_async(url="https://example.com", max_size_kb=5120)
+    await tool.execute(url="https://example.com", max_size_kb=5120)
     call_args = mock_backend.fetch.call_args
     assert call_args.kwargs["max_size_kb"] == 5120
 
@@ -147,7 +147,7 @@ class TestWebFetchToolExecution:
     Then: Returns error ToolResult
     """
     tool = WebFetchTool()
-    result = await tool.execute_async()
+    result = await tool.execute()
     assert not result.success
     assert "required" in result.error.lower()
 
@@ -159,7 +159,7 @@ class TestWebFetchToolExecution:
     Then: Returns error ToolResult
     """
     tool = WebFetchTool()
-    result = await tool.execute_async(url="")
+    result = await tool.execute(url="")
     assert not result.success
     assert "required" in result.error.lower()
 
@@ -171,7 +171,7 @@ class TestWebFetchToolExecution:
     Then: Returns error ToolResult
     """
     tool = WebFetchTool()
-    result = await tool.execute_async(url="   ")
+    result = await tool.execute(url="   ")
     assert not result.success
     assert "empty" in result.error.lower() or "required" in result.error.lower()
 
@@ -183,7 +183,7 @@ class TestWebFetchToolExecution:
     Then: Clamps max_size_kb to 10240
     """
     tool = WebFetchTool(backend=mock_backend)
-    await tool.execute_async(url="https://example.com", max_size_kb=20000)
+    await tool.execute(url="https://example.com", max_size_kb=20000)
     call_args = mock_backend.fetch.call_args
     assert call_args.kwargs["max_size_kb"] == 10240
 
@@ -195,7 +195,7 @@ class TestWebFetchToolExecution:
     Then: Defaults to content_type='markdown'
     """
     tool = WebFetchTool(backend=mock_backend)
-    await tool.execute_async(url="https://example.com", content_type="pdf")
+    await tool.execute(url="https://example.com", content_type="pdf")
     call_args = mock_backend.fetch.call_args
     assert call_args.kwargs["content_type"] == "markdown"
 
@@ -211,7 +211,7 @@ class TestWebFetchToolExecution:
       valid=False, reason="Domain is blocked: internal.local"
     )
     tool = WebFetchTool(backend=None, guardrail=guardrail)
-    result = await tool.execute_async(url="https://internal.local/data")
+    result = await tool.execute(url="https://internal.local/data")
     assert not result.success
     assert "blocked" in result.error.lower()
 
@@ -223,7 +223,7 @@ class TestWebFetchToolExecution:
     Then: Strips whitespace before validation
     """
     tool = WebFetchTool(backend=mock_backend)
-    await tool.execute_async(url="  https://example.com  ")
+    await tool.execute(url="  https://example.com  ")
     call_args = mock_backend.fetch.call_args
     assert call_args.kwargs["url"] == "https://example.com"
 
@@ -239,7 +239,7 @@ class TestWebFetchToolBackendIntegration:
     Then: Backend.fetch() receives validated url, content_type, and max_size_kb
     """
     tool = WebFetchTool(backend=mock_backend)
-    await tool.execute_async(url="https://example.com", content_type="text", max_size_kb=1024)
+    await tool.execute(url="https://example.com", content_type="text", max_size_kb=1024)
     call_args = mock_backend.fetch.call_args
     assert call_args.kwargs["url"] == "https://example.com"
     assert call_args.kwargs["content_type"] == "text"
@@ -253,7 +253,7 @@ class TestWebFetchToolBackendIntegration:
     Then: Returns error ToolResult with backend error message
     """
     tool = WebFetchTool(backend=mock_backend_error)
-    result = await tool.execute_async(url="https://example.com")
+    result = await tool.execute(url="https://example.com")
     assert not result.success
     assert "test" in result.error.lower()
 
@@ -267,7 +267,7 @@ class TestWebFetchToolBackendIntegration:
     Then: Returns error ToolResult with timeout message
     """
     tool = WebFetchTool(backend=mock_backend_timeout)
-    result = await tool.execute_async(url="https://example.com")
+    result = await tool.execute(url="https://example.com")
     assert not result.success
     assert "timeout" in result.error.lower()
 
@@ -281,7 +281,7 @@ class TestWebFetchToolBackendIntegration:
     Then: Returns error ToolResult with connection error message
     """
     tool = WebFetchTool(backend=mock_backend_connection_error)
-    result = await tool.execute_async(url="https://example.com")
+    result = await tool.execute(url="https://example.com")
     assert not result.success
     assert "connect" in result.error.lower()
 
@@ -293,7 +293,7 @@ class TestWebFetchToolBackendIntegration:
     Then: Returns error ToolResult with size limit message
     """
     tool = WebFetchTool(backend=mock_backend_size_error)
-    result = await tool.execute_async(url="https://example.com/large")
+    result = await tool.execute(url="https://example.com/large")
     assert not result.success
     assert "size" in result.error.lower()
 
@@ -309,7 +309,7 @@ class TestWebFetchToolResultFormat:
     Then: success=True, result contains url, title, content, content_type, source, metadata
     """
     tool = WebFetchTool(backend=mock_backend)
-    result = await tool.execute_async(url="https://example.com")
+    result = await tool.execute(url="https://example.com")
     assert result.success
     assert "url" in result.result
     assert "title" in result.result
@@ -326,7 +326,7 @@ class TestWebFetchToolResultFormat:
     Then: success=False, result is empty, error contains message
     """
     tool = WebFetchTool(backend=None)
-    result = await tool.execute_async(url="https://example.com")
+    result = await tool.execute(url="https://example.com")
     assert not result.success
     assert result.result == {}
     assert result.error is not None
@@ -339,7 +339,7 @@ class TestWebFetchToolResultFormat:
     Then: result contains metadata dict with size_kb
     """
     tool = WebFetchTool(backend=mock_backend)
-    result = await tool.execute_async(url="https://example.com")
+    result = await tool.execute(url="https://example.com")
     assert "metadata" in result.result
     assert "size_kb" in result.result["metadata"]
 
@@ -351,7 +351,7 @@ class TestWebFetchToolResultFormat:
     Then: result['content_type'] matches requested format
     """
     tool = WebFetchTool(backend=mock_backend)
-    await tool.execute_async(url="https://example.com", content_type="text")
+    await tool.execute(url="https://example.com", content_type="text")
     # Verify the backend was called with the correct content_type
     call_args = mock_backend.fetch.call_args
     assert call_args.kwargs["content_type"] == "text"
@@ -377,7 +377,7 @@ class TestWebFetchToolConfiguration:
     Then: Uses provided backend instead of default
     """
     tool = WebFetchTool(backend=mock_backend)
-    await tool.execute_async(url="https://example.com")
+    await tool.execute(url="https://example.com")
     mock_backend.fetch.assert_called_once()
 
   @pytest.mark.asyncio
@@ -388,7 +388,7 @@ class TestWebFetchToolConfiguration:
     Then: Returns error about missing backend
     """
     tool = WebFetchTool()
-    result = await tool.execute_async(url="https://example.com")
+    result = await tool.execute(url="https://example.com")
     assert not result.success
     assert "backend" in result.error.lower()
 
@@ -410,7 +410,7 @@ class TestWebFetchToolConfiguration:
       )
     )
     tool = WebFetchTool(backend=None, guardrail=guardrail)
-    result = await tool.execute_async(url="https://internal.local/data")
+    result = await tool.execute(url="https://internal.local/data")
     assert not result.success
     assert "blocked" in result.error.lower()
 
@@ -428,7 +428,7 @@ class TestWebFetchToolSecurity:
     Then: Returns error about private IP blocked
     """
     tool = WebFetchTool(backend=None, guardrail=mock_guardrail_ssrf)
-    result = await tool.execute_async(url="http://192.168.1.1/secret")
+    result = await tool.execute(url="http://192.168.1.1/secret")
     assert not result.success
     assert "ssrf" in result.error.lower() or "private" in result.error.lower()
 
@@ -442,7 +442,7 @@ class TestWebFetchToolSecurity:
     Then: Returns error about private IP blocked
     """
     tool = WebFetchTool(backend=None, guardrail=mock_guardrail_ssrf)
-    result = await tool.execute_async(url="http://127.0.0.1/admin")
+    result = await tool.execute(url="http://127.0.0.1/admin")
     assert not result.success
     assert "ssrf" in result.error.lower() or "private" in result.error.lower()
 
@@ -454,7 +454,7 @@ class TestWebFetchToolSecurity:
     Then: Returns error about private IP blocked
     """
     tool = WebFetchTool(backend=None, guardrail=mock_guardrail_ssrf)
-    result = await tool.execute_async(url="http://[::1]:8080/")
+    result = await tool.execute(url="http://[::1]:8080/")
     assert not result.success
     assert "ssrf" in result.error.lower() or "private" in result.error.lower()
 
@@ -466,7 +466,7 @@ class TestWebFetchToolSecurity:
     Then: Returns error about metadata endpoint blocked
     """
     tool = WebFetchTool(backend=None, guardrail=mock_guardrail_ssrf)
-    result = await tool.execute_async(url="http://169.254.169.254/latest/")
+    result = await tool.execute(url="http://169.254.169.254/latest/")
     assert not result.success
     assert "ssrf" in result.error.lower() or "metadata" in result.error.lower()
 
@@ -478,7 +478,7 @@ class TestWebFetchToolSecurity:
     Then: Returns error about SSRF blocked
     """
     tool = WebFetchTool(backend=None, guardrail=mock_guardrail_ssrf)
-    result = await tool.execute_async(url="http://localhost/admin")
+    result = await tool.execute(url="http://localhost/admin")
     assert not result.success
     assert "ssrf" in result.error.lower() or "private" in result.error.lower()
 
@@ -492,7 +492,7 @@ class TestWebFetchToolSecurity:
     Then: Returns error about blocked domain
     """
     tool = WebFetchTool(backend=None, guardrail=mock_guardrail_blocked)
-    result = await tool.execute_async(url="https://internal.local/data")
+    result = await tool.execute(url="https://internal.local/data")
     assert not result.success
     assert "blocked" in result.error.lower()
 
@@ -506,7 +506,7 @@ class TestWebFetchToolSecurity:
     Then: Returns error about domain not allowed
     """
     tool = WebFetchTool(backend=None, guardrail=mock_guardrail_allowlist)
-    result = await tool.execute_async(url="https://example.com/data")
+    result = await tool.execute(url="https://example.com/data")
     assert not result.success
     assert "allowlist" in result.error.lower() or "not in" in result.error.lower()
 
@@ -520,7 +520,7 @@ class TestWebFetchToolSecurity:
     guardrail = MagicMock(spec=WebGuardrail)
     guardrail.validate_url.return_value = ValidationResult(valid=True)
     tool = WebFetchTool(backend=mock_backend, guardrail=guardrail)
-    result = await tool.execute_async(url="https://allowed.com/data")
+    result = await tool.execute(url="https://allowed.com/data")
     assert result.success
 
   # Scheme Validation Tests
@@ -535,7 +535,7 @@ class TestWebFetchToolSecurity:
     Then: Returns error about HTTPS required
     """
     tool = WebFetchTool(backend=None, guardrail=mock_guardrail_https)
-    result = await tool.execute_async(url="http://example.com/")
+    result = await tool.execute(url="http://example.com/")
     assert not result.success
     assert "https" in result.error.lower()
 
@@ -549,7 +549,7 @@ class TestWebFetchToolSecurity:
     guardrail = MagicMock(spec=WebGuardrail)
     guardrail.validate_url.return_value = ValidationResult(valid=True)
     tool = WebFetchTool(backend=mock_backend, guardrail=guardrail)
-    result = await tool.execute_async(url="https://example.com/")
+    result = await tool.execute(url="https://example.com/")
     assert result.success
 
   # URL Parsing Tests
@@ -562,7 +562,7 @@ class TestWebFetchToolSecurity:
     Then: Returns error about missing scheme
     """
     tool = WebFetchTool(backend=None)
-    result = await tool.execute_async(url="example.com/path")
+    result = await tool.execute(url="example.com/path")
     assert not result.success
     # Should fail due to no host in urlparse
 
@@ -575,7 +575,7 @@ class TestWebFetchToolSecurity:
     """
     guardrail = WebGuardrail()
     tool = WebFetchTool(backend=None, guardrail=guardrail)
-    result = await tool.execute_async(url="https:///path")
+    result = await tool.execute(url="https:///path")
     assert not result.success
     assert "host" in result.error.lower()
 

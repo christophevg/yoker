@@ -34,7 +34,7 @@ class TestUpdateToolReplaceOperation:
     test_file.write_text("Line 1\nOld text\nLine 3\n")
 
     # Replace text
-    result = await tool.execute_async(
+    result = await tool.execute(
       path=str(test_file), operation="replace", old_string="Old text", new_string="New text"
     )
 
@@ -66,7 +66,7 @@ class TestUpdateToolReplaceOperation:
     test_file.write_text("Old content\n")
 
     # Replace
-    result = await tool.execute_async(
+    result = await tool.execute(
       path=str(test_file), operation="replace", old_string="Old content", new_string="New content"
     )
 
@@ -90,7 +90,7 @@ class TestUpdateToolReplaceOperation:
     test_file.write_text("Line 1\nOld\nLine 3\n")
 
     # Replace
-    result = await tool.execute_async(
+    result = await tool.execute(
       path=str(test_file), operation="replace", old_string="Old", new_string="New"
     )
 
@@ -121,7 +121,7 @@ class TestUpdateToolReplaceOperation:
     test_file.write_text("\n".join(f"Line {i}" for i in range(50)))
 
     # Replace large portion
-    result = await tool.execute_async(
+    result = await tool.execute(
       path=str(test_file), operation="replace", old_string="Line 10", new_string="Modified line"
     )
 
@@ -152,7 +152,7 @@ class TestUpdateToolInsertOperation:
     test_file.write_text("Line 1\nLine 2\n")
 
     # Insert before line 2
-    result = await tool.execute_async(
+    result = await tool.execute(
       path=str(test_file), operation="insert_before", line_number=2, new_string="Inserted line"
     )
 
@@ -178,7 +178,7 @@ class TestUpdateToolInsertOperation:
     test_file.write_text("Line 1\nLine 2\n")
 
     # Insert after line 1
-    result = await tool.execute_async(
+    result = await tool.execute(
       path=str(test_file), operation="insert_after", line_number=1, new_string="Inserted line"
     )
 
@@ -204,7 +204,7 @@ class TestUpdateToolInsertOperation:
     test_file.write_text("Line 1\n")
 
     # Insert
-    result = await tool.execute_async(
+    result = await tool.execute(
       path=str(test_file), operation="insert_after", line_number=1, new_string="New line"
     )
 
@@ -230,7 +230,7 @@ class TestUpdateToolInsertOperation:
     test_file.write_text("Line 1\nLine 2\nLine 3\n")
 
     # Insert
-    result = await tool.execute_async(
+    result = await tool.execute(
       path=str(test_file), operation="insert_after", line_number=2, new_string="Inserted"
     )
 
@@ -260,9 +260,7 @@ class TestUpdateToolDeleteOperation:
     test_file.write_text("Line 1\nDelete me\nLine 3\n")
 
     # Delete
-    result = await tool.execute_async(
-      path=str(test_file), operation="delete", old_string="Delete me\n"
-    )
+    result = await tool.execute(path=str(test_file), operation="delete", old_string="Delete me\n")
 
     # Verify result
     assert result.success
@@ -290,9 +288,7 @@ class TestUpdateToolDeleteOperation:
     test_file.write_text("Line 1\nTo delete\nLine 3\n")
 
     # Delete
-    result = await tool.execute_async(
-      path=str(test_file), operation="delete", old_string="To delete\n"
-    )
+    result = await tool.execute(path=str(test_file), operation="delete", old_string="To delete\n")
 
     # Verify result
     assert result.success
@@ -314,7 +310,7 @@ class TestUpdateToolDeleteOperation:
     test_file.write_text("Line 1\nLine 2\nLine 3\n")
 
     # Delete by line number
-    result = await tool.execute_async(path=str(test_file), operation="delete", line_number=2)
+    result = await tool.execute(path=str(test_file), operation="delete", line_number=2)
 
     # Verify result
     assert result.success
@@ -347,7 +343,7 @@ class TestUpdateToolDiffTruncation:
     test_file.write_text("\n".join(f"Line {i}" for i in range(50)))
 
     # Replace
-    result = await tool.execute_async(
+    result = await tool.execute(
       path=str(test_file), operation="replace", old_string="Line 10", new_string="Modified"
     )
 
@@ -377,7 +373,7 @@ class TestUpdateToolDiffTruncation:
     test_file.write_text("\n".join(f"Line {i}" for i in range(100)))
 
     # Replace
-    result = await tool.execute_async(
+    result = await tool.execute(
       path=str(test_file), operation="replace", old_string="Line 50", new_string="Changed"
     )
 
@@ -408,7 +404,7 @@ class TestUpdateToolDiffTruncation:
     test_file.write_text("Line 1\nLine 2\nLine 3\n")
 
     # Replace
-    result = await tool.execute_async(
+    result = await tool.execute(
       path=str(test_file), operation="replace", old_string="Line 2", new_string="Modified"
     )
 
@@ -439,7 +435,7 @@ class TestUpdateToolShowDiffFlag:
     test_file.write_text("Old\n")
 
     # Replace
-    result = await tool.execute_async(
+    result = await tool.execute(
       path=str(test_file), operation="replace", old_string="Old", new_string="New"
     )
 
@@ -468,7 +464,7 @@ class TestUpdateToolShowDiffFlag:
     test_file.write_text("Old\n")
 
     # Replace
-    result = await tool.execute_async(
+    result = await tool.execute(
       path=str(test_file), operation="replace", old_string="Old", new_string="New"
     )
 
@@ -497,7 +493,7 @@ class TestUpdateToolShowDiffFlag:
     test_file.write_text("Line 1\n")
 
     # Insert
-    result = await tool.execute_async(
+    result = await tool.execute(
       path=str(test_file), operation="insert_after", line_number=1, new_string="New line"
     )
 
@@ -528,7 +524,7 @@ class TestUpdateToolVerbosityLevels:
     test_file.write_text("Content\n")
 
     # Replace
-    result = await tool.execute_async(
+    result = await tool.execute(
       path=str(test_file), operation="replace", old_string="Content", new_string="New content"
     )
 
@@ -556,7 +552,7 @@ class TestUpdateToolVerbosityLevels:
     test_file.write_text("Old\n")
 
     # Replace
-    result = await tool.execute_async(
+    result = await tool.execute(
       path=str(test_file), operation="replace", old_string="Old", new_string="New"
     )
 
@@ -586,7 +582,7 @@ class TestUpdateToolVerbosityLevels:
     test_file.write_text("Old\n")
 
     # Replace
-    result = await tool.execute_async(
+    result = await tool.execute(
       path=str(test_file), operation="replace", old_string="Old", new_string="New"
     )
 
@@ -640,7 +636,7 @@ class TestUpdateToolConfigIntegration:
     test_file.write_text("\n".join(f"Line {i}" for i in range(50)))
 
     # Replace
-    result = await tool.execute_async(
+    result = await tool.execute(
       path=str(test_file), operation="replace", old_string="Line 25", new_string="Changed"
     )
 

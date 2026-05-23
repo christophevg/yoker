@@ -58,7 +58,7 @@ class TestExistenceToolFileCheck:
   async def test_existing_file(self, temp_files: Path) -> None:
     """Test existing file returns True."""
     tool = ExistenceTool()
-    result = await tool.execute_async(path=str(temp_files / "file.txt"))
+    result = await tool.execute(path=str(temp_files / "file.txt"))
 
     assert result.success
     assert result.result["exists"] is True
@@ -69,7 +69,7 @@ class TestExistenceToolFileCheck:
   async def test_existing_hidden_file(self, temp_files: Path) -> None:
     """Test hidden file existence check."""
     tool = ExistenceTool()
-    result = await tool.execute_async(path=str(temp_files / ".hidden"))
+    result = await tool.execute(path=str(temp_files / ".hidden"))
 
     assert result.success
     assert result.result["exists"] is True
@@ -79,7 +79,7 @@ class TestExistenceToolFileCheck:
   async def test_existing_nested_file(self, temp_files: Path) -> None:
     """Test nested file existence check."""
     tool = ExistenceTool()
-    result = await tool.execute_async(path=str(temp_files / "subdir" / "nested.txt"))
+    result = await tool.execute(path=str(temp_files / "subdir" / "nested.txt"))
 
     assert result.success
     assert result.result["exists"] is True
@@ -108,7 +108,7 @@ class TestExistenceToolDirectoryCheck:
   async def test_existing_directory(self, temp_dirs: Path) -> None:
     """Test existing directory returns True."""
     tool = ExistenceTool()
-    result = await tool.execute_async(path=str(temp_dirs / "subdir"))
+    result = await tool.execute(path=str(temp_dirs / "subdir"))
 
     assert result.success
     assert result.result["exists"] is True
@@ -118,7 +118,7 @@ class TestExistenceToolDirectoryCheck:
   async def test_existing_hidden_directory(self, temp_dirs: Path) -> None:
     """Test hidden directory existence check."""
     tool = ExistenceTool()
-    result = await tool.execute_async(path=str(temp_dirs / ".hidden_dir"))
+    result = await tool.execute(path=str(temp_dirs / ".hidden_dir"))
 
     assert result.success
     assert result.result["exists"] is True
@@ -128,7 +128,7 @@ class TestExistenceToolDirectoryCheck:
   async def test_existing_nested_directory(self, temp_dirs: Path) -> None:
     """Test nested directory existence check."""
     tool = ExistenceTool()
-    result = await tool.execute_async(path=str(temp_dirs / "nested" / "deep"))
+    result = await tool.execute(path=str(temp_dirs / "nested" / "deep"))
 
     assert result.success
     assert result.result["exists"] is True
@@ -142,7 +142,7 @@ class TestExistenceToolNonExistent:
   async def test_nonexistent_file(self, tmp_path: Path) -> None:
     """Test non-existent file returns False."""
     tool = ExistenceTool()
-    result = await tool.execute_async(path=str(tmp_path / "nonexistent.txt"))
+    result = await tool.execute(path=str(tmp_path / "nonexistent.txt"))
 
     assert result.success
     assert result.result["exists"] is False
@@ -153,7 +153,7 @@ class TestExistenceToolNonExistent:
   async def test_nonexistent_directory(self, tmp_path: Path) -> None:
     """Test non-existent directory returns False."""
     tool = ExistenceTool()
-    result = await tool.execute_async(path=str(tmp_path / "nonexistent_dir"))
+    result = await tool.execute(path=str(tmp_path / "nonexistent_dir"))
 
     assert result.success
     assert result.result["exists"] is False
@@ -163,7 +163,7 @@ class TestExistenceToolNonExistent:
   async def test_nonexistent_nested_path(self, tmp_path: Path) -> None:
     """Test non-existent nested path returns False."""
     tool = ExistenceTool()
-    result = await tool.execute_async(path=str(tmp_path / "a" / "b" / "c" / "file.txt"))
+    result = await tool.execute(path=str(tmp_path / "a" / "b" / "c" / "file.txt"))
 
     assert result.success
     assert result.result["exists"] is False
@@ -188,7 +188,7 @@ class TestExistenceToolSymlinkRejection:
       pytest.skip("Symlinks not supported on this platform")
 
     tool = ExistenceTool()
-    result = await tool.execute_async(path=str(symlink))
+    result = await tool.execute(path=str(symlink))
 
     assert not result.success
     assert "not accessible" in result.error.lower()
@@ -208,7 +208,7 @@ class TestExistenceToolSymlinkRejection:
       pytest.skip("Symlinks not supported on this platform")
 
     tool = ExistenceTool()
-    result = await tool.execute_async(path=str(symlink))
+    result = await tool.execute(path=str(symlink))
 
     assert not result.success
     assert "not accessible" in result.error.lower()
@@ -221,7 +221,7 @@ class TestExistenceToolValidation:
   async def test_empty_path(self) -> None:
     """Test empty path returns error."""
     tool = ExistenceTool()
-    result = await tool.execute_async(path="")
+    result = await tool.execute(path="")
 
     assert not result.success
     assert "empty" in result.error.lower()
@@ -230,7 +230,7 @@ class TestExistenceToolValidation:
   async def test_whitespace_only_path(self) -> None:
     """Test whitespace-only path returns error."""
     tool = ExistenceTool()
-    result = await tool.execute_async(path="   ")
+    result = await tool.execute(path="   ")
 
     assert not result.success
     assert "empty" in result.error.lower()
@@ -239,7 +239,7 @@ class TestExistenceToolValidation:
   async def test_invalid_path_type(self) -> None:
     """Test non-string path returns error."""
     tool = ExistenceTool()
-    result = await tool.execute_async(path=123)
+    result = await tool.execute(path=123)
 
     assert not result.success
     assert "invalid" in result.error.lower()
@@ -259,7 +259,7 @@ class TestExistenceToolWithGuardrail:
     mock_guardrail.validate.return_value = ValidationResult(valid=False, reason="Path not allowed")
 
     tool = ExistenceTool(guardrail=mock_guardrail)
-    result = await tool.execute_async(path=str(tmp_path / "test.txt"))
+    result = await tool.execute(path=str(tmp_path / "test.txt"))
 
     assert not result.success
     assert "Path not allowed" in result.error
@@ -276,7 +276,7 @@ class TestExistenceToolWithGuardrail:
     mock_guardrail.validate.return_value = ValidationResult(valid=True)
 
     tool = ExistenceTool(guardrail=mock_guardrail)
-    result = await tool.execute_async(path=str(tmp_path / "test.txt"))
+    result = await tool.execute(path=str(tmp_path / "test.txt"))
 
     assert result.success
     assert result.result["exists"] is True
@@ -289,7 +289,7 @@ class TestExistenceToolWithGuardrail:
     (tmp_path / "test.txt").write_text("content")
 
     tool = ExistenceTool()  # No guardrail
-    result = await tool.execute_async(path=str(tmp_path / "test.txt"))
+    result = await tool.execute(path=str(tmp_path / "test.txt"))
 
     assert result.success
     assert result.result["exists"] is True
@@ -304,7 +304,7 @@ class TestExistenceToolWithGuardrail:
     )
 
     tool = ExistenceTool(guardrail=mock_guardrail)
-    result = await tool.execute_async(path="/etc/passwd")
+    result = await tool.execute(path="/etc/passwd")
 
     assert not result.success
     assert "Path outside allowed directories" in result.error
@@ -320,7 +320,7 @@ class TestExistenceToolPathResolution:
     (tmp_path / "file.txt").write_text("content")
 
     tool = ExistenceTool()
-    result = await tool.execute_async(path=str(tmp_path / "file.txt"))
+    result = await tool.execute(path=str(tmp_path / "file.txt"))
 
     assert result.success
     # Path should be absolute
@@ -334,7 +334,7 @@ class TestExistenceToolPathResolution:
 
     tool = ExistenceTool()
     # Use path with ./ segments
-    result = await tool.execute_async(path=str(tmp_path / "." / "file.txt"))
+    result = await tool.execute(path=str(tmp_path / "." / "file.txt"))
 
     assert result.success
     assert result.result["exists"] is True
@@ -349,7 +349,7 @@ class TestExistenceToolSpecialCases:
   async def test_root_directory(self) -> None:
     """Test checking root directory exists."""
     tool = ExistenceTool()
-    result = await tool.execute_async(path="/")
+    result = await tool.execute(path="/")
 
     assert result.success
     assert result.result["exists"] is True
@@ -359,7 +359,7 @@ class TestExistenceToolSpecialCases:
   async def test_current_directory(self) -> None:
     """Test checking current directory exists."""
     tool = ExistenceTool()
-    result = await tool.execute_async(path=".")
+    result = await tool.execute(path=".")
 
     assert result.success
     assert result.result["exists"] is True
@@ -369,7 +369,7 @@ class TestExistenceToolSpecialCases:
   async def test_parent_directory(self) -> None:
     """Test checking parent directory exists."""
     tool = ExistenceTool()
-    result = await tool.execute_async(path="..")
+    result = await tool.execute(path="..")
 
     assert result.success
     assert result.result["exists"] is True
@@ -393,7 +393,7 @@ class TestExistenceToolErrorHandling:
     # Patch Path to return our mock
     mocker.patch("yoker.tools.existence.Path", return_value=mock_path)
 
-    result = await tool.execute_async(path="/test/path")
+    result = await tool.execute(path="/test/path")
 
     assert not result.success
     assert "failed" in result.error.lower()
@@ -412,7 +412,7 @@ class TestExistenceToolErrorHandling:
     # Patch Path to return our mock
     mocker.patch("yoker.tools.existence.Path", return_value=mock_path)
 
-    result = await tool.execute_async(path="/test/path")
+    result = await tool.execute(path="/test/path")
 
     assert not result.success
     assert "failed" in result.error.lower()
@@ -425,7 +425,7 @@ class TestExistenceToolErrorHandling:
     # Mock os.path.realpath to raise OSError
     mocker.patch("os.path.realpath", side_effect=OSError("Resolution failed"))
 
-    result = await tool.execute_async(path="/test/path")
+    result = await tool.execute(path="/test/path")
 
     assert not result.success
     assert "invalid" in result.error.lower()

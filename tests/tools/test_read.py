@@ -53,7 +53,7 @@ class TestReadTool:
     file_path = tmp_path / "test.txt"
     file_path.write_text("hello world")
     tool = ReadTool()
-    result = await tool.execute_async(path=str(file_path))
+    result = await tool.execute(path=str(file_path))
     assert result.success is True
     assert result.result == "hello world"
     assert result.error is None
@@ -62,7 +62,7 @@ class TestReadTool:
   async def test_read_missing_file(self) -> None:
     """ReadTool returns error for missing file."""
     tool = ReadTool()
-    result = await tool.execute_async(path="/nonexistent/path/file.txt")
+    result = await tool.execute(path="/nonexistent/path/file.txt")
     assert result.success is False
     assert result.result == ""
     assert "not found" in result.error.lower()
@@ -71,7 +71,7 @@ class TestReadTool:
   async def test_read_result_is_toolresult(self) -> None:
     """ReadTool execute returns ToolResult."""
     tool = ReadTool()
-    result = await tool.execute_async(path="/dev/null")
+    result = await tool.execute(path="/dev/null")
     assert isinstance(result, ToolResult)
 
   @pytest.mark.asyncio
@@ -79,7 +79,7 @@ class TestReadTool:
     """ReadTool with guardrail blocks unauthorized paths."""
     guardrail = FakeGuardrail(allow=False, reason="outside allowed")
     tool = ReadTool(guardrail=guardrail)
-    result = await tool.execute_async(path="/etc/passwd")
+    result = await tool.execute(path="/etc/passwd")
     assert result.success is False
     assert result.error == "outside allowed"
     assert guardrail.calls == [("read", {"path": "/etc/passwd"})]
@@ -91,7 +91,7 @@ class TestReadTool:
     file_path.write_text("allowed content")
     guardrail = FakeGuardrail(allow=True)
     tool = ReadTool(guardrail=guardrail)
-    result = await tool.execute_async(path=str(file_path))
+    result = await tool.execute(path=str(file_path))
     assert result.success is True
     assert result.result == "allowed content"
     assert guardrail.calls == [("read", {"path": str(file_path)})]
@@ -104,7 +104,7 @@ class TestReadTool:
     link = tmp_path / "link.txt"
     link.symlink_to(target)
     tool = ReadTool()
-    result = await tool.execute_async(path=str(link))
+    result = await tool.execute(path=str(link))
     assert result.success is False
 
   @pytest.mark.asyncio
@@ -113,7 +113,7 @@ class TestReadTool:
     file_path = tmp_path / "test.txt"
     file_path.write_text("hello world")
     tool = ReadTool()
-    result = await tool.execute_async(path=str(file_path))
+    result = await tool.execute(path=str(file_path))
     assert result.success is True
     assert result.result == "hello world"
 
@@ -124,7 +124,7 @@ class TestReadTool:
     file_path = tmp_path / "test.txt"
     file_path.write_text(content)
     tool = ReadTool()
-    result = await tool.execute_async(path=str(file_path))
+    result = await tool.execute(path=str(file_path))
     assert result.success is True
     assert result.result == content
 
@@ -137,7 +137,7 @@ class TestReadTool:
     real_file.write_text("allowed")
     sensitive_path = str(tmp_path / ".." / tmp_path.name / "real" / "real.txt")
     tool = ReadTool()
-    result = await tool.execute_async(path=sensitive_path)
+    result = await tool.execute(path=sensitive_path)
     # Path should be resolved by realpath, so it should succeed
     assert result.success is True
 
@@ -148,7 +148,7 @@ class TestReadTool:
     file_path.write_text("secret")
     guardrail = FakeGuardrail(allow=False, reason="blocked")
     tool = ReadTool(guardrail=guardrail)
-    result = await tool.execute_async(path=str(file_path))
+    result = await tool.execute(path=str(file_path))
     assert result.success is False
     assert result.error == "blocked"
 
@@ -156,7 +156,7 @@ class TestReadTool:
   async def test_read_nonexistent_file(self) -> None:
     """ReadTool returns error for non-existent file."""
     tool = ReadTool()
-    result = await tool.execute_async(path="/nonexistent/file.txt")
+    result = await tool.execute(path="/nonexistent/file.txt")
     assert result.success is False
     assert "not found" in result.error.lower()
 
@@ -164,7 +164,7 @@ class TestReadTool:
   async def test_read_directory(self, tmp_path: Path) -> None:
     """ReadTool returns error for directory path."""
     tool = ReadTool()
-    result = await tool.execute_async(path=str(tmp_path))
+    result = await tool.execute(path=str(tmp_path))
     assert result.success is False
     assert "not a file" in result.error.lower()
 
@@ -172,7 +172,7 @@ class TestReadTool:
   async def test_read_empty_path(self) -> None:
     """ReadTool returns error for empty path."""
     tool = ReadTool()
-    result = await tool.execute_async(path="")
+    result = await tool.execute(path="")
     assert result.success is False
     assert result.error
 
@@ -180,7 +180,7 @@ class TestReadTool:
   async def test_read_invalid_path_type(self) -> None:
     """ReadTool returns error for invalid path type."""
     tool = ReadTool()
-    result = await tool.execute_async(path=123)  # type: ignore
+    result = await tool.execute(path=123)  # type: ignore
     assert result.success is False
     assert result.error
 
@@ -190,5 +190,5 @@ class TestReadTool:
     # Skip on systems where /dev/null might not have permission issues
     tool = ReadTool()
     # Reading a directory should fail with "not a file" not permission error
-    result = await tool.execute_async(path="/dev")
+    result = await tool.execute(path="/dev")
     assert result.success is False

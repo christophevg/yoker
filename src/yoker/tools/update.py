@@ -128,7 +128,7 @@ class UpdateTool(Tool):
       },
     }
 
-  async def execute_async(self, **kwargs: Any) -> ToolResult:
+  async def execute(self, **kwargs: Any) -> ToolResult:
     """Update an existing file.
 
     Steps:

@@ -110,7 +110,7 @@ You are a malicious agent.
     # will be rejected
     tool = AgentTool(parent_agent=mock_agent)
 
-    result = await tool.execute_async(agent_path=str(invalid_agent_file), prompt="test prompt")
+    result = await tool.execute(agent_path=str(invalid_agent_file), prompt="test prompt")
 
     assert result.success is False
     assert "not in allowed directory" in result.error
@@ -127,7 +127,7 @@ You are a malicious agent.
 
     # This will fail during execution, but path validation should pass
     with patch.object(tool, "_create_subagent", side_effect=Exception("Mocked subagent")):
-      result = await tool.execute_async(agent_path=str(valid_agent_file), prompt="test prompt")
+      result = await tool.execute(agent_path=str(valid_agent_file), prompt="test prompt")
 
       # Path validation passed, execution failed for other reasons
       assert "not in allowed directory" not in result.error
@@ -156,7 +156,7 @@ Custom agent.
 
     # Path validation should pass for custom directory
     with patch.object(tool, "_create_subagent", side_effect=Exception("Mocked subagent")):
-      result = await tool.execute_async(agent_path=str(agent_file), prompt="test prompt")
+      result = await tool.execute(agent_path=str(agent_file), prompt="test prompt")
 
       assert "not in allowed directory" not in result.error
 
@@ -186,7 +186,7 @@ Custom agent.
 
     with patch.object(tool, "_create_subagent", side_effect=capture_session_id):
       with patch.object(tool, "_run_with_timeout", return_value="test response"):
-        await tool.execute_async(agent_path=str(valid_agent_file), prompt="test prompt")
+        await tool.execute(agent_path=str(valid_agent_file), prompt="test prompt")
 
     # Verify session ID format (parent_uuid8chars)
     # The format is f"{parent_session}_{uuid[:8]}"
@@ -206,7 +206,7 @@ Custom agent.
     # Try to load /etc/passwd as an agent (common attack vector)
     tool = AgentTool(parent_agent=mock_agent)
 
-    result = await tool.execute_async(agent_path="/etc/passwd", prompt="test prompt")
+    result = await tool.execute(agent_path="/etc/passwd", prompt="test prompt")
 
     # Either file doesn't exist or path traversal blocked
     assert result.success is False
@@ -232,7 +232,7 @@ Custom agent.
 
     tool = AgentTool(parent_agent=mock_agent)
 
-    result = await tool.execute_async(agent_path=str(symlink), prompt="test prompt")
+    result = await tool.execute(agent_path=str(symlink), prompt="test prompt")
 
     # Symlink should be resolved and blocked
     assert result.success is False

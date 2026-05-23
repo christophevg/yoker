@@ -62,7 +62,7 @@ class TestUpdateTool:
     file_path = tmp_path / "test.txt"
     file_path.write_text("hello world")
     tool = UpdateTool()
-    result = await tool.execute_async(
+    result = await tool.execute(
       path=str(file_path),
       operation="replace",
       old_string="hello",
@@ -80,7 +80,7 @@ class TestUpdateTool:
     file_path.write_text("hello hello world")
     config = Config(tools=ToolsConfig(update=UpdateToolConfig(require_exact_match=True)))
     tool = UpdateTool(config=config)
-    result = await tool.execute_async(
+    result = await tool.execute(
       path=str(file_path),
       operation="replace",
       old_string="hello",
@@ -97,7 +97,7 @@ class TestUpdateTool:
     file_path.write_text("hello world")
     config = Config(tools=ToolsConfig(update=UpdateToolConfig(require_exact_match=True)))
     tool = UpdateTool(config=config)
-    result = await tool.execute_async(
+    result = await tool.execute(
       path=str(file_path),
       operation="replace",
       old_string="hello",
@@ -112,7 +112,7 @@ class TestUpdateTool:
     file_path = tmp_path / "test.txt"
     file_path.write_text("hello world")
     tool = UpdateTool()
-    result = await tool.execute_async(
+    result = await tool.execute(
       path=str(file_path),
       operation="replace",
       old_string="missing",
@@ -128,7 +128,7 @@ class TestUpdateTool:
     file_path.write_text("hello hello world")
     config = Config(tools=ToolsConfig(update=UpdateToolConfig(require_exact_match=False)))
     tool = UpdateTool(config=config)
-    result = await tool.execute_async(
+    result = await tool.execute(
       path=str(file_path),
       operation="replace",
       old_string="hello",
@@ -145,7 +145,7 @@ class TestUpdateTool:
     file_path = tmp_path / "test.txt"
     file_path.write_text("line1\nline2\nline3")
     tool = UpdateTool()
-    result = await tool.execute_async(
+    result = await tool.execute(
       path=str(file_path),
       operation="insert_before",
       line_number=2,
@@ -164,7 +164,7 @@ class TestUpdateTool:
     file_path = tmp_path / "test.txt"
     file_path.write_text("line1\nline2\nline3")
     tool = UpdateTool()
-    result = await tool.execute_async(
+    result = await tool.execute(
       path=str(file_path),
       operation="insert_after",
       line_number=2,
@@ -182,7 +182,7 @@ class TestUpdateTool:
     file_path = tmp_path / "test.txt"
     file_path.write_text("line1\nline2")
     tool = UpdateTool()
-    result = await tool.execute_async(
+    result = await tool.execute(
       path=str(file_path),
       operation="insert_before",
       line_number=5,
@@ -197,7 +197,7 @@ class TestUpdateTool:
     file_path = tmp_path / "test.txt"
     file_path.write_text("line1\nline2")
     tool = UpdateTool()
-    result = await tool.execute_async(
+    result = await tool.execute(
       path=str(file_path),
       operation="insert_before",
       line_number=0,
@@ -212,7 +212,7 @@ class TestUpdateTool:
     file_path = tmp_path / "test.txt"
     file_path.write_text("line1\nline2")
     tool = UpdateTool()
-    result = await tool.execute_async(
+    result = await tool.execute(
       path=str(file_path),
       operation="insert_before",
       new_string="inserted",
@@ -226,7 +226,7 @@ class TestUpdateTool:
     file_path = tmp_path / "test.txt"
     file_path.write_text("")
     tool = UpdateTool()
-    result = await tool.execute_async(
+    result = await tool.execute(
       path=str(file_path),
       operation="insert_before",
       line_number=1,
@@ -243,7 +243,7 @@ class TestUpdateTool:
     file_path = tmp_path / "test.txt"
     file_path.write_text("hello world")
     tool = UpdateTool()
-    result = await tool.execute_async(
+    result = await tool.execute(
       path=str(file_path),
       operation="delete",
       old_string="hello ",
@@ -257,7 +257,7 @@ class TestUpdateTool:
     file_path = tmp_path / "test.txt"
     file_path.write_text("line1\nline2\nline3")
     tool = UpdateTool()
-    result = await tool.execute_async(
+    result = await tool.execute(
       path=str(file_path),
       operation="delete",
       line_number=2,
@@ -275,7 +275,7 @@ class TestUpdateTool:
     file_path = tmp_path / "test.txt"
     file_path.write_text("hello world")
     tool = UpdateTool()
-    result = await tool.execute_async(
+    result = await tool.execute(
       path=str(file_path),
       operation="delete",
       old_string="missing",
@@ -290,7 +290,7 @@ class TestUpdateTool:
     file_path.write_text("hello hello world")
     config = Config(tools=ToolsConfig(update=UpdateToolConfig(require_exact_match=True)))
     tool = UpdateTool(config=config)
-    result = await tool.execute_async(
+    result = await tool.execute(
       path=str(file_path),
       operation="delete",
       old_string="hello",
@@ -304,7 +304,7 @@ class TestUpdateTool:
     file_path = tmp_path / "test.txt"
     file_path.write_text("line1\nline2")
     tool = UpdateTool()
-    result = await tool.execute_async(
+    result = await tool.execute(
       path=str(file_path),
       operation="delete",
       line_number=5,
@@ -319,7 +319,7 @@ class TestUpdateTool:
     """UpdateTool with guardrail blocks unauthorized paths."""
     guardrail = FakeGuardrail(allow=False, reason="outside allowed")
     tool = UpdateTool(guardrail=guardrail)
-    result = await tool.execute_async(
+    result = await tool.execute(
       path="/etc/passwd",
       operation="replace",
       old_string="x",
@@ -346,7 +346,7 @@ class TestUpdateTool:
     file_path.write_text("hello")
     guardrail = FakeGuardrail(allow=True)
     tool = UpdateTool(guardrail=guardrail)
-    result = await tool.execute_async(
+    result = await tool.execute(
       path=str(file_path),
       operation="replace",
       old_string="hello",
@@ -376,7 +376,7 @@ class TestUpdateTool:
     link = tmp_path / "link.txt"
     link.symlink_to(target)
     tool = UpdateTool()
-    result = await tool.execute_async(
+    result = await tool.execute(
       path=str(link),
       operation="replace",
       old_string="secret",
@@ -390,7 +390,7 @@ class TestUpdateTool:
     """UpdateTool returns error when file does not exist."""
     file_path = tmp_path / "missing.txt"
     tool = UpdateTool()
-    result = await tool.execute_async(
+    result = await tool.execute(
       path=str(file_path),
       operation="replace",
       old_string="x",
@@ -405,7 +405,7 @@ class TestUpdateTool:
     subdir = tmp_path / "subdir"
     subdir.mkdir()
     tool = UpdateTool()
-    result = await tool.execute_async(
+    result = await tool.execute(
       path=str(subdir),
       operation="replace",
       old_string="x",
@@ -419,7 +419,7 @@ class TestUpdateTool:
     """UpdateTool does not leak full paths in error messages."""
     tool = UpdateTool()
     sensitive_path = str(tmp_path / ".ssh" / "id_rsa")
-    result = await tool.execute_async(
+    result = await tool.execute(
       path=sensitive_path,
       operation="replace",
       old_string="x",
@@ -434,7 +434,7 @@ class TestUpdateTool:
     file_path = tmp_path / "real.txt"
     file_path.write_text("original")
     tool = UpdateTool()
-    result = await tool.execute_async(
+    result = await tool.execute(
       path=str(tmp_path / ".." / tmp_path.name / "real.txt"),
       operation="replace",
       old_string="original",
@@ -454,7 +454,7 @@ class TestUpdateTool:
     tool = UpdateTool(config=config)
     # 2048 bytes = 2KB, exceeds 1KB limit
     large_string = "a" * 2048
-    result = await tool.execute_async(
+    result = await tool.execute(
       path=str(file_path),
       operation="replace",
       old_string="x",
@@ -470,7 +470,7 @@ class TestUpdateTool:
     file_path.write_text("x")
     config = Config(tools=ToolsConfig(update=UpdateToolConfig(max_diff_size_kb=100)))
     tool = UpdateTool(config=config)
-    result = await tool.execute_async(
+    result = await tool.execute(
       path=str(file_path),
       operation="replace",
       old_string="x",
@@ -491,7 +491,7 @@ class TestUpdateTool:
 
     monkeypatch.setattr(Path, "read_text", mock_read_text)
     tool = UpdateTool()
-    result = await tool.execute_async(
+    result = await tool.execute(
       path=str(file_path),
       operation="replace",
       old_string="existing",
@@ -508,7 +508,7 @@ class TestUpdateTool:
     file_path.write_text("hello")
     config = Config(tools=ToolsConfig(update=UpdateToolConfig(require_exact_match=False)))
     tool = UpdateTool(config=config)
-    result = await tool.execute_async(
+    result = await tool.execute(
       path=str(file_path),
       operation="replace",
       old_string="",
@@ -521,7 +521,7 @@ class TestUpdateTool:
   async def test_invalid_operation(self) -> None:
     """UpdateTool handles invalid operation parameter."""
     tool = UpdateTool()
-    result = await tool.execute_async(
+    result = await tool.execute(
       path="/tmp/test.txt",
       operation="invalid_op",
       old_string="x",
@@ -534,7 +534,7 @@ class TestUpdateTool:
   async def test_non_string_path(self) -> None:
     """UpdateTool handles non-string path parameter."""
     tool = UpdateTool()
-    result = await tool.execute_async(
+    result = await tool.execute(
       path=123,
       operation="replace",
       old_string="x",
@@ -547,7 +547,7 @@ class TestUpdateTool:
   async def test_non_string_old_string(self) -> None:
     """UpdateTool handles non-string old_string parameter."""
     tool = UpdateTool()
-    result = await tool.execute_async(
+    result = await tool.execute(
       path="/tmp/test.txt",
       operation="replace",
       old_string=123,
@@ -560,7 +560,7 @@ class TestUpdateTool:
   async def test_result_is_toolresult(self) -> None:
     """UpdateTool execute returns ToolResult."""
     tool = UpdateTool()
-    result = await tool.execute_async(
+    result = await tool.execute(
       path="/dev/null",
       operation="replace",
       old_string="x",
@@ -577,7 +577,7 @@ class TestUpdateTool:
     link.symlink_to(target)
     guardrail = FakeGuardrail(allow=True)
     tool = UpdateTool(guardrail=guardrail)
-    result = await tool.execute_async(
+    result = await tool.execute(
       path=str(link),
       operation="replace",
       old_string="allowed",
@@ -592,7 +592,7 @@ class TestUpdateTool:
     file_path = tmp_path / "test.txt"
     file_path.write_text("hello world")
     tool = UpdateTool()
-    result = await tool.execute_async(
+    result = await tool.execute(
       path=str(file_path),
       operation="delete",
     )

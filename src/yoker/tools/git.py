@@ -184,7 +184,7 @@ For diff and show, the path parameter can be a file to diff/show that file.
     """Get the list of allowed operations from config."""
     return self._config.allowed_commands
 
-  async def execute_async(self, **kwargs: Any) -> ToolResult:
+  async def execute(self, **kwargs: Any) -> ToolResult:
     """Execute a Git operation.
 
     Steps:
