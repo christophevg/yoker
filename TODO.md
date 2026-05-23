@@ -140,17 +140,18 @@ This phase creates two separate Agent classes following the httpx pattern:
 
 Both share identical public interfaces with the same method names.
 
-- [ ] **1.7.1 Extract AgentCore Class**
-  - Create `src/yoker/agent_base.py` with shared state and utilities
+- [x] **1.7.1 Extract AgentCore Class** (2026-05-23)
+  - Create `src/yoker/base.py` with shared state and utilities
   - Extract: configuration initialization, tool registry building, context manager
   - Extract: guardrail setup, agent definition loading, event handler storage
   - Extract: recursion tracking
   - Ensure sync Agent still works with AgentCore delegation
-  - Write unit tests for AgentCore
+  - Write unit tests for AgentCore (51 tests, 98% coverage)
   - **Estimated time:** 1 hour
   - **Satisfies:** FR4
+  - See: `reporting/1.7.1-agentcore-extraction/summary.md`
 
-- [ ] **1.7.2 Refactor Sync Agent**
+- [x] **1.7.2 Refactor Sync Agent** (2026-05-23)
   - Update `src/yoker/agent.py` to use AgentCore via composition
   - Add property delegations to AgentCore (model, tool_registry, context, etc.)
   - Keep sync `Client` initialization (no asyncio)
