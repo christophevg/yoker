@@ -3,8 +3,10 @@
 Task: 1.5.6 - Complete Tool Content Display
 """
 
+import asyncio
 from pathlib import Path
 from typing import Any
+from unittest.mock import AsyncMock
 
 from pytest_mock import MockerFixture
 
@@ -92,16 +94,34 @@ def create_mock_chunk(
   return mock_chunk
 
 
+class AsyncIter:
+  """Helper class to create an async iterator from a list."""
+
+  def __init__(self, items: list[Any]) -> None:
+    self.items = items
+    self.index = 0
+
+  def __aiter__(self) -> "AsyncIter":
+    return self
+
+  async def __anext__(self) -> Any:
+    if self.index >= len(self.items):
+      raise StopAsyncIteration
+    item = self.items[self.index]
+    self.index += 1
+    return item
+
+
 def create_tool_then_response(
   mocker: MockerFixture,
   tool_calls: list[Any],
   final_content: str = "Done",
-) -> list[list[Any]]:
+) -> list[AsyncIter]:
   """Create a side_effect sequence for Agent.process() tests.
 
   The Agent.process() loop:
-  1. First call: Returns tool_calls → Agent executes the tool
-  2. Second call: Returns content (no tool_calls) → Agent finishes the turn
+  1. First call: Returns tool_calls -> Agent executes the tool
+  2. Second call: Returns content (no tool_calls) -> Agent finishes the turn
 
   Args:
     mocker: pytest-mock fixture
@@ -109,7 +129,7 @@ def create_tool_then_response(
     final_content: Final content response (default: "Done")
 
   Returns:
-    List of chunk lists to use as side_effect
+    List of AsyncIter objects to use as side_effect
   """
   # First call: tool call
   tool_chunk = create_mock_chunk(mocker, tool_calls=tool_calls)
@@ -121,7 +141,7 @@ def create_tool_then_response(
   final_chunk.eval_count = 20
   final_chunk.total_duration = 100_000_000  # 100ms in nanoseconds
 
-  return [[tool_chunk], [final_chunk]]
+  return [AsyncIter([tool_chunk]), AsyncIter([final_chunk])]
 
 
 def create_agent_with_permissions(tmp_path: Path) -> Agent:
@@ -150,24 +170,26 @@ class TestAgentContentEventEmission:
     """
     # Mock the ollama client to return tool call, then final response
     mock_client = mocker.MagicMock()
-    mock_client.chat.side_effect = create_tool_then_response(
-      mocker,
-      tool_calls=[
-        create_mock_tool_call(
-          mocker,
-          name="write",
-          arguments={"path": str(tmp_path / "test.txt"), "content": "Hello\nWorld\n"},
-        )
-      ],
+    mock_client.chat = AsyncMock(
+      side_effect=create_tool_then_response(
+        mocker,
+        tool_calls=[
+          create_mock_tool_call(
+            mocker,
+            name="write",
+            arguments={"path": str(tmp_path / "test.txt"), "content": "Hello\nWorld\n"},
+          )
+        ],
+      )
     )
 
-    mocker.patch("yoker.agent.Client", return_value=mock_client)
+    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
     agent.add_event_handler(collector)
 
-    agent.process("Write a file")
+    asyncio.run(agent.process("Write a file"))
 
     # Check that ToolContentEvent was emitted
     content_events = collector.events_of_type(EventType.TOOL_CONTENT)
@@ -187,24 +209,26 @@ class TestAgentContentEventEmission:
 
     # Mock the ollama client to return tool call, then final response
     mock_client = mocker.MagicMock()
-    mock_client.chat.side_effect = create_tool_then_response(
-      mocker,
-      tool_calls=[
-        create_mock_tool_call(
-          mocker,
-          name="read",
-          arguments={"path": str(tmp_path / "test.txt")},
-        )
-      ],
+    mock_client.chat = AsyncMock(
+      side_effect=create_tool_then_response(
+        mocker,
+        tool_calls=[
+          create_mock_tool_call(
+            mocker,
+            name="read",
+            arguments={"path": str(tmp_path / "test.txt")},
+          )
+        ],
+      )
     )
 
-    mocker.patch("yoker.agent.Client", return_value=mock_client)
+    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
     agent.add_event_handler(collector)
 
-    agent.process("Read a file")
+    asyncio.run(agent.process("Read a file"))
 
     # Check that no ToolContentEvent was emitted
     content_events = collector.events_of_type(EventType.TOOL_CONTENT)
@@ -220,24 +244,26 @@ class TestAgentContentEventEmission:
     """
     # Mock the ollama client
     mock_client = mocker.MagicMock()
-    mock_client.chat.side_effect = create_tool_then_response(
-      mocker,
-      tool_calls=[
-        create_mock_tool_call(
-          mocker,
-          name="write",
-          arguments={"path": str(tmp_path / "test.txt"), "content": "Test\n"},
-        )
-      ],
+    mock_client.chat = AsyncMock(
+      side_effect=create_tool_then_response(
+        mocker,
+        tool_calls=[
+          create_mock_tool_call(
+            mocker,
+            name="write",
+            arguments={"path": str(tmp_path / "test.txt"), "content": "Test\n"},
+          )
+        ],
+      )
     )
 
-    mocker.patch("yoker.agent.Client", return_value=mock_client)
+    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
     agent.add_event_handler(collector)
 
-    agent.process("Write a file")
+    asyncio.run(agent.process("Write a file"))
 
     # Find ToolResultEvent and ToolContentEvent
     result_idx = None
@@ -263,24 +289,26 @@ class TestAgentContentEventEmission:
     """
     # Mock the ollama client
     mock_client = mocker.MagicMock()
-    mock_client.chat.side_effect = create_tool_then_response(
-      mocker,
-      tool_calls=[
-        create_mock_tool_call(
-          mocker,
-          name="write",
-          arguments={"path": str(tmp_path / "myfile.txt"), "content": "Test\n"},
-        )
-      ],
+    mock_client.chat = AsyncMock(
+      side_effect=create_tool_then_response(
+        mocker,
+        tool_calls=[
+          create_mock_tool_call(
+            mocker,
+            name="write",
+            arguments={"path": str(tmp_path / "myfile.txt"), "content": "Test\n"},
+          )
+        ],
+      )
     )
 
-    mocker.patch("yoker.agent.Client", return_value=mock_client)
+    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
     agent.add_event_handler(collector)
 
-    agent.process("Write a file")
+    asyncio.run(agent.process("Write a file"))
 
     content_events = collector.events_of_type(EventType.TOOL_CONTENT)
     assert len(content_events) == 1
@@ -300,18 +328,20 @@ class TestAgentContentEventEmission:
     """
     # Mock the ollama client
     mock_client = mocker.MagicMock()
-    mock_client.chat.side_effect = create_tool_then_response(
-      mocker,
-      tool_calls=[
-        create_mock_tool_call(
-          mocker,
-          name="write",
-          arguments={"path": str(tmp_path / "test.txt"), "content": "Test\n"},
-        )
-      ],
+    mock_client.chat = AsyncMock(
+      side_effect=create_tool_then_response(
+        mocker,
+        tool_calls=[
+          create_mock_tool_call(
+            mocker,
+            name="write",
+            arguments={"path": str(tmp_path / "test.txt"), "content": "Test\n"},
+          )
+        ],
+      )
     )
 
-    mocker.patch("yoker.agent.Client", return_value=mock_client)
+    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
 
     # Configure for content verbosity
     from yoker.config.schema import ContentDisplayConfig, ToolsConfig
@@ -324,7 +354,7 @@ class TestAgentContentEventEmission:
     collector = TestEventCollector()
     agent.add_event_handler(collector)
 
-    agent.process("Write a file")
+    asyncio.run(agent.process("Write a file"))
 
     content_events = collector.events_of_type(EventType.TOOL_CONTENT)
     assert len(content_events) == 1
@@ -349,29 +379,31 @@ class TestAgentContentEventEmission:
 
     # Mock the ollama client
     mock_client = mocker.MagicMock()
-    mock_client.chat.side_effect = create_tool_then_response(
-      mocker,
-      tool_calls=[
-        create_mock_tool_call(
-          mocker,
-          name="update",
-          arguments={
-            "path": str(test_file),
-            "operation": "replace",
-            "old_string": "Old",
-            "new_string": "New",
-          },
-        )
-      ],
+    mock_client.chat = AsyncMock(
+      side_effect=create_tool_then_response(
+        mocker,
+        tool_calls=[
+          create_mock_tool_call(
+            mocker,
+            name="update",
+            arguments={
+              "path": str(test_file),
+              "operation": "replace",
+              "old_string": "Old",
+              "new_string": "New",
+            },
+          )
+        ],
+      )
     )
 
-    mocker.patch("yoker.agent.Client", return_value=mock_client)
+    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
     agent.add_event_handler(collector)
 
-    agent.process("Update a file")
+    asyncio.run(agent.process("Update a file"))
 
     content_events = collector.events_of_type(EventType.TOOL_CONTENT)
     assert len(content_events) >= 1
@@ -396,24 +428,26 @@ class TestAgentContentEventConstruction:
     """
     # Mock the ollama client
     mock_client = mocker.MagicMock()
-    mock_client.chat.side_effect = create_tool_then_response(
-      mocker,
-      tool_calls=[
-        create_mock_tool_call(
-          mocker,
-          name="write",
-          arguments={"path": str(tmp_path / "test.txt"), "content": "Test\n"},
-        )
-      ],
+    mock_client.chat = AsyncMock(
+      side_effect=create_tool_then_response(
+        mocker,
+        tool_calls=[
+          create_mock_tool_call(
+            mocker,
+            name="write",
+            arguments={"path": str(tmp_path / "test.txt"), "content": "Test\n"},
+          )
+        ],
+      )
     )
 
-    mocker.patch("yoker.agent.Client", return_value=mock_client)
+    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
     agent.add_event_handler(collector)
 
-    agent.process("Write a file")
+    asyncio.run(agent.process("Write a file"))
 
     content_events = collector.events_of_type(EventType.TOOL_CONTENT)
     assert len(content_events) == 1
@@ -441,29 +475,31 @@ class TestAgentContentEventConstruction:
 
     # Mock the ollama client
     mock_client = mocker.MagicMock()
-    mock_client.chat.side_effect = create_tool_then_response(
-      mocker,
-      tool_calls=[
-        create_mock_tool_call(
-          mocker,
-          name="update",
-          arguments={
-            "path": str(test_file),
-            "operation": "replace",
-            "old_string": "Original",
-            "new_string": "Modified",
-          },
-        )
-      ],
+    mock_client.chat = AsyncMock(
+      side_effect=create_tool_then_response(
+        mocker,
+        tool_calls=[
+          create_mock_tool_call(
+            mocker,
+            name="update",
+            arguments={
+              "path": str(test_file),
+              "operation": "replace",
+              "old_string": "Original",
+              "new_string": "Modified",
+            },
+          )
+        ],
+      )
     )
 
-    mocker.patch("yoker.agent.Client", return_value=mock_client)
+    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
     agent.add_event_handler(collector)
 
-    agent.process("Update a file")
+    asyncio.run(agent.process("Update a file"))
 
     content_events = collector.events_of_type(EventType.TOOL_CONTENT)
     assert len(content_events) >= 1
@@ -481,24 +517,26 @@ class TestAgentContentEventConstruction:
     """
     # Mock the ollama client
     mock_client = mocker.MagicMock()
-    mock_client.chat.side_effect = create_tool_then_response(
-      mocker,
-      tool_calls=[
-        create_mock_tool_call(
-          mocker,
-          name="write",
-          arguments={"path": str(tmp_path / "test.txt"), "content": "Test\n"},
-        )
-      ],
+    mock_client.chat = AsyncMock(
+      side_effect=create_tool_then_response(
+        mocker,
+        tool_calls=[
+          create_mock_tool_call(
+            mocker,
+            name="write",
+            arguments={"path": str(tmp_path / "test.txt"), "content": "Test\n"},
+          )
+        ],
+      )
     )
 
-    mocker.patch("yoker.agent.Client", return_value=mock_client)
+    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
     agent.add_event_handler(collector)
 
-    agent.process("Write a file")
+    asyncio.run(agent.process("Write a file"))
 
     content_events = collector.events_of_type(EventType.TOOL_CONTENT)
     assert len(content_events) == 1
@@ -518,24 +556,26 @@ class TestAgentContentEventEmissionOrder:
     """
     # Mock the ollama client
     mock_client = mocker.MagicMock()
-    mock_client.chat.side_effect = create_tool_then_response(
-      mocker,
-      tool_calls=[
-        create_mock_tool_call(
-          mocker,
-          name="write",
-          arguments={"path": str(tmp_path / "test.txt"), "content": "Test\n"},
-        )
-      ],
+    mock_client.chat = AsyncMock(
+      side_effect=create_tool_then_response(
+        mocker,
+        tool_calls=[
+          create_mock_tool_call(
+            mocker,
+            name="write",
+            arguments={"path": str(tmp_path / "test.txt"), "content": "Test\n"},
+          )
+        ],
+      )
     )
 
-    mocker.patch("yoker.agent.Client", return_value=mock_client)
+    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
     agent.add_event_handler(collector)
 
-    agent.process("Write a file")
+    asyncio.run(agent.process("Write a file"))
 
     # Verify order
     result_idx = None
@@ -562,29 +602,31 @@ class TestAgentContentEventEmissionOrder:
 
     # Mock the ollama client
     mock_client = mocker.MagicMock()
-    mock_client.chat.side_effect = create_tool_then_response(
-      mocker,
-      tool_calls=[
-        create_mock_tool_call(
-          mocker,
-          name="update",
-          arguments={
-            "path": str(test_file),
-            "operation": "replace",
-            "old_string": "Original",
-            "new_string": "Updated",
-          },
-        )
-      ],
+    mock_client.chat = AsyncMock(
+      side_effect=create_tool_then_response(
+        mocker,
+        tool_calls=[
+          create_mock_tool_call(
+            mocker,
+            name="update",
+            arguments={
+              "path": str(test_file),
+              "operation": "replace",
+              "old_string": "Original",
+              "new_string": "Updated",
+            },
+          )
+        ],
+      )
     )
 
-    mocker.patch("yoker.agent.Client", return_value=mock_client)
+    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
     agent.add_event_handler(collector)
 
-    agent.process("Update a file")
+    asyncio.run(agent.process("Update a file"))
 
     # Verify order
     result_idx = None
@@ -611,24 +653,26 @@ class TestAgentContentEventEmissionOrder:
 
     # Mock the ollama client
     mock_client = mocker.MagicMock()
-    mock_client.chat.side_effect = create_tool_then_response(
-      mocker,
-      tool_calls=[
-        create_mock_tool_call(
-          mocker,
-          name="read",
-          arguments={"path": str(test_file)},
-        )
-      ],
+    mock_client.chat = AsyncMock(
+      side_effect=create_tool_then_response(
+        mocker,
+        tool_calls=[
+          create_mock_tool_call(
+            mocker,
+            name="read",
+            arguments={"path": str(test_file)},
+          )
+        ],
+      )
     )
 
-    mocker.patch("yoker.agent.Client", return_value=mock_client)
+    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
     agent.add_event_handler(collector)
 
-    agent.process("Read a file")
+    asyncio.run(agent.process("Read a file"))
 
     # Verify no content event
     content_events = collector.events_of_type(EventType.TOOL_CONTENT)
@@ -651,31 +695,33 @@ class TestAgentContentEventWithMultipleTools:
     """
     # Mock the ollama client to return multiple tool calls
     mock_client = mocker.MagicMock()
-    mock_client.chat.side_effect = create_tool_then_response(
-      mocker,
-      tool_calls=[
-        create_mock_tool_call(
-          mocker,
-          name="write",
-          arguments={"path": str(tmp_path / "file1.txt"), "content": "Content 1\n"},
-          call_id="call_write_1",
-        ),
-        create_mock_tool_call(
-          mocker,
-          name="write",
-          arguments={"path": str(tmp_path / "file2.txt"), "content": "Content 2\n"},
-          call_id="call_write_2",
-        ),
-      ],
+    mock_client.chat = AsyncMock(
+      side_effect=create_tool_then_response(
+        mocker,
+        tool_calls=[
+          create_mock_tool_call(
+            mocker,
+            name="write",
+            arguments={"path": str(tmp_path / "file1.txt"), "content": "Content 1\n"},
+            call_id="call_write_1",
+          ),
+          create_mock_tool_call(
+            mocker,
+            name="write",
+            arguments={"path": str(tmp_path / "file2.txt"), "content": "Content 2\n"},
+            call_id="call_write_2",
+          ),
+        ],
+      )
     )
 
-    mocker.patch("yoker.agent.Client", return_value=mock_client)
+    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
     agent.add_event_handler(collector)
 
-    agent.process("Write files")
+    asyncio.run(agent.process("Write files"))
 
     # Count content events
     content_events = collector.events_of_type(EventType.TOOL_CONTENT)
@@ -706,42 +752,44 @@ class TestAgentContentEventWithMultipleTools:
 
     # Mock the ollama client
     mock_client = mocker.MagicMock()
-    mock_client.chat.side_effect = create_tool_then_response(
-      mocker,
-      tool_calls=[
-        create_mock_tool_call(
-          mocker,
-          name="write",
-          arguments={"path": str(tmp_path / "new.txt"), "content": "New file\n"},
-          call_id="call_write",
-        ),
-        create_mock_tool_call(
-          mocker,
-          name="read",
-          arguments={"path": str(tmp_path / "existing.txt")},
-          call_id="call_read",
-        ),
-        create_mock_tool_call(
-          mocker,
-          name="update",
-          arguments={
-            "path": str(tmp_path / "existing.txt"),
-            "operation": "replace",
-            "old_string": "Original",
-            "new_string": "Updated",
-          },
-          call_id="call_update",
-        ),
-      ],
+    mock_client.chat = AsyncMock(
+      side_effect=create_tool_then_response(
+        mocker,
+        tool_calls=[
+          create_mock_tool_call(
+            mocker,
+            name="write",
+            arguments={"path": str(tmp_path / "new.txt"), "content": "New file\n"},
+            call_id="call_write",
+          ),
+          create_mock_tool_call(
+            mocker,
+            name="read",
+            arguments={"path": str(tmp_path / "existing.txt")},
+            call_id="call_read",
+          ),
+          create_mock_tool_call(
+            mocker,
+            name="update",
+            arguments={
+              "path": str(tmp_path / "existing.txt"),
+              "operation": "replace",
+              "old_string": "Original",
+              "new_string": "Updated",
+            },
+            call_id="call_update",
+          ),
+        ],
+      )
     )
 
-    mocker.patch("yoker.agent.Client", return_value=mock_client)
+    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
     agent.add_event_handler(collector)
 
-    agent.process("Mixed operations")
+    asyncio.run(agent.process("Mixed operations"))
 
     # Should have 2 content events (write and update, not read)
     content_events = collector.events_of_type(EventType.TOOL_CONTENT)
@@ -764,25 +812,27 @@ class TestAgentContentEventErrorHandling:
     """
     # Mock the ollama client to return a tool call that will fail
     mock_client = mocker.MagicMock()
-    mock_client.chat.side_effect = create_tool_then_response(
-      mocker,
-      tool_calls=[
-        create_mock_tool_call(
-          mocker,
-          name="write",
-          # Invalid path (will fail)
-          arguments={"path": "/nonexistent/path/test.txt", "content": "Test\n"},
-        )
-      ],
+    mock_client.chat = AsyncMock(
+      side_effect=create_tool_then_response(
+        mocker,
+        tool_calls=[
+          create_mock_tool_call(
+            mocker,
+            name="write",
+            # Invalid path (will fail)
+            arguments={"path": "/nonexistent/path/test.txt", "content": "Test\n"},
+          )
+        ],
+      )
     )
 
-    mocker.patch("yoker.agent.Client", return_value=mock_client)
+    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
     agent.add_event_handler(collector)
 
-    agent.process("Write to invalid path")
+    asyncio.run(agent.process("Write to invalid path"))
 
     # Should not emit ToolContentEvent on error
     content_events = collector.events_of_type(EventType.TOOL_CONTENT)
@@ -803,24 +853,26 @@ class TestAgentContentEventErrorHandling:
     """
     # Mock the ollama client
     mock_client = mocker.MagicMock()
-    mock_client.chat.side_effect = create_tool_then_response(
-      mocker,
-      tool_calls=[
-        create_mock_tool_call(
-          mocker,
-          name="write",
-          arguments={"path": str(tmp_path / "test.txt"), "content": "Test\n"},
-        )
-      ],
+    mock_client.chat = AsyncMock(
+      side_effect=create_tool_then_response(
+        mocker,
+        tool_calls=[
+          create_mock_tool_call(
+            mocker,
+            name="write",
+            arguments={"path": str(tmp_path / "test.txt"), "content": "Test\n"},
+          )
+        ],
+      )
     )
 
-    mocker.patch("yoker.agent.Client", return_value=mock_client)
+    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
     agent.add_event_handler(collector)
 
-    agent.process("Write a file")
+    asyncio.run(agent.process("Write a file"))
 
     content_events = collector.events_of_type(EventType.TOOL_CONTENT)
     assert len(content_events) == 1
@@ -841,18 +893,20 @@ class TestAgentContentEventErrorHandling:
     """
     # Mock the ollama client
     mock_client = mocker.MagicMock()
-    mock_client.chat.side_effect = create_tool_then_response(
-      mocker,
-      tool_calls=[
-        create_mock_tool_call(
-          mocker,
-          name="write",
-          arguments={"path": str(tmp_path / "test.txt"), "content": "Test\n"},
-        )
-      ],
+    mock_client.chat = AsyncMock(
+      side_effect=create_tool_then_response(
+        mocker,
+        tool_calls=[
+          create_mock_tool_call(
+            mocker,
+            name="write",
+            arguments={"path": str(tmp_path / "test.txt"), "content": "Test\n"},
+          )
+        ],
+      )
     )
 
-    mocker.patch("yoker.agent.Client", return_value=mock_client)
+    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
 
     agent = Agent(model="test-model")
 
@@ -870,7 +924,7 @@ class TestAgentContentEventErrorHandling:
     agent.add_event_handler(failing_handler)
 
     # Process should complete without raising error
-    agent.process("Write a file")
+    asyncio.run(agent.process("Write a file"))
 
     # Tool result event should have been emitted before the failure
     result_events = [e for e in failing_handler.events if e.type == EventType.TOOL_RESULT]

@@ -26,8 +26,8 @@ class WebFetchTool(Tool):
   Validates URLs through WebGuardrail before execution.
 
   Example:
-    tool = WebFetchTool(backend=OllamaWebFetchBackend(client))
-    result = tool.execute(url="https://example.com", content_type="markdown")
+    tool = WebFetchTool(backend=OllamaWebFetchBackend(async_client))
+    result = await tool.execute_async(url="https://example.com", content_type="markdown")
   """
 
   _guardrail: WebGuardrail | None
@@ -95,7 +95,25 @@ class WebFetchTool(Tool):
     }
 
   def execute(self, **kwargs: Any) -> ToolResult:
-    """Execute web fetch with the given parameters.
+    """Execute web fetch synchronously (not supported for async tools).
+
+    This method is provided for compatibility but will return an error
+    indicating async execution is required.
+
+    Args:
+      **kwargs: Must contain 'url', optionally 'content_type', 'max_size_kb'.
+
+    Returns:
+      ToolResult with error indicating async execution required.
+    """
+    return ToolResult(
+      success=False,
+      result={},
+      error="web_fetch requires async execution. Use execute_async() instead.",
+    )
+
+  async def execute_async(self, **kwargs: Any) -> ToolResult:
+    """Execute web fetch with the given parameters asynchronously.
 
     Steps:
       1. Validate parameters via guardrail if provided.
@@ -160,7 +178,7 @@ class WebFetchTool(Tool):
 
     # Step 5: Execute fetch
     try:
-      content = self._backend.fetch(
+      content = await self._backend.fetch(
         url=url,
         content_type=content_type,
         max_size_kb=max_size_kb,

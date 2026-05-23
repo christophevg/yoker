@@ -1,7 +1,7 @@
 """Tests for AgentTool implementation."""
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -49,36 +49,40 @@ class TestAgentToolSchema:
 class TestAgentToolParameters:
   """Tests for parameter validation."""
 
-  def test_missing_agent_path(self) -> None:
+  @pytest.mark.asyncio
+  async def test_missing_agent_path(self) -> None:
     """Test error when agent_path is missing."""
     tool = AgentTool()
-    result = tool.execute(prompt="Test prompt")
+    result = await tool.execute_async(prompt="Test prompt")
 
     assert not result.success
     assert "Missing required parameter" in result.error
     assert "agent_path" in result.error
 
-  def test_missing_prompt(self) -> None:
+  @pytest.mark.asyncio
+  async def test_missing_prompt(self) -> None:
     """Test error when prompt is missing."""
     tool = AgentTool()
-    result = tool.execute(agent_path="/path/to/agent.md")
+    result = await tool.execute_async(agent_path="/path/to/agent.md")
 
     assert not result.success
     assert "Missing required parameter" in result.error
     assert "prompt" in result.error
 
-  def test_missing_both_parameters(self) -> None:
+  @pytest.mark.asyncio
+  async def test_missing_both_parameters(self) -> None:
     """Test error when both parameters are missing."""
     tool = AgentTool()
-    result = tool.execute()
+    result = await tool.execute_async()
 
     assert not result.success
     assert "Missing required parameter" in result.error
 
-  def test_invalid_timeout_string(self) -> None:
+  @pytest.mark.asyncio
+  async def test_invalid_timeout_string(self) -> None:
     """Test error for invalid timeout_seconds parameter."""
     tool = AgentTool()
-    result = tool.execute(
+    result = await tool.execute_async(
       agent_path="/tmp/agent.md",
       prompt="Test",
       timeout_seconds="not_a_number",
@@ -87,7 +91,8 @@ class TestAgentToolParameters:
     assert not result.success
     assert "Invalid numeric parameter" in result.error
 
-  def test_timeout_clamped_to_minimum(self, tmp_path: Path) -> None:
+  @pytest.mark.asyncio
+  async def test_timeout_clamped_to_minimum(self, tmp_path: Path) -> None:
     """Test timeout below minimum is clamped."""
     agents_dir = tmp_path / "agents"
     agents_dir.mkdir(exist_ok=True)
@@ -98,7 +103,7 @@ class TestAgentToolParameters:
 
     tool = AgentTool()
     # Timeout 0 should be clamped to 1
-    result = tool.execute(
+    result = await tool.execute_async(
       agent_path=str(agent_file),
       prompt="Test",
       timeout_seconds=0,
@@ -109,7 +114,8 @@ class TestAgentToolParameters:
     # The error should be about missing parent/config, not timeout
     assert result.success is False  # Expected to fail for other reasons
 
-  def test_timeout_clamped_to_maximum(self, tmp_path: Path) -> None:
+  @pytest.mark.asyncio
+  async def test_timeout_clamped_to_maximum(self, tmp_path: Path) -> None:
     """Test timeout above maximum is clamped."""
     agents_dir = tmp_path / "agents"
     agents_dir.mkdir(exist_ok=True)
@@ -120,7 +126,7 @@ class TestAgentToolParameters:
 
     tool = AgentTool()
     # Timeout 9999 should be clamped to 3600
-    result = tool.execute(
+    result = await tool.execute_async(
       agent_path=str(agent_file),
       prompt="Test",
       timeout_seconds=9999,
@@ -134,10 +140,11 @@ class TestAgentToolParameters:
 class TestAgentToolPathValidation:
   """Tests for agent path validation."""
 
-  def test_agent_file_not_found(self) -> None:
+  @pytest.mark.asyncio
+  async def test_agent_file_not_found(self) -> None:
     """Test error when agent file does not exist."""
     tool = AgentTool()
-    result = tool.execute(
+    result = await tool.execute_async(
       agent_path="/nonexistent/agent.md",
       prompt="Test prompt",
     )
@@ -145,10 +152,11 @@ class TestAgentToolPathValidation:
     assert not result.success
     assert "Agent definition not found" in result.error
 
-  def test_agent_path_is_directory(self, tmp_path: Path) -> None:
+  @pytest.mark.asyncio
+  async def test_agent_path_is_directory(self, tmp_path: Path) -> None:
     """Test error when agent path is a directory."""
     tool = AgentTool()
-    result = tool.execute(
+    result = await tool.execute_async(
       agent_path=str(tmp_path),
       prompt="Test prompt",
     )
@@ -233,7 +241,8 @@ class TestAgentToolRecursionDepth:
 
     return agent
 
-  def test_recursion_depth_zero_allowed(
+  @pytest.mark.asyncio
+  async def test_recursion_depth_zero_allowed(
     self, temp_agent_file: Path, mock_parent_agent: MagicMock
   ) -> None:
     """Test that spawning at depth 0 is allowed."""
@@ -244,28 +253,29 @@ class TestAgentToolRecursionDepth:
     # Mock the _create_subagent method to return a mock agent
     with patch.object(tool, "_create_subagent") as mock_create:
       mock_subagent = MagicMock()
-      mock_subagent.process.return_value = "Test response"
+      mock_subagent.process = AsyncMock(return_value="Test response")
       mock_create.return_value = mock_subagent
 
       # Mock _run_with_timeout to return directly
       with patch.object(tool, "_run_with_timeout") as mock_run:
         mock_run.return_value = "Test response"
 
-        result = tool.execute(
+        result = await tool.execute_async(
           agent_path=str(temp_agent_file),
           prompt="Test prompt",
         )
 
         assert result.success
 
-  def test_recursion_depth_at_limit_blocked(
+  @pytest.mark.asyncio
+  async def test_recursion_depth_at_limit_blocked(
     self, temp_agent_file: Path, mock_parent_agent: MagicMock
   ) -> None:
     """Test that spawning at max depth is blocked."""
     mock_parent_agent._recursion_depth = 3  # At max depth
 
     tool = AgentTool(parent_agent=mock_parent_agent)
-    result = tool.execute(
+    result = await tool.execute_async(
       agent_path=str(temp_agent_file),
       prompt="Test prompt",
     )
@@ -274,14 +284,15 @@ class TestAgentToolRecursionDepth:
     assert "Maximum recursion depth" in result.error
     assert "exceeded" in result.error.lower()
 
-  def test_recursion_depth_beyond_limit_blocked(
+  @pytest.mark.asyncio
+  async def test_recursion_depth_beyond_limit_blocked(
     self, temp_agent_file: Path, mock_parent_agent: MagicMock
   ) -> None:
     """Test that spawning beyond max depth is blocked."""
     mock_parent_agent._recursion_depth = 5  # Beyond max depth
 
     tool = AgentTool(parent_agent=mock_parent_agent)
-    result = tool.execute(
+    result = await tool.execute_async(
       agent_path=str(temp_agent_file),
       prompt="Test prompt",
     )
@@ -289,7 +300,8 @@ class TestAgentToolRecursionDepth:
     assert not result.success
     assert "Maximum recursion depth" in result.error
 
-  def test_recursion_depth_one_below_limit_allowed(
+  @pytest.mark.asyncio
+  async def test_recursion_depth_one_below_limit_allowed(
     self, temp_agent_file: Path, mock_parent_agent: MagicMock
   ) -> None:
     """Test that spawning at max_depth - 1 is allowed."""
@@ -299,13 +311,13 @@ class TestAgentToolRecursionDepth:
 
     with patch.object(tool, "_create_subagent") as mock_create:
       mock_subagent = MagicMock()
-      mock_subagent.process.return_value = "Test response"
+      mock_subagent.process = AsyncMock(return_value="Test response")
       mock_create.return_value = mock_subagent
 
       with patch.object(tool, "_run_with_timeout") as mock_run:
         mock_run.return_value = "Test response"
 
-        result = tool.execute(
+        result = await tool.execute_async(
           agent_path=str(temp_agent_file),
           prompt="Test prompt",
         )
@@ -382,7 +394,8 @@ class TestAgentToolTimeout:
 
     return agent
 
-  def test_timeout_raises_timeout_error(
+  @pytest.mark.asyncio
+  async def test_timeout_raises_timeout_error(
     self, temp_agent_file: Path, mock_parent_agent: MagicMock
   ) -> None:
     """Test that timeout is enforced and raises TimeoutError."""
@@ -392,7 +405,7 @@ class TestAgentToolTimeout:
     with patch.object(tool, "_run_with_timeout") as mock_run:
       mock_run.side_effect = TimeoutError("Timed out")
 
-      result = tool.execute(
+      result = await tool.execute_async(
         agent_path=str(temp_agent_file),
         prompt="Test prompt",
         timeout_seconds=1,
@@ -401,7 +414,10 @@ class TestAgentToolTimeout:
       assert not result.success
       assert "timed out" in result.error.lower()
 
-  def test_default_timeout_used(self, temp_agent_file: Path, mock_parent_agent: MagicMock) -> None:
+  @pytest.mark.asyncio
+  async def test_default_timeout_used(
+    self, temp_agent_file: Path, mock_parent_agent: MagicMock
+  ) -> None:
     """Test that default timeout is applied when not specified."""
     tool = AgentTool(parent_agent=mock_parent_agent)
 
@@ -412,7 +428,7 @@ class TestAgentToolTimeout:
       with patch.object(tool, "_run_with_timeout") as mock_run:
         mock_run.return_value = "Response"
 
-        result = tool.execute(
+        result = await tool.execute_async(
           agent_path=str(temp_agent_file),
           prompt="Test prompt",
         )
@@ -498,7 +514,10 @@ class TestAgentToolContextIsolation:
 
     return agent
 
-  def test_fresh_context_created(self, temp_agent_file: Path, mock_parent_agent: MagicMock) -> None:
+  @pytest.mark.asyncio
+  async def test_fresh_context_created(
+    self, temp_agent_file: Path, mock_parent_agent: MagicMock
+  ) -> None:
     """Test that subagent gets fresh context."""
     tool = AgentTool(parent_agent=mock_parent_agent)
 
@@ -512,10 +531,10 @@ class TestAgentToolContextIsolation:
 
       with patch("yoker.agent.Agent") as mock_agent_class:
         mock_agent = MagicMock()
-        mock_agent.process.return_value = "Response"
+        mock_agent.process = AsyncMock(return_value="Response")
         mock_agent_class.return_value = mock_agent
 
-        tool.execute(
+        await tool.execute_async(
           agent_path=str(temp_agent_file),
           prompt="Test prompt",
         )
@@ -589,7 +608,8 @@ class TestAgentToolAgentDefinition:
 
     return agent
 
-  def test_valid_agent_definition(self, tmp_path: Path, mock_parent_agent: MagicMock) -> None:
+  @pytest.mark.asyncio
+  async def test_valid_agent_definition(self, tmp_path: Path, mock_parent_agent: MagicMock) -> None:
     """Test loading valid agent definition."""
     agents_dir = tmp_path / "agents"
     agents_dir.mkdir(exist_ok=True)
@@ -610,7 +630,7 @@ class TestAgentToolAgentDefinition:
     with patch.object(tool, "_run_with_timeout") as mock_run:
       mock_run.return_value = "Response"
 
-      result = tool.execute(
+      result = await tool.execute_async(
         agent_path=str(agent_file),
         prompt="Test prompt",
       )
@@ -618,7 +638,8 @@ class TestAgentToolAgentDefinition:
       assert result.success
       assert result.result == "Response"
 
-  def test_invalid_agent_definition_yaml(
+  @pytest.mark.asyncio
+  async def test_invalid_agent_definition_yaml(
     self, tmp_path: Path, mock_parent_agent: MagicMock
   ) -> None:
     """Test loading agent definition with invalid YAML."""
@@ -628,7 +649,7 @@ class TestAgentToolAgentDefinition:
     agent_file.write_text("---\nname: [invalid yaml\n---\n\nContent\n")
 
     tool = AgentTool(parent_agent=mock_parent_agent)
-    result = tool.execute(
+    result = await tool.execute_async(
       agent_path=str(agent_file),
       prompt="Test prompt",
     )
@@ -636,7 +657,8 @@ class TestAgentToolAgentDefinition:
     assert not result.success
     assert "error" in result.error.lower()
 
-  def test_agent_definition_missing_name(
+  @pytest.mark.asyncio
+  async def test_agent_definition_missing_name(
     self, tmp_path: Path, mock_parent_agent: MagicMock
   ) -> None:
     """Test agent definition missing required name field."""
@@ -646,14 +668,15 @@ class TestAgentToolAgentDefinition:
     agent_file.write_text("---\ndescription: Test agent\ntools:\n  - read\n---\n\nContent\n")
 
     tool = AgentTool(parent_agent=mock_parent_agent)
-    result = tool.execute(
+    result = await tool.execute_async(
       agent_path=str(agent_file),
       prompt="Test prompt",
     )
 
     assert not result.success
 
-  def test_agent_definition_missing_tools(
+  @pytest.mark.asyncio
+  async def test_agent_definition_missing_tools(
     self, tmp_path: Path, mock_parent_agent: MagicMock
   ) -> None:
     """Test agent definition missing required tools field."""
@@ -663,7 +686,7 @@ class TestAgentToolAgentDefinition:
     agent_file.write_text("---\nname: test\ndescription: Test agent\n---\n\nContent\n")
 
     tool = AgentTool(parent_agent=mock_parent_agent)
-    result = tool.execute(
+    result = await tool.execute_async(
       agent_path=str(agent_file),
       prompt="Test prompt",
     )
@@ -747,7 +770,8 @@ class TestAgentToolSubagentCreation:
 
     return agent
 
-  def test_subagent_created_with_correct_depth(
+  @pytest.mark.asyncio
+  async def test_subagent_created_with_correct_depth(
     self, temp_agent_file: Path, mock_parent_agent: MagicMock
   ) -> None:
     """Test that subagent is created with incremented depth."""
@@ -757,7 +781,7 @@ class TestAgentToolSubagentCreation:
 
     with patch("yoker.agent.Agent") as mock_agent_class:
       mock_agent = MagicMock()
-      mock_agent.process.return_value = "Response"
+      mock_agent.process = AsyncMock(return_value="Response")
       mock_agent_class.return_value = mock_agent
 
       def capture_agent(*args, **kwargs):
@@ -769,7 +793,7 @@ class TestAgentToolSubagentCreation:
       with patch.object(tool, "_run_with_timeout") as mock_run:
         mock_run.return_value = "Response"
 
-        result = tool.execute(
+        result = await tool.execute_async(
           agent_path=str(temp_agent_file),
           prompt="Test prompt",
         )
@@ -780,7 +804,8 @@ class TestAgentToolSubagentCreation:
         kwargs = created_agents[0][1]
         assert kwargs.get("_recursion_depth") == 1
 
-  def test_subagent_uses_agent_model(
+  @pytest.mark.asyncio
+  async def test_subagent_uses_agent_model(
     self, temp_agent_file: Path, mock_parent_agent: MagicMock
   ) -> None:
     """Test that subagent uses model from agent definition."""
@@ -790,7 +815,7 @@ class TestAgentToolSubagentCreation:
 
     with patch("yoker.agent.Agent") as mock_agent_class:
       mock_agent = MagicMock()
-      mock_agent.process.return_value = "Response"
+      mock_agent.process = AsyncMock(return_value="Response")
       mock_agent_class.return_value = mock_agent
 
       def capture_agent(*args, **kwargs):
@@ -802,7 +827,7 @@ class TestAgentToolSubagentCreation:
       with patch.object(tool, "_run_with_timeout") as mock_run:
         mock_run.return_value = "Response"
 
-        result = tool.execute(
+        result = await tool.execute_async(
           agent_path=str(temp_agent_file),
           prompt="Test prompt",
         )
@@ -862,7 +887,8 @@ class TestAgentToolIntegration:
     )
     return agent_file
 
-  def test_full_execution_flow(self, temp_agent_file: Path, tmp_path: Path) -> None:
+  @pytest.mark.asyncio
+  async def test_full_execution_flow(self, temp_agent_file: Path, tmp_path: Path) -> None:
     """Test full execution flow with mocked Agent."""
     # Create mock config with all required validation fields
     config = MagicMock()
@@ -920,10 +946,10 @@ class TestAgentToolIntegration:
     # Mock Agent creation and process
     with patch("yoker.agent.Agent") as mock_agent_class:
       mock_agent = MagicMock()
-      mock_agent.process.return_value = "Sub-agent response"
+      mock_agent.process = AsyncMock(return_value="Sub-agent response")
       mock_agent_class.return_value = mock_agent
 
-      result = tool.execute(
+      result = await tool.execute_async(
         agent_path=str(temp_agent_file),
         prompt="Test prompt",
         timeout_seconds=60,

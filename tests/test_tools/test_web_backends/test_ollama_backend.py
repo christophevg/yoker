@@ -5,7 +5,7 @@ including result parsing, error handling, and API integration.
 """
 
 from dataclasses import dataclass
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -44,7 +44,7 @@ def mock_response(items: list[dict[str, str]]) -> MockWebSearchResponse:
 def create_mock_client(response: MockWebSearchResponse | None = None) -> MagicMock:
   """Create a mock Ollama Client with web_search method."""
   client = MagicMock()
-  client.web_search = MagicMock(return_value=response or mock_response([]))
+  client.web_search = AsyncMock(return_value=response or mock_response([]))
   return client
 
 
@@ -58,7 +58,7 @@ class TestOllamaWebSearchBackendSchema:
     Then: Creates backend with client and default settings
     """
     client = create_mock_client()
-    backend = OllamaWebSearchBackend(client=client)
+    backend = OllamaWebSearchBackend(async_client=client)
 
     assert backend._backend_name == "ollama"
     assert backend._timeout_seconds == 30
@@ -71,7 +71,7 @@ class TestOllamaWebSearchBackendSchema:
     Then: Uses provided timeout
     """
     client = create_mock_client()
-    backend = OllamaWebSearchBackend(client=client, timeout_seconds=60)
+    backend = OllamaWebSearchBackend(async_client=client, timeout_seconds=60)
 
     assert backend._timeout_seconds == 60
 
@@ -82,7 +82,7 @@ class TestOllamaWebSearchBackendSchema:
     Then: Returns 'ollama' as backend identifier
     """
     client = create_mock_client()
-    backend = OllamaWebSearchBackend(client=client)
+    backend = OllamaWebSearchBackend(async_client=client)
 
     assert backend._backend_name == "ollama"
 
@@ -90,7 +90,8 @@ class TestOllamaWebSearchBackendSchema:
 class TestOllamaWebSearchBackendSearch:
   """Tests for OllamaWebSearchBackend.search() method."""
 
-  def test_search_returns_list_of_results(self) -> None:
+  @pytest.mark.asyncio
+  async def test_search_returns_list_of_results(self) -> None:
     """
     Given: A backend with mocked client
     When: Calling search() with valid query
@@ -99,13 +100,14 @@ class TestOllamaWebSearchBackendSearch:
     client = create_mock_client(
       mock_response([{"title": "Result 1", "url": "https://example.com/1", "content": "Content 1"}])
     )
-    backend = OllamaWebSearchBackend(client=client)
-    results = backend.search(query="test query")
+    backend = OllamaWebSearchBackend(async_client=client)
+    results = await backend.search(query="test query")
 
     assert isinstance(results, list)
     assert len(results) == 1
 
-  def test_search_result_has_required_fields(self) -> None:
+  @pytest.mark.asyncio
+  async def test_search_result_has_required_fields(self) -> None:
     """
     Given: A backend with mocked client
     When: Getting search results
@@ -114,8 +116,8 @@ class TestOllamaWebSearchBackendSearch:
     client = create_mock_client(
       mock_response([{"title": "Test", "url": "https://example.com", "content": "Snippet"}])
     )
-    backend = OllamaWebSearchBackend(client=client)
-    results = backend.search(query="test query")
+    backend = OllamaWebSearchBackend(async_client=client)
+    results = await backend.search(query="test query")
 
     for result in results:
       assert hasattr(result, "title")
@@ -123,7 +125,8 @@ class TestOllamaWebSearchBackendSearch:
       assert hasattr(result, "snippet")
       assert hasattr(result, "source")
 
-  def test_search_result_source_is_ollama(self) -> None:
+  @pytest.mark.asyncio
+  async def test_search_result_source_is_ollama(self) -> None:
     """
     Given: Ollama backend returning results
     When: Getting search results
@@ -132,13 +135,14 @@ class TestOllamaWebSearchBackendSearch:
     client = create_mock_client(
       mock_response([{"title": "Test", "url": "https://example.com", "content": "Content"}])
     )
-    backend = OllamaWebSearchBackend(client=client)
-    results = backend.search(query="test query")
+    backend = OllamaWebSearchBackend(async_client=client)
+    results = await backend.search(query="test query")
 
     for result in results:
       assert result.source == "ollama"
 
-  def test_search_with_default_max_results(self) -> None:
+  @pytest.mark.asyncio
+  async def test_search_with_default_max_results(self) -> None:
     """
     Given: A backend with mocked client
     When: Calling search() without max_results
@@ -152,12 +156,13 @@ class TestOllamaWebSearchBackendSearch:
         ]
       )
     )
-    backend = OllamaWebSearchBackend(client=client)
-    results = backend.search(query="test query")
+    backend = OllamaWebSearchBackend(async_client=client)
+    results = await backend.search(query="test query")
 
     assert len(results) == 10  # Capped at 10
 
-  def test_search_with_custom_max_results(self) -> None:
+  @pytest.mark.asyncio
+  async def test_search_with_custom_max_results(self) -> None:
     """
     Given: A backend with mocked client
     When: Calling search() with max_results=5
@@ -171,12 +176,13 @@ class TestOllamaWebSearchBackendSearch:
         ]
       )
     )
-    backend = OllamaWebSearchBackend(client=client)
-    results = backend.search(query="test query", max_results=5)
+    backend = OllamaWebSearchBackend(async_client=client)
+    results = await backend.search(query="test query", max_results=5)
 
     assert len(results) == 5
 
-  def test_search_caps_at_10_results(self) -> None:
+  @pytest.mark.asyncio
+  async def test_search_caps_at_10_results(self) -> None:
     """
     Given: Ollama returns more than 10 results
     When: Calling search() with max_results=20
@@ -190,32 +196,34 @@ class TestOllamaWebSearchBackendSearch:
         ]
       )
     )
-    backend = OllamaWebSearchBackend(client=client)
-    results = backend.search(query="test query", max_results=20)
+    backend = OllamaWebSearchBackend(async_client=client)
+    results = await backend.search(query="test query", max_results=20)
 
     assert len(results) == 10  # Hard cap at 10
 
-  def test_search_empty_results(self) -> None:
+  @pytest.mark.asyncio
+  async def test_search_empty_results(self) -> None:
     """
     Given: Ollama returns empty list
     When: Calling search()
     Then: Returns empty list
     """
     client = create_mock_client(mock_response([]))
-    backend = OllamaWebSearchBackend(client=client)
-    results = backend.search(query="test query")
+    backend = OllamaWebSearchBackend(async_client=client)
+    results = await backend.search(query="test query")
 
     assert results == []
 
-  def test_search_preserves_query(self) -> None:
+  @pytest.mark.asyncio
+  async def test_search_preserves_query(self) -> None:
     """
     Given: A backend with mocked client
     When: Calling search() with specific query
     Then: Passes query to client.web_search
     """
     client = create_mock_client(mock_response([]))
-    backend = OllamaWebSearchBackend(client=client)
-    backend.search(query="Python asyncio tutorial")
+    backend = OllamaWebSearchBackend(async_client=client)
+    await backend.search(query="Python asyncio tutorial")
 
     client.web_search.assert_called_once_with("Python asyncio tutorial", max_results=10)
 
@@ -223,63 +231,67 @@ class TestOllamaWebSearchBackendSearch:
 class TestOllamaWebSearchBackendErrorHandling:
   """Tests for error handling in OllamaWebSearchBackend."""
 
-  def test_ollama_connection_error(self) -> None:
+  @pytest.mark.asyncio
+  async def test_ollama_connection_error(self) -> None:
     """
     Given: A backend with mocked client that fails to connect
     When: Calling search()
     Then: Raises WebSearchError with connection message
     """
     client = create_mock_client()
-    client.web_search.side_effect = ConnectionError("Connection refused")
-    backend = OllamaWebSearchBackend(client=client)
+    client.web_search = AsyncMock(side_effect=ConnectionError("Connection refused"))
+    backend = OllamaWebSearchBackend(async_client=client)
 
     with pytest.raises(WebSearchError) as exc_info:
-      backend.search(query="test query")
+      await backend.search(query="test query")
 
     assert "connect" in str(exc_info.value).lower()
 
-  def test_ollama_timeout_error(self) -> None:
+  @pytest.mark.asyncio
+  async def test_ollama_timeout_error(self) -> None:
     """
     Given: A backend with mocked client that times out
     When: Calling search()
     Then: Raises WebSearchError with timeout message
     """
     client = create_mock_client()
-    client.web_search.side_effect = TimeoutError("Request timed out")
-    backend = OllamaWebSearchBackend(client=client)
+    client.web_search = AsyncMock(side_effect=TimeoutError("Request timed out"))
+    backend = OllamaWebSearchBackend(async_client=client)
 
     with pytest.raises(WebSearchError) as exc_info:
-      backend.search(query="test query")
+      await backend.search(query="test query")
 
     assert "timeout" in str(exc_info.value).lower()
 
-  def test_ollama_rate_limit_error(self) -> None:
+  @pytest.mark.asyncio
+  async def test_ollama_rate_limit_error(self) -> None:
     """
     Given: A backend with mocked client that returns rate limit error
     When: Calling search()
     Then: Raises WebSearchError with rate limit message
     """
     client = create_mock_client()
-    client.web_search.side_effect = Exception("429 Rate Limited")
-    backend = OllamaWebSearchBackend(client=client)
+    client.web_search = AsyncMock(side_effect=Exception("429 Rate Limited"))
+    backend = OllamaWebSearchBackend(async_client=client)
 
     with pytest.raises(WebSearchError) as exc_info:
-      backend.search(query="test query")
+      await backend.search(query="test query")
 
     assert "rate limit" in str(exc_info.value).lower()
 
-  def test_ollama_error_includes_backend_name(self) -> None:
+  @pytest.mark.asyncio
+  async def test_ollama_error_includes_backend_name(self) -> None:
     """
     Given: A backend with mocked client that raises error
     When: Catching WebSearchError
     Then: Error includes backend name
     """
     client = create_mock_client()
-    client.web_search.side_effect = Exception("Unknown error")
-    backend = OllamaWebSearchBackend(client=client)
+    client.web_search = AsyncMock(side_effect=Exception("Unknown error"))
+    backend = OllamaWebSearchBackend(async_client=client)
 
     with pytest.raises(WebSearchError) as exc_info:
-      backend.search(query="test query")
+      await backend.search(query="test query")
 
     assert exc_info.value.backend == "ollama"
 
@@ -287,7 +299,8 @@ class TestOllamaWebSearchBackendErrorHandling:
 class TestOllamaWebSearchBackendResultParsing:
   """Tests for parsing Ollama web_search results."""
 
-  def test_handles_unicode_in_results(self) -> None:
+  @pytest.mark.asyncio
+  async def test_handles_unicode_in_results(self) -> None:
     """
     Given: A backend with mocked client returning Unicode text
     When: Calling search()
@@ -304,13 +317,14 @@ class TestOllamaWebSearchBackendResultParsing:
         ]
       )
     )
-    backend = OllamaWebSearchBackend(client=client)
-    results = backend.search(query="test")
+    backend = OllamaWebSearchBackend(async_client=client)
+    results = await backend.search(query="test")
 
     assert len(results) > 0
     assert "中文" in results[0].title or "中文" in results[0].snippet
 
-  def test_handles_empty_url_in_result(self) -> None:
+  @pytest.mark.asyncio
+  async def test_handles_empty_url_in_result(self) -> None:
     """
     Given: A backend with mocked client returning result with empty URL
     When: Calling search()
@@ -321,13 +335,14 @@ class TestOllamaWebSearchBackendResultParsing:
         [{"title": "Result with empty URL", "url": "", "content": "This result has no URL"}]
       )
     )
-    backend = OllamaWebSearchBackend(client=client)
-    results = backend.search(query="test")
+    backend = OllamaWebSearchBackend(async_client=client)
+    results = await backend.search(query="test")
 
     assert isinstance(results, list)
     assert results[0].url == ""
 
-  def test_handles_long_snippets(self) -> None:
+  @pytest.mark.asyncio
+  async def test_handles_long_snippets(self) -> None:
     """
     Given: A backend with mocked client returning very long snippets
     When: Calling search()
@@ -339,8 +354,8 @@ class TestOllamaWebSearchBackendResultParsing:
         [{"title": "Long Result", "url": "https://example.com", "content": long_content}]
       )
     )
-    backend = OllamaWebSearchBackend(client=client)
-    results = backend.search(query="test")
+    backend = OllamaWebSearchBackend(async_client=client)
+    results = await backend.search(query="test")
 
     assert isinstance(results, list)
     # Should handle long content gracefully
@@ -356,7 +371,7 @@ class TestOllamaWebSearchBackendTimeout:
     Then: Uses default 30 seconds
     """
     client = create_mock_client()
-    backend = OllamaWebSearchBackend(client=client)
+    backend = OllamaWebSearchBackend(async_client=client)
 
     assert backend._timeout_seconds == 30
 
@@ -367,7 +382,7 @@ class TestOllamaWebSearchBackendTimeout:
     Then: Uses provided timeout
     """
     client = create_mock_client()
-    backend = OllamaWebSearchBackend(client=client, timeout_seconds=60)
+    backend = OllamaWebSearchBackend(async_client=client, timeout_seconds=60)
 
     assert backend._timeout_seconds == 60
 
@@ -375,7 +390,8 @@ class TestOllamaWebSearchBackendTimeout:
 class TestOllamaWebSearchBackendIntegration:
   """Integration tests for OllamaWebSearchBackend."""
 
-  def test_real_ollama_client_format(self) -> None:
+  @pytest.mark.asyncio
+  async def test_real_ollama_client_format(self) -> None:
     """
     Given: A backend with mocked client returning typical format
     When: Calling search()
@@ -398,8 +414,8 @@ class TestOllamaWebSearchBackendIntegration:
         ]
       )
     )
-    backend = OllamaWebSearchBackend(client=client)
-    results = backend.search(query="Python asyncio", max_results=2)
+    backend = OllamaWebSearchBackend(async_client=client)
+    results = await backend.search(query="Python asyncio", max_results=2)
 
     assert len(results) == 2
     assert "Python" in results[0].title

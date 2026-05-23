@@ -32,7 +32,7 @@ from yoker.tools.websearch import WebSearchTool
 from yoker.tools.write import WriteTool
 
 if TYPE_CHECKING:
-  from ollama import Client
+  from ollama import AsyncClient
 
   from yoker.agents import AgentDefinition
   from yoker.commands import CommandRegistry
@@ -86,7 +86,7 @@ class AgentCore:
     agent_definition: "AgentDefinition | None" = None,
     agent_path: Path | str | None = None,
     context_manager: "ContextManager | None" = None,
-    client: "Client | None" = None,
+    client: "AsyncClient | None" = None,
     _recursion_depth: int = 0,
   ) -> None:
     """Initialize shared agent state.
@@ -100,7 +100,7 @@ class AgentCore:
       agent_definition: Pre-loaded AgentDefinition to use for system prompt.
       agent_path: Path to agent definition file (Markdown with frontmatter).
       context_manager: Optional ContextManager for conversation persistence.
-      client: Optional Ollama client for tools that need it (e.g., WebSearch).
+      client: Optional AsyncClient for tools that need it (e.g., WebSearch).
       _recursion_depth: Internal parameter for subagent recursion tracking.
     """
     # Load environment variables from .env and .env.local
@@ -282,7 +282,7 @@ class AgentCore:
     """
     return self._event_handlers.copy()
 
-  def _build_tool_registry(self, client: "Client | None" = None) -> ToolRegistry:
+  def _build_tool_registry(self, client: "AsyncClient | None" = None) -> ToolRegistry:
     """Build a tool registry filtered by agent definition.
 
     If an agent definition is loaded, only registers tools listed in
@@ -292,7 +292,7 @@ class AgentCore:
     for defense-in-depth validation.
 
     Args:
-      client: Optional Ollama client for tools that need it (e.g., WebSearch).
+      client: Optional AsyncClient for tools that need it (e.g., WebSearch).
 
     Returns:
       ToolRegistry with available tools for this agent.
@@ -330,7 +330,7 @@ class AgentCore:
       )
       tools.append(
         WebSearchTool(
-          backend=OllamaWebSearchBackend(client=client),
+          backend=OllamaWebSearchBackend(async_client=client),
           guardrail=WebGuardrail(config=websearch_config),
         )
       )
@@ -343,7 +343,7 @@ class AgentCore:
       )
       tools.append(
         WebFetchTool(
-          backend=OllamaWebFetchBackend(client=client),
+          backend=OllamaWebFetchBackend(async_client=client),
           guardrail=WebGuardrail(config=webfetch_config),
         )
       )

@@ -9,6 +9,7 @@ Options:
 """
 
 import argparse
+import asyncio
 from pathlib import Path
 
 from ollama import ResponseError
@@ -149,6 +150,85 @@ def create_command_registry(agent: Agent) -> CommandRegistry:
   return registry
 
 
+async def run_interactive_session(
+  agent: Agent, command_registry: CommandRegistry, session: PromptSession[str]
+) -> None:
+  """Run the interactive agent session asynchronously.
+
+  Args:
+    agent: The agent instance.
+    command_registry: Command registry for slash-commands.
+    session: PromptSession for user input.
+  """
+  # Begin session
+  await agent.begin_session()
+
+  try:
+    while True:
+      try:
+        user_input = prompt_input("> ", session)
+      except EOFError:
+        await agent.end_session(reason="quit")
+        break
+      except KeyboardInterrupt:
+        print()  # Newline after ^C
+        await agent.end_session(reason="interrupt")
+        break
+
+      if not user_input.strip():
+        continue
+
+      # Handle commands
+      if user_input.startswith("/"):
+        result = command_registry.dispatch(user_input)
+        if result:
+          # Print command result directly (no events needed for commands)
+          print(f"{result}\n")
+        continue
+
+      # Process message (output is streamed via events)
+      try:
+        # No blank line needed here - user's Enter key already provides separation
+
+        await agent.process(user_input)
+
+        # Add blank line after agent response
+        print()
+      except NetworkError as e:
+        # Handle network errors gracefully - allow retry
+        if e.recoverable:
+          print(f"\n[Network Error] {e}")
+          print("Your message was preserved. You can try again or type a new message.")
+        else:
+          print(f"\n[Fatal Network Error] {e}")
+          print("Unable to recover. Please restart the session.")
+          raise
+        continue
+      except ResponseError as e:
+        # Handle Ollama API errors gracefully - allow retry
+        if e.status_code == 503:
+          print("\n[Error] Ollama server is overloaded. Please wait a moment and try again.")
+        elif e.status_code == 404:
+          print("\n[Error] Model not found. Check that the model is available.")
+        elif e.status_code in (401, 403):
+          print("\n[Error] Authentication failed. Check your Ollama configuration.")
+        elif e.status_code == 500:
+          print(f"\n[Error] Ollama internal error: {e}")
+        else:
+          print(f"\n[Error] Ollama error ({e.status_code}): {e}")
+        continue
+
+  except Exception as e:
+    await agent._emit(
+      ErrorEvent(
+        type=EventType.ERROR,
+        error_type=type(e).__name__,
+        message=str(e),
+      )
+    )
+    raise
+
+
 def main() -> None:
   """Run the interactive agent."""
   parser = argparse.ArgumentParser(
@@ -228,73 +308,8 @@ def main() -> None:
   )
   agent.add_event_handler(console_handler)
 
-  # Begin session
-  agent.begin_session()
-
-  try:
-    while True:
-      try:
-        user_input = prompt_input("> ", session)
-      except EOFError:
-        agent.end_session(reason="quit")
-        break
-      except KeyboardInterrupt:
-        print()  # Newline after ^C
-        agent.end_session(reason="interrupt")
-        break
-
-      if not user_input.strip():
-        continue
-
-      # Handle commands
-      if user_input.startswith("/"):
-        result = command_registry.dispatch(user_input)
-        if result:
-          # Print command result directly (no events needed for commands)
-          print(f"{result}\n")
-        continue
-
-      # Process message (output is streamed via events)
-      try:
-        # No blank line needed here - user's Enter key already provides separation
-
-        agent.process(user_input)
-
-        # Add blank line after agent response
-        print()
-      except NetworkError as e:
-        # Handle network errors gracefully - allow retry
-        if e.recoverable:
-          print(f"\n[Network Error] {e}")
-          print("Your message was preserved. You can try again or type a new message.")
-        else:
-          print(f"\n[Fatal Network Error] {e}")
-          print("Unable to recover. Please restart the session.")
-          raise
-        continue
-      except ResponseError as e:
-        # Handle Ollama API errors gracefully - allow retry
-        if e.status_code == 503:
-          print("\n[Error] Ollama server is overloaded. Please wait a moment and try again.")
-        elif e.status_code == 404:
-          print("\n[Error] Model not found. Check that the model is available.")
-        elif e.status_code in (401, 403):
-          print("\n[Error] Authentication failed. Check your Ollama configuration.")
-        elif e.status_code == 500:
-          print(f"\n[Error] Ollama internal error: {e}")
-        else:
-          print(f"\n[Error] Ollama error ({e.status_code}): {e}")
-        continue
-
-  except Exception as e:
-    agent._emit(
-      ErrorEvent(
-        type=EventType.ERROR,
-        error_type=type(e).__name__,
-        message=str(e),
-      )
-    )
-    raise
+  # Run interactive session
+  asyncio.run(run_interactive_session(agent, command_registry, session))
 
 
 if __name__ == "__main__":
