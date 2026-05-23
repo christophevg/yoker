@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Protocol
 from .web_types import FetchedContent, SearchResult, WebFetchError, WebSearchError
 
 if TYPE_CHECKING:
-  from ollama import Client
+  from ollama import AsyncClient
 
 logger = logging.getLogger(__name__)
 
@@ -18,14 +18,13 @@ class WebSearchBackend(Protocol):
   """Protocol for web search backend implementations.
 
   Defines the interface that all search backends must implement.
-  Supports both synchronous Ollama native tools and async local backends.
+  Supports async native tools.
 
   Implementations:
     - OllamaWebSearchBackend: Uses Ollama's native web_search function
-    - LocalWebSearchBackend: Uses DDGS library (future)
   """
 
-  def search(self, query: str, max_results: int = 10) -> list[SearchResult]:
+  async def search(self, query: str, max_results: int = 10) -> list[SearchResult]:
     """Execute a web search and return results.
 
     Args:
@@ -45,7 +44,7 @@ class OllamaWebSearchBackend:
   """Web search backend using Ollama's native web_search function.
 
   Uses the Ollama Python SDK's built-in web_search capability.
-  Requires an authenticated Client for cloud-based web search.
+  Requires an authenticated AsyncClient for cloud-based web search.
 
   Features:
     - Native Ollama SDK integration
@@ -58,18 +57,18 @@ class OllamaWebSearchBackend:
     - No domain filtering on client side
   """
 
-  def __init__(self, client: "Client", timeout_seconds: int = 30) -> None:
+  def __init__(self, async_client: "AsyncClient", timeout_seconds: int = 30) -> None:
     """Initialize backend.
 
     Args:
-      client: Authenticated Ollama Client instance.
+      async_client: Authenticated Ollama AsyncClient instance.
       timeout_seconds: Request timeout in seconds.
     """
-    self._client = client
+    self._client = async_client
     self._timeout_seconds = timeout_seconds
     self._backend_name = "ollama"
 
-  def search(self, query: str, max_results: int = 10) -> list[SearchResult]:
+  async def search(self, query: str, max_results: int = 10) -> list[SearchResult]:
     """Execute search via Ollama web_search function.
 
     Uses client.web_search() which returns structured results directly.
@@ -90,7 +89,7 @@ class OllamaWebSearchBackend:
     try:
       # Use client's web_search method
       # Returns WebSearchResponse with .results attribute
-      response = self._client.web_search(query, max_results=capped_results)
+      response = await self._client.web_search(query, max_results=capped_results)
 
       # Parse the response into SearchResult objects
       results: list[SearchResult] = []
@@ -141,14 +140,13 @@ class WebFetchBackend(Protocol):
   """Protocol for web fetch backend implementations.
 
   Defines the interface that all fetch backends must implement.
-  Supports both synchronous Ollama native tools and async local backends.
+  Supports async native tools.
 
   Implementations:
     - OllamaWebFetchBackend: Uses Ollama's native web_fetch function
-    - LocalWebFetchBackend: Uses httpx + Trafilatura (future)
   """
 
-  def fetch(
+  async def fetch(
     self,
     url: str,
     *,
@@ -177,7 +175,7 @@ class OllamaWebFetchBackend:
   """Web fetch backend using Ollama's native web_fetch function.
 
   Uses the Ollama Python SDK's built-in web_fetch capability.
-  Requires an authenticated Client for cloud-based fetch.
+  Requires an authenticated AsyncClient for cloud-based fetch.
 
   Features:
     - Native Ollama SDK integration
@@ -192,23 +190,23 @@ class OllamaWebFetchBackend:
 
   def __init__(
     self,
-    client: "Client",
+    async_client: "AsyncClient",
     timeout_seconds: int = 30,
     max_size_kb: int = 2048,
   ) -> None:
     """Initialize backend.
 
     Args:
-      client: Authenticated Ollama Client instance.
+      async_client: Authenticated Ollama AsyncClient instance.
       timeout_seconds: Default fetch timeout in seconds.
       max_size_kb: Default maximum content size in KB.
     """
-    self._client = client
+    self._client = async_client
     self._timeout_seconds = timeout_seconds
     self._max_size_kb = max_size_kb
     self._backend_name = "ollama"
 
-  def fetch(
+  async def fetch(
     self,
     url: str,
     *,
@@ -238,7 +236,7 @@ class OllamaWebFetchBackend:
     try:
       # Use client's web_fetch method
       # Returns WebFetchResponse with .content, .title attributes
-      response = self._client.web_fetch(url)
+      response = await self._client.web_fetch(url)
 
       # Extract content
       content = str(response.content or "")

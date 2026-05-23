@@ -27,7 +27,7 @@ class WebSearchTool(Tool):
 
   Example:
     tool = WebSearchTool(backend=OllamaWebSearchBackend())
-    result = tool.execute(query="Python async best practices", max_results=5)
+    result = await tool.execute_async(query="Python async best practices", max_results=5)
   """
 
   def __init__(
@@ -86,7 +86,25 @@ class WebSearchTool(Tool):
     }
 
   def execute(self, **kwargs: Any) -> ToolResult:
-    """Execute web search with the given parameters.
+    """Execute web search synchronously (not supported for async tools).
+
+    This method is provided for compatibility but will return an error
+    indicating async execution is required.
+
+    Args:
+      **kwargs: Must contain 'query', optionally 'max_results'.
+
+    Returns:
+      ToolResult with error indicating async execution required.
+    """
+    return ToolResult(
+      success=False,
+      result={},
+      error="web_search requires async execution. Use execute_async() instead.",
+    )
+
+  async def execute_async(self, **kwargs: Any) -> ToolResult:
+    """Execute web search with the given parameters asynchronously.
 
     Steps:
       1. Validate parameters via guardrail if provided.
@@ -150,7 +168,7 @@ class WebSearchTool(Tool):
 
     # Step 5: Execute search
     try:
-      results = self._backend.search(query=query, max_results=max_results)
+      results = await self._backend.search(query=query, max_results=max_results)
 
       # Convert SearchResult objects to dicts for ToolResult
       results_list = [r.to_dict() for r in results]

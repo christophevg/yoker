@@ -4,7 +4,7 @@ These tests verify the behavior of the WebFetchTool, including backend integrati
 URL validation, SSRF protection, domain filtering, and error handling.
 """
 
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -91,106 +91,116 @@ class TestWebFetchToolSchema:
 class TestWebFetchToolExecution:
   """Tests for WebFetchTool execute method."""
 
-  def test_execute_returns_results(self, mock_backend: MagicMock) -> None:
+  @pytest.mark.asyncio
+  async def test_execute_returns_results(self, mock_backend: MagicMock) -> None:
     """
     Given: A WebFetchTool with mocked backend
     When: Executing a valid URL fetch
     Then: Returns ToolResult with fetched content
     """
     tool = WebFetchTool(backend=mock_backend)
-    result = tool.execute(url="https://example.com")
+    result = await tool.execute_async(url="https://example.com")
     assert result.success
     assert "content" in result.result
 
-  def test_execute_with_default_content_type(self, mock_backend: MagicMock) -> None:
+  @pytest.mark.asyncio
+  async def test_execute_with_default_content_type(self, mock_backend: MagicMock) -> None:
     """
     Given: A WebFetchTool with mocked backend
     When: Executing fetch without content_type parameter
     Then: Uses default content_type='markdown'
     """
     tool = WebFetchTool(backend=mock_backend)
-    tool.execute(url="https://example.com")
+    await tool.execute_async(url="https://example.com")
     call_args = mock_backend.fetch.call_args
     assert call_args.kwargs["content_type"] == "markdown"
 
-  def test_execute_with_custom_content_type(self, mock_backend: MagicMock) -> None:
+  @pytest.mark.asyncio
+  async def test_execute_with_custom_content_type(self, mock_backend: MagicMock) -> None:
     """
     Given: A WebFetchTool with mocked backend
     When: Executing fetch with content_type='text'
     Then: Passes content_type='text' to backend
     """
     tool = WebFetchTool(backend=mock_backend)
-    tool.execute(url="https://example.com", content_type="text")
+    await tool.execute_async(url="https://example.com", content_type="text")
     call_args = mock_backend.fetch.call_args
     assert call_args.kwargs["content_type"] == "text"
 
-  def test_execute_with_custom_max_size(self, mock_backend: MagicMock) -> None:
+  @pytest.mark.asyncio
+  async def test_execute_with_custom_max_size(self, mock_backend: MagicMock) -> None:
     """
     Given: A WebFetchTool with mocked backend
     When: Executing fetch with max_size_kb=5120
     Then: Passes max_size_kb=5120 to backend
     """
     tool = WebFetchTool(backend=mock_backend)
-    tool.execute(url="https://example.com", max_size_kb=5120)
+    await tool.execute_async(url="https://example.com", max_size_kb=5120)
     call_args = mock_backend.fetch.call_args
     assert call_args.kwargs["max_size_kb"] == 5120
 
-  def test_execute_url_required(self) -> None:
+  @pytest.mark.asyncio
+  async def test_execute_url_required(self) -> None:
     """
     Given: A WebFetchTool execute call without url
     When: Calling execute without url parameter
     Then: Returns error ToolResult
     """
     tool = WebFetchTool()
-    result = tool.execute()
+    result = await tool.execute_async()
     assert not result.success
     assert "required" in result.error.lower()
 
-  def test_execute_empty_url_rejected(self) -> None:
+  @pytest.mark.asyncio
+  async def test_execute_empty_url_rejected(self) -> None:
     """
     Given: A WebFetchTool execute call with empty url
     When: Calling execute with url=""
     Then: Returns error ToolResult
     """
     tool = WebFetchTool()
-    result = tool.execute(url="")
+    result = await tool.execute_async(url="")
     assert not result.success
     assert "required" in result.error.lower()
 
-  def test_execute_whitespace_url_rejected(self) -> None:
+  @pytest.mark.asyncio
+  async def test_execute_whitespace_url_rejected(self) -> None:
     """
     Given: A WebFetchTool execute call with whitespace-only url
     When: Calling execute with url="   "
     Then: Returns error ToolResult
     """
     tool = WebFetchTool()
-    result = tool.execute(url="   ")
+    result = await tool.execute_async(url="   ")
     assert not result.success
     assert "empty" in result.error.lower() or "required" in result.error.lower()
 
-  def test_execute_clamps_max_size(self, mock_backend: MagicMock) -> None:
+  @pytest.mark.asyncio
+  async def test_execute_clamps_max_size(self, mock_backend: MagicMock) -> None:
     """
     Given: A WebFetchTool with max_size_kb=20000 (exceeds maximum)
     When: Executing fetch
     Then: Clamps max_size_kb to 10240
     """
     tool = WebFetchTool(backend=mock_backend)
-    tool.execute(url="https://example.com", max_size_kb=20000)
+    await tool.execute_async(url="https://example.com", max_size_kb=20000)
     call_args = mock_backend.fetch.call_args
     assert call_args.kwargs["max_size_kb"] == 10240
 
-  def test_execute_invalid_content_type_defaults(self, mock_backend: MagicMock) -> None:
+  @pytest.mark.asyncio
+  async def test_execute_invalid_content_type_defaults(self, mock_backend: MagicMock) -> None:
     """
     Given: A WebFetchTool with invalid content_type='pdf'
     When: Executing fetch
     Then: Defaults to content_type='markdown'
     """
     tool = WebFetchTool(backend=mock_backend)
-    tool.execute(url="https://example.com", content_type="pdf")
+    await tool.execute_async(url="https://example.com", content_type="pdf")
     call_args = mock_backend.fetch.call_args
     assert call_args.kwargs["content_type"] == "markdown"
 
-  def test_execute_guardrail_validation_failure(self) -> None:
+  @pytest.mark.asyncio
+  async def test_execute_guardrail_validation_failure(self) -> None:
     """
     Given: A WebFetchTool with guardrail that rejects URL
     When: Executing fetch with blocked URL
@@ -201,18 +211,19 @@ class TestWebFetchToolExecution:
       valid=False, reason="Domain is blocked: internal.local"
     )
     tool = WebFetchTool(backend=None, guardrail=guardrail)
-    result = tool.execute(url="https://internal.local/data")
+    result = await tool.execute_async(url="https://internal.local/data")
     assert not result.success
     assert "blocked" in result.error.lower()
 
-  def test_execute_strips_url_whitespace(self, mock_backend: MagicMock) -> None:
+  @pytest.mark.asyncio
+  async def test_execute_strips_url_whitespace(self, mock_backend: MagicMock) -> None:
     """
     Given: A WebFetchTool with url containing leading/trailing whitespace
     When: Executing fetch
     Then: Strips whitespace before validation
     """
     tool = WebFetchTool(backend=mock_backend)
-    tool.execute(url="  https://example.com  ")
+    await tool.execute_async(url="  https://example.com  ")
     call_args = mock_backend.fetch.call_args
     assert call_args.kwargs["url"] == "https://example.com"
 
@@ -220,42 +231,48 @@ class TestWebFetchToolExecution:
 class TestWebFetchToolBackendIntegration:
   """Tests for WebFetchTool backend integration."""
 
-  def test_backend_receives_valid_parameters(self, mock_backend: MagicMock) -> None:
+  @pytest.mark.asyncio
+  async def test_backend_receives_valid_parameters(self, mock_backend: MagicMock) -> None:
     """
     Given: A WebFetchTool with mocked backend
     When: Executing fetch with valid parameters
     Then: Backend.fetch() receives validated url, content_type, and max_size_kb
     """
     tool = WebFetchTool(backend=mock_backend)
-    tool.execute(url="https://example.com", content_type="text", max_size_kb=1024)
+    await tool.execute_async(url="https://example.com", content_type="text", max_size_kb=1024)
     call_args = mock_backend.fetch.call_args
     assert call_args.kwargs["url"] == "https://example.com"
     assert call_args.kwargs["content_type"] == "text"
     assert call_args.kwargs["max_size_kb"] == 1024
 
-  def test_backend_error_returns_error_result(self, mock_backend_error: MagicMock) -> None:
+  @pytest.mark.asyncio
+  async def test_backend_error_returns_error_result(self, mock_backend_error: MagicMock) -> None:
     """
     Given: A backend that raises WebFetchError
     When: Executing fetch
     Then: Returns error ToolResult with backend error message
     """
     tool = WebFetchTool(backend=mock_backend_error)
-    result = tool.execute(url="https://example.com")
+    result = await tool.execute_async(url="https://example.com")
     assert not result.success
     assert "test" in result.error.lower()
 
-  def test_backend_timeout_returns_error_result(self, mock_backend_timeout: MagicMock) -> None:
+  @pytest.mark.asyncio
+  async def test_backend_timeout_returns_error_result(
+    self, mock_backend_timeout: MagicMock
+  ) -> None:
     """
     Given: A backend that times out
     When: Executing fetch
     Then: Returns error ToolResult with timeout message
     """
     tool = WebFetchTool(backend=mock_backend_timeout)
-    result = tool.execute(url="https://example.com")
+    result = await tool.execute_async(url="https://example.com")
     assert not result.success
     assert "timeout" in result.error.lower()
 
-  def test_backend_connection_error_returns_error_result(
+  @pytest.mark.asyncio
+  async def test_backend_connection_error_returns_error_result(
     self, mock_backend_connection_error: MagicMock
   ) -> None:
     """
@@ -264,18 +281,19 @@ class TestWebFetchToolBackendIntegration:
     Then: Returns error ToolResult with connection error message
     """
     tool = WebFetchTool(backend=mock_backend_connection_error)
-    result = tool.execute(url="https://example.com")
+    result = await tool.execute_async(url="https://example.com")
     assert not result.success
     assert "connect" in result.error.lower()
 
-  def test_backend_size_limit_error(self, mock_backend_size_error: MagicMock) -> None:
+  @pytest.mark.asyncio
+  async def test_backend_size_limit_error(self, mock_backend_size_error: MagicMock) -> None:
     """
     Given: A backend that raises size limit error
     When: Executing fetch
     Then: Returns error ToolResult with size limit message
     """
     tool = WebFetchTool(backend=mock_backend_size_error)
-    result = tool.execute(url="https://example.com/large")
+    result = await tool.execute_async(url="https://example.com/large")
     assert not result.success
     assert "size" in result.error.lower()
 
@@ -283,14 +301,15 @@ class TestWebFetchToolBackendIntegration:
 class TestWebFetchToolResultFormat:
   """Tests for WebFetchTool result formatting."""
 
-  def test_success_result_format(self, mock_backend: MagicMock) -> None:
+  @pytest.mark.asyncio
+  async def test_success_result_format(self, mock_backend: MagicMock) -> None:
     """
     Given: A successful web fetch
     When: Checking the ToolResult
     Then: success=True, result contains url, title, content, content_type, source, metadata
     """
     tool = WebFetchTool(backend=mock_backend)
-    result = tool.execute(url="https://example.com")
+    result = await tool.execute_async(url="https://example.com")
     assert result.success
     assert "url" in result.result
     assert "title" in result.result
@@ -299,37 +318,40 @@ class TestWebFetchToolResultFormat:
     assert "source" in result.result
     assert "metadata" in result.result
 
-  def test_error_result_format(self) -> None:
+  @pytest.mark.asyncio
+  async def test_error_result_format(self) -> None:
     """
     Given: A failed web fetch
     When: Checking the ToolResult
     Then: success=False, result is empty, error contains message
     """
     tool = WebFetchTool(backend=None)
-    result = tool.execute(url="https://example.com")
+    result = await tool.execute_async(url="https://example.com")
     assert not result.success
     assert result.result == {}
     assert result.error is not None
 
-  def test_result_includes_metadata(self, mock_backend: MagicMock) -> None:
+  @pytest.mark.asyncio
+  async def test_result_includes_metadata(self, mock_backend: MagicMock) -> None:
     """
     Given: A successful web fetch
     When: Checking the ToolResult
     Then: result contains metadata dict with size_kb
     """
     tool = WebFetchTool(backend=mock_backend)
-    result = tool.execute(url="https://example.com")
+    result = await tool.execute_async(url="https://example.com")
     assert "metadata" in result.result
     assert "size_kb" in result.result["metadata"]
 
-  def test_result_content_type_matches_request(self, mock_backend: MagicMock) -> None:
+  @pytest.mark.asyncio
+  async def test_result_content_type_matches_request(self, mock_backend: MagicMock) -> None:
     """
     Given: A fetch request with content_type='text'
     When: Checking the ToolResult
     Then: result['content_type'] matches requested format
     """
     tool = WebFetchTool(backend=mock_backend)
-    tool.execute(url="https://example.com", content_type="text")
+    await tool.execute_async(url="https://example.com", content_type="text")
     # Verify the backend was called with the correct content_type
     call_args = mock_backend.fetch.call_args
     assert call_args.kwargs["content_type"] == "text"
@@ -347,28 +369,31 @@ class TestWebFetchToolConfiguration:
     tool = WebFetchTool()
     assert tool._backend is None
 
-  def test_custom_backend_used(self, mock_backend: MagicMock) -> None:
+  @pytest.mark.asyncio
+  async def test_custom_backend_used(self, mock_backend: MagicMock) -> None:
     """
     Given: Creating WebFetchTool with custom backend
     When: Executing fetch
     Then: Uses provided backend instead of default
     """
     tool = WebFetchTool(backend=mock_backend)
-    tool.execute(url="https://example.com")
+    await tool.execute_async(url="https://example.com")
     mock_backend.fetch.assert_called_once()
 
-  def test_no_backend_returns_error(self) -> None:
+  @pytest.mark.asyncio
+  async def test_no_backend_returns_error(self) -> None:
     """
     Given: WebFetchTool without backend configured
     When: Executing fetch
     Then: Returns error about missing backend
     """
     tool = WebFetchTool()
-    result = tool.execute(url="https://example.com")
+    result = await tool.execute_async(url="https://example.com")
     assert not result.success
     assert "backend" in result.error.lower()
 
-  def test_guardrail_from_config(self) -> None:
+  @pytest.mark.asyncio
+  async def test_guardrail_from_config(self) -> None:
     """
     Given: WebFetchToolConfig with domain restrictions
     When: Creating WebFetchTool with config
@@ -385,7 +410,7 @@ class TestWebFetchToolConfiguration:
       )
     )
     tool = WebFetchTool(backend=None, guardrail=guardrail)
-    result = tool.execute(url="https://internal.local/data")
+    result = await tool.execute_async(url="https://internal.local/data")
     assert not result.success
     assert "blocked" in result.error.lower()
 
@@ -395,86 +420,98 @@ class TestWebFetchToolSecurity:
 
   # SSRF Protection Tests
 
-  def test_execute_private_ipv4_blocked(self, mock_guardrail_ssrf: MagicMock) -> None:
+  @pytest.mark.asyncio
+  async def test_execute_private_ipv4_blocked(self, mock_guardrail_ssrf: MagicMock) -> None:
     """
     Given: A URL pointing to private IPv4 address (192.168.1.1)
     When: Executing fetch
     Then: Returns error about private IP blocked
     """
     tool = WebFetchTool(backend=None, guardrail=mock_guardrail_ssrf)
-    result = tool.execute(url="http://192.168.1.1/secret")
+    result = await tool.execute_async(url="http://192.168.1.1/secret")
     assert not result.success
     assert "ssrf" in result.error.lower() or "private" in result.error.lower()
 
-  def test_execute_private_ipv4_loopback_blocked(self, mock_guardrail_ssrf: MagicMock) -> None:
+  @pytest.mark.asyncio
+  async def test_execute_private_ipv4_loopback_blocked(
+    self, mock_guardrail_ssrf: MagicMock
+  ) -> None:
     """
     Given: A URL pointing to loopback address (127.0.0.1)
     When: Executing fetch
     Then: Returns error about private IP blocked
     """
     tool = WebFetchTool(backend=None, guardrail=mock_guardrail_ssrf)
-    result = tool.execute(url="http://127.0.0.1/admin")
+    result = await tool.execute_async(url="http://127.0.0.1/admin")
     assert not result.success
     assert "ssrf" in result.error.lower() or "private" in result.error.lower()
 
-  def test_execute_private_ipv6_blocked(self, mock_guardrail_ssrf: MagicMock) -> None:
+  @pytest.mark.asyncio
+  async def test_execute_private_ipv6_blocked(self, mock_guardrail_ssrf: MagicMock) -> None:
     """
     Given: A URL pointing to private IPv6 address (::1)
     When: Executing fetch
     Then: Returns error about private IP blocked
     """
     tool = WebFetchTool(backend=None, guardrail=mock_guardrail_ssrf)
-    result = tool.execute(url="http://[::1]:8080/")
+    result = await tool.execute_async(url="http://[::1]:8080/")
     assert not result.success
     assert "ssrf" in result.error.lower() or "private" in result.error.lower()
 
-  def test_execute_metadata_endpoint_blocked(self, mock_guardrail_ssrf: MagicMock) -> None:
+  @pytest.mark.asyncio
+  async def test_execute_metadata_endpoint_blocked(self, mock_guardrail_ssrf: MagicMock) -> None:
     """
     Given: A URL pointing to cloud metadata endpoint (169.254.169.254)
     When: Executing fetch
     Then: Returns error about metadata endpoint blocked
     """
     tool = WebFetchTool(backend=None, guardrail=mock_guardrail_ssrf)
-    result = tool.execute(url="http://169.254.169.254/latest/")
+    result = await tool.execute_async(url="http://169.254.169.254/latest/")
     assert not result.success
     assert "ssrf" in result.error.lower() or "metadata" in result.error.lower()
 
-  def test_execute_localhost_blocked(self, mock_guardrail_ssrf: MagicMock) -> None:
+  @pytest.mark.asyncio
+  async def test_execute_localhost_blocked(self, mock_guardrail_ssrf: MagicMock) -> None:
     """
     Given: A URL pointing to localhost
     When: Executing fetch
     Then: Returns error about SSRF blocked
     """
     tool = WebFetchTool(backend=None, guardrail=mock_guardrail_ssrf)
-    result = tool.execute(url="http://localhost/admin")
+    result = await tool.execute_async(url="http://localhost/admin")
     assert not result.success
     assert "ssrf" in result.error.lower() or "private" in result.error.lower()
 
   # Domain Filtering Tests
 
-  def test_execute_domain_blocklist(self, mock_guardrail_blocked: MagicMock) -> None:
+  @pytest.mark.asyncio
+  async def test_execute_domain_blocklist(self, mock_guardrail_blocked: MagicMock) -> None:
     """
     Given: A URL with domain in blocklist (*.internal)
     When: Executing fetch
     Then: Returns error about blocked domain
     """
     tool = WebFetchTool(backend=None, guardrail=mock_guardrail_blocked)
-    result = tool.execute(url="https://internal.local/data")
+    result = await tool.execute_async(url="https://internal.local/data")
     assert not result.success
     assert "blocked" in result.error.lower()
 
-  def test_execute_domain_allowlist_not_present(self, mock_guardrail_allowlist: MagicMock) -> None:
+  @pytest.mark.asyncio
+  async def test_execute_domain_allowlist_not_present(
+    self, mock_guardrail_allowlist: MagicMock
+  ) -> None:
     """
     Given: A URL with domain not in allowlist
     When: Executing fetch
     Then: Returns error about domain not allowed
     """
     tool = WebFetchTool(backend=None, guardrail=mock_guardrail_allowlist)
-    result = tool.execute(url="https://example.com/data")
+    result = await tool.execute_async(url="https://example.com/data")
     assert not result.success
     assert "allowlist" in result.error.lower() or "not in" in result.error.lower()
 
-  def test_execute_domain_allowlist_present(self, mock_backend: MagicMock) -> None:
+  @pytest.mark.asyncio
+  async def test_execute_domain_allowlist_present(self, mock_backend: MagicMock) -> None:
     """
     Given: A URL with domain in allowlist
     When: Executing fetch
@@ -483,12 +520,13 @@ class TestWebFetchToolSecurity:
     guardrail = MagicMock(spec=WebGuardrail)
     guardrail.validate_url.return_value = ValidationResult(valid=True)
     tool = WebFetchTool(backend=mock_backend, guardrail=guardrail)
-    result = tool.execute(url="https://allowed.com/data")
+    result = await tool.execute_async(url="https://allowed.com/data")
     assert result.success
 
   # Scheme Validation Tests
 
-  def test_execute_http_scheme_blocked_when_https_required(
+  @pytest.mark.asyncio
+  async def test_execute_http_scheme_blocked_when_https_required(
     self, mock_guardrail_https: MagicMock
   ) -> None:
     """
@@ -497,11 +535,12 @@ class TestWebFetchToolSecurity:
     Then: Returns error about HTTPS required
     """
     tool = WebFetchTool(backend=None, guardrail=mock_guardrail_https)
-    result = tool.execute(url="http://example.com/")
+    result = await tool.execute_async(url="http://example.com/")
     assert not result.success
     assert "https" in result.error.lower()
 
-  def test_execute_https_scheme_allowed(self, mock_backend: MagicMock) -> None:
+  @pytest.mark.asyncio
+  async def test_execute_https_scheme_allowed(self, mock_backend: MagicMock) -> None:
     """
     Given: A HTTPS URL
     When: Executing fetch
@@ -510,23 +549,25 @@ class TestWebFetchToolSecurity:
     guardrail = MagicMock(spec=WebGuardrail)
     guardrail.validate_url.return_value = ValidationResult(valid=True)
     tool = WebFetchTool(backend=mock_backend, guardrail=guardrail)
-    result = tool.execute(url="https://example.com/")
+    result = await tool.execute_async(url="https://example.com/")
     assert result.success
 
   # URL Parsing Tests
 
-  def test_execute_missing_scheme_rejected(self) -> None:
+  @pytest.mark.asyncio
+  async def test_execute_missing_scheme_rejected(self) -> None:
     """
     Given: A URL without scheme (example.com/path)
     When: Executing fetch
     Then: Returns error about missing scheme
     """
     tool = WebFetchTool(backend=None)
-    result = tool.execute(url="example.com/path")
+    result = await tool.execute_async(url="example.com/path")
     assert not result.success
     # Should fail due to no host in urlparse
 
-  def test_execute_missing_host_rejected(self) -> None:
+  @pytest.mark.asyncio
+  async def test_execute_missing_host_rejected(self) -> None:
     """
     Given: A URL without host (https:///path)
     When: Executing fetch
@@ -534,7 +575,7 @@ class TestWebFetchToolSecurity:
     """
     guardrail = WebGuardrail()
     tool = WebFetchTool(backend=None, guardrail=guardrail)
-    result = tool.execute(url="https:///path")
+    result = await tool.execute_async(url="https:///path")
     assert not result.success
     assert "host" in result.error.lower()
 
@@ -733,12 +774,13 @@ class TestOllamaWebFetchBackend:
     from yoker.tools.web_backend import OllamaWebFetchBackend
 
     mock_client = MagicMock()
-    backend = OllamaWebFetchBackend(client=mock_client)
+    backend = OllamaWebFetchBackend(async_client=mock_client)
     assert backend._client == mock_client
     assert backend._timeout_seconds == 30
     assert backend._max_size_kb == 2048
 
-  def test_ollama_backend_fetch_calls_client(self, mock_ollama_client: MagicMock) -> None:
+  @pytest.mark.asyncio
+  async def test_ollama_backend_fetch_calls_client(self, mock_ollama_client: MagicMock) -> None:
     """
     Given: An OllamaWebFetchBackend with mocked client
     When: Calling fetch(url)
@@ -746,11 +788,12 @@ class TestOllamaWebFetchBackend:
     """
     from yoker.tools.web_backend import OllamaWebFetchBackend
 
-    backend = OllamaWebFetchBackend(client=mock_ollama_client)
-    backend.fetch(url="https://example.com")
+    backend = OllamaWebFetchBackend(async_client=mock_ollama_client)
+    await backend.fetch(url="https://example.com")
     mock_ollama_client.web_fetch.assert_called_once_with("https://example.com")
 
-  def test_ollama_backend_fetch_returns_fetched_content(
+  @pytest.mark.asyncio
+  async def test_ollama_backend_fetch_returns_fetched_content(
     self, mock_ollama_client: MagicMock
   ) -> None:
     """
@@ -760,13 +803,14 @@ class TestOllamaWebFetchBackend:
     """
     from yoker.tools.web_backend import OllamaWebFetchBackend
 
-    backend = OllamaWebFetchBackend(client=mock_ollama_client)
-    result = backend.fetch(url="https://example.com")
+    backend = OllamaWebFetchBackend(async_client=mock_ollama_client)
+    result = await backend.fetch(url="https://example.com")
     assert isinstance(result, FetchedContent)
     assert result.url == "https://example.com"
     assert result.source == "ollama"
 
-  def test_ollama_backend_fetch_size_check(self, mock_ollama_client_large: MagicMock) -> None:
+  @pytest.mark.asyncio
+  async def test_ollama_backend_fetch_size_check(self, mock_ollama_client_large: MagicMock) -> None:
     """
     Given: An OllamaWebFetchBackend receiving content exceeding max_size_kb
     When: Calling fetch(url, max_size_kb=1024)
@@ -774,12 +818,15 @@ class TestOllamaWebFetchBackend:
     """
     from yoker.tools.web_backend import OllamaWebFetchBackend
 
-    backend = OllamaWebFetchBackend(client=mock_ollama_client_large)
+    backend = OllamaWebFetchBackend(async_client=mock_ollama_client_large)
     with pytest.raises(WebFetchError) as exc_info:
-      backend.fetch(url="https://example.com/large", max_size_kb=1)
+      await backend.fetch(url="https://example.com/large", max_size_kb=1)
     assert exc_info.value.error_type == "size_limit"
 
-  def test_ollama_backend_fetch_connection_error(self, mock_ollama_client_error: MagicMock) -> None:
+  @pytest.mark.asyncio
+  async def test_ollama_backend_fetch_connection_error(
+    self, mock_ollama_client_error: MagicMock
+  ) -> None:
     """
     Given: An OllamaWebFetchBackend with connection error
     When: Calling fetch(url)
@@ -787,12 +834,13 @@ class TestOllamaWebFetchBackend:
     """
     from yoker.tools.web_backend import OllamaWebFetchBackend
 
-    backend = OllamaWebFetchBackend(client=mock_ollama_client_error)
+    backend = OllamaWebFetchBackend(async_client=mock_ollama_client_error)
     with pytest.raises(WebFetchError) as exc_info:
-      backend.fetch(url="https://example.com")
+      await backend.fetch(url="https://example.com")
     assert exc_info.value.error_type == "connection"
 
-  def test_ollama_backend_fetch_timeout(self, mock_ollama_client_timeout: MagicMock) -> None:
+  @pytest.mark.asyncio
+  async def test_ollama_backend_fetch_timeout(self, mock_ollama_client_timeout: MagicMock) -> None:
     """
     Given: An OllamaWebFetchBackend with timeout
     When: Calling fetch(url)
@@ -800,9 +848,9 @@ class TestOllamaWebFetchBackend:
     """
     from yoker.tools.web_backend import OllamaWebFetchBackend
 
-    backend = OllamaWebFetchBackend(client=mock_ollama_client_timeout)
+    backend = OllamaWebFetchBackend(async_client=mock_ollama_client_timeout)
     with pytest.raises(WebFetchError) as exc_info:
-      backend.fetch(url="https://example.com")
+      await backend.fetch(url="https://example.com")
     assert exc_info.value.error_type == "timeout"
 
   def test_ollama_backend_backend_name(self) -> None:
@@ -814,7 +862,7 @@ class TestOllamaWebFetchBackend:
     from yoker.tools.web_backend import OllamaWebFetchBackend
 
     mock_client = MagicMock()
-    backend = OllamaWebFetchBackend(client=mock_client)
+    backend = OllamaWebFetchBackend(async_client=mock_client)
     assert backend._backend_name == "ollama"
 
   def test_ollama_backend_default_timeout(self) -> None:
@@ -826,7 +874,7 @@ class TestOllamaWebFetchBackend:
     from yoker.tools.web_backend import OllamaWebFetchBackend
 
     mock_client = MagicMock()
-    backend = OllamaWebFetchBackend(client=mock_client)
+    backend = OllamaWebFetchBackend(async_client=mock_client)
     assert backend._timeout_seconds == 30
 
   def test_ollama_backend_default_max_size(self) -> None:
@@ -838,7 +886,7 @@ class TestOllamaWebFetchBackend:
     from yoker.tools.web_backend import OllamaWebFetchBackend
 
     mock_client = MagicMock()
-    backend = OllamaWebFetchBackend(client=mock_client)
+    backend = OllamaWebFetchBackend(async_client=mock_client)
     assert backend._max_size_kb == 2048
 
 
@@ -1088,13 +1136,15 @@ class TestWebFetchToolConfig:
 def mock_backend() -> MagicMock:
   """Mock WebFetchBackend that returns sample content."""
   backend = MagicMock(spec=WebFetchBackend)
-  backend.fetch.return_value = FetchedContent(
-    url="https://example.com",
-    title="Example Page",
-    content="This is example content.",
-    content_type="markdown",
-    source="test",
-    metadata={"size_kb": 1.5},
+  backend.fetch = AsyncMock(
+    return_value=FetchedContent(
+      url="https://example.com",
+      title="Example Page",
+      content="This is example content.",
+      content_type="markdown",
+      source="test",
+      metadata={"size_kb": 1.5},
+    )
   )
   return backend
 
@@ -1103,11 +1153,13 @@ def mock_backend() -> MagicMock:
 def mock_backend_error() -> MagicMock:
   """Mock WebFetchBackend that raises error."""
   backend = MagicMock(spec=WebFetchBackend)
-  backend.fetch.side_effect = WebFetchError(
-    "Fetch failed",
-    url="https://example.com",
-    backend="test",
-    error_type="connection",
+  backend.fetch = AsyncMock(
+    side_effect=WebFetchError(
+      "Fetch failed",
+      url="https://example.com",
+      backend="test",
+      error_type="connection",
+    )
   )
   return backend
 
@@ -1116,11 +1168,13 @@ def mock_backend_error() -> MagicMock:
 def mock_backend_timeout() -> MagicMock:
   """Mock WebFetchBackend that times out."""
   backend = MagicMock(spec=WebFetchBackend)
-  backend.fetch.side_effect = WebFetchError(
-    "Fetch timeout after 30s",
-    url="https://example.com",
-    backend="test",
-    error_type="timeout",
+  backend.fetch = AsyncMock(
+    side_effect=WebFetchError(
+      "Fetch timeout after 30s",
+      url="https://example.com",
+      backend="test",
+      error_type="timeout",
+    )
   )
   return backend
 
@@ -1129,11 +1183,13 @@ def mock_backend_timeout() -> MagicMock:
 def mock_backend_connection_error() -> MagicMock:
   """Mock WebFetchBackend with connection error."""
   backend = MagicMock(spec=WebFetchBackend)
-  backend.fetch.side_effect = WebFetchError(
-    "Failed to connect to server",
-    url="https://example.com",
-    backend="test",
-    error_type="connection",
+  backend.fetch = AsyncMock(
+    side_effect=WebFetchError(
+      "Failed to connect to server",
+      url="https://example.com",
+      backend="test",
+      error_type="connection",
+    )
   )
   return backend
 
@@ -1142,11 +1198,13 @@ def mock_backend_connection_error() -> MagicMock:
 def mock_backend_size_error() -> MagicMock:
   """Mock WebFetchBackend with size limit error."""
   backend = MagicMock(spec=WebFetchBackend)
-  backend.fetch.side_effect = WebFetchError(
-    "Content size (5000KB) exceeds limit (2048KB)",
-    url="https://example.com/large",
-    backend="test",
-    error_type="size_limit",
+  backend.fetch = AsyncMock(
+    side_effect=WebFetchError(
+      "Content size (5000KB) exceeds limit (2048KB)",
+      url="https://example.com/large",
+      backend="test",
+      error_type="size_limit",
+    )
   )
   return backend
 
@@ -1207,9 +1265,11 @@ def mock_guardrail_https() -> MagicMock:
 def mock_ollama_client() -> MagicMock:
   """Mock Ollama Client for backend tests."""
   client = MagicMock()
-  client.web_fetch.return_value = MagicMock(
-    content="Example page content",
-    title="Example Page",
+  client.web_fetch = AsyncMock(
+    return_value=MagicMock(
+      content="Example page content",
+      title="Example Page",
+    )
   )
   return client
 
@@ -1218,9 +1278,11 @@ def mock_ollama_client() -> MagicMock:
 def mock_ollama_client_large() -> MagicMock:
   """Mock Ollama Client returning large content."""
   client = MagicMock()
-  client.web_fetch.return_value = MagicMock(
-    content="x" * 3_000_000,  # 3MB content
-    title="Large Page",
+  client.web_fetch = AsyncMock(
+    return_value=MagicMock(
+      content="x" * 3_000_000,  # 3MB content
+      title="Large Page",
+    )
   )
   return client
 
@@ -1229,7 +1291,7 @@ def mock_ollama_client_large() -> MagicMock:
 def mock_ollama_client_error() -> MagicMock:
   """Mock Ollama Client with connection error."""
   client = MagicMock()
-  client.web_fetch.side_effect = ConnectionError("Failed to connect to Ollama")
+  client.web_fetch = AsyncMock(side_effect=ConnectionError("Failed to connect to Ollama"))
   return client
 
 
@@ -1237,5 +1299,5 @@ def mock_ollama_client_error() -> MagicMock:
 def mock_ollama_client_timeout() -> MagicMock:
   """Mock Ollama Client with timeout error."""
   client = MagicMock()
-  client.web_fetch.side_effect = TimeoutError("Request timed out")
+  client.web_fetch = AsyncMock(side_effect=TimeoutError("Request timed out"))
   return client

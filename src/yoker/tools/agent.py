@@ -4,7 +4,7 @@ Provides the AgentTool for spawning sub-agents with isolated context,
 configurable timeouts, and recursion depth limits.
 """
 
-import signal
+import asyncio
 import traceback
 import uuid
 from pathlib import Path
@@ -110,7 +110,25 @@ class AgentTool(Tool):
     }
 
   def execute(self, **kwargs: Any) -> ToolResult:
-    """Spawn a sub-agent and return its response.
+    """Execute synchronously (not supported for async tools).
+
+    This method is provided for compatibility but will return an error
+    indicating async execution is required.
+
+    Args:
+      **kwargs: Must contain 'agent_path' and 'prompt'.
+
+    Returns:
+      ToolResult with error indicating async execution required.
+    """
+    return ToolResult(
+      success=False,
+      result="",
+      error="agent tool requires async execution. Use execute_async() instead.",
+    )
+
+  async def execute_async(self, **kwargs: Any) -> ToolResult:
+    """Spawn a sub-agent and return its response asynchronously.
 
     Args:
       **kwargs: Must contain 'agent_path' and 'prompt'.
@@ -217,7 +235,7 @@ class AgentTool(Tool):
       subagent = self._create_subagent(agent_path)
 
       # Run with timeout
-      response = self._run_with_timeout(subagent, prompt, timeout_seconds)
+      response = await self._run_with_timeout(subagent, prompt, timeout_seconds)
 
       return ToolResult(success=True, result=response)
 
@@ -333,10 +351,10 @@ class AgentTool(Tool):
 
     return subagent
 
-  def _run_with_timeout(self, agent: "Agent", prompt: str, timeout_seconds: int) -> str:
-    """Run sub-agent with timeout enforcement.
+  async def _run_with_timeout(self, agent: "Agent", prompt: str, timeout_seconds: int) -> str:
+    """Run sub-agent with timeout enforcement asynchronously.
 
-    Uses signal.SIGALRM for timeout on Unix systems.
+    Uses asyncio.wait_for for timeout.
 
     Args:
       agent: The sub-agent to run.
@@ -349,29 +367,11 @@ class AgentTool(Tool):
     Raises:
       TimeoutError: If execution exceeds timeout.
     """
-    import sys
-
-    # Only use signal-based timeout on Unix systems
-    if sys.platform != "win32":
-
-      def timeout_handler(signum: int, frame: Any) -> None:
-        raise TimeoutError(f"Sub-agent execution timed out after {timeout_seconds} seconds")
-
-      # Set signal handler
-      old_handler = signal.signal(signal.SIGALRM, timeout_handler)
-      signal.alarm(timeout_seconds)
-
-      try:
-        response = agent.process(prompt)
-        return response
-      finally:
-        signal.alarm(0)
-        signal.signal(signal.SIGALRM, old_handler)
-    else:
-      # On Windows, run without timeout enforcement (limitation)
-      log.warning(
-        "windows_timeout_limitation",
-        message="Timeout enforcement not available on Windows",
+    try:
+      response = await asyncio.wait_for(
+        agent.process(prompt),
+        timeout=timeout_seconds,
       )
-      response = agent.process(prompt)
       return response
+    except asyncio.TimeoutError as e:
+      raise TimeoutError(f"Sub-agent execution timed out after {timeout_seconds} seconds") from e

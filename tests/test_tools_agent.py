@@ -1,7 +1,7 @@
 """Tests for AgentTool security features."""
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -100,19 +100,23 @@ You are a malicious agent.
     )
     return agent_file
 
-  def test_path_traversal_blocked(self, mock_agent: MagicMock, invalid_agent_file: Path) -> None:
+  @pytest.mark.asyncio
+  async def test_path_traversal_blocked(
+    self, mock_agent: MagicMock, invalid_agent_file: Path
+  ) -> None:
     """Test that path traversal attacks are blocked."""
     # The mock_agent fixture already has config.agents.directory set
     # to tmp_path/agents, so invalid_agent_file (which is in tmp_path/forbidden)
     # will be rejected
     tool = AgentTool(parent_agent=mock_agent)
 
-    result = tool.execute(agent_path=str(invalid_agent_file), prompt="test prompt")
+    result = await tool.execute_async(agent_path=str(invalid_agent_file), prompt="test prompt")
 
     assert result.success is False
     assert "not in allowed directory" in result.error
 
-  def test_valid_agent_path_allowed(
+  @pytest.mark.asyncio
+  async def test_valid_agent_path_allowed(
     self, mock_agent: MagicMock, valid_agent_file: Path, tmp_path: Path
   ) -> None:
     """Test that valid agent paths within allowed directory work."""
@@ -123,12 +127,13 @@ You are a malicious agent.
 
     # This will fail during execution, but path validation should pass
     with patch.object(tool, "_create_subagent", side_effect=Exception("Mocked subagent")):
-      result = tool.execute(agent_path=str(valid_agent_file), prompt="test prompt")
+      result = await tool.execute_async(agent_path=str(valid_agent_file), prompt="test prompt")
 
       # Path validation passed, execution failed for other reasons
       assert "not in allowed directory" not in result.error
 
-  def test_custom_agents_directory(self, mock_agent: MagicMock, tmp_path: Path) -> None:
+  @pytest.mark.asyncio
+  async def test_custom_agents_directory(self, mock_agent: MagicMock, tmp_path: Path) -> None:
     """Test that custom agents directory is respected."""
     # Set custom agents directory
     custom_dir = tmp_path / "custom_agents"
@@ -151,11 +156,12 @@ Custom agent.
 
     # Path validation should pass for custom directory
     with patch.object(tool, "_create_subagent", side_effect=Exception("Mocked subagent")):
-      result = tool.execute(agent_path=str(agent_file), prompt="test prompt")
+      result = await tool.execute_async(agent_path=str(agent_file), prompt="test prompt")
 
       assert "not in allowed directory" not in result.error
 
-  def test_session_id_uses_uuid(
+  @pytest.mark.asyncio
+  async def test_session_id_uses_uuid(
     self, mock_agent: MagicMock, valid_agent_file: Path, tmp_path: Path
   ) -> None:
     """Test that session IDs use UUID for unpredictability."""
@@ -175,12 +181,12 @@ Custom agent.
       captured_session_ids.append(ctx.get_session_id.return_value)
 
       subagent = MagicMock()
-      subagent.process = MagicMock(return_value="test response")
+      subagent.process = AsyncMock(return_value="test response")
       return subagent
 
     with patch.object(tool, "_create_subagent", side_effect=capture_session_id):
       with patch.object(tool, "_run_with_timeout", return_value="test response"):
-        tool.execute(agent_path=str(valid_agent_file), prompt="test prompt")
+        await tool.execute_async(agent_path=str(valid_agent_file), prompt="test prompt")
 
     # Verify session ID format (parent_uuid8chars)
     # The format is f"{parent_session}_{uuid[:8]}"
@@ -192,18 +198,22 @@ Custom agent.
     # Should have parent session prefix
     assert session_id.startswith("test_session_")
 
-  def test_absolute_path_traversal_blocked(self, mock_agent: MagicMock, tmp_path: Path) -> None:
+  @pytest.mark.asyncio
+  async def test_absolute_path_traversal_blocked(
+    self, mock_agent: MagicMock, tmp_path: Path
+  ) -> None:
     """Test that absolute path traversal is blocked."""
     # Try to load /etc/passwd as an agent (common attack vector)
     tool = AgentTool(parent_agent=mock_agent)
 
-    result = tool.execute(agent_path="/etc/passwd", prompt="test prompt")
+    result = await tool.execute_async(agent_path="/etc/passwd", prompt="test prompt")
 
     # Either file doesn't exist or path traversal blocked
     assert result.success is False
     assert "not in allowed directory" in result.error or "not found" in result.error
 
-  def test_symlink_traversal_blocked(self, mock_agent: MagicMock, tmp_path: Path) -> None:
+  @pytest.mark.asyncio
+  async def test_symlink_traversal_blocked(self, mock_agent: MagicMock, tmp_path: Path) -> None:
     """Test that symlink-based path traversal is blocked."""
     # Create agents directory inside tmp_path
     agents_dir = tmp_path / "agents"
@@ -222,7 +232,7 @@ Custom agent.
 
     tool = AgentTool(parent_agent=mock_agent)
 
-    result = tool.execute(agent_path=str(symlink), prompt="test prompt")
+    result = await tool.execute_async(agent_path=str(symlink), prompt="test prompt")
 
     # Symlink should be resolved and blocked
     assert result.success is False

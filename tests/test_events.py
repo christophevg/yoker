@@ -1,6 +1,9 @@
 """Tests for yoker events module."""
 
+import asyncio
 from io import StringIO
+from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 from pytest_mock import MockerFixture
@@ -327,13 +330,36 @@ class TestAgentEventEmission:
     """Test that Agent emits events during process()."""
     # Mock the ollama client
     mock_client = mocker.MagicMock()
+
+    class AsyncIter:
+      """Helper class to create an async iterator from a list."""
+
+      def __init__(self, items: list) -> None:
+        self.items = items
+        self.index = 0
+
+      def __aiter__(self) -> "AsyncIter":
+        return self
+
+      async def __anext__(self) -> Any:
+        if self.index >= len(self.items):
+          raise StopAsyncIteration
+        item = self.items[self.index]
+        self.index += 1
+        return item
+
     mock_chunk = mocker.MagicMock()
     mock_chunk.message.thinking = None
     mock_chunk.message.content = "Hello there"
     mock_chunk.message.tool_calls: list = []
-    mock_client.chat.return_value = [mock_chunk]
+    mock_chunk.done = True
+    mock_chunk.prompt_eval_count = 10
+    mock_chunk.eval_count = 20
+    mock_chunk.total_duration = 100_000_000
 
-    mocker.patch("yoker.agent.Client", return_value=mock_client)
+    mock_client.chat = AsyncMock(return_value=AsyncIter([mock_chunk]))
+
+    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
 
     from yoker.agent import Agent
 
@@ -341,7 +367,7 @@ class TestAgentEventEmission:
     collector = TestEventCollector()
     agent.add_event_handler(collector)
 
-    agent.process("Hi")
+    asyncio.run(agent.process("Hi"))
 
     # Check that events were emitted
     assert len(collector.events) > 0
@@ -375,10 +401,10 @@ class TestAgentEventEmission:
     agent.add_event_handler(collector)
 
     # Begin session
-    agent.begin_session()
+    asyncio.run(agent.begin_session())
 
     # End session
-    agent.end_session(reason="quit")
+    asyncio.run(agent.end_session(reason="quit"))
 
     # Check session events
     event_types = [e.type for e in collector.events]
