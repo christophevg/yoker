@@ -162,7 +162,7 @@ Both share identical public interfaces with the same method names.
   - **Estimated time:** 1 hour
   - **Satisfies:** FR1, NFR3
 
-- [ ] **1.7.3 Create Async Agent Module**
+- [x] **1.7.3 Create Async Agent Module** (2026-05-23)
   - Create `src/yoker/async_agent.py` with AsyncAgent class
   - Update `src/yoker/__init__.py` to export AsyncAgent
   - Use AgentCore for shared state (composition)
@@ -171,23 +171,22 @@ Both share identical public interfaces with the same method names.
   - Implement async `_emit()` supporting both sync and async handlers
   - **Estimated time:** 2 hours
   - **Satisfies:** FR2, FR5, FR6, FR7
+  - See: `reporting/1.7.3-async-agent-module/consensus.md`
 
-- [ ] **1.7.4 Async Ollama Streaming**
+- [x] **1.7.4 Async Ollama Streaming** (2026-05-23)
   - Implement async `process()` in AsyncAgent with async streaming
   - Use `async for` for chunk iteration
   - Update all event emission to async (`await self._emit()`)
   - Handle tool execution in async context
   - Ensure identical behavior to sync implementation
-  - Write comprehensive async tests
-  - **Estimated time:** 1.5 hours
+  - **Estimated time:** 1.5 hours (implemented in 1.7.3)
   - **Satisfies:** FR2
 
-- [ ] **1.7.5 Async Session Management**
+- [x] **1.7.5 Async Session Management** (2026-05-23)
   - Implement async `begin_session()` and `end_session()` in AsyncAgent
   - Use async event emission
   - Ensure proper resource cleanup in async context
-  - Write unit tests for async session lifecycle
-  - **Estimated time:** 30 minutes
+  - **Estimated time:** 30 minutes (implemented in 1.7.3)
   - **Satisfies:** FR2
 
 - [ ] **1.7.6 Async CLI Integration**
