@@ -95,9 +95,9 @@ class AsyncWebSearchTool(Tool):
     """
     # Validate query through guardrail
     if self._guardrail is not None:
-      validation = self._guardrail.validate_query(query)
+      validation = self._guardrail.validate(self.name, {"query": query})
       if not validation.valid:
-        return ToolResult(success=False, error=validation.reason)
+        return ToolResult(success=False, result={}, error=validation.reason)
 
     try:
       results = await self._backend.search(query, max_results=max_results)
@@ -117,7 +117,7 @@ class AsyncWebSearchTool(Tool):
         },
       )
     except WebSearchError as e:
-      return ToolResult(success=False, error=str(e))
+      return ToolResult(success=False, result={}, error=str(e))
 
 
 class AsyncOllamaWebSearchBackend:
@@ -255,9 +255,9 @@ class AsyncWebFetchTool(Tool):
     """
     # Validate URL through guardrail
     if self._guardrail is not None:
-      validation = self._guardrail.validate_url(url)
+      validation = self._guardrail.validate(self.name, {"url": url})
       if not validation.valid:
-        return ToolResult(success=False, error=validation.reason)
+        return ToolResult(success=False, result={}, error=validation.reason)
 
     try:
       content = await self._backend.fetch(url)
@@ -274,7 +274,7 @@ class AsyncWebFetchTool(Tool):
         },
       )
     except WebFetchError as e:
-      return ToolResult(success=False, error=str(e))
+      return ToolResult(success=False, result={}, error=str(e))
 
 
 class AsyncOllamaWebFetchBackend:
