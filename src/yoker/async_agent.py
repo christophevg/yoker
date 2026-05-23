@@ -115,9 +115,7 @@ class AsyncAgent:
       log.info("async_ollama_client_initialized", host=base_url, auth="none")
 
     # Delegate initialization to AgentCore for shared state
-    # Note: client parameter not passed because WebSearch/WebFetch tools
-    # require sync Client (not AsyncClient). Web tools are not available
-    # in AsyncAgent for MVP. Future: Create AsyncWebSearchBackend.
+    # Pass AsyncClient for async web tools (WebSearch/WebFetch)
     self._core = AgentCore(
       model=model,
       config=loaded_config,
@@ -126,7 +124,7 @@ class AsyncAgent:
       agent_definition=agent_definition,
       agent_path=agent_path,
       context_manager=context_manager,
-      client=None,  # WebSearch/WebFetch not available in AsyncAgent for MVP
+      client=self._client,  # Pass AsyncClient for async web tools
       _recursion_depth=_recursion_depth,
     )
 
@@ -530,7 +528,11 @@ class AsyncAgent:
               )
             try:
               with log_timing("tool_execution", tool=tool_name):
-                tool_result = tool.execute(**tool_args)
+                # Check if tool supports async execution
+                if hasattr(tool, "execute_async"):
+                  tool_result = await tool.execute_async(**tool_args)
+                else:
+                  tool_result = tool.execute(**tool_args)
               success = tool_result.success
               if success:
                 result = str(tool_result.result)
