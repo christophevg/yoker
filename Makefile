@@ -70,8 +70,9 @@ demos: ## Generate all demo screenshots
 typecheck: ## Run mypy type checking
 	uv run mypy --strict src
 
-lint: ## Run ruff linting
+lint: ## Run ruff linting and format check
 	uv run ruff check src tests
+	uv run ruff format --check src tests
 
 format: ## Format code with ruff
 	uv run ruff format src tests

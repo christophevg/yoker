@@ -125,9 +125,13 @@ class Agent:
     if self._core.agent_definition is not None:
       allowed_tools = {t.lower() for t in self._core.agent_definition.tools}
       if "agent" in allowed_tools:
-        self._core.tool_registry.register(AgentTool(guardrail=self._core.guardrail, parent_agent=self))
+        self._core.tool_registry.register(
+          AgentTool(guardrail=self._core.guardrail, parent_agent=self)
+        )
     else:
-      self._core.tool_registry.register(AgentTool(guardrail=self._core.guardrail, parent_agent=self))
+      self._core.tool_registry.register(
+        AgentTool(guardrail=self._core.guardrail, parent_agent=self)
+      )
 
     log.info(
       "agent_initialized",
