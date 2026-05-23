@@ -134,64 +134,50 @@
 
 ### Phase 1.7: Async-First Agent Architecture (High Priority)
 
-This phase creates two separate Agent classes following the httpx pattern:
-- `yoker.Agent` - Synchronous implementation
-- `yoker.AsyncAgent` - Async-native implementation
-
-Both share identical public interfaces with the same method names.
+This phase implements async-only Agent architecture:
+- `yoker.Agent` - Async-native implementation (all methods are async)
+- All tools use `async def execute()` 
+- CLI wraps async calls with `asyncio.run()`
 
 - [x] **1.7.1 Extract AgentCore Class** (2026-05-23)
   - Create `src/yoker/base.py` with shared state and utilities
   - Extract: configuration initialization, tool registry building, context manager
   - Extract: guardrail setup, agent definition loading, event handler storage
   - Extract: recursion tracking
-  - Ensure sync Agent still works with AgentCore delegation
   - Write unit tests for AgentCore (51 tests, 98% coverage)
   - **Estimated time:** 1 hour
   - **Satisfies:** FR4
   - See: `reporting/1.7.1-agentcore-extraction/summary.md`
 
-- [x] **1.7.2 Refactor Sync Agent** (2026-05-23)
-  - Update `src/yoker/agent.py` to use AgentCore via composition
-  - Add property delegations to AgentCore (model, tool_registry, context, etc.)
-  - Keep sync `Client` initialization (no asyncio)
-  - Keep sync `_emit()` method
-  - Keep sync `process()` implementation
-  - Keep sync session methods
-  - Verify all existing tests pass
-  - **Estimated time:** 1 hour
-  - **Satisfies:** FR1, NFR3
-
-- [ ] **1.7.3 Create Async Agent Module**
-  - Create `src/yoker/async_agent.py` with AsyncAgent class
-  - Update `src/yoker/__init__.py` to export AsyncAgent
-  - Use AgentCore for shared state (composition)
+- [x] **1.7.2 Async-Only Agent** (2026-05-23)
+  - Rename AsyncAgent to Agent (async-only)
   - Use `AsyncClient` from ollama library
-  - Add property delegations to AgentCore (same as sync Agent)
-  - Implement async `_emit()` supporting both sync and async handlers
+  - All methods are async: `process()`, `begin_session()`, `end_session()`
+  - Event emission is async
+  - Tool execution uses `await tool.execute()`
   - **Estimated time:** 2 hours
   - **Satisfies:** FR2, FR5, FR6, FR7
 
-- [ ] **1.7.4 Async Ollama Streaming**
-  - Implement async `process()` in AsyncAgent with async streaming
-  - Use `async for` for chunk iteration
-  - Update all event emission to async (`await self._emit()`)
-  - Handle tool execution in async context
-  - Ensure identical behavior to sync implementation
-  - Write comprehensive async tests
-  - **Estimated time:** 1.5 hours
-  - **Satisfies:** FR2
+- [x] **1.7.3 Async Tool Execution** (2026-05-23)
+  - Convert all tools to async: `async def execute()`
+  - Tool base class: `execute()` is abstract async method
+  - WebSearch/WebFetch use AsyncClient
+  - AgentTool spawns async subagents
+  - All 1047 tests pass
+  - **Estimated time:** 1 hour
 
-- [ ] **1.7.5 Async Session Management**
-  - Implement async `begin_session()` and `end_session()` in AsyncAgent
-  - Use async event emission
-  - Ensure proper resource cleanup in async context
-  - Write unit tests for async session lifecycle
-  - **Estimated time:** 30 minutes
-  - **Satisfies:** FR2
-
-- [ ] **1.7.6 Async CLI Integration**
+- [x] **1.7.4 Async CLI Integration** (2026-05-23)
   - Create `main_async()` function in `__main__.py`
+  - Refactor `main()` to call `asyncio.run(main_async())`
+  - Use `prompt_async()` for async input
+  - Handle async session begin/end
+  - **Estimated time:** 30 minutes
+
+- [ ] **1.7.5 Update Documentation**
+  - Update `docs/quickstart.md` with async usage examples
+  - Update `REQUIREMENTS.md` to reflect async-only architecture
+  - Update `scripts/demo_session.py` for async
+  - **Estimated time:** 30 minutes
   - Refactor `main()` to call `asyncio.run(main_async())`
   - Update prompt_toolkit calls to use `prompt_async()`
   - Use AsyncAgent in CLI

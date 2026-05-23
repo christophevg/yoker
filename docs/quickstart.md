@@ -42,6 +42,7 @@ python -m yoker --config yoker.toml
 ### Library Usage (Headless)
 
 ```python
+import asyncio
 from yoker import Agent
 from yoker.events import Event, ContentChunkEvent
 
@@ -51,14 +52,18 @@ class MyHandler:
         if hasattr(event, 'text'):
             print(event.text, end='', flush=True)
 
-# Create agent and attach handler
-agent = Agent(model="llama3.2")
-agent.add_event_handler(MyHandler())
+async def main():
+    # Create agent and attach handler
+    agent = Agent(model="llama3.2")
+    agent.add_event_handler(MyHandler())
 
-# Use the agent programmatically
-agent.begin_session()
-agent.process("What is 2+2?")
-agent.end_session()
+    # Use the agent programmatically (all methods are async)
+    await agent.begin_session()
+    await agent.process("What is 2+2?")
+    await agent.end_session()
+
+# Run the async main function
+asyncio.run(main())
 ```
 
 ### Interactive Session
@@ -147,31 +152,35 @@ When using `--persist`, the session is saved after each turn. Use `--resume` to 
 **Programmatic usage:**
 
 ```python
+import asyncio
 from pathlib import Path
 from yoker.agent import Agent
 from yoker.context import BasicPersistenceContextManager
 
-# Create context manager for persistence
-context = BasicPersistenceContextManager(
-  storage_path=Path(".yoker/sessions"),
-  session_id="my-session"
-)
+async def main():
+    # Create context manager for persistence
+    context = BasicPersistenceContextManager(
+      storage_path=Path(".yoker/sessions"),
+      session_id="my-session"
+    )
 
-# Create agent with context
-agent = Agent(context_manager=context)
+    # Create agent with context
+    agent = Agent(context_manager=context)
 
-# Use the agent
-agent.begin_session()
-agent.process("What is 2+2?")
-agent.end_session()
+    # Use the agent (all methods are async)
+    await agent.begin_session()
+    await agent.process("What is 2+2?")
+    await agent.end_session()
 
-# Later, resume the session
-context = BasicPersistenceContextManager(
-  storage_path=Path(".yoker/sessions"),
-  session_id="my-session"
-)
-agent = Agent(context_manager=context)
-# Context is automatically loaded
+    # Later, resume the session
+    context = BasicPersistenceContextManager(
+      storage_path=Path(".yoker/sessions"),
+      session_id="my-session"
+    )
+    agent = Agent(context_manager=context)
+    # Context is automatically loaded
+
+asyncio.run(main())
 ```
 
 ## Tools
