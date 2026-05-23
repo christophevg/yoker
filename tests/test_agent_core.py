@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from yoker.agent_base import DEFAULT_SYSTEM_PROMPT, AgentCore
+from yoker.base import DEFAULT_SYSTEM_PROMPT, AgentCore
 from yoker.config import BackendConfig, Config, OllamaConfig
 from yoker.thinking import ThinkingMode
 
