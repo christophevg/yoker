@@ -528,11 +528,7 @@ class Agent:
               )
             try:
               with log_timing("tool_execution", tool=tool_name):
-                # Check if tool supports async execution
-                if hasattr(tool, "execute_async"):
-                  tool_result = await tool.execute_async(**tool_args)
-                else:
-                  tool_result = tool.execute(**tool_args)
+                tool_result = await tool.execute_async(**tool_args)
               success = tool_result.success
               if success:
                 result = str(tool_result.result)

@@ -109,24 +109,6 @@ class AgentTool(Tool):
       },
     }
 
-  def execute(self, **kwargs: Any) -> ToolResult:
-    """Execute synchronously (not supported for async tools).
-
-    This method is provided for compatibility but will return an error
-    indicating async execution is required.
-
-    Args:
-      **kwargs: Must contain 'agent_path' and 'prompt'.
-
-    Returns:
-      ToolResult with error indicating async execution required.
-    """
-    return ToolResult(
-      success=False,
-      result="",
-      error="agent tool requires async execution. Use execute_async() instead.",
-    )
-
   async def execute_async(self, **kwargs: Any) -> ToolResult:
     """Spawn a sub-agent and return its response asynchronously.
 

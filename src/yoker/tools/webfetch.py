@@ -94,24 +94,6 @@ class WebFetchTool(Tool):
       },
     }
 
-  def execute(self, **kwargs: Any) -> ToolResult:
-    """Execute web fetch synchronously (not supported for async tools).
-
-    This method is provided for compatibility but will return an error
-    indicating async execution is required.
-
-    Args:
-      **kwargs: Must contain 'url', optionally 'content_type', 'max_size_kb'.
-
-    Returns:
-      ToolResult with error indicating async execution required.
-    """
-    return ToolResult(
-      success=False,
-      result={},
-      error="web_fetch requires async execution. Use execute_async() instead.",
-    )
-
   async def execute_async(self, **kwargs: Any) -> ToolResult:
     """Execute web fetch with the given parameters asynchronously.
 

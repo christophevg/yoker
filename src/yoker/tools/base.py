@@ -142,8 +142,11 @@ class Tool(ABC):
     """
 
   @abstractmethod
-  def execute(self, **kwargs: Any) -> ToolResult:
-    """Execute the tool with the given parameters.
+  async def execute_async(self, **kwargs: Any) -> ToolResult:
+    """Execute the tool asynchronously with the given parameters.
+
+    All tools must implement async execution for proper async/await
+    integration with the agent's event loop.
 
     Args:
       **kwargs: Parameters from the LLM tool call.

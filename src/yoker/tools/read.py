@@ -69,7 +69,7 @@ class ReadTool(Tool):
       },
     }
 
-  def execute(self, **kwargs: Any) -> ToolResult:
+  async def execute_async(self, **kwargs: Any) -> ToolResult:
     """Read a file and return its contents.
 
     Steps:

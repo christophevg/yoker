@@ -65,7 +65,7 @@ class TestToolRegistry:
       def get_schema(self) -> dict:
         return {"type": "function", "function": {"name": "alpha"}}
 
-      def execute(self) -> ToolResult:
+      async def execute_async(self) -> ToolResult:
         return ToolResult(success=True, result="")
 
     class ZetaTool(Tool):
@@ -80,7 +80,7 @@ class TestToolRegistry:
       def get_schema(self) -> dict:
         return {"type": "function", "function": {"name": "zeta"}}
 
-      def execute(self) -> ToolResult:
+      async def execute_async(self) -> ToolResult:
         return ToolResult(success=True, result="")
 
     registry = ToolRegistry()
