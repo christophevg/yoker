@@ -81,7 +81,7 @@ class Tool(ABC):
           }
         }
 
-      def execute(self, arg: str) -> ToolResult:
+      async def execute(self, arg: str) -> ToolResult:
         return ToolResult(success=True, result=f"Got: {arg}")
   """
 
@@ -142,8 +142,8 @@ class Tool(ABC):
     """
 
   @abstractmethod
-  async def execute_async(self, **kwargs: Any) -> ToolResult:
-    """Execute the tool asynchronously with the given parameters.
+  async def execute(self, **kwargs: Any) -> ToolResult:
+    """Execute the tool with the given parameters.
 
     All tools must implement async execution for proper async/await
     integration with the agent's event loop.

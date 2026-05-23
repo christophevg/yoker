@@ -21,7 +21,7 @@ class ConcreteTool(Tool):
   def get_schema(self) -> dict:
     return {"type": "function", "function": {"name": self.name, "description": self.description}}
 
-  async def execute_async(self, **kwargs) -> ToolResult:
+  async def execute(self, **kwargs) -> ToolResult:
     return ToolResult(success=True, result="test")
 
 

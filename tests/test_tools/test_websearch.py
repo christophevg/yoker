@@ -80,7 +80,7 @@ class TestWebSearchToolSchema:
 
 
 class TestWebSearchToolExecution:
-  """Tests for WebSearchTool execute_async method."""
+  """Tests for WebSearchTool execute method."""
 
   @pytest.mark.asyncio
   async def test_execute_returns_results(self, mock_backend: MagicMock) -> None:
@@ -95,7 +95,7 @@ class TestWebSearchToolExecution:
       ]
     )
     tool = WebSearchTool(backend=mock_backend)
-    result = await tool.execute_async(query="test query")
+    result = await tool.execute(query="test query")
 
     assert result.success
     assert "results" in result.result
@@ -113,7 +113,7 @@ class TestWebSearchToolExecution:
       ]
     )
     tool = WebSearchTool(backend=mock_backend)
-    await tool.execute_async(query="test query")
+    await tool.execute(query="test query")
 
     # Check that backend was called with default max_results=10
     mock_backend.search.assert_called_once()
@@ -135,7 +135,7 @@ class TestWebSearchToolExecution:
       ]
     )
     tool = WebSearchTool(backend=mock_backend)
-    await tool.execute_async(query="test query", max_results=5)
+    await tool.execute(query="test query", max_results=5)
 
     mock_backend.search.assert_called_once()
     call_kwargs = mock_backend.search.call_args.kwargs
@@ -149,7 +149,7 @@ class TestWebSearchToolExecution:
     Then: Returns error ToolResult
     """
     tool = WebSearchTool()
-    result = await tool.execute_async()
+    result = await tool.execute()
 
     assert not result.success
     assert result.error is not None
@@ -163,7 +163,7 @@ class TestWebSearchToolExecution:
     Then: Returns error ToolResult
     """
     tool = WebSearchTool()
-    result = await tool.execute_async(query="")
+    result = await tool.execute(query="")
 
     assert not result.success
     assert result.error is not None
@@ -176,7 +176,7 @@ class TestWebSearchToolExecution:
     Then: Returns error ToolResult
     """
     tool = WebSearchTool()
-    result = await tool.execute_async(query="   ")
+    result = await tool.execute(query="   ")
 
     assert not result.success
     assert result.error is not None
@@ -194,7 +194,7 @@ class TestWebSearchToolExecution:
       ]
     )
     tool = WebSearchTool(backend=mock_backend)
-    await tool.execute_async(query="test query", max_results=100)
+    await tool.execute(query="test query", max_results=100)
 
     call_kwargs = mock_backend.search.call_args.kwargs
     assert call_kwargs.get("max_results") == 50
@@ -212,7 +212,7 @@ class TestWebSearchToolExecution:
     tool = WebSearchTool(backend=mock_backend, guardrail=guardrail)
 
     # Query containing blocked domain
-    result = await tool.execute_async(query="site:blocked.com secret data")
+    result = await tool.execute(query="site:blocked.com secret data")
 
     assert not result.success
     assert result.error is not None
@@ -235,7 +235,7 @@ class TestWebSearchToolBackendIntegration:
       ]
     )
     tool = WebSearchTool(backend=mock_backend)
-    await tool.execute_async(query="test query", max_results=5)
+    await tool.execute(query="test query", max_results=5)
 
     mock_backend.search.assert_called_once_with(query="test query", max_results=5)
 
@@ -250,7 +250,7 @@ class TestWebSearchToolBackendIntegration:
       side_effect=WebSearchError("Backend unavailable", backend="test")
     )
     tool = WebSearchTool(backend=mock_backend_error)
-    result = await tool.execute_async(query="test query")
+    result = await tool.execute(query="test query")
 
     assert not result.success
     assert result.error is not None
@@ -268,7 +268,7 @@ class TestWebSearchToolBackendIntegration:
       side_effect=WebSearchError("Search timeout after 30s", backend="test")
     )
     tool = WebSearchTool(backend=mock_backend_timeout)
-    result = await tool.execute_async(query="test query")
+    result = await tool.execute(query="test query")
 
     assert not result.success
     assert result.error is not None
@@ -290,7 +290,7 @@ class TestWebSearchToolResultFormat:
       ]
     )
     tool = WebSearchTool(backend=mock_backend)
-    result = await tool.execute_async(query="test query")
+    result = await tool.execute(query="test query")
 
     assert result.success
     assert isinstance(result.result, dict)
@@ -305,7 +305,7 @@ class TestWebSearchToolResultFormat:
     Then: success=False, result is empty, error contains message
     """
     tool = WebSearchTool()
-    result = await tool.execute_async()  # No query provided
+    result = await tool.execute()  # No query provided
 
     assert not result.success
     assert result.result == {}
@@ -320,7 +320,7 @@ class TestWebSearchToolResultFormat:
     """
     mock_backend_empty.search = AsyncMock(return_value=[])
     tool = WebSearchTool(backend=mock_backend_empty)
-    result = await tool.execute_async(query="test query")
+    result = await tool.execute(query="test query")
 
     assert result.success
     assert result.result["results"] == []
@@ -353,7 +353,7 @@ class TestWebSearchToolConfiguration:
       ]
     )
     tool = WebSearchTool(backend=mock_backend)
-    await tool.execute_async(query="test query")
+    await tool.execute(query="test query")
 
     mock_backend.search.assert_called_once()
 
@@ -365,7 +365,7 @@ class TestWebSearchToolConfiguration:
     Then: Returns error about missing backend
     """
     tool = WebSearchTool()
-    result = await tool.execute_async(query="test query")
+    result = await tool.execute(query="test query")
 
     assert not result.success
     assert "backend" in result.error.lower()

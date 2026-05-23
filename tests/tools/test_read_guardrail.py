@@ -68,7 +68,7 @@ class TestReadToolGuardrailIntegration:
     file_path = tmp_path / "test.txt"
     file_path.write_text("hello world")
     tool = ReadTool(guardrail=guardrail)
-    result = await tool.execute_async(path=str(file_path))
+    result = await tool.execute(path=str(file_path))
     assert result.success is True
     assert result.result == "hello world"
 
@@ -76,7 +76,7 @@ class TestReadToolGuardrailIntegration:
   async def test_path_traversal_blocked(self, tmp_path: Path, guardrail: PathGuardrail) -> None:
     """ReadTool blocks path traversal outside allowed paths."""
     tool = ReadTool(guardrail=guardrail)
-    result = await tool.execute_async(path=str(tmp_path / ".." / ".." / "etc" / "passwd"))
+    result = await tool.execute(path=str(tmp_path / ".." / ".." / "etc" / "passwd"))
     assert result.success is False
     assert "outside allowed" in result.error.lower()
 
@@ -88,7 +88,7 @@ class TestReadToolGuardrailIntegration:
     env_file = tmp_path / ".env"
     env_file.write_text("SECRET_KEY=abc")
     tool = ReadTool(guardrail=guardrail)
-    result = await tool.execute_async(path=str(env_file))
+    result = await tool.execute(path=str(env_file))
     assert result.success is False
     assert "blocked" in result.error.lower()
 
@@ -100,7 +100,7 @@ class TestReadToolGuardrailIntegration:
     secret_file = tmp_path / "secrets.txt"
     secret_file.write_text("top secret")
     tool = ReadTool(guardrail=guardrail)
-    result = await tool.execute_async(path=str(secret_file))
+    result = await tool.execute(path=str(secret_file))
     assert result.success is False
     assert "blocked" in result.error.lower()
 
@@ -112,7 +112,7 @@ class TestReadToolGuardrailIntegration:
     pem_file = tmp_path / "key.pem"
     pem_file.write_text("-----BEGIN KEY-----")
     tool = ReadTool(guardrail=guardrail)
-    result = await tool.execute_async(path=str(pem_file))
+    result = await tool.execute(path=str(pem_file))
     assert result.success is False
     assert "extension" in result.error.lower()
 
@@ -124,7 +124,7 @@ class TestReadToolGuardrailIntegration:
     md_file = tmp_path / "readme.md"
     md_file.write_text("# Hello")
     tool = ReadTool(guardrail=guardrail)
-    result = await tool.execute_async(path=str(md_file))
+    result = await tool.execute(path=str(md_file))
     assert result.success is True
     assert result.result == "# Hello"
 
@@ -134,7 +134,7 @@ class TestReadToolGuardrailIntegration:
     large_file = tmp_path / "large.txt"
     large_file.write_text("x" * 20 * 1024)  # 20KB > 10KB limit
     tool = ReadTool(guardrail=guardrail)
-    result = await tool.execute_async(path=str(large_file))
+    result = await tool.execute(path=str(large_file))
     assert result.success is False
     assert "size" in result.error.lower()
 
@@ -150,7 +150,7 @@ class TestReadToolGuardrailIntegration:
     link = tmp_path / "link.txt"
     link.symlink_to(outside)
     tool = ReadTool(guardrail=guardrail)
-    result = await tool.execute_async(path=str(link))
+    result = await tool.execute(path=str(link))
     # Tool-layer blocks symlinks before guardrail even runs
     assert result.success is False
     assert "symlink" in result.error.lower()
@@ -161,7 +161,7 @@ class TestReadToolGuardrailIntegration:
   ) -> None:
     """ReadTool blocks absolute paths outside allowed directories."""
     tool = ReadTool(guardrail=guardrail)
-    result = await tool.execute_async(path="/etc/passwd")
+    result = await tool.execute(path="/etc/passwd")
     assert result.success is False
     assert "outside allowed" in result.error.lower()
 
@@ -169,7 +169,7 @@ class TestReadToolGuardrailIntegration:
   async def test_empty_path_blocked(self, guardrail: PathGuardrail) -> None:
     """ReadTool blocks empty path parameter."""
     tool = ReadTool(guardrail=guardrail)
-    result = await tool.execute_async(path="")
+    result = await tool.execute(path="")
     assert result.success is False
 
   @pytest.mark.asyncio
@@ -178,6 +178,6 @@ class TestReadToolGuardrailIntegration:
     file_path = tmp_path / "test.txt"
     file_path.write_text("hello")
     tool = ReadTool()  # No guardrail
-    result = await tool.execute_async(path=str(file_path))
+    result = await tool.execute(path=str(file_path))
     assert result.success is True
     assert result.result == "hello"

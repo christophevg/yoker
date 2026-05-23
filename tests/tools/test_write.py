@@ -58,7 +58,7 @@ class TestWriteTool:
     """WriteTool writes content to a new file."""
     file_path = tmp_path / "test.txt"
     tool = WriteTool()
-    result = await tool.execute_async(path=str(file_path), content="hello world")
+    result = await tool.execute(path=str(file_path), content="hello world")
     assert result.success is True
     assert result.result == "File written successfully"
     assert result.error is None
@@ -71,7 +71,7 @@ class TestWriteTool:
     file_path.write_text("old content")
     config = Config(tools=ToolsConfig(write=WriteToolConfig(allow_overwrite=False)))
     tool = WriteTool(config=config)
-    result = await tool.execute_async(path=str(file_path), content="new content")
+    result = await tool.execute(path=str(file_path), content="new content")
     assert result.success is False
     assert "overwrite" in result.error.lower()
     assert file_path.read_text(encoding="utf-8") == "old content"
@@ -83,7 +83,7 @@ class TestWriteTool:
     file_path.write_text("old content")
     config = Config(tools=ToolsConfig(write=WriteToolConfig(allow_overwrite=True)))
     tool = WriteTool(config=config)
-    result = await tool.execute_async(path=str(file_path), content="new content")
+    result = await tool.execute(path=str(file_path), content="new content")
     assert result.success is True
     assert file_path.read_text(encoding="utf-8") == "new content"
 
@@ -92,7 +92,7 @@ class TestWriteTool:
     """WriteTool with guardrail blocks unauthorized paths."""
     guardrail = FakeGuardrail(allow=False, reason="outside allowed")
     tool = WriteTool(guardrail=guardrail)
-    result = await tool.execute_async(path="/etc/passwd", content="data")
+    result = await tool.execute(path="/etc/passwd", content="data")
     assert result.success is False
     assert result.error == "outside allowed"
     assert guardrail.calls == [("write", {"path": "/etc/passwd", "content": "data"})]
@@ -103,7 +103,7 @@ class TestWriteTool:
     file_path = tmp_path / "test.txt"
     guardrail = FakeGuardrail(allow=True)
     tool = WriteTool(guardrail=guardrail)
-    result = await tool.execute_async(path=str(file_path), content="allowed content")
+    result = await tool.execute(path=str(file_path), content="allowed content")
     assert result.success is True
     assert file_path.read_text(encoding="utf-8") == "allowed content"
     assert guardrail.calls == [("write", {"path": str(file_path), "content": "allowed content"})]
@@ -116,7 +116,7 @@ class TestWriteTool:
     link = tmp_path / "link.txt"
     link.symlink_to(target)
     tool = WriteTool()
-    result = await tool.execute_async(path=str(link), content="new data")
+    result = await tool.execute(path=str(link), content="new data")
     assert result.success is False
     assert "symlink" in result.error.lower()
 
@@ -125,7 +125,7 @@ class TestWriteTool:
     """WriteTool returns error when parent missing and create_parents=False."""
     file_path = tmp_path / "missing" / "test.txt"
     tool = WriteTool()
-    result = await tool.execute_async(path=str(file_path), content="data", create_parents=False)
+    result = await tool.execute(path=str(file_path), content="data", create_parents=False)
     assert result.success is False
     assert "parent directory" in result.error.lower()
 
@@ -134,7 +134,7 @@ class TestWriteTool:
     """WriteTool creates parents when create_parents=True."""
     file_path = tmp_path / "missing" / "test.txt"
     tool = WriteTool()
-    result = await tool.execute_async(path=str(file_path), content="data", create_parents=True)
+    result = await tool.execute(path=str(file_path), content="data", create_parents=True)
     assert result.success is True
     assert file_path.read_text(encoding="utf-8") == "data"
 
@@ -142,7 +142,7 @@ class TestWriteTool:
   async def test_write_missing_path(self) -> None:
     """WriteTool handles missing path parameter."""
     tool = WriteTool()
-    result = await tool.execute_async(content="data")
+    result = await tool.execute(content="data")
     assert result.success is False
     assert "invalid path" in result.error.lower()
 
@@ -151,7 +151,7 @@ class TestWriteTool:
     """WriteTool writes empty file when content is omitted."""
     file_path = tmp_path / "empty_file.txt"
     tool = WriteTool()
-    result = await tool.execute_async(path=str(file_path))
+    result = await tool.execute(path=str(file_path))
     assert result.success is True
     assert result.result == "File written successfully"
     assert file_path.read_text(encoding="utf-8") == ""
@@ -160,7 +160,7 @@ class TestWriteTool:
   async def test_write_non_string_path(self) -> None:
     """WriteTool handles non-string path parameter."""
     tool = WriteTool()
-    result = await tool.execute_async(path=123, content="data")  # type: ignore
+    result = await tool.execute(path=123, content="data")  # type: ignore
     assert result.success is False
     assert result.error == "Invalid path parameter"
 
@@ -168,7 +168,7 @@ class TestWriteTool:
   async def test_write_non_string_content(self) -> None:
     """WriteTool handles non-string content parameter."""
     tool = WriteTool()
-    result = await tool.execute_async(path="/tmp/test.txt", content=123)  # type: ignore
+    result = await tool.execute(path="/tmp/test.txt", content=123)  # type: ignore
     assert result.success is False
     assert result.error == "Invalid content parameter"
 
@@ -184,7 +184,7 @@ class TestWriteTool:
     monkeypatch.setattr(Path, "write_text", mock_write_text)
     config = Config(tools=ToolsConfig(write=WriteToolConfig(allow_overwrite=True)))
     tool = WriteTool(config=config)
-    result = await tool.execute_async(path=str(file_path), content="new data")
+    result = await tool.execute(path=str(file_path), content="new data")
     assert result.success is False
     assert "permission denied" in result.error.lower()
     assert str(file_path) not in result.error
@@ -194,7 +194,7 @@ class TestWriteTool:
     """WriteTool does not leak full paths in error messages."""
     tool = WriteTool()
     sensitive_path = str(tmp_path / ".ssh" / "id_rsa")
-    result = await tool.execute_async(path=sensitive_path, content="secret")
+    result = await tool.execute(path=sensitive_path, content="secret")
     assert result.success is False
     assert sensitive_path not in result.error
 
@@ -203,7 +203,7 @@ class TestWriteTool:
     """WriteTool resolves relative paths before writing."""
     file_path = tmp_path / "real.txt"
     tool = WriteTool()
-    result = await tool.execute_async(
+    result = await tool.execute(
       path=str(tmp_path / ".." / tmp_path.name / "real.txt"),
       content="resolved",
     )
@@ -222,7 +222,7 @@ class TestWriteTool:
     monkeypatch.setattr(Path, "write_text", mock_write_text)
     config = Config(tools=ToolsConfig(write=WriteToolConfig(allow_overwrite=True)))
     tool = WriteTool(config=config)
-    result = await tool.execute_async(path=str(file_path), content="new data")
+    result = await tool.execute(path=str(file_path), content="new data")
     assert result.success is False
     assert "error writing file" in result.error.lower()
     assert str(file_path) not in result.error
@@ -231,7 +231,7 @@ class TestWriteTool:
   async def test_write_empty_path(self) -> None:
     """WriteTool handles empty path string."""
     tool = WriteTool()
-    result = await tool.execute_async(path="", content="data")
+    result = await tool.execute(path="", content="data")
     assert result.success is False
     assert "invalid path" in result.error.lower()
 
@@ -239,7 +239,7 @@ class TestWriteTool:
   async def test_write_result_is_toolresult(self) -> None:
     """WriteTool execute returns ToolResult."""
     tool = WriteTool()
-    result = await tool.execute_async(path="/dev/null", content="test")
+    result = await tool.execute(path="/dev/null", content="test")
     assert isinstance(result, ToolResult)
 
   @pytest.mark.asyncio
@@ -247,7 +247,7 @@ class TestWriteTool:
     """Guardrail receives create_parents parameter."""
     guardrail = FakeGuardrail(allow=True)
     tool = WriteTool(guardrail=guardrail)
-    result = await tool.execute_async(
+    result = await tool.execute(
       path=str(tmp_path / "test.txt"),
       content="data",
       create_parents=True,
@@ -274,7 +274,7 @@ class TestWriteTool:
     link.symlink_to(target)
     guardrail = FakeGuardrail(allow=True)
     tool = WriteTool(guardrail=guardrail)
-    result = await tool.execute_async(path=str(link), content="new data")
+    result = await tool.execute(path=str(link), content="new data")
     # Tool layer rejects symlinks before writing
     assert result.success is False
     assert "symlink" in result.error.lower()
@@ -289,6 +289,6 @@ class TestWriteTool:
     subdir.mkdir()
     config = Config(tools=ToolsConfig(write=WriteToolConfig(allow_overwrite=True)))
     tool = WriteTool(config=config)
-    result = await tool.execute_async(path=str(subdir), content="data")
+    result = await tool.execute(path=str(subdir), content="data")
     assert result.success is False
     assert "error writing file" in result.error.lower()

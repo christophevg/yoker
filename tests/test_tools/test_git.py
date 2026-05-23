@@ -135,7 +135,7 @@ class TestGitToolReadOnlyOperations:
 
     config = GitToolConfig()
     tool = GitTool(config=config)
-    result = await tool.execute_async(operation="status", path=str(git_repo))
+    result = await tool.execute(operation="status", path=str(git_repo))
 
     assert result.success
     assert "new_file.txt" in result.result
@@ -152,7 +152,7 @@ class TestGitToolReadOnlyOperations:
 
     config = GitToolConfig()
     tool = GitTool(config=config)
-    result = await tool.execute_async(operation="status", path=str(git_repo), args={"short": True})
+    result = await tool.execute(operation="status", path=str(git_repo), args={"short": True})
 
     assert result.success
     assert "?? new_file.txt" in result.result
@@ -166,7 +166,7 @@ class TestGitToolReadOnlyOperations:
     """
     config = GitToolConfig()
     tool = GitTool(config=config)
-    result = await tool.execute_async(operation="log", path=str(git_repo))
+    result = await tool.execute(operation="log", path=str(git_repo))
 
     assert result.success
     assert "Initial commit" in result.result
@@ -180,7 +180,7 @@ class TestGitToolReadOnlyOperations:
     """
     config = GitToolConfig()
     tool = GitTool(config=config)
-    result = await tool.execute_async(operation="log", path=str(git_repo), args={"oneline": True})
+    result = await tool.execute(operation="log", path=str(git_repo), args={"oneline": True})
 
     assert result.success
     assert "Initial commit" in result.result
@@ -205,9 +205,7 @@ class TestGitToolReadOnlyOperations:
 
     config = GitToolConfig()
     tool = GitTool(config=config)
-    result = await tool.execute_async(
-      operation="log", path=str(git_repo), args={"oneline": True, "n": 5}
-    )
+    result = await tool.execute(operation="log", path=str(git_repo), args={"oneline": True, "n": 5})
 
     assert result.success
     # Should have exactly 5 commits shown
@@ -223,7 +221,7 @@ class TestGitToolReadOnlyOperations:
     """
     config = GitToolConfig()
     tool = GitTool(config=config)
-    result = await tool.execute_async(operation="log", path=str(git_repo), args={"author": "Test"})
+    result = await tool.execute(operation="log", path=str(git_repo), args={"author": "Test"})
 
     assert result.success
     assert "Initial commit" in result.result
@@ -240,7 +238,7 @@ class TestGitToolReadOnlyOperations:
 
     config = GitToolConfig()
     tool = GitTool(config=config)
-    result = await tool.execute_async(operation="diff", path=str(git_repo))
+    result = await tool.execute(operation="diff", path=str(git_repo))
 
     assert result.success
     assert "# Modified" in result.result
@@ -257,7 +255,7 @@ class TestGitToolReadOnlyOperations:
 
     config = GitToolConfig()
     tool = GitTool(config=config)
-    result = await tool.execute_async(operation="diff", path=str(git_repo), args={"stat": True})
+    result = await tool.execute(operation="diff", path=str(git_repo), args={"stat": True})
 
     assert result.success
     assert "README.md" in result.result
@@ -275,7 +273,7 @@ class TestGitToolReadOnlyOperations:
 
     config = GitToolConfig()
     tool = GitTool(config=config)
-    result = await tool.execute_async(operation="diff", path=str(git_repo), args={"cached": True})
+    result = await tool.execute(operation="diff", path=str(git_repo), args={"cached": True})
 
     assert result.success
     assert "staged_file.txt" in result.result
@@ -292,7 +290,7 @@ class TestGitToolReadOnlyOperations:
 
     config = GitToolConfig()
     tool = GitTool(config=config)
-    result = await tool.execute_async(operation="branch", path=str(git_repo), args={"list": True})
+    result = await tool.execute(operation="branch", path=str(git_repo), args={"list": True})
 
     assert result.success
     assert "master" in result.result or "main" in result.result
@@ -307,7 +305,7 @@ class TestGitToolReadOnlyOperations:
     """
     config = GitToolConfig()
     tool = GitTool(config=config)
-    result = await tool.execute_async(operation="branch", path=str(git_repo), args={"all": True})
+    result = await tool.execute(operation="branch", path=str(git_repo), args={"all": True})
 
     assert result.success
     # Should show at least the current branch
@@ -322,7 +320,7 @@ class TestGitToolReadOnlyOperations:
     """
     config = GitToolConfig()
     tool = GitTool(config=config)
-    result = await tool.execute_async(operation="show", path=str(git_repo))
+    result = await tool.execute(operation="show", path=str(git_repo))
 
     assert result.success
     assert "Initial commit" in result.result
@@ -336,7 +334,7 @@ class TestGitToolReadOnlyOperations:
     """
     config = GitToolConfig()
     tool = GitTool(config=config)
-    result = await tool.execute_async(operation="show", path=str(git_repo), args={"format": "%s"})
+    result = await tool.execute(operation="show", path=str(git_repo), args={"format": "%s"})
 
     assert result.success
     assert "Initial commit" in result.result
@@ -385,7 +383,7 @@ class TestGitToolPermissionRequiredOperations:
     config = GitToolConfig(allowed_commands=("status", "log", "commit"))
     tool = GitTool(config=config, permission_handlers={})
 
-    result = await tool.execute_async(
+    result = await tool.execute(
       operation="commit",
       path=str(git_repo),
       args={"message": "Test commit"},
@@ -406,7 +404,7 @@ class TestGitToolPermissionRequiredOperations:
 
     tool = GitTool(config=config, permission_handlers=handlers)
 
-    result = await tool.execute_async(
+    result = await tool.execute(
       operation="commit",
       path=str(git_repo),
       args={"message": "Test commit"},
@@ -431,7 +429,7 @@ class TestGitToolPermissionRequiredOperations:
 
     tool = GitTool(config=config, permission_handlers=handlers)
 
-    result = await tool.execute_async(
+    result = await tool.execute(
       operation="commit",
       path=str(git_repo),
       args={"message": "Test commit"},
@@ -450,7 +448,7 @@ class TestGitToolPermissionRequiredOperations:
 
     tool = GitTool(config=config, permission_handlers={})
 
-    result = await tool.execute_async(operation="push", path=str(git_repo))
+    result = await tool.execute(operation="push", path=str(git_repo))
 
     assert not result.success
     assert "requires permission" in result.error.lower()
@@ -467,7 +465,7 @@ class TestGitToolPermissionRequiredOperations:
 
     tool = GitTool(config=config, permission_handlers=handlers)
 
-    result = await tool.execute_async(operation="push", path=str(git_repo))
+    result = await tool.execute(operation="push", path=str(git_repo))
 
     assert not result.success
     assert "Push is blocked" in result.error
@@ -485,7 +483,7 @@ class TestGitToolPermissionRequiredOperations:
     tool = GitTool(config=config, permission_handlers=handlers)
 
     # Push will fail because there's no remote, but it should get past permission check
-    result = await tool.execute_async(operation="push", path=str(git_repo))
+    result = await tool.execute(operation="push", path=str(git_repo))
 
     # The error should be from git, not from permission
     if not result.success:
@@ -502,7 +500,7 @@ class TestGitToolPermissionRequiredOperations:
 
     tool = GitTool(config=config)
 
-    result = await tool.execute_async(operation="reset", path=str(git_repo))
+    result = await tool.execute(operation="reset", path=str(git_repo))
 
     assert not result.success
     assert "not allowed" in result.error.lower()
@@ -529,7 +527,7 @@ class TestGitToolCommandInjectionPrevention:
     config = GitToolConfig()
     tool = GitTool(config=config)
 
-    result = await tool.execute_async(
+    result = await tool.execute(
       operation="log",
       path=str(git_repo),
       args={"format": "--something-malicious"},
@@ -549,7 +547,7 @@ class TestGitToolCommandInjectionPrevention:
     tool = GitTool(config=config)
 
     # Try to inject config via format arg
-    result = await tool.execute_async(
+    result = await tool.execute(
       operation="log",
       path=str(git_repo),
       args={"format": "-c core.hooksPath=/malicious"},
@@ -567,7 +565,7 @@ class TestGitToolCommandInjectionPrevention:
     config = GitToolConfig()
     tool = GitTool(config=config)
 
-    result = await tool.execute_async(
+    result = await tool.execute(
       operation="log",
       path=str(git_repo),
       args={"format": "--upload-pack=/malicious"},
@@ -586,7 +584,7 @@ class TestGitToolCommandInjectionPrevention:
     config = GitToolConfig()
     tool = GitTool(config=config)
 
-    result = await tool.execute_async(
+    result = await tool.execute(
       operation="log",
       path=str(git_repo),
       args={"format": "--uploadPack=/malicious"},
@@ -606,7 +604,7 @@ class TestGitToolCommandInjectionPrevention:
     config = GitToolConfig()
     tool = GitTool(config=config)
 
-    result = await tool.execute_async(
+    result = await tool.execute(
       operation="log",
       path=str(git_repo),
       args={"format": "test | cat /etc/passwd"},
@@ -625,7 +623,7 @@ class TestGitToolCommandInjectionPrevention:
     config = GitToolConfig()
     tool = GitTool(config=config)
 
-    result = await tool.execute_async(
+    result = await tool.execute(
       operation="log",
       path=str(git_repo),
       args={"format": "$(cat /etc/passwd)"},
@@ -644,7 +642,7 @@ class TestGitToolCommandInjectionPrevention:
     config = GitToolConfig()
     tool = GitTool(config=config)
 
-    result = await tool.execute_async(
+    result = await tool.execute(
       operation="log",
       path=str(git_repo),
       args={"format": "test\nmalicious"},
@@ -663,7 +661,7 @@ class TestGitToolCommandInjectionPrevention:
     config = GitToolConfig()
     tool = GitTool(config=config)
 
-    result = await tool.execute_async(
+    result = await tool.execute(
       operation="log",
       path=str(git_repo),
       args={"format": "test\x00malicious"},
@@ -693,7 +691,7 @@ class TestGitToolPathRestrictions:
 
     tool = GitTool(config=config, guardrail=mock_guardrail)
 
-    result = await tool.execute_async(operation="status", path="/etc/passwd/../../../..")
+    result = await tool.execute(operation="status", path="/etc/passwd/../../../..")
 
     assert not result.success
     assert "allowed" in result.error.lower() or "outside" in result.error.lower()
@@ -713,7 +711,7 @@ class TestGitToolPathRestrictions:
     config = GitToolConfig()
     tool = GitTool(config=config)
 
-    result = await tool.execute_async(
+    result = await tool.execute(
       operation="log",
       path=str(repo),
       args={"format": "--git-dir=/malicious"},
@@ -738,7 +736,7 @@ class TestGitToolPathRestrictions:
     config = GitToolConfig()
     tool = GitTool(config=config)
 
-    result = await tool.execute_async(
+    result = await tool.execute(
       operation="log",
       path=str(repo),
       args={"format": "--work-tree=/malicious"},
@@ -765,7 +763,7 @@ class TestGitToolPathRestrictions:
 
     tool = GitTool(config=config, guardrail=mock_guardrail)
 
-    result = await tool.execute_async(operation="status", path="/some/path")
+    result = await tool.execute(operation="status", path="/some/path")
 
     assert not result.success
     assert "allowed" in result.error.lower() or "outside" in result.error.lower()
@@ -796,7 +794,7 @@ class TestGitToolPathRestrictions:
 
     tool = GitTool(config=config, guardrail=mock_guardrail)
 
-    result = await tool.execute_async(operation="status", path=str(symlink))
+    result = await tool.execute(operation="status", path=str(symlink))
 
     assert not result.success
 
@@ -810,7 +808,7 @@ class TestGitToolPathRestrictions:
     config = GitToolConfig()
     tool = GitTool(config=config)
 
-    result = await tool.execute_async(operation="status", path=str(tmp_path / "nonexistent"))
+    result = await tool.execute(operation="status", path=str(tmp_path / "nonexistent"))
 
     assert not result.success
     assert "not exist" in result.error.lower() or "not found" in result.error.lower()
@@ -828,7 +826,7 @@ class TestGitToolPathRestrictions:
     config = GitToolConfig()
     tool = GitTool(config=config)
 
-    result = await tool.execute_async(operation="status", path=str(non_git))
+    result = await tool.execute(operation="status", path=str(non_git))
 
     assert not result.success
     assert "git repository" in result.error.lower() or "not a git" in result.error.lower()
@@ -905,7 +903,7 @@ class TestGitToolOutputSanitization:
     config = GitToolConfig()
     tool = GitTool(config=config)
 
-    result = await tool.execute_async(operation="log", path=str(repo))
+    result = await tool.execute(operation="log", path=str(repo))
 
     assert result.success
     # Output should not contain any config values that weren't committed
@@ -924,7 +922,7 @@ class TestGitToolErrorHandling:
     config = GitToolConfig()
     tool = GitTool(config=config)
 
-    result = await tool.execute_async(operation="nonexistent", path=str(tmp_path))
+    result = await tool.execute(operation="nonexistent", path=str(tmp_path))
 
     assert not result.success
     assert "not allowed" in result.error.lower()
@@ -947,7 +945,7 @@ class TestGitToolErrorHandling:
     with patch("yoker.tools.git.subprocess.run") as mock_run:
       mock_run.side_effect = subprocess.TimeoutExpired(cmd=["git"], timeout=30)
 
-      result = await tool.execute_async(operation="status", path=str(repo))
+      result = await tool.execute(operation="status", path=str(repo))
 
       assert not result.success
       assert "timeout" in result.error.lower()
@@ -970,7 +968,7 @@ class TestGitToolErrorHandling:
     with patch("yoker.tools.git.subprocess.run") as mock_run:
       mock_run.side_effect = FileNotFoundError()
 
-      result = await tool.execute_async(operation="status", path=str(repo))
+      result = await tool.execute(operation="status", path=str(repo))
 
       assert not result.success
       assert "not installed" in result.error.lower() or "not found" in result.error.lower()
@@ -985,7 +983,7 @@ class TestGitToolErrorHandling:
     config = GitToolConfig()
     tool = GitTool(config=config)
 
-    result = await tool.execute_async(operation=123, path=str(tmp_path))
+    result = await tool.execute(operation=123, path=str(tmp_path))
 
     assert not result.success
     assert "string" in result.error.lower()
@@ -1000,7 +998,7 @@ class TestGitToolErrorHandling:
     config = GitToolConfig()
     tool = GitTool(config=config)
 
-    result = await tool.execute_async(operation="status", path=123)
+    result = await tool.execute(operation="status", path=123)
 
     assert not result.success
     assert "string" in result.error.lower()
@@ -1020,7 +1018,7 @@ class TestGitToolErrorHandling:
     config = GitToolConfig()
     tool = GitTool(config=config)
 
-    result = await tool.execute_async(operation="status", path=str(repo), args="invalid")
+    result = await tool.execute(operation="status", path=str(repo), args="invalid")
 
     assert not result.success
     assert "object" in result.error.lower()
@@ -1035,7 +1033,7 @@ class TestGitToolErrorHandling:
     config = GitToolConfig()
     tool = GitTool(config=config)
 
-    result = await tool.execute_async(path=str(tmp_path))
+    result = await tool.execute(path=str(tmp_path))
 
     assert not result.success
     assert "missing" in result.error.lower() and "operation" in result.error.lower()
@@ -1062,7 +1060,7 @@ class TestGitToolArgumentValidation:
     config = GitToolConfig()
     tool = GitTool(config=config)
 
-    result = await tool.execute_async(
+    result = await tool.execute(
       operation="log",
       path=str(git_repo),
       args={"invalid_arg": "value"},
@@ -1081,7 +1079,7 @@ class TestGitToolArgumentValidation:
     config = GitToolConfig()
     tool = GitTool(config=config)
 
-    result = await tool.execute_async(
+    result = await tool.execute(
       operation="log",
       path=str(git_repo),
       args={"n": "five"},
@@ -1100,7 +1098,7 @@ class TestGitToolArgumentValidation:
     config = GitToolConfig()
     tool = GitTool(config=config)
 
-    result = await tool.execute_async(
+    result = await tool.execute(
       operation="status",
       path=str(git_repo),
       args={"short": "yes"},
@@ -1119,7 +1117,7 @@ class TestGitToolArgumentValidation:
     config = GitToolConfig()
     tool = GitTool(config=config)
 
-    result = await tool.execute_async(
+    result = await tool.execute(
       operation="log",
       path=str(git_repo),
       args={"n": 500},
@@ -1140,7 +1138,7 @@ class TestGitToolArgumentValidation:
 
     long_string = "x" * 1001
 
-    result = await tool.execute_async(
+    result = await tool.execute(
       operation="log",
       path=str(git_repo),
       args={"format": long_string},
@@ -1178,7 +1176,7 @@ class TestGitToolGuardrailIntegration:
 
     tool = GitTool(config=config, guardrail=mock_guardrail)
 
-    result = await tool.execute_async(operation="status", path=str(git_repo))
+    result = await tool.execute(operation="status", path=str(git_repo))
 
     assert not result.success
     assert "allowed" in result.error.lower() or "outside" in result.error.lower()
@@ -1198,7 +1196,7 @@ class TestGitToolGuardrailIntegration:
 
     tool = GitTool(config=config, guardrail=mock_guardrail)
 
-    result = await tool.execute_async(operation="status", path=str(git_repo))
+    result = await tool.execute(operation="status", path=str(git_repo))
 
     assert result.success
 
@@ -1255,7 +1253,7 @@ class TestGitToolReturnFormat:
     config = GitToolConfig()
     tool = GitTool(config=config)
 
-    result = await tool.execute_async(operation="status", path=str(git_repo))
+    result = await tool.execute(operation="status", path=str(git_repo))
 
     assert result.success is True
     assert isinstance(result.result, str)
@@ -1272,7 +1270,7 @@ class TestGitToolReturnFormat:
     config = GitToolConfig()
     tool = GitTool(config=config)
 
-    result = await tool.execute_async(operation="status", path=str(tmp_path / "nonexistent"))
+    result = await tool.execute(operation="status", path=str(tmp_path / "nonexistent"))
 
     assert result.success is False
     assert result.result == ""
@@ -1290,7 +1288,7 @@ class TestGitToolReturnFormat:
     config = GitToolConfig()
     tool = GitTool(config=config)
 
-    result = await tool.execute_async(operation="diff", path=str(git_repo))
+    result = await tool.execute(operation="diff", path=str(git_repo))
 
     # diff with no changes returns empty output
     assert result.success
@@ -1322,7 +1320,7 @@ class TestGitToolSubprocessSecurity:
         stderr="",
       )
 
-      await tool.execute_async(operation="status", path=str(repo))
+      await tool.execute(operation="status", path=str(repo))
 
       # Verify shell=True was NOT passed
       call_kwargs = mock_run.call_args.kwargs
@@ -1350,7 +1348,7 @@ class TestGitToolSubprocessSecurity:
         stderr="",
       )
 
-      await tool.execute_async(operation="status", path=str(repo))
+      await tool.execute(operation="status", path=str(repo))
 
       # Verify first argument (command) is a list
       call_args = mock_run.call_args.args
@@ -1401,7 +1399,7 @@ class TestGitToolIntegration:
 
     # Create a file with WriteTool
     write_tool = WriteTool()
-    write_result = await write_tool.execute_async(
+    write_result = await write_tool.execute(
       path=str(git_repo / "new_file.txt"),
       content="New content",
       create_parents=True,
@@ -1411,7 +1409,7 @@ class TestGitToolIntegration:
     # Check git status
     config = GitToolConfig()
     git_tool = GitTool(config=config)
-    result = await git_tool.execute_async(operation="status", path=str(git_repo))
+    result = await git_tool.execute(operation="status", path=str(git_repo))
 
     assert result.success
     assert "new_file.txt" in result.result
@@ -1427,7 +1425,7 @@ class TestGitToolIntegration:
 
     # Update README.md with UpdateTool
     update_tool = UpdateTool()
-    update_result = await update_tool.execute_async(
+    update_result = await update_tool.execute(
       path=str(git_repo / "README.md"),
       operation="replace",
       old_string="# Test",
@@ -1438,7 +1436,7 @@ class TestGitToolIntegration:
     # Check git diff
     config = GitToolConfig()
     git_tool = GitTool(config=config)
-    result = await git_tool.execute_async(operation="diff", path=str(git_repo))
+    result = await git_tool.execute(operation="diff", path=str(git_repo))
 
     assert result.success
     assert "# Updated" in result.result

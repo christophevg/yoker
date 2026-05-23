@@ -45,7 +45,7 @@ class TestListTool:
     (tmp_path / "subdir").mkdir()
 
     tool = ListTool()
-    result = await tool.execute_async(path=str(tmp_path))
+    result = await tool.execute(path=str(tmp_path))
     assert result.success is True
     assert "alpha.txt" in result.result
     assert "beta.py" in result.result
@@ -64,7 +64,7 @@ class TestListTool:
     (deep / "bottom.txt").write_text("bottom")
 
     tool = ListTool()
-    result = await tool.execute_async(path=str(tmp_path), max_depth=2)
+    result = await tool.execute(path=str(tmp_path), max_depth=2)
     assert result.success is True
     assert "root.txt" in result.result
     assert "nested.txt" in result.result
@@ -78,7 +78,7 @@ class TestListTool:
     (tmp_path / "subdir").mkdir()
 
     tool = ListTool()
-    result = await tool.execute_async(path=str(tmp_path), max_depth=0)
+    result = await tool.execute(path=str(tmp_path), max_depth=0)
     assert result.success is True
     assert str(tmp_path).rstrip("/") + "/" in result.result
     assert "file.txt" not in result.result
@@ -91,7 +91,7 @@ class TestListTool:
       (tmp_path / f"file{i}.txt").write_text("x")
 
     tool = ListTool()
-    result = await tool.execute_async(path=str(tmp_path), max_entries=3)
+    result = await tool.execute(path=str(tmp_path), max_entries=3)
     assert result.success is True
     assert "truncated" in result.result
     assert "3 entries total" in result.result
@@ -105,7 +105,7 @@ class TestListTool:
     (tmp_path / "subdir").mkdir()
 
     tool = ListTool()
-    result = await tool.execute_async(path=str(tmp_path), pattern="*.py")
+    result = await tool.execute(path=str(tmp_path), pattern="*.py")
     assert result.success is True
     assert "foo.py" in result.result
     assert "bar.py" in result.result
@@ -116,7 +116,7 @@ class TestListTool:
   async def test_list_nonexistent_path(self) -> None:
     """ListTool returns error for nonexistent path."""
     tool = ListTool()
-    result = await tool.execute_async(path="/nonexistent/path")
+    result = await tool.execute(path="/nonexistent/path")
     assert result.success is False
     assert "not found" in result.error.lower()
 
@@ -127,7 +127,7 @@ class TestListTool:
     file_path.write_text("hello")
 
     tool = ListTool()
-    result = await tool.execute_async(path=str(file_path))
+    result = await tool.execute(path=str(file_path))
     assert result.success is True
     assert "single.txt" in result.result
     assert "1 entry total (1 file, 0 directories)" in result.result
@@ -144,7 +144,7 @@ class TestListTool:
     os.chmod(str(restricted), 0o000)
     try:
       tool = ListTool()
-      result = await tool.execute_async(path=str(restricted))
+      result = await tool.execute(path=str(restricted))
       assert result.success is True
       assert "permission denied" in result.result.lower()
     finally:
@@ -154,7 +154,7 @@ class TestListTool:
   async def test_list_invalid_max_depth(self) -> None:
     """ListTool handles invalid max_depth."""
     tool = ListTool()
-    result = await tool.execute_async(path=".", max_depth="abc")  # type: ignore
+    result = await tool.execute(path=".", max_depth="abc")  # type: ignore
     assert result.success is False
     assert "invalid numeric" in result.error.lower()
 
@@ -164,7 +164,7 @@ class TestListTool:
     (tmp_path / "file.txt").write_text("hello")
 
     tool = ListTool()
-    result = await tool.execute_async(path=str(tmp_path), max_depth=-5)
+    result = await tool.execute(path=str(tmp_path), max_depth=-5)
     assert result.success is True
     assert "file.txt" not in result.result
 
@@ -174,7 +174,7 @@ class TestListTool:
     (tmp_path / "file.txt").write_text("hello")
 
     tool = ListTool()
-    result = await tool.execute_async(path=str(tmp_path), max_depth=999)
+    result = await tool.execute(path=str(tmp_path), max_depth=999)
     assert result.success is True
     assert "file.txt" in result.result
 
@@ -182,7 +182,7 @@ class TestListTool:
   async def test_list_empty_directory(self, tmp_path: Path) -> None:
     """ListTool handles empty directory."""
     tool = ListTool()
-    result = await tool.execute_async(path=str(tmp_path))
+    result = await tool.execute(path=str(tmp_path))
     assert result.success is True
     assert "0 entries total (0 files, 0 directories)" in result.result
 
@@ -196,7 +196,7 @@ class TestListTool:
     os.symlink(str(target), str(symlink))
 
     tool = ListTool()
-    result = await tool.execute_async(path=str(tmp_path), max_depth=2)
+    result = await tool.execute(path=str(tmp_path), max_depth=2)
     assert result.success is True
     assert "link" in result.result
     assert "inside.txt" not in result.result
@@ -209,7 +209,7 @@ class TestListTool:
     (tmp_path / "beta.txt").write_text("b")
 
     tool = ListTool()
-    result = await tool.execute_async(path=str(tmp_path))
+    result = await tool.execute(path=str(tmp_path))
     lines = result.result.split("\n")
     names = [line.strip() for line in lines if line.strip() and not line.startswith(".")]
     assert names[0] == str(tmp_path).rstrip("/") + "/"
@@ -221,5 +221,5 @@ class TestListTool:
   async def test_list_result_is_toolresult(self) -> None:
     """ListTool execute returns ToolResult."""
     tool = ListTool()
-    result = await tool.execute_async(path="/tmp")
+    result = await tool.execute(path="/tmp")
     assert isinstance(result, ToolResult)

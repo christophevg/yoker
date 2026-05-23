@@ -31,7 +31,7 @@ class TestWriteToolContentMetadataEmission:
 
     # Write a new file
     test_file = tmp_path / "new_file.txt"
-    result = await tool.execute_async(path=str(test_file), content="Hello\nWorld\n")
+    result = await tool.execute(path=str(test_file), content="Hello\nWorld\n")
 
     # Verify result
     assert result.success
@@ -58,7 +58,7 @@ class TestWriteToolContentMetadataEmission:
     test_file.write_text("Original content\n")
 
     # Overwrite the file
-    result = await tool.execute_async(path=str(test_file), content="New content\n")
+    result = await tool.execute(path=str(test_file), content="New content\n")
 
     # Verify result
     assert result.success
@@ -79,7 +79,7 @@ class TestWriteToolContentMetadataEmission:
 
     # Write file
     test_file = tmp_path / "content.txt"
-    result = await tool.execute_async(path=str(test_file), content="Line 1\nLine 2\n")
+    result = await tool.execute(path=str(test_file), content="Line 1\nLine 2\n")
 
     # Verify result
     assert result.success
@@ -100,7 +100,7 @@ class TestWriteToolContentMetadataEmission:
 
     # Write file
     test_file = tmp_path / "silent.txt"
-    result = await tool.execute_async(path=str(test_file), content="Content\n")
+    result = await tool.execute(path=str(test_file), content="Content\n")
 
     # Verify result
     assert result.success
@@ -128,7 +128,7 @@ class TestWriteToolContentTruncation:
     # Write file with 10 lines
     test_file = tmp_path / "large.txt"
     content = "\n".join(f"Line {i}" for i in range(10))
-    result = await tool.execute_async(path=str(test_file), content=content)
+    result = await tool.execute(path=str(test_file), content=content)
 
     # Verify result
     assert result.success
@@ -157,7 +157,7 @@ class TestWriteToolContentTruncation:
     # Write file with 10 lines
     test_file = tmp_path / "truncated.txt"
     content = "\n".join(f"Line {i}" for i in range(10))
-    result = await tool.execute_async(path=str(test_file), content=content)
+    result = await tool.execute(path=str(test_file), content=content)
 
     # Verify result
     assert result.success
@@ -179,7 +179,7 @@ class TestWriteToolContentTruncation:
     # Write small file
     test_file = tmp_path / "small.txt"
     content = "Line 1\nLine 2\n"
-    result = await tool.execute_async(path=str(test_file), content=content)
+    result = await tool.execute(path=str(test_file), content=content)
 
     # Verify result
     assert result.success
@@ -207,7 +207,7 @@ class TestWriteToolContentTruncation:
     # Write file with content > 100 bytes
     test_file = tmp_path / "large_bytes.txt"
     content = "x" * 200
-    result = await tool.execute_async(path=str(test_file), content=content)
+    result = await tool.execute(path=str(test_file), content=content)
 
     # Verify result
     assert result.success
@@ -232,7 +232,7 @@ class TestWriteToolEmptyFile:
 
     # Write empty file
     test_file = tmp_path / "empty.txt"
-    result = await tool.execute_async(path=str(test_file), content="")
+    result = await tool.execute(path=str(test_file), content="")
 
     # Verify result
     assert result.success
@@ -252,7 +252,7 @@ class TestWriteToolEmptyFile:
 
     # Write empty file
     test_file = tmp_path / "empty_summary.txt"
-    result = await tool.execute_async(path=str(test_file), content="")
+    result = await tool.execute(path=str(test_file), content="")
 
     # Verify result
     assert result.success
@@ -278,7 +278,7 @@ class TestWriteToolBinaryDetection:
     # Write binary content (contains null byte)
     test_file = tmp_path / "binary.bin"
     content = "Binary\x00content"
-    result = await tool.execute_async(path=str(test_file), content=content)
+    result = await tool.execute(path=str(test_file), content=content)
 
     # Verify result
     assert result.success
@@ -299,7 +299,7 @@ class TestWriteToolBinaryDetection:
     # Write binary content
     test_file = tmp_path / "binary_meta.bin"
     content = "Binary\x00data"
-    result = await tool.execute_async(path=str(test_file), content=content)
+    result = await tool.execute(path=str(test_file), content=content)
 
     # Verify result
     assert result.success
@@ -321,7 +321,7 @@ class TestWriteToolBinaryDetection:
     # Write binary content
     test_file = tmp_path / "binary_summary.bin"
     content = "Binary\x00content"
-    result = await tool.execute_async(path=str(test_file), content=content)
+    result = await tool.execute(path=str(test_file), content=content)
 
     # Verify result
     assert result.success
@@ -346,7 +346,7 @@ class TestWriteToolVerbosityLevels:
 
     # Write file
     test_file = tmp_path / "silent.txt"
-    result = await tool.execute_async(path=str(test_file), content="Content\n")
+    result = await tool.execute(path=str(test_file), content="Content\n")
 
     # Verify result
     assert result.success
@@ -364,7 +364,7 @@ class TestWriteToolVerbosityLevels:
 
     # Write file
     test_file = tmp_path / "summary.txt"
-    result = await tool.execute_async(path=str(test_file), content="Line 1\nLine 2\nLine 3\n")
+    result = await tool.execute(path=str(test_file), content="Line 1\nLine 2\nLine 3\n")
 
     # Verify result
     assert result.success
@@ -387,7 +387,7 @@ class TestWriteToolVerbosityLevels:
     # Write file
     test_file = tmp_path / "content.txt"
     content = "Line 1\nLine 2\n"
-    result = await tool.execute_async(path=str(test_file), content=content)
+    result = await tool.execute(path=str(test_file), content=content)
 
     # Verify result
     assert result.success
@@ -436,7 +436,7 @@ class TestWriteToolConfigIntegration:
 
     # Write file - should still work (setting is ignored)
     test_file = tmp_path / "test.txt"
-    result = await tool.execute_async(path=str(test_file), content="Content\n")
+    result = await tool.execute(path=str(test_file), content="Content\n")
 
     # Verify result - should show full content despite show_diff_for_updates=False
     assert result.success
