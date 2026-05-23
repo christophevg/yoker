@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 import httpx
 from ollama import Client
 
-from yoker.agent_base import AgentCore, EventCallback
+from yoker.base import AgentCore, EventCallback
 from yoker.events import (
   ContentChunkEvent,
   ContentEndEvent,
