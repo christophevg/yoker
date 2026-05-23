@@ -59,7 +59,8 @@ class TestToolABC:
     with pytest.raises(TypeError):
       Tool()
 
-  def test_concrete_tool(self) -> None:
+  @pytest.mark.asyncio
+  async def test_concrete_tool(self) -> None:
     """Concrete Tool subclass can be instantiated."""
 
     class MyTool(Tool):
@@ -74,13 +75,14 @@ class TestToolABC:
       def get_schema(self) -> dict:
         return {"type": "function", "function": {"name": "my_tool"}}
 
-      def execute(self, value: str = "") -> ToolResult:
+      async def execute_async(self, value: str = "") -> ToolResult:
         return ToolResult(success=True, result=value)
 
     tool = MyTool()
     assert tool.name == "my_tool"
     assert tool.description == "A test tool"
     assert tool.get_schema()["function"]["name"] == "my_tool"
-    result = tool.execute(value="hello")
+
+    result = await tool.execute_async(value="hello")
     assert result.success is True
     assert result.result == "hello"

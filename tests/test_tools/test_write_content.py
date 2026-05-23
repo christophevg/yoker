@@ -5,6 +5,8 @@ Task: 1.5.5 - Show Write/Update Tool Content in CLI
 
 from pathlib import Path
 
+import pytest
+
 from yoker.config.schema import (
   Config,
   ContentDisplayConfig,
@@ -17,7 +19,8 @@ from yoker.tools.write import WriteTool, _is_binary, _truncate_content
 class TestWriteToolContentMetadataEmission:
   """Test WriteTool content metadata emission."""
 
-  def test_content_metadata_for_new_file(self, tmp_path: Path) -> None:
+  @pytest.mark.asyncio
+  async def test_content_metadata_for_new_file(self, tmp_path: Path) -> None:
     """
     Given: WriteTool creating a new file with content
     When: execute() is called
@@ -28,7 +31,7 @@ class TestWriteToolContentMetadataEmission:
 
     # Write a new file
     test_file = tmp_path / "new_file.txt"
-    result = tool.execute(path=str(test_file), content="Hello\nWorld\n")
+    result = await tool.execute_async(path=str(test_file), content="Hello\nWorld\n")
 
     # Verify result
     assert result.success
@@ -39,7 +42,8 @@ class TestWriteToolContentMetadataEmission:
     assert result.content_metadata["metadata"]["is_new_file"] is True
     assert result.content_metadata["metadata"]["lines"] == 2
 
-  def test_content_metadata_for_overwrite(self, tmp_path: Path) -> None:
+  @pytest.mark.asyncio
+  async def test_content_metadata_for_overwrite(self, tmp_path: Path) -> None:
     """
     Given: WriteTool overwriting an existing file
     When: execute() is called
@@ -54,7 +58,7 @@ class TestWriteToolContentMetadataEmission:
     test_file.write_text("Original content\n")
 
     # Overwrite the file
-    result = tool.execute(path=str(test_file), content="New content\n")
+    result = await tool.execute_async(path=str(test_file), content="New content\n")
 
     # Verify result
     assert result.success
@@ -62,7 +66,8 @@ class TestWriteToolContentMetadataEmission:
     assert result.content_metadata["metadata"]["is_overwrite"] is True
     assert result.content_metadata["metadata"]["is_new_file"] is False
 
-  def test_content_metadata_includes_content(self, tmp_path: Path) -> None:
+  @pytest.mark.asyncio
+  async def test_content_metadata_includes_content(self, tmp_path: Path) -> None:
     """
     Given: WriteTool with content display enabled
     When: execute() is called
@@ -74,7 +79,7 @@ class TestWriteToolContentMetadataEmission:
 
     # Write file
     test_file = tmp_path / "content.txt"
-    result = tool.execute(path=str(test_file), content="Line 1\nLine 2\n")
+    result = await tool.execute_async(path=str(test_file), content="Line 1\nLine 2\n")
 
     # Verify result
     assert result.success
@@ -82,7 +87,8 @@ class TestWriteToolContentMetadataEmission:
     assert result.content_metadata["content_type"] == "full"
     assert result.content_metadata["content"] == "Line 1\nLine 2\n"
 
-  def test_content_metadata_omitted_when_disabled(self, tmp_path: Path) -> None:
+  @pytest.mark.asyncio
+  async def test_content_metadata_omitted_when_disabled(self, tmp_path: Path) -> None:
     """
     Given: ContentDisplayConfig with verbosity="silent"
     When: execute() is called
@@ -94,7 +100,7 @@ class TestWriteToolContentMetadataEmission:
 
     # Write file
     test_file = tmp_path / "silent.txt"
-    result = tool.execute(path=str(test_file), content="Content\n")
+    result = await tool.execute_async(path=str(test_file), content="Content\n")
 
     # Verify result
     assert result.success
@@ -104,7 +110,8 @@ class TestWriteToolContentMetadataEmission:
 class TestWriteToolContentTruncation:
   """Test WriteTool content truncation for large files."""
 
-  def test_truncation_for_large_files(self, tmp_path: Path) -> None:
+  @pytest.mark.asyncio
+  async def test_truncation_for_large_files(self, tmp_path: Path) -> None:
     """
     Given: WriteTool writing content exceeding max_content_lines
     When: execute() is called
@@ -121,7 +128,7 @@ class TestWriteToolContentTruncation:
     # Write file with 10 lines
     test_file = tmp_path / "large.txt"
     content = "\n".join(f"Line {i}" for i in range(10))
-    result = tool.execute(path=str(test_file), content=content)
+    result = await tool.execute_async(path=str(test_file), content=content)
 
     # Verify result
     assert result.success
@@ -132,7 +139,8 @@ class TestWriteToolContentTruncation:
     assert truncated_content is not None
     assert truncated_content.count("\n") <= 5
 
-  def test_truncation_metadata(self, tmp_path: Path) -> None:
+  @pytest.mark.asyncio
+  async def test_truncation_metadata(self, tmp_path: Path) -> None:
     """
     Given: WriteTool writing large content that is truncated
     When: execute() is called
@@ -149,7 +157,7 @@ class TestWriteToolContentTruncation:
     # Write file with 10 lines
     test_file = tmp_path / "truncated.txt"
     content = "\n".join(f"Line {i}" for i in range(10))
-    result = tool.execute(path=str(test_file), content=content)
+    result = await tool.execute_async(path=str(test_file), content=content)
 
     # Verify result
     assert result.success
@@ -157,7 +165,8 @@ class TestWriteToolContentTruncation:
     assert result.content_metadata["metadata"].get("truncated") is True
     assert result.content_metadata["metadata"].get("original_line_count") == 10
 
-  def test_no_truncation_for_small_files(self, tmp_path: Path) -> None:
+  @pytest.mark.asyncio
+  async def test_no_truncation_for_small_files(self, tmp_path: Path) -> None:
     """
     Given: WriteTool writing content within max_content_lines
     When: execute() is called
@@ -170,7 +179,7 @@ class TestWriteToolContentTruncation:
     # Write small file
     test_file = tmp_path / "small.txt"
     content = "Line 1\nLine 2\n"
-    result = tool.execute(path=str(test_file), content=content)
+    result = await tool.execute_async(path=str(test_file), content=content)
 
     # Verify result
     assert result.success
@@ -178,7 +187,8 @@ class TestWriteToolContentTruncation:
     assert result.content_metadata["content"] == content
     assert result.content_metadata["metadata"].get("truncated") is None
 
-  def test_truncation_respects_max_content_bytes(self, tmp_path: Path) -> None:
+  @pytest.mark.asyncio
+  async def test_truncation_respects_max_content_bytes(self, tmp_path: Path) -> None:
     """
     Given: WriteTool writing content exceeding max_content_bytes
     When: execute() is called
@@ -197,7 +207,7 @@ class TestWriteToolContentTruncation:
     # Write file with content > 100 bytes
     test_file = tmp_path / "large_bytes.txt"
     content = "x" * 200
-    result = tool.execute(path=str(test_file), content=content)
+    result = await tool.execute_async(path=str(test_file), content=content)
 
     # Verify result
     assert result.success
@@ -210,7 +220,8 @@ class TestWriteToolContentTruncation:
 class TestWriteToolEmptyFile:
   """Test WriteTool handling of empty files."""
 
-  def test_empty_file_content_metadata(self, tmp_path: Path) -> None:
+  @pytest.mark.asyncio
+  async def test_empty_file_content_metadata(self, tmp_path: Path) -> None:
     """
     Given: WriteTool writing empty content
     When: execute() is called
@@ -221,7 +232,7 @@ class TestWriteToolEmptyFile:
 
     # Write empty file
     test_file = tmp_path / "empty.txt"
-    result = tool.execute(path=str(test_file), content="")
+    result = await tool.execute_async(path=str(test_file), content="")
 
     # Verify result
     assert result.success
@@ -229,7 +240,8 @@ class TestWriteToolEmptyFile:
     assert result.content_metadata["metadata"]["lines"] == 0
     assert result.content_metadata["metadata"]["is_empty"] is True
 
-  def test_empty_file_summary_display(self, tmp_path: Path) -> None:
+  @pytest.mark.asyncio
+  async def test_empty_file_summary_display(self, tmp_path: Path) -> None:
     """
     Given: WriteTool writing empty file with verbosity="summary"
     When: execute() is called
@@ -240,7 +252,7 @@ class TestWriteToolEmptyFile:
 
     # Write empty file
     test_file = tmp_path / "empty_summary.txt"
-    result = tool.execute(path=str(test_file), content="")
+    result = await tool.execute_async(path=str(test_file), content="")
 
     # Verify result
     assert result.success
@@ -252,7 +264,8 @@ class TestWriteToolEmptyFile:
 class TestWriteToolBinaryDetection:
   """Test WriteTool binary file detection."""
 
-  def test_binary_file_detection(self, tmp_path: Path) -> None:
+  @pytest.mark.asyncio
+  async def test_binary_file_detection(self, tmp_path: Path) -> None:
     """
     Given: WriteTool writing binary content
     When: execute() is called
@@ -265,7 +278,7 @@ class TestWriteToolBinaryDetection:
     # Write binary content (contains null byte)
     test_file = tmp_path / "binary.bin"
     content = "Binary\x00content"
-    result = tool.execute(path=str(test_file), content=content)
+    result = await tool.execute_async(path=str(test_file), content=content)
 
     # Verify result
     assert result.success
@@ -273,7 +286,8 @@ class TestWriteToolBinaryDetection:
     assert result.content_metadata["content_type"] == "summary"
     assert result.content_metadata["metadata"]["is_binary"] is True
 
-  def test_binary_file_metadata(self, tmp_path: Path) -> None:
+  @pytest.mark.asyncio
+  async def test_binary_file_metadata(self, tmp_path: Path) -> None:
     """
     Given: WriteTool writing binary content
     When: execute() is called
@@ -285,7 +299,7 @@ class TestWriteToolBinaryDetection:
     # Write binary content
     test_file = tmp_path / "binary_meta.bin"
     content = "Binary\x00data"
-    result = tool.execute(path=str(test_file), content=content)
+    result = await tool.execute_async(path=str(test_file), content=content)
 
     # Verify result
     assert result.success
@@ -293,7 +307,8 @@ class TestWriteToolBinaryDetection:
     assert result.content_metadata["metadata"]["is_binary"] is True
     assert result.content_metadata["metadata"]["bytes"] == len(content)
 
-  def test_binary_file_summary_only(self, tmp_path: Path) -> None:
+  @pytest.mark.asyncio
+  async def test_binary_file_summary_only(self, tmp_path: Path) -> None:
     """
     Given: WriteTool writing binary content with verbosity="content"
     When: execute() is called
@@ -306,7 +321,7 @@ class TestWriteToolBinaryDetection:
     # Write binary content
     test_file = tmp_path / "binary_summary.bin"
     content = "Binary\x00content"
-    result = tool.execute(path=str(test_file), content=content)
+    result = await tool.execute_async(path=str(test_file), content=content)
 
     # Verify result
     assert result.success
@@ -318,7 +333,8 @@ class TestWriteToolBinaryDetection:
 class TestWriteToolVerbosityLevels:
   """Test WriteTool behavior with different verbosity levels."""
 
-  def test_silent_verbosity(self, tmp_path: Path) -> None:
+  @pytest.mark.asyncio
+  async def test_silent_verbosity(self, tmp_path: Path) -> None:
     """
     Given: ContentDisplayConfig with verbosity="silent"
     When: WriteTool executes
@@ -330,13 +346,14 @@ class TestWriteToolVerbosityLevels:
 
     # Write file
     test_file = tmp_path / "silent.txt"
-    result = tool.execute(path=str(test_file), content="Content\n")
+    result = await tool.execute_async(path=str(test_file), content="Content\n")
 
     # Verify result
     assert result.success
     assert result.content_metadata is None
 
-  def test_summary_verbosity(self, tmp_path: Path) -> None:
+  @pytest.mark.asyncio
+  async def test_summary_verbosity(self, tmp_path: Path) -> None:
     """
     Given: ContentDisplayConfig with verbosity="summary"
     When: WriteTool executes
@@ -347,7 +364,7 @@ class TestWriteToolVerbosityLevels:
 
     # Write file
     test_file = tmp_path / "summary.txt"
-    result = tool.execute(path=str(test_file), content="Line 1\nLine 2\nLine 3\n")
+    result = await tool.execute_async(path=str(test_file), content="Line 1\nLine 2\nLine 3\n")
 
     # Verify result
     assert result.success
@@ -356,7 +373,8 @@ class TestWriteToolVerbosityLevels:
     assert result.content_metadata["content"] is None
     assert result.content_metadata["metadata"]["lines"] == 3
 
-  def test_content_verbosity(self, tmp_path: Path) -> None:
+  @pytest.mark.asyncio
+  async def test_content_verbosity(self, tmp_path: Path) -> None:
     """
     Given: ContentDisplayConfig with verbosity="content"
     When: WriteTool executes
@@ -369,7 +387,7 @@ class TestWriteToolVerbosityLevels:
     # Write file
     test_file = tmp_path / "content.txt"
     content = "Line 1\nLine 2\n"
-    result = tool.execute(path=str(test_file), content=content)
+    result = await tool.execute_async(path=str(test_file), content=content)
 
     # Verify result
     assert result.success
@@ -401,7 +419,8 @@ class TestWriteToolConfigIntegration:
     assert tool._config.tools.content_display.verbosity == "content"
     assert tool._config.tools.content_display.max_content_lines == 100
 
-  def test_write_tool_ignores_show_diff_for_updates(self, tmp_path: Path) -> None:
+  @pytest.mark.asyncio
+  async def test_write_tool_ignores_show_diff_for_updates(self, tmp_path: Path) -> None:
     """
     Given: WriteTool with show_diff_for_updates setting (irrelevant for write)
     When: Checking configuration
@@ -417,7 +436,7 @@ class TestWriteToolConfigIntegration:
 
     # Write file - should still work (setting is ignored)
     test_file = tmp_path / "test.txt"
-    result = tool.execute(path=str(test_file), content="Content\n")
+    result = await tool.execute_async(path=str(test_file), content="Content\n")
 
     # Verify result - should show full content despite show_diff_for_updates=False
     assert result.success

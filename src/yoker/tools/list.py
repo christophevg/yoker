@@ -96,7 +96,7 @@ class ListTool(Tool):
       },
     }
 
-  def execute(self, **kwargs: Any) -> ToolResult:
+  async def execute_async(self, **kwargs: Any) -> ToolResult:
     """List directory contents with optional filtering and limits.
 
     Args:

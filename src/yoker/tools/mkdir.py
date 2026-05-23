@@ -72,7 +72,7 @@ class MkdirTool(Tool):
       },
     }
 
-  def execute(self, **kwargs: Any) -> ToolResult:
+  async def execute_async(self, **kwargs: Any) -> ToolResult:
     """Create a directory.
 
     Steps:

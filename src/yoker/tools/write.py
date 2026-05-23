@@ -139,7 +139,7 @@ class WriteTool(Tool):
       },
     }
 
-  def execute(self, **kwargs: Any) -> ToolResult:
+  async def execute_async(self, **kwargs: Any) -> ToolResult:
     """Write content to a file.
 
     Steps:
