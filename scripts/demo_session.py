@@ -19,6 +19,7 @@ Output:
 """
 
 import argparse
+import asyncio
 import json
 from datetime import datetime
 from pathlib import Path
@@ -114,7 +115,7 @@ def _cleanup_temp_files() -> None:
       temp_file.unlink()
 
 
-def run_demo_session(
+async def run_demo_session(
   script: DemoScript,
   config_path: str | None = None,
   log: bool = False,
@@ -260,7 +261,7 @@ def run_demo_session(
 
   # Begin session (emits SESSION_START event for real LLM mode)
   if not is_replay_mode:
-    agent.begin_session()
+    await agent.begin_session()
 
   # Print mode-specific info
   if is_replay_mode:
@@ -296,14 +297,14 @@ def run_demo_session(
           event_recorder(command_event)
       continue
 
-    response = agent.process(message)
+    response = await agent.process(message)
     # In replay mode, events are emitted by EventReplayAgent
     # In real LLM mode, events are emitted by Agent
     # ConsoleEventHandler prints the output in both cases
 
   # End session (emits SESSION_END event for real LLM mode)
   if not (events_path and events_path.exists()):
-    agent.end_session()
+    await agent.end_session()
 
   # Print session footer
   console.print("\n[bold cyan]Session complete.[/]")
@@ -425,7 +426,7 @@ def main() -> None:
       print(f"\n{'=' * 60}")
       print(f"Running demo: {title}")
       print(f"{'=' * 60}")
-      run_demo_session(
+      asyncio.run(run_demo_session(
         script=script,
         config_path=str(config_path) if config_path else None,
         log=args.log,
@@ -434,11 +435,11 @@ def main() -> None:
         persist=args.persist,
         resume=args.resume,
         output=args.output,
-      )
+      ))
   else:
     # Run single script
     script = _resolve_script(args)
-    run_demo_session(
+    asyncio.run(run_demo_session(
       script=script,
       config_path=str(config_path) if config_path else None,
       log=args.log,
@@ -447,7 +448,7 @@ def main() -> None:
       persist=args.persist,
       resume=args.resume,
       output=args.output,
-    )
+    ))
 
 
 if __name__ == "__main__":
