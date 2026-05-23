@@ -15,6 +15,7 @@ from yoker.tools.base import Tool, ToolResult
 
 if TYPE_CHECKING:
   from yoker.agent import Agent
+  from yoker.async_agent import AsyncAgent
   from yoker.tools.guardrails import Guardrail
 
 log = get_logger(__name__)
@@ -43,7 +44,7 @@ class AgentTool(Tool):
   def __init__(
     self,
     guardrail: "Guardrail | None" = None,
-    parent_agent: "Agent | None" = None,
+    parent_agent: "Agent | AsyncAgent | None" = None,
   ) -> None:
     """Initialize AgentTool with optional guardrail and parent agent.
 

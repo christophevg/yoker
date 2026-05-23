@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from dotenv import load_dotenv
+from ollama import Client
 
 from yoker.config import Config
 from yoker.logging import get_logger
@@ -32,7 +33,7 @@ from yoker.tools.websearch import WebSearchTool
 from yoker.tools.write import WriteTool
 
 if TYPE_CHECKING:
-  from ollama import Client
+  from ollama import AsyncClient
 
   from yoker.agents import AgentDefinition
   from yoker.commands import CommandRegistry
@@ -86,7 +87,7 @@ class AgentCore:
     agent_definition: "AgentDefinition | None" = None,
     agent_path: Path | str | None = None,
     context_manager: "ContextManager | None" = None,
-    client: "Client | None" = None,
+    client: "Client | AsyncClient | None" = None,
     _recursion_depth: int = 0,
   ) -> None:
     """Initialize shared agent state.
@@ -282,7 +283,7 @@ class AgentCore:
     """
     return self._event_handlers.copy()
 
-  def _build_tool_registry(self, client: "Client | None" = None) -> ToolRegistry:
+  def _build_tool_registry(self, client: "Client | AsyncClient | None" = None) -> ToolRegistry:
     """Build a tool registry filtered by agent definition.
 
     If an agent definition is loaded, only registers tools listed in
@@ -317,36 +318,42 @@ class AgentCore:
     ]
 
     # Add WebSearchTool only if API key is available and client is provided
+    # Note: WebSearch/WebFetch backends require sync Client, not AsyncClient
     if os.environ.get("OLLAMA_API_KEY") and client is not None:
-      # Create guardrails with configuration from tool configs
-      websearch_config = WebGuardrailConfig(
-        max_query_length=self._config.tools.websearch.max_query_length,
-        domain_allowlist=self._config.tools.websearch.domain_allowlist,
-        domain_blocklist=self._config.tools.websearch.domain_blocklist,
-        requests_per_minute=self._config.tools.websearch.requests_per_minute,
-        requests_per_hour=self._config.tools.websearch.requests_per_hour,
-        block_private_cidrs=self._config.tools.websearch.block_private_cidrs,
-        timeout_seconds=self._config.tools.websearch.timeout_seconds,
-      )
-      tools.append(
-        WebSearchTool(
-          backend=OllamaWebSearchBackend(client=client),
-          guardrail=WebGuardrail(config=websearch_config),
+      # Only add web tools if client is a sync Client (not AsyncClient)
+      # AsyncClient is not supported by web backends for MVP
+      if isinstance(client, Client):
+        # Create guardrails with configuration from tool configs
+        websearch_config = WebGuardrailConfig(
+          max_query_length=self._config.tools.websearch.max_query_length,
+          domain_allowlist=self._config.tools.websearch.domain_allowlist,
+          domain_blocklist=self._config.tools.websearch.domain_blocklist,
+          requests_per_minute=self._config.tools.websearch.requests_per_minute,
+          requests_per_hour=self._config.tools.websearch.requests_per_hour,
+          block_private_cidrs=self._config.tools.websearch.block_private_cidrs,
+          timeout_seconds=self._config.tools.websearch.timeout_seconds,
         )
-      )
-      webfetch_config = WebGuardrailConfig(
-        domain_allowlist=self._config.tools.webfetch.domain_allowlist,
-        domain_blocklist=self._config.tools.webfetch.domain_blocklist,
-        block_private_cidrs=self._config.tools.webfetch.block_private_cidrs,
-        require_https=self._config.tools.webfetch.require_https,
-        timeout_seconds=self._config.tools.webfetch.timeout_seconds,
-      )
-      tools.append(
-        WebFetchTool(
-          backend=OllamaWebFetchBackend(client=client),
-          guardrail=WebGuardrail(config=webfetch_config),
+        tools.append(
+          WebSearchTool(
+            backend=OllamaWebSearchBackend(client=client),
+            guardrail=WebGuardrail(config=websearch_config),
+          )
         )
-      )
+        webfetch_config = WebGuardrailConfig(
+          domain_allowlist=self._config.tools.webfetch.domain_allowlist,
+          domain_blocklist=self._config.tools.webfetch.domain_blocklist,
+          block_private_cidrs=self._config.tools.webfetch.block_private_cidrs,
+          require_https=self._config.tools.webfetch.require_https,
+          timeout_seconds=self._config.tools.webfetch.timeout_seconds,
+        )
+        tools.append(
+          WebFetchTool(
+            backend=OllamaWebFetchBackend(client=client),
+            guardrail=WebGuardrail(config=webfetch_config),
+          )
+        )
+      else:
+        log.warning("web_tools_unavailable", reason="AsyncClient not supported for web tools (MVP)")
     else:
       log.warning("web_search_unavailable", reason="OLLAMA_API_KEY not set")
       log.warning("web_fetch_unavailable", reason="OLLAMA_API_KEY not set")
