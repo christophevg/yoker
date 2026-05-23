@@ -524,7 +524,9 @@ class TestAgentCoreToolMatching:
 class TestAgentCoreGuardrailValidation:
   """Tests for SEC-5: Guardrail validation failure."""
 
-  def test_guardrail_validation_failure_raises_runtime_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
+  def test_guardrail_validation_failure_raises_runtime_error(
+    self, monkeypatch: pytest.MonkeyPatch
+  ) -> None:
     """Test that missing guardrail on filesystem tool raises RuntimeError (SEC-5)."""
     # This test verifies the defense-in-depth check in _validate_guardrails_enforced
     # We need to create a scenario where a filesystem tool lacks a guardrail
