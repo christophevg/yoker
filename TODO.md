@@ -173,18 +173,11 @@ This phase implements async-only Agent architecture:
   - Handle async session begin/end
   - **Estimated time:** 30 minutes
 
-- [ ] **1.7.5 Update Documentation**
+- [x] **1.7.5 Update Documentation** (2026-05-25)
   - Update `docs/quickstart.md` with async usage examples
   - Update `REQUIREMENTS.md` to reflect async-only architecture
   - Update `scripts/demo_session.py` for async
   - **Estimated time:** 30 minutes
-  - Refactor `main()` to call `asyncio.run(main_async())`
-  - Update prompt_toolkit calls to use `prompt_async()`
-  - Use AsyncAgent in CLI
-  - Handle async session begin/end
-  - Test interactive mode with async implementation
-  - **Estimated time:** 45 minutes
-  - **Satisfies:** FR11
 
 - [ ] **1.7.7 Async Event Handler Support**
   - Update `ConsoleEventHandler` to support async operation
