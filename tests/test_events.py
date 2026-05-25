@@ -164,61 +164,68 @@ class TestConsoleEventHandler:
     console = Console(file=output, force_terminal=False)
     return ConsoleEventHandler(console=console, show_thinking=True, show_tool_calls=True)
 
-  def test_handler_handles_content_chunk(self, console_handler: ConsoleEventHandler) -> None:
+  @pytest.mark.asyncio
+  async def test_handler_handles_content_chunk(self, console_handler: ConsoleEventHandler) -> None:
     """Test that ContentChunkEvent is handled."""
     event = ContentChunkEvent(type=EventType.CONTENT_CHUNK, text="Hello")
-    console_handler(event)
+    await console_handler(event)
     assert "Hello" in console_handler.console.file.getvalue()  # type: ignore[attr-defined]
 
-  def test_handler_handles_session_start(self, console_handler: ConsoleEventHandler) -> None:
+  @pytest.mark.asyncio
+  async def test_handler_handles_session_start(self, console_handler: ConsoleEventHandler) -> None:
     """Test that SessionStartEvent is handled."""
     event = SessionStartEvent(
       type=EventType.SESSION_START,
       model="llama3.2",
       thinking_enabled=True,
     )
-    console_handler(event)
+    await console_handler(event)
     output = console_handler.console.file.getvalue()  # type: ignore[attr-defined]
     assert "llama3.2" in output
     assert "enabled" in output
 
-  def test_handler_handles_session_end(self, console_handler: ConsoleEventHandler) -> None:
+  @pytest.mark.asyncio
+  async def test_handler_handles_session_end(self, console_handler: ConsoleEventHandler) -> None:
     """Test that SessionEndEvent is handled."""
     event = SessionEndEvent(type=EventType.SESSION_END, reason="quit")
-    console_handler(event)
+    await console_handler(event)
     output = console_handler.console.file.getvalue()  # type: ignore[attr-defined]
     assert "Goodbye" in output
 
-  def test_handler_handles_thinking_chunk(self, console_handler: ConsoleEventHandler) -> None:
+  @pytest.mark.asyncio
+  async def test_handler_handles_thinking_chunk(self, console_handler: ConsoleEventHandler) -> None:
     """Test that ThinkingChunkEvent is handled."""
     event = ThinkingChunkEvent(type=EventType.THINKING_CHUNK, text="reasoning...")
-    console_handler(event)
+    await console_handler(event)
     assert "reasoning" in console_handler.console.file.getvalue()  # type: ignore[attr-defined]
 
-  def test_handler_hides_thinking_when_disabled(self) -> None:
+  @pytest.mark.asyncio
+  async def test_handler_hides_thinking_when_disabled(self) -> None:
     """Test that thinking output is hidden when show_thinking=False."""
     output = StringIO()
     console = Console(file=output, force_terminal=False)
     handler = ConsoleEventHandler(console=console, show_thinking=False)
     event = ThinkingChunkEvent(type=EventType.THINKING_CHUNK, text="reasoning...")
-    handler(event)
+    await handler(event)
     # Thinking should not appear in output
     assert "reasoning" not in output.getvalue()
 
-  def test_handler_handles_tool_call(self, console_handler: ConsoleEventHandler) -> None:
+  @pytest.mark.asyncio
+  async def test_handler_handles_tool_call(self, console_handler: ConsoleEventHandler) -> None:
     """Test that ToolCallEvent is handled."""
     event = ToolCallEvent(
       type=EventType.TOOL_CALL,
       tool_name="read",
       arguments={"path": "/tmp/test.txt"},
     )
-    console_handler(event)
+    await console_handler(event)
     output = console_handler.console.file.getvalue()  # type: ignore[attr-defined]
     # New format: "Read tool: test.txt"
     assert "Read" in output
     assert "test.txt" in output
 
-  def test_handler_hides_tool_calls_when_disabled(self) -> None:
+  @pytest.mark.asyncio
+  async def test_handler_hides_tool_calls_when_disabled(self) -> None:
     """Test that tool calls are hidden when show_tool_calls=False."""
     output = StringIO()
     console = Console(file=output, force_terminal=False)
@@ -228,41 +235,46 @@ class TestConsoleEventHandler:
       tool_name="read",
       arguments={"path": "/tmp/test.txt"},
     )
-    handler(event)
+    await handler(event)
     assert "read" not in output.getvalue().lower()
 
-  def test_handler_handles_error(self, console_handler: ConsoleEventHandler) -> None:
+  @pytest.mark.asyncio
+  async def test_handler_handles_error(self, console_handler: ConsoleEventHandler) -> None:
     """Test that ErrorEvent is handled."""
     event = ErrorEvent(
       type=EventType.ERROR,
       error_type="ValueError",
       message="Something went wrong",
     )
-    console_handler(event)
+    await console_handler(event)
     output = console_handler.console.file.getvalue()  # type: ignore[attr-defined]
     assert "Error" in output
     assert "ValueError" in output
 
-  def test_handler_handles_command(self, console_handler: ConsoleEventHandler) -> None:
+  @pytest.mark.asyncio
+  async def test_handler_handles_command(self, console_handler: ConsoleEventHandler) -> None:
     """Test that CommandEvent is handled."""
     event = CommandEvent(
       type=EventType.COMMAND,
       command="/help",
       result="Available commands:\n  /help - Show help\n  /think - Toggle thinking",
     )
-    console_handler(event)
+    await console_handler(event)
     output = console_handler.console.file.getvalue()  # type: ignore[attr-defined]
     assert "Available commands" in output
     assert "/help" in output
 
-  def test_handler_handles_command_empty_result(self, console_handler: ConsoleEventHandler) -> None:
+  @pytest.mark.asyncio
+  async def test_handler_handles_command_empty_result(
+    self, console_handler: ConsoleEventHandler
+  ) -> None:
     """Test that CommandEvent with empty result doesn't print anything."""
     event = CommandEvent(
       type=EventType.COMMAND,
       command="/unknown",
       result="",
     )
-    console_handler(event)
+    await console_handler(event)
     output = console_handler.console.file.getvalue()  # type: ignore[attr-defined]
     # Empty result should not produce output
     assert output == ""
@@ -298,14 +310,17 @@ class TestConsoleEventHandler:
     assert handler._capitalize("Read") == "Read"
     assert handler._capitalize("") == ""
 
-  def test_handler_tool_call_display_format(self, console_handler: ConsoleEventHandler) -> None:
+  @pytest.mark.asyncio
+  async def test_handler_tool_call_display_format(
+    self, console_handler: ConsoleEventHandler
+  ) -> None:
     """Test that tool call display shows filename only."""
     event = ToolCallEvent(
       type=EventType.TOOL_CALL,
       tool_name="read",
       arguments={"file_path": "/long/path/to/some/file.py"},
     )
-    console_handler(event)
+    await console_handler(event)
     output = console_handler.console.file.getvalue()  # type: ignore[attr-defined]
     # Should show capitalized tool name and filename only
     assert "Read tool: file.py" in output
