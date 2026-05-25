@@ -604,6 +604,13 @@ This phase implements async-only Agent architecture:
 
 ## Done
 
+- [x] **Issue #9: Fix ~ in Storage Path** (2026-05-25)
+  - Fixed bug where storage paths containing `~` created literal `~` directories
+  - Added `.expanduser()` call in `BasicPersistenceContextManager.__init__()` 
+  - Added regression test for tilde expansion
+  - See `docs/bug-analysis/issue-9-expanduser.md` for bug analysis
+  - PR: #11
+
 - [x] **2.14 Python Tool Research** (2026-05-05)
   - Research safe Python code execution approaches (subprocess, sandbox, AST validation)
   - Investigate uv integration for virtual environment management
