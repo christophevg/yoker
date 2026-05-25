@@ -6,6 +6,7 @@ Pairs with "clitic" (both are joining tools).
 """
 
 from yoker.agent import Agent
+from yoker.agents import AgentDefinition, load_agent_definition
 from yoker.base import AgentCore
 from yoker.commands import Command, CommandRegistry, create_help_command, create_think_command
 from yoker.config import (
@@ -59,6 +60,9 @@ __all__ = [
   # Core classes
   "Agent",
   "AgentCore",  # Internal: shared state for Agent variants
+  # Agents
+  "AgentDefinition",
+  "load_agent_definition",
   # Thinking
   "ThinkingMode",
   # Commands
