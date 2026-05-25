@@ -604,6 +604,12 @@ This phase implements async-only Agent architecture:
 
 ## Done
 
+- [x] **Issue #10: Add Type Exports** (2026-05-25)
+  - Added `AgentDefinition` and `load_agent_definition` exports to top-level package
+  - Enables better mypy/pyright type checking support for users
+  - `Config` and `ContextManager` were already exported
+  - PR: #12
+
 - [x] **Issue #9: Fix ~ in Storage Path** (2026-05-25)
   - Fixed bug where storage paths containing `~` created literal `~` directories
   - Added `.expanduser()` call in `BasicPersistenceContextManager.__init__()` 
