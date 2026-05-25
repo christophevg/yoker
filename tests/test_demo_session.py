@@ -893,21 +893,21 @@ class TestEventReplayAgent:
     agent.add_event_handler(handler)
     assert handler in agent._handlers
 
-  def test_agent_begin_session_noop(self, events_file: Path) -> None:
+  async def test_agent_begin_session_noop(self, events_file: Path) -> None:
     """Test that begin_session is a no-op."""
     agent = EventReplayAgent(events_file)
 
     # Should not raise
-    agent.begin_session()
+    await agent.begin_session()
 
-  def test_agent_end_session_noop(self, events_file: Path) -> None:
+  async def test_agent_end_session_noop(self, events_file: Path) -> None:
     """Test that end_session is a no-op."""
     agent = EventReplayAgent(events_file)
 
     # Should not raise
-    agent.end_session(reason="test")
+    await agent.end_session(reason="test")
 
-  def test_agent_process_replays_events_to_handlers(self, events_file: Path) -> None:
+  async def test_agent_process_replays_events_to_handlers(self, events_file: Path) -> None:
     """Test that process() replays events to handlers."""
     agent = EventReplayAgent(events_file)
 
@@ -918,7 +918,7 @@ class TestEventReplayAgent:
 
     agent.add_event_handler(handler)
 
-    agent.process("Hello")
+    await agent.process("Hello")
 
     # Should have received all events between TURN_START and TURN_END
     assert len(collected_events) == 4
@@ -927,25 +927,25 @@ class TestEventReplayAgent:
     assert isinstance(collected_events[2], ContentEndEvent)
     assert isinstance(collected_events[3], TurnEndEvent)
 
-  def test_agent_process_returns_response(self, events_file: Path) -> None:
+  async def test_agent_process_returns_response(self, events_file: Path) -> None:
     """Test that process() returns the response from TURN_END."""
     agent = EventReplayAgent(events_file)
 
-    response = agent.process("Hello")
+    response = await agent.process("Hello")
 
     assert response == "Hi there!"
 
-  def test_agent_process_matches_message(self, events_file: Path) -> None:
+  async def test_agent_process_matches_message(self, events_file: Path) -> None:
     """Test that process() finds TURN_START with matching message."""
     agent = EventReplayAgent(events_file)
 
     # First call should find "Hello" message
-    agent.process("Hello")
+    await agent.process("Hello")
 
     # After processing, index should be at TURN_END
     # The next process would search for another matching turn
 
-  def test_agent_process_multiple_turns(self, tmp_path: Path) -> None:
+  async def test_agent_process_multiple_turns(self, tmp_path: Path) -> None:
     """Test processing multiple turns from events file."""
     events_path = tmp_path / "events.jsonl"
 
@@ -999,13 +999,13 @@ class TestEventReplayAgent:
 
     agent = EventReplayAgent(events_path)
 
-    response1 = agent.process("First message")
+    response1 = await agent.process("First message")
     assert response1 == "First response"
 
-    response2 = agent.process("Second message")
+    response2 = await agent.process("Second message")
     assert response2 == "Second response"
 
-  def test_agent_replay_command(self, tmp_path: Path) -> None:
+  async def test_agent_replay_command(self, tmp_path: Path) -> None:
     """Test replaying a command event."""
     events_path = tmp_path / "events.jsonl"
 
@@ -1051,14 +1051,14 @@ class TestEventReplayAgent:
 
     agent.add_event_handler(handler)
 
-    result = agent.replay_command("/help")
+    result = await agent.replay_command("/help")
 
     assert result == "Available commands:\n  /help - Show help\n  /think - Toggle thinking"
     assert len(collected_events) == 1
     assert isinstance(collected_events[0], CommandEvent)
     assert collected_events[0].command == "/help"
 
-  def test_agent_replay_command_not_found(self, tmp_path: Path) -> None:
+  async def test_agent_replay_command_not_found(self, tmp_path: Path) -> None:
     """Test replaying a command that doesn't exist in events."""
     events_path = tmp_path / "events.jsonl"
 
@@ -1081,11 +1081,11 @@ class TestEventReplayAgent:
 
     agent = EventReplayAgent(events_path)
 
-    result = agent.replay_command("/unknown")
+    result = await agent.replay_command("/unknown")
 
     assert result == ""
 
-  def test_agent_replay_command_mixed_with_turns(self, tmp_path: Path) -> None:
+  async def test_agent_replay_command_mixed_with_turns(self, tmp_path: Path) -> None:
     """Test replaying commands mixed with turns."""
     events_path = tmp_path / "events.jsonl"
 
@@ -1130,15 +1130,15 @@ class TestEventReplayAgent:
     agent = EventReplayAgent(events_path)
 
     # Replay command first
-    result1 = agent.replay_command("/help")
+    result1 = await agent.replay_command("/help")
     assert result1 == "Help output"
 
     # Then process a turn
-    result2 = agent.process("Hello")
+    result2 = await agent.process("Hello")
     assert result2 == "Hi!"
 
     # Then replay another command
-    result3 = agent.replay_command("/think on")
+    result3 = await agent.replay_command("/think on")
     assert result3 == "Thinking enabled"
 
 

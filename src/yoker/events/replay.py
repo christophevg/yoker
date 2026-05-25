@@ -7,6 +7,7 @@ This module is part of the Event System (domain layer), enabling
 session replay for demos, testing, and debugging.
 """
 
+import inspect
 import json
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -27,7 +28,7 @@ if TYPE_CHECKING:
 class EventReplayAgent:
   """Agent that replays events from a JSONL file.
 
-  This class provides the same interface as Agent but replays previously
+  This class provides the same async interface as Agent but replays previously
   recorded events instead of calling the LLM. Useful for:
 
   - Generating screenshots without LLM costs
@@ -37,7 +38,7 @@ class EventReplayAgent:
   Example:
     agent = EventReplayAgent(Path("session.jsonl"))
     agent.add_event_handler(ConsoleEventHandler(console))
-    agent.process("Hello")  # Replays events for "Hello" turn
+    await agent.process("Hello")  # Replays events for "Hello" turn
   """
 
   def __init__(self, events_path: Path) -> None:
@@ -84,15 +85,15 @@ class EventReplayAgent:
     """
     self._handlers.append(handler)
 
-  def begin_session(self) -> None:
+  async def begin_session(self) -> None:
     """No-op for replay agent - session already in event log."""
     pass
 
-  def end_session(self, reason: str = "quit") -> None:
+  async def end_session(self, reason: str = "quit") -> None:
     """No-op for replay agent."""
     pass
 
-  def process(self, message: str) -> str:
+  async def process(self, message: str) -> str:
     """Replay events for one turn.
 
     Finds the matching TURN_START event and replays all events
@@ -121,9 +122,8 @@ class EventReplayAgent:
     while self.index < len(self.events):
       evt = self.events[self.index]
 
-      # Emit to handlers
-      for handler in self._handlers:
-        handler(evt)
+      # Emit to handlers (supports both sync and async handlers)
+      await self._emit(evt)
 
       # Capture response from TURN_END
       if isinstance(evt, TurnEndEvent):
@@ -135,7 +135,7 @@ class EventReplayAgent:
 
     return response
 
-  def replay_command(self, command: str) -> str:
+  async def replay_command(self, command: str) -> str:
     """Replay a command event.
 
     Finds the matching COMMAND event and emits it to handlers.
@@ -155,11 +155,36 @@ class EventReplayAgent:
         # Check if this matches our command
         if evt.command == command:
           # Emit to handlers
-          for handler in self._handlers:
-            handler(evt)
+          await self._emit(evt)
           return evt.result
 
     return ""  # Command not found
+
+  async def _emit(self, event: Event) -> None:
+    """Emit an event to all registered handlers asynchronously.
+
+    Supports both sync and async handlers for backward compatibility.
+
+    Args:
+      event: The event to emit.
+    """
+    for handler in self._handlers:
+      try:
+        # Check if handler is async: either a coroutine function or an instance
+        # with an async __call__ method.
+        # inspect.iscoroutinefunction(instance) returns False for instances with
+        # async __call__, but inspect.iscoroutinefunction(instance.__call__)
+        # returns True.
+        call_fn = getattr(handler, "__call__", handler)  # noqa: B004
+        if inspect.iscoroutinefunction(call_fn):
+          # Async handler - await it
+          await handler(event)  # type: ignore[misc]
+        else:
+          # Sync handler - call directly
+          handler(event)
+      except Exception:
+        # Ignore handler errors during replay
+        pass
 
 
 __all__ = [

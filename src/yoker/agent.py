@@ -165,6 +165,11 @@ class Agent:
     """Current thinking mode state."""
     return self._core.thinking_mode
 
+  @thinking_mode.setter
+  def thinking_mode(self, value: ThinkingMode) -> None:
+    """Set thinking mode state."""
+    self._core.thinking_mode = value
+
   @property
   def agent_definition(self) -> "AgentDefinition | None":
     """Loaded agent definition, if any."""

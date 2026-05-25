@@ -92,6 +92,7 @@ class ConsoleEventHandler:
 
     # Live display - managed internally, not passed from outside
     self._live_display: LiveDisplay | None = None
+    self._spinner_active = False  # Track if spinner is currently active
 
     # State for wrapping and thinking tracking
     self._column = 0
@@ -157,11 +158,10 @@ class ConsoleEventHandler:
     # Reset flags for new turn
     self._thinking_shown = False
     self._content_shown = False
-    # Create LiveDisplay for this turn (spinner is active)
-    if self._live_display is None:
-      self._live_display = LiveDisplay(console=self.console)
-      self._live_display.__enter__()
-      self._spinner_active = True  # Track spinner state
+    # Note: LiveDisplay is created lazily in _handle_thinking_start or
+    # _handle_content_start when content actually starts. This prevents
+    # showing a "Processing..." spinner during replay mode where events
+    # come immediately without real-time delays.
 
   def _handle_turn_end(self, event: TurnEndEvent) -> None:
     """Handle turn end event."""
@@ -173,14 +173,19 @@ class ConsoleEventHandler:
       self._live_display = None
       self._spinner_active = False
       # Print stats directly to console (outside Live, ensures SVG capture)
+      # Only show timing if we have actual timing data (non-zero duration or tokens)
       duration_s = event.total_duration_ms / 1000.0
       total_tokens = event.prompt_eval_count + event.eval_count
-      if total_tokens > 0:
-        tokens_per_sec = total_tokens / duration_s if duration_s > 0 else 0
-        stats = f"⏱ {duration_s:.1f}s | {event.prompt_eval_count}+{event.eval_count}={total_tokens} tokens | {tokens_per_sec:.0f} tok/s"
+      if event.total_duration_ms > 0 or total_tokens > 0:
+        if total_tokens > 0:
+          tokens_per_sec = total_tokens / duration_s if duration_s > 0 else 0
+          stats = f"⏱ {duration_s:.1f}s | {event.prompt_eval_count}+{event.eval_count}={total_tokens} tokens | {tokens_per_sec:.0f} tok/s"
+        else:
+          stats = f"⏱ {duration_s:.1f}s"
+        self.console.print(stats, style="dim")
       else:
-        stats = f"⏱ {duration_s:.1f}s"
-      self.console.print(stats, style="dim")
+        # No timing data available - just print blank line for spacing
+        self.console.print()
     else:
       # Without live display, add blank line after response
       self.console.print()
@@ -201,7 +206,7 @@ class ConsoleEventHandler:
           self.console.print()
         self._live_display = LiveDisplay(console=self.console)
         self._live_display.__enter__()
-        self._spinner_active = True  # Spinner is now active
+        self._live_display.start_spinner()  # Show spinner while streaming
       # Without live display, add newline before thinking
       else:
         self._print_wrapped("\n", style=THINKING_STYLE)
@@ -243,6 +248,7 @@ class ConsoleEventHandler:
     if self._live_display is None:
       self._live_display = LiveDisplay(console=self.console)
       self._live_display.__enter__()
+      self._live_display.start_spinner()  # Show spinner while streaming
 
   def _handle_content_chunk(self, event: ContentChunkEvent) -> None:
     """Handle content chunk event."""
@@ -370,7 +376,7 @@ class ConsoleEventHandler:
       if self._live_display is None:
         self._live_display = LiveDisplay(console=self.console)
         self._live_display.__enter__()
-        self._spinner_active = True
+        self._live_display.start_spinner()  # Show spinner while streaming
 
   def _handle_tool_content(self, event: ToolContentEvent) -> None:
     """Handle tool content event.
@@ -409,7 +415,7 @@ class ConsoleEventHandler:
     if self._live_display is None:
       self._live_display = LiveDisplay(console=self.console)
       self._live_display.__enter__()
-      self._spinner_active = True
+      self._live_display.start_spinner()  # Show spinner while streaming
 
   def _show_summary(self, event: ToolContentEvent, filename: str) -> None:
     """Show operation summary.

@@ -74,10 +74,11 @@ class LiveDisplay:
     """Enter the live display context.
 
     Creates and starts the Live display with empty content.
+    The spinner is NOT shown by default - call start_spinner() to show it.
     """
     self._start_time = time.time()
-    self._spinner = self.console.status("Processing...")
-    self._spinner_active = True
+    self._spinner = None  # No spinner by default
+    self._spinner_active = False
     self._stats_text = None
     self._live = Live(
       self._build_renderable(),
@@ -145,7 +146,13 @@ class LiveDisplay:
       self._spinner.update(f"Processing... {elapsed:.1f}s")
 
   def start_spinner(self) -> None:
-    """Show the spinner (called automatically on context enter)."""
+    """Show the spinner.
+
+    Creates the spinner if it doesn't exist and activates it.
+    Called automatically when content starts streaming.
+    """
+    if self._spinner is None:
+      self._spinner = self.console.status("Processing...")
     self._spinner_active = True
     self._update()
 

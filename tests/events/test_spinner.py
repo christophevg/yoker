@@ -23,11 +23,12 @@ class TestLiveDisplay:
     assert display.refresh_per_second == 10
 
   def test_context_manager_creates_live(self) -> None:
-    """Test that __enter__ creates Live display."""
+    """Test that __enter__ creates Live display without spinner."""
     display = LiveDisplay()
     with display:
       assert display._live is not None
-      assert display._spinner_active is True
+      assert display._spinner_active is False
+      assert display._spinner is None
 
   def test_context_manager_exits_cleanly(self) -> None:
     """Test that __exit__ cleans up."""
@@ -65,7 +66,10 @@ class TestLiveDisplay:
     """Test stopping spinner."""
     display = LiveDisplay()
     with display:
+      # Start spinner first
+      display.start_spinner()
       assert display._spinner_active is True
+      assert display._spinner is not None
       display.stop_spinner()
       assert display._spinner_active is False
       assert display._spinner is None
@@ -178,7 +182,8 @@ class TestLiveDisplayIntegration:
     """Test that show_stats replaces the spinner."""
     display = LiveDisplay()
     with display:
-      # Initially spinner should be active
+      # Start spinner first
+      display.start_spinner()
       assert display._spinner_active is True
 
       display.show_stats(prompt_tokens=10, eval_tokens=20, duration_ms=500)

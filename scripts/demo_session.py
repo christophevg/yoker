@@ -281,7 +281,7 @@ async def run_demo_session(
     if message.startswith("/"):
       if is_replay_mode:
         # Replay mode: emit CommandEvent from event log
-        agent.replay_command(message)  # type: ignore
+        await agent.replay_command(message)  # type: ignore
       else:
         # Real LLM mode: execute command and log it
         result = command_registry.dispatch(message)
