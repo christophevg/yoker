@@ -337,6 +337,29 @@ class TestBasicPersistenceContextManager:
     cm = BasicPersistenceContextManager(tmp_path, session_id="test-protocol")
     assert isinstance(cm, ContextManager)
 
+  def test_tilde_expansion_in_storage_path(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test that ~ in storage path is expanded to home directory.
+
+    Regression test for issue #9: Storage path with ~ creates literal ~
+    directory instead of expanding to home.
+    """
+    # Mock home directory to tmp_path
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    # Create context manager with tilde path
+    cm = BasicPersistenceContextManager(
+      storage_path="~/.cache/yoker/sessions",
+      session_id="test-tilde-expansion",
+    )
+
+    # The storage path should be expanded to the home directory,
+    # not create a literal "~" directory in CWD
+    storage_path_str = str(cm._storage_path)
+
+    # Should contain tmp_path (mocked home), not literal "~"
+    assert "~" not in storage_path_str, f"Path contains literal ~: {storage_path_str}"
+    assert str(tmp_path) in storage_path_str, f"Path not under home: {storage_path_str}"
+
 
 class TestListSessions:
   """Tests for list_sessions function."""
