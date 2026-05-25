@@ -1,13 +1,12 @@
 # Yoker
 
-[![PyPI version](https://img.shields.io/pypi/v/yoker.svg)](https://pypi.org/project/yoker/)
-[![PyPI downloads](https://img.shields.io/pypi/dm/yoker.svg)](https://pypistats.org/packages/yoker)
-[![Python versions](https://img.shields.io/pypi/pyversions/yoker.svg)](https://pypi.org/project/yoker/)
-[![License](https://img.shields.io/github/license/christophevg/yoker)](https://github.com/christophevg/yoker/blob/master/LICENSE)
-[![Documentation Status](https://readthedocs.org/projects/yoker/badge/?version=latest)](https://yoker.readthedocs.io/en/latest/?badge=latest)
-[![Tests](https://github.com/christophevg/yoker/actions/workflows/tests.yml/badge.svg)](https://github.com/christophevg/yoker/actions/workflows/tests.yml)
-[![Coverage Status](https://img.shields.io/coveralls/github/christophevg/yoker.svg)](https://coveralls.io/github/christophevg/yoker)
-[![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-7c85a3.svg)](https://docs.astral.sh/ruff/)
+[![PyPI](https://img.shields.io/pypi/v/yoker.svg)][pypi]
+[![Python](https://img.shields.io/pypi/pyversions/yoker.svg)][pypi]
+[![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)][uv]
+[![CI](https://img.shields.io/github/actions/workflow/status/christophevg/yoker/tests.yml.svg)][ci]
+[![Coverage](https://img.shields.io/coveralls/github/christophevg/yoker.svg)][coveralls]
+[![License](https://img.shields.io/github/license/christophevg/yoker.svg)][license]
+[![Agentic](https://img.shields.io/badge/workflow-agentic-blueviolet?style=flat-square)](https://christophe.vg/about/Coding-Agent)
 
 A Python agent harness with configurable tools, guardrails, and Ollama backend integration.
 
@@ -207,3 +206,9 @@ MIT License - see [LICENSE](LICENSE) for details.
 ---
 
 **Name**: "yoker" - One who yokes. The agent noun from "yoke" (PIE *yeug-* meaning "to join"). Pairs with "clitic" (both are joining tools). See [docs/NAME.md](docs/NAME.md) for full etymology.
+
+[pypi]: https://pypi.org/project/yoker/
+[uv]: https://docs.astral.sh/uv/
+[ci]: https://github.com/christophevg/yoker/actions
+[coveralls]: https://coveralls.io/github/christophevg/yoker
+[license]: https://github.com/christophevg/yoker/blob/main/LICENSE

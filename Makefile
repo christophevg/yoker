@@ -1,61 +1,55 @@
--include ~/.claude/Makefile # include the global Claude-oriented C3 Makefile
+-include ~/.claude/Makefile
 
-.PHONY: install install-pythons sync test test-all test-3.10 test-3.11 test-3.12 test-file test-one typecheck lint format check build publish publish-test clean clean-all help docs docs-view demo demos
+.PHONY: env-dev env-run install-pythons test test-cov test-all test-file test-one format lint typecheck check run docs docs-view build publish publish-test clean clean-all help demo demos
 
-## environment management
+## Environment
 
-env-test:
-	uv sync --extra dev
+env-dev: ## Install all dependencies (dev + docs)
+	uv sync --all-extras
 
-env-docs:
-	uv sync --extra docs
-
-env-run:
+env-run: ## Install runtime dependencies only
 	uv sync
 
-## Setup
-
-install-pythons: ## Install all supported Python versions for tox
+install-pythons: ## Install Python 3.10, 3.11, 3.12
 	uv python install 3.10 3.11 3.12
-
-sync: ## Sync dependencies from lock file
-	uv sync --frozen --all-extras
 
 ## Testing
 
-test: ## Run all tests with coverage
-	uv run pytest
+test: env-dev ## Run tests (usage: make test / optional: TEST=file|file:test_name)
+	uv run pytest -v $(TEST)
 
-test-file: ## Run specific test file (usage: make test-file FILE=tests/test_package.py)
-	uv run pytest $(FILE)
+test-cov: env-dev ## Run tests with coverage
+	uv run pytest --cov=src --cov-report=term-missing
 
-test-one: ## Run specific test function (usage: make test-one TEST=tests/test_package.py::test_import)
-	uv run pytest $(TEST)
-
-test-all: ## Run tests against all supported Python versions (3.10, 3.11, 3.12)
+test-all: env-dev ## Run tests on all Python versions
 	uv run tox
 
-test-3.10: ## Run tests against Python 3.10 only
-	uv run tox -e py310
+## Code Quality
 
-test-3.11: ## Run tests against Python 3.11 only
-	uv run tox -e py311
+format: env-dev ## Format code and fix linting issues
+	uv run ruff format src tests
+	uv run ruff check --fix src tests
 
-test-3.12: ## Run tests against Python 3.12 only
-	uv run tox -e py312
+lint: env-dev ## Check code for linting issues
+	uv run ruff check src tests
+
+typecheck: env-dev ## Run type checking
+	uv run mypy --strict src
+
+check: format lint typecheck test ## Run all quality checks
+
+## Running
+
+run: env-run ## Run the application
+	uv run python -m yoker
 
 ## Documentation
 
-docs: ## Build HTML documentation
-	cd docs; uv run sphinx-build -M html . _build
+docs: env-dev ## Build HTML documentation
+	cd docs && uv run sphinx-build -M html . _build
 
-docs-view: docs ## Build and open documentation in browser
-	@echo "Opening documentation..."
-	@if command -v open >/dev/null; then \
-	  open docs/_build/html/index.html; \
-	elif command -v xdg-open >/dev/null; then \
-	  xdg-open docs/_build/html/index.html; \
-	fi
+docs-view: docs ## Build and open documentation
+	open docs/_build/html/index.html
 
 ## Demo Screenshots
 
@@ -65,63 +59,31 @@ demo: ## Generate main session screenshot (media/session.svg)
 demos: ## Generate all demo screenshots
 	uv run python scripts/demo_session.py --scripts-dir demos/
 
-## Code Quality
-
-typecheck: ## Run mypy type checking
-	uv run mypy --strict src
-
-lint: ## Run ruff linting and format check
-	uv run ruff check src tests
-	uv run ruff format --check src tests
-
-format: ## Format code with ruff
-	uv run ruff format src tests
-
-check: typecheck lint ## Run all checks (typecheck + lint)
-
 ## Build & Publish
 
-build: ## Build package distributions
+build: ## Build distribution packages
 	uv build
 
-publish: clean build ## Build and publish to PyPI
+publish: clean build ## Publish to PyPI
 	uv run twine upload dist/*
 
-publish-test: build ## Build and publish to TestPyPI
+publish-test: build ## Publish to TestPyPI
 	uv run twine upload --repository testpypi dist/*
 
 ## Cleanup
 
 clean: ## Remove build artifacts
-	rm -rf build/
-	rm -rf dist/
-	rm -rf *.egg-info
-	rm -rf src/*.egg-info
-	find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
-	find . -type d -name ".pytest_cache" -exec rm -rf {} + 2>/dev/null || true
-	find . -type d -name ".mypy_cache" -exec rm -rf {} + 2>/dev/null || true
+	rm -rf dist/ build/ *.egg-info .pytest_cache .coverage .mypy_cache .ruff_cache
+	rm -rf docs/_build
+	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 
-clean-all: clean ## Remove virtual environment and lock file
-	@echo "Removing virtual environment..."
-	rm -rf .venv
-	rm -f uv.lock
-	@echo "Virtual environment and lock file removed."
-	@echo ""
-	@echo "Run 'make install' to recreate the environment."
+clean-all: clean ## Remove virtualenv and lock file
+	rm -rf .venv uv.lock
 
 ## Help
 
 help: ## Show this help message
 	@echo "Usage: make [target]"
 	@echo ""
-	@echo "Virtual Environment:"
-	@echo "  make install        - Install/update dependencies"
-	@echo "  make install-pythons - Install Python 3.10, 3.11, 3.12 for tox"
-	@echo "  make sync           - Sync from lock file (frozen)"
-	@echo ""
-	@echo "Documentation:"
-	@echo "  make docs           - Build HTML documentation"
-	@echo "  make docs-view      - Build and open documentation in browser"
-	@echo ""
 	@echo "Targets:"
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' Makefile | grep -v "install-pythons\|sync\|docs" | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' Makefile | grep -v "install-pythons\|sync" | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
