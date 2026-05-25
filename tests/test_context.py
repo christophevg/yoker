@@ -337,7 +337,9 @@ class TestBasicPersistenceContextManager:
     cm = BasicPersistenceContextManager(tmp_path, session_id="test-protocol")
     assert isinstance(cm, ContextManager)
 
-  def test_tilde_expansion_in_storage_path(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+  def test_tilde_expansion_in_storage_path(
+    self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+  ) -> None:
     """Test that ~ in storage path is expanded to home directory.
 
     Regression test for issue #9: Storage path with ~ creates literal ~
