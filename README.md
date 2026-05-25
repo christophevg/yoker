@@ -6,7 +6,7 @@
 [![CI](https://img.shields.io/github/actions/workflow/status/christophevg/yoker/test.yaml.svg)][ci]
 [![Coverage](https://img.shields.io/coveralls/github/christophevg/yoker.svg)][coveralls]
 [![License](https://img.shields.io/github/license/christophevg/yoker.svg)][license]
-[![Agentic](https://img.shields.io/badge/workflow-agentic-blueviolet?style=flat-square)](https://christophe.vg/about/Coding-Agent)
+[![Agentic](https://img.shields.io/badge/workflow-agentic-blueviolet?style=flat-square)](https://christophe.vg/about/Agentic-Workflow)
 
 A Python agent harness with configurable tools, guardrails, and Ollama backend integration.
 
