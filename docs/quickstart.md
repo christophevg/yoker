@@ -83,10 +83,49 @@ async def main():
 asyncio.run(main())
 ```
 
+### Async Model
+
+Yoker is built with an async-first architecture:
+
+- **All Agent methods are async**: `begin_session()`, `process()`, and `end_session()` are all coroutines
+- **Event handlers can be async**: Handlers receive events in the same asyncio task as `process()`
+- **No thread pool bridging needed**: Async handlers can directly `await` I/O operations
+
+```python
+class DatabaseHandler:
+    """Example async handler writing to a database."""
+    
+    def __init__(self, db_connection):
+        self.db = db_connection
+    
+    async def __call__(self, event: Event) -> None:
+        if isinstance(event, ContentEndEvent):
+            # Direct await - no run_coroutine_threadsafe needed!
+            await self.db.save_response(event.total_length)
+
+async def main():
+    agent = Agent(model="llama3.2")
+    agent.add_event_handler(DatabaseHandler(db))
+    
+    await agent.begin_session()
+    await agent.process("Hello")  # Handler runs in same event loop
+    await agent.end_session()
+```
+
+**Threading Model:**
+
+| Context | Where handlers run |
+|---------|---------------------|
+| `await agent.process()` | Same asyncio task |
+| Interactive CLI | Main asyncio event loop |
+| Web server (FastAPI) | Request handler's event loop |
+
+Handlers run synchronously within the asyncio event loop. For long-running operations, use async handlers that yield control (e.g., `await asyncio.sleep(0)`) or offload to a separate executor.
+
 ### Interactive Session
 
 ```
-Yoker v0.1.0 - Using model: glm-5:cloud
+Yoker v0.2.0 - Using model: glm-5:cloud
 Thinking mode: enabled (use /think on|off to toggle)
 Type /help for available commands.
 Press Ctrl+D (or Ctrl+Z on Windows) to quit.
