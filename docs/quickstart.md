@@ -46,16 +46,33 @@ import asyncio
 from yoker import Agent
 from yoker.events import Event, ContentChunkEvent
 
-# Create a custom event handler
-class MyHandler:
+# Create a custom async event handler (recommended)
+class MyAsyncHandler:
+    """Async event handler for processing events.
+
+    Async handlers are recommended for most use cases, especially when
+    performing I/O operations like writing to files, making network calls,
+    or interacting with databases.
+    """
+    async def __call__(self, event: Event) -> None:
+        if isinstance(event, ContentChunkEvent):
+            print(event.text, end='', flush=True)
+
+# Sync handlers are also supported for simple, fast operations
+class MySyncHandler:
+    """Sync handler for simple operations (no I/O).
+
+    Sync handlers are supported for cases where the handler just
+    performs fast, non-blocking operations like logging or counters.
+    """
     def __call__(self, event: Event) -> None:
-        if hasattr(event, 'text'):
+        if isinstance(event, ContentChunkEvent):
             print(event.text, end='', flush=True)
 
 async def main():
-    # Create agent and attach handler
+    # Create agent and attach async handler
     agent = Agent(model="llama3.2")
-    agent.add_event_handler(MyHandler())
+    agent.add_event_handler(MyAsyncHandler())
 
     # Use the agent programmatically (all methods are async)
     await agent.begin_session()
