@@ -49,7 +49,7 @@ from yoker.exceptions import (
 from yoker.logging import LoggingContext, configure_logging, get_logger, log_timing
 from yoker.thinking import ThinkingMode
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 __author__ = "Christophe VG"
 
 __all__ = [

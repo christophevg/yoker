@@ -125,7 +125,7 @@ Handlers run synchronously within the asyncio event loop. For long-running opera
 ### Interactive Session
 
 ```
-Yoker v0.2.0 - Using model: glm-5:cloud
+Yoker v0.3.0 - Using model: glm-5:cloud
 Thinking mode: enabled (use /think on|off to toggle)
 Type /help for available commands.
 Press Ctrl+D (or Ctrl+Z on Windows) to quit.
