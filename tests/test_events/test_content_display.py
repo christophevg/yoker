@@ -48,7 +48,9 @@ class TestConsoleEventHandlerSilentMode:
     assert "file.txt" in output
 
   @pytest.mark.asyncio
-  async def test_silent_mode_shows_success_indicator(self, silent_handler: ConsoleEventHandler) -> None:
+  async def test_silent_mode_shows_success_indicator(
+    self, silent_handler: ConsoleEventHandler
+  ) -> None:
     """
     Given: ConsoleEventHandler with verbosity="silent"
     When: Handling ToolContentEvent after successful write
@@ -101,7 +103,9 @@ class TestConsoleEventHandlerSummaryMode:
     assert "24 lines" in output
 
   @pytest.mark.asyncio
-  async def test_summary_mode_shows_overwrite_info(self, summary_handler: ConsoleEventHandler) -> None:
+  async def test_summary_mode_shows_overwrite_info(
+    self, summary_handler: ConsoleEventHandler
+  ) -> None:
     """
     Given: ConsoleEventHandler with verbosity="summary"
     When: Handling ToolContentEvent for overwrite
@@ -122,7 +126,9 @@ class TestConsoleEventHandlerSummaryMode:
     assert "42 lines" in output
 
   @pytest.mark.asyncio
-  async def test_summary_mode_shows_replace_summary(self, summary_handler: ConsoleEventHandler) -> None:
+  async def test_summary_mode_shows_replace_summary(
+    self, summary_handler: ConsoleEventHandler
+  ) -> None:
     """
     Given: ConsoleEventHandler with verbosity="summary"
     When: Handling ToolContentEvent for replace
@@ -143,7 +149,9 @@ class TestConsoleEventHandlerSummaryMode:
     assert "Replace" in output
 
   @pytest.mark.asyncio
-  async def test_summary_mode_shows_insert_summary(self, summary_handler: ConsoleEventHandler) -> None:
+  async def test_summary_mode_shows_insert_summary(
+    self, summary_handler: ConsoleEventHandler
+  ) -> None:
     """
     Given: ConsoleEventHandler with verbosity="summary"
     When: Handling ToolContentEvent for insert
@@ -166,7 +174,9 @@ class TestConsoleEventHandlerSummaryMode:
     assert "3 line" in output
 
   @pytest.mark.asyncio
-  async def test_summary_mode_shows_delete_summary(self, summary_handler: ConsoleEventHandler) -> None:
+  async def test_summary_mode_shows_delete_summary(
+    self, summary_handler: ConsoleEventHandler
+  ) -> None:
     """
     Given: ConsoleEventHandler with verbosity="summary"
     When: Handling ToolContentEvent for delete
@@ -199,7 +209,9 @@ class TestConsoleEventHandlerContentMode:
     return ConsoleEventHandler(console=console, show_tool_calls=True)
 
   @pytest.mark.asyncio
-  async def test_content_mode_shows_full_content(self, content_handler: ConsoleEventHandler) -> None:
+  async def test_content_mode_shows_full_content(
+    self, content_handler: ConsoleEventHandler
+  ) -> None:
     """
     Given: ConsoleEventHandler with verbosity="content"
     When: Handling ToolContentEvent for write
@@ -372,7 +384,9 @@ class TestConsoleEventHandlerTruncation:
     assert "file.txt" in output
 
   @pytest.mark.asyncio
-  async def test_no_truncation_for_small_content(self, content_handler: ConsoleEventHandler) -> None:
+  async def test_no_truncation_for_small_content(
+    self, content_handler: ConsoleEventHandler
+  ) -> None:
     """
     Given: Content within max_content_lines
     When: Displaying content
