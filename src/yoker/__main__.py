@@ -83,8 +83,8 @@ def create_prompt_session() -> PromptSession[str]:
   return session
 
 
-def prompt_input(prompt: str, session: PromptSession[str]) -> str:
-  """Get user input with prompt_toolkit.
+async def prompt_input_async(prompt: str, session: PromptSession[str]) -> str:
+  """Get user input with prompt_toolkit (async version).
 
   Args:
     prompt: The prompt string to display.
@@ -93,7 +93,7 @@ def prompt_input(prompt: str, session: PromptSession[str]) -> str:
   Returns:
     User input string.
   """
-  result: str = session.prompt(prompt)
+  result: str = await session.prompt_async(prompt)
   return result
 
 
@@ -166,7 +166,7 @@ async def run_interactive_session(
   try:
     while True:
       try:
-        user_input = prompt_input("> ", session)
+        user_input = await prompt_input_async("> ", session)
       except EOFError:
         await agent.end_session(reason="quit")
         break
