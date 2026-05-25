@@ -4,11 +4,12 @@ This module provides Agent, an async-first agent that chats with Ollama
 and uses tools. All I/O operations are async.
 """
 
-import asyncio
+import inspect
 import json
 import os
+from collections.abc import Awaitable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import httpx
 from ollama import AsyncClient
@@ -236,10 +237,15 @@ class Agent:
       Handler registration is logged for audit purposes.
     """
     handler_name = getattr(handler, "__name__", str(handler))
+    # Get the __call__ method if handler is an instance, otherwise use handler
+    # This is needed because inspect.iscoroutinefunction(instance) returns False
+    # for instances with async __call__, but inspect.iscoroutinefunction(instance.__call__)
+    # returns True.
+    call_fn = getattr(handler, "__call__", handler)  # noqa: B004
     log.info(
       "handler_registered",
       handler=handler_name,
-      is_async=asyncio.iscoroutinefunction(handler),
+      is_async=inspect.iscoroutinefunction(call_fn),
     )
     self._core.add_event_handler(handler)
 
@@ -269,9 +275,15 @@ class Agent:
     """
     for handler in self._core.get_event_handlers():
       try:
-        if asyncio.iscoroutinefunction(handler):
+        # Check if handler is async: either a coroutine function or an instance
+        # with an async __call__ method.
+        # inspect.iscoroutinefunction(instance) returns False for instances with
+        # async __call__, but inspect.iscoroutinefunction(instance.__call__) returns True.
+        call_fn = getattr(handler, "__call__", handler)  # noqa: B004
+        if inspect.iscoroutinefunction(call_fn):
           # Async handler - await it
-          await handler(event)
+          # mypy doesn't narrow the type, so we cast to help it
+          await cast("Awaitable[None]", handler(event))
         else:
           # Sync handler - call directly
           # Note: This runs in the async context and could block
