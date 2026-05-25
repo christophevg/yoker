@@ -21,7 +21,8 @@ class TestConsoleEventHandlerSilentMode:
     console = Console(file=output, force_terminal=False)
     return ConsoleEventHandler(console=console, show_tool_calls=True)
 
-  def test_silent_mode_displays_no_content(self, silent_handler: ConsoleEventHandler) -> None:
+  @pytest.mark.asyncio
+  async def test_silent_mode_displays_no_content(self, silent_handler: ConsoleEventHandler) -> None:
     """
     Given: ConsoleEventHandler with verbosity="silent"
     When: Handling ToolContentEvent
@@ -40,13 +41,14 @@ class TestConsoleEventHandlerSilentMode:
       content=None,
       metadata={"lines": 10, "is_new_file": True},
     )
-    silent_handler(event)
+    await silent_handler(event)
     # Should not raise, just handle silently
     output = silent_handler.console.file.getvalue()  # type: ignore[attr-defined]
     # With show_tool_calls=True, summary info should be displayed
     assert "file.txt" in output
 
-  def test_silent_mode_shows_success_indicator(self, silent_handler: ConsoleEventHandler) -> None:
+  @pytest.mark.asyncio
+  async def test_silent_mode_shows_success_indicator(self, silent_handler: ConsoleEventHandler) -> None:
     """
     Given: ConsoleEventHandler with verbosity="silent"
     When: Handling ToolContentEvent after successful write
@@ -61,7 +63,7 @@ class TestConsoleEventHandlerSilentMode:
       content=None,
       metadata={"lines": 10, "is_new_file": True},
     )
-    silent_handler(event)
+    await silent_handler(event)
     output = silent_handler.console.file.getvalue()  # type: ignore[attr-defined]
     # Summary mode shows file info
     assert "file.txt" in output
@@ -77,7 +79,8 @@ class TestConsoleEventHandlerSummaryMode:
     console = Console(file=output, force_terminal=False)
     return ConsoleEventHandler(console=console, show_tool_calls=True)
 
-  def test_summary_mode_shows_line_count(self, summary_handler: ConsoleEventHandler) -> None:
+  @pytest.mark.asyncio
+  async def test_summary_mode_shows_line_count(self, summary_handler: ConsoleEventHandler) -> None:
     """
     Given: ConsoleEventHandler with verbosity="summary"
     When: Handling ToolContentEvent for write
@@ -92,12 +95,13 @@ class TestConsoleEventHandlerSummaryMode:
       content=None,
       metadata={"lines": 24, "is_new_file": True},
     )
-    summary_handler(event)
+    await summary_handler(event)
     output = summary_handler.console.file.getvalue()  # type: ignore[attr-defined]
     assert "newfile.txt" in output
     assert "24 lines" in output
 
-  def test_summary_mode_shows_overwrite_info(self, summary_handler: ConsoleEventHandler) -> None:
+  @pytest.mark.asyncio
+  async def test_summary_mode_shows_overwrite_info(self, summary_handler: ConsoleEventHandler) -> None:
     """
     Given: ConsoleEventHandler with verbosity="summary"
     When: Handling ToolContentEvent for overwrite
@@ -112,12 +116,13 @@ class TestConsoleEventHandlerSummaryMode:
       content=None,
       metadata={"lines": 42, "is_new_file": False, "is_overwrite": True},
     )
-    summary_handler(event)
+    await summary_handler(event)
     output = summary_handler.console.file.getvalue()  # type: ignore[attr-defined]
     assert "existing.txt" in output
     assert "42 lines" in output
 
-  def test_summary_mode_shows_replace_summary(self, summary_handler: ConsoleEventHandler) -> None:
+  @pytest.mark.asyncio
+  async def test_summary_mode_shows_replace_summary(self, summary_handler: ConsoleEventHandler) -> None:
     """
     Given: ConsoleEventHandler with verbosity="summary"
     When: Handling ToolContentEvent for replace
@@ -132,12 +137,13 @@ class TestConsoleEventHandlerSummaryMode:
       content=None,
       metadata={"old_content": "old", "new_content": "new"},
     )
-    summary_handler(event)
+    await summary_handler(event)
     output = summary_handler.console.file.getvalue()  # type: ignore[attr-defined]
     assert "file.txt" in output
     assert "Replace" in output
 
-  def test_summary_mode_shows_insert_summary(self, summary_handler: ConsoleEventHandler) -> None:
+  @pytest.mark.asyncio
+  async def test_summary_mode_shows_insert_summary(self, summary_handler: ConsoleEventHandler) -> None:
     """
     Given: ConsoleEventHandler with verbosity="summary"
     When: Handling ToolContentEvent for insert
@@ -152,14 +158,15 @@ class TestConsoleEventHandlerSummaryMode:
       content=None,
       metadata={"line_number": 42, "inserted_lines": 3},
     )
-    summary_handler(event)
+    await summary_handler(event)
     output = summary_handler.console.file.getvalue()  # type: ignore[attr-defined]
     assert "file.txt" in output
     assert "Insert" in output
     assert "line 42" in output
     assert "3 line" in output
 
-  def test_summary_mode_shows_delete_summary(self, summary_handler: ConsoleEventHandler) -> None:
+  @pytest.mark.asyncio
+  async def test_summary_mode_shows_delete_summary(self, summary_handler: ConsoleEventHandler) -> None:
     """
     Given: ConsoleEventHandler with verbosity="summary"
     When: Handling ToolContentEvent for delete
@@ -174,7 +181,7 @@ class TestConsoleEventHandlerSummaryMode:
       content=None,
       metadata={"line_number": 15},
     )
-    summary_handler(event)
+    await summary_handler(event)
     output = summary_handler.console.file.getvalue()  # type: ignore[attr-defined]
     assert "file.txt" in output
     assert "Delete" in output
@@ -191,7 +198,8 @@ class TestConsoleEventHandlerContentMode:
     console = Console(file=output, force_terminal=False)
     return ConsoleEventHandler(console=console, show_tool_calls=True)
 
-  def test_content_mode_shows_full_content(self, content_handler: ConsoleEventHandler) -> None:
+  @pytest.mark.asyncio
+  async def test_content_mode_shows_full_content(self, content_handler: ConsoleEventHandler) -> None:
     """
     Given: ConsoleEventHandler with verbosity="content"
     When: Handling ToolContentEvent for write
@@ -206,7 +214,7 @@ class TestConsoleEventHandlerContentMode:
       content="Line 1\nLine 2\nLine 3\n",
       metadata={"lines": 3},
     )
-    content_handler(event)
+    await content_handler(event)
     output = content_handler.console.file.getvalue()  # type: ignore[attr-defined]
     assert "file.txt" in output
     assert "Line 1" in output
@@ -217,7 +225,8 @@ class TestConsoleEventHandlerContentMode:
     assert "2" in output
     assert "3" in output
 
-  def test_content_mode_shows_diff(self, content_handler: ConsoleEventHandler) -> None:
+  @pytest.mark.asyncio
+  async def test_content_mode_shows_diff(self, content_handler: ConsoleEventHandler) -> None:
     """
     Given: ConsoleEventHandler with verbosity="content" and show_diff_for_updates=True
     When: Handling ToolContentEvent for replace
@@ -232,14 +241,15 @@ class TestConsoleEventHandlerContentMode:
       content="--- file.txt\n+++ file.txt\n@@ -1 +1 @@\n-old line\n+new line\n",
       metadata={},
     )
-    content_handler(event)
+    await content_handler(event)
     output = content_handler.console.file.getvalue()  # type: ignore[attr-defined]
     assert "file.txt" in output
     # Diff markers should be present
     assert "-" in output or "old" in output
     assert "+" in output or "new" in output
 
-  def test_content_mode_shows_insert_with_context(
+  @pytest.mark.asyncio
+  async def test_content_mode_shows_insert_with_context(
     self, content_handler: ConsoleEventHandler
   ) -> None:
     """
@@ -256,12 +266,13 @@ class TestConsoleEventHandlerContentMode:
       content="Inserted line 1\nInserted line 2\n",
       metadata={"line_number": 10, "inserted_lines": 2},
     )
-    content_handler(event)
+    await content_handler(event)
     output = content_handler.console.file.getvalue()  # type: ignore[attr-defined]
     assert "file.txt" in output
     assert "Inserted" in output
 
-  def test_content_mode_shows_delete_with_context(
+  @pytest.mark.asyncio
+  async def test_content_mode_shows_delete_with_context(
     self, content_handler: ConsoleEventHandler
   ) -> None:
     """
@@ -278,7 +289,7 @@ class TestConsoleEventHandlerContentMode:
       content=None,  # No content for delete in full mode
       metadata={"line_number": 15},
     )
-    content_handler(event)
+    await content_handler(event)
     output = content_handler.console.file.getvalue()  # type: ignore[attr-defined]
     assert "file.txt" in output
     assert "Delete" in output
@@ -294,7 +305,8 @@ class TestConsoleEventHandlerTruncation:
     console = Console(file=output, force_terminal=False)
     return ConsoleEventHandler(console=console, show_tool_calls=True)
 
-  def test_truncation_shows_first_n_lines(self, content_handler: ConsoleEventHandler) -> None:
+  @pytest.mark.asyncio
+  async def test_truncation_shows_first_n_lines(self, content_handler: ConsoleEventHandler) -> None:
     """
     Given: Content exceeding max_content_lines
     When: Displaying content
@@ -309,12 +321,13 @@ class TestConsoleEventHandlerTruncation:
       content="\n".join(f"Line {i}" for i in range(10)),
       metadata={"lines": 50, "truncated": True, "original_line_count": 50},
     )
-    content_handler(event)
+    await content_handler(event)
     output = content_handler.console.file.getvalue()  # type: ignore[attr-defined]
     # Should show truncation indicator
     assert "more lines" in output or "Line 0" in output
 
-  def test_truncation_indicator_format(self, content_handler: ConsoleEventHandler) -> None:
+  @pytest.mark.asyncio
+  async def test_truncation_indicator_format(self, content_handler: ConsoleEventHandler) -> None:
     """
     Given: Content truncated to 10 lines out of 50
     When: Displaying truncation indicator
@@ -329,11 +342,12 @@ class TestConsoleEventHandlerTruncation:
       content="\n".join(f"Line {i}" for i in range(10)),
       metadata={"truncated": True, "original_line_count": 50},
     )
-    content_handler(event)
+    await content_handler(event)
     output = content_handler.console.file.getvalue()  # type: ignore[attr-defined]
     assert "40 more lines" in output
 
-  def test_truncation_for_diff(self, content_handler: ConsoleEventHandler) -> None:
+  @pytest.mark.asyncio
+  async def test_truncation_for_diff(self, content_handler: ConsoleEventHandler) -> None:
     """
     Given: Diff exceeding max_diff_lines
     When: Displaying diff
@@ -352,12 +366,13 @@ class TestConsoleEventHandlerTruncation:
       content=diff_content,
       metadata={},
     )
-    content_handler(event)
+    await content_handler(event)
     # Should handle diff content
     output = content_handler.console.file.getvalue()  # type: ignore[attr-defined]
     assert "file.txt" in output
 
-  def test_no_truncation_for_small_content(self, content_handler: ConsoleEventHandler) -> None:
+  @pytest.mark.asyncio
+  async def test_no_truncation_for_small_content(self, content_handler: ConsoleEventHandler) -> None:
     """
     Given: Content within max_content_lines
     When: Displaying content
@@ -372,7 +387,7 @@ class TestConsoleEventHandlerTruncation:
       content="Line 1\nLine 2\nLine 3\n",
       metadata={"lines": 3},
     )
-    content_handler(event)
+    await content_handler(event)
     output = content_handler.console.file.getvalue()  # type: ignore[attr-defined]
     # Should show all lines
     assert "Line 1" in output
@@ -392,7 +407,8 @@ class TestConsoleEventHandlerDiffDisplay:
     console = Console(file=output, force_terminal=False)
     return ConsoleEventHandler(console=console, show_tool_calls=True)
 
-  def test_diff_shows_removed_lines_in_red(self, diff_handler: ConsoleEventHandler) -> None:
+  @pytest.mark.asyncio
+  async def test_diff_shows_removed_lines_in_red(self, diff_handler: ConsoleEventHandler) -> None:
     """
     Given: Diff with removed lines
     When: Displaying diff
@@ -407,11 +423,12 @@ class TestConsoleEventHandlerDiffDisplay:
       content="--- file.txt\n+++ file.txt\n@@ -1 +1 @@\n-old line\n+new line\n",
       metadata={},
     )
-    diff_handler(event)
+    await diff_handler(event)
     output = diff_handler.console.file.getvalue()  # type: ignore[attr-defined]
     assert "old line" in output
 
-  def test_diff_shows_added_lines_in_green(self, diff_handler: ConsoleEventHandler) -> None:
+  @pytest.mark.asyncio
+  async def test_diff_shows_added_lines_in_green(self, diff_handler: ConsoleEventHandler) -> None:
     """
     Given: Diff with added lines
     When: Displaying diff
@@ -426,11 +443,12 @@ class TestConsoleEventHandlerDiffDisplay:
       content="--- file.txt\n+++ file.txt\n@@ -1 +1 @@\n-old line\n+new line\n",
       metadata={},
     )
-    diff_handler(event)
+    await diff_handler(event)
     output = diff_handler.console.file.getvalue()  # type: ignore[attr-defined]
     assert "new line" in output
 
-  def test_diff_shows_context_in_cyan(self, diff_handler: ConsoleEventHandler) -> None:
+  @pytest.mark.asyncio
+  async def test_diff_shows_context_in_cyan(self, diff_handler: ConsoleEventHandler) -> None:
     """
     Given: Diff with context lines
     When: Displaying diff
@@ -445,11 +463,12 @@ class TestConsoleEventHandlerDiffDisplay:
       content="--- file.txt\n+++ file.txt\n@@ -1,3 +1,3 @@\n context\n-old\n+new\n context\n",
       metadata={},
     )
-    diff_handler(event)
+    await diff_handler(event)
     output = diff_handler.console.file.getvalue()  # type: ignore[attr-defined]
     assert "@@" in output
 
-  def test_diff_uses_unified_format(self, diff_handler: ConsoleEventHandler) -> None:
+  @pytest.mark.asyncio
+  async def test_diff_uses_unified_format(self, diff_handler: ConsoleEventHandler) -> None:
     """
     Given: Replace operation with old and new content
     When: Generating diff
@@ -464,7 +483,7 @@ class TestConsoleEventHandlerDiffDisplay:
       content="--- file.txt\n+++ file.txt\n@@ -1 +1 @@\n-old\n+new\n",
       metadata={},
     )
-    diff_handler(event)
+    await diff_handler(event)
     output = diff_handler.console.file.getvalue()  # type: ignore[attr-defined]
     # Unified diff format markers
     assert "---" in output or "file.txt" in output
@@ -481,7 +500,8 @@ class TestConsoleEventHandlerVisualConsistency:
     console = Console(file=output, force_terminal=False)
     return ConsoleEventHandler(console=console, show_tool_calls=True)
 
-  def test_tool_name_in_cyan(self, handler: ConsoleEventHandler) -> None:
+  @pytest.mark.asyncio
+  async def test_tool_name_in_cyan(self, handler: ConsoleEventHandler) -> None:
     """
     Given: ToolContentEvent
     When: Displaying tool output
@@ -497,12 +517,13 @@ class TestConsoleEventHandlerVisualConsistency:
       content=None,
       metadata={"lines": 10},
     )
-    handler(event)
+    await handler(event)
     # Should display without error
     output = handler.console.file.getvalue()  # type: ignore[attr-defined]
     assert "file.txt" in output
 
-  def test_filename_only_not_full_path(self, handler: ConsoleEventHandler) -> None:
+  @pytest.mark.asyncio
+  async def test_filename_only_not_full_path(self, handler: ConsoleEventHandler) -> None:
     """
     Given: ToolContentEvent with full path
     When: Displaying tool output
@@ -517,14 +538,15 @@ class TestConsoleEventHandlerVisualConsistency:
       content=None,
       metadata={"lines": 10},
     )
-    handler(event)
+    await handler(event)
     output = handler.console.file.getvalue()  # type: ignore[attr-defined]
     # Should show only basename
     assert "file.txt" in output
     # Should not show full path
     assert "/very/long/path" not in output
 
-  def test_success_indicator_after_content(self, handler: ConsoleEventHandler) -> None:
+  @pytest.mark.asyncio
+  async def test_success_indicator_after_content(self, handler: ConsoleEventHandler) -> None:
     """
     Given: ToolContentEvent with successful operation
     When: Displaying content
@@ -541,12 +563,13 @@ class TestConsoleEventHandlerVisualConsistency:
       content="Content\n",
       metadata={"lines": 1},
     )
-    handler(event)
+    await handler(event)
     # Should handle event without error
     output = handler.console.file.getvalue()  # type: ignore[attr-defined]
     assert "file.txt" in output
 
-  def test_content_separator_style(self, handler: ConsoleEventHandler) -> None:
+  @pytest.mark.asyncio
+  async def test_content_separator_style(self, handler: ConsoleEventHandler) -> None:
     """
     Given: ToolContentEvent with content
     When: Displaying content in content mode
@@ -561,7 +584,7 @@ class TestConsoleEventHandlerVisualConsistency:
       content="Line 1\nLine 2\n",
       metadata={"lines": 2},
     )
-    handler(event)
+    await handler(event)
     output = handler.console.file.getvalue()  # type: ignore[attr-defined]
     # Should show content with line numbers
     assert "file.txt" in output
@@ -577,7 +600,8 @@ class TestConsoleEventHandlerEdgeCases:
     console = Console(file=output, force_terminal=False)
     return ConsoleEventHandler(console=console, show_tool_calls=True)
 
-  def test_empty_file_display(self, handler: ConsoleEventHandler) -> None:
+  @pytest.mark.asyncio
+  async def test_empty_file_display(self, handler: ConsoleEventHandler) -> None:
     """
     Given: ToolContentEvent for empty file
     When: Displaying content
@@ -592,12 +616,13 @@ class TestConsoleEventHandlerEdgeCases:
       content=None,
       metadata={"lines": 0, "is_empty": True},
     )
-    handler(event)
+    await handler(event)
     output = handler.console.file.getvalue()  # type: ignore[attr-defined]
     assert "0 lines" in output
     assert "empty" in output
 
-  def test_binary_file_display(self, handler: ConsoleEventHandler) -> None:
+  @pytest.mark.asyncio
+  async def test_binary_file_display(self, handler: ConsoleEventHandler) -> None:
     """
     Given: ToolContentEvent for binary file
     When: Displaying content
@@ -612,12 +637,13 @@ class TestConsoleEventHandlerEdgeCases:
       content=None,
       metadata={"is_binary": True, "bytes": 2048},
     )
-    handler(event)
+    await handler(event)
     output = handler.console.file.getvalue()  # type: ignore[attr-defined]
     assert "binary" in output
     assert "KB" in output
 
-  def test_unicode_content_handling(self, handler: ConsoleEventHandler) -> None:
+  @pytest.mark.asyncio
+  async def test_unicode_content_handling(self, handler: ConsoleEventHandler) -> None:
     """
     Given: ToolContentEvent with unicode content
     When: Displaying content
@@ -632,13 +658,14 @@ class TestConsoleEventHandlerEdgeCases:
       content="Hello 世界\nПривет мир\n",
       metadata={"lines": 2},
     )
-    handler(event)
+    await handler(event)
     output = handler.console.file.getvalue()  # type: ignore[attr-defined]
     # Unicode should be preserved
     assert "世界" in output
     assert "мир" in output
 
-  def test_very_long_lines_truncation(self, handler: ConsoleEventHandler) -> None:
+  @pytest.mark.asyncio
+  async def test_very_long_lines_truncation(self, handler: ConsoleEventHandler) -> None:
     """
     Given: Content with very long lines
     When: Displaying content
@@ -654,7 +681,7 @@ class TestConsoleEventHandlerEdgeCases:
       content="x" * 100,  # Short content for unit test
       metadata={"lines": 1},
     )
-    handler(event)
+    await handler(event)
     # Should handle without error
     output = handler.console.file.getvalue()  # type: ignore[attr-defined]
     assert "file.txt" in output
@@ -673,7 +700,8 @@ class TestConsoleEventHandlerMethodDispatch:
     assert hasattr(handler, "_handle_tool_content")
     assert callable(handler._handle_tool_content)
 
-  def test_handler_dispatches_tool_content_event(self) -> None:
+  @pytest.mark.asyncio
+  async def test_handler_dispatches_tool_content_event(self) -> None:
     """
     Given: ConsoleEventHandler handling events
     When: ToolContentEvent is emitted
@@ -694,13 +722,14 @@ class TestConsoleEventHandlerMethodDispatch:
     )
 
     # Call handler
-    handler(event)
+    await handler(event)
 
     # Should produce output
     output_str = console.file.getvalue()  # type: ignore[attr-defined]
     assert "file.txt" in output_str
 
-  def test_handler_formats_content_based_on_type(self) -> None:
+  @pytest.mark.asyncio
+  async def test_handler_formats_content_based_on_type(self) -> None:
     """
     Given: ToolContentEvent with different content_type values
     When: Handling event
@@ -720,7 +749,7 @@ class TestConsoleEventHandlerMethodDispatch:
       content=None,
       metadata={"lines": 10},
     )
-    handler(event_summary)
+    await handler(event_summary)
     output_summary = console.file.getvalue()  # type: ignore[attr-defined]
     assert "file.txt" in output_summary
 
@@ -738,7 +767,7 @@ class TestConsoleEventHandlerMethodDispatch:
       content="Line 1\nLine 2\n",
       metadata={"lines": 2},
     )
-    handler(event_full)
+    await handler(event_full)
     output_full = console.file.getvalue()  # type: ignore[attr-defined]
     assert "Line 1" in output_full
     assert "Line 2" in output_full
@@ -757,6 +786,6 @@ class TestConsoleEventHandlerMethodDispatch:
       content="--- file.txt\n+++ file.txt\n@@ -1 +1 @@\n-old\n+new\n",
       metadata={},
     )
-    handler(event_diff)
+    await handler(event_diff)
     output_diff = console.file.getvalue()  # type: ignore[attr-defined]
     assert "file.txt" in output_diff

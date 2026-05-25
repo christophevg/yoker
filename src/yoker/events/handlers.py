@@ -1,5 +1,6 @@
 """Event handlers for the Yoker event system."""
 
+from collections.abc import Coroutine
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
@@ -35,10 +36,31 @@ TOOL_STYLE = Style(color="cyan")
 
 @runtime_checkable
 class EventHandler(Protocol):
-  """Protocol for event handlers."""
+  """Protocol for event handlers.
 
-  def __call__(self, event: Event) -> None:
-    """Handle an event."""
+  Event handlers receive all events emitted during agent processing.
+  Both sync and async handlers are supported:
+
+  - Sync handlers: def __call__(self, event: Event) -> None
+  - Async handlers: async def __call__(self, event: Event) -> None
+
+  Handlers should complete quickly (ideally <100ms) to avoid blocking
+  the event loop. For I/O-bound operations, use async handlers.
+
+  Security Note:
+    Handlers can access potentially sensitive data (tool results, file contents).
+    Only register handlers from trusted sources.
+  """
+
+  def __call__(self, event: Event) -> None | Coroutine[None, None, None]:
+    """Handle an event.
+
+    Args:
+      event: The event to handle.
+
+    Returns:
+      None for sync handlers, coroutine for async handlers.
+    """
     ...
 
 
@@ -76,8 +98,16 @@ class ConsoleEventHandler:
     self._thinking_shown = False  # Track if thinking was displayed
     self._content_shown = False  # Track if any content was shown this turn
 
-  def __call__(self, event: Event) -> None:
-    """Handle an event by dispatching to the appropriate handler method."""
+  async def __call__(self, event: Event) -> None:
+    """Handle an event by dispatching to the appropriate handler method.
+
+    This is an async handler that dispatches to synchronous _handle_* methods.
+    Rich console operations are thread-safe and fast (<10ms), so we keep
+    the handler methods synchronous for simplicity.
+
+    Args:
+      event: The event to handle.
+    """
     match event.type:
       case EventType.SESSION_START:
         self._handle_session_start(event)  # type: ignore[arg-type]

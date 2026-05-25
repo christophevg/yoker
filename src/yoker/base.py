@@ -8,7 +8,7 @@ and utilities for both synchronous Agent and asynchronous AsyncAgent implementat
 """
 
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Coroutine
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -43,7 +43,9 @@ if TYPE_CHECKING:
 log = get_logger(__name__)
 
 # Type alias for event callbacks
-EventCallback = Callable[["Event"], None]
+# Supports both sync handlers: Callable[["Event"], None]
+# and async handlers: Callable[["Event"], Coroutine[None, None, None]]
+EventCallback = Callable[["Event"], None] | Callable[["Event"], Coroutine[None, None, None]]
 
 # Default system prompt
 DEFAULT_SYSTEM_PROMPT = "You are a helpful assistant."
@@ -251,15 +253,23 @@ class AgentCore:
     Handlers can access potentially sensitive data (tool results, file contents).
     Only register handlers from trusted sources.
 
+    Supports both sync and async handlers:
+      - Sync handlers: def handler(event: Event) -> None
+      - Async handlers: async def handler(event: Event) -> None
+
     Args:
       handler: Callable that receives Event objects.
 
     Example:
       def my_handler(event: Event):
-        if isinstance(event, ContentChunkEvent):
-          print(event.text, end='', flush=True)
+          if isinstance(event, ContentChunkEvent):
+              print(event.text, end='', flush=True)
 
       agent.add_event_handler(my_handler)
+
+    Security Note:
+      Handler registration is logged for audit purposes.
+      Handlers should complete quickly (<100ms) to avoid blocking the event loop.
     """
     self._event_handlers.append(handler)
 

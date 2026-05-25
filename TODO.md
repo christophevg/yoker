@@ -179,7 +179,7 @@ This phase implements async-only Agent architecture:
   - Update `scripts/demo_session.py` for async
   - **Estimated time:** 30 minutes
 
-- [ ] **1.7.7 Async Event Handler Support**
+- [x] **1.7.7 Async Event Handler Support** (2026-05-25)
   - Update `ConsoleEventHandler` to support async operation
   - Make `__call__` method async
   - Add backward-compatible sync support if needed
@@ -187,6 +187,7 @@ This phase implements async-only Agent architecture:
   - Write tests for async event handling
   - **Estimated time:** 45 minutes
   - **Satisfies:** FR7
+  - See: `reporting/1.7.7-async-event-handler/functional-review.md`
 
 - [ ] **1.7.8 Async Test Coverage**
   - Add pytest-asyncio markers to test files
