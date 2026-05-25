@@ -1,10 +1,10 @@
-"""Shared state and utilities for Agent variants.
+"""Shared state and utilities for the async Agent.
 
-This module provides AgentCore, a composition class that holds common state
-and utilities for both synchronous Agent and asynchronous AsyncAgent implementations.
+This module provides AgentCore, a composition class that holds shared state
+and utilities for the async-only Agent implementation.
 
 .. warning::
-  This class is for internal use. Use Agent or AsyncAgent instead.
+  This class is for internal use. Use Agent instead.
 """
 
 import os
@@ -57,15 +57,15 @@ _FILESYSTEM_TOOLS = frozenset(
 
 
 class AgentCore:
-  """Shared state and utilities for both Agent variants.
+  """Shared state and utilities for the async Agent.
 
   This class holds configuration, tool registry, context manager,
-  and other state that is common to both sync and async agents.
+  and other state needed by the Agent.
 
-  Not intended for direct use by consumers. Use Agent or AsyncAgent instead.
+  Not intended for direct use by consumers. Use Agent instead.
 
   Note:
-    This class is not thread-safe. Each Agent/AsyncAgent instance must have
+    This class is not thread-safe. Each Agent instance must have
     its own AgentCore instance. Do not share AgentCore between agents.
 
   Attributes:
@@ -193,7 +193,7 @@ class AgentCore:
     # Verify guardrails are enforced (SEC-5)
     self._validate_guardrails_enforced()
 
-    # Note: Logging happens in Agent/AsyncAgent after AgentTool is registered
+    # Note: Logging happens in Agent after AgentTool is registered
     # This ensures the tool list is complete in the log
 
   @property

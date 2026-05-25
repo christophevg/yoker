@@ -1,59 +1,66 @@
 # Async-First Agent Architecture
 
-**Document Version**: 2.0
-**Date**: 2026-05-22
-**Status**: Functional Analysis
+**Document Version**: 3.0
+**Date**: 2026-05-25
+**Status**: Implemented
 
 ## Executive Summary
 
-This document outlines the migration of Yoker's Agent to an **async-first architecture** with **two separate classes** following the httpx pattern:
+Yoker's Agent has been migrated to an **async-only architecture**:
 
-1. **`yoker.Agent`** - Synchronous implementation (sync-native)
-2. **`yoker.AsyncAgent`** - Async-native implementation
+1. **`yoker.Agent`** - Async-native implementation (the only Agent class)
 
-Both classes share **identical public interfaces** with the same method names and parameters.
+The architecture was simplified from the original two-class design (Agent + AsyncAgent)
+to a single async-only Agent class. This decision was made because:
+- Simpler API surface (only one Agent class to learn)
+- All modern Python web frameworks (FastAPI, Quart) are async-native
+- No need to maintain sync/async parity
+- Event handlers naturally benefit from async (I/O operations)
 
 This architectural shift positions Yoker for:
 - Better integration with async web frameworks (Quart, FastAPI)
 - Non-blocking I/O operations (file, network, subprocess)
 - Parallel tool execution in future phases
 - Cleaner resource management with async context managers
-- Clear separation of concerns (no mixed sync/async code in one class)
 
 ## Vision and Goals
 
 ### Primary Goals
 
-| Goal | Description | Priority |
-|------|-------------|----------|
-| Separate Classes | Two distinct Agent classes with identical interfaces | Critical |
-| Async-Native Core | Async Agent uses async throughout (no wrappers) | Critical |
-| Sync-Native Core | Sync Agent uses sync throughout (no asyncio.run) | Critical |
-| Code Sharing | Minimize duplication through shared utilities | High |
-| Non-Blocking Events | Async Agent has async event handlers | High |
-| Foundation for Parallelism | Architecture supports future parallel tool execution | High |
+| Goal | Description | Status |
+|------|-------------|--------|
+| Async-Native Agent | Agent uses async throughout (no wrappers) | ✅ Complete |
+| Code Sharing | Minimize duplication through AgentCore | ✅ Complete |
+| Non-Blocking Events | Async event handlers supported | ✅ Complete |
+| Foundation for Parallelism | Architecture supports future parallel tool execution | ✅ Complete |
 
-### Non-Goals (Initial Implementation)
+### Non-Goals
 
+- Sync Agent implementation (simplified to async-only)
 - Parallel tool execution (Phase 2)
-- Async tool implementations (Phase 2)
-- Breaking existing sync consumers
 - Performance optimization (maintain current performance)
 
 ## Architecture Overview
 
-### Current State (Single Synchronous Class)
+### Implemented State (Async-Only Agent)
 
 ```python
 # yoker/agent.py
 class Agent:
-    def process(self, message: str) -> str:
-        # All logic is synchronous
-        stream = self.client.chat(...)  # Sync streaming
-        for chunk in stream:
-            # Process chunks synchronously
-            ...
+    async def process(self, message: str) -> str:
+        """Async implementation - fully async throughout."""
+        async_stream = await self._client.chat(...)  # AsyncClient
+        async for chunk in async_stream:
+            await self._emit(event)  # Async event emission
         return content
+
+    async def begin_session(self) -> None:
+        """Start a new session."""
+        ...
+
+    async def end_session(self) -> None:
+        """End the current session."""
+        ...
 ```
 
 **Issues:**
