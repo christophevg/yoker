@@ -72,8 +72,10 @@ class BasicPersistenceContextManager:
     if storage_path is None:
       storage_path = DEFAULT_STORAGE_PATH
 
-    # Validate and resolve storage path
-    self._storage_path = validate_storage_path(Path(storage_path), "context.storage_path")
+    # Validate and resolve storage path (expand ~ before validation)
+    self._storage_path = validate_storage_path(
+      Path(storage_path).expanduser(), "context.storage_path"
+    )
 
     # Validate session ID
     self._session_id = validate_session_id(session_id, "context.session_id")
