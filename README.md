@@ -3,7 +3,7 @@
 [![PyPI](https://img.shields.io/pypi/v/yoker.svg)][pypi]
 [![Python](https://img.shields.io/pypi/pyversions/yoker.svg)][pypi]
 [![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)][uv]
-[![CI](https://img.shields.io/github/actions/workflow/status/christophevg/yoker/tests.yml.svg)][ci]
+[![CI](https://img.shields.io/github/actions/workflow/status/christophevg/yoker/test.yaml.svg)][ci]
 [![Coverage](https://img.shields.io/coveralls/github/christophevg/yoker.svg)][coveralls]
 [![License](https://img.shields.io/github/license/christophevg/yoker.svg)][license]
 [![Agentic](https://img.shields.io/badge/workflow-agentic-blueviolet?style=flat-square)](https://christophe.vg/about/Coding-Agent)
@@ -30,7 +30,7 @@ python -m yoker --agent examples/agents/researcher.md
 
 Example session:
 
-![Yoker Session](media/session.svg)
+![Yoker Session](https://raw.githubusercontent.com/christophevg/yoker/master/media/session.svg)
 
 ## Why Yoker?
 
@@ -165,7 +165,7 @@ See `examples/yoker.toml` for the full configuration reference.
 
 Yoker uses an **event-driven architecture** for library-first design. The Agent emits events; application code handles UI.
 
-![Architecture Diagram](media/architecture-diagram.svg)
+![Architecture Diagram](https://raw.githubusercontent.com/christophevg/yoker/master/media/architecture-diagram.svg)
 
 **Event Types**: Session (start/end), Turn (start/end), Thinking (start/chunk/end), Content (start/chunk/end), Tool (call/result), Error, Command
 
