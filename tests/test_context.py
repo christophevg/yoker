@@ -345,8 +345,9 @@ class TestBasicPersistenceContextManager:
     Regression test for issue #9: Storage path with ~ creates literal ~
     directory instead of expanding to home.
     """
-    # Mock home directory to tmp_path
+    # Mock home directory to tmp_path (both HOME for Unix and USERPROFILE for Windows)
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
 
     # Create context manager with tilde path
     cm = BasicPersistenceContextManager(
