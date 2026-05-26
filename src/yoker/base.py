@@ -160,7 +160,9 @@ class AgentCore:
 
       base_config, discovered_path = discover_config()
       self._config = merge_configs(base_config, env_overrides) if env_overrides else base_config
-      config_source = "discovered_with_env" if env_overrides else "discovered" if discovered_path else "defaults"
+      config_source = (
+        "discovered_with_env" if env_overrides else "discovered" if discovered_path else "defaults"
+      )
       log.info(
         "config_loaded",
         source=config_source,

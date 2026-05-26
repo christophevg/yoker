@@ -614,7 +614,7 @@ def load_env_config(prefix: str | None = None) -> dict[str, Any]:
       continue
 
     # Strip the prefix to get the default env var name
-    default_env_key = env_key[len(prefix) + 1:] if prefix else env_key
+    default_env_key = env_key[len(prefix) + 1 :] if prefix else env_key
 
     # Look up the config path using the default reverse mapping
     if default_env_key not in _DEFAULT_ENV_VAR_TO_PATH:
