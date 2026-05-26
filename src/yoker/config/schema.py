@@ -5,6 +5,7 @@ Following clitic patterns for immutable configuration objects.
 """
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Literal
 
 
@@ -434,6 +435,48 @@ class Config:
   tools: ToolsConfig = field(default_factory=ToolsConfig)
   agents: AgentsConfig = field(default_factory=AgentsConfig)
   logging: LoggingConfig = field(default_factory=LoggingConfig)
+
+  @classmethod
+  def discover(cls, config_path: Path | str | None = None) -> "Config":
+    """Auto-discover configuration from environment and files.
+
+    Resolution order (highest to lowest priority):
+      1. Environment variables (YOKER_* or {PREFIX}_YOKER_*)
+      2. Explicit config_path parameter
+      3. ./yoker.toml (project config)
+      4. ~/.yoker.toml (user config)
+      5. Default Config()
+
+    Args:
+      config_path: Optional explicit path to config file.
+
+    Returns:
+      Config with resolved values from all sources.
+
+    Example:
+      >>> config = Config.discover()  # Auto-discover
+      >>> config = Config.discover("./custom.toml")  # Explicit path
+    """
+    from yoker.config.loader import (
+      discover_config,
+      load_config,
+      load_env_config,
+      merge_configs,
+    )
+
+    # Load environment variables first (highest priority)
+    env_overrides = load_env_config()
+
+    # Load base config
+    if config_path is not None:
+      base_config = load_config(config_path)
+    else:
+      base_config, _ = discover_config()
+
+    # Merge env overrides on top
+    if env_overrides:
+      return merge_configs(base_config, env_overrides)
+    return base_config
 
 
 __all__ = [
