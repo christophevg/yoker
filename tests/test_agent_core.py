@@ -14,7 +14,8 @@ class TestAgentCoreInitialization:
 
   def test_agent_core_initialization_defaults(self) -> None:
     """Test AgentCore initializes with default config."""
-    core = AgentCore()
+    # Pass explicit config to prevent auto-discovery from picking up local config
+    core = AgentCore(config=Config())
     assert core.model == Config().backend.ollama.model
     assert core.thinking_mode == ThinkingMode.ON
     assert core.tool_registry is not None
@@ -37,21 +38,21 @@ class TestAgentCoreInitialization:
 
   def test_agent_core_thinking_mode(self) -> None:
     """Test thinking_mode parameter is respected."""
-    core = AgentCore(thinking_mode=ThinkingMode.OFF)
+    core = AgentCore(config=Config(), thinking_mode=ThinkingMode.OFF)
     assert core.thinking_mode == ThinkingMode.OFF
 
-    core_silent = AgentCore(thinking_mode=ThinkingMode.SILENT)
+    core_silent = AgentCore(config=Config(), thinking_mode=ThinkingMode.SILENT)
     assert core_silent.thinking_mode == ThinkingMode.SILENT
 
   def test_agent_core_recursion_depth_default(self) -> None:
     """Test recursion depth starts at 0 by default."""
-    core = AgentCore()
+    core = AgentCore(config=Config())
     assert core.recursion_depth == 0
     assert core.max_recursion_depth == core.config.tools.agent.max_recursion_depth
 
   def test_agent_core_recursion_depth_custom(self) -> None:
     """Test recursion depth can be set via internal parameter."""
-    core = AgentCore(_recursion_depth=2)
+    core = AgentCore(config=Config(), _recursion_depth=2)
     assert core.recursion_depth == 2
 
   def test_agent_core_recursion_depth_validation_negative(self) -> None:

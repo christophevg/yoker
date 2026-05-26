@@ -374,7 +374,17 @@ See `examples/yoker.toml` for the full configuration reference.
 
 ### Environment Variables
 
-Yoker automatically loads `yoker.toml` from the current directory if it exists.
+Yoker auto-discovers configuration files in this order:
+
+1. `./yoker.toml` (current directory)
+2. `~/.yoker.toml` (user home directory)
+3. Built-in defaults
+
+You can also specify an explicit config file:
+
+```bash
+python -m yoker --config path/to/config.toml
+```
 
 ## Available Tools
 

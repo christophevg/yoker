@@ -93,6 +93,18 @@ class AgentCore:
   ) -> None:
     """Initialize shared agent state.
 
+    Config/Agent Resolution (in order of precedence):
+        1. Explicit `config` parameter
+        2. Explicit `config_path` parameter
+        3. Auto-discovered config (./yoker.toml, ~/.yoker.toml)
+        4. Config() defaults
+
+    Agent Definition Resolution (in order of precedence):
+        1. Explicit `agent_definition` parameter
+        2. Explicit `agent_path` parameter
+        3. Config's `agents.definition` (if set and file exists)
+        4. None (default system prompt)
+
     Args:
       model: Model to use (overrides config if provided).
       config: Configuration object (takes precedence over config_path).
@@ -110,15 +122,33 @@ class AgentCore:
     load_dotenv(Path(".env"))
     load_dotenv(Path(".env.local"))
 
-    # Load configuration
+    # Load configuration (with auto-discovery)
+    config_source: str
+    discovered_path: Path | None = None
+
     if config is not None:
       self._config = config
+      # Skip logging - caller (Agent) already logged config resolution
     elif config_path is not None:
       from yoker.config import load_config
 
       self._config = load_config(config_path)
+      discovered_path = Path(config_path)
+      log.info(
+        "config_loaded",
+        source="explicit_path",
+        path=str(discovered_path),
+      )
     else:
-      self._config = Config()
+      from yoker.config import discover_config
+
+      self._config, discovered_path = discover_config()
+      config_source = "discovered" if discovered_path else "defaults"
+      log.info(
+        "config_loaded",
+        source=config_source,
+        path=str(discovered_path) if discovered_path else None,
+      )
 
     # Validate configuration
     from yoker.config.validator import validate_config
@@ -136,6 +166,26 @@ class AgentCore:
     # Command registry for slash-commands
     self._command_registry = command_registry
 
+    # Resolve agent definition from config if not explicitly provided
+    resolved_agent_path: Path | str | None = agent_path
+    if agent_definition is None and agent_path is None:
+      # Check if config has agents.definition
+      if self._config.agents.definition:
+        definition_path = Path(self._config.agents.definition).expanduser()
+        if definition_path.exists():
+          resolved_agent_path = definition_path
+          log.info(
+            "agent_definition_loaded",
+            path=str(definition_path),
+            source="config",
+          )
+        else:
+          log.warning(
+            "agent_definition_not_found",
+            path=str(definition_path),
+            fallback="default_prompt",
+          )
+
     # Load agent definition if path provided
     self._agent_definition: AgentDefinition | None = None
     system_prompt = DEFAULT_SYSTEM_PROMPT
@@ -143,10 +193,10 @@ class AgentCore:
     if agent_definition is not None:
       self._agent_definition = agent_definition
       system_prompt = agent_definition.system_prompt or DEFAULT_SYSTEM_PROMPT
-    elif agent_path is not None:
+    elif resolved_agent_path is not None:
       from yoker.agents import load_agent_definition
 
-      self._agent_definition = load_agent_definition(agent_path)
+      self._agent_definition = load_agent_definition(resolved_agent_path)
       system_prompt = self._agent_definition.system_prompt or DEFAULT_SYSTEM_PROMPT
 
     # Initialize path guardrail for filesystem tool validation

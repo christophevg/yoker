@@ -11,12 +11,15 @@ Example:
     # Load with defaults (returns default config if file missing)
     config = load_config_with_defaults("yoker.toml")
 
+    # Auto-discover configuration (./yoker.toml, ~/.yoker.toml)
+    config, config_path = discover_config()
+
     # Access configuration values
     print(config.backend.ollama.model)
     print(config.tools.read.enabled)
 """
 
-from yoker.config.loader import load_config, load_config_with_defaults
+from yoker.config.loader import discover_config, load_config, load_config_with_defaults
 from yoker.config.schema import (
   AgentsConfig,
   AgentToolConfig,
@@ -46,6 +49,7 @@ __all__ = [
   # Loader functions
   "load_config",
   "load_config_with_defaults",
+  "discover_config",
   # Validator functions
   "validate_config",
   # Configuration classes
