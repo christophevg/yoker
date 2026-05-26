@@ -212,43 +212,19 @@ This phase implements async-only Agent architecture:
 **Total estimated time:** 9.5 hours (+ 2 hours buffer)
 **See:** `analysis/async-first-architecture.md` for full design document
 
-- [ ] **1.8 Config Auto-Discovery and Agent Definition Path** (#7)
-  - **Schema Changes**:
-    - Add `definition: str = ""` field to `AgentsConfig` dataclass
-    - Update `_parse_agents()` to parse the `definition` field
-  - **Auto-Discovery Implementation**:
-    - Create `discover_config()` function in `loader.py`
-    - Search order: `./yoker.toml` (CWD), `~/.yoker.toml` (home), `Config()` defaults
-    - Return `(Config, Path | None)` tuple (config + source path)
-    - Raise `ConfigurationError` for invalid config files (not silent fallback)
-  - **Agent Initialization**:
-    - Update `Agent.__init__()` to use `discover_config()` when no config provided
-    - Implement agent definition resolution from `config.agents.definition`
-    - Resolution order: `agent_definition` param > `agent_path` param > `config.agents.definition` > None
-  - **Logging**:
-    - Log config discovery source (cwd/home/defaults)
-    - Log agent definition loading (from config vs fallback)
-    - Warning if `config.agents.definition` path doesn't exist
-  - **Backward Compatibility**:
-    - All existing initialization patterns continue to work
-    - Explicit `config` and `config_path` params skip auto-discovery
-    - No breaking changes
-  - **Edge Cases**:
-    - Invalid config file → `ConfigurationError` (not silent fallback)
-    - Both CWD and home configs → CWD takes precedence
-    - Missing agent definition file → Warning + default prompt (graceful degradation)
-    - Relative paths → Resolve from CWD (not config file location)
-    - Empty config file → Use `Config()` defaults
-  - **Testing**:
-    - Unit tests for `discover_config()` (6 scenarios)
-    - Unit tests for agent definition resolution (7 scenarios)
-    - Integration tests for zero-config startup
-  - **Documentation**:
-    - Update `README.md` with auto-discovery feature
-    - Update `docs/quickstart.md` with zero-config usage
-    - Add example config with `agents.definition`
+- [x] **1.8 Config Auto-Discovery and Agent Definition Path** (#7) (2026-05-26)
+  - Added `definition` field to `AgentsConfig` for explicit agent definition path
+  - Implemented `discover_config()` for auto-discovery (CWD → home → defaults)
+  - Added environment variable support with highest priority
+  - Added `Config.discover()` class method for object-oriented API
+  - Resolution order: env vars → explicit config → explicit path → CWD config → home config → defaults
+  - Environment variable format: `YOKER_BACKEND_OLLAMA_MODEL` (single underscore)
+  - Prefix support via `YOKER_PREFIX` env var
+  - Type coercion for str, int, float, bool, tuple
+  - Lists use comma-separated values
+  - All tests pass (1103 tests)
   - See: `analysis/api-config-auto-discovery.md` for full API design
-  - **Estimated time:** 2 hours
+  - PR: #13
 
 ### Future Features (Low Priority)
 
@@ -641,6 +617,14 @@ This phase implements async-only Agent architecture:
   - Write tutorial documentation
 
 ## Done
+
+- [x] **Issue #7: Config Auto-Discovery and Agent Definition Path** (2026-05-26)
+  - Config auto-discovery: `./yoker.toml` → `~/.yoker.toml` → defaults
+  - Environment variable support with highest priority
+  - `Config.discover()` class method for object-oriented API
+  - `agents.definition` config field for agent definition path
+  - Resolution order: env vars → explicit config → explicit path → file discovery → defaults
+  - PR: #13
 
 - [x] **Issue #10: Add Type Exports** (2026-05-25)
   - Added `AgentDefinition` and `load_agent_definition` exports to top-level package
