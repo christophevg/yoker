@@ -365,9 +365,7 @@ timeout_seconds = 60
 class TestConfigDiscover:
   """Tests for Config.discover() class method."""
 
-  def test_discover_with_defaults(
-    self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-  ) -> None:
+  def test_discover_with_defaults(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Test Config.discover() returns default config when no config found."""
     # Change to temp directory (no config files)
     monkeypatch.chdir(tmp_path)
@@ -386,9 +384,7 @@ class TestConfigDiscover:
     assert config.backend.provider == "ollama"
     assert config.backend.ollama.model == "llama3.2:latest"
 
-  def test_discover_with_env_vars(
-    self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-  ) -> None:
+  def test_discover_with_env_vars(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Test Config.discover() merges env vars."""
     monkeypatch.chdir(tmp_path)
 
@@ -409,9 +405,7 @@ class TestConfigDiscover:
     assert config.harness.name == "env-harness"
     assert config.backend.ollama.model == "env-model"
 
-  def test_discover_with_config_file(
-    self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-  ) -> None:
+  def test_discover_with_config_file(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Test Config.discover() loads config file."""
     # Create config file
     config_file = tmp_path / "yoker.toml"
