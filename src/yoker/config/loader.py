@@ -27,12 +27,15 @@ from yoker.config.schema import (
   WriteToolConfig,
 )
 from yoker.exceptions import ConfigurationError, FileNotFoundError
+from yoker.logging import get_logger
 
 # Use tomli for Python < 3.11, tomllib for 3.11+
 if sys.version_info >= (3, 11):
   import tomllib
 else:
   import tomli as tomllib  # type: ignore[import-not-found]
+
+log = get_logger(__name__)
 
 
 def _get_nested(data: dict[str, object], *keys: str) -> dict[str, object] | None:
@@ -316,6 +319,7 @@ def _parse_agents(data: dict[str, object]) -> AgentsConfig:
 
   return AgentsConfig(
     directory=agents.get("directory", "./agents"),  # type: ignore
+    definition=agents.get("definition", ""),  # type: ignore
     default_type=agents.get("default_type", "main"),  # type: ignore
   )
 
@@ -391,7 +395,40 @@ def load_config_with_defaults(path: Path | str | None = None) -> Config:
     return Config()
 
 
+def discover_config() -> tuple[Config, Path | None]:
+  """Auto-discover configuration file.
+
+  Search order:
+      1. ./yoker.toml (current directory)
+      2. ~/.yoker.toml (user home directory)
+      3. Config() defaults
+
+  Returns:
+      Tuple of (Config, Path | None). Path is the discovered config file,
+      or None if using defaults.
+
+  Raises:
+      ConfigurationError: If config file exists but is invalid.
+  """
+  # Try current directory
+  cwd_config = Path.cwd() / "yoker.toml"
+  if cwd_config.exists():
+    log.info("config_discovered", path=str(cwd_config), location="cwd")
+    return load_config(cwd_config), cwd_config
+
+  # Try user home directory
+  home_config = Path.home() / ".yoker.toml"
+  if home_config.exists():
+    log.info("config_discovered", path=str(home_config), location="home")
+    return load_config(home_config), home_config
+
+  # Fallback to defaults
+  log.info("config_defaults")
+  return Config(), None
+
+
 __all__ = [
   "load_config",
   "load_config_with_defaults",
+  "discover_config",
 ]

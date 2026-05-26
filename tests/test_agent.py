@@ -9,7 +9,8 @@ class TestAgent:
 
   def test_agent_initialization(self) -> None:
     """Test that Agent initializes with default config."""
-    agent = Agent()
+    # Pass explicit config to prevent auto-discovery from picking up local config
+    agent = Agent(config=Config())
     # Default model comes from Config
     assert agent.model == Config().backend.ollama.model
     assert agent.tool_registry is not None
@@ -35,7 +36,7 @@ class TestAgent:
 
   def test_recursion_depth_default(self) -> None:
     """Test that recursion depth starts at 0 by default."""
-    agent = Agent()
+    agent = Agent(config=Config())
     assert agent._recursion_depth == 0
     assert agent._max_recursion_depth == agent.config.tools.agent.max_recursion_depth
 
@@ -46,5 +47,5 @@ class TestAgent:
 
   def test_agent_tool_available(self) -> None:
     """Test that agent tool is available in tool registry."""
-    agent = Agent()
+    agent = Agent(config=Config())
     assert agent.tool_registry.get("agent") is not None

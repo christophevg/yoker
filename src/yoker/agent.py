@@ -79,6 +79,18 @@ class Agent:
   ) -> None:
     """Initialize the async agent.
 
+    Config/Agent Resolution (in order of precedence):
+        1. Explicit `config` parameter
+        2. Explicit `config_path` parameter
+        3. Auto-discovered config (./yoker.toml, ~/.yoker.toml)
+        4. Config() defaults
+
+    Agent Definition Resolution (in order of precedence):
+        1. Explicit `agent_definition` parameter
+        2. Explicit `agent_path` parameter
+        3. Config's `agents.definition` (if set and file exists)
+        4. None (default system prompt)
+
     Args:
       model: Model to use (overrides config if provided).
       config: Configuration object (takes precedence over config_path).
@@ -90,17 +102,50 @@ class Agent:
       context_manager: Optional ContextManager for conversation persistence.
       _recursion_depth: Internal parameter for subagent recursion tracking.
     """
-    # Load configuration once (following same precedence as AgentCore)
-    from yoker.config import Config
+    # Load configuration (with auto-discovery)
+    from yoker.config import discover_config
+
+    config_source: str
+    discovered_path: Path | None = None
 
     if config is not None:
       loaded_config = config
+      config_source = "explicit"
     elif config_path is not None:
       from yoker.config import load_config
 
       loaded_config = load_config(config_path)
+      config_source = "explicit_path"
+      discovered_path = Path(config_path)
     else:
-      loaded_config = Config()
+      loaded_config, discovered_path = discover_config()
+      config_source = "discovered" if discovered_path else "defaults"
+
+    log.info(
+      "config_loaded",
+      source=config_source,
+      path=str(discovered_path) if discovered_path else None,
+    )
+
+    # Resolve agent definition from config if not explicitly provided
+    resolved_agent_path: Path | str | None = agent_path
+    if agent_definition is None and agent_path is None:
+      # Check if config has agents.definition
+      if loaded_config.agents.definition:
+        definition_path = Path(loaded_config.agents.definition).expanduser()
+        if definition_path.exists():
+          resolved_agent_path = definition_path
+          log.info(
+            "agent_definition_loaded",
+            path=str(definition_path),
+            source="config",
+          )
+        else:
+          log.warning(
+            "agent_definition_not_found",
+            path=str(definition_path),
+            fallback="default_prompt",
+          )
 
     # Initialize async-specific client
     api_key = os.environ.get("OLLAMA_API_KEY")
@@ -122,7 +167,7 @@ class Agent:
       thinking_mode=thinking_mode,
       command_registry=command_registry,
       agent_definition=agent_definition,
-      agent_path=agent_path,
+      agent_path=resolved_agent_path,
       context_manager=context_manager,
       client=self._client,  # Pass AsyncClient for async web tools
       _recursion_depth=_recursion_depth,

@@ -140,7 +140,18 @@ python scripts/demo_session.py --script demos/session.md --agent examples/agents
 
 ## Configuration
 
-Create a `yoker.toml` file to configure Yoker:
+Yoker auto-discovers configuration files:
+
+1. `./yoker.toml` (current directory)
+2. `~/.yoker.toml` (user home directory)
+3. Built-in defaults
+
+```bash
+# Zero-configuration startup - uses auto-discovered config
+python -m yoker
+```
+
+Or create a `yoker.toml` file for explicit configuration:
 
 ```toml
 [harness]
@@ -153,6 +164,9 @@ provider = "ollama"
 [backend.ollama]
 base_url = "http://localhost:11434"
 model = "llama3.2:latest"
+
+[agents]
+definition = "./agents/researcher.md"  # Optional: agent definition file
 
 [tools.read]
 enabled = true

@@ -385,10 +385,12 @@ class AgentsConfig:
 
   Attributes:
     directory: Directory containing agent definition files (empty = no directory).
+    definition: Path to a specific agent definition file (overrides default_type).
     default_type: Default agent type.
   """
 
   directory: str = ""
+  definition: str = ""
   default_type: str = "main"
 
 
