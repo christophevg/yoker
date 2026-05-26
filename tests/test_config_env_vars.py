@@ -2,6 +2,7 @@
 
 import os
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -359,3 +360,134 @@ timeout_seconds = 60
     # Env var should override
     assert merged.backend.ollama.model == "env-model"
     assert merged.backend.ollama.timeout_seconds == 120
+
+
+class TestConfigDiscover:
+  """Tests for Config.discover() class method."""
+
+  def test_discover_with_defaults(
+    self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+  ) -> None:
+    """Test Config.discover() returns default config when no config found."""
+    # Change to temp directory (no config files)
+    monkeypatch.chdir(tmp_path)
+
+    # Clear any env vars
+    for key in list(os.environ.keys()):
+      if key.startswith("YOKER_"):
+        monkeypatch.delenv(key, raising=False)
+
+    # Mock Path.home() to prevent finding home config
+    with patch.object(Path, "home", return_value=tmp_path):
+      config = Config.discover()
+
+    # Should have default values
+    assert config.harness.name == "yoker"  # Default from HarnessConfig
+    assert config.backend.provider == "ollama"
+    assert config.backend.ollama.model == "llama3.2:latest"
+
+  def test_discover_with_env_vars(
+    self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+  ) -> None:
+    """Test Config.discover() merges env vars."""
+    monkeypatch.chdir(tmp_path)
+
+    # Clear any existing env vars
+    for key in list(os.environ.keys()):
+      if key.startswith("YOKER_"):
+        monkeypatch.delenv(key, raising=False)
+
+    # Set env vars
+    monkeypatch.setenv("YOKER_HARNESS_NAME", "env-harness")
+    monkeypatch.setenv("YOKER_BACKEND_OLLAMA_MODEL", "env-model")
+
+    # Mock Path.home() to prevent finding home config
+    with patch.object(Path, "home", return_value=tmp_path):
+      config = Config.discover()
+
+    # Env vars should be applied
+    assert config.harness.name == "env-harness"
+    assert config.backend.ollama.model == "env-model"
+
+  def test_discover_with_config_file(
+    self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+  ) -> None:
+    """Test Config.discover() loads config file."""
+    # Create config file
+    config_file = tmp_path / "yoker.toml"
+    config_file.write_text("""
+[harness]
+name = "toml-harness"
+
+[backend.ollama]
+model = "toml-model"
+""")
+
+    monkeypatch.chdir(tmp_path)
+
+    # Clear env vars
+    for key in list(os.environ.keys()):
+      if key.startswith("YOKER_"):
+        monkeypatch.delenv(key, raising=False)
+
+    # Mock Path.home() to prevent finding home config
+    with patch.object(Path, "home", return_value=tmp_path):
+      config = Config.discover()
+
+    # TOML values should be loaded
+    assert config.harness.name == "toml-harness"
+    assert config.backend.ollama.model == "toml-model"
+
+  def test_discover_with_explicit_path(
+    self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+  ) -> None:
+    """Test Config.discover() with explicit config_path."""
+    # Create config file with custom name
+    config_file = tmp_path / "custom.toml"
+    config_file.write_text("""
+[harness]
+name = "custom-harness"
+""")
+
+    # Clear env vars
+    for key in list(os.environ.keys()):
+      if key.startswith("YOKER_"):
+        monkeypatch.delenv(key, raising=False)
+
+    config = Config.discover(config_path=config_file)
+
+    # Should load from explicit path
+    assert config.harness.name == "custom-harness"
+
+  def test_discover_env_overrides_file(
+    self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+  ) -> None:
+    """Test that env vars override file config."""
+    # Create config file
+    config_file = tmp_path / "yoker.toml"
+    config_file.write_text("""
+[harness]
+name = "toml-harness"
+
+[backend.ollama]
+model = "toml-model"
+""")
+
+    monkeypatch.chdir(tmp_path)
+
+    # Clear existing env vars
+    for key in list(os.environ.keys()):
+      if key.startswith("YOKER_"):
+        monkeypatch.delenv(key, raising=False)
+
+    # Set env vars (higher priority)
+    monkeypatch.setenv("YOKER_HARNESS_NAME", "env-harness")
+
+    # Mock Path.home() to prevent finding home config
+    with patch.object(Path, "home", return_value=tmp_path):
+      config = Config.discover()
+
+    # Env var should override TOML
+    assert config.harness.name == "env-harness"
+    # TOML value not overridden should remain
+    assert config.backend.ollama.model == "toml-model"
