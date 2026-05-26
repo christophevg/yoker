@@ -228,12 +228,12 @@ You are a research agent.
 """
     )
 
-    # Create config file with agent definition
+    # Create config file with agent definition (use forward slashes for TOML)
     config_file = tmp_path / "yoker.toml"
     config_file.write_text(
       f"""
 [agents]
-definition = "{agent_file}"
+definition = "{agent_file.as_posix()}"
 """
     )
 
@@ -341,12 +341,12 @@ You are the explicit agent.
 """
     )
 
-    # Create config file with agent definition
+    # Create config file with agent definition (use forward slashes for TOML)
     config_file = tmp_path / "yoker.toml"
     config_file.write_text(
       f"""
 [agents]
-definition = "{config_agent_file}"
+definition = "{config_agent_file.as_posix()}"
 """
     )
 
