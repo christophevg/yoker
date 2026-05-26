@@ -79,11 +79,12 @@ class Agent:
   ) -> None:
     """Initialize the async agent.
 
-    Config/Agent Resolution (in order of precedence):
-        1. Explicit `config` parameter
-        2. Explicit `config_path` parameter
-        3. Auto-discovered config (./yoker.toml, ~/.yoker.toml)
-        4. Config() defaults
+    Config Resolution (in order of precedence):
+        1. Environment variables (YOKER_* or {PREFIX}_YOKER_*)
+        2. Explicit `config` parameter
+        3. Explicit `config_path` parameter
+        4. Auto-discovered config (./yoker.toml, ~/.yoker.toml)
+        5. Config() defaults
 
     Agent Definition Resolution (in order of precedence):
         1. Explicit `agent_definition` parameter
@@ -102,29 +103,36 @@ class Agent:
       context_manager: Optional ContextManager for conversation persistence.
       _recursion_depth: Internal parameter for subagent recursion tracking.
     """
-    # Load configuration (with auto-discovery)
-    from yoker.config import discover_config
+    # Load environment variable configuration FIRST (highest priority)
+    from yoker.config import discover_config, load_env_config, merge_configs
 
+    env_overrides = load_env_config()
+
+    # Load configuration (with auto-discovery)
     config_source: str
     discovered_path: Path | None = None
 
     if config is not None:
-      loaded_config = config
-      config_source = "explicit"
+      # Merge env vars ON TOP of explicit config
+      loaded_config = merge_configs(config, env_overrides) if env_overrides else config
+      config_source = "explicit_with_env" if env_overrides else "explicit"
     elif config_path is not None:
       from yoker.config import load_config
 
-      loaded_config = load_config(config_path)
-      config_source = "explicit_path"
+      base_config = load_config(config_path)
+      loaded_config = merge_configs(base_config, env_overrides) if env_overrides else base_config
+      config_source = "explicit_path_with_env" if env_overrides else "explicit_path"
       discovered_path = Path(config_path)
     else:
-      loaded_config, discovered_path = discover_config()
-      config_source = "discovered" if discovered_path else "defaults"
+      base_config, discovered_path = discover_config()
+      loaded_config = merge_configs(base_config, env_overrides) if env_overrides else base_config
+      config_source = "discovered_with_env" if env_overrides else "discovered" if discovered_path else "defaults"
 
     log.info(
       "config_loaded",
       source=config_source,
       path=str(discovered_path) if discovered_path else None,
+      env_vars_count=len(env_overrides) if env_overrides else 0,
     )
 
     # Resolve agent definition from config if not explicitly provided

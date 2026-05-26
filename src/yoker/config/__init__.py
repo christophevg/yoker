@@ -14,12 +14,24 @@ Example:
     # Auto-discover configuration (./yoker.toml, ~/.yoker.toml)
     config, config_path = discover_config()
 
+    # Load configuration from environment variables
+    env_config = load_env_config()
+
+    # Merge environment variables into config
+    merged_config = merge_configs(base_config, env_overrides)
+
     # Access configuration values
     print(config.backend.ollama.model)
     print(config.tools.read.enabled)
 """
 
-from yoker.config.loader import discover_config, load_config, load_config_with_defaults
+from yoker.config.loader import (
+  discover_config,
+  load_config,
+  load_config_with_defaults,
+  load_env_config,
+  merge_configs,
+)
 from yoker.config.schema import (
   AgentsConfig,
   AgentToolConfig,
@@ -50,6 +62,8 @@ __all__ = [
   "load_config",
   "load_config_with_defaults",
   "discover_config",
+  "load_env_config",
+  "merge_configs",
   # Validator functions
   "validate_config",
   # Configuration classes
