@@ -3,8 +3,11 @@
 Loads configuration from yoker.toml files and parses into Config objects.
 """
 
+import os
 import sys
+from dataclasses import fields
 from pathlib import Path
+from typing import Any, Union, get_args, get_origin
 
 from yoker.config.schema import (
   AgentsConfig,
@@ -427,8 +430,289 @@ def discover_config() -> tuple[Config, Path | None]:
   return Config(), None
 
 
+# Environment variable support
+
+
+def _get_env_var_name(config_path: tuple[str, ...], prefix: str = "") -> str:
+  """Convert config path to environment variable name.
+
+  Args:
+    config_path: Tuple of path components (e.g., ('backend', 'ollama', 'model'))
+    prefix: Optional prefix (e.g., 'MYAPP')
+
+  Returns:
+    Environment variable name (e.g., 'MYAPP_YOKER_BACKEND_OLLAMA_MODEL' or
+    'YOKER_BACKEND_OLLAMA_MODEL')
+
+  Example:
+    _get_env_var_name(('backend', 'ollama', 'model')) -> 'YOKER_BACKEND_OLLAMA_MODEL'
+    _get_env_var_name(('backend', 'ollama', 'model'), 'MYAPP') -> 'MYAPP_YOKER_BACKEND_OLLAMA_MODEL'
+  """
+  parts = [prefix, "YOKER"] if prefix else ["YOKER"]
+  parts.extend(part.upper() for part in config_path)
+  return "_".join(parts)
+
+
+# Mapping of config paths to their types for coercion
+# Format: (section, subsection, field) -> type
+_CONFIG_FIELD_TYPES: dict[tuple[str, ...], type] = {}
+
+
+def _build_config_field_types() -> dict[tuple[str, ...], type]:
+  """Build mapping of config paths to their types.
+
+  This is built once at module load time for efficient env var lookups.
+  """
+  types_map: dict[tuple[str, ...], type] = {}
+
+  # Helper to extract field types from a dataclass
+  def extract_types(
+    prefix: tuple[str, ...],
+    dataclass_type: type,
+    types_map: dict[tuple[str, ...], type],
+  ) -> None:
+    for f in fields(dataclass_type):
+      field_path = prefix + (f.name,)
+      field_type = f.type
+
+      # Handle string annotations (forward references)
+      if isinstance(field_type, str):
+        # Skip string annotations, we can't resolve them
+        continue
+
+      # Handle optional types (str | None)
+      origin = get_origin(field_type)
+      if origin is Union:
+        # Extract non-None type from Union
+        for arg in get_args(field_type):
+          if arg is not type(None):
+            field_type = arg
+            break
+        # Re-get origin after unwrapping Union
+        origin = get_origin(field_type)
+
+      # Check if this is a nested dataclass
+      if hasattr(field_type, "__dataclass_fields__"):
+        # Recurse into nested dataclass
+        extract_types(field_path, field_type, types_map)
+      else:
+        # Store the type for this field
+        # Handle both simple types (str, int, bool) and generic types (tuple[str, ...])
+        if isinstance(field_type, type) or origin is not None:
+          types_map[field_path] = field_type
+        # Skip complex type annotations that aren't simple types
+
+  # Build from root Config
+  extract_types((), Config, types_map)
+
+  return types_map
+
+
+# Initialize field types at module load
+_CONFIG_FIELD_TYPES = _build_config_field_types()
+
+# Build reverse mapping from env var name to config path (for default prefix)
+# Note: For custom prefixes, we need to strip the prefix when looking up
+_DEFAULT_ENV_VAR_TO_PATH: dict[str, tuple[str, ...]] = {
+  _get_env_var_name(path): path for path in _CONFIG_FIELD_TYPES
+}
+
+
+def _coerce_value(value: str, target_type: type) -> Any:
+  """Coerce string value to target type.
+
+  Args:
+    value: String value from environment variable
+    target_type: Target Python type
+
+  Returns:
+    Coerced value
+
+  Raises:
+    ValueError: If value cannot be coerced to target type
+  """
+  if target_type is str:
+    return value
+  elif target_type is int:
+    return int(value)
+  elif target_type is float:
+    return float(value)
+  elif target_type is bool:
+    lower = value.lower()
+    if lower in ("true", "1", "yes", "on"):
+      return True
+    elif lower in ("false", "0", "no", "off"):
+      return False
+    else:
+      raise ValueError(f"Cannot convert '{value}' to bool")
+  else:
+    # Check if this is a tuple type (tuple[str, ...]) or raw tuple class
+    origin = get_origin(target_type)
+    if origin is tuple or target_type is tuple:
+      # Handle tuple[str, ...] or tuple
+      # Split by comma and strip whitespace
+      return tuple(v.strip() for v in value.split(",") if v.strip())
+    else:
+      # Default to string
+      return value
+
+
+def _set_nested_value(
+  data: dict[str, Any],
+  path: tuple[str, ...],
+  value: Any,
+) -> None:
+  """Set a nested value in a dictionary.
+
+  Args:
+    data: Dictionary to modify
+    path: Path to the nested key
+    value: Value to set
+
+  Example:
+    data = {}
+    _set_nested_value(data, ('backend', 'ollama', 'model'), 'llama3')
+    # data = {'backend': {'ollama': {'model': 'llama3'}}}
+  """
+  for key in path[:-1]:
+    if key not in data:
+      data[key] = {}
+    data = data[key]
+  data[path[-1]] = value
+
+
+def load_env_config(prefix: str | None = None) -> dict[str, Any]:
+  """Load configuration from environment variables.
+
+  Environment variables take the form:
+    YOKER_BACKEND_OLLAMA_MODEL=value
+    YOKER_PERMISSIONS_FILESYSTEM_PATHS=/path1,/path2
+    YOKER_CONTEXT_PERSIST_AFTER_TURN=true
+
+  With prefix:
+    MYAPP_YOKER_BACKEND_OLLAMA_MODEL=value
+
+  Args:
+    prefix: Optional prefix for env vars (from YOKER_PREFIX env var or explicit)
+
+  Returns:
+    Dictionary with config structure from environment variables.
+  """
+  # Get prefix from env var if not explicitly provided
+  if prefix is None:
+    prefix = os.environ.get("YOKER_PREFIX", "")
+
+  result: dict[str, Any] = {}
+
+  # Determine the env var prefix to look for
+  env_prefix = f"{prefix}_YOKER_" if prefix else "YOKER_"
+
+  # Scan environment variables
+  for env_key, env_value in os.environ.items():
+    # Check if this env var matches our pattern
+    if not env_key.startswith(env_prefix):
+      continue
+
+    # Strip the prefix to get the default env var name
+    default_env_key = env_key[len(prefix) + 1:] if prefix else env_key
+
+    # Look up the config path using the default reverse mapping
+    if default_env_key not in _DEFAULT_ENV_VAR_TO_PATH:
+      # Unknown env var, skip
+      continue
+
+    # Get the config path and target type
+    config_path = _DEFAULT_ENV_VAR_TO_PATH[default_env_key]
+    target_type = _CONFIG_FIELD_TYPES[config_path]
+
+    try:
+      # Coerce the value to the correct type
+      coerced_value = _coerce_value(env_value, target_type)
+      _set_nested_value(result, config_path, coerced_value)
+      log.debug(
+        "env_var_loaded",
+        env_var=env_key,
+        path=".".join(config_path),
+        value_type=type(coerced_value).__name__,
+      )
+    except ValueError as e:
+      log.warning(
+        "env_var_coercion_failed",
+        env_var=env_key,
+        value=env_value,
+        target_type=target_type.__name__,
+        error=str(e),
+      )
+
+  return result
+
+
+def merge_configs(base: Config, overrides: dict[str, Any]) -> Config:
+  """Merge environment overrides into a base configuration.
+
+  Creates a new Config with values from overrides merged on top of base.
+  Overrides take precedence over base values.
+
+  Args:
+    base: Base configuration
+    overrides: Dictionary with override values (from load_env_config)
+
+  Returns:
+    New Config with merged values
+  """
+  if not overrides:
+    return base
+
+  # Convert base to dict for merging
+  # Since Config is frozen, we need to build new instances
+
+  def merge_section(
+    base_obj: Any,
+    overrides_dict: dict[str, Any] | None,
+  ) -> Any:
+    """Recursively merge a section."""
+    if overrides_dict is None:
+      return base_obj
+
+    if not hasattr(base_obj, "__dataclass_fields__"):
+      return base_obj
+
+    # Build kwargs for new instance
+    kwargs: dict[str, Any] = {}
+    for f in fields(base_obj):
+      field_name = f.name
+      base_value = getattr(base_obj, field_name)
+
+      if field_name in overrides_dict:
+        override_value = overrides_dict[field_name]
+        if hasattr(base_value, "__dataclass_fields__"):
+          # Nested dataclass - recurse
+          kwargs[field_name] = merge_section(base_value, override_value)
+        else:
+          # Leaf value - use override
+          kwargs[field_name] = override_value
+      else:
+        # No override - use base value
+        kwargs[field_name] = base_value
+
+    # Create new instance
+    return type(base_obj)(**kwargs)
+
+  # Merge each top-level section
+  result_kwargs: dict[str, Any] = {}
+  for f in fields(base):
+    section_name = f.name
+    base_section = getattr(base, section_name)
+    override_section = overrides.get(section_name)
+    result_kwargs[section_name] = merge_section(base_section, override_section)
+
+  return Config(**result_kwargs)
+
+
 __all__ = [
   "load_config",
   "load_config_with_defaults",
   "discover_config",
+  "load_env_config",
+  "merge_configs",
 ]

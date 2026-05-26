@@ -93,11 +93,12 @@ class AgentCore:
   ) -> None:
     """Initialize shared agent state.
 
-    Config/Agent Resolution (in order of precedence):
-        1. Explicit `config` parameter
-        2. Explicit `config_path` parameter
-        3. Auto-discovered config (./yoker.toml, ~/.yoker.toml)
-        4. Config() defaults
+    Config Resolution (in order of precedence):
+        1. Environment variables (YOKER_* or {PREFIX}_YOKER_*)
+        2. Explicit `config` parameter
+        3. Explicit `config_path` parameter
+        4. Auto-discovered config (./yoker.toml, ~/.yoker.toml)
+        5. Config() defaults
 
     Agent Definition Resolution (in order of precedence):
         1. Explicit `agent_definition` parameter
@@ -122,32 +123,49 @@ class AgentCore:
     load_dotenv(Path(".env"))
     load_dotenv(Path(".env.local"))
 
+    # Load environment variable configuration
+    # Env vars have HIGHEST priority (even over explicit config parameter)
+    from yoker.config import load_env_config, merge_configs
+
+    env_overrides = load_env_config()
+
     # Load configuration (with auto-discovery)
     config_source: str
     discovered_path: Path | None = None
 
     if config is not None:
-      self._config = config
+      # Merge env vars ON TOP of explicit config
+      self._config = merge_configs(config, env_overrides) if env_overrides else config
+      if env_overrides:
+        log.info(
+          "config_loaded",
+          source="explicit_with_env",
+          env_vars_count=len(env_overrides),
+        )
       # Skip logging - caller (Agent) already logged config resolution
     elif config_path is not None:
       from yoker.config import load_config
 
-      self._config = load_config(config_path)
+      base_config = load_config(config_path)
+      self._config = merge_configs(base_config, env_overrides) if env_overrides else base_config
       discovered_path = Path(config_path)
       log.info(
         "config_loaded",
-        source="explicit_path",
+        source="explicit_path_with_env" if env_overrides else "explicit_path",
         path=str(discovered_path),
+        env_vars_count=len(env_overrides) if env_overrides else 0,
       )
     else:
       from yoker.config import discover_config
 
-      self._config, discovered_path = discover_config()
-      config_source = "discovered" if discovered_path else "defaults"
+      base_config, discovered_path = discover_config()
+      self._config = merge_configs(base_config, env_overrides) if env_overrides else base_config
+      config_source = "discovered_with_env" if env_overrides else "discovered" if discovered_path else "defaults"
       log.info(
         "config_loaded",
         source=config_source,
         path=str(discovered_path) if discovered_path else None,
+        env_vars_count=len(env_overrides) if env_overrides else 0,
       )
 
     # Validate configuration
