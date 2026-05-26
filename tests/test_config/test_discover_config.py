@@ -386,9 +386,7 @@ class TestConfigLogging:
     assert path == config_file
     assert config.harness.name == "test"
 
-  def test_logs_config_defaults(
-    self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-  ) -> None:
+  def test_logs_config_defaults(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Test that discover_config returns defaults when no config found."""
     from yoker.config import discover_config
 
