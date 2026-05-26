@@ -32,7 +32,10 @@ class TestEnvVarNames:
 
   def test_with_prefix(self) -> None:
     """Test prefix support."""
-    assert _get_env_var_name(("backend", "ollama", "model"), "MYAPP") == "MYAPP_YOKER_BACKEND_OLLAMA_MODEL"
+    assert (
+      _get_env_var_name(("backend", "ollama", "model"), "MYAPP")
+      == "MYAPP_YOKER_BACKEND_OLLAMA_MODEL"
+    )
     assert _get_env_var_name(("harness", "name"), "MYAPP") == "MYAPP_YOKER_HARNESS_NAME"
 
 
@@ -250,16 +253,12 @@ class TestMergeConfigs:
 class TestEnvVarPriority:
   """Tests for environment variable priority in config resolution."""
 
-  def test_env_overrides_explicit_config(
-    self, monkeypatch: pytest.MonkeyPatch
-  ) -> None:
+  def test_env_overrides_explicit_config(self, monkeypatch: pytest.MonkeyPatch) -> None:
     """Test that env vars override explicit config parameter."""
     monkeypatch.setenv("YOKER_BACKEND_OLLAMA_MODEL", "env-model")
 
     # Create explicit config
-    explicit_config = Config(
-      backend=BackendConfig(ollama=OllamaConfig(model="config-model"))
-    )
+    explicit_config = Config(backend=BackendConfig(ollama=OllamaConfig(model="config-model")))
 
     # Load env config and merge
     env_overrides = load_env_config()
@@ -268,9 +267,7 @@ class TestEnvVarPriority:
     # Env var should override
     assert merged.backend.ollama.model == "env-model"
 
-  def test_env_overrides_file_config(
-    self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-  ) -> None:
+  def test_env_overrides_file_config(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Test that env vars override file config."""
     # Create config file
     config_file = tmp_path / "yoker.toml"
@@ -335,9 +332,7 @@ class TestIntegration:
     assert merged.permissions.filesystem_paths == ("/app", "/data")
     assert merged.permissions.network_access == "local"
 
-  def test_env_with_toml_config(
-    self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-  ) -> None:
+  def test_env_with_toml_config(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Test that env vars override TOML config values."""
     # Create config file with some values
     config_file = tmp_path / "yoker.toml"
