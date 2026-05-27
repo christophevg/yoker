@@ -303,8 +303,9 @@ def load_skills(
 def load_skills_from_env(env_var: str = "YOKER_SKILLS_PATH") -> dict[str, Skill]:
   """Load skills from directories specified in environment variable.
 
-  Environment variable should contain colon-separated list of directories.
-  Each directory is searched for skill definition files.
+  Environment variable should contain os.pathsep-separated list of
+  directories (':' on Unix, ';' on Windows). Each directory is searched
+  for skill definition files.
 
   Args:
     env_var: Environment variable name (default: YOKER_SKILLS_PATH).
@@ -322,7 +323,7 @@ def load_skills_from_env(env_var: str = "YOKER_SKILLS_PATH") -> dict[str, Skill]
   if not path_str:
     return skills
 
-  for directory in path_str.split(":"):
+  for directory in path_str.split(os.pathsep):
     if not directory:
       continue
 
