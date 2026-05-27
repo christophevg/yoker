@@ -1,388 +1,114 @@
 # TODO
 
-## Backlog
+## MVP: Package Plugin System (Issue #14)
 
-### Standard Project Setup
+**Goal:** Enable Python packages to provide tools and skills to yoker via `yoker --with <package>`
 
-- [x] **migrate-to-hatchling** (2026-04-29)
-  - Migrate from setuptools.build_meta to hatchling
-  - Update pyproject.toml: change build-backend to "hatchling.build"
-  - Replace `[tool.setuptools.*]` sections with `[tool.hatch.build.*]`
-  - Update packages config: `[tool.hatch.build.targets.wheel] packages = ["src/yoker"]`
-  - Verify all tool configs remain in pyproject.toml
-  - Acceptance: `pip install -e ".[dev]"` works, `make test` passes, `python -m build` succeeds
-  - See: c3 skill `python-project` for hatchling configuration
-  - See: `reporting/migrate-to-hatchling/summary.md` for implementation summary
+**Milestone:** Users can run `uvx --with pkgq yoker --with pkgq` and invoke `/pkgq:create`
 
-### Phase 1.5: UI/UX Fixes (High Priority)
+### Phase 2: Plugin & Skill System
 
-- [x] **1.5.1 Remove Thinking Headers**
-  - Remove "[thinking]" and "[response]" text headers from console output
-  - Use visual styling (gray/muted color) to distinguish thinking sections
-  - Ensure thinking sections remain readable but visually distinct from content
-  - Verify the change works in both interactive and demo modes
+- [ ] **2.1 Skill Infrastructure**
+  - Define `Skill` dataclass (Markdown + YAML frontmatter, similar to AgentDefinition)
+  - Implement `SkillLoader` class (load from directory, parse frontmatter)
+  - Implement skill context injection (user-level message with skill content)
+  - Add skill discovery (`list_skills()` method)
+  - Add skill registry to track loaded skills
+  - Write unit tests for SkillLoader and skill injection
+  - **Estimated time:** 2-3 hours
+  - **Satisfies:** Skill invocation capability
 
-- [x] **1.5.2 Fix Mouse Selection in Interactive Mode**
-  - Set `mouse_support=False` in `PromptSession` (recommended fix from UX analysis)
-  - Verify text selection works in terminal output area (scrollback buffer)
-  - Verify text can be copied correctly (Ctrl+Shift+C / Cmd+C)
-  - Verify keyboard navigation still works (arrows, Home, End, Ctrl+A, Ctrl+E)
-  - Verify no conflicts with existing keybindings (multiline, history, search)
-  - Update README.md to document keyboard navigation
-  - See `analysis/ux-mouse-selection.md` for full UX analysis
-  - See `reporting/1.5.2-mouse-selection/summary.md` for implementation summary
+- [ ] **2.2 Package Plugin System**
+  - Import `{package}.yoker` module if present (using importlib)
+  - Extract `TOOLS`, `SKILLS`, `AGENTS` lists from module
+  - Handle graceful failure when package lacks yoker support
+  - Implement namespace format: `{package}:{tool|skill|agent}` (e.g., `pkgq:find`)
+  - Register discovered components with respective registries
+  - Write unit tests for plugin discovery and registration
+  - **Estimated time:** 2-3 hours
+  - **Satisfies:** Package integration capability
+  - **See:** Issue #14
 
-- [x] **1.5.3 Update Demo Session Script**
-  - Update tool display format: `[Tool Call] read(file_path=...)` → `Read tool: <filename>`
-  - Use cyan color for tool name (matches session header style)
-  - Display filename only (not full path) for better readability
-  - Ensure tool display is visually distinct but harmonious with other output
-  - Create new session log for replay with tool calls
-  - Improve replay to include commands and thinking events
-  - Test replay mode produces same visual output as live session
-  - See `analysis/ux-demo-session.md` for full UX analysis
-  - See `reporting/1.5.3-demo-session/functional-review.md` for review summary
+- [ ] **2.3 CLI --with Argument**
+  - Add `--with <package>` argument to `__main__.py`
+  - Support multiple packages: `--with pkgq --with another`
+  - Load packages before agent starts (in `main_async()`)
+  - Add skill invocation via `/skill-name` commands in CLI
+  - Handle package import errors with user-friendly messages
+  - Update README.md with `--with` usage examples
+  - Write unit tests for CLI argument handling
+  - **Estimated time:** 1-2 hours
+  - **Depends on:** 2.1, 2.2
+  - **Satisfies:** User-facing capability
 
-- [x] **1.5.4 Event Logging System**
-  - Create `EventLogger` class to log all event types to JSONL
-  - Log SESSION_START, TURN_START, THINKING_*, TOOL_*, CONTENT_*, events
-  - Enable full visual replay capability
-  - Create `EventReplayAgent` that emits events from log
-  - Extracted from demo_session.py into src/yoker/logging/ module
-  - See `reporting/1.5.4-event-logging/summary.md` for implementation summary
+### Phase 5: Polish (Post-MVP)
 
-- [x] **1.5.5 Show Write/Update Tool Content in CLI** (2026-05-05)
-  - Add ToolContentEvent to event types ✅
-  - Add ContentDisplayConfig to configuration schema ✅
-  - Add content_metadata field to ToolResult ✅
-  - Update WriteTool to populate content_metadata ✅
-  - Update UpdateTool to populate content_metadata ✅
-  - Write unit tests for WriteTool/UpdateTool (46 tests) ✅
-  - **Incomplete**: Agent emission and ConsoleEventHandler display moved to Task 1.5.6
-  - See `analysis/api-write-update-display.md` for API design
-  - See `analysis/ux-write-update-display.md` for UX design
-  - See `reporting/1.5.5-write-update-display/consensus.md` for consensus
+- [ ] **5.1 Error Handling**
+  - Define error codes and messages
+  - Implement graceful error recovery
+  - Add user-friendly error messages
+  - Ensure all exceptions are handled
+  - **Priority:** P2
 
-- [x] **1.5.6 Complete Tool Content Display** (2026-05-16)
-  - Implement Agent emission of ToolContentEvent when metadata present ✅
-  - Add ConsoleEventHandler._handle_tool_content() method ✅
-  - Dispatch TOOL_CONTENT event type to handler ✅
-  - Implement silent mode (tool name + success indicator only) ✅
-  - Implement summary mode (line counts, operation summaries) ✅
-  - Implement content mode (full content with line numbers) ✅
-  - Implement diff display for replace operations (unified diff) ✅
-  - Implement context display for insert/delete operations ✅
-  - Match Read tool visual style (cyan tool name, filename only) ✅
-  - Convert 47 stub tests to real tests ✅
-  - **Depends on**: 1.5.5 (content_metadata already populated by tools)
-  - See `reporting/1.5.6-tool-content-display/summary.md` for implementation summary
+- [ ] **5.2 Documentation**
+  - Write README with quick start guide
+  - Document all configuration options
+  - Write API documentation (Sphinx autodoc)
+  - Create usage examples
+  - Publish to ReadTheDocs
+  - **Priority:** P2
 
-### Phase 1.6: Documentation (Medium Priority)
+- [ ] **5.3 Testing**
+  - Achieve high test coverage (>80%)
+  - Add integration tests for full flows
+  - Add guardrail enforcement tests
+  - Add edge case tests
+  - **Priority:** P2
 
-- [x] **1.6.1 Update Documentation Folder**
-  - Review all files in docs/ folder against current implementation
-  - Update outdated content to reflect current architecture
-  - Ensure consistency with README.md and CLAUDE.md
-  - Update code examples where necessary
-  - Add feature checkboxes (current vs planned)
-  - Add "Why Yoker?" section with rationale links
-  - Add `--output` option to demo_session.py for single-use screenshots
-  - See `reporting/1.6.1-documentation/summary.md` for implementation summary
+### Phase 6: Release Preparation
 
-- [x] **1.6.2 Define Project Rationale**
-  - Research existing coding agent solutions and their approaches
-  - Interview user to understand goals and vision
-  - Document unique selling factors of yoker
-  - Create rationale document explaining why yoker should exist and what it offers
-  - Identify gaps in existing solutions that yoker addresses
-  - See `docs/rationale.md` for the rationale document
-  - See `research/2026-04-22-coding-agent-rationale/` for research findings
+- [ ] **6.1 PyPI Package**
+  - Finalize pyproject.toml metadata
+  - Create release notes
+  - Test installation from source distribution
+  - Upload to TestPyPI
+  - Upload to PyPI
+  - **Priority:** P3
 
-### Phase 1: Core Infrastructure
+- [ ] **6.2 Examples and Tutorials**
+  - Create basic example
+  - Create research workflow example
+  - Write tutorial documentation
+  - **Priority:** P3
 
-- [x] **1.1 Project Setup**
-  - Create Python package structure (src/yoker/)
-  - Set up pyproject.toml with dependencies (following clitic template)
-  - Configure development environment (ruff, mypy, pytest)
-  - Create basic CLI entry point
-  - Set up Sphinx documentation structure
-  - Create .readthedocs.yaml
+---
 
-- [x] **1.2 Configuration System**
-  - Implement TOML config loader
-  - Define configuration schema (dataclasses or pydantic)
-  - Implement config validator (schema + semantic checks)
-  - Add error handling for invalid configs
-  - Create example configuration files
+## Future Work (Post-Release)
 
-- [x] **1.3 Agent Definition Loader**
-  - Implement Markdown file parser
-  - Parse YAML frontmatter
-  - Validate agent definitions against schema
-  - Handle missing or invalid frontmatter
-  - Create example agent definitions
-  - See `analysis/agent-definition-loader.md` for design
-  - See `reporting/1.3-agent-definition-loader/summary.md` for implementation summary
-
-- [x] **1.5 Logging System**
-  - Integrate structlog for structured logging
-  - Add file and console handlers
-  - Log tool calls and guardrail decisions
-  - Add timing information for performance tracking
-  - See `analysis/api-logging-system.md` for API design
-  - See `reporting/1.5-logging-system/summary.md` for implementation summary
-
-### Phase 1.7: Async-First Agent Architecture (High Priority)
-
-This phase implements async-only Agent architecture:
-- `yoker.Agent` - Async-native implementation (all methods are async)
-- All tools use `async def execute()` 
-- CLI wraps async calls with `asyncio.run()`
-
-- [x] **1.7.1 Extract AgentCore Class** (2026-05-23)
-  - Create `src/yoker/base.py` with shared state and utilities
-  - Extract: configuration initialization, tool registry building, context manager
-  - Extract: guardrail setup, agent definition loading, event handler storage
-  - Extract: recursion tracking
-  - Write unit tests for AgentCore (51 tests, 98% coverage)
-  - **Estimated time:** 1 hour
-  - **Satisfies:** FR4
-  - See: `reporting/1.7.1-agentcore-extraction/summary.md`
-
-- [x] **1.7.2 Async-Only Agent** (2026-05-23)
-  - Rename AsyncAgent to Agent (async-only)
-  - Use `AsyncClient` from ollama library
-  - All methods are async: `process()`, `begin_session()`, `end_session()`
-  - Event emission is async
-  - Tool execution uses `await tool.execute()`
-  - **Estimated time:** 2 hours
-  - **Satisfies:** FR2, FR5, FR6, FR7
-
-- [x] **1.7.3 Async Tool Execution** (2026-05-23)
-  - Convert all tools to async: `async def execute()`
-  - Tool base class: `execute()` is abstract async method
-  - WebSearch/WebFetch use AsyncClient
-  - AgentTool spawns async subagents
-  - All 1047 tests pass
-  - **Estimated time:** 1 hour
-
-- [x] **1.7.4 Async CLI Integration** (2026-05-23)
-  - Create `main_async()` function in `__main__.py`
-  - Refactor `main()` to call `asyncio.run(main_async())`
-  - Use `prompt_async()` for async input
-  - Handle async session begin/end
-  - **Estimated time:** 30 minutes
-
-- [x] **1.7.5 Update Documentation** (2026-05-25)
-  - Update `docs/quickstart.md` with async usage examples
-  - Update `REQUIREMENTS.md` to reflect async-only architecture
-  - Update `scripts/demo_session.py` for async
-  - **Estimated time:** 30 minutes
-
-- [x] **1.7.7 Async Event Handler Support** (2026-05-25)
-  - Update `ConsoleEventHandler` to support async operation
-  - Make `__call__` method async
-  - Add backward-compatible sync support if needed
-  - Ensure Rich console output works in async context
-  - Write tests for async event handling
-  - **Estimated time:** 45 minutes
-  - **Satisfies:** FR7
-  - See: `reporting/1.7.7-async-event-handler/functional-review.md`
-
-- [x] **1.7.8 Async Test Coverage** (2026-05-25)
-  - Add pytest-asyncio markers to test files ✅ (already using asyncio_mode = "auto")
-  - Create async test fixtures in `conftest.py` ✅ (not needed - pytest handles async fixtures)
-  - Write tests for async Agent ✅ (1047 tests passing, 82% coverage)
-  - Write tests for async event handlers ✅ (test_events.py covers async handlers)
-  - Ensure test coverage maintained (>80%) ✅ (82% achieved)
-  - **Note**: Original task mentioned "sync Agent" and "AsyncAgent" but the architecture
-    was simplified to async-only Agent. No sync Agent or AsyncAgent classes exist.
-  - **Estimated time:** 1 hour
-  - **Satisfies:** FR8
-
-- [x] **1.7.9 Documentation Updates** (2026-05-25)
-  - Update docs/quickstart.md with async usage examples ✅ (already updated)
-  - Update CLAUDE.md architecture section ✅ (async-only documented)
-  - **Note**: Original task mentioned "both import paths" but there is only `Agent` (async-only).
-    No AsyncAgent class exists. Quart/FastAPI integration examples not yet added.
-  - **Remaining**: Add Quart/FastAPI integration examples (deferred to future task)
-  - **Estimated time:** 1 hour
-  - **Satisfies:** FR9, FR10
-
-**Total estimated time:** 9.5 hours (+ 2 hours buffer)
-**See:** `analysis/async-first-architecture.md` for full design document
-
-- [x] **1.8 Config Auto-Discovery and Agent Definition Path** (#7) (2026-05-26)
-  - Added `definition` field to `AgentsConfig` for explicit agent definition path
-  - Implemented `discover_config()` for auto-discovery (CWD → home → defaults)
-  - Added environment variable support with highest priority
-  - Added `Config.discover()` class method for object-oriented API
-  - Resolution order: env vars → explicit config → explicit path → CWD config → home config → defaults
-  - Environment variable format: `YOKER_BACKEND_OLLAMA_MODEL` (single underscore)
-  - Prefix support via `YOKER_PREFIX` env var
-  - Type coercion for str, int, float, bool, tuple
-  - Lists use comma-separated values
-  - All tests pass (1103 tests)
-  - See: `analysis/api-config-auto-discovery.md` for full API design
-  - PR: #13
-
-### Future Features (Low Priority)
-
-- [ ] **2.13.1 Local WebSearch Backend** (Deferred: Ollama backend working)
-  - Implement LocalWebSearchBackend using DDGS library
-  - Support multiple search backends (bing, brave, ddg, google)
-  - Add rate limiting and error handling
-  - Integrate with WebSearchTool via plugin system
-  - Write unit tests
-  - Note: OllamaWebSearchBackend is working, this is for offline-first operation
-
-- [ ] **2.13.2 Local WebFetch Backend** (Deferred: Ollama backend working)
-  - Implement LocalWebFetchBackend using httpx + Trafilatura
-  - Implement content extraction with Trafilatura
-  - Add SSRF protection and DNS rebinding defense
-  - Integrate with WebFetchTool via plugin system
-  - Write unit tests
-  - Note: OllamaWebFetchBackend is working, this is for full control over SSRF/redirects
-
-- [ ] **R.1 Hermes Agent Comparison**
-  - Research Hermes Agent architecture and capabilities
-  - Compare Hermes to Yoker architecture
-  - Compare Hermes to C3 Agentic Harness approach
-  - Compare Hermes to Assistant pattern
-  - Document findings in research folder
-  - Identify features worth incorporating
-
-- [ ] **F.1 Multi-Agent Chat Room Demo**
-  - Design multi-agent chat room architecture
-  - Implement spawn command in TUI to spawn agent from folder
-  - Create agent folder structure for spawned agents
-  - Implement agent-to-agent communication protocol
-  - Create demonstration scenario
-
-### Phase 2: Tool Implementation
-
-- [x] **2.1 Tool Base Framework**
-  - Define Tool abstract base class
-  - Define ToolResult and ValidationResult types
-  - Implement tool registry
-  - Create guardrail enforcer interface
-
-- [x] **2.1.5 Shared PathGuardrail Implementation**
-  - Implement PathGuardrail concrete class using config permissions
-  - Resolve paths with os.path.realpath() to prevent traversal
-  - Validate paths against config.permissions.filesystem_paths
-  - Add blocked pattern matching (regex)
-  - Add file size limit enforcement
-  - Add extension filtering for read tool
-  - Wire guardrail validation into Agent.process() before tool.execute()
-  - Add structured logging for allow/block decisions
-  - Harden ReadTool to use the guardrail
-  - Write unit tests for traversal, symlinks, blocked patterns
-  - See analysis/security-list-tool.md for threat model
-  - See analysis/api-list-tool.md for API design
-
-- [x] **2.2 List Tool**
-  - Implement directory listing functionality
-  - Add path restriction guardrails
-  - Add max_depth and max_entries limits
-  - Add pattern filtering support
-  - Write unit tests
-  - API design: `analysis/api-list-tool.md`
-    - Tool name: `list`, schema follows ReadTool patterns
-    - Parameters: `path` (required), `max_depth` (default 1), `max_entries` (default 1000), `pattern` (optional glob)
-    - Returns tree-formatted text with directory/file counts
-    - Limits are self-enforced (clamped); guardrails focus on path security
-    - PathGuardrail should be shared with ReadTool (task 2.3) and other filesystem tools
-    - Update `src/yoker/tools/__init__.py` to register ListTool in default registry
-  - **Security**: Must use shared `PathGuardrail` (see `analysis/security-list-tool.md`)
-  - **Security**: Do not follow symlinks during recursion (`followlinks=False`)
-  - **Security**: Resolve and validate path against `config.permissions.filesystem_paths`
-  - **Security**: Enforce `max_depth` and `max_entries` with early termination
-  - **Security**: Add tests for path traversal (`../../../etc`), symlink bypass, and blocked patterns
-
-- [x] **2.3 Read Tool**
-  - Implement file reading functionality
-  - Add path restriction guardrails
-  - Add file extension filtering
-  - Add size limit enforcement
-  - Add blocked pattern matching (e.g., .env files)
-  - Write unit tests
-  - **Security**: Must use shared `PathGuardrail` (see `analysis/security-list-tool.md`)
-  - **Security**: Current `ReadTool` is critically vulnerable (zero validation); harden via guardrail
-  - See `reporting/2.3-read-tool/summary.md` for implementation summary
-
-- [x] **2.4 Write Tool**
-  - Implement file writing functionality
-  - Add path restriction guardrails
-  - Implement overwrite protection
-  - Add size limit enforcement
-  - Add blocked extension filtering
-  - Write unit tests
-  - See `reporting/2.4-write-tool/summary.md` for implementation summary
-
-- [x] **2.5 Update Tool**
-  - Implement file editing operations (replace, insert, delete)
-  - Add exact match validation
-  - Add diff size limits
-  - Implement line-based operations
-  - Write unit tests
-  - See `reporting/2.5-update-tool/summary.md` for implementation summary
-
-- [x] **2.6 Search Tool**
-  - Implement content search (grep-like)
-  - Implement filename search (glob-like)
-  - Add regex complexity limits
-  - Add result count limits
-  - Add timeout enforcement
-  - Write unit tests
-  - See `analysis/api-search-tool.md` for API design
-  - See `analysis/security-search-tool.md` for security analysis
-  - See `reporting/2.6-search-tool/summary.md` for implementation summary
-
-- [x] **2.7 Agent Tool**
-  - Implement subagent spawning
-  - Implement recursion depth tracking (internal)
-  - Return error when max depth exceeded
-  - Add subagent timeout handling
-  - Implement clean context creation for subagents
-  - Write unit tests
-  - See `analysis/api-agent-tool.md` for API design
-  - See `analysis/security-agent-tool.md` for security analysis
-  - See `reporting/2.7-agent-tool/consensus.md` for consensus report
-
-- [x] **2.8 File Existence Tool**
-  - Implement file existence check functionality
-  - Implement folder existence check functionality
-  - Add path restriction guardrails (use shared PathGuardrail)
-  - Return structured result with exists, type, and path
-  - Symlink rejection for security
-  - Generic error messages (security hardening)
-  - Write unit tests (28 test cases)
-  - See `analysis/api-existence-tool.md` for API design
-  - See `analysis/security-existence-tool.md` for security analysis
-  - See `reporting/2.8-existence-tool/summary.md` for implementation summary
+### Additional Tools (Phase 2 continued)
 
 - [ ] **2.15 Python Tool**
-  - Depends on: 2.14 Python Tool Research
+  - Depends on: 2.14 Python Tool Research (complete)
   - Implement Python script execution functionality
   - Support virtual environment activation (uv, pyenv, venv)
-  - Implement code validation guardrails based on research
+  - Implement code validation guardrails (6-layer defense)
   - Define allowed operations and permissions
   - Add timeout and resource limits
   - Write unit tests
-  - See `analysis/api-python-tool.md` for API design (to be created)
+  - See `analysis/api-python-tool.md` for API design
+  - **Priority:** P4
 
 - [ ] **2.16 Pytest Tool**
   - Implement test execution functionality via pytest
-  - Support running all tests, a single test file, or a selection of tests
-  - Add optional `activate_venv` parameter to activate pyenv virtual environment before running
-  - Add optional `filter` parameter for simple grep pattern filtering of results
-  - Add optional `max_lines` parameter to return only the top N lines of output
-  - Apply concise output format (summary-focused, not verbose)
-  - Add path restriction guardrails (use shared PathGuardrail for test file paths)
-  - Add timeout enforcement for long-running test suites
+  - Support running all tests, single test file, or selection
+  - Add optional `activate_venv` parameter
+  - Add optional `filter` parameter for grep pattern
+  - Add optional `max_lines` parameter for output
+  - Apply PathGuardrail for test file paths
+  - Add timeout enforcement
   - Write unit tests
-  - See `analysis/api-pytest-tool.md` for API design (to be created)
+  - See `analysis/api-pytest-tool.md` for API design
+  - **Priority:** P4
 
 - [ ] **2.17 AskUserQuestion Tool**
   - Implement interactive question asking capability
@@ -391,7 +117,8 @@ This phase implements async-only Agent architecture:
   - Add timeout and default value handling
   - Integrate with TUI for interactive sessions
   - Write unit tests
-  - See `analysis/api-askuserquestion-tool.md` for API design (to be created)
+  - See `analysis/api-askuserquestion-tool.md` for API design
+  - **Priority:** P4
 
 - [ ] **2.18 Development Workflow Tools**
   - Implement RuffTool for linting/formatting operations
@@ -399,103 +126,60 @@ This phase implements async-only Agent architecture:
   - Implement ToxTool for multi-version testing
   - Implement MakeTool for Makefile target execution
   - Implement PyPiTool for package publishing
-  - All tools should use PathGuardrail for path validation
-  - All tools should have timeout enforcement
+  - All tools use PathGuardrail for path validation
+  - All tools have timeout enforcement
   - Write unit tests for each tool
-  - See `analysis/api-dev-tools.md` for API design (to be created)
+  - See `analysis/api-dev-tools.md` for API design
+  - **Priority:** P4
 
 - [ ] **2.19 GitHub Tool**
   - Implement GitHub CLI wrapper tool for repository operations
   - Support read-only operations: repo_view, issue_list/view, pr_list/view, workflow_list/view, release_list/view
   - Use `gh` CLI with `--json` output for structured responses
-  - Add operation allowlist guardrail (config.controls allowed_operations)
+  - Add operation allowlist guardrail
   - Add timeout enforcement (default 30 seconds)
   - Add result count limits (max 100 for lists)
-  - Handle authentication errors (gh not installed, not authenticated)
-  - Handle rate limit errors gracefully
-  - Subprocess execution with list args (no shell=True for security)
-  - Write unit tests (mock subprocess, test injection attempts)
+  - Handle authentication errors gracefully
+  - Subprocess execution with list args (no shell=True)
+  - Write unit tests
   - See `analysis/api-github-tool.md` for API design
   - See `analysis/security-github-tool.md` for security analysis
-  - **Security**: MVP excludes destructive operations (pr_merge, branch_delete, issue_create)
-  - **Security**: Phase 2 will add write operations with explicit configuration
+  - **Priority:** P4
 
 - [ ] **2.20 Add [start:stop] Arguments to Output-Heavy Tools**
-  - Extend offset/limit pattern to tools that return large outputs
+  - Extend offset/limit pattern to tools with large outputs
   - Add `offset` and `limit` parameters to SearchTool results
-  - Add `offset` and `limit` parameters to ListTool (for deep directory trees)
-  - Add `offset` and `limit` to any tool with paginated results
-  - Use consistent parameter naming across tools (offset/limit, not start/stop)
+  - Add `offset` and `limit` parameters to ListTool
+  - Use consistent parameter naming (offset/limit)
   - Add result count metadata (total_matches, shown_matches, has_more)
-  - Update tool descriptions to document pagination parameters
+  - Update tool descriptions
   - Write unit tests for pagination edge cases
-  - See existing ReadTool implementation as reference
-
-- [ ] **2.21 Skill Tool**
-  - Research C3 skill system integration and invocation patterns
-  - Implement SkillTool for invoking configured skills from agents
-  - Support skill discovery from skill directories
-  - Pass context and parameters to skill execution
-  - Handle skill errors gracefully with meaningful messages
-  - Add skill availability guardrails (configurable allowed skills per agent)
-  - Write unit tests
-  - See `analysis/api-skill-tool.md` for API design (to be created)
-  - See `analysis/skill-system-integration.md` for integration design (to be created)
+  - **Priority:** P4
 
 - [ ] **2.22 uv Tool**
   - Implement uv CLI wrapper tool for Python package management
   - Support common operations: install, sync, add, remove, run, venv
-  - Add operation allowlist guardrail (config.controls allowed_operations)
-  - Add timeout enforcement (default 60 seconds for operations)
+  - Add operation allowlist guardrail
+  - Add timeout enforcement (default 60 seconds)
   - Use PathGuardrail for virtual environment paths
-  - Handle virtual environment activation within tool execution
-  - Add result parsing for structured output (dependencies installed, errors)
-  - Handle common errors (uv not installed, lock file conflicts)
-  - Subprocess execution with list args (no shell=True for security)
+  - Handle virtual environment activation
+  - Add result parsing for structured output
+  - Subprocess execution with list args (no shell=True)
   - Write unit tests
-  - See `analysis/api-uv-tool.md` for API design (to be created)
+  - See `analysis/api-uv-tool.md` for API design
+  - **Priority:** P4
 
-### Phase 3: Backend Integration
-
-- [x] **3.1 Ollama Client** (2026-05-06)
-  - Implement HTTP client for Ollama API
-  - Support all configurable parameters
-  - Implement streaming response handling
-  - Add connection error handling and retries
-  - Parse tool calls from responses
-  - Write unit tests (with mocking)
-  - **Note**: Implemented directly in Agent class (not separate backend module)
-  - Supports both local Ollama and ollama.com with API key authentication
-
-- [x] **3.2 Tool Call Processing** (2026-05-06)
-  - Parse tool call requests from LLM responses
-  - Route to appropriate tool implementation
-  - Format tool results for LLM
-  - Handle tool errors gracefully
-  - Implement tool call loop
-  - **Note**: Implemented in Agent.process() method with deduplication and error handling
-
-- [x] **3.3 Context Management Research** (2026-05-14)
-  - Analyze logged sessions to identify context patterns
-  - Reverse engineer context content from JSONL event logs
-  - Identify system prompt construction requirements
-  - Document prompt construction patterns for sub-agents
-  - Research skill context injection requirements
-  - Define context inheritance vs. isolation rules
-  - Create analysis document with findings
-  - Prerequisite for: Phase 4 (Agent Runner)
-  - **Findings**: Sub-agents get fresh context (no history), filtered tools (28 vs 37), specialized system prompts (3KB vs 27KB). Skills are loaded on-demand via Skill tool.
-  - See `analysis/context-management-research.md` for full analysis
+### Backend Integration (Phase 3)
 
 - [ ] **3.4 Configurable Components Infrastructure**
-  - Create base classes for component sets (SetMetadata, ComponentSet, ComponentLoader)
+  - Create base classes (SetMetadata, ComponentSet, ComponentLoader)
   - Implement resolution strategy (additional_dirs override set)
   - Create directory structure (prompts/sets/, skills/sets/, agents/sets/)
   - Implement metadata.toml parsing
   - Add configuration support to Config schema
-  - Write unit tests for loader classes
+  - Write unit tests
   - See `analysis/configurable-components-design.md` for design
-  - See `analysis/component-resolution-strategy.md` for resolution strategy
+  - **Priority:** P5
 
 - [ ] **3.5 Prompt Sets Implementation**
   - Create prompts/sets/default/ with main.md, general-purpose.md, explore.md, plan.md
@@ -503,21 +187,21 @@ This phase implements async-only Agent architecture:
   - Create prompts/sets/detailed/ with verbose prompts
   - Implement PromptTemplate with variable rendering
   - Implement PromptLoader with set support
-  - Integrate with Agent class (get_system_prompt)
-  - Add prompt variants support (concise, verbose)
-  - Write unit tests for prompt loading
-  - See `analysis/prompt-sets-design.md` for design
+  - Integrate with Agent class
+  - Write unit tests
+  - **Depends on:** 3.4
+  - **Priority:** P5
 
 - [ ] **3.6 Skills Sets Implementation**
-  - Create skills/sets/default/ with core skills (git-commit, project-status, bug-fixing)
-  - Create skills/sets/minimal/ with essential skills only
+  - Create skills/sets/default/ with core skills
+  - Create skills/sets/minimal/ with essential skills
   - Implement Skill class with frontmatter parsing
   - Implement SkillLoader with set support
-  - Integrate with SkillTool (on-demand loading)
-  - Add skill discovery (list available skills)
-  - Add skill invocation from agent
-  - Write unit tests for skill loading
-  - See `analysis/configurable-components-design.md` for design
+  - Integrate with SkillTool
+  - Add skill discovery
+  - Write unit tests
+  - **Depends on:** 3.4
+  - **Priority:** P5
 
 - [ ] **3.7 Agent Sets Implementation**
   - Create agents/sets/default/ with main.md, researcher.md, developer.md, reviewer.md
@@ -527,9 +211,9 @@ This phase implements async-only Agent architecture:
   - Implement AgentLoader with set support
   - Integrate with existing agent.py
   - Add tool filtering per agent definition
-  - Add model configuration per agent
-  - Write unit tests for agent loading
-  - See `analysis/configurable-components-design.md` for design
+  - Write unit tests
+  - **Depends on:** 3.4
+  - **Priority:** P5
 
 - [ ] **3.8 Context Reminders Implementation**
   - Implement ContextReminder protocol
@@ -540,295 +224,299 @@ This phase implements async-only Agent architecture:
   - Implement GitContextReminder (branch, status)
   - Create ReminderComposer class
   - Integrate with Agent message building
-  - Write unit tests for reminders
+  - Write unit tests
   - See `analysis/context-implementation-plan.md` for design
+  - **Priority:** P5
 
 - [ ] **3.9 Lazy Loading Implementation**
   - Implement LazyToolRegistry (load tools on first use)
   - Implement LazySkillLoader (load skills on demand)
   - Create core tools set (Read, List, Search, Existence)
   - Add tool caching after first load
-  - Add skill discovery without loading
-  - Implement get_tools_for_request() (core + loaded)
+  - Implement get_tools_for_request()
   - Add configuration for lazy vs eager loading
-  - Write unit tests for lazy loading
-  - See `analysis/context-implementation-plan.md` for design
-
-### Phase 4: Agent Runner
-
-- [x] **4.1 Agent Lifecycle** (2026-05-06)
-  - Implement Agent class with state management
-  - Load agent definition from Markdown file
-  - Implement tool availability filtering
-  - Add system prompt handling
   - Write unit tests
-  - **Note**: Implemented in agent.py with full state management, definition loading, and tool filtering
+  - **Depends on:** 3.4, 3.5, 3.6, 3.7
+  - **Priority:** P5
 
-- [x] **4.2 Main Execution Loop** (2026-05-06)
-  - Implement message exchange loop
-  - Integrate context manager
-  - Integrate tool dispatcher
-  - Add turn-by-turn persistence
-  - Implement graceful shutdown
-  - **Note**: Implemented in Agent.process() with streaming, context management, and tool call loop
+### Future Features (Low Priority)
 
-- [x] **4.3 Hierarchical Spawning** (2026-05-06)
-  - Implement internal depth tracking
-  - Create fresh context for subagents
-  - Pass initial prompt to subagent
-  - Collect result from subagent
-  - Add hierarchical logging
-  - Write integration tests
-  - **Note**: Implemented in AgentTool with depth tracking, timeout handling, and context isolation
+- [ ] **2.13.1 Local WebSearch Backend**
+  - Implement LocalWebSearchBackend using DDGS library
+  - Support multiple search backends (bing, brave, ddg, google)
+  - Add rate limiting and error handling
+  - Integrate with WebSearchTool via plugin system
+  - Write unit tests
+  - Note: OllamaWebSearchBackend is working, this is for offline-first
+  - **Priority:** P6
 
-### Phase 5: Polish and Documentation
+- [ ] **2.13.2 Local WebFetch Backend**
+  - Implement LocalWebFetchBackend using httpx + Trafilatura
+  - Implement content extraction with Trafilatura
+  - Add SSRF protection and DNS rebinding defense
+  - Integrate with WebFetchTool via plugin system
+  - Write unit tests
+  - Note: OllamaWebFetchBackend is working, this is for full control
+  - **Priority:** P6
 
-- [ ] **5.1 Error Handling**
-  - Define error codes and messages
-  - Implement graceful error recovery
-  - Add user-friendly error messages
-  - Ensure all exceptions are handled
+- [ ] **R.1 Hermes Agent Comparison**
+  - Research Hermes Agent architecture and capabilities
+  - Compare Hermes to Yoker architecture
+  - Compare Hermes to C3 Agentic Harness approach
+  - Document findings in research folder
+  - Identify features worth incorporating
+  - **Priority:** P6
 
-- [ ] **5.2 Documentation**
-  - Write README with quick start guide
-  - Document all configuration options
-  - Write API documentation (Sphinx autodoc)
-  - Create usage examples
-  - Publish to ReadTheDocs
+- [ ] **F.1 Multi-Agent Chat Room Demo**
+  - Design multi-agent chat room architecture
+  - Implement spawn command in TUI to spawn agent from folder
+  - Create agent folder structure for spawned agents
+  - Implement agent-to-agent communication protocol
+  - Create demonstration scenario
+  - **Priority:** P6
 
-- [ ] **5.3 Testing**
-  - Achieve high test coverage (>80%)
-  - Add integration tests for full flows
-  - Add guardrail enforcement tests
-  - Add edge case tests
-
-### Phase 6: Release Preparation
-
-- [ ] **6.1 PyPI Package**
-  - Finalize pyproject.toml metadata
-  - Create release notes
-  - Test installation from source distribution
-  - Upload to TestPyPI
-  - Upload to PyPI
-
-- [ ] **6.2 Examples and Tutorials**
-  - Create basic example
-  - Create research workflow example
-  - Write tutorial documentation
+---
 
 ## Done
 
+### Phase 1.7: Async-First Agent Architecture
+
+- [x] **1.7.1 Extract AgentCore Class** (2026-05-23)
+  - Created `src/yoker/base.py` with shared state and utilities
+  - 51 tests, 98% coverage
+  - See: `reporting/1.7.1-agentcore-extraction/summary.md`
+
+- [x] **1.7.2 Async-Only Agent** (2026-05-23)
+  - Renamed AsyncAgent to Agent (async-only)
+  - All methods are async
+  - 1047 tests passing
+
+- [x] **1.7.3 Async Tool Execution** (2026-05-23)
+  - All tools converted to async
+  - Tool base class has abstract async method
+
+- [x] **1.7.4 Async CLI Integration** (2026-05-23)
+  - Created `main_async()` function
+  - Uses `prompt_async()` for async input
+
+- [x] **1.7.5 Update Documentation** (2026-05-25)
+  - Updated docs/quickstart.md
+  - Updated REQUIREMENTS.md
+
+- [x] **1.7.7 Async Event Handler Support** (2026-05-25)
+  - Updated ConsoleEventHandler for async operation
+  - See: `reporting/1.7.7-async-event-handler/functional-review.md`
+
+- [x] **1.7.8 Async Test Coverage** (2026-05-25)
+  - 1047 tests passing, 82% coverage
+
+- [x] **1.7.9 Documentation Updates** (2026-05-25)
+  - Async-only architecture documented
+
+- [x] **1.8 Config Auto-Discovery and Agent Definition Path** (2026-05-26)
+  - Added `definition` field to `AgentsConfig`
+  - Implemented `discover_config()` and `Config.discover()`
+  - Environment variable support
+  - PR: #13
+
+### Phase 1.6: Documentation
+
+- [x] **1.6.1 Update Documentation Folder**
+  - Reviewed and updated all docs/
+  - Added feature checkboxes and "Why Yoker?" section
+  - See: `reporting/1.6.1-documentation/summary.md`
+
+- [x] **1.6.2 Define Project Rationale**
+  - Created rationale document
+  - Identified gaps in existing solutions
+  - See: `docs/rationale.md`
+
+### Phase 1.5: UI/UX Fixes
+
+- [x] **1.5.1 Remove Thinking Headers**
+  - Removed "[thinking]" and "[response]" text headers
+  - Used visual styling for thinking sections
+
+- [x] **1.5.2 Fix Mouse Selection in Interactive Mode**
+  - Set `mouse_support=False` in PromptSession
+  - Text selection works in terminal output
+  - See: `reporting/1.5.2-mouse-selection/summary.md`
+
+- [x] **1.5.3 Update Demo Session Script**
+  - Updated tool display format
+  - Cyan color for tool name
+  - Improved replay mode
+  - See: `reporting/1.5.3-demo-session/functional-review.md`
+
+- [x] **1.5.4 Event Logging System**
+  - Created EventLogger class for JSONL logging
+  - EventReplayAgent for full replay
+  - See: `reporting/1.5.4-event-logging/summary.md`
+
+- [x] **1.5.5 Show Write/Update Tool Content in CLI** (2026-05-05)
+  - Added ToolContentEvent to event types
+  - Added ContentDisplayConfig to configuration
+  - See: `reporting/1.5.5-write-update-display/consensus.md`
+
+- [x] **1.5.6 Complete Tool Content Display** (2026-05-16)
+  - Agent emits ToolContentEvent
+  - ConsoleEventHandler displays tool content
+  - 47 tests converted from stubs
+  - See: `reporting/1.5.6-tool-content-display/summary.md`
+
+### Phase 1: Core Infrastructure
+
+- [x] **1.1 Project Setup**
+  - Created Python package structure
+  - Set up pyproject.toml
+  - Configured development environment
+
+- [x] **1.2 Configuration System**
+  - Implemented TOML config loader
+  - Defined configuration schema
+  - Created example configurations
+
+- [x] **1.3 Agent Definition Loader**
+  - Implemented Markdown file parser
+  - Parsed YAML frontmatter
+  - Created example agent definitions
+  - See: `reporting/1.3-agent-definition-loader/summary.md`
+
+- [x] **1.5 Logging System**
+  - Integrated structlog for structured logging
+  - See: `reporting/1.5-logging-system/summary.md`
+
+### Phase 2: Tool Implementation (Core Tools)
+
+- [x] **2.1 Tool Base Framework**
+  - Defined Tool abstract base class
+  - Defined ToolResult and ValidationResult types
+  - Implemented tool registry
+
+- [x] **2.1.5 Shared PathGuardrail Implementation**
+  - Implemented PathGuardrail with config permissions
+  - Path traversal prevention, symlinks, blocked patterns
+  - See: `analysis/security-list-tool.md`
+
+- [x] **2.2 List Tool**
+  - Implemented directory listing
+  - Path restriction guardrails
+  - See: `analysis/api-list-tool.md`
+
+- [x] **2.3 Read Tool**
+  - Implemented file reading
+  - Path restriction guardrails
+  - See: `reporting/2.3-read-tool/summary.md`
+
+- [x] **2.4 Write Tool**
+  - Implemented file writing
+  - Overwrite protection, size limits
+  - See: `reporting/2.4-write-tool/summary.md`
+
+- [x] **2.5 Update Tool**
+  - Implemented file editing operations
+  - Exact match validation, diff size limits
+  - See: `reporting/2.5-update-tool/summary.md`
+
+- [x] **2.6 Search Tool**
+  - Implemented content search (grep-like)
+  - Implemented filename search (glob-like)
+  - Regex complexity limits, timeout enforcement
+  - See: `reporting/2.6-search-tool/summary.md`
+
+- [x] **2.7 Agent Tool**
+  - Implemented subagent spawning
+  - Recursion depth tracking, timeout handling
+  - See: `reporting/2.7-agent-tool/consensus.md`
+
+- [x] **2.8 File Existence Tool**
+  - Implemented file/folder existence check
+  - Path restriction guardrails
+  - See: `reporting/2.8-existence-tool/summary.md`
+
+- [x] **2.9 Folder Creation Tool**
+  - Implemented folder creation (mkdir -p)
+  - Path restriction guardrails
+  - See: `reporting/2.9-mkdir-tool/summary.md`
+
+- [x] **2.10 Git Tool**
+  - Implemented Git operations (status, log, diff, branch, show)
+  - Permission handlers for write operations
+  - Command sanitization
+  - See: `reporting/2.10-git-tool/summary.md`
+
+- [x] **2.11 WebSearch and WebFetch Tools Research**
+  - Recommended custom implementation
+  - See: `analysis/websearch-webfetch-research.md`
+
+- [x] **2.12 WebSearch Tool**
+  - Implemented WebSearchTool with OllamaWebSearchBackend
+  - WebGuardrail with SSRF protection
+  - See: `reporting/2.12-websearch-tool/summary.md`
+
+- [x] **2.12 WebFetch Tool**
+  - Implemented WebFetchTool with OllamaWebFetchBackend
+  - Domain whitelist/blacklist
+  - See: `reporting/2.12-webfetch-tool/summary.md`
+
+- [x] **2.14 Python Tool Research**
+  - Recommended subprocess isolation + AST validation
+  - 6-layer defense model
+  - See: `research/2026-05-05-python-execution-safety/README.md`
+
+### Phase 3: Backend Integration
+
+- [x] **3.1 Ollama Client**
+  - Implemented HTTP client for Ollama API
+  - Streaming response handling
+  - Supports local Ollama and ollama.com with API key
+
+- [x] **3.2 Tool Call Processing**
+  - Parse tool call requests from LLM responses
+  - Route to appropriate tool implementation
+  - Tool call loop with deduplication
+
+- [x] **3.3 Context Management Research**
+  - Analyzed logged sessions for context patterns
+  - Documented sub-agent context isolation
+  - See: `analysis/context-management-research.md`
+
+### Phase 4: Agent Runner
+
+- [x] **4.1 Agent Lifecycle**
+  - Implemented Agent class with state management
+  - Load agent definition from Markdown file
+
+- [x] **4.2 Main Execution Loop**
+  - Implemented message exchange loop
+  - Context management, tool call loop
+
+- [x] **4.3 Hierarchical Spawning**
+  - Implemented internal depth tracking
+  - Fresh context for subagents
+  - See: AgentTool implementation
+
+### Standard Project Setup
+
+- [x] **migrate-to-hatchling** (2026-04-29)
+  - Migrated from setuptools to hatchling
+  - See: `reporting/migrate-to-hatchling/summary.md`
+
+- [x] **migrate-to-uv** (2026-04-30)
+  - Migrated from pyenv virtualenv to uv
+  - Updated Makefile and CI workflow
+  - See: `analysis/uv-migration-checklist.md`
+
+### Issues Completed
+
 - [x] **Issue #7: Config Auto-Discovery and Agent Definition Path** (2026-05-26)
-  - Config auto-discovery: `./yoker.toml` → `~/.yoker.toml` → defaults
-  - Environment variable support with highest priority
-  - `Config.discover()` class method for object-oriented API
-  - `agents.definition` config field for agent definition path
-  - Resolution order: env vars → explicit config → explicit path → file discovery → defaults
+  - Config auto-discovery, environment variables
   - PR: #13
 
 - [x] **Issue #10: Add Type Exports** (2026-05-25)
-  - Added `AgentDefinition` and `load_agent_definition` exports to top-level package
-  - Enables better mypy/pyright type checking support for users
-  - `Config` and `ContextManager` were already exported
+  - Added AgentDefinition and load_agent_definition exports
   - PR: #12
 
 - [x] **Issue #9: Fix ~ in Storage Path** (2026-05-25)
-  - Fixed bug where storage paths containing `~` created literal `~` directories
-  - Added `.expanduser()` call in `BasicPersistenceContextManager.__init__()` 
-  - Added regression test for tilde expansion
-  - See `docs/bug-analysis/issue-9-expanduser.md` for bug analysis
+  - Fixed tilde expansion bug
   - PR: #11
-
-- [x] **2.14 Python Tool Research** (2026-05-05)
-  - Research safe Python code execution approaches (subprocess, sandbox, AST validation)
-  - Investigate uv integration for virtual environment management
-  - Define security model for code execution (what operations are allowed)
-  - Document guardrails and permissions approach
-  - Research pyenv environment activation integration
-  - Recommend implementation strategy with justification
-  - **Recommendation**: Subprocess isolation + AST validation + Resource limits (6-layer defense)
-  - **Key insight**: RestrictedPython is NOT a sandbox; defense-in-depth is required
-  - See `research/2026-05-05-python-execution-safety/README.md` for research findings
-  - See `analysis/api-python-tool.md` for API design
-
-- [x] **1.5.5 Show Write/Update Tool Content in CLI** (2026-05-05)
-  - Add ToolContentEvent to event types ✅
-  - Add ContentDisplayConfig to configuration schema ✅
-  - Add content_metadata field to ToolResult ✅
-  - Update WriteTool to populate content_metadata ✅
-  - Update UpdateTool to populate content_metadata ✅
-  - Write unit tests for WriteTool/UpdateTool (46 tests) ✅
-  - **Incomplete**: Agent emission and ConsoleEventHandler display moved to Task 1.5.6
-  - See `analysis/api-write-update-display.md` for API design
-  - See `analysis/ux-write-update-display.md` for UX design
-  - See `reporting/1.5.5-write-update-display/consensus.md` for consensus
-
-- [x] **2.12 WebFetch Tool** (2026-05-04)
-  - Design pluggable backend architecture for fetch implementations
-  - Create WebFetchBackend abstract interface (Protocol-based)
-  - Implement OllamaWebFetchBackend (uses Ollama's native web_fetch tool)
-  - Create WebFetchTool with backend selection via configuration
-  - Extend WebGuardrail with validate_url() for SSRF protection
-  - Add domain whitelist/blacklist with wildcard matching
-  - Add HTTPS enforcement and private IP blocking
-  - Write unit tests (83 tests)
-  - All acceptance criteria verified:
-    - `make test` (828 tests) ✓
-    - `make lint` ✓
-    - `make typecheck` ✓
-  - See `analysis/api-webfetch-tool.md` for API design
-  - See `analysis/security-webfetch-tool.md` for security analysis
-  - See `reporting/2.12-webfetch-tool/summary.md` for implementation summary
-
-- [x] **2.12 WebSearch Tool** (2026-05-04)
-  - Design pluggable backend architecture for search implementations
-  - Create WebSearchBackend abstract interface (Protocol-based)
-  - Implement OllamaWebSearchBackend (uses Ollama's native web_search tool)
-  - Create WebSearchTool with backend selection via configuration
-  - Implement WebGuardrail with comprehensive SSRF protection
-  - Add domain whitelist/blacklist with wildcard matching
-  - Add query sanitization for sensitive patterns
-  - Add rate limiting (requests/min, requests/hour)
-  - Write unit tests (110 tests)
-  - All acceptance criteria verified:
-    - `make test` (746 tests) ✓
-    - `make lint` ✓
-    - `make typecheck` ✓
-  - See `analysis/api-websearch-tool.md` for API design
-  - See `analysis/security-websearch-tool.md` for security analysis
-  - See `reporting/2.12-websearch-tool/summary.md` for implementation summary
-
-- [x] **2.11 WebSearch and WebFetch Tools Research** (2026-05-04)
-  - Research Ollama's WebSearch/WebFetch implementation capabilities
-  - Compare Ollama approach with own HTTP client implementation
-  - Document trade-offs: control vs. dependency, feature parity, maintenance
-  - Evaluate guardrail implementation options for each approach
-  - Recommend implementation strategy with justification
-  - **Recommendation**: Custom implementation (DDGS for search, httpx+Trafilatura for fetch)
-  - **Key Guardrails**: SSRF protection, domain whitelist, content limits, timeout
-  - See `analysis/websearch-webfetch-research.md` for analysis summary
-  - See `research/2026-05-04-websearch-webfetch-tools/` for full research
-
-- [x] **2.10 Git Tool** (2026-05-04)
-  - Implement Git operations (status, log, diff, branch, show) - read-only
-  - Implement permission-required operations (commit, push)
-  - Add permission handlers (allow, block, ask_user modes)
-  - Implement command sanitization to prevent injection
-  - Add dangerous option blocking (--exec, --upload-pack, etc.)
-  - Add credential redaction in output
-  - Integrate with PathGuardrail for repository path validation
-  - Write unit tests
-  - All acceptance criteria verified:
-    - `make test` passes
-    - `make lint` passes
-    - `make typecheck` passes
-  - See `analysis/api-git-tool.md` for API design
-  - See `analysis/security-git-tool.md` for security analysis
-  - See `reporting/2.10-git-tool/summary.md` for implementation summary
-
-- [x] **2.9 Folder Creation Tool** (2026-04-30)
-  - Implement folder creation functionality (mkdir -p equivalent)
-  - Add path restriction guardrails (use shared PathGuardrail)
-  - Support recursive parent creation
-  - Handle existing folder gracefully (no error if already exists)
-  - Depth limit enforcement (max 20 levels from allowed root)
-  - Generic error messages for security
-  - Write unit tests (56 tests)
-  - All acceptance criteria verified:
-    - `make test` (572 tests) ✓
-    - `make lint` ✓
-    - `make typecheck` ✓
-  - See `analysis/api-folder-creation-tool.md` for API design
-  - See `analysis/security-folder-creation-tool.md` for security analysis
-  - See `reporting/2.9-mkdir-tool/summary.md` for implementation summary
-
-- [x] **migrate-to-uv** (2026-04-30)
-  - Migrated from pyenv virtualenv to uv for unified dependency management
-  - Updated `.python-version` to contain version number only (3.11)
-  - Refactored Makefile to use `uv run` for all commands
-  - Updated CI workflow to use `astral-sh/setup-uv@v5`
-  - Updated documentation (README.md, CLAUDE.md)
-  - All acceptance criteria verified:
-    - `make test` (516 tests) ✓
-    - `make lint` ✓
-    - `make build` ✓
-    - Interactive mode works ✓
-  - See `analysis/uv-migration-checklist.md` for migration checklist
-  - Commit: 5c05f71
-
-- [x] **2.8 File Existence Tool** (2026-04-29)
-  - Implement file existence check functionality
-  - Implement folder existence check functionality
-  - Add path restriction guardrails (use shared PathGuardrail)
-  - Return structured result with exists, type, and path
-  - Symlink rejection for security
-  - Generic error messages (security hardening)
-  - Expanded default blocked patterns in config
-  - Write unit tests (28 test cases, including error handling)
-  - All acceptance criteria verified:
-    - `make lint` ✓
-    - `make typecheck` ✓
-    - `make test` (516 tests) ✓
-  - See `analysis/api-existence-tool.md` for API design
-  - See `analysis/security-existence-tool.md` for security analysis
-  - See `reporting/2.8-existence-tool/summary.md` for implementation summary
-
-- [x] **migrate-to-hatchling** (2026-04-29)
-  - Migrate from setuptools.build_meta to hatchling
-  - Updated pyproject.toml: build-backend to "hatchling.build"
-  - Replaced `[tool.setuptools.*]` sections with `[tool.hatch.build.*]`
-  - Updated license format to PEP 639: `license = {text = "MIT"}`
-  - All acceptance criteria verified:
-    - `pip install -e ".[dev]"` ✓
-    - `make test` (487 tests) ✓
-    - `python -m build` ✓
-    - `twine check dist/*` ✓
-  - See `reporting/migrate-to-hatchling/summary.md` for implementation summary
-
-- [x] **2.6 Search Tool**
-  - Implement content search (grep-like)
-  - Implement filename search (glob-like)
-  - Add regex complexity limits (ReDoS prevention)
-  - Add result count limits (max_results parameter)
-  - Add timeout enforcement (time.monotonic tracking)
-  - Write unit tests (comprehensive error handling tests)
-  - See `analysis/api-search-tool.md` for API design
-  - See `analysis/security-search-tool.md` for security analysis
-  - See `reporting/2.6-search-tool/summary.md` for implementation summary
-
-- [x] **1.4.1 Context Manager Integration**
-  - Add ContextManager parameter to Agent.__init__
-  - Replace self.messages with self.context
-  - Update process() to use context methods
-  - Add session persistence to CLI
-  - Context now persists after each turn
-  - Added --persist and --resume flags to demo_session.py
-  - Fixed duplicate message bug (user and assistant added twice)
-  - Fixed system message re-added on resume
-
-- [x] **1.4 Context Manager**
-  - Define context storage format (JSONL)
-  - Implement Context class for conversation history
-  - Implement context persistence (append to JSONL)
-  - Add session ID management
-  - Implement context isolation for subagents (clear method)
-  - Fix atomic write implementation (file locking with fcntl)
-  - Fix get_context() ordering (single sequence list)
-  - See `reporting/1.4-context-manager/summary.md` for implementation summary
-
-- [x] **1.3 Agent Definition Loader**
-  - Implement Markdown file parser
-  - Parse YAML frontmatter
-  - Validate agent definitions against schema
-  - Handle missing or invalid frontmatter
-  - Create example agent definitions
-  - See `analysis/agent-definition-loader.md` for design
-  - See `reporting/1.3-agent-definition-loader/summary.md` for implementation summary
-
-- [x] **1.2.5 Event-Driven Architecture Refactor**
-  - Refactor Agent class to emit events instead of console output
-  - Define event types (thinking_start, thinking_chunk, content_chunk, tool_call, etc.)
-  - Create event emitter/callback system in library
-  - Move all Rich console logic to __main__.py (application layer)
-  - Ensure library is headless and reusable in different contexts
-  - Write unit tests for event emission
