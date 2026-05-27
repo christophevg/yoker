@@ -1,6 +1,5 @@
 """Tests for skill injection functions."""
 
-
 from yoker.skills.injection import (
   build_skill_context_message,
   format_discovery_block,
