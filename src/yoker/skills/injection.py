@@ -110,9 +110,7 @@ def build_skill_context_message(skills: list[Skill], is_discovery: bool = True) 
   return ""
 
 
-def match_skill_by_trigger(
-  message: str, skills: list[Skill]
-) -> tuple[Skill | None, str]:
+def match_skill_by_trigger(message: str, skills: list[Skill]) -> tuple[Skill | None, str]:
   """Match a message against skill triggers for natural language invocation.
 
   Looks for trigger phrases in the message that might invoke a skill.
