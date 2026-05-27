@@ -43,12 +43,10 @@ logs/
 # Local configuration
 yoker.toml
 
-# Generated session logs
-media/session.jsonl
-
 # Environment files with secrets
+.env
 .env.local
 
-# Temporary verification scripts
-verify_fix.py
-.env
+# folder for local transient files
+local/
+
