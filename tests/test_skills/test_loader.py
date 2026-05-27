@@ -1,5 +1,6 @@
 """Tests for skill loader."""
 
+import os
 from pathlib import Path
 
 import pytest
@@ -499,7 +500,7 @@ description: Skill B
 Content B
 """)
 
-    monkeypatch.setenv("YOKER_SKILLS_PATH", f"{dir1}:{dir2}")
+    monkeypatch.setenv("YOKER_SKILLS_PATH", f"{dir1}{os.pathsep}{dir2}")
 
     skills = load_skills_from_env()
 
@@ -537,7 +538,9 @@ Content
 """)
 
     # Mix of valid and invalid paths
-    monkeypatch.setenv("YOKER_SKILLS_PATH", f"/nonexistent:{tmp_path}:/also/nonexistent")
+    monkeypatch.setenv(
+      "YOKER_SKILLS_PATH", f"/nonexistent{os.pathsep}{tmp_path}{os.pathsep}/also/nonexistent"
+    )
 
     skills = load_skills_from_env()
 
