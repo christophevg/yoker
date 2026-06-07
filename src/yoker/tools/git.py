@@ -9,7 +9,7 @@ import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from yoker.config.schema import GitToolConfig, HandlerConfig
+from yoker.config import GitToolConfig, HandlerConfig
 from yoker.logging import get_logger
 from yoker.tools.base import Tool, ToolResult, ValidationResult
 

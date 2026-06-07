@@ -1,146 +1,89 @@
-"""Configuration schema definitions for Yoker.
+"""Configuration system for Yoker.
 
-Provides frozen dataclasses for all configuration sections with validation.
-Following clitic patterns for immutable configuration objects.
-Uses Clevis for configuration management.
+Uses Clevis for configuration management with:
+  - Auto-generated CLI arguments from dataclass fields
+  - Environment variable interpolation via TOML syntax (${VAR})
+  - Config file discovery (~/.yoker.toml, ./yoker.toml)
+  - Layered merging (env interpolation > CLI args > project config > user config)
+
+Example:
+    from yoker.config import Config, get_yoker_config
+
+    # Load config with dev/test security bypass (auto-detected)
+    config = get_yoker_config()
+
+    # Load config with CLI argument support
+    config = get_yoker_config(cli=True)
+
+    # Access configuration values
+    print(config.backend.ollama.model)
+    print(config.tools.read.enabled)
+
+Environment Variables:
+    Environment variables can be used in TOML config files via interpolation:
+        [backend.ollama]
+        model = "${OLLAMA_MODEL}"
+        base_url = "${OLLAMA_HOST:-http://localhost:11434}"
+
+    Clevis processes these interpolations when loading the config.
+
+Configuration Files:
+    - User config: ~/.yoker.toml (lower priority)
+    - Project config: ./yoker.toml (higher priority)
+
+CLI Arguments:
+    Clevis auto-generates CLI args from dataclass fields:
+    --backend-ollama-model MODEL         Set model
+    --context-session-id SESSION_ID      Set session ID
+    --tools-read-enabled BOOL           Enable/disable read tool
 """
 
-import logging
-import re
+import os
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Literal
-from urllib.parse import urlparse
+
+from clevis import SecurityAction, SecurityConfig, get_config
 
 from yoker.exceptions import ValidationError
-
-logger = logging.getLogger(__name__)
-
-
-def _validate_url(value: str, path: str) -> None:
-  """Validate that a value is a valid URL.
-
-  Args:
-    value: The value to validate.
-    path: Configuration path for error messages.
-
-  Raises:
-    ValidationError: If the value is not a valid URL.
-  """
-  try:
-    result = urlparse(value)
-    if not result.scheme or not result.netloc:
-      raise ValidationError(path, value, "must be a valid URL with scheme and host")
-  except Exception as e:
-    raise ValidationError(path, value, f"must be a valid URL: {e}") from None
+from yoker.validators import (
+  validate_choice,
+  validate_directory_exists,
+  validate_log_level,
+  validate_non_empty_string,
+  validate_non_negative_int,
+  validate_positive_int,
+  validate_regex_patterns,
+  validate_url,
+)
 
 
-def _validate_non_empty_string(value: str, path: str) -> None:
-  """Validate that a value is a non-empty string.
+def get_yoker_config(cli: bool = False) -> "Config":
+  """Get Yoker configuration with dev/test security bypass.
 
-  Args:
-    value: The value to validate.
-    path: Configuration path for error messages.
+  This is the recommended way to load Yoker configuration. It automatically
+  detects development/testing environments and relaxes security checks.
 
-  Raises:
-    ValidationError: If the value is empty.
-  """
-  if not value or not value.strip():
-    raise ValidationError(path, value, "must be a non-empty string")
+  Security bypass is enabled when:
+    - YOKER_DEV_MODE=1 environment variable is set
+    - PYTEST_CURRENT_TEST is set (running tests)
 
-
-def _validate_positive_int(value: int, path: str) -> None:
-  """Validate that a value is a positive integer.
+  In these environments, world-writable directories and files with relaxed
+  permissions are allowed (logged but not blocked).
 
   Args:
-    value: The value to validate.
-    path: Configuration path for error messages.
+    cli: Whether to parse CLI arguments (default: False for library mode).
 
-  Raises:
-    ValidationError: If the value is not positive.
+  Returns:
+    Config object with security settings appropriate for the environment.
   """
-  if value <= 0:
-    raise ValidationError(path, value, "must be a positive integer")
+  security: SecurityConfig | None = None
+  if os.environ.get("YOKER_DEV_MODE") == "1" or os.environ.get("PYTEST_CURRENT_TEST"):
+    security = SecurityConfig(
+      file_permissions=SecurityAction.LOG,
+      directory_permissions=SecurityAction.LOG,
+    )
 
-
-def _validate_non_negative_int(value: int, path: str) -> None:
-  """Validate that a value is a non-negative integer.
-
-  Args:
-    value: The value to validate.
-    path: Configuration path for error messages.
-
-  Raises:
-    ValidationError: If the value is negative.
-  """
-  if value < 0:
-    raise ValidationError(path, value, "must be a non-negative integer")
-
-
-def _validate_choice(
-  value: str,
-  path: str,
-  choices: tuple[str, ...],
-) -> None:
-  """Validate that a value is one of the allowed choices.
-
-  Args:
-    value: The value to validate.
-    path: Configuration path for error messages.
-    choices: Allowed values.
-
-  Raises:
-    ValidationError: If the value is not in choices.
-  """
-  if value not in choices:
-    raise ValidationError(path, value, f"must be one of {choices}")
-
-
-def _validate_log_level(value: str, path: str) -> None:
-  """Validate that a log level is valid.
-
-  Args:
-    value: The log level to validate.
-    path: Configuration path for error messages.
-
-  Raises:
-    ValidationError: If the log level is invalid.
-  """
-  valid_levels = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
-  if value.upper() not in valid_levels:
-    raise ValidationError(path, value, f"must be one of {valid_levels}")
-
-
-def _validate_regex_patterns(
-  patterns: tuple[str, ...],
-  path: str,
-) -> None:
-  """Validate that regex patterns are valid.
-
-  Args:
-    patterns: The regex patterns to validate.
-    path: Configuration path for error messages.
-
-  Raises:
-    ValidationError: If any pattern is invalid.
-  """
-  for pattern in patterns:
-    try:
-      re.compile(pattern)
-    except re.error as e:
-      raise ValidationError(path, pattern, f"invalid regex pattern: {e}") from None
-
-
-def _validate_directory_exists(value: str, path: str) -> None:
-  """Validate that a directory exists (warning only).
-
-  Args:
-    value: The directory path to validate.
-    path: Configuration path for error messages.
-  """
-  dir_path = Path(value)
-  if not dir_path.exists():
-    logger.warning(f"Configuration warning at '{path}': Directory does not exist: {value}")
+  return get_config(Config, name="yoker", cli=cli, security=security)
 
 
 @dataclass(frozen=True)
@@ -159,8 +102,8 @@ class HarnessConfig:
 
   def __post_init__(self) -> None:
     """Validate harness configuration."""
-    _validate_non_empty_string(self.name, "harness.name")
-    _validate_log_level(self.log_level, "harness.log_level")
+    validate_non_empty_string(self.name, "harness.name")
+    validate_log_level(self.log_level, "harness.log_level")
 
 
 @dataclass(frozen=True)
@@ -193,8 +136,8 @@ class OllamaParameters:
         self.top_p,
         "must be between 0.0 and 1.0",
       )
-    _validate_positive_int(self.top_k, "backend.ollama.parameters.top_k")
-    _validate_positive_int(self.num_ctx, "backend.ollama.parameters.num_ctx")
+    validate_positive_int(self.top_k, "backend.ollama.parameters.top_k")
+    validate_positive_int(self.num_ctx, "backend.ollama.parameters.num_ctx")
 
 
 @dataclass(frozen=True)
@@ -215,9 +158,9 @@ class OllamaConfig:
 
   def __post_init__(self) -> None:
     """Validate Ollama configuration."""
-    _validate_url(self.base_url, "backend.ollama.base_url")
-    _validate_non_empty_string(self.model, "backend.ollama.model")
-    _validate_positive_int(self.timeout_seconds, "backend.ollama.timeout_seconds")
+    validate_url(self.base_url, "backend.ollama.base_url")
+    validate_non_empty_string(self.model, "backend.ollama.model")
+    validate_positive_int(self.timeout_seconds, "backend.ollama.timeout_seconds")
 
 
 @dataclass(frozen=True)
@@ -234,7 +177,7 @@ class BackendConfig:
 
   def __post_init__(self) -> None:
     """Validate backend configuration."""
-    _validate_choice(self.provider, "backend.provider", ("ollama",))
+    validate_choice(self.provider, "backend.provider", ("ollama",))
 
 
 @dataclass(frozen=True)
@@ -255,7 +198,7 @@ class ContextConfig:
 
   def __post_init__(self) -> None:
     """Validate context configuration."""
-    _validate_choice(
+    validate_choice(
       self.manager,
       "context.manager",
       ("basic_persistence", "compaction", "multi_tier"),
@@ -295,9 +238,9 @@ class PermissionsConfig:
 
   def __post_init__(self) -> None:
     """Validate permissions configuration."""
-    _validate_choice(self.network_access, "permissions.network_access", ("none", "local", "all"))
-    _validate_positive_int(self.max_file_size_kb, "permissions.max_file_size_kb")
-    _validate_non_negative_int(self.max_recursion_depth, "permissions.max_recursion_depth")
+    validate_choice(self.network_access, "permissions.network_access", ("none", "local", "all"))
+    validate_positive_int(self.max_file_size_kb, "permissions.max_file_size_kb")
+    validate_non_negative_int(self.max_recursion_depth, "permissions.max_recursion_depth")
     if not self.filesystem_paths:
       raise ValidationError(
         "permissions.filesystem_paths",
@@ -331,8 +274,8 @@ class ListToolConfig(ToolConfig):
 
   def __post_init__(self) -> None:
     """Validate list tool configuration."""
-    _validate_positive_int(self.max_depth, "tools.list.max_depth")
-    _validate_positive_int(self.max_entries, "tools.list.max_entries")
+    validate_positive_int(self.max_depth, "tools.list.max_depth")
+    validate_positive_int(self.max_entries, "tools.list.max_entries")
 
 
 @dataclass(frozen=True)
@@ -375,7 +318,7 @@ class ReadToolConfig(ToolConfig):
 
   def __post_init__(self) -> None:
     """Validate read tool configuration."""
-    _validate_regex_patterns(self.blocked_patterns, "tools.read.blocked_patterns")
+    validate_regex_patterns(self.blocked_patterns, "tools.read.blocked_patterns")
 
 
 @dataclass(frozen=True)
@@ -394,7 +337,7 @@ class WriteToolConfig(ToolConfig):
 
   def __post_init__(self) -> None:
     """Validate write tool configuration."""
-    _validate_positive_int(self.max_size_kb, "tools.write.max_size_kb")
+    validate_positive_int(self.max_size_kb, "tools.write.max_size_kb")
 
 
 @dataclass(frozen=True)
@@ -411,7 +354,7 @@ class UpdateToolConfig(ToolConfig):
 
   def __post_init__(self) -> None:
     """Validate update tool configuration."""
-    _validate_positive_int(self.max_diff_size_kb, "tools.update.max_diff_size_kb")
+    validate_positive_int(self.max_diff_size_kb, "tools.update.max_diff_size_kb")
 
 
 @dataclass(frozen=True)
@@ -450,8 +393,8 @@ class SearchToolConfig(ToolConfig):
 
   def __post_init__(self) -> None:
     """Validate search tool configuration."""
-    _validate_positive_int(self.max_results, "tools.search.max_results")
-    _validate_positive_int(self.timeout_ms, "tools.search.timeout_ms")
+    validate_positive_int(self.max_results, "tools.search.max_results")
+    validate_positive_int(self.timeout_ms, "tools.search.timeout_ms")
 
 
 @dataclass(frozen=True)
@@ -468,8 +411,8 @@ class AgentToolConfig(ToolConfig):
 
   def __post_init__(self) -> None:
     """Validate agent tool configuration."""
-    _validate_positive_int(self.max_recursion_depth, "tools.agent.max_recursion_depth")
-    _validate_positive_int(self.timeout_seconds, "tools.agent.timeout_seconds")
+    validate_positive_int(self.max_recursion_depth, "tools.agent.max_recursion_depth")
+    validate_positive_int(self.timeout_seconds, "tools.agent.timeout_seconds")
 
 
 @dataclass(frozen=True)
@@ -610,7 +553,7 @@ class AgentsConfig:
   def __post_init__(self) -> None:
     """Validate agents configuration."""
     if self.directory:
-      _validate_directory_exists(self.directory, "agents.directory")
+      validate_directory_exists(self.directory, "agents.directory")
 
 
 @dataclass(frozen=True)
@@ -646,7 +589,7 @@ class LoggingConfig:
 
   def __post_init__(self) -> None:
     """Validate logging configuration."""
-    _validate_choice(self.format, "logging.format", ("json", "text"))
+    validate_choice(self.format, "logging.format", ("json", "text"))
 
 
 @dataclass(frozen=True)
@@ -675,10 +618,12 @@ class Config:
 
 
 __all__ = [
+  # Configuration classes
+  "Config",
   "HarnessConfig",
-  "OllamaParameters",
-  "OllamaConfig",
   "BackendConfig",
+  "OllamaConfig",
+  "OllamaParameters",
   "ContextConfig",
   "HandlerConfig",
   "PermissionsConfig",
@@ -698,5 +643,6 @@ __all__ = [
   "AgentsConfig",
   "SkillsConfig",
   "LoggingConfig",
-  "Config",
+  # Helper function
+  "get_yoker_config",
 ]

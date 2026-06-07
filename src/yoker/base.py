@@ -122,26 +122,10 @@ class AgentCore:
 
     # Load configuration using Clevis (handles env vars, user config, project config)
     # Clevis handles environment variable interpolation via envtoml/tomlev
-    import os
-
-    from clevis import SecurityAction, SecurityConfig, get_config
-
-    # Configure security checks based on environment
-    # In development/testing, allow group/other readable config files
-    # In production, use strict permissions (default)
-    security_config: SecurityConfig | None = None
-    if os.environ.get("YOKER_DEV_MODE") == "1" or os.environ.get("PYTEST_CURRENT_TEST"):
-      security_config = SecurityConfig(
-        file_permissions=SecurityAction.LOG,
-        directory_permissions=SecurityAction.LOG,
-      )
+    from yoker.config import get_yoker_config
 
     # Use cli=False for library mode (no CLI argument parsing)
-    self._config = (
-      config
-      if config is not None
-      else get_config(Config, name="yoker", cli=False, security=security_config)
-    )
+    self._config = config if config is not None else get_yoker_config(cli=False)
     config_source = "explicit" if config is not None else "discovered"
     log.info("config_loaded", source=config_source)
 

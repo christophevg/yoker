@@ -3,7 +3,7 @@
 import os
 from pathlib import Path
 
-from yoker.config.schema import (
+from yoker.config import (
   Config,
   PermissionsConfig,
   ReadToolConfig,

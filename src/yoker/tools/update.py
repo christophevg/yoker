@@ -10,7 +10,7 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from yoker.config.schema import Config
+from yoker.config import Config
 from yoker.logging import get_logger
 from yoker.tools.base import Tool, ToolResult
 

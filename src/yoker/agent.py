@@ -103,10 +103,10 @@ class Agent:
     """
     # Load configuration using Clevis (handles env vars, user config, project config)
     # Clevis handles environment variable interpolation via envtoml/tomlev
-    from clevis import get_config
+    from yoker.config import get_yoker_config
 
     # Use cli=False for library mode (no CLI argument parsing)
-    loaded_config = config if config is not None else get_config(Config, name="yoker", cli=False)
+    loaded_config = config if config is not None else get_yoker_config(cli=False)
 
     config_source = "explicit" if config is not None else "discovered"
     log.info("config_loaded", source=config_source)

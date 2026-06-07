@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from yoker.config.schema import Config, ToolsConfig, WriteToolConfig
+from yoker.config import Config, ToolsConfig, WriteToolConfig
 from yoker.tools import WriteTool
 from yoker.tools.base import ToolResult, ValidationResult
 

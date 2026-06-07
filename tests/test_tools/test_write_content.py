@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from yoker.config.schema import (
+from yoker.config import (
   Config,
   ContentDisplayConfig,
   ToolsConfig,

@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 
-from yoker.config.schema import (
+from yoker.config import (
   Config,
   MkdirToolConfig,
   PermissionsConfig,

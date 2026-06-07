@@ -8,7 +8,7 @@ from yoker.agents.validator import (
   validate_non_empty_string,
   validate_tools,
 )
-from yoker.config.schema import (
+from yoker.config import (
   AgentToolConfig,
   ListToolConfig,
   ReadToolConfig,

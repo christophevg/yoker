@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from yoker.config.schema import WebFetchToolConfig
+from yoker.config import WebFetchToolConfig
 from yoker.tools.base import ValidationResult
 from yoker.tools.web_backend import WebFetchBackend
 from yoker.tools.web_guardrail import WebGuardrail, WebGuardrailConfig

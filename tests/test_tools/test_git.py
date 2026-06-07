@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from yoker.config.schema import (
+from yoker.config import (
   GitToolConfig,
   HandlerConfig,
 )
