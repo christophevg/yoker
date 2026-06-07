@@ -1,6 +1,10 @@
 # Yoker Configuration File
 # Copy this file to yoker.toml and customize for your needs.
 
+# Runtime configuration (top-level, takes precedence over backend.ollama.model)
+# model = "llama3.2:latest"  # Override model for all agents
+# agent = "agents/researcher.md"  # Path to agent definition file
+
 # Harness metadata
 [harness]
 name = "my-yoke"
@@ -13,7 +17,7 @@ provider = "ollama"  # Currently only "ollama" is supported
 
 [backend.ollama]
 base_url = "http://localhost:11434"
-model = "llama3.2:latest"
+model = "llama3.2:latest"  # Default model (overridden by top-level model)
 timeout_seconds = 60
 
 [backend.ollama.parameters]
