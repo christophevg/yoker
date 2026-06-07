@@ -73,25 +73,23 @@ uv run python scripts/skill_demo.py
 
 ## Skills Infrastructure Demo
 
-The skills infrastructure is demonstrated via a dedicated Python script:
+The skills demo shows how Yoker's skill system differs from tools:
 
 ```bash
-uv run python scripts/skill_demo.py
+uv run python scripts/demo_session.py --script demos/skills.md
 ```
 
-This demo shows:
+This demo demonstrates:
 
-1. **Discovery Phase**: Skills listed in system reminder
-2. **Invocation Phase**: Full skill content injected via slash command
-3. **Natural Language Invocation**: Agent recognizes skill from context
+1. **Tool vs Skill distinction** - Tools are executable code (functions), skills are prompt instructions (context)
+2. **Discovery Phase** - Skills listed in `<system-reminder>` blocks with name + description
+3. **Invocation Phase** - Full skill content injected via `<command-message>` blocks
+4. **Context Efficiency** - Skills are discovered on every turn but only fully loaded when invoked
 
-**Note**: Skills are not yet integrated into the command system. The demo shows
-the infrastructure pattern and how skill context injection would work.
-
-For details, see:
-- `scripts/skill_demo.py` - Working demonstration
-- `analysis/api-skill-infrastructure.md` - API design
-- `src/yoker/skills/` - Implementation
+For implementation details, see:
+- `src/yoker/skills/` - Core skill infrastructure (schema, loader, injection, registry)
+- `scripts/skill_demo.py` - Working demonstration with actual Agent
+- `analysis/api-skill-infrastructure.md` - API design documentation
 
 ## Writing Demos
 
