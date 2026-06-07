@@ -1,5 +1,23 @@
 # TODO
 
+## P1: Critical Infrastructure
+
+### Issue #16: Adopt Clevis for Configuration Management
+
+- [ ] **16.1 Migrate Configuration System to Clevis**
+  - Replace custom yoker/config/ module (~700 lines) with Clevis package
+  - Migrate config/loader.py to Clevis loader pattern
+  - Migrate config/schema.py to Clevis schema with frozen dataclasses
+  - Migrate config/validator.py to Clevis validation hooks
+  - Preserve custom validation via `__post_init__` on config classes
+  - Support environment variables via TOML interpolation (Clevis native)
+  - Implement configuration discovery: user < project < CLI (Clevis pattern)
+  - Ensure minimal breaking changes to public config file format
+  - **Estimated time:** 4-6 hours
+  - **Priority:** P1 (Critical - blocks other work)
+  - **See:** Issue #16
+  - **Satisfies:** Configuration infrastructure modernization
+
 ## MVP: Package Plugin System (Issue #14)
 
 **Goal:** Enable Python packages to provide tools and skills to yoker via `yoker --with <package>`

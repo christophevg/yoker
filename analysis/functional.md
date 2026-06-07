@@ -567,6 +567,42 @@ Subagent Error
 
 ## 5. Configuration Approach
 
+### 5.0 Configuration Infrastructure Migration (Issue #16)
+
+**Status:** Planned (P1 Critical)
+
+**Goal:** Migrate from custom configuration system to Clevis package for improved maintainability and standardization.
+
+**Current State (Custom Implementation):**
+- `yoker/config/loader.py` - TOML loading (~200 lines)
+- `yoker/config/schema.py` - Frozen dataclass configuration (~300 lines)
+- `yoker/config/validator.py` - Schema and semantic validation (~200 lines)
+- Total: ~700 lines of custom configuration code
+
+**Target State (Clevis Integration):**
+- Use Clevis package for TOML configuration loading
+- Preserve frozen dataclass schemas with `__post_init__` custom validation
+- Support environment variables via Clevis native TOML interpolation
+- Implement configuration discovery pattern: user < project < CLI
+- Minimal breaking changes to public config file format
+
+**Migration Path:**
+1. Add Clevis as dependency in pyproject.toml
+2. Create adapter layer between Clevis loader and existing schema
+3. Migrate validation to `__post_init__` hooks on frozen dataclasses
+4. Test configuration discovery and environment variable support
+5. Remove custom loader, validator modules (keep schema.py)
+6. Update documentation and examples
+
+**Benefits:**
+- Reduced maintenance burden (~700 lines removed)
+- Standardized configuration pattern across projects
+- Native environment variable support
+- Better configuration discovery (user < project < CLI)
+- Consistent with other tools in ecosystem
+
+**Reference:** Issue #16
+
 ### 5.1 TOML Configuration (harness.toml)
 
 ```toml
