@@ -73,23 +73,30 @@ uv run python scripts/skill_demo.py
 
 ## Skills Infrastructure Demo
 
-The skills demo shows how Yoker's skill system differs from tools:
+The skills demo shows how Yoker's skill system works:
 
 ```bash
-uv run python scripts/demo_session.py --script demos/skills.md
+# Run the skills demo (requires --skills-dir to load skill files)
+uv run python scripts/demo_session.py --script demos/skills.md --skills-dir demos/skills
+
+# With logging for replay
+uv run python scripts/demo_session.py --script demos/skills.md --skills-dir demos/skills --log
 ```
 
 This demo demonstrates:
 
-1. **Tool vs Skill distinction** - Tools are executable code (functions), skills are prompt instructions (context)
-2. **Discovery Phase** - Skills listed in `<system-reminder>` blocks with name + description
-3. **Invocation Phase** - Full skill content injected via `<command-message>` blocks
-4. **Context Efficiency** - Skills are discovered on every turn but only fully loaded when invoked
+1. **Skill Discovery** - Skills loaded from `YOKER_SKILLS_PATH` environment variable
+2. **Slash Commands** - Each skill becomes a `/skill-name` command
+3. **Context Injection** - Skill content injected into LLM context when invoked
+4. **Minimal Demo Scripts** - Demo runner handles setup, scripts stay minimal
+
+The `--skills-dir` flag sets `YOKER_SKILLS_PATH` before starting the agent,
+allowing skills to be loaded from a directory of `.md` files.
 
 For implementation details, see:
 - `src/yoker/skills/` - Core skill infrastructure (schema, loader, injection, registry)
-- `scripts/skill_demo.py` - Working demonstration with actual Agent
-- `analysis/api-skill-infrastructure.md` - API design documentation
+- `demos/skills/example.md` - Example skill definition
+- `demos/skills.md` - Demo script using the skill
 
 ## Writing Demos
 

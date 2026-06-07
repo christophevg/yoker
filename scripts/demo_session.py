@@ -124,6 +124,7 @@ async def run_demo_session(
   persist: bool = False,
   resume: str | None = None,
   output: Path | None = None,
+  skills_dir: Path | None = None,
 ) -> Path:
   """Run a demo session from a script and save as SVG.
 
@@ -136,10 +137,16 @@ async def run_demo_session(
     persist: Whether to persist session for resumption.
     resume: Session ID to resume (if set, loads previous session).
     output: Output path for SVG (overrides script.output).
+    skills_dir: Path to directory containing skill files (sets YOKER_SKILLS_PATH).
 
   Returns:
     Path to the generated SVG file.
   """
+  # Set skills path environment variable if provided
+  if skills_dir:
+    import os
+    os.environ["YOKER_SKILLS_PATH"] = str(skills_dir.resolve())
+
   # Clean up temp files/directories before starting (ensure clean state)
   _cleanup_temp_files()
 
@@ -258,6 +265,17 @@ async def run_demo_session(
       set_thinking_mode=lambda mode: setattr(agent, "thinking_mode", mode),
     )
   )
+
+  # Register skill commands if skills are loaded
+  if agent.skill_registry:
+    from yoker.commands.skill import create_skill_commands
+
+    skill_commands = create_skill_commands(
+      registry=agent.skill_registry,
+      get_skill_registry=lambda: agent.skill_registry,
+    )
+    for cmd in skill_commands:
+      command_registry.register(cmd)
 
   # Begin session (emits SESSION_START event for real LLM mode)
   if not is_replay_mode:
@@ -412,6 +430,12 @@ def main() -> None:
     default=None,
     help="Output path for SVG (overrides script default)",
   )
+  parser.add_argument(
+    "--skills-dir",
+    type=Path,
+    default=None,
+    help="Path to directory containing skill files (sets YOKER_SKILLS_PATH)",
+  )
   args = parser.parse_args()
 
   # Look for local config file
@@ -435,6 +459,7 @@ def main() -> None:
         persist=args.persist,
         resume=args.resume,
         output=args.output,
+        skills_dir=args.skills_dir,
       ))
   else:
     # Run single script
@@ -448,6 +473,7 @@ def main() -> None:
       persist=args.persist,
       resume=args.resume,
       output=args.output,
+      skills_dir=args.skills_dir,
     ))
 
 

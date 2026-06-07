@@ -77,6 +77,11 @@ class EventReplayAgent:
     """Return the model name from the recorded session."""
     return self._model
 
+  @property
+  def skill_registry(self) -> None:
+    """Return None - replay agent doesn't have skills."""
+    return None
+
   def add_event_handler(self, handler: "EventCallback") -> None:
     """Register an event handler for replay.
 
