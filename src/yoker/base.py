@@ -99,11 +99,17 @@ class AgentCore:
         - Project config (./yoker.toml)
         - Default values from Config dataclass
 
+    Model Resolution (in order of precedence):
+        1. AgentDefinition.model (if agent definition has model)
+        2. config.model (top-level config field)
+        3. config.backend.ollama.model (backend-specific model)
+
     Agent Definition Resolution (in order of precedence):
         1. Explicit `agent_definition` parameter
         2. Explicit `agent_path` parameter
-        3. Config's `agents.definition` (if set and file exists)
-        4. None (default system prompt)
+        3. config.agent (top-level config field, if set and file exists)
+        4. config.agents.definition (legacy field, if set and file exists)
+        5. None (default system prompt)
 
     Args:
       config: Configuration object (uses Clevis auto-discovery if not provided).
@@ -131,8 +137,16 @@ class AgentCore:
 
     # Validation happens automatically in Config.__post_init__
 
-    # Use model from config
-    self._model = self._config.backend.ollama.model
+    # Model resolution: explicit agent_definition > config.model > backend.ollama.model
+    if agent_definition and agent_definition.model:
+      self._model = agent_definition.model
+      log.info("model_from_agent_definition", model=self._model)
+    elif self._config.model:
+      self._model = self._config.model
+      log.info("model_from_config", model=self._model)
+    else:
+      self._model = self._config.backend.ollama.model
+      log.info("model_from_backend_config", model=self._model)
 
     # Thinking mode state
     self._thinking_mode = thinking_mode
@@ -141,17 +155,34 @@ class AgentCore:
     self._command_registry = command_registry
 
     # Resolve agent definition from config if not explicitly provided
+    # Priority: explicit agent_definition > explicit agent_path > config.agent > config.agents.definition
     resolved_agent_path: Path | str | None = agent_path
     if agent_definition is None and agent_path is None:
-      # Check if config has agents.definition
-      if self._config.agents.definition:
+      # Check config.agent first (top-level config field)
+      if self._config.agent:
+        definition_path = Path(self._config.agent).expanduser()
+        if definition_path.exists():
+          resolved_agent_path = definition_path
+          log.info(
+            "agent_definition_loaded",
+            path=str(definition_path),
+            source="config.agent",
+          )
+        else:
+          log.warning(
+            "agent_definition_not_found",
+            path=str(definition_path),
+            fallback="default_prompt",
+          )
+      # Fall back to agents.definition (legacy field)
+      elif self._config.agents.definition:
         definition_path = Path(self._config.agents.definition).expanduser()
         if definition_path.exists():
           resolved_agent_path = definition_path
           log.info(
             "agent_definition_loaded",
             path=str(definition_path),
-            source="config",
+            source="config.agents.definition",
           )
         else:
           log.warning(

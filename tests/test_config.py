@@ -45,6 +45,8 @@ class TestConfigSchema:
   def test_config_defaults(self) -> None:
     """Test Config default values."""
     config = Config()
+    assert config.model is None
+    assert config.agent is None
     assert config.harness.name == "yoker"
     assert config.backend.provider == "ollama"
     assert config.backend.ollama.model == "llama3.2:latest"
@@ -55,6 +57,20 @@ class TestConfigSchema:
     assert config.agents.directory == ""
     assert config.logging.format == "text"
     assert config.logging.level == "INFO"
+
+  def test_config_with_model_override(self) -> None:
+    """Test Config with model override."""
+    config = Config(model="custom-model:latest")
+    assert config.model == "custom-model:latest"
+    # Backend model is still available as fallback
+    assert config.backend.ollama.model == "llama3.2:latest"
+
+  def test_config_with_agent_path(self) -> None:
+    """Test Config with agent definition path."""
+    config = Config(agent="agents/custom.md")
+    assert config.agent == "agents/custom.md"
+    # Legacy field is available for backward compatibility
+    assert config.agents.definition == ""
 
   def test_frozen_dataclass(self) -> None:
     """Test that config classes are frozen (immutable)."""
