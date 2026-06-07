@@ -23,6 +23,7 @@ class DemoScript:
     events: Default path for event log (JSONL) used for replay.
     messages: List of user messages to send during the demo.
     source_path: Path to the source Markdown file.
+    skills_dir: Optional path to directory containing skill files.
   """
 
   title: str
@@ -31,6 +32,7 @@ class DemoScript:
   events: str
   messages: tuple[str, ...]
   source_path: str
+  skills_dir: str | None = None
 
 
 def _extract_messages(body: str) -> tuple[str, ...]:
@@ -163,6 +165,7 @@ def load_demo_script(path: Path | str) -> DemoScript:
   description = frontmatter.get("description", "")
   output = frontmatter.get("output", "")
   events = frontmatter.get("events", "")
+  skills_dir = frontmatter.get("skills_dir")
 
   # Extract messages from body
   messages = _extract_messages(body)
@@ -179,6 +182,7 @@ def load_demo_script(path: Path | str) -> DemoScript:
     events=str(events) if events else "",
     messages=messages,
     source_path=str(file_path),
+    skills_dir=str(skills_dir) if skills_dir else None,
   )
 
 
@@ -233,3 +237,4 @@ __all__ = [
   "load_demo_script",
   "load_demo_scripts",
 ]
+

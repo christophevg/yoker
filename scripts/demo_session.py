@@ -145,14 +145,17 @@ async def run_demo_session(
     resume: Session ID to resume (if set, loads previous session).
     output: Output path for SVG (overrides script.output).
     skills_dir: Path to directory containing skill files (sets YOKER_SKILLS_PATH).
+      If None, uses script.skills_dir if available.
 
   Returns:
     Path to the generated SVG file.
   """
   # Set skills path environment variable if provided
-  if skills_dir:
+  # Priority: command-line arg > script frontmatter
+  effective_skills_dir = skills_dir or (Path(script.skills_dir) if script.skills_dir else None)
+  if effective_skills_dir:
     import os
-    os.environ["YOKER_SKILLS_PATH"] = str(skills_dir.resolve())
+    os.environ["YOKER_SKILLS_PATH"] = str(effective_skills_dir.resolve())
 
   # Clean up temp files/directories before starting (ensure clean state)
   _cleanup_temp_files()
@@ -534,3 +537,4 @@ def main() -> None:
 
 if __name__ == "__main__":
   main()
+
