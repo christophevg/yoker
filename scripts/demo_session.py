@@ -275,8 +275,8 @@ async def run_demo_session(
   else:
     # Real LLM mode
     # Load configuration using Clevis (handles env vars, user config, project config)
-    from clevis import get_config
-    config = get_config(Config, name="yoker", cli=False)
+    from yoker.config import get_yoker_config
+    config = get_yoker_config(cli=False)
 
     # Create context manager for persistence or resumption
     if persist or resume:

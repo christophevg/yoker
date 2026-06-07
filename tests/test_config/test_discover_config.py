@@ -6,8 +6,7 @@ from unittest.mock import patch
 import pytest
 from clevis import SecurityAction, get_config
 
-from yoker.config import Config
-from yoker.config.schema import AgentsConfig
+from yoker.config import AgentsConfig, Config
 
 
 class TestClevisIntegration:

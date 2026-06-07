@@ -72,7 +72,7 @@ This is a test skill.
     )
 
     # Create config with skills directory
-    from yoker.config.schema import SkillsConfig
+    from yoker.config import SkillsConfig
 
     config = Config(skills=SkillsConfig(directories=(str(skill_dir),)))
 

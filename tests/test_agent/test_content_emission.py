@@ -11,8 +11,7 @@ from unittest.mock import AsyncMock
 from pytest_mock import MockerFixture
 
 from yoker.agent import Agent
-from yoker.config import Config
-from yoker.config.schema import PermissionsConfig
+from yoker.config import Config, PermissionsConfig
 from yoker.events import EventType, ToolContentEvent
 from yoker.events.types import Event
 
@@ -344,7 +343,7 @@ class TestAgentContentEventEmission:
     mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
 
     # Configure for content verbosity
-    from yoker.config.schema import BackendConfig, ContentDisplayConfig, OllamaConfig, ToolsConfig
+    from yoker.config import BackendConfig, ContentDisplayConfig, OllamaConfig, ToolsConfig
 
     config = Config(
       backend=BackendConfig(ollama=OllamaConfig(model="test-model")),

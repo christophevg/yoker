@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from yoker.config.schema import Config, ContentDisplayConfig, ToolsConfig
+from yoker.config import Config, ContentDisplayConfig, ToolsConfig
 from yoker.tools.update import UpdateTool, _truncate_diff
 
 

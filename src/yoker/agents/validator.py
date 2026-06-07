@@ -4,7 +4,7 @@ Validates agent definitions against configuration constraints.
 """
 
 from yoker.agents.schema import AgentDefinition
-from yoker.config.schema import ToolsConfig
+from yoker.config import ToolsConfig
 from yoker.exceptions import ValidationError
 
 

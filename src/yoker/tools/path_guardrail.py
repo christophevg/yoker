@@ -10,7 +10,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from yoker.config.schema import (
+from yoker.config import (
   Config,
   MkdirToolConfig,
   PermissionsConfig,
