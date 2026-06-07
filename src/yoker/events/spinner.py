@@ -269,4 +269,3 @@ __all__ = [
   "LiveDisplay",
   "live_display",
 ]
-
