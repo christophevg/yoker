@@ -92,4 +92,3 @@ class TestSVGGeneration:
     # Content is split across chunks, with non-breaking spaces (&#160;) in SVG
     assert "Hello" in svg_content
     assert "world" in svg_content
-

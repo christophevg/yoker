@@ -612,4 +612,3 @@ class ConsoleEventHandler:
 
     if end:
       self.console.print(end, style=style, end="")
-
