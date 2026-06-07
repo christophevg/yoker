@@ -171,4 +171,3 @@ class TestSkillTool:
 
     assert result.success is True
     assert "<command-args></command-args>" in result.result
-

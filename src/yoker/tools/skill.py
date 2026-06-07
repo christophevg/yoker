@@ -134,4 +134,3 @@ class SkillTool(Tool):
       success=True,
       result=invocation,
     )
-
