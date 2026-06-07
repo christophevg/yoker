@@ -9,6 +9,7 @@ from yoker.commands.context import create_context_command
 from yoker.commands.help import create_help_command
 from yoker.commands.registry import CommandRegistry
 from yoker.commands.skill import create_skill_commands
+from yoker.commands.skills import create_skills_command
 from yoker.commands.think import create_think_command
 
 __all__ = [
@@ -17,5 +18,6 @@ __all__ = [
   "create_context_command",
   "create_help_command",
   "create_skill_commands",
+  "create_skills_command",
   "create_think_command",
 ]

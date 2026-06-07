@@ -24,6 +24,7 @@ from yoker.commands import (
   create_context_command,
   create_help_command,
   create_skill_commands,
+  create_skills_command,
   create_think_command,
 )
 from yoker.config import Config
@@ -137,22 +138,6 @@ def create_command_registry(agent: Agent, config: Config) -> CommandRegistry:
   """
   registry = CommandRegistry()
 
-  # Register built-in commands
-  registry.register(create_help_command(registry))
-  registry.register(
-    create_think_command(
-      get_thinking_mode=lambda: agent.thinking_mode,
-      set_thinking_mode=lambda mode: setattr(agent, "thinking_mode", mode),
-    )
-  )
-  registry.register(
-    create_context_command(
-      get_session_id=lambda: agent.context.get_session_id(),
-      get_statistics=lambda: agent.context.get_statistics(),
-      get_messages=lambda: agent.context.get_messages(),
-    )
-  )
-
   # Load skills from configuration and environment
   skill_registry = SkillRegistry()
 
@@ -177,6 +162,23 @@ def create_command_registry(agent: Agent, config: Config) -> CommandRegistry:
 
   # Set skill registry on agent
   agent._core.skill_registry = skill_registry
+
+  # Register built-in commands
+  registry.register(create_help_command(registry))
+  registry.register(create_skills_command(skill_registry))
+  registry.register(
+    create_think_command(
+      get_thinking_mode=lambda: agent.thinking_mode,
+      set_thinking_mode=lambda mode: setattr(agent, "thinking_mode", mode),
+    )
+  )
+  registry.register(
+    create_context_command(
+      get_session_id=lambda: agent.context.get_session_id(),
+      get_statistics=lambda: agent.context.get_statistics(),
+      get_messages=lambda: agent.context.get_messages(),
+    )
+  )
 
   # Register skill commands
   skill_commands = create_skill_commands(
