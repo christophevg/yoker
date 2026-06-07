@@ -178,53 +178,45 @@ class TestConfigValidator:
     assert isinstance(warnings, list)
 
   def test_validate_invalid_url(self) -> None:
-    """Test validation catches invalid URL."""
-    config = Config()
-    config = Config(backend=BackendConfig(ollama=OllamaConfig(base_url="not-a-valid-url")))
+    """Test validation catches invalid URL during construction."""
     with pytest.raises(ValidationError) as exc_info:
-      validate_config(config)
+      Config(backend=BackendConfig(ollama=OllamaConfig(base_url="not-a-valid-url")))
     assert "backend.ollama.base_url" in str(exc_info.value)
 
   def test_validate_empty_model(self) -> None:
-    """Test validation catches empty model."""
-    config = Config(backend=BackendConfig(ollama=OllamaConfig(model="")))
+    """Test validation catches empty model during construction."""
     with pytest.raises(ValidationError) as exc_info:
-      validate_config(config)
+      Config(backend=BackendConfig(ollama=OllamaConfig(model="")))
     assert "backend.ollama.model" in str(exc_info.value)
 
   def test_validate_negative_timeout(self) -> None:
-    """Test validation catches negative timeout."""
-    config = Config(backend=BackendConfig(ollama=OllamaConfig(timeout_seconds=-1)))
+    """Test validation catches negative timeout during construction."""
     with pytest.raises(ValidationError) as exc_info:
-      validate_config(config)
+      Config(backend=BackendConfig(ollama=OllamaConfig(timeout_seconds=-1)))
     assert "timeout_seconds" in str(exc_info.value)
 
   def test_validate_invalid_log_level(self) -> None:
-    """Test validation catches invalid log level."""
-    config = Config(harness=HarnessConfig(log_level="INVALID"))
+    """Test validation catches invalid log level during construction."""
     with pytest.raises(ValidationError) as exc_info:
-      validate_config(config)
+      Config(harness=HarnessConfig(log_level="INVALID"))
     assert "harness.log_level" in str(exc_info.value)
 
   def test_validate_invalid_context_manager(self) -> None:
-    """Test validation catches invalid context manager."""
-    config = Config(context=ContextConfig(manager="invalid"))
+    """Test validation catches invalid context manager during construction."""
     with pytest.raises(ValidationError) as exc_info:
-      validate_config(config)
+      Config(context=ContextConfig(manager="invalid"))
     assert "context.manager" in str(exc_info.value)
 
   def test_validate_invalid_network_access(self) -> None:
-    """Test validation catches invalid network access."""
-    config = Config(permissions=PermissionsConfig(network_access="invalid"))
+    """Test validation catches invalid network access during construction."""
     with pytest.raises(ValidationError) as exc_info:
-      validate_config(config)
+      Config(permissions=PermissionsConfig(network_access="invalid"))
     assert "permissions.network_access" in str(exc_info.value)
 
   def test_validate_empty_filesystem_paths(self) -> None:
-    """Test validation catches empty filesystem_paths."""
-    config = Config(permissions=PermissionsConfig(filesystem_paths=()))
+    """Test validation catches empty filesystem_paths during construction."""
     with pytest.raises(ValidationError) as exc_info:
-      validate_config(config)
+      Config(permissions=PermissionsConfig(filesystem_paths=()))
     assert "permissions.filesystem_paths" in str(exc_info.value)
     assert "must not be empty" in str(exc_info.value).lower()
 

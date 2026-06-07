@@ -15,6 +15,7 @@ import httpx
 from ollama import AsyncClient
 
 from yoker.base import AgentCore, EventCallback
+from yoker.config import Config
 from yoker.events import (
   ContentChunkEvent,
   ContentEndEvent,
@@ -104,38 +105,15 @@ class Agent:
       context_manager: Optional ContextManager for conversation persistence.
       _recursion_depth: Internal parameter for subagent recursion tracking.
     """
-    # Load environment variable configuration FIRST (highest priority)
-    from yoker.config import discover_config, load_env_config, merge_configs
+    # Load configuration using Clevis (handles env vars, user config, project config)
+    # Clevis handles environment variable interpolation via envtoml/tomlev
+    loaded_config = config if config is not None else Config.discover(config_path)
 
-    env_overrides = load_env_config()
-
-    # Load configuration (with auto-discovery)
-    config_source: str
-    discovered_path: Path | None = None
-
-    if config is not None:
-      # Merge env vars ON TOP of explicit config
-      loaded_config = merge_configs(config, env_overrides) if env_overrides else config
-      config_source = "explicit_with_env" if env_overrides else "explicit"
-    elif config_path is not None:
-      from yoker.config import load_config
-
-      base_config = load_config(config_path)
-      loaded_config = merge_configs(base_config, env_overrides) if env_overrides else base_config
-      config_source = "explicit_path_with_env" if env_overrides else "explicit_path"
-      discovered_path = Path(config_path)
-    else:
-      base_config, discovered_path = discover_config()
-      loaded_config = merge_configs(base_config, env_overrides) if env_overrides else base_config
-      config_source = (
-        "discovered_with_env" if env_overrides else "discovered" if discovered_path else "defaults"
-      )
-
+    config_source = "explicit" if config is not None else "discovered"
     log.info(
       "config_loaded",
       source=config_source,
-      path=str(discovered_path) if discovered_path else None,
-      env_vars_count=len(env_overrides) if env_overrides else 0,
+      path=str(config_path) if config_path else None,
     )
 
     # Resolve agent definition from config if not explicitly provided

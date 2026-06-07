@@ -124,59 +124,34 @@ class AgentCore:
     load_dotenv(Path(".env"))
     load_dotenv(Path(".env.local"))
 
-    # Load environment variable configuration
-    # Env vars have HIGHEST priority (even over explicit config parameter)
-    from yoker.config import load_env_config, merge_configs
-
-    env_overrides = load_env_config()
-
-    # Load configuration (with auto-discovery)
-    config_source: str
+    # Load configuration using Clevis (handles env vars, user config, project config)
+    # Clevis handles environment variable interpolation via envtoml/tomlev
     discovered_path: Path | None = None
-
     if config is not None:
-      # Merge env vars ON TOP of explicit config
-      self._config = merge_configs(config, env_overrides) if env_overrides else config
-      if env_overrides:
-        log.info(
-          "config_loaded",
-          source="explicit_with_env",
-          env_vars_count=len(env_overrides),
-        )
+      self._config = config
       # Skip logging - caller (Agent) already logged config resolution
     elif config_path is not None:
       from yoker.config import load_config
 
-      base_config = load_config(config_path)
-      self._config = merge_configs(base_config, env_overrides) if env_overrides else base_config
+      self._config = load_config(config_path)
       discovered_path = Path(config_path)
       log.info(
         "config_loaded",
-        source="explicit_path_with_env" if env_overrides else "explicit_path",
+        source="explicit_path",
         path=str(discovered_path),
-        env_vars_count=len(env_overrides) if env_overrides else 0,
       )
     else:
       from yoker.config import discover_config
 
-      base_config, discovered_path = discover_config()
-      self._config = merge_configs(base_config, env_overrides) if env_overrides else base_config
-      config_source = (
-        "discovered_with_env" if env_overrides else "discovered" if discovered_path else "defaults"
-      )
+      self._config, discovered_path = discover_config()
+      config_source = "discovered" if discovered_path else "defaults"
       log.info(
         "config_loaded",
         source=config_source,
         path=str(discovered_path) if discovered_path else None,
-        env_vars_count=len(env_overrides) if env_overrides else 0,
       )
 
-    # Validate configuration
-    from yoker.config.validator import validate_config
-
-    warnings = validate_config(self._config)
-    for warning in warnings:
-      log.warning("config_validation_warning", warning=warning)
+    # Validation happens automatically in Config.__post_init__
 
     # Use provided model or config model
     self._model = model if model is not None else self._config.backend.ollama.model

@@ -257,6 +257,18 @@ wheels = [
 ]
 
 [[package]]
+name = "clevis"
+version = "0.3.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "dacite" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f9/87/d18101b0a6644d3715e7f5fdd829988fce8302971dfede53b71f95c3ebdf/clevis-0.3.1.tar.gz", hash = "sha256:36b26bb0220f48210d2f9e8aa72388dea4c3b612dbac35d8a5414e8cd1fa9c92", size = 168785, upload-time = "2026-06-07T18:52:22.782Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/00/7d/eb25735374fb50ad6e6d4d74106881bcf1dfbe3e85f7a6277e45343fd945/clevis-0.3.1-py3-none-any.whl", hash = "sha256:c4c60f3b9f40fd8b88199cadf98bb10efba139ba2790bbc7f95f4c5e250ff2ed", size = 16551, upload-time = "2026-06-07T18:52:21.446Z" },
+]
+
+[[package]]
 name = "click"
 version = "8.3.3"
 source = { registry = "https://pypi.org/simple" }
@@ -450,6 +462,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/07/d6/1b90f1a4e453009730b4545286f0b39bb348d805c11181fc31544e4f9a65/cryptography-47.0.0-pp311-pypy311_pp73-manylinux_2_28_x86_64.whl", hash = "sha256:20fdbe3e38fb67c385d233c89371fa27f9909f6ebca1cecc20c13518dae65475", size = 4627192, upload-time = "2026-04-24T19:54:42.849Z" },
     { url = "https://files.pythonhosted.org/packages/dc/53/cb358a80e9e359529f496870dd08c102aa8a4b5b9f9064f00f0d6ed5b527/cryptography-47.0.0-pp311-pypy311_pp73-manylinux_2_34_aarch64.whl", hash = "sha256:f7db373287273d8af1414cf95dc4118b13ffdc62be521997b0f2b270771fef50", size = 4587486, upload-time = "2026-04-24T19:54:44.908Z" },
     { url = "https://files.pythonhosted.org/packages/8b/57/aaa3d53876467a226f9a7a82fd14dd48058ad2de1948493442dfa16e2ffd/cryptography-47.0.0-pp311-pypy311_pp73-manylinux_2_34_x86_64.whl", hash = "sha256:9fe6b7c64926c765f9dff301f9c1b867febcda5768868ca084e18589113732ab", size = 4626327, upload-time = "2026-04-24T19:54:47.813Z" },
+]
+
+[[package]]
+name = "dacite"
+version = "1.9.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/55/a0/7ca79796e799a3e782045d29bf052b5cde7439a2bbb17f15ff44f7aacc63/dacite-1.9.2.tar.gz", hash = "sha256:6ccc3b299727c7aa17582f0021f6ae14d5de47c7227932c47fec4cdfefd26f09", size = 22420, upload-time = "2025-02-05T09:27:29.757Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/94/35/386550fd60316d1e37eccdda609b074113298f23cef5bddb2049823fe666/dacite-1.9.2-py3-none-any.whl", hash = "sha256:053f7c3f5128ca2e9aceb66892b1a3c8936d02c686e707bee96e19deef4bc4a0", size = 16600, upload-time = "2025-02-05T09:27:24.345Z" },
 ]
 
 [[package]]
@@ -1996,6 +2017,7 @@ name = "yoker"
 version = "0.4.0"
 source = { editable = "." }
 dependencies = [
+    { name = "clevis" },
     { name = "httpx" },
     { name = "ollama" },
     { name = "prompt-toolkit" },
@@ -2003,7 +2025,6 @@ dependencies = [
     { name = "pyyaml" },
     { name = "rich" },
     { name = "structlog" },
-    { name = "tomli", marker = "python_full_version < '3.11'" },
 ]
 
 [package.optional-dependencies]
@@ -2033,6 +2054,7 @@ docs = [
 [package.metadata]
 requires-dist = [
     { name = "build", marker = "extra == 'dev'", specifier = ">=1.0.0" },
+    { name = "clevis", specifier = ">=0.2.0" },
     { name = "coveralls", marker = "extra == 'dev'", specifier = ">=3.3.0" },
     { name = "httpx", specifier = ">=0.25.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.13.0" },
@@ -2050,7 +2072,6 @@ requires-dist = [
     { name = "sphinx", marker = "extra == 'docs'", specifier = ">=7.0.0" },
     { name = "sphinx-rtd-theme", marker = "extra == 'docs'", specifier = ">=2.0.0" },
     { name = "structlog", specifier = ">=23.0.0" },
-    { name = "tomli", marker = "python_full_version < '3.11'", specifier = ">=2.0" },
     { name = "tox", marker = "extra == 'dev'", specifier = ">=4.0.0" },
     { name = "tox-uv", marker = "extra == 'dev'", specifier = ">=1.0.0" },
     { name = "twine", marker = "extra == 'dev'", specifier = ">=5.0.0" },
