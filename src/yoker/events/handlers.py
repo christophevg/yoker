@@ -99,6 +99,10 @@ class ConsoleEventHandler:
     self._thinking_shown = False  # Track if thinking was displayed
     self._content_shown = False  # Track if any content was shown this turn
 
+    # Check if console is recording (for SVG generation)
+    # When recording, we should not use spinner to avoid capturing intermediate states
+    self._is_recording = console.record if console else False
+
   async def __call__(self, event: Event) -> None:
     """Handle an event by dispatching to the appropriate handler method.
 
@@ -206,7 +210,9 @@ class ConsoleEventHandler:
           self.console.print()
         self._live_display = LiveDisplay(console=self.console)
         self._live_display.__enter__()
-        self._live_display.start_spinner()  # Show spinner while streaming
+        # Only show spinner if NOT recording (for SVG generation)
+        if not self._is_recording:
+          self._live_display.start_spinner()  # Show spinner while streaming
       # Without live display, add newline before thinking
       else:
         self._print_wrapped("\n", style=THINKING_STYLE)
@@ -248,7 +254,9 @@ class ConsoleEventHandler:
     if self._live_display is None:
       self._live_display = LiveDisplay(console=self.console)
       self._live_display.__enter__()
-      self._live_display.start_spinner()  # Show spinner while streaming
+      # Only show spinner if NOT recording (for SVG generation)
+      if not self._is_recording:
+        self._live_display.start_spinner()  # Show spinner while streaming
 
   def _handle_content_chunk(self, event: ContentChunkEvent) -> None:
     """Handle content chunk event."""
@@ -376,7 +384,9 @@ class ConsoleEventHandler:
       if self._live_display is None:
         self._live_display = LiveDisplay(console=self.console)
         self._live_display.__enter__()
-        self._live_display.start_spinner()  # Show spinner while streaming
+        # Only show spinner if NOT recording (for SVG generation)
+        if not self._is_recording:
+          self._live_display.start_spinner()  # Show spinner while streaming
 
   def _handle_tool_content(self, event: ToolContentEvent) -> None:
     """Handle tool content event.
@@ -415,7 +425,9 @@ class ConsoleEventHandler:
     if self._live_display is None:
       self._live_display = LiveDisplay(console=self.console)
       self._live_display.__enter__()
-      self._live_display.start_spinner()  # Show spinner while streaming
+      # Only show spinner if NOT recording (for SVG generation)
+      if not self._is_recording:
+        self._live_display.start_spinner()  # Show spinner while streaming
 
   def _show_summary(self, event: ToolContentEvent, filename: str) -> None:
     """Show operation summary.
