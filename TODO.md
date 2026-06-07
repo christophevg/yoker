@@ -24,19 +24,55 @@
 
 **Milestone:** Users can run `uvx --with pkgq yoker --with pkgq` and invoke `/pkgq:create`
 
-### Phase 2: Plugin & Skill System
+### Phase 2: Skill System (Core)
 
-- [ ] **2.1 Skill Infrastructure**
+**Goal:** Basic skill system that users can invoke immediately.
+
+**Milestone:** Users can define skills in configured directories and invoke them via `/skill-name` commands or through agent tool calls.
+
+- [x] **2.1 Skill Infrastructure** (2026-06-07)
   - Define `Skill` dataclass (Markdown + YAML frontmatter, similar to AgentDefinition)
   - Implement `SkillLoader` class (load from directory, parse frontmatter)
   - Implement skill context injection (user-level message with skill content)
   - Add skill discovery (`list_skills()` method)
   - Add skill registry to track loaded skills
   - Write unit tests for SkillLoader and skill injection
-  - **Estimated time:** 2-3 hours
   - **Satisfies:** Skill invocation capability
+  - **See:** PR #15
 
-- [ ] **2.2 Package Plugin System**
+- [ ] **2.2 Slash Command Support**
+  - Add `/skill-name` command parsing in CLI (prompt_toolkit)
+  - Parse `/skill-name` and `/skill-name args` formats
+  - Lookup skill in SkillRegistry
+  - Build skill context message using `format_invocation_block()`
+  - Inject as user message into conversation
+  - Handle skill not found error gracefully
+  - Load skills from configured directories (yoker.toml `skills_dirs`)
+  - Support `YOKER_SKILLS_PATH` environment variable
+  - Write unit tests for command parsing and skill injection
+  - **Depends on:** 2.1
+  - **Estimated time:** 1-2 hours
+  - **Satisfies:** User-facing skill invocation via CLI
+
+- [ ] **2.3 Skill Tool for Agent Invocation**
+  - Create `SkillTool` in `src/yoker/tools/skill.py`
+  - Implement `execute(name: str, args: str = "")` method
+  - Lookup skill in SkillRegistry
+  - Return skill content via `format_invocation_block()`
+  - Add SkillTool to default tool registry
+  - Update PathGuardrail (not a filesystem tool)
+  - Write unit tests for SkillTool
+  - **Depends on:** 2.1
+  - **Estimated time:** 1-2 hours
+  - **Satisfies:** Agent can invoke skills dynamically
+
+### Phase 3: Package Plugin System
+
+**Goal:** Enable Python packages to provide tools, skills, and agents to yoker.
+
+**Milestone:** Packages can register components via `yoker` module namespace.
+
+- [ ] **3.1 Package Plugin Discovery**
   - Import `{package}.yoker` module if present (using importlib)
   - Extract `TOOLS`, `SKILLS`, `AGENTS` lists from module
   - Handle graceful failure when package lacks yoker support
@@ -47,17 +83,16 @@
   - **Satisfies:** Package integration capability
   - **See:** Issue #14
 
-- [ ] **2.3 CLI --with Argument**
+- [ ] **3.2 CLI --with Argument**
   - Add `--with <package>` argument to `__main__.py`
   - Support multiple packages: `--with pkgq --with another`
   - Load packages before agent starts (in `main_async()`)
-  - Add skill invocation via `/skill-name` commands in CLI
   - Handle package import errors with user-friendly messages
   - Update README.md with `--with` usage examples
   - Write unit tests for CLI argument handling
   - **Estimated time:** 1-2 hours
-  - **Depends on:** 2.1, 2.2
-  - **Satisfies:** User-facing capability
+  - **Depends on:** 3.1
+  - **Satisfies:** User-facing package integration
 
 ### Phase 5: Polish (Post-MVP)
 

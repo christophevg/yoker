@@ -43,6 +43,7 @@ if TYPE_CHECKING:
   from yoker.commands import CommandRegistry
   from yoker.config import Config
   from yoker.context import ContextManager
+  from yoker.skills import SkillRegistry
   from yoker.tools.path_guardrail import PathGuardrail
 
 log = get_logger(__name__)
@@ -244,6 +245,11 @@ class Agent:
   def command_registry(self) -> "CommandRegistry | None":
     """Command registry for slash-commands."""
     return self._core.command_registry
+
+  @property
+  def skill_registry(self) -> "SkillRegistry | None":
+    """Skill registry for skill definitions."""
+    return self._core.skill_registry
 
   @property
   def _recursion_depth(self) -> int:
@@ -695,3 +701,4 @@ class Agent:
 
 
 __all__ = ["Agent"]
+

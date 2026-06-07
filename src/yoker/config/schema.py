@@ -396,6 +396,19 @@ class AgentsConfig:
 
 
 @dataclass(frozen=True)
+class SkillsConfig:
+  """Skills configuration.
+
+  Attributes:
+    directories: Directories containing skill definition files.
+    discovery: Whether to show skill discovery block on startup.
+  """
+
+  directories: tuple[str, ...] = ()
+  discovery: bool = True
+
+
+@dataclass(frozen=True)
 class LoggingConfig:
   """Logging configuration.
 
@@ -425,6 +438,7 @@ class Config:
     permissions: Permission boundaries.
     tools: Tool configurations.
     agents: Agent definition settings.
+    skills: Skills configuration.
     logging: Logging configuration.
   """
 
@@ -434,6 +448,7 @@ class Config:
   permissions: PermissionsConfig = field(default_factory=PermissionsConfig)
   tools: ToolsConfig = field(default_factory=ToolsConfig)
   agents: AgentsConfig = field(default_factory=AgentsConfig)
+  skills: SkillsConfig = field(default_factory=SkillsConfig)
   logging: LoggingConfig = field(default_factory=LoggingConfig)
 
   @classmethod
@@ -501,6 +516,8 @@ __all__ = [
   "ContentDisplayConfig",
   "ToolsConfig",
   "AgentsConfig",
+  "SkillsConfig",
   "LoggingConfig",
   "Config",
 ]
+

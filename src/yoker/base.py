@@ -38,6 +38,7 @@ if TYPE_CHECKING:
   from yoker.commands import CommandRegistry
   from yoker.context import ContextManager
   from yoker.events import Event
+  from yoker.skills import SkillRegistry
   from yoker.tools.path_guardrail import PathGuardrail
 
 log = get_logger(__name__)
@@ -260,6 +261,9 @@ class AgentCore:
     # Event handlers storage
     self._event_handlers: list[EventCallback] = []
 
+    # Skill registry (initially empty, populated by Agent)
+    self._skill_registry: SkillRegistry | None = None
+
     # Verify guardrails are enforced (SEC-5)
     self._validate_guardrails_enforced()
 
@@ -305,6 +309,16 @@ class AgentCore:
   def command_registry(self) -> "CommandRegistry | None":
     """Command registry for slash-commands."""
     return self._command_registry
+
+  @property
+  def skill_registry(self) -> "SkillRegistry | None":
+    """Skill registry for skill definitions."""
+    return self._skill_registry
+
+  @skill_registry.setter
+  def skill_registry(self, value: "SkillRegistry | None") -> None:
+    """Set skill registry."""
+    self._skill_registry = value
 
   @property
   def recursion_depth(self) -> int:
@@ -465,3 +479,4 @@ class AgentCore:
 
 
 __all__ = ["AgentCore", "EventCallback", "DEFAULT_SYSTEM_PROMPT"]
+
