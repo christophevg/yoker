@@ -192,4 +192,3 @@ class TestSkillsCommand:
     assert "- c3:commit: Guide git commits" in result
     assert "- commit: Guide git commits" in result
     assert "- review: Review code" in result
-

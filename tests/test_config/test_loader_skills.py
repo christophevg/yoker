@@ -152,4 +152,3 @@ discovery = false
     # Verify skills section
     assert config.skills.directories == ("./skills", "/custom/skills")
     assert config.skills.discovery is False
-
