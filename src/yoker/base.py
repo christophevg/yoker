@@ -479,4 +479,3 @@ class AgentCore:
 
 
 __all__ = ["AgentCore", "EventCallback", "DEFAULT_SYSTEM_PROMPT"]
-

@@ -142,4 +142,3 @@ def test_namespaced_skill_commands():
   result = command_registry.dispatch("/c3:commit")
   assert result is not None
   assert "<command-name>c3:commit</command-name>" in result
-
