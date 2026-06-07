@@ -61,6 +61,7 @@ See [docs/rationale.md](docs/rationale.md) for the full rationale and comparison
 - [x] `web_search` tool - Web search with SSRF protection, domain filtering, and rate limiting
 - [x] `web_fetch` tool - Fetch web content with SSRF protection, URL validation, and size limits
 - [x] `agent` tool - Spawn subagents with isolated context and recursion limits
+- [x] `skill` tool - Invoke skills dynamically by name with full content loading
 - [x] Slash commands - Built-in commands: `/help`, `/think on|off`
 - [x] Thinking mode - LLM reasoning trace with gray output
 - [x] Streaming - Real-time token streaming from Ollama
