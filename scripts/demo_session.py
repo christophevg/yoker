@@ -181,16 +181,24 @@ async def run_demo_session(
     current_link.symlink_to(svg_path.name)
 
   # Determine events path
-  events_path = replay if replay else (Path(script.events) if script.events else None)
+  # Only use replay mode if --replay flag is explicitly provided
+  is_replay_mode = replay is not None
+
+  # Set events_path based on mode
+  if is_replay_mode:
+    # Replay mode: use --replay path or fall back to script's events path
+    events_path = replay if replay else (Path(script.events) if script.events else None)
+  elif log and script.events:
+    # Log mode: use script's events path for recording
+    events_path = Path(script.events)
+  else:
+    events_path = None
 
   # Event recorder for --log mode
   event_recorder: EventRecorder | None = None
 
   # Initialize context manager (used in real LLM mode)
   context_manager: BasicPersistenceContextManager | None = None
-
-  # Check replay mode BEFORE any file creation from --log
-  is_replay_mode = events_path and events_path.exists()
 
   if is_replay_mode:
     # Replay mode: use EventReplayAgent to replay events
@@ -368,7 +376,7 @@ async def run_demo_session(
     # ConsoleEventHandler prints the output in both cases
 
   # End session (emits SESSION_END event for real LLM mode)
-  if not (events_path and events_path.exists()):
+  if not is_replay_mode:
     await agent.end_session()
 
   # Print session footer
