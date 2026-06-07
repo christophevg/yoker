@@ -23,6 +23,7 @@ from yoker.commands import (
   CommandRegistry,
   create_context_command,
   create_help_command,
+  create_skill_commands,
   create_think_command,
 )
 from yoker.config import Config
@@ -33,6 +34,7 @@ from yoker.events import (
 )
 from yoker.exceptions import NetworkError
 from yoker.logging import configure_logging, get_logger
+from yoker.skills import SkillRegistry, load_skills, load_skills_from_env
 
 # Default configuration file name
 DEFAULT_CONFIG = "yoker.toml"
@@ -120,11 +122,15 @@ def setup_logging(config: Config) -> None:
   log.info("logging_configured", level=config.logging.level)
 
 
-def create_command_registry(agent: Agent) -> CommandRegistry:
+def create_command_registry(agent: Agent, config: Config) -> CommandRegistry:
   """Create and populate the command registry.
+
+  Loads skills from configured directories and environment variables,
+  then registers skill commands alongside built-in commands.
 
   Args:
     agent: The agent instance (for state access).
+    config: Configuration object.
 
   Returns:
     Populated CommandRegistry.
@@ -145,6 +151,50 @@ def create_command_registry(agent: Agent) -> CommandRegistry:
       get_statistics=lambda: agent.context.get_statistics(),
       get_messages=lambda: agent.context.get_messages(),
     )
+  )
+
+  # Load skills from configuration and environment
+  skill_registry = SkillRegistry()
+
+  # Load from configured directories
+  for directory in config.skills.directories:
+    try:
+      skills = load_skills(directory)
+      for skill_name, skill in skills.items():
+        skill_registry.register(skill)
+        log.info("skill_loaded", name=skill_name, source=directory)
+    except Exception as e:
+      log.warning("skill_directory_load_failed", directory=directory, error=str(e))
+
+  # Load from environment variable (YOKER_SKILLS_PATH)
+  try:
+    env_skills = load_skills_from_env()
+    for skill_name, skill in env_skills.items():
+      skill_registry.register(skill)
+      log.info("skill_loaded_from_env", name=skill_name)
+  except Exception as e:
+    log.warning("skill_env_load_failed", error=str(e))
+
+  # Set skill registry on agent
+  agent._core.skill_registry = skill_registry
+
+  # Register skill commands
+  skill_commands = create_skill_commands(
+    registry=skill_registry,
+    get_skill_registry=lambda: skill_registry,
+  )
+  for command in skill_commands:
+    try:
+      registry.register(command)
+      log.debug("skill_command_registered", name=command.name)
+    except ValueError as e:
+      # Command already exists (e.g., duplicate skill name)
+      log.warning("skill_command_duplicate", name=command.name, error=str(e))
+
+  log.info(
+    "skills_registered",
+    count=skill_registry.count,
+    commands=[cmd.name for cmd in skill_commands],
   )
 
   return registry
@@ -298,7 +348,7 @@ def main() -> None:
     print()
 
   # Create command registry with agent access
-  command_registry = create_command_registry(agent)
+  command_registry = create_command_registry(agent, config)
 
   # Create and attach console handler
   console_handler = ConsoleEventHandler(
@@ -314,3 +364,4 @@ def main() -> None:
 
 if __name__ == "__main__":
   main()
+

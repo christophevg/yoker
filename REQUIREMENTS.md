@@ -2,6 +2,32 @@
 
 ## Functional Requirements
 
+### Skill System
+
+- [ ] **FR-S1:** Skills are loaded from configured directories (yoker.toml `skills_dirs`)
+- [ ] **FR-S2:** Skills are loaded from `YOKER_SKILLS_PATH` environment variable
+- [ ] **FR-S3:** `/skill-name` command invokes skill via CLI
+- [ ] **FR-S4:** `/skill-name args` command passes arguments to skill
+- [ ] **FR-S5:** Skill discovery shows available skills to agent
+- [ ] **FR-S6:** Agent can invoke skills dynamically via SkillTool
+- [ ] **FR-S7:** Skills use user-level message injection for context
+- [ ] **FR-S8:** Skills have namespace support (`pkg:skill` format)
+- [ ] **FR-S9:** Skill content size limited to 100KB (security)
+- [ ] **FR-S10:** Skill paths validated against allowed directories (security)
+- [x] **FR-S11:** Skill schema with name, description, content, triggers, tools
+- [x] **FR-S12:** SkillLoader parses Markdown + YAML frontmatter
+- [x] **FR-S13:** SkillRegistry manages loaded skills with name lookup
+- [x] **FR-S14:** format_discovery_block() shows skill list for LLM context
+- [x] **FR-S15:** format_invocation_block() injects full skill content
+
+### Package Plugin System
+
+- [ ] **FR-PP1:** Packages provide tools/skills/agents via `yoker` module
+- [ ] **FR-PP2:** `--with <package>` loads package components before agent starts
+- [ ] **FR-PP3:** Namespaced components (`pkg:skill`, `pkg:tool`, `pkg:agent`)
+- [ ] **FR-PP4:** Graceful failure when package lacks yoker support
+- [ ] **FR-PP5:** Multiple packages can be loaded (`--with pkg1 --with pkg2`)
+
 ### Async-First Agent Architecture
 
 - [x] **FR1:** `process()` method is async and handles all core logic
