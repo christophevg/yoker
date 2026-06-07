@@ -1,12 +1,12 @@
 ---
 title: Skills Infrastructure
-description: Demonstrates skill context injection pattern in Yoker.
+description: Demonstrates skill discovery and invocation in Yoker.
 output: media/demo-skills.svg
 events: media/events-skills.jsonl
 ---
 
 ## Messages
 
-- /help
-- What capabilities do you have for working with git repositories? Answer in 2 sentences.
-- Use the git tool to show the current repository status. Reply in 1 line.
+- What is the difference between a tool and a skill in Yoker? Answer in 2 sentences.
+- How are skills discovered and invoked? Answer in 2 sentences.
+- Show me an example of the skill discovery block format. Answer in 3 lines.
