@@ -27,7 +27,14 @@ from pathlib import Path
 from rich.console import Console
 
 from yoker.agent import Agent, EventCallback
-from yoker.commands import CommandRegistry, create_help_command, create_think_command
+from yoker.commands import (
+  CommandRegistry,
+  create_context_command,
+  create_help_command,
+  create_skill_commands,
+  create_skills_command,
+  create_think_command,
+)
 from yoker.config import load_config_with_defaults
 from yoker.context import BasicPersistenceContextManager
 from yoker.demo import DemoScript, load_demo_script, load_demo_scripts
@@ -276,6 +283,15 @@ async def run_demo_session(
     )
     for cmd in skill_commands:
       command_registry.register(cmd)
+
+    # Register /skills command to list available skills
+    command_registry.register(create_skills_command(agent.skill_registry))
+  else:
+    # Even without skills loaded, register /skills command with empty registry
+    from yoker.skills import SkillRegistry
+
+    empty_registry = SkillRegistry()
+    command_registry.register(create_skills_command(empty_registry))
 
   # Begin session (emits SESSION_START event for real LLM mode)
   if not is_replay_mode:
