@@ -277,6 +277,33 @@ Key features:
 - **Timeout**: 5-minute default execution limit
 - **Tool filtering**: Subagents use only their defined tools
 
+### Skill Tool
+
+The `skill` tool allows the agent to invoke skills dynamically by name:
+
+```
+> use the example skill
+
+[Tool Call] skill(skill_name="example")
+
+<command-message>
+<command-name>example</command-name>
+<command-args></command-args>
+</command-message>
+
+Base directory for this skill:
+
+# Example Skill
+
+This is an example skill for testing purposes.
+```
+
+Key features:
+- **Dynamic loading**: Skills are loaded from `YOKER_SKILLS_PATH` environment variable
+- **Full content**: Returns the complete skill content for the agent to follow
+- **Args support**: Pass arguments to skills via the `args` parameter
+- **Discovery**: Available skills shown in system reminder
+
 ## Agent Definitions
 
 Yoker supports loading agent definitions from Markdown files with YAML frontmatter. This allows you to define custom system prompts and tool availability.

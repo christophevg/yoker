@@ -16,6 +16,7 @@ from .path_guardrail import PathGuardrail
 from .read import ReadTool
 from .registry import ToolRegistry
 from .search import SearchTool
+from .skill import SkillTool
 from .update import UpdateTool
 from .web_backend import (
   OllamaWebFetchBackend,
@@ -76,6 +77,7 @@ __all__ = [
   "MkdirTool",
   "GitTool",
   "AgentTool",
+  "SkillTool",
   "WebSearchTool",
   "WebSearchBackend",
   "OllamaWebSearchBackend",

@@ -199,11 +199,16 @@ class Agent:
 
     # Load skills from YOKER_SKILLS_PATH environment variable
     from yoker.skills import SkillRegistry, load_skills_from_env
+    from yoker.tools import SkillTool
 
     skills = load_skills_from_env()
     if skills:
       self._core.skill_registry = SkillRegistry()
       self._core.skill_registry.update(skills)
+
+      # Register SkillTool so agent can invoke skills
+      self._core.tool_registry.register(SkillTool(skill_registry=self._core.skill_registry))
+
       log.info(
         "skills_loaded",
         count=len(skills),
