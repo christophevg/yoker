@@ -55,7 +55,7 @@
   - **Satisfies:** User-facing skill invocation via CLI
   - **See:** PR #15
 
-- [ ] **2.3 Skill Tool for Agent Invocation**
+- [x] **2.3 Skill Tool for Agent Invocation** (2026-06-07)
   - Create `SkillTool` in `src/yoker/tools/skill.py`
   - Implement `execute(name: str, args: str = "")` method
   - Lookup skill in SkillRegistry
@@ -66,6 +66,7 @@
   - **Depends on:** 2.1
   - **Estimated time:** 1-2 hours
   - **Satisfies:** Agent can invoke skills dynamically
+  - **See:** PR #15
 
 ### Phase 3: Package Plugin System
 
