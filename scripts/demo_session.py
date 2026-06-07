@@ -57,6 +57,63 @@ DEFAULT_SCRIPT = Path("demos/session.md")
 # Set to 120 for wider output that fits modern displays
 CONSOLE_WIDTH = 120
 
+# SVG format with emoji font fallbacks
+# Fira Code doesn't have emoji glyphs, so we need fallback fonts for emoji characters
+# This is the default Rich SVG format with modified font-family declaration
+EMOJI_SVG_FORMAT = """<svg class="rich-terminal" viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg">
+    <!-- Generated with Rich https://www.textualize.io -->
+    <style>
+
+    @font-face {{
+        font-family: "Fira Code";
+        src: local("FiraCode-Regular"),
+                url("https://cdnjs.cloudflare.com/ajax/libs/firacode/6.2.0/woff2/FiraCode-Regular.woff2") format("woff2"),
+                url("https://cdnjs.cloudflare.com/ajax/libs/firacode/6.2.0/woff/FiraCode-Regular.woff") format("woff");
+        font-style: normal;
+        font-weight: 400;
+    }}
+    @font-face {{
+        font-family: "Fira Code";
+        src: local("FiraCode-Bold"),
+                url("https://cdnjs.cloudflare.com/ajax/libs/firacode/6.2.0/woff2/FiraCode-Bold.woff2") format("woff2"),
+                url("https://cdnjs.cloudflare.com/ajax/libs/firacode/6.2.0/woff/FiraCode-Bold.woff") format("woff");
+        font-style: bold;
+        font-weight: 700;
+    }}
+
+    .{unique_id}-matrix {{
+        font-family: "Fira Code", "Noto Color Emoji", "Apple Color Emoji", "Segoe UI Emoji", monospace;
+        font-size: {char_height}px;
+        line-height: {line_height}px;
+        font-variant-east-asian: full-width;
+    }}
+
+    .{unique_id}-title {{
+        font-size: 18px;
+        font-weight: bold;
+        font-family: arial;
+    }}
+
+    {styles}
+    </style>
+
+    <defs>
+    <clipPath id="{unique_id}-clip-terminal">
+      <rect x="0" y="0" width="{terminal_width}" height="{terminal_height}" />
+    </clipPath>
+    {lines}
+    </defs>
+
+    {chrome}
+    <g transform="translate({terminal_x}, {terminal_y})" clip-path="url(#{unique_id}-clip-terminal)">
+    {backgrounds}
+    <g class="{unique_id}-matrix">
+    {matrix}
+    </g>
+    </g>
+</svg>
+"""
+
 
 class PredefinedInput:
   """Iterator that yields predefined messages and raises EOFError when done."""
@@ -155,6 +212,7 @@ async def run_demo_session(
   effective_skills_dir = skills_dir or (Path(script.skills_dir) if script.skills_dir else None)
   if effective_skills_dir:
     import os
+
     os.environ["YOKER_SKILLS_PATH"] = str(effective_skills_dir.resolve())
 
   # Clean up temp files/directories before starting (ensure clean state)
@@ -395,7 +453,7 @@ async def run_demo_session(
     )
 
   # Save SVG
-  console.save_svg(str(svg_path))
+  console.save_svg(str(svg_path), code_format=EMOJI_SVG_FORMAT)
   console.print(f"\n[dim]Saved session to: {svg_path}[/]")
 
   # Clean up temp files and directories after demo
@@ -508,7 +566,24 @@ def main() -> None:
       print(f"\n{'=' * 60}")
       print(f"Running demo: {title}")
       print(f"{'=' * 60}")
-      asyncio.run(run_demo_session(
+      asyncio.run(
+        run_demo_session(
+          script=script,
+          config_path=str(config_path) if config_path else None,
+          log=args.log,
+          replay=args.replay,
+          agent_path=args.agent,
+          persist=args.persist,
+          resume=args.resume,
+          output=args.output,
+          skills_dir=args.skills_dir,
+        )
+      )
+  else:
+    # Run single script
+    script = _resolve_script(args)
+    asyncio.run(
+      run_demo_session(
         script=script,
         config_path=str(config_path) if config_path else None,
         log=args.log,
@@ -518,21 +593,8 @@ def main() -> None:
         resume=args.resume,
         output=args.output,
         skills_dir=args.skills_dir,
-      ))
-  else:
-    # Run single script
-    script = _resolve_script(args)
-    asyncio.run(run_demo_session(
-      script=script,
-      config_path=str(config_path) if config_path else None,
-      log=args.log,
-      replay=args.replay,
-      agent_path=args.agent,
-      persist=args.persist,
-      resume=args.resume,
-      output=args.output,
-      skills_dir=args.skills_dir,
-    ))
+      )
+    )
 
 
 if __name__ == "__main__":
