@@ -1,164 +1,38 @@
-"""Tests for config auto-discovery."""
+"""Tests for config auto-discovery using Clevis."""
 
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from clevis import SecurityAction, get_config
 
-from yoker.config import Config, discover_config, load_config
+from yoker.config import Config
 from yoker.config.schema import AgentsConfig
-from yoker.exceptions import ConfigurationError
 
 
-class TestDiscoverConfig:
-  """Tests for discover_config function."""
+class TestClevisIntegration:
+  """Tests for Clevis integration."""
 
-  def test_discover_config_no_files(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Test discover_config returns defaults when no config files exist."""
-    # Change to temp directory (no yoker.toml)
-    monkeypatch.chdir(tmp_path)
-
-    # Mock Path.home() to point to temp directory (no .yoker.toml)
-    with patch.object(Path, "home", return_value=tmp_path):
-      config, path = discover_config()
-
-    assert config == Config()
-    assert path is None
-
-  def test_discover_config_cwd(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Test discover_config finds config in current directory."""
-    # Create yoker.toml in temp directory
-    config_file = tmp_path / "yoker.toml"
-    config_file.write_text(
-      """
-[harness]
-name = "test-project"
-version = "2.0"
-
-[agents]
-directory = "./test-agents"
-definition = "./test-agents/test.md"
-"""
-    )
-
-    # Change to temp directory
-    monkeypatch.chdir(tmp_path)
-
-    # Mock Path.home() to point elsewhere
-    with patch.object(Path, "home", return_value=tmp_path / "home"):
-      config, path = discover_config()
-
-    assert config.harness.name == "test-project"
-    assert config.harness.version == "2.0"
-    assert config.agents.directory == "./test-agents"
-    assert config.agents.definition == "./test-agents/test.md"
-    assert path == config_file
-
-  def test_discover_config_home(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Test discover_config finds config in home directory."""
-    # Create .yoker.toml in mock home directory
-    home_dir = tmp_path / "home"
-    home_dir.mkdir()
-    config_file = home_dir / ".yoker.toml"
-    config_file.write_text(
-      """
-[harness]
-name = "home-project"
-version = "3.0"
-
-[agents]
-directory = "./home-agents"
-"""
-    )
-
-    # Change to temp directory (no yoker.toml in cwd)
-    work_dir = tmp_path / "work"
-    work_dir.mkdir()
-    monkeypatch.chdir(work_dir)
-
-    # Mock Path.home() to point to mock home
-    with patch.object(Path, "home", return_value=home_dir):
-      config, path = discover_config()
-
-    assert config.harness.name == "home-project"
-    assert config.harness.version == "3.0"
-    assert config.agents.directory == "./home-agents"
-    assert path == config_file
-
-  def test_discover_config_cwd_takes_precedence(
-    self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-  ) -> None:
-    """Test discover_config prefers cwd over home directory."""
-    # Create yoker.toml in cwd
-    cwd_config_file = tmp_path / "yoker.toml"
-    cwd_config_file.write_text(
-      """
-[harness]
-name = "cwd-project"
-"""
-    )
-
-    # Create .yoker.toml in home
-    home_dir = tmp_path / "home"
-    home_dir.mkdir()
-    home_config_file = home_dir / ".yoker.toml"
-    home_config_file.write_text(
-      """
-[harness]
-name = "home-project"
-"""
-    )
-
-    # Change to temp directory
-    monkeypatch.chdir(tmp_path)
-
-    # Mock Path.home() to point to mock home
-    with patch.object(Path, "home", return_value=home_dir):
-      config, path = discover_config()
-
-    # Should load cwd config, not home config
-    assert config.harness.name == "cwd-project"
-    assert path == cwd_config_file
-
-  def test_discover_config_invalid_toml(
-    self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-  ) -> None:
-    """Test discover_config raises error for invalid TOML."""
-    # Create invalid yoker.toml
-    config_file = tmp_path / "yoker.toml"
-    config_file.write_text(
-      """
-[harness
-name = "invalid"
-"""
-    )
-
-    # Change to temp directory
+  def test_get_config_returns_config(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test that get_config() returns a valid Config."""
+    # Change to temp directory to avoid loading project config
     monkeypatch.chdir(tmp_path)
 
     # Mock Path.home() to prevent finding home config
     with patch.object(Path, "home", return_value=tmp_path / "home"):
-      with pytest.raises(ConfigurationError, match="Failed to parse TOML"):
-        discover_config()
-
-  def test_discover_config_empty_file(
-    self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-  ) -> None:
-    """Test discover_config handles empty config file."""
-    # Create empty yoker.toml
-    config_file = tmp_path / "yoker.toml"
-    config_file.write_text("")
-
-    # Change to temp directory
-    monkeypatch.chdir(tmp_path)
-
-    # Mock Path.home() to prevent finding home config
-    with patch.object(Path, "home", return_value=tmp_path / "home"):
-      config, path = discover_config()
-
-    # Empty file should result in default config
-    assert config == Config()
-    assert path == config_file
+      # Use security bypass for tests (temp files are group/other readable)
+      config = get_config(
+        Config,
+        name="yoker",
+        cli=False,
+        security={
+          "file_permissions": SecurityAction.DONT_CHECK,
+          "directory_permissions": SecurityAction.DONT_CHECK,
+        },
+      )
+      assert isinstance(config, Config)
+      # With no config files, should use defaults
+      assert config.harness.name == "yoker"
 
 
 class TestAgentsConfigDefinition:
@@ -173,36 +47,6 @@ class TestAgentsConfigDefinition:
     """Test that definition field can be set explicitly."""
     config = AgentsConfig(definition="./agents/researcher.md")
     assert config.definition == "./agents/researcher.md"
-
-  def test_agents_config_definition_from_toml(self, tmp_path: Path) -> None:
-    """Test that definition field is parsed from TOML."""
-    config_file = tmp_path / "yoker.toml"
-    config_file.write_text(
-      """
-[agents]
-directory = "./agents"
-definition = "./agents/researcher.md"
-default_type = "main"
-"""
-    )
-
-    config = load_config(config_file)
-    assert config.agents.directory == "./agents"
-    assert config.agents.definition == "./agents/researcher.md"
-    assert config.agents.default_type == "main"
-
-  def test_agents_config_definition_missing_in_toml(self, tmp_path: Path) -> None:
-    """Test that definition field defaults when not in TOML."""
-    config_file = tmp_path / "yoker.toml"
-    config_file.write_text(
-      """
-[agents]
-directory = "./agents"
-"""
-    )
-
-    config = load_config(config_file)
-    assert config.agents.definition == ""
 
 
 class TestAgentDefinitionResolution:
@@ -242,7 +86,16 @@ definition = "{agent_file.as_posix()}"
 
     # Mock Path.home() to prevent finding home config
     with patch.object(Path, "home", return_value=tmp_path / "home"):
-      agent = Agent()
+      config = get_config(
+        Config,
+        name="yoker",
+        cli=False,
+        security={
+          "file_permissions": SecurityAction.DONT_CHECK,
+          "directory_permissions": SecurityAction.DONT_CHECK,
+        },
+      )
+      agent = Agent(config=config)
 
     # Should have loaded agent definition from config
     assert agent.agent_definition is not None
@@ -269,7 +122,16 @@ definition = "./agents/missing.md"
 
     # Mock Path.home() to prevent finding home config
     with patch.object(Path, "home", return_value=tmp_path / "home"):
-      agent = Agent()
+      config = get_config(
+        Config,
+        name="yoker",
+        cli=False,
+        security={
+          "file_permissions": SecurityAction.DONT_CHECK,
+          "directory_permissions": SecurityAction.DONT_CHECK,
+        },
+      )
+      agent = Agent(config=config)
 
     # Should have fallen back to default (no agent definition)
     assert agent.agent_definition is None
@@ -303,7 +165,16 @@ definition = "./agents/researcher.md"
 
     # Mock Path.home() to prevent finding home config
     with patch.object(Path, "home", return_value=tmp_path / "home"):
-      agent = Agent(agent_definition=explicit_definition)
+      config = get_config(
+        Config,
+        name="yoker",
+        cli=False,
+        security={
+          "file_permissions": SecurityAction.DONT_CHECK,
+          "directory_permissions": SecurityAction.DONT_CHECK,
+        },
+      )
+      agent = Agent(config=config, agent_definition=explicit_definition)
 
     # Should use explicit agent definition, not config
     assert agent.agent_definition is not None
@@ -355,48 +226,17 @@ definition = "{config_agent_file.as_posix()}"
 
     # Mock Path.home() to prevent finding home config
     with patch.object(Path, "home", return_value=tmp_path / "home"):
-      agent = Agent(agent_path=explicit_agent_file)
+      config = get_config(
+        Config,
+        name="yoker",
+        cli=False,
+        security={
+          "file_permissions": SecurityAction.DONT_CHECK,
+          "directory_permissions": SecurityAction.DONT_CHECK,
+        },
+      )
+      agent = Agent(config=config, agent_path=explicit_agent_file)
 
     # Should use explicit path, not config
     assert agent.agent_definition is not None
     assert agent.agent_definition.name == "explicit-agent"
-
-
-class TestConfigLogging:
-  """Tests for config discovery logging."""
-
-  def test_logs_config_discovered_cwd(
-    self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-  ) -> None:
-    """Test that discover_config logs when config is discovered in cwd."""
-    from yoker.config import discover_config
-
-    # Create yoker.toml in temp directory
-    config_file = tmp_path / "yoker.toml"
-    config_file.write_text('[harness]\nname = "test"')
-
-    # Change to temp directory
-    monkeypatch.chdir(tmp_path)
-
-    # Mock Path.home() to point elsewhere
-    with patch.object(Path, "home", return_value=tmp_path / "home"):
-      config, path = discover_config()
-
-    # Should discover config in cwd
-    assert path == config_file
-    assert config.harness.name == "test"
-
-  def test_logs_config_defaults(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Test that discover_config returns defaults when no config found."""
-    from yoker.config import discover_config
-
-    # Change to temp directory (no config files)
-    monkeypatch.chdir(tmp_path)
-
-    # Mock Path.home() to point to temp directory (no config files)
-    with patch.object(Path, "home", return_value=tmp_path / "home"):
-      config, path = discover_config()
-
-    # Should return defaults
-    assert path is None
-    assert config == Config()

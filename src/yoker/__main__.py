@@ -2,20 +2,22 @@
 
 Usage: python -m yoker [OPTIONS]
 
-Options:
-  -c, --config PATH    Path to configuration file (default: yoker.toml)
-  -m, --model MODEL    Model to use (overrides config)
-  -h, --help           Show this message and exit
+Clevis automatically generates CLI arguments from the Config dataclass:
+  --backend-ollama-model MODEL         Model to use
+  --context-session-id SESSION_ID      Session ID for context persistence
+  --tools-read-enabled BOOL           Enable/disable read tool
+  ...
+
+Environment variables (YOKER_*) and config files (~/.yoker.toml, ./yoker.toml)
+are also supported via Clevis.
 """
 
-import argparse
 import asyncio
+import os
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from ollama import ResponseError
-from prompt_toolkit.history import FileHistory
-from prompt_toolkit.key_binding import KeyBindings
-from prompt_toolkit.shortcuts import PromptSession
+from clevis import get_config
 
 from yoker import __version__
 from yoker.agent import Agent
@@ -37,8 +39,8 @@ from yoker.exceptions import NetworkError
 from yoker.logging import configure_logging, get_logger
 from yoker.skills import SkillRegistry, load_skills, load_skills_from_env
 
-# Default configuration file name
-DEFAULT_CONFIG = "yoker.toml"
+if TYPE_CHECKING:
+  from prompt_toolkit.shortcuts import PromptSession
 
 # History file for prompt_toolkit
 HISTORY_FILE = Path.home() / ".yoker_history"
@@ -47,7 +49,7 @@ HISTORY_FILE = Path.home() / ".yoker_history"
 log = get_logger(__name__)
 
 
-def create_prompt_session() -> PromptSession[str]:
+def create_prompt_session() -> "PromptSession[str]":
   """Create a prompt session with multiline support.
 
   Returns:
@@ -58,7 +60,9 @@ def create_prompt_session() -> PromptSession[str]:
   Note: Shift+Enter is not distinguishable from Enter in most terminals,
   so we use Meta+Enter for multiline input instead.
   """
-  from prompt_toolkit.key_binding import KeyPressEvent
+  from prompt_toolkit.history import FileHistory
+  from prompt_toolkit.key_binding import KeyBindings, KeyPressEvent
+  from prompt_toolkit.shortcuts import PromptSession
 
   # Key bindings for multiline input
   kb = KeyBindings()
@@ -86,7 +90,7 @@ def create_prompt_session() -> PromptSession[str]:
   return session
 
 
-async def prompt_input_async(prompt: str, session: PromptSession[str]) -> str:
+async def prompt_input_async(prompt: str, session: "PromptSession[str]") -> str:
   """Get user input with prompt_toolkit (async version).
 
   Args:
@@ -219,7 +223,7 @@ def create_command_registry(agent: Agent, config: Config) -> CommandRegistry:
 
 
 async def run_interactive_session(
-  agent: Agent, command_registry: CommandRegistry, session: PromptSession[str]
+  agent: Agent, command_registry: CommandRegistry, session: "PromptSession[str]"
 ) -> None:
   """Run the interactive agent session asynchronously.
 
@@ -228,6 +232,8 @@ async def run_interactive_session(
     command_registry: Command registry for slash-commands.
     session: PromptSession for user input.
   """
+  from ollama import ResponseError
+
   # Begin session
   await agent.begin_session()
 
@@ -342,65 +348,48 @@ async def run_interactive_session(
 
 
 def main() -> None:
-  """Run the interactive agent."""
-  parser = argparse.ArgumentParser(
-    prog="yoker",
-    description="Yoker - A Python agent harness with configurable tools and guardrails.",
-  )
-  parser.add_argument(
-    "-c",
-    "--config",
-    type=Path,
-    default=None,
-    help=f"Path to configuration file (default: {DEFAULT_CONFIG})",
-  )
-  parser.add_argument(
-    "-m",
-    "--model",
-    type=str,
-    default=None,
-    help="Model to use (overrides config)",
-  )
-  parser.add_argument(
-    "-a",
-    "--agent",
-    type=Path,
-    default=None,
-    help="Path to agent definition file (Markdown with YAML frontmatter)",
-  )
+  """Run the interactive agent.
 
-  args = parser.parse_args()
+  Uses Clevis to load configuration from:
+    1. CLI arguments (highest priority, auto-generated from Config schema)
+    2. Environment variables (YOKER_*)
+    3. Project config (./yoker.toml)
+    4. User config (~/.yoker.toml)
+    5. Default values (lowest priority)
 
-  # Load configuration
-  config_path = args.config
-  if config_path is None:
-    # Try default config file
-    default_path = Path(DEFAULT_CONFIG)
-    if default_path.exists():
-      config_path = default_path
+  CLI arguments are generated from Config fields:
+    --backend-ollama-model MODEL         Set model
+    --context-session-id SESSION_ID      Set session ID
+    --tools-read-enabled BOOL           Enable/disable read tool
+    ...
+  """
+  from clevis import SecurityAction, SecurityConfig
 
-  # Create agent
-  if config_path is not None:
-    from yoker.config import load_config
+  # Configure security checks based on environment
+  # In development/testing, allow group/other readable config files
+  # In production, use strict permissions (default)
+  security_config: SecurityConfig | None = None
+  if os.environ.get("YOKER_DEV_MODE") == "1" or os.environ.get("PYTEST_CURRENT_TEST"):
+    security_config = SecurityConfig(
+      file_permissions=SecurityAction.LOG,
+      directory_permissions=SecurityAction.LOG,
+    )
 
-    config = load_config(config_path)
-    print(f"Loaded configuration from: {config_path}")
-  else:
-    config = Config()
-    print("Using default configuration")
+  # Load configuration with Clevis (handles env vars, config files, CLI args)
+  # Note: cli=True generates CLI arguments from Config fields
+  config = get_config(Config, name="yoker", cli=True, security=security_config)
 
   # Setup logging with config
   setup_logging(config)
 
+  # Log config source
+  log.info("config_loaded_via_clevis", source="clevis")
+
   # Create prompt session for interactive input
   session = create_prompt_session()
 
-  # Create agent with optional agent definition
-  agent = Agent(
-    model=args.model,
-    config=config,
-    agent_path=args.agent,
-  )
+  # Create agent with config
+  agent = Agent(config=config)
 
   # Show agent info if loaded
   if agent.agent_definition:

@@ -834,8 +834,11 @@ class TestAgentToolSubagentCreation:
 
         assert result.success
         # The agent definition specifies model: llama3.2:latest
+        # Model is now passed via config, not as separate parameter
         kwargs = created_agents[0][1]
-        assert kwargs.get("model") == "llama3.2:latest"
+        config = kwargs.get("config")
+        assert config is not None
+        assert config.backend.ollama.model == "llama3.2:latest"
 
 
 class TestAgentToolClamp:

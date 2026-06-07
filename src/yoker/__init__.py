@@ -9,13 +9,7 @@ from yoker.agent import Agent
 from yoker.agents import AgentDefinition, load_agent_definition
 from yoker.base import AgentCore
 from yoker.commands import Command, CommandRegistry, create_help_command, create_think_command
-from yoker.config import (
-  Config,
-  discover_config,
-  load_config,
-  load_config_with_defaults,
-  validate_config,
-)
+from yoker.config import Config
 from yoker.context import BasicPersistenceContextManager, ContextManager, ContextStatistics
 from yoker.events import (
   ConsoleEventHandler,
@@ -73,10 +67,6 @@ __all__ = [
   "create_think_command",
   # Configuration
   "Config",
-  "discover_config",
-  "load_config",
-  "load_config_with_defaults",
-  "validate_config",
   # Events
   "Event",
   "EventType",

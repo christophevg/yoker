@@ -69,9 +69,7 @@ class Agent:
 
   def __init__(
     self,
-    model: str | None = None,
     config: "Config | None" = None,
-    config_path: Path | str | None = None,
     thinking_mode: ThinkingMode = ThinkingMode.ON,
     command_registry: "CommandRegistry | None" = None,
     agent_definition: "AgentDefinition | None" = None,
@@ -81,12 +79,12 @@ class Agent:
   ) -> None:
     """Initialize the async agent.
 
-    Config Resolution (in order of precedence):
-        1. Environment variables (YOKER_* or {PREFIX}_YOKER_*)
-        2. Explicit `config` parameter
-        3. Explicit `config_path` parameter
-        4. Auto-discovered config (./yoker.toml, ~/.yoker.toml)
-        5. Config() defaults
+    Config Resolution:
+        Configuration is loaded using Clevis which handles:
+        - Environment variables (YOKER_* prefix)
+        - User config (~/.yoker.toml)
+        - Project config (./yoker.toml)
+        - Default values from Config dataclass
 
     Agent Definition Resolution (in order of precedence):
         1. Explicit `agent_definition` parameter
@@ -95,9 +93,7 @@ class Agent:
         4. None (default system prompt)
 
     Args:
-      model: Model to use (overrides config if provided).
-      config: Configuration object (takes precedence over config_path).
-      config_path: Path to configuration file (loaded if config not provided).
+      config: Configuration object (uses Clevis auto-discovery if not provided).
       thinking_mode: Thinking mode (on/off/silent, default: ON).
       command_registry: Optional command registry for slash-commands.
       agent_definition: Pre-loaded AgentDefinition to use for system prompt.
@@ -107,14 +103,13 @@ class Agent:
     """
     # Load configuration using Clevis (handles env vars, user config, project config)
     # Clevis handles environment variable interpolation via envtoml/tomlev
-    loaded_config = config if config is not None else Config.discover(config_path)
+    from clevis import get_config
+
+    # Use cli=False for library mode (no CLI argument parsing)
+    loaded_config = config if config is not None else get_config(Config, name="yoker", cli=False)
 
     config_source = "explicit" if config is not None else "discovered"
-    log.info(
-      "config_loaded",
-      source=config_source,
-      path=str(config_path) if config_path else None,
-    )
+    log.info("config_loaded", source=config_source)
 
     # Resolve agent definition from config if not explicitly provided
     resolved_agent_path: Path | str | None = agent_path
@@ -151,7 +146,6 @@ class Agent:
     # Delegate initialization to AgentCore for shared state
     # Pass AsyncClient for async web tools (WebSearch/WebFetch)
     self._core = AgentCore(
-      model=model,
       config=loaded_config,
       thinking_mode=thinking_mode,
       command_registry=command_registry,

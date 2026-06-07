@@ -18,8 +18,9 @@ class TestAgent:
     assert agent.config is not None
 
   def test_agent_custom_model(self) -> None:
-    """Test that Agent accepts custom model."""
-    agent = Agent(model="custom-model")
+    """Test that Agent accepts model via config."""
+    config = Config(backend=BackendConfig(ollama=OllamaConfig(model="custom-model")))
+    agent = Agent(config=config)
     assert agent.model == "custom-model"
 
   def test_agent_with_config(self) -> None:
@@ -42,7 +43,7 @@ class TestAgent:
 
   def test_recursion_depth_custom(self) -> None:
     """Test that recursion depth can be set via internal parameter."""
-    agent = Agent(_recursion_depth=2)
+    agent = Agent(config=Config(), _recursion_depth=2)
     assert agent._recursion_depth == 2
 
   def test_agent_tool_available(self) -> None:

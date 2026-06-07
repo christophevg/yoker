@@ -81,9 +81,7 @@ class AgentCore:
 
   def __init__(
     self,
-    model: str | None = None,
     config: Config | None = None,
-    config_path: Path | str | None = None,
     thinking_mode: ThinkingMode = ThinkingMode.ON,
     command_registry: "CommandRegistry | None" = None,
     agent_definition: "AgentDefinition | None" = None,
@@ -94,12 +92,12 @@ class AgentCore:
   ) -> None:
     """Initialize shared agent state.
 
-    Config Resolution (in order of precedence):
-        1. Environment variables (YOKER_* or {PREFIX}_YOKER_*)
-        2. Explicit `config` parameter
-        3. Explicit `config_path` parameter
-        4. Auto-discovered config (./yoker.toml, ~/.yoker.toml)
-        5. Config() defaults
+    Config Resolution:
+        Configuration is loaded using Clevis which handles:
+        - Environment variables (YOKER_* prefix)
+        - User config (~/.yoker.toml)
+        - Project config (./yoker.toml)
+        - Default values from Config dataclass
 
     Agent Definition Resolution (in order of precedence):
         1. Explicit `agent_definition` parameter
@@ -108,9 +106,7 @@ class AgentCore:
         4. None (default system prompt)
 
     Args:
-      model: Model to use (overrides config if provided).
-      config: Configuration object (takes precedence over config_path).
-      config_path: Path to configuration file (loaded if config not provided).
+      config: Configuration object (uses Clevis auto-discovery if not provided).
       thinking_mode: Thinking mode (on/off/silent, default: ON).
       command_registry: Optional command registry for slash-commands.
       agent_definition: Pre-loaded AgentDefinition to use for system prompt.
@@ -126,35 +122,17 @@ class AgentCore:
 
     # Load configuration using Clevis (handles env vars, user config, project config)
     # Clevis handles environment variable interpolation via envtoml/tomlev
-    discovered_path: Path | None = None
-    if config is not None:
-      self._config = config
-      # Skip logging - caller (Agent) already logged config resolution
-    elif config_path is not None:
-      from yoker.config import load_config
+    from clevis import get_config
 
-      self._config = load_config(config_path)
-      discovered_path = Path(config_path)
-      log.info(
-        "config_loaded",
-        source="explicit_path",
-        path=str(discovered_path),
-      )
-    else:
-      from yoker.config import discover_config
-
-      self._config, discovered_path = discover_config()
-      config_source = "discovered" if discovered_path else "defaults"
-      log.info(
-        "config_loaded",
-        source=config_source,
-        path=str(discovered_path) if discovered_path else None,
-      )
+    # Use cli=False for library mode (no CLI argument parsing)
+    self._config = config if config is not None else get_config(Config, name="yoker", cli=False)
+    config_source = "explicit" if config is not None else "discovered"
+    log.info("config_loaded", source=config_source)
 
     # Validation happens automatically in Config.__post_init__
 
-    # Use provided model or config model
-    self._model = model if model is not None else self._config.backend.ollama.model
+    # Use model from config
+    self._model = self._config.backend.ollama.model
 
     # Thinking mode state
     self._thinking_mode = thinking_mode

@@ -35,7 +35,7 @@ from yoker.commands import (
   create_skills_command,
   create_think_command,
 )
-from yoker.config import load_config_with_defaults
+from yoker.config import Config
 from yoker.context import BasicPersistenceContextManager
 from yoker.demo import DemoScript, load_demo_script, load_demo_scripts
 from yoker.events import (
@@ -181,7 +181,6 @@ def _cleanup_temp_files() -> None:
 
 async def run_demo_session(
   script: DemoScript,
-  config_path: str | None = None,
   log: bool = False,
   replay: Path | None = None,
   agent_path: Path | None = None,
@@ -194,7 +193,6 @@ async def run_demo_session(
 
   Args:
     script: DemoScript with messages and output path.
-    config_path: Path to configuration file.
     log: Whether to log events to the script's events file.
     replay: Path to events.jsonl file to replay (overrides script.events).
     agent_path: Path to agent definition file (Markdown with frontmatter).
@@ -276,7 +274,9 @@ async def run_demo_session(
     messages = []  # Will be read from file
   else:
     # Real LLM mode
-    config = load_config_with_defaults(config_path)
+    # Load configuration using Clevis (handles env vars, user config, project config)
+    from clevis import get_config
+    config = get_config(Config, name="yoker")
 
     # Create context manager for persistence or resumption
     if persist or resume:
@@ -554,11 +554,6 @@ def main() -> None:
   )
   args = parser.parse_args()
 
-  # Look for local config file
-  config_path = Path("yoker.toml")
-  if not config_path.exists():
-    config_path = None
-
   if args.scripts_dir:
     # Run all scripts in directory
     scripts = load_demo_scripts(args.scripts_dir)
@@ -569,7 +564,6 @@ def main() -> None:
       asyncio.run(
         run_demo_session(
           script=script,
-          config_path=str(config_path) if config_path else None,
           log=args.log,
           replay=args.replay,
           agent_path=args.agent,
@@ -585,7 +579,6 @@ def main() -> None:
     asyncio.run(
       run_demo_session(
         script=script,
-        config_path=str(config_path) if config_path else None,
         log=args.log,
         replay=args.replay,
         agent_path=args.agent,
