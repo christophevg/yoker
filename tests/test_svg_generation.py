@@ -1,5 +1,8 @@
 """Tests for SVG generation without spinner."""
 
+import tempfile
+from pathlib import Path
+
 from rich.console import Console
 
 from yoker.events.handlers import ConsoleEventHandler
@@ -77,18 +80,22 @@ class TestSVGGeneration:
     )
 
     # Save SVG
-    svg_path = "/tmp/test-no-spinner.svg"
-    console.save_svg(svg_path)
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".svg", delete=False) as f:
+      svg_path = f.name
 
-    # Read SVG and verify no spinner text
-    with open(svg_path) as f:
-      svg_content = f.read()
+    try:
+      console.save_svg(svg_path)
 
-    # The SVG should NOT contain "Processing..." spinner text
-    assert "Processing..." not in svg_content
+      # Read SVG and verify no spinner text
+      svg_content = Path(svg_path).read_text(encoding="utf-8")
 
-    # The SVG should contain the actual content
-    assert "Thinking..." in svg_content
-    # Content is split across chunks, with non-breaking spaces (&#160;) in SVG
-    assert "Hello" in svg_content
-    assert "world" in svg_content
+      # The SVG should NOT contain "Processing..." spinner text
+      assert "Processing..." not in svg_content
+
+      # The SVG should contain the actual content
+      assert "Thinking..." in svg_content
+      # Content is split across chunks, with non-breaking spaces (&#160;) in SVG
+      assert "Hello" in svg_content
+      assert "world" in svg_content
+    finally:
+      Path(svg_path).unlink()

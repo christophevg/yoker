@@ -63,7 +63,7 @@ class TestSVGNoDuplicates:
 
     try:
       console.save_svg(svg_path)
-      svg_content = Path(svg_path).read_text()
+      svg_content = Path(svg_path).read_text(encoding="utf-8")
 
       # Count occurrences of Yoker (appears at least once in header)
       yoker_count = svg_content.count("Yoker")
@@ -111,7 +111,7 @@ class TestSVGNoDuplicates:
 
     try:
       console.save_svg(svg_path)
-      svg_content = Path(svg_path).read_text()
+      svg_content = Path(svg_path).read_text(encoding="utf-8")
 
       # Count thinking content (may be split across elements)
       thinking_count = svg_content.count("Unique thinking text")
@@ -181,7 +181,7 @@ class TestSVGNoDuplicates:
 
     try:
       console.save_svg(svg_path)
-      svg_content = Path(svg_path).read_text()
+      svg_content = Path(svg_path).read_text(encoding="utf-8")
 
       # Tool name should appear once (in tool call display)
       tool_count = svg_content.count("Read")
@@ -230,7 +230,7 @@ class TestSVGNoDuplicates:
 
     try:
       console.save_svg(svg_path)
-      svg_content = Path(svg_path).read_text()
+      svg_content = Path(svg_path).read_text(encoding="utf-8")
 
       # Each word should appear approximately the right number of times
       # (words may be split across SVG elements, but shouldn't be repeated excessively)
