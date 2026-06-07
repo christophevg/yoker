@@ -673,33 +673,6 @@ class Config:
   skills: SkillsConfig = field(default_factory=SkillsConfig)
   logging: LoggingConfig = field(default_factory=LoggingConfig)
 
-  @classmethod
-  def discover(cls, config_path: Path | str | None = None) -> "Config":
-    """Auto-discover configuration from environment and files.
-
-    Resolution order (highest to lowest priority):
-      1. Environment variables (YOKER_* or {PREFIX}_YOKER_*)
-      2. Explicit config_path parameter
-      3. ./yoker.toml (project config)
-      4. ~/.yoker.toml (user config)
-      5. Default Config()
-
-    Args:
-      config_path: Optional explicit path to config file.
-
-    Returns:
-      Config with resolved values from all sources.
-
-    Example:
-      >>> config = Config.discover()  # Auto-discover
-      >>> config = Config.discover("./custom.toml")  # Explicit path
-    """
-    # Use discover_config from __init__.py which handles list-to-tuple conversion
-    from yoker.config import discover_config
-
-    config, _ = discover_config()
-    return config
-
 
 __all__ = [
   "HarnessConfig",

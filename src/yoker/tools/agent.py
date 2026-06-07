@@ -311,13 +311,43 @@ class AgentTool(Tool):
 
     # Determine model (use agent's model or parent's model)
     model = agent_def.model
-    if model is None and self._parent_agent is not None:
-      model = self._parent_agent.model
+    parent_config = self._parent_agent.config if self._parent_agent else None
+
+    # If agent definition specifies a model, create config override
+    from yoker.config import BackendConfig, Config, OllamaConfig
+
+    config: Config | None = None
+    if model is not None:
+      if parent_config is not None:
+        # Clone parent config with model override
+        config = Config(
+          harness=parent_config.harness,
+          backend=BackendConfig(
+            provider=parent_config.backend.provider,
+            ollama=OllamaConfig(
+              base_url=parent_config.backend.ollama.base_url,
+              model=model,
+              timeout_seconds=parent_config.backend.ollama.timeout_seconds,
+              parameters=parent_config.backend.ollama.parameters,
+            ),
+          ),
+          context=parent_config.context,
+          permissions=parent_config.permissions,
+          tools=parent_config.tools,
+          agents=parent_config.agents,
+          skills=parent_config.skills,
+          logging=parent_config.logging,
+        )
+      else:
+        # Create default config with model
+        config = Config(backend=BackendConfig(ollama=OllamaConfig(model=model)))
+    else:
+      # Use parent config (which may be None, will use defaults)
+      config = parent_config
 
     # Create sub-agent with incremented depth
     subagent = Agent(
-      model=model,
-      config=self._parent_agent.config if self._parent_agent else None,
+      config=config,
       agent_definition=agent_def,
       context_manager=fresh_context,
       _recursion_depth=depth,
@@ -328,7 +358,7 @@ class AgentTool(Tool):
       agent_name=agent_def.name,
       depth=depth,
       session_id=fresh_session_id,
-      model=model,
+      model=model or (config.backend.ollama.model if config else "default"),
     )
 
     return subagent

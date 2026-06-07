@@ -9,6 +9,7 @@ import pytest
 from pytest_mock import MockerFixture
 from rich.console import Console
 
+from yoker.config import Config
 from yoker.events import (
   CommandEvent,
   ConsoleEventHandler,
@@ -378,7 +379,7 @@ class TestAgentEventEmission:
 
     from yoker.agent import Agent
 
-    agent = Agent(model="test-model")
+    agent = Agent(config=Config())
     collector = TestEventCollector()
     agent.add_event_handler(collector)
 
@@ -396,7 +397,7 @@ class TestAgentEventEmission:
     """Test adding and removing event handlers."""
     from yoker.agent import Agent
 
-    agent = Agent(model="test-model")
+    agent = Agent(config=Config())
 
     def handler(event: Event) -> None:
       pass
@@ -411,7 +412,7 @@ class TestAgentEventEmission:
     """Test that Agent emits session events via begin_session/end_session."""
     from yoker.agent import Agent
 
-    agent = Agent(model="test-model")
+    agent = Agent(config=Config())
     collector = TestEventCollector()
     agent.add_event_handler(collector)
 

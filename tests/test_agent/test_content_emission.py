@@ -154,7 +154,7 @@ def create_agent_with_permissions(tmp_path: Path) -> Agent:
     Agent instance configured to allow filesystem access to tmp_path
   """
   config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
-  return Agent(model="test-model", config=config)
+  return Agent(config=config)
 
 
 class TestAgentContentEventEmission:
@@ -344,13 +344,14 @@ class TestAgentContentEventEmission:
     mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
 
     # Configure for content verbosity
-    from yoker.config.schema import ContentDisplayConfig, ToolsConfig
+    from yoker.config.schema import BackendConfig, ContentDisplayConfig, OllamaConfig, ToolsConfig
 
     config = Config(
+      backend=BackendConfig(ollama=OllamaConfig(model="test-model")),
       permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)),
       tools=ToolsConfig(content_display=ContentDisplayConfig(verbosity="content")),
     )
-    agent = Agent(model="test-model", config=config)
+    agent = Agent(config=config)
     collector = TestEventCollector()
     agent.add_event_handler(collector)
 
@@ -908,7 +909,7 @@ class TestAgentContentEventErrorHandling:
 
     mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
 
-    agent = Agent(model="test-model")
+    agent = Agent(config=Config())
 
     # Create a handler that fails on ToolContentEvent
     class FailingHandler:

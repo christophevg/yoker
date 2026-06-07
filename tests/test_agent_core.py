@@ -25,9 +25,10 @@ class TestAgentCoreInitialization:
     assert core.recursion_depth == 0
     assert core.max_recursion_depth == core.config.tools.agent.max_recursion_depth
 
-  def test_agent_core_model_override(self) -> None:
-    """Test model parameter overrides config."""
-    core = AgentCore(model="custom-model")
+  def test_agent_core_model_from_config(self) -> None:
+    """Test model comes from config."""
+    config = Config(backend=BackendConfig(ollama=OllamaConfig(model="custom-model")))
+    core = AgentCore(config=config)
     assert core.model == "custom-model"
 
   def test_agent_core_with_config(self) -> None:
@@ -58,14 +59,14 @@ class TestAgentCoreInitialization:
   def test_agent_core_recursion_depth_validation_negative(self) -> None:
     """Test that negative recursion depth raises ValueError."""
     with pytest.raises(ValueError, match="must be non-negative"):
-      AgentCore(_recursion_depth=-1)
+      AgentCore(config=Config(), _recursion_depth=-1)
 
   def test_agent_core_recursion_depth_validation_exceeds_max(self) -> None:
     """Test that recursion depth exceeding max raises ValueError."""
     config = Config()
     max_depth = config.tools.agent.max_recursion_depth
     with pytest.raises(ValueError, match="exceeds max_recursion_depth"):
-      AgentCore(_recursion_depth=max_depth + 1)
+      AgentCore(config=Config(), _recursion_depth=max_depth + 1)
 
 
 class TestAgentCoreToolRegistry:
@@ -73,7 +74,7 @@ class TestAgentCoreToolRegistry:
 
   def test_tool_registry_has_default_tools(self) -> None:
     """Test that default tools are available."""
-    core = AgentCore()
+    core = AgentCore(config=Config())
     assert core.tool_registry.get("read") is not None
     assert core.tool_registry.get("list") is not None
     assert core.tool_registry.get("write") is not None
@@ -82,7 +83,7 @@ class TestAgentCoreToolRegistry:
 
   def test_tool_registry_guardrails_injected(self) -> None:
     """Test that all filesystem tools have guardrails injected."""
-    core = AgentCore()
+    core = AgentCore(config=Config())
     # Check filesystem tools have guardrails
     read_tool = core.tool_registry.get("read")
     assert read_tool is not None
@@ -133,7 +134,7 @@ class TestAgentCoreEventHandlers:
 
   def test_add_event_handler(self) -> None:
     """Test adding an event handler."""
-    core = AgentCore()
+    core = AgentCore(config=Config())
 
     handler_called = []
 
@@ -145,7 +146,7 @@ class TestAgentCoreEventHandlers:
 
   def test_remove_event_handler(self) -> None:
     """Test removing an event handler."""
-    core = AgentCore()
+    core = AgentCore(config=Config())
 
     def handler(event: object) -> None:
       pass
@@ -158,7 +159,7 @@ class TestAgentCoreEventHandlers:
 
   def test_get_event_handlers_returns_copy(self) -> None:
     """Test that get_event_handlers returns a copy."""
-    core = AgentCore()
+    core = AgentCore(config=Config())
 
     def handler(event: object) -> None:
       pass
@@ -173,7 +174,7 @@ class TestAgentCoreEventHandlers:
 
   def test_remove_nonexistent_handler_raises(self) -> None:
     """Test that removing a non-existent handler raises ValueError."""
-    core = AgentCore()
+    core = AgentCore(config=Config())
 
     def handler(event: object) -> None:
       pass
@@ -187,7 +188,7 @@ class TestAgentCoreContext:
 
   def test_context_has_system_prompt(self) -> None:
     """Test that context is initialized with system prompt."""
-    core = AgentCore()
+    core = AgentCore(config=Config())
     messages = core.context.get_messages()
     system_messages = [m for m in messages if m.get("role") == "system"]
     assert len(system_messages) == 1
@@ -224,7 +225,7 @@ class TestAgentCoreSecurity:
   def test_guardrail_enforcement_validation(self) -> None:
     """Test that guardrails are enforced on all filesystem tools."""
     # This test verifies SEC-1: Guardrails MUST be injected into all filesystem tools
-    core = AgentCore()
+    core = AgentCore(config=Config())
     # All filesystem tools should have _guardrail attribute
     filesystem_tools = ["read", "list", "write", "update", "search", "existence", "mkdir", "git"]
     for tool_name in filesystem_tools:
@@ -234,8 +235,8 @@ class TestAgentCoreSecurity:
 
   def test_each_core_is_independent(self) -> None:
     """Test that each AgentCore instance is independent (SEC-2)."""
-    core1 = AgentCore(model="model1")
-    core2 = AgentCore(model="model2")
+    core1 = AgentCore(config=Config(backend=BackendConfig(ollama=OllamaConfig(model="model1"))))
+    core2 = AgentCore(config=Config(backend=BackendConfig(ollama=OllamaConfig(model="model2"))))
 
     assert core1.model != core2.model
     assert core1.context is not core2.context
@@ -243,7 +244,7 @@ class TestAgentCoreSecurity:
 
   def test_config_is_read_only(self) -> None:
     """Test that config cannot be mutated through AgentCore (SEC-4)."""
-    core = AgentCore()
+    core = AgentCore(config=Config())
     config = core.config
     # Config is a frozen dataclass, so mutation should raise
     with pytest.raises(AttributeError):
@@ -261,7 +262,8 @@ class TestAgentCoreProperties:
 
   def test_model_property(self) -> None:
     """Test model property returns model name."""
-    core = AgentCore(model="test-model")
+    config = Config(backend=BackendConfig(ollama=OllamaConfig(model="test-model")))
+    core = AgentCore(config=config)
     assert core.model == "test-model"
 
   def test_thinking_mode_property(self) -> None:
@@ -271,25 +273,25 @@ class TestAgentCoreProperties:
 
   def test_agent_definition_property_none(self) -> None:
     """Test agent_definition property returns None when not provided."""
-    core = AgentCore()
+    core = AgentCore(config=Config())
     assert core.agent_definition is None
 
   def test_tool_registry_property(self) -> None:
     """Test tool_registry property returns tool registry."""
-    core = AgentCore()
+    core = AgentCore(config=Config())
     assert core.tool_registry is not None
     assert hasattr(core.tool_registry, "get")
     assert hasattr(core.tool_registry, "register")
 
   def test_context_property(self) -> None:
     """Test context property returns context manager."""
-    core = AgentCore()
+    core = AgentCore(config=Config())
     assert core.context is not None
     assert hasattr(core.context, "get_messages")
 
   def test_command_registry_property_none(self) -> None:
     """Test command_registry property returns None when not provided."""
-    core = AgentCore()
+    core = AgentCore(config=Config())
     assert core.command_registry is None
 
   def test_command_registry_property_with_registry(self) -> None:
@@ -301,45 +303,24 @@ class TestAgentCoreProperties:
     assert core.command_registry is registry
 
 
-class TestAgentCoreConfigLoading:
-  """Tests for AgentCore configuration loading."""
-
-  def test_config_from_path(self, tmp_path: Path) -> None:
-    """Test loading configuration from file path."""
-    config_file = tmp_path / "config.toml"
-    config_file.write_text('[backend.ollama]\nmodel = "path-model"\n')
-
-    core = AgentCore(config_path=config_file)
-    assert core.model == "path-model"
-
-  def test_config_object_takes_precedence(self, tmp_path: Path) -> None:
-    """Test that config object takes precedence over config_path."""
-    config_file = tmp_path / "config.toml"
-    config_file.write_text('[backend.ollama]\nmodel = "path-model"\n')
-
-    config = Config(backend=BackendConfig(ollama=OllamaConfig(model="object-model")))
-    core = AgentCore(config=config, config_path=config_file)
-    assert core.model == "object-model"
-
-
 class TestAgentCoreGuardrailProperty:
   """Tests for AgentCore guardrail property (H2)."""
 
   def test_guardrail_property_exists(self) -> None:
     """Test that guardrail property is accessible."""
-    core = AgentCore()
+    core = AgentCore(config=Config())
     assert hasattr(core, "guardrail")
 
   def test_guardrail_property_returns_path_guardrail(self) -> None:
     """Test that guardrail property returns PathGuardrail instance."""
     from yoker.tools.path_guardrail import PathGuardrail
 
-    core = AgentCore()
+    core = AgentCore(config=Config())
     assert isinstance(core.guardrail, PathGuardrail)
 
   def test_guardrail_property_is_read_only(self) -> None:
     """Test that guardrail property cannot be set directly."""
-    core = AgentCore()
+    core = AgentCore(config=Config())
     # Attempting to set should raise AttributeError (property is read-only)
     with pytest.raises(AttributeError):
       core.guardrail = None  # type: ignore
@@ -465,7 +446,7 @@ class TestAgentCoreClientParameter:
     # Remove API key if present
     monkeypatch.delenv("OLLAMA_API_KEY", raising=False)
 
-    core = AgentCore()
+    core = AgentCore(config=Config())
 
     # WebSearch should not be in default tools (no API key)
     assert core.tool_registry.get("websearch") is None
@@ -476,7 +457,7 @@ class TestAgentCoreClientParameter:
     # Set API key but don't pass client
     monkeypatch.setenv("OLLAMA_API_KEY", "test-key")
 
-    core = AgentCore()  # No client parameter
+    core = AgentCore(config=Config())  # No client parameter
 
     # WebSearch should not be added (no client)
     assert core.tool_registry.get("websearch") is None
@@ -552,7 +533,7 @@ class TestAgentCoreGuardrailValidation:
 
     # AgentCore initialization should raise RuntimeError for missing guardrail
     with pytest.raises(RuntimeError, match="missing guardrail"):
-      AgentCore()
+      AgentCore(config=Config())
 
 
 class TestAgentCoreBuildToolRegistry:
@@ -579,7 +560,7 @@ class TestAgentCoreBuildToolRegistry:
 
   def test_build_tool_registry_all_tools_without_agent_definition(self) -> None:
     """Test that all tools are registered when no agent definition is provided."""
-    core = AgentCore()
+    core = AgentCore(config=Config())
 
     # All default tools should be present
     assert core.tool_registry.get("read") is not None
@@ -592,7 +573,7 @@ class TestAgentCoreBuildToolRegistry:
 
   def test_build_tool_registry_injects_guardrails(self) -> None:
     """Test that guardrails are injected into all filesystem tools."""
-    core = AgentCore()
+    core = AgentCore(config=Config())
 
     filesystem_tools = ["read", "list", "write", "update", "search", "existence", "mkdir"]
     for tool_name in filesystem_tools:
@@ -602,7 +583,7 @@ class TestAgentCoreBuildToolRegistry:
 
   def test_build_tool_registry_git_tool_with_config(self) -> None:
     """Test that GitTool is created with proper configuration."""
-    core = AgentCore()
+    core = AgentCore(config=Config())
 
     git_tool = core.tool_registry.get("git")
     assert git_tool is not None
