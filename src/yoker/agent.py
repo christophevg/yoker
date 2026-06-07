@@ -197,6 +197,19 @@ class Agent:
         AgentTool(guardrail=self._core.guardrail, parent_agent=self)
       )
 
+    # Load skills from YOKER_SKILLS_PATH environment variable
+    from yoker.skills import SkillRegistry, load_skills_from_env
+
+    skills = load_skills_from_env()
+    if skills:
+      self._core.skill_registry = SkillRegistry()
+      self._core.skill_registry.update(skills)
+      log.info(
+        "skills_loaded",
+        count=len(skills),
+        names=list(skills.keys()),
+      )
+
     log.info(
       "async_agent_initialized",
       model=self.model,
