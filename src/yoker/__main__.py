@@ -232,8 +232,52 @@ async def run_interactive_session(
       if user_input.startswith("/"):
         result = command_registry.dispatch(user_input)
         if result:
-          # Print command result directly (no events needed for commands)
-          print(f"{result}\n")
+          # Check if this is a skill injection
+          from yoker.commands.skill import extract_skill_content, is_skill_injection
+
+          if is_skill_injection(result):
+            # Inject skill content as system message (invisible to user)
+            skill_content = extract_skill_content(result)
+            agent.context.add_message("system", skill_content)
+
+            # Extract skill name and args for logging
+            parts = user_input[1:].split(maxsplit=1)
+            skill_name = parts[0]
+            skill_args = parts[1] if len(parts) > 1 else ""
+            log.info("skill_injected", skill_name=skill_name, args=skill_args)
+
+            # Process with agent - the skill content is now in context
+            # Send appropriate prompt based on whether args were provided
+            try:
+              if skill_args:
+                # If args provided, send them as the user message
+                # The agent sees skill context + user's args
+                await agent.process(skill_args)
+              else:
+                # If no args, send minimal prompt indicating skill invocation
+                # The agent sees skill context + invocation request
+                await agent.process("Execute the skill as requested.")
+              print()  # Blank line after response
+            except NetworkError as e:
+              if e.recoverable:
+                print(f"\n[Network Error] {e}")
+                print("Your message was preserved. You can try again or type a new message.")
+              else:
+                print(f"\n[Fatal Network Error] {e}")
+                print("Unable to recover. Please restart the session.")
+                raise
+            except Exception as e:
+              await agent._emit(
+                ErrorEvent(
+                  type=EventType.ERROR,
+                  error_type=type(e).__name__,
+                  message=str(e),
+                )
+              )
+              raise
+          else:
+            # Regular command - print result directly
+            print(f"{result}\n")
         continue
 
       # Process message (output is streamed via events)
