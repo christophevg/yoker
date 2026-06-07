@@ -25,6 +25,7 @@ from yoker.config.schema import (
   PermissionsConfig,
   ReadToolConfig,
   SearchToolConfig,
+  SkillsConfig,
   ToolsConfig,
   UpdateToolConfig,
   WriteToolConfig,
@@ -327,6 +328,24 @@ def _parse_agents(data: dict[str, object]) -> AgentsConfig:
   )
 
 
+def _parse_skills(data: dict[str, object]) -> SkillsConfig:
+  """Parse skills configuration section."""
+  skills = _get_nested(data, "skills")
+  if skills is None:
+    return SkillsConfig()
+
+  directories_raw = skills.get("directories", [])
+  if isinstance(directories_raw, list):
+    directories = tuple(str(d) for d in directories_raw)
+  else:
+    directories = ()
+
+  return SkillsConfig(
+    directories=directories,
+    discovery=skills.get("discovery", True),  # type: ignore
+  )
+
+
 def _parse_logging(data: dict[str, object]) -> LoggingConfig:
   """Parse logging configuration section."""
   logging = _get_nested(data, "logging")
@@ -374,6 +393,7 @@ def load_config(path: Path | str) -> Config:
     permissions=_parse_permissions(data),
     tools=_parse_tools(data),
     agents=_parse_agents(data),
+    skills=_parse_skills(data),
     logging=_parse_logging(data),
   )
 
@@ -716,3 +736,4 @@ __all__ = [
   "load_env_config",
   "merge_configs",
 ]
+
