@@ -7,4 +7,6 @@ events: media/events-skill-tool.jsonl
 
 ## Messages
 
-- Explain how skills work as a song.
+- /think silent
+- Use the sing skill to explain skills in 4 lines or less. Output only the poem.
+
