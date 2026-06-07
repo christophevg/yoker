@@ -70,23 +70,37 @@ class LiveDisplay:
     # Live display (created on enter)
     self._live: Live | None = None
 
+    # Check if console is recording (for SVG generation)
+    # When recording, we should not use Live to avoid capturing intermediate states
+    self._is_recording = console.record if console else False
+
   def __enter__(self) -> "LiveDisplay":
     """Enter the live display context.
 
     Creates and starts the Live display with empty content.
     The spinner is NOT shown by default - call start_spinner() to show it.
+
+    When the console is recording (for SVG generation), we skip the Live context
+    and just accumulate text for later printing. This prevents intermediate states
+    from being captured in the SVG.
     """
     self._start_time = time.time()
     self._spinner = None  # No spinner by default
     self._spinner_active = False
     self._stats_text = None
-    self._live = Live(
-      self._build_renderable(),
-      console=self.console,
-      refresh_per_second=self.refresh_per_second,
-      vertical_overflow="visible",
-    )
-    self._live.__enter__()
+
+    # Only use Live when NOT recording (to avoid capturing intermediate states)
+    if not self._is_recording:
+      self._live = Live(
+        self._build_renderable(),
+        console=self.console,
+        refresh_per_second=self.refresh_per_second,
+        vertical_overflow="visible",
+      )
+      self._live.__enter__()
+    else:
+      self._live = None
+
     return self
 
   def __exit__(
@@ -95,9 +109,21 @@ class LiveDisplay:
     exc_val: BaseException | None,
     exc_tb: TracebackType | None,
   ) -> None:
-    """Exit the live display context."""
+    """Exit the live display context.
+
+    When recording, prints the accumulated content to the console.
+    """
     if self._live:
       self._live.__exit__(exc_type, exc_val, exc_tb)
+    elif self._is_recording:
+      # When recording, print the accumulated content at the end
+      # This prevents intermediate Live states from being captured
+      if self._thinking_text.plain:
+        self.console.print(self._thinking_text)
+      if self._response_text.plain:
+        self.console.print(self._response_text)
+      if self._stats_text:
+        self.console.print(self._stats_text)
 
   def stop_spinner(self) -> None:
     """Remove the spinner from the display.
@@ -135,7 +161,11 @@ class LiveDisplay:
     return grid
 
   def _update(self) -> None:
-    """Trigger a Live display refresh."""
+    """Trigger a Live display refresh.
+
+    When recording, this is a no-op since we don't use Live context.
+    The content will be printed when the LiveDisplay exits.
+    """
     if self._live:
       self._live.update(self._build_renderable())
 
@@ -239,3 +269,4 @@ __all__ = [
   "LiveDisplay",
   "live_display",
 ]
+
