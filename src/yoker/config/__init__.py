@@ -49,6 +49,7 @@ from yoker.config.schema import (
   PermissionsConfig,
   ReadToolConfig,
   SearchToolConfig,
+  SkillsConfig,
   ToolConfig,
   ToolsConfig,
   UpdateToolConfig,
@@ -87,6 +88,7 @@ __all__ = [
   "ToolsConfig",
   "AgentsConfig",
   "LoggingConfig",
+  "SkillsConfig",
   # Exceptions
   "ConfigurationError",
   "ValidationError",

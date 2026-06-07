@@ -163,6 +163,16 @@ def create_command_registry(agent: Agent, config: Config) -> CommandRegistry:
   # Set skill registry on agent
   agent._core.skill_registry = skill_registry
 
+  # Add skill discovery block to context if skills are loaded
+  if skill_registry.count > 0:
+    from yoker.skills import format_discovery_block
+
+    skill_list = skill_registry.list_skills()
+    discovery_block = format_discovery_block(skill_list)
+    # Add as system message so the agent knows about available skills
+    agent.context.add_message("system", discovery_block)
+    log.info("skill_discovery_added", skill_count=len(skill_list))
+
   # Register built-in commands
   registry.register(create_help_command(registry))
   registry.register(create_skills_command(skill_registry))

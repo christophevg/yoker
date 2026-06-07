@@ -210,6 +210,17 @@ class Agent:
         names=list(skills.keys()),
       )
 
+    # Add skill discovery block to context if skills are loaded
+    if self._core.skill_registry and self._core.skill_registry.count > 0:
+      from yoker.skills import format_discovery_block
+
+      skill_list = self._core.skill_registry.list_skills()
+      discovery_block = format_discovery_block(skill_list)
+      # Add as system message before any agent definition
+      # This ensures skills are visible to the agent
+      self.context.add_message("system", discovery_block)
+      log.info("skill_discovery_added", skill_count=len(skill_list))
+
     log.info(
       "async_agent_initialized",
       model=self.model,
