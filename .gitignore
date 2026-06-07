@@ -40,8 +40,8 @@ docs/_build/
 logs/
 *.jsonl
 
-# Local configuration
-yoker.toml
+# Local configuration (root only)
+/yoker.toml
 
 # Environment files with secrets
 .env
