@@ -304,15 +304,46 @@ async def run_demo_session(
         # Real LLM mode: execute command and log it
         result = command_registry.dispatch(message)
         if result:
-          console.print(f"{result}\n")
-        # Log command event if logging is enabled
-        if event_recorder is not None:
-          command_event = CommandEvent(
-            type=EventType.COMMAND,
-            command=message,
-            result=result or "",
-          )
-          event_recorder(command_event)
+          # Check if this is a skill injection
+          from yoker.commands.skill import is_skill_injection, extract_skill_content
+
+          if is_skill_injection(result):
+            # Inject skill content as system message (invisible to user)
+            skill_content = extract_skill_content(result)
+            agent.context.add_message("system", skill_content)
+
+            # Extract skill name and args for logging
+            parts = message[1:].split(maxsplit=1)
+            skill_name = parts[0]
+            skill_args = parts[1] if len(parts) > 1 else ""
+
+            # Log skill injection event if logging is enabled
+            if event_recorder is not None:
+              # Log as command event with skill injection marker
+              command_event = CommandEvent(
+                type=EventType.COMMAND,
+                command=message,
+                result=f"Skill injected: {skill_name}",
+              )
+              event_recorder(command_event)
+
+            # Process with agent - the skill content is now in context
+            # Send appropriate prompt based on whether args were provided
+            if skill_args:
+              await agent.process(skill_args)
+            else:
+              await agent.process("Execute the skill as requested.")
+          else:
+            # Regular command - print result directly
+            console.print(f"{result}\n")
+            # Log command event if logging is enabled
+            if event_recorder is not None:
+              command_event = CommandEvent(
+                type=EventType.COMMAND,
+                command=message,
+                result=result,
+              )
+              event_recorder(command_event)
       continue
 
     response = await agent.process(message)

@@ -5,6 +5,14 @@ output: media/demo-skills.svg
 events: media/events-skills.jsonl
 ---
 
+## Configuration
+
+```toml
+# yoker.toml
+[skills]
+directories = ["demos/skills"]
+```
+
 ## Messages
 
 - /example
