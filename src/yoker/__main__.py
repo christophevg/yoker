@@ -173,6 +173,12 @@ def create_command_registry(agent: Agent, config: Config) -> CommandRegistry:
     agent.context.add_message("system", discovery_block)
     log.info("skill_discovery_added", skill_count=len(skill_list))
 
+    # Register SkillTool so agent can invoke skills dynamically
+    from yoker.tools import SkillTool
+
+    agent._core.tool_registry.register(SkillTool(skill_registry=skill_registry))
+    log.info("skill_tool_registered")
+
   # Register built-in commands
   registry.register(create_help_command(registry))
   registry.register(create_skills_command(skill_registry))
