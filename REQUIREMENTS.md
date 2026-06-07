@@ -4,16 +4,16 @@
 
 ### Skill System
 
-- [ ] **FR-S1:** Skills are loaded from configured directories (yoker.toml `skills_dirs`)
-- [ ] **FR-S2:** Skills are loaded from `YOKER_SKILLS_PATH` environment variable
-- [ ] **FR-S3:** `/skill-name` command invokes skill via CLI
-- [ ] **FR-S4:** `/skill-name args` command passes arguments to skill
-- [ ] **FR-S5:** Skill discovery shows available skills to agent
+- [x] **FR-S1:** Skills are loaded from configured directories (yoker.toml `skills_dirs`)
+- [x] **FR-S2:** Skills are loaded from `YOKER_SKILLS_PATH` environment variable
+- [x] **FR-S3:** `/skill-name` command invokes skill via CLI
+- [x] **FR-S4:** `/skill-name args` command passes arguments to skill
+- [x] **FR-S5:** Skill discovery shows available skills to agent
 - [ ] **FR-S6:** Agent can invoke skills dynamically via SkillTool
-- [ ] **FR-S7:** Skills use user-level message injection for context
+- [x] **FR-S7:** Skills use user-level message injection for context
 - [ ] **FR-S8:** Skills have namespace support (`pkg:skill` format)
-- [ ] **FR-S9:** Skill content size limited to 100KB (security)
-- [ ] **FR-S10:** Skill paths validated against allowed directories (security)
+- [x] **FR-S9:** Skill content size limited to 100KB (security)
+- [x] **FR-S10:** Skill paths validated against allowed directories (security)
 - [x] **FR-S11:** Skill schema with name, description, content, triggers, tools
 - [x] **FR-S12:** SkillLoader parses Markdown + YAML frontmatter
 - [x] **FR-S13:** SkillRegistry manages loaded skills with name lookup
