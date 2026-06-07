@@ -3,6 +3,7 @@
 from rich.console import Console
 
 from yoker.events.handlers import ConsoleEventHandler
+from yoker.events.spinner import LiveDisplay
 from yoker.events.types import (
   ContentChunkEvent,
   ContentEndEvent,
@@ -19,22 +20,22 @@ class TestSVGGeneration:
   """Test that SVG generation doesn't capture intermediate spinner states."""
 
   def test_spinner_disabled_when_recording(self) -> None:
-    """Verify spinner is disabled when console.record is True."""
+    """Verify spinner is disabled in LiveDisplay when console.record is True."""
     # Create console with recording enabled
     console = Console(record=True, width=80)
-    handler = ConsoleEventHandler(console=console)
+    display = LiveDisplay(console=console)
 
-    # Check that handler detected recording mode
-    assert handler._is_recording is True
+    # Check that LiveDisplay detected recording mode
+    assert display._is_recording is True
 
   def test_spinner_enabled_when_not_recording(self) -> None:
-    """Verify spinner is enabled when console.record is False."""
+    """Verify spinner is enabled in LiveDisplay when console.record is False."""
     # Create console without recording
     console = Console(record=False, width=80)
-    handler = ConsoleEventHandler(console=console)
+    display = LiveDisplay(console=console)
 
-    # Check that handler detected non-recording mode
-    assert handler._is_recording is False
+    # Check that LiveDisplay detected non-recording mode
+    assert display._is_recording is False
 
   def test_svg_without_intermediate_spinner_updates(self) -> None:
     """Verify SVG generation doesn't include intermediate spinner updates.
@@ -91,3 +92,4 @@ class TestSVGGeneration:
     # Content is split across chunks, with non-breaking spaces (&#160;) in SVG
     assert "Hello" in svg_content
     assert "world" in svg_content
+
