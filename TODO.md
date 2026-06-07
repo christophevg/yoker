@@ -40,7 +40,7 @@
   - **Satisfies:** Skill invocation capability
   - **See:** PR #15
 
-- [ ] **2.2 Slash Command Support**
+- [x] **2.2 Slash Command Support** (2026-06-07)
   - Add `/skill-name` command parsing in CLI (prompt_toolkit)
   - Parse `/skill-name` and `/skill-name args` formats
   - Lookup skill in SkillRegistry
@@ -53,6 +53,7 @@
   - **Depends on:** 2.1
   - **Estimated time:** 1-2 hours
   - **Satisfies:** User-facing skill invocation via CLI
+  - **See:** PR #15
 
 - [ ] **2.3 Skill Tool for Agent Invocation**
   - Create `SkillTool` in `src/yoker/tools/skill.py`
