@@ -1,0 +1,8 @@
+# Demo Configuration File
+# Allows overwrites for cleaner demo behavior
+
+[tools.write]
+allow_overwrite = true
+
+[tools.read]
+allowed_extensions = []  # Allow all extensions for demos

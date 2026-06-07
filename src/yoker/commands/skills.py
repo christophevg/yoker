@@ -55,4 +55,3 @@ def _create_skills_handler(registry: SkillRegistry) -> Callable[[list[str]], str
     return "\n".join(lines)
 
   return handler
-

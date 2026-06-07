@@ -1,0 +1,4 @@
+# Skills demo configuration
+
+[skills]
+directories = ["demos/skills"]

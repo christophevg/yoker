@@ -104,7 +104,7 @@ def extract_skill_content(result: str) -> str:
   Returns:
     The skill content to inject as a system message.
   """
-  return result[len(SKILL_INJECTION_MARKER):]
+  return result[len(SKILL_INJECTION_MARKER) :]
 
 
 __all__ = ["create_skill_commands", "is_skill_injection", "extract_skill_content"]
