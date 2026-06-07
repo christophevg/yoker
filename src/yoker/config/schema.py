@@ -1,12 +1,146 @@
 """Configuration schema definitions for Yoker.
 
-Provides frozen dataclasses for all configuration sections.
+Provides frozen dataclasses for all configuration sections with validation.
 Following clitic patterns for immutable configuration objects.
+Uses Clevis for configuration management.
 """
 
+import logging
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlparse
+
+from yoker.exceptions import ValidationError
+
+logger = logging.getLogger(__name__)
+
+
+def _validate_url(value: str, path: str) -> None:
+  """Validate that a value is a valid URL.
+
+  Args:
+    value: The value to validate.
+    path: Configuration path for error messages.
+
+  Raises:
+    ValidationError: If the value is not a valid URL.
+  """
+  try:
+    result = urlparse(value)
+    if not result.scheme or not result.netloc:
+      raise ValidationError(path, value, "must be a valid URL with scheme and host")
+  except Exception as e:
+    raise ValidationError(path, value, f"must be a valid URL: {e}") from None
+
+
+def _validate_non_empty_string(value: str, path: str) -> None:
+  """Validate that a value is a non-empty string.
+
+  Args:
+    value: The value to validate.
+    path: Configuration path for error messages.
+
+  Raises:
+    ValidationError: If the value is empty.
+  """
+  if not value or not value.strip():
+    raise ValidationError(path, value, "must be a non-empty string")
+
+
+def _validate_positive_int(value: int, path: str) -> None:
+  """Validate that a value is a positive integer.
+
+  Args:
+    value: The value to validate.
+    path: Configuration path for error messages.
+
+  Raises:
+    ValidationError: If the value is not positive.
+  """
+  if value <= 0:
+    raise ValidationError(path, value, "must be a positive integer")
+
+
+def _validate_non_negative_int(value: int, path: str) -> None:
+  """Validate that a value is a non-negative integer.
+
+  Args:
+    value: The value to validate.
+    path: Configuration path for error messages.
+
+  Raises:
+    ValidationError: If the value is negative.
+  """
+  if value < 0:
+    raise ValidationError(path, value, "must be a non-negative integer")
+
+
+def _validate_choice(
+  value: str,
+  path: str,
+  choices: tuple[str, ...],
+) -> None:
+  """Validate that a value is one of the allowed choices.
+
+  Args:
+    value: The value to validate.
+    path: Configuration path for error messages.
+    choices: Allowed values.
+
+  Raises:
+    ValidationError: If the value is not in choices.
+  """
+  if value not in choices:
+    raise ValidationError(path, value, f"must be one of {choices}")
+
+
+def _validate_log_level(value: str, path: str) -> None:
+  """Validate that a log level is valid.
+
+  Args:
+    value: The log level to validate.
+    path: Configuration path for error messages.
+
+  Raises:
+    ValidationError: If the log level is invalid.
+  """
+  valid_levels = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
+  if value.upper() not in valid_levels:
+    raise ValidationError(path, value, f"must be one of {valid_levels}")
+
+
+def _validate_regex_patterns(
+  patterns: tuple[str, ...],
+  path: str,
+) -> None:
+  """Validate that regex patterns are valid.
+
+  Args:
+    patterns: The regex patterns to validate.
+    path: Configuration path for error messages.
+
+  Raises:
+    ValidationError: If any pattern is invalid.
+  """
+  for pattern in patterns:
+    try:
+      re.compile(pattern)
+    except re.error as e:
+      raise ValidationError(path, pattern, f"invalid regex pattern: {e}") from None
+
+
+def _validate_directory_exists(value: str, path: str) -> None:
+  """Validate that a directory exists (warning only).
+
+  Args:
+    value: The directory path to validate.
+    path: Configuration path for error messages.
+  """
+  dir_path = Path(value)
+  if not dir_path.exists():
+    logger.warning(f"Configuration warning at '{path}': Directory does not exist: {value}")
 
 
 @dataclass(frozen=True)
@@ -22,6 +156,11 @@ class HarnessConfig:
   name: str = "yoker"
   version: str = "1.0"
   log_level: str = "INFO"
+
+  def __post_init__(self) -> None:
+    """Validate harness configuration."""
+    _validate_non_empty_string(self.name, "harness.name")
+    _validate_log_level(self.log_level, "harness.log_level")
 
 
 @dataclass(frozen=True)
@@ -40,6 +179,23 @@ class OllamaParameters:
   top_k: int = 40
   num_ctx: int = 4096
 
+  def __post_init__(self) -> None:
+    """Validate Ollama parameters."""
+    if not 0.0 <= self.temperature <= 2.0:
+      raise ValidationError(
+        "backend.ollama.parameters.temperature",
+        self.temperature,
+        "must be between 0.0 and 2.0",
+      )
+    if not 0.0 <= self.top_p <= 1.0:
+      raise ValidationError(
+        "backend.ollama.parameters.top_p",
+        self.top_p,
+        "must be between 0.0 and 1.0",
+      )
+    _validate_positive_int(self.top_k, "backend.ollama.parameters.top_k")
+    _validate_positive_int(self.num_ctx, "backend.ollama.parameters.num_ctx")
+
 
 @dataclass(frozen=True)
 class OllamaConfig:
@@ -57,6 +213,12 @@ class OllamaConfig:
   timeout_seconds: int = 60
   parameters: OllamaParameters = field(default_factory=OllamaParameters)
 
+  def __post_init__(self) -> None:
+    """Validate Ollama configuration."""
+    _validate_url(self.base_url, "backend.ollama.base_url")
+    _validate_non_empty_string(self.model, "backend.ollama.model")
+    _validate_positive_int(self.timeout_seconds, "backend.ollama.timeout_seconds")
+
 
 @dataclass(frozen=True)
 class BackendConfig:
@@ -69,6 +231,10 @@ class BackendConfig:
 
   provider: str = "ollama"
   ollama: OllamaConfig = field(default_factory=OllamaConfig)
+
+  def __post_init__(self) -> None:
+    """Validate backend configuration."""
+    _validate_choice(self.provider, "backend.provider", ("ollama",))
 
 
 @dataclass(frozen=True)
@@ -86,6 +252,14 @@ class ContextConfig:
   storage_path: str = "./context"
   session_id: str = "auto"
   persist_after_turn: bool = True
+
+  def __post_init__(self) -> None:
+    """Validate context configuration."""
+    _validate_choice(
+      self.manager,
+      "context.manager",
+      ("basic_persistence", "compaction", "multi_tier"),
+    )
 
 
 @dataclass(frozen=True)
@@ -119,6 +293,18 @@ class PermissionsConfig:
   max_recursion_depth: int = 3
   handlers: dict[str, HandlerConfig] = field(default_factory=dict)
 
+  def __post_init__(self) -> None:
+    """Validate permissions configuration."""
+    _validate_choice(self.network_access, "permissions.network_access", ("none", "local", "all"))
+    _validate_positive_int(self.max_file_size_kb, "permissions.max_file_size_kb")
+    _validate_non_negative_int(self.max_recursion_depth, "permissions.max_recursion_depth")
+    if not self.filesystem_paths:
+      raise ValidationError(
+        "permissions.filesystem_paths",
+        self.filesystem_paths,
+        "must not be empty for security",
+      )
+
 
 @dataclass(frozen=True)
 class ToolConfig:
@@ -142,6 +328,11 @@ class ListToolConfig(ToolConfig):
 
   max_depth: int = 5
   max_entries: int = 2000
+
+  def __post_init__(self) -> None:
+    """Validate list tool configuration."""
+    _validate_positive_int(self.max_depth, "tools.list.max_depth")
+    _validate_positive_int(self.max_entries, "tools.list.max_entries")
 
 
 @dataclass(frozen=True)
@@ -182,6 +373,10 @@ class ReadToolConfig(ToolConfig):
     r"\.old$",  # Old files
   )
 
+  def __post_init__(self) -> None:
+    """Validate read tool configuration."""
+    _validate_regex_patterns(self.blocked_patterns, "tools.read.blocked_patterns")
+
 
 @dataclass(frozen=True)
 class WriteToolConfig(ToolConfig):
@@ -197,6 +392,10 @@ class WriteToolConfig(ToolConfig):
   max_size_kb: int = 1000
   blocked_extensions: tuple[str, ...] = (".exe", ".sh", ".bat")
 
+  def __post_init__(self) -> None:
+    """Validate write tool configuration."""
+    _validate_positive_int(self.max_size_kb, "tools.write.max_size_kb")
+
 
 @dataclass(frozen=True)
 class UpdateToolConfig(ToolConfig):
@@ -209,6 +408,10 @@ class UpdateToolConfig(ToolConfig):
 
   require_exact_match: bool = True
   max_diff_size_kb: int = 100
+
+  def __post_init__(self) -> None:
+    """Validate update tool configuration."""
+    _validate_positive_int(self.max_diff_size_kb, "tools.update.max_diff_size_kb")
 
 
 @dataclass(frozen=True)
@@ -245,6 +448,11 @@ class SearchToolConfig(ToolConfig):
   max_results: int = 500
   timeout_ms: int = 10000
 
+  def __post_init__(self) -> None:
+    """Validate search tool configuration."""
+    _validate_positive_int(self.max_results, "tools.search.max_results")
+    _validate_positive_int(self.timeout_ms, "tools.search.timeout_ms")
+
 
 @dataclass(frozen=True)
 class AgentToolConfig(ToolConfig):
@@ -257,6 +465,11 @@ class AgentToolConfig(ToolConfig):
 
   max_recursion_depth: int = 3
   timeout_seconds: int = 300
+
+  def __post_init__(self) -> None:
+    """Validate agent tool configuration."""
+    _validate_positive_int(self.max_recursion_depth, "tools.agent.max_recursion_depth")
+    _validate_positive_int(self.timeout_seconds, "tools.agent.timeout_seconds")
 
 
 @dataclass(frozen=True)
@@ -394,6 +607,11 @@ class AgentsConfig:
   definition: str = ""
   default_type: str = "main"
 
+  def __post_init__(self) -> None:
+    """Validate agents configuration."""
+    if self.directory:
+      _validate_directory_exists(self.directory, "agents.directory")
+
 
 @dataclass(frozen=True)
 class SkillsConfig:
@@ -425,6 +643,10 @@ class LoggingConfig:
   file: str | None = None
   include_tool_calls: bool = True
   include_permission_checks: bool = True
+
+  def __post_init__(self) -> None:
+    """Validate logging configuration."""
+    _validate_choice(self.format, "logging.format", ("json", "text"))
 
 
 @dataclass(frozen=True)
@@ -472,26 +694,11 @@ class Config:
       >>> config = Config.discover()  # Auto-discover
       >>> config = Config.discover("./custom.toml")  # Explicit path
     """
-    from yoker.config.loader import (
-      discover_config,
-      load_config,
-      load_env_config,
-      merge_configs,
-    )
+    # Use discover_config from __init__.py which handles list-to-tuple conversion
+    from yoker.config import discover_config
 
-    # Load environment variables first (highest priority)
-    env_overrides = load_env_config()
-
-    # Load base config
-    if config_path is not None:
-      base_config = load_config(config_path)
-    else:
-      base_config, _ = discover_config()
-
-    # Merge env overrides on top
-    if env_overrides:
-      return merge_configs(base_config, env_overrides)
-    return base_config
+    config, _ = discover_config()
+    return config
 
 
 __all__ = [
