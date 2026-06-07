@@ -236,4 +236,3 @@ class TestSkillCommand:
 
     result = command.handler(["find", "the", "bug"])
     assert "<command-args>find the bug</command-args>" in result
-

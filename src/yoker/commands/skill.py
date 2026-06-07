@@ -69,4 +69,3 @@ def _skill_handler(skill: Skill, args: list[str]) -> str:
 
 
 __all__ = ["create_skill_commands"]
-

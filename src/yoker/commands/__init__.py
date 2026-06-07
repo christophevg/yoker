@@ -19,4 +19,3 @@ __all__ = [
   "create_skill_commands",
   "create_think_command",
 ]
-
