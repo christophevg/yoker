@@ -3,7 +3,7 @@
 from pathlib import Path
 
 import pytest
-from clevis import get_config
+from clevis import SecurityAction, SecurityConfig, get_config
 
 from yoker.config import (
   BackendConfig,
@@ -124,7 +124,12 @@ class TestClevisIntegration:
 
     # Mock Path.home() to prevent finding home config
     with patch.object(Path, "home", return_value=tmp_path / "home"):
-      config = get_config(Config, name="yoker", cli=False)
+      # Use LOG security action to allow world-writable temp dirs on Windows
+      security = SecurityConfig(
+        file_permissions=SecurityAction.LOG,
+        directory_permissions=SecurityAction.LOG,
+      )
+      config = get_config(Config, name="yoker", cli=False, security=security)
       assert isinstance(config, Config)
       # With no config files, should use defaults
       assert config.harness.name == "yoker"
@@ -154,8 +159,13 @@ class TestExampleConfig:
 
     # Mock Path.home() to prevent finding home config
     with patch.object(Path, "home", return_value=tmp_path / "home"):
+      # Use LOG security action to allow world-writable temp dirs on Windows
+      security = SecurityConfig(
+        file_permissions=SecurityAction.LOG,
+        directory_permissions=SecurityAction.LOG,
+      )
       # With Clevis, we can load from a specific file
-      config = get_config(Config, name="yoker", cli=False)
+      config = get_config(Config, name="yoker", cli=False, security=security)
       assert isinstance(config, Config)
       # Default config has the standard values (no config files in tmp_path)
       assert config.harness.name == "yoker"
