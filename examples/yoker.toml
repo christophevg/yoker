@@ -1,0 +1,99 @@
+# Yoker Configuration File
+# Copy this file to yoker.toml and customize for your needs.
+
+# Harness metadata
+[harness]
+name = "my-yoke"
+version = "1.0"
+log_level = "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+
+# Backend provider configuration
+[backend]
+provider = "ollama"  # Currently only "ollama" is supported
+
+[backend.ollama]
+base_url = "http://localhost:11434"
+model = "llama3.2:latest"
+timeout_seconds = 60
+
+[backend.ollama.parameters]
+temperature = 0.7   # Sampling temperature (0.0-2.0)
+top_p = 0.9         # Nucleus sampling (0.0-1.0)
+top_k = 40           # Top-k sampling
+num_ctx = 4096       # Context window size
+
+# Context management configuration
+[context]
+manager = "basic_persistence"  # basic_persistence | compaction | multi_tier
+storage_path = "./context"
+session_id = "auto"            # Auto-generated session ID
+persist_after_turn = true
+
+# Permission boundaries
+[permissions]
+filesystem_paths = ["/workspace", "/docs"]
+network_access = "none"        # none | local | all
+max_file_size_kb = 500
+max_recursion_depth = 3
+
+[permissions.handlers.default]
+mode = "block"                 # block | allow | ask_user
+
+[permissions.handlers.git_commit]
+mode = "ask_user"
+message = "Commit changes to repository?"
+
+# Tool configurations
+[tools.list]
+enabled = true
+max_depth = 5
+max_entries = 2000
+
+[tools.read]
+enabled = true
+allowed_extensions = [".txt", ".md", ".json", ".yaml", ".yml", ".toml", ".py", ".js", ".ts", ".html", ".css"]
+blocked_patterns = ["\\.env", "credentials", "secret"]
+
+[tools.write]
+enabled = true
+allow_overwrite = false
+max_size_kb = 1000
+blocked_extensions = [".exe", ".sh", ".bat"]
+
+[tools.update]
+enabled = true
+require_exact_match = true
+max_diff_size_kb = 100
+
+[tools.search]
+enabled = true
+max_regex_complexity = "medium"
+max_results = 500
+timeout_ms = 10000
+
+[tools.agent]
+enabled = true
+max_recursion_depth = 3
+timeout_seconds = 300
+
+[tools.git]
+enabled = true
+allowed_commands = ["status", "log", "diff", "branch", "show"]
+requires_permission = ["commit", "push"]
+
+# Agent definition settings
+[agents]
+directory = "./agents"
+definition = "./agents/researcher.md"  # Optional: explicit agent definition file
+default_type = "main"
+
+# Skills configuration
+[skills]
+directories = ["./skills"]
+discovery = true
+
+# Logging configuration
+[logging]
+format = "json"                    # json | text
+include_tool_calls = true
+include_permission_checks = true
