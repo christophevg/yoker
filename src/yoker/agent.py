@@ -86,17 +86,11 @@ class Agent:
         - Project config (./yoker.toml)
         - Default values from Config dataclass
 
-    Model Resolution (in order of precedence):
-        1. AgentDefinition.model (if agent definition has model)
-        2. config.model (top-level config field)
-        3. config.backend.ollama.model (backend-specific model)
-
     Agent Definition Resolution (in order of precedence):
         1. Explicit `agent_definition` parameter
         2. Explicit `agent_path` parameter
-        3. config.agent (top-level config field, if set and file exists)
-        4. config.agents.definition (legacy field, if set and file exists)
-        5. None (default system prompt)
+        3. Config's `agents.definition` (if set and file exists)
+        4. None (default system prompt)
 
     Args:
       config: Configuration object (uses Clevis auto-discovery if not provided).
@@ -118,34 +112,17 @@ class Agent:
     log.info("config_loaded", source=config_source)
 
     # Resolve agent definition from config if not explicitly provided
-    # Priority: explicit agent_definition > explicit agent_path > config.agent > config.agents.definition
     resolved_agent_path: Path | str | None = agent_path
     if agent_definition is None and agent_path is None:
-      # Check config.agent first (top-level config field)
-      if loaded_config.agent:
-        definition_path = Path(loaded_config.agent).expanduser()
-        if definition_path.exists():
-          resolved_agent_path = definition_path
-          log.info(
-            "agent_definition_loaded",
-            path=str(definition_path),
-            source="config.agent",
-          )
-        else:
-          log.warning(
-            "agent_definition_not_found",
-            path=str(definition_path),
-            fallback="default_prompt",
-          )
-      # Fall back to agents.definition (legacy field)
-      elif loaded_config.agents.definition:
+      # Check if config has agents.definition
+      if loaded_config.agents.definition:
         definition_path = Path(loaded_config.agents.definition).expanduser()
         if definition_path.exists():
           resolved_agent_path = definition_path
           log.info(
             "agent_definition_loaded",
             path=str(definition_path),
-            source="config.agents.definition",
+            source="config",
           )
         else:
           log.warning(

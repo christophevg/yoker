@@ -16,18 +16,13 @@ Example:
     config = get_yoker_config(cli=True)
 
     # Access configuration values
-    print(config.model)  # Top-level model override
-    print(config.agent)  # Top-level agent definition path
-    print(config.backend.ollama.model)  # Backend-specific model
+    print(config.backend.ollama.model)
     print(config.tools.read.enabled)
 
 Environment Variables:
     Environment variables can be used in TOML config files via interpolation:
-        model = "${OLLAMA_MODEL}"
-        agent = "${YOKER_AGENT}"
-
         [backend.ollama]
-        model = "${OLLAMA_MODEL:-llama3.2:latest}"
+        model = "${OLLAMA_MODEL}"
         base_url = "${OLLAMA_HOST:-http://localhost:11434}"
 
     Clevis processes these interpolations when loading the config.
@@ -38,9 +33,7 @@ Configuration Files:
 
 CLI Arguments:
     Clevis auto-generates CLI args from dataclass fields:
-    --model MODEL                       Set model (overrides backend.ollama.model)
-    --agent PATH                        Set agent definition file path
-    --backend-ollama-model MODEL         Set backend model
+    --backend-ollama-model MODEL         Set model
     --context-session-id SESSION_ID      Set session ID
     --tools-read-enabled BOOL           Enable/disable read tool
 """
@@ -604,8 +597,6 @@ class Config:
   """Root configuration container.
 
   Attributes:
-    model: Default model to use (overrides backend.ollama.model if set).
-    agent: Path to agent definition file (overrides agents.definition if set).
     harness: Harness metadata.
     backend: Backend provider configuration.
     context: Context management configuration.
@@ -616,8 +607,6 @@ class Config:
     logging: Logging configuration.
   """
 
-  model: str | None = None
-  agent: str | None = None
   harness: HarnessConfig = field(default_factory=HarnessConfig)
   backend: BackendConfig = field(default_factory=BackendConfig)
   context: ContextConfig = field(default_factory=ContextConfig)
