@@ -268,11 +268,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/ee/01/c2a3e1bb3794a3ba7a47b9820c04e62fbcc0946e5ed716e6ff468326783f/clevis-0.3.3-py3-none-any.whl", hash = "sha256:a27f6d658da33f3a7a595ed6113ce7c934f2cf6f5758608f09d3a84fad374e51", size = 16871, upload-time = "2026-06-07T21:49:21.899Z" },
 ]
 
-[package.optional-dependencies]
-envtoml = [
-    { name = "envtoml" },
-]
-
 [[package]]
 name = "click"
 version = "8.3.3"
@@ -511,18 +506,6 @@ resolution-markers = [
 sdist = { url = "https://files.pythonhosted.org/packages/ae/b6/03bb70946330e88ffec97aefd3ea75ba575cb2e762061e0e62a213befee8/docutils-0.22.4.tar.gz", hash = "sha256:4db53b1fde9abecbb74d91230d32ab626d94f6badfc575d6db9194a49df29968", size = 2291750, upload-time = "2025-12-18T19:00:26.443Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/02/10/5da547df7a391dcde17f59520a231527b8571e6f46fc8efb02ccb370ab12/docutils-0.22.4-py3-none-any.whl", hash = "sha256:d0013f540772d1420576855455d050a2180186c91c15779301ac2ccb3eeb68de", size = 633196, upload-time = "2025-12-18T19:00:18.077Z" },
-]
-
-[[package]]
-name = "envtoml"
-version = "0.4.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "tomli", marker = "python_full_version < '3.11'" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/1b/0b/f4366faffcb2123107e2e4c0f6f29bc2f1264e17e697504d2ed9f5ccb9e4/envtoml-0.4.0.tar.gz", hash = "sha256:a5a0be49649535146f86402bc8b723ee47ef005995032f4ccb821f7a88dd64ee", size = 28545, upload-time = "2026-01-22T11:07:46.877Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/47/74/1a217e8900a244add27a6548dcd403569de54a22a9fad52990d3435fba81/envtoml-0.4.0-py3-none-any.whl", hash = "sha256:f5a271a9a07622a8e1b467ea20bec5ac91fa0353e24d7385981a25ecbf128d2e", size = 4779, upload-time = "2026-01-22T11:07:46.053Z" },
 ]
 
 [[package]]
@@ -2034,7 +2017,7 @@ name = "yoker"
 version = "0.4.0"
 source = { editable = "." }
 dependencies = [
-    { name = "clevis", extra = ["envtoml"] },
+    { name = "clevis" },
     { name = "httpx" },
     { name = "ollama" },
     { name = "prompt-toolkit" },
@@ -2071,7 +2054,7 @@ docs = [
 [package.metadata]
 requires-dist = [
     { name = "build", marker = "extra == 'dev'", specifier = ">=1.0.0" },
-    { name = "clevis", extras = ["envtoml"], specifier = ">=0.3.3" },
+    { name = "clevis", specifier = ">=0.3.3" },
     { name = "coveralls", marker = "extra == 'dev'", specifier = ">=3.3.0" },
     { name = "httpx", specifier = ">=0.25.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.13.0" },
