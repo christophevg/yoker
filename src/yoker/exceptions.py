@@ -166,6 +166,24 @@ class NetworkError(YokerError):
     return self.message
 
 
+class PluginError(YokerError):
+  """Exception for plugin-related errors.
+
+  Raised when a plugin fails to load or register components.
+
+  Attributes:
+    package: The package name that caused the error.
+    message: Error description.
+  """
+
+  def __init__(self, package: str, message: str) -> None:
+    self.package = package
+    super().__init__(f"Plugin '{package}': {message}")
+
+  def __str__(self) -> str:
+    return self.message
+
+
 __all__ = [
   "YokerError",
   "ConfigurationError",
@@ -175,4 +193,5 @@ __all__ = [
   "ContextCorruptionError",
   "PermissionViolationError",
   "NetworkError",
+  "PluginError",
 ]
