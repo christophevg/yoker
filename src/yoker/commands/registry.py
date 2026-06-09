@@ -1,6 +1,9 @@
 """Command registry for managing slash-commands."""
 
 from yoker.commands.base import Command
+from yoker.logging import get_logger
+
+log = get_logger(__name__)
 
 
 class CommandRegistry:
@@ -67,12 +70,25 @@ class CommandRegistry:
     command_name = parts[0].lower()
     args: list[str] = parts[1].split() if len(parts) > 1 else []
 
+    log.debug(
+      "command_dispatch",
+      command_name=command_name,
+      args=args,
+      available_commands=list(self._commands.keys()),
+    )
+
     # Look up command
     command = self.get(command_name)
     if command is None:
+      log.warning(
+        "command_not_found",
+        command_name=command_name,
+        available_commands=list(self._commands.keys()),
+      )
       return f"Error: Unknown command '/{command_name}'. Type /help for available commands."
 
     # Execute command
+    log.info("command_executing", command_name=command_name, args=args)
     return command.handler(args)
 
   def list_commands(self) -> list[Command]:
