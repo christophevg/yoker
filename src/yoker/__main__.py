@@ -14,6 +14,7 @@ are also supported via Clevis.
 
 import asyncio
 import os
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -362,8 +363,35 @@ def main() -> None:
     --context-session-id SESSION_ID      Set session ID
     --tools-read-enabled BOOL           Enable/disable read tool
     ...
+
+  Additional CLI arguments (pre-Clevis):
+    --with PACKAGE                       Load plugin package (can be specified multiple times)
   """
   from clevis import SecurityAction, SecurityConfig
+
+  # Pre-parse --with arguments before Clevis (temporary workaround)
+  # This will be replaced by Clevis native --with support in future
+  plugin_packages: list[str] = []
+  args_to_remove = []
+
+  # Parse sys.argv to extract --with arguments
+  i = 1  # Skip script name
+  while i < len(sys.argv):
+    arg = sys.argv[i]
+    if arg == "--with":
+      if i + 1 < len(sys.argv):
+        plugin_packages.append(sys.argv[i + 1])
+        args_to_remove.extend([i, i + 1])
+        i += 2
+      else:
+        print("Error: --with requires a package name")
+        sys.exit(1)
+    else:
+      i += 1
+
+  # Remove --with arguments from sys.argv before Clevis parsing
+  for idx in sorted(args_to_remove, reverse=True):
+    sys.argv.pop(idx)
 
   # Configure security checks based on environment
   # In development/testing, allow group/other readable config files
@@ -385,11 +413,15 @@ def main() -> None:
   # Log config source
   log.info("config_loaded_via_clevis", source="clevis")
 
+  # Log --with packages if specified
+  if plugin_packages:
+    log.info("cli_plugins_specified", packages=plugin_packages)
+
   # Create prompt session for interactive input
   session = create_prompt_session()
 
-  # Create agent with config
-  agent = Agent(config=config)
+  # Create agent with config and optional plugin override
+  agent = Agent(config=config, plugins=plugin_packages if plugin_packages else None)
 
   # Show agent info if loaded
   if agent.agent_definition:
