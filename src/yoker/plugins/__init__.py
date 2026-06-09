@@ -8,6 +8,8 @@ Key Components:
   - PluginComponents: Container for loaded plugin components
   - load_plugin(): Load plugin from Python package
   - load_plugins(): Load multiple plugins
+  - load_skills_from_package(): Load skills from package's skills/ directory
+  - load_agents_from_package(): Load agents from package's agents/ directory
   - register_tools(): Register tools with namespace prefix
   - register_skills(): Register skills with namespace prefix
   - register_agents(): Register agents with namespace prefix
@@ -31,7 +33,13 @@ from yoker.plugins.builtin import AGENTS as BUILTIN_AGENTS
 from yoker.plugins.builtin import SKILLS as BUILTIN_SKILLS
 from yoker.plugins.builtin import TOOLS as BUILTIN_TOOLS
 from yoker.plugins.builtin import load_builtin_plugin
-from yoker.plugins.loader import PluginComponents, load_plugin, load_plugins
+from yoker.plugins.loader import (
+  PluginComponents,
+  load_agents_from_package,
+  load_plugin,
+  load_plugins,
+  load_skills_from_package,
+)
 from yoker.plugins.manifest import PluginManifest
 from yoker.plugins.registration import (
   register_agents,
@@ -46,6 +54,8 @@ __all__ = [
   "PluginComponents",
   "load_plugin",
   "load_plugins",
+  "load_skills_from_package",
+  "load_agents_from_package",
   # Registration
   "register_tools",
   "register_skills",
@@ -56,3 +66,4 @@ __all__ = [
   "BUILTIN_AGENTS",
   "load_builtin_plugin",
 ]
+
