@@ -90,6 +90,47 @@ def load_plugin(package_name: str) -> PluginComponents | None:
   skills = _extract_list(module, "SKILLS")
   agents = _extract_list(module, "AGENTS")
 
+  # Check for manifest to discover skills/agents from directories
+  manifest = getattr(module, "__YOKER_MANIFEST__", None)
+  if manifest is not None:
+    log.info(
+      "plugin_manifest_found",
+      package=package_name,
+      skills_dir=manifest.skills_dir,
+      agents_dir=manifest.agents_dir,
+    )
+
+    # Load skills from skills_dir if declared
+    if manifest.skills_dir:
+      discovered_skills = load_skills_from_package(package_name, manifest.skills_dir)
+      if discovered_skills:
+        skills = list(skills) + discovered_skills  # Merge with explicit skills
+        log.info(
+          "plugin_skills_discovered",
+          package=package_name,
+          skills_dir=manifest.skills_dir,
+          count=len(discovered_skills),
+        )
+
+    # Load agents from agents_dir if declared
+    if manifest.agents_dir:
+      discovered_agents = load_agents_from_package(package_name, manifest.agents_dir)
+      if discovered_agents:
+        agents = list(agents) + discovered_agents  # Merge with explicit agents
+        log.info(
+          "plugin_agents_discovered",
+          package=package_name,
+          agents_dir=manifest.agents_dir,
+          count=len(discovered_agents),
+        )
+
+    # Merge tools from manifest if not already in TOOLS list
+    if manifest.tools:
+      existing_names = {t.name for t in tools}
+      for tool in manifest.tools:
+        if tool.name not in existing_names:
+          tools.append(tool)
+
   log.info(
     "plugin_components_extracted",
     package=package_name,
@@ -195,43 +236,79 @@ def load_skills_from_package(
     try:
       # Python 3.9+ API
       if hasattr(resources, "files"):
-        package_files = resources.files(package)
-        skills_path = package_files / skills_dir
+        # Use yoker submodule to access skills directory
+        yoker_files = resources.files(yoker_module)
+        skills_path = yoker_files / skills_dir
         if skills_path.is_dir():
-          for skill_file in skills_path.iterdir():
-            if (
-              hasattr(skill_file, "suffix")
-              and skill_file.suffix == ".md"
-              and skill_file.name != "SKILL.md"
-            ):
-              try:
-                content = skill_file.read_text()
-                from yoker.skills import parse_skill_frontmatter
+          for entry in skills_path.iterdir():
+            # Handle both flat (.md files) and nested (subdir/SKILL.md) structures
+            if hasattr(entry, "is_file") and entry.is_file():
+              # Flat structure: skill.md directly in skills/
+              if (
+                hasattr(entry, "suffix")
+                and entry.suffix == ".md"
+                and entry.name != "SKILL.md"
+              ):
+                try:
+                  content = entry.read_text()
+                  from yoker.skills import parse_skill_frontmatter
 
-                frontmatter, body = parse_skill_frontmatter(content)
+                  frontmatter, body = parse_skill_frontmatter(content)
 
-                # Extract required fields
-                name = frontmatter.get("name")
-                description = frontmatter.get("description", "")
+                  # Extract required fields
+                  name = frontmatter.get("name")
+                  description = frontmatter.get("description", "")
 
-                if name:
-                  from yoker.skills.schema import Skill
+                  if name:
+                    from yoker.skills.schema import Skill
 
-                  skill = Skill(
-                    name=str(name),
-                    description=str(description),
-                    content=body.strip(),
-                    namespace=package,
-                    source_path=f"{package}/{skills_dir}/{skill_file.name}",
+                    skill = Skill(
+                      name=str(name),
+                      description=str(description),
+                      content=body.strip(),
+                      namespace=package,
+                      source_path=f"{yoker_module}/{skills_dir}/{entry.name}",
+                    )
+                    skills.append(skill)
+                except Exception as e:
+                  log.warning(
+                    "plugin_skill_load_failed",
+                    package=package,
+                    file=str(entry),
+                    error=str(e),
                   )
-                  skills.append(skill)
-              except Exception as e:
-                log.warning(
-                  "plugin_skill_load_failed",
-                  package=package,
-                  file=str(skill_file),
-                  error=str(e),
-                )
+            elif hasattr(entry, "is_dir") and entry.is_dir():
+              # Nested structure: skill-name/SKILL.md
+              skill_file = entry / "SKILL.md"
+              if hasattr(skill_file, "is_file") and skill_file.is_file():
+                try:
+                  content = skill_file.read_text()
+                  from yoker.skills import parse_skill_frontmatter
+
+                  frontmatter, body = parse_skill_frontmatter(content)
+
+                  # Extract required fields
+                  name = frontmatter.get("name")
+                  description = frontmatter.get("description", "")
+
+                  if name:
+                    from yoker.skills.schema import Skill
+
+                    skill = Skill(
+                      name=str(name),
+                      description=str(description),
+                      content=body.strip(),
+                      namespace=package,
+                      source_path=f"{yoker_module}/{skills_dir}/{entry.name}/SKILL.md",
+                    )
+                    skills.append(skill)
+                except Exception as e:
+                  log.warning(
+                    "plugin_skill_load_failed",
+                    package=package,
+                    file=str(skill_file),
+                    error=str(e),
+                  )
       else:
         # Python 3.8 fallback (deprecated but still works)
         with resources.path(yoker_module, skills_dir) as skills_path:

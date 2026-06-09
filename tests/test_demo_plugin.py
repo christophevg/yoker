@@ -192,3 +192,42 @@ class TestDemoPluginRegistration:
     assert len(registered) >= 1
     assert "demo:greeting" in registered
     assert registry.get("demo:greeting") is not None
+
+
+class TestDemoPluginIntegration:
+  """Test end-to-end plugin loading with skill discovery."""
+
+  def test_load_plugin_discovers_skills_from_directory(self) -> None:
+    """load_plugin should discover skills from skills_dir declared in manifest."""
+    from yoker.plugins import load_plugin
+
+    plugin = load_plugin("demo")
+
+    assert plugin is not None
+    # Plugin should have loaded skills from skills/ directory
+    # (not just the empty SKILLS list in __init__.py)
+    assert len(plugin.skills) >= 1, (
+      f"Plugin should have loaded skills from skills/ directory, "
+      f"but got {len(plugin.skills)} skills. "
+      f"load_plugin should check __YOKER_MANIFEST__ and call load_skills_from_package"
+    )
+
+    greeting_skill = next((s for s in plugin.skills if s.name == "greeting"), None)
+    assert greeting_skill is not None, (
+      "greeting skill should be loaded from skills/greeting/SKILL.md"
+    )
+    assert greeting_skill.namespace == "demo"
+
+  def test_load_plugin_discovers_agents_from_directory(self) -> None:
+    """load_plugin should discover agents from agents_dir declared in manifest."""
+    from yoker.plugins import load_plugin
+
+    plugin = load_plugin("demo")
+
+    assert plugin is not None
+    # Plugin should have loaded agents from agents/ directory
+    assert len(plugin.agents) >= 1, (
+      f"Plugin should have loaded agents from agents/ directory, "
+      f"but got {len(plugin.agents)} agents. "
+      f"load_plugin should check __YOKER_MANIFEST__ and call load_agents_from_package"
+    )
