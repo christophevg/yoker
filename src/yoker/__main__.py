@@ -143,8 +143,9 @@ def create_command_registry(agent: Agent, config: Config) -> CommandRegistry:
   """
   registry = CommandRegistry()
 
-  # Load skills from configuration and environment
-  skill_registry = SkillRegistry()
+  # Use agent's existing skill registry (populated by plugins) if available
+  # Otherwise create a new one
+  skill_registry = agent.skill_registry or SkillRegistry()
 
   # Load from configured directories
   for directory in config.skills.directories:
@@ -165,8 +166,9 @@ def create_command_registry(agent: Agent, config: Config) -> CommandRegistry:
   except Exception as e:
     log.warning("skill_env_load_failed", error=str(e))
 
-  # Set skill registry on agent
-  agent._core.skill_registry = skill_registry
+  # Set skill registry on agent (if it wasn't already set)
+  if agent._core.skill_registry is None:
+    agent._core.skill_registry = skill_registry
 
   # Add skill discovery block to context if skills are loaded
   if skill_registry.count > 0:
@@ -206,10 +208,15 @@ def create_command_registry(agent: Agent, config: Config) -> CommandRegistry:
     registry=skill_registry,
     get_skill_registry=lambda: skill_registry,
   )
+  log.info(
+    "skill_commands_created",
+    count=len(skill_commands),
+    commands=[cmd.name for cmd in skill_commands],
+  )
   for command in skill_commands:
     try:
       registry.register(command)
-      log.debug("skill_command_registered", name=command.name)
+      log.info("skill_command_registered", name=command.name, description=command.description)
     except ValueError as e:
       # Command already exists (e.g., duplicate skill name)
       log.warning("skill_command_duplicate", name=command.name, error=str(e))
