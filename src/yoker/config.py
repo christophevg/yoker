@@ -570,6 +570,17 @@ class SkillsConfig:
 
 
 @dataclass(frozen=True)
+class PluginsConfig:
+  """Plugin configuration.
+
+  Attributes:
+    packages: List of plugin packages to load (e.g., ["pkgq", "c3"]).
+  """
+
+  packages: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class LoggingConfig:
   """Logging configuration.
 
@@ -604,6 +615,7 @@ class Config:
     tools: Tool configurations.
     agents: Agent definition settings.
     skills: Skills configuration.
+    plugins: Plugin configuration.
     logging: Logging configuration.
   """
 
@@ -614,6 +626,7 @@ class Config:
   tools: ToolsConfig = field(default_factory=ToolsConfig)
   agents: AgentsConfig = field(default_factory=AgentsConfig)
   skills: SkillsConfig = field(default_factory=SkillsConfig)
+  plugins: PluginsConfig = field(default_factory=PluginsConfig)
   logging: LoggingConfig = field(default_factory=LoggingConfig)
 
 
@@ -642,6 +655,7 @@ __all__ = [
   "ToolsConfig",
   "AgentsConfig",
   "SkillsConfig",
+  "PluginsConfig",
   "LoggingConfig",
   # Helper function
   "get_yoker_config",

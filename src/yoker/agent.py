@@ -35,6 +35,7 @@ from yoker.events import (
 )
 from yoker.exceptions import NetworkError
 from yoker.logging import get_logger, log_timing
+from yoker.skills import SkillRegistry
 from yoker.thinking import ThinkingMode
 from yoker.tools import ToolRegistry
 from yoker.tools.agent import AgentTool
@@ -75,6 +76,7 @@ class Agent:
     agent_definition: "AgentDefinition | None" = None,
     agent_path: Path | str | None = None,
     context_manager: "ContextManager | None" = None,
+    plugins: list[str] | None = None,
     _recursion_depth: int = 0,
   ) -> None:
     """Initialize the async agent.
@@ -92,6 +94,11 @@ class Agent:
         3. Config's `agents.definition` (if set and file exists)
         4. None (default system prompt)
 
+    Plugin Loading:
+        1. Built-in plugin (yoker) is always loaded first
+        2. Config-specified plugins from config.plugins.packages
+        3. Override plugins from `plugins` parameter (if provided)
+
     Args:
       config: Configuration object (uses Clevis auto-discovery if not provided).
       thinking_mode: Thinking mode (on/off/silent, default: ON).
@@ -99,6 +106,7 @@ class Agent:
       agent_definition: Pre-loaded AgentDefinition to use for system prompt.
       agent_path: Path to agent definition file (Markdown with frontmatter).
       context_manager: Optional ContextManager for conversation persistence.
+      plugins: Optional list of plugin packages to load (overrides config).
       _recursion_depth: Internal parameter for subagent recursion tracking.
     """
     # Load configuration using Clevis (handles env vars, user config, project config)
@@ -186,6 +194,9 @@ class Agent:
         count=len(skills),
         names=list(skills.keys()),
       )
+
+    # Load plugins (built-in first, then configured/CLI-specified)
+    self._load_plugins(loaded_config, plugins)
 
     # Add skill discovery block to context if skills are loaded
     if self._core.skill_registry and self._core.skill_registry.count > 0:
@@ -277,6 +288,153 @@ class Agent:
   def _guardrail(self) -> "PathGuardrail":
     """Path guardrail for filesystem tool validation."""
     return self._core.guardrail
+
+  def _load_plugins(
+    self,
+    config: "Config",
+    plugins_override: list[str] | None = None,
+  ) -> None:
+    """Load built-in and configured plugins.
+
+    Plugin Loading Order:
+        1. Built-in plugin (yoker) - always loaded first
+        2. Config-specified plugins - from config.plugins.packages
+        3. CLI override plugins - from plugins parameter
+
+    Args:
+      config: Configuration object.
+      plugins_override: Optional list of plugins to load (overrides config).
+    """
+    """Load built-in and configured plugins.
+
+    Plugin Loading Order:
+        1. Built-in plugin (yoker) - always loaded first
+        2. Config-specified plugins - from config.plugins.packages
+        3. CLI override plugins - from plugins parameter
+
+    Args:
+      config: Configuration object.
+      plugins_override: Optional list of plugins to load (overrides config).
+    """
+    from yoker.plugins import (
+      BUILTIN_AGENTS,
+      BUILTIN_SKILLS,
+      BUILTIN_TOOLS,
+      load_plugins,
+      register_agents,
+      register_skills,
+      register_tools,
+    )
+
+    # Load built-in plugin first (always)
+    log.info("loading_builtin_plugin")
+
+    # Register built-in tools with "yoker" namespace
+    for tool in BUILTIN_TOOLS:
+      namespaced_name = f"yoker:{tool.name}"
+      # Clone tool with namespaced name
+      from yoker.plugins.registration import _clone_tool_with_name
+
+      namespaced_tool = _clone_tool_with_name(tool, namespaced_name)
+      self.tool_registry.register(namespaced_tool)
+
+    log.info(
+      "builtin_tools_registered",
+      count=len(BUILTIN_TOOLS),
+      tools=[f"yoker:{t.name}" for t in BUILTIN_TOOLS],
+    )
+
+    # Register built-in skills with "yoker" namespace
+    for skill in BUILTIN_SKILLS:
+      # Create namespaced skill
+      from dataclasses import fields as dataclass_fields
+
+      from yoker.skills import Skill
+
+      field_values = {f.name: getattr(skill, f.name) for f in dataclass_fields(skill)}
+      field_values["namespace"] = "yoker"
+      namespaced_skill = Skill(**field_values)
+
+      # Ensure skill registry exists
+      if self._core.skill_registry is None:
+        self._core.skill_registry = SkillRegistry()
+
+      self._core.skill_registry.register(namespaced_skill)
+
+    log.info(
+      "builtin_skills_registered",
+      count=len(BUILTIN_SKILLS),
+      skills=[f"yoker:{s.name}" for s in BUILTIN_SKILLS],
+    )
+
+    # Register built-in agents (future)
+    for _agent_def in BUILTIN_AGENTS:
+      # AgentRegistry doesn't exist yet
+      pass
+
+    # Determine which plugins to load
+    plugin_packages = plugins_override if plugins_override is not None else config.plugins.packages
+
+    if not plugin_packages:
+      log.info("no_plugins_configured")
+      return
+
+    # Load configured plugins
+    log.info("loading_plugins", packages=list(plugin_packages))
+
+    loaded_plugins = load_plugins(list(plugin_packages))
+
+    # Register each plugin's components
+    for plugin in loaded_plugins:
+      # Register tools with namespace
+      if plugin.tools:
+        registered_tools = register_tools(
+          plugin.tools,
+          self.tool_registry,
+          namespace=plugin.source,
+        )
+        log.info(
+          "plugin_tools_registered",
+          package=plugin.source,
+          tools=registered_tools,
+        )
+
+      # Register skills with namespace
+      if plugin.skills:
+        # Ensure skill registry exists
+        if self._core.skill_registry is None:
+          self._core.skill_registry = SkillRegistry()
+
+        registered_skills = register_skills(
+          plugin.skills,
+          self._core.skill_registry,
+          namespace=plugin.source,
+        )
+        log.info(
+          "plugin_skills_registered",
+          package=plugin.source,
+          skills=registered_skills,
+        )
+
+      # Register agents (future)
+      if plugin.agents:
+        registered_agents = register_agents(
+          plugin.agents,
+          namespace=plugin.source,
+        )
+        log.info(
+          "plugin_agents_registered",
+          package=plugin.source,
+          agents=registered_agents,
+        )
+
+      log.info(
+        "plugin_loaded",
+        package=plugin.source,
+        tools=len(plugin.tools),
+        skills=len(plugin.skills),
+        agents=len(plugin.agents),
+      )
 
   # Event handler methods delegate to core
   def add_event_handler(self, handler: EventCallback) -> None:
