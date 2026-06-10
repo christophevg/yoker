@@ -131,9 +131,6 @@ class AgentCore:
 
     # Validation happens automatically in Config.__post_init__
 
-    # Use model from config
-    self._model = self._config.backend.ollama.model
-
     # Thinking mode state
     self._thinking_mode = thinking_mode
 
@@ -172,6 +169,18 @@ class AgentCore:
 
       self._agent_definition = load_agent_definition(resolved_agent_path)
       system_prompt = self._agent_definition.system_prompt or DEFAULT_SYSTEM_PROMPT
+
+    # Set model: agent definition overrides config
+    if self._agent_definition is not None and self._agent_definition.model is not None:
+      self._model = self._agent_definition.model
+      log.info(
+        "model_from_agent_definition",
+        model=self._model,
+        agent=self._agent_definition.name,
+      )
+    else:
+      self._model = self._config.backend.ollama.model
+      log.info("model_from_config", model=self._model)
 
     # Initialize path guardrail for filesystem tool validation
     from yoker.tools.path_guardrail import PathGuardrail
@@ -216,6 +225,12 @@ class AgentCore:
 
     # Skill registry (initially empty, populated by Agent)
     self._skill_registry: SkillRegistry | None = None
+
+    # Plugin tools tracking (populated by Agent during plugin loading)
+    self._plugin_tools: list[Tool] = []
+
+    # Plugin agents tracking (populated by Agent during plugin loading)
+    self._plugin_agents: list[AgentDefinition] = []
 
     # Verify guardrails are enforced (SEC-5)
     self._validate_guardrails_enforced()
@@ -288,6 +303,40 @@ class AgentCore:
     """Path guardrail for filesystem tool validation."""
     return self._guardrail
 
+  @property
+  def plugin_tools(self) -> list[Tool]:
+    """List of loaded plugin tools.
+
+    Returns:
+      List of Tool instances from loaded plugins.
+    """
+    return self._plugin_tools
+
+  def add_plugin_tool(self, tool: Tool) -> None:
+    """Add a plugin tool to the known tools list.
+
+    Args:
+      tool: Tool instance from a plugin.
+    """
+    self._plugin_tools.append(tool)
+
+  @property
+  def plugin_agents(self) -> list["AgentDefinition"]:
+    """List of loaded plugin agents.
+
+    Returns:
+      List of AgentDefinition instances from loaded plugins.
+    """
+    return self._plugin_agents
+
+  def add_plugin_agent(self, agent_def: "AgentDefinition") -> None:
+    """Add a plugin agent to the known agents list.
+
+    Args:
+      agent_def: AgentDefinition instance from a plugin.
+    """
+    self._plugin_agents.append(agent_def)
+
   def add_event_handler(self, handler: EventCallback) -> None:
     """Register an event handler.
 
@@ -343,6 +392,8 @@ class AgentCore:
     All filesystem tools are created with the agent's guardrail injected
     for defense-in-depth validation.
 
+    Tools are only registered if their enabled flag is True in config.
+
     Args:
       client: Optional AsyncClient for tools that need it (e.g., WebSearch).
 
@@ -352,24 +403,45 @@ class AgentCore:
     registry = ToolRegistry()
 
     # Create tools with guardrail injected for defense-in-depth
-    tools: list[Tool] = [
-      ReadTool(guardrail=self._guardrail),
-      ListTool(guardrail=self._guardrail),
-      WriteTool(guardrail=self._guardrail),
-      UpdateTool(guardrail=self._guardrail),
-      SearchTool(guardrail=self._guardrail),
-      ExistenceTool(guardrail=self._guardrail),
-      MkdirTool(guardrail=self._guardrail),
-      GitTool(
-        config=self._config.tools.git,
-        guardrail=self._guardrail,
-        permission_handlers=self._config.permissions.handlers,
-      ),
-      # AgentTool is added separately below (needs parent_agent reference)
-    ]
+    # Only add tools that are enabled in config
+    tools: list[Tool] = []
+
+    if self._config.tools.read.enabled:
+      tools.append(ReadTool(guardrail=self._guardrail))
+
+    if self._config.tools.list.enabled:
+      tools.append(ListTool(guardrail=self._guardrail))
+
+    if self._config.tools.write.enabled:
+      tools.append(WriteTool(guardrail=self._guardrail))
+
+    if self._config.tools.update.enabled:
+      tools.append(UpdateTool(guardrail=self._guardrail))
+
+    if self._config.tools.search.enabled:
+      tools.append(SearchTool(guardrail=self._guardrail))
+
+    if self._config.tools.existence.enabled:
+      tools.append(ExistenceTool(guardrail=self._guardrail))
+
+    if self._config.tools.mkdir.enabled:
+      tools.append(MkdirTool(guardrail=self._guardrail))
+
+    if self._config.tools.git.enabled:
+      tools.append(
+        GitTool(
+          config=self._config.tools.git,
+          guardrail=self._guardrail,
+          permission_handlers=self._config.permissions.handlers,
+        )
+      )
 
     # Add WebSearchTool only if API key is available and client is provided
-    if os.environ.get("OLLAMA_API_KEY") and client is not None:
+    if (
+      self._config.tools.websearch.enabled
+      and os.environ.get("OLLAMA_API_KEY")
+      and client is not None
+    ):
       # Create guardrails with configuration from tool configs
       websearch_config = WebGuardrailConfig(
         max_query_length=self._config.tools.websearch.max_query_length,
@@ -386,6 +458,12 @@ class AgentCore:
           guardrail=WebGuardrail(config=websearch_config),
         )
       )
+
+    if (
+      self._config.tools.webfetch.enabled
+      and os.environ.get("OLLAMA_API_KEY")
+      and client is not None
+    ):
       webfetch_config = WebGuardrailConfig(
         domain_allowlist=self._config.tools.webfetch.domain_allowlist,
         domain_blocklist=self._config.tools.webfetch.domain_blocklist,
@@ -399,21 +477,89 @@ class AgentCore:
           guardrail=WebGuardrail(config=webfetch_config),
         )
       )
-    else:
+
+    # Log if web tools are unavailable
+    if not os.environ.get("OLLAMA_API_KEY"):
       log.warning("web_search_unavailable", reason="OLLAMA_API_KEY not set")
       log.warning("web_fetch_unavailable", reason="OLLAMA_API_KEY not set")
 
     # Filter by agent definition if present
     if self._agent_definition is not None:
+      # Agent definition's tools list is namespaced
+      # We need to map namespaced names to actual tool names
       allowed_tools = {t.lower() for t in self._agent_definition.tools}
+
       for tool in tools:
-        if tool.name.lower() in allowed_tools:
+        # Check if tool is allowed (with or without namespace)
+        # Built-in tools are registered as "name" but agent may specify "yoker:name"
+        tool_name_lower = tool.name.lower()
+        yoker_tool_name = f"yoker:{tool_name_lower}"
+
+        # Tool is allowed if:
+        # 1. Plain name matches (backward compatibility)
+        # 2. yoker: prefix version matches
+        if tool_name_lower in allowed_tools or yoker_tool_name in allowed_tools:
           registry.register(tool)
     else:
       for tool in tools:
         registry.register(tool)
 
     return registry
+
+  def get_known_tools(self) -> list[Tool]:
+    """Get list of all known built-in tools.
+
+    Returns list of tool instances for all built-in tools (without
+    namespace prefixes). Plugin tools are tracked separately in Agent.
+
+    Only includes tools that are enabled in config.
+
+    Returns:
+      List of Tool instances for built-in tools.
+    """
+    # Create tool instances without guardrails for metadata access
+    # (descriptions don't require guardrails)
+    from yoker.tools import (
+      ExistenceTool,
+      ListTool,
+      MkdirTool,
+      ReadTool,
+      SearchTool,
+      SkillTool,
+      UpdateTool,
+      WriteTool,
+    )
+
+    # Note: These are fresh instances without guardrails,
+    # used only for metadata (name, description)
+    tools: list[Tool] = []
+
+    if self._config.tools.read.enabled:
+      tools.append(ReadTool())
+
+    if self._config.tools.list.enabled:
+      tools.append(ListTool())
+
+    if self._config.tools.write.enabled:
+      tools.append(WriteTool())
+
+    if self._config.tools.update.enabled:
+      tools.append(UpdateTool())
+
+    if self._config.tools.search.enabled:
+      tools.append(SearchTool())
+
+    if self._config.tools.existence.enabled:
+      tools.append(ExistenceTool())
+
+    if self._config.tools.mkdir.enabled:
+      tools.append(MkdirTool())
+
+    # Add SkillTool only if skill tool is enabled and registry exists
+    if self._config.tools.skill.enabled and self._skill_registry is not None:
+      tools.append(SkillTool(skill_registry=self._skill_registry))
+
+    return tools
 
   def _validate_guardrails_enforced(self) -> None:
     """Verify all filesystem tools have guardrails.
