@@ -9,7 +9,7 @@ This is a demonstration plugin for the Yoker plugin system. It shows how to crea
 A simple tool that echoes back input messages with a prefix.
 
 ```python
-from demo.yoker import EchoTool
+from yoker_plugin_demo import EchoTool
 
 tool = EchoTool()
 result = await tool.execute(message="Hello")
@@ -20,40 +20,62 @@ result = await tool.execute(message="Hello")
 
 A skill that provides friendly greetings.
 
-Location: `demo/skills/greeting.md`
+Location: `yoker_plugin_demo/skills/greeting/SKILL.md`
 
 ### 3. Demo Agent
 
 A demonstration agent definition.
 
-Location: `demo/agents/demo.md`
+Location: `yoker_plugin_demo/agents/demo.md`
 
 ## Structure
 
 ```
 examples/plugins/demo/
-  __init__.py           # Package marker with __YOKER_MANIFEST__
-  yoker/
-    __init__.py         # Plugin manifest and tool exports
-    tools.py            # EchoTool implementation
-  skills/
-    greeting.md         # Greeting skill definition
-  agents/
-    demo.md             # Demo agent definition
+  pyproject.toml          # Package configuration
+  README.md               # This file
+  yoker_plugin_demo/      # Plugin package (NO conflict with yoker!)
+    __init__.py           # Plugin manifest with __YOKER_MANIFEST__
+    tools.py              # EchoTool implementation
+    agents/
+      demo.md             # Demo agent definition
+    skills/
+      greeting/
+        SKILL.md          # Greeting skill definition
 ```
 
 ## Usage
 
-### As a Plugin
+### Installation
 
 ```bash
-# Run yoker with demo plugin (future feature)
-yoker --with demo
+# From yoker root directory
+cd /path/to/yoker
+uv pip install -e examples/plugins/demo
+
+# Or from plugin directory
+cd examples/plugins/demo
+uv pip install -e .
+```
+
+### Verification
+
+```bash
+# Verify installation
+python -c "import yoker_plugin_demo; print(yoker_plugin_demo.__YOKER_MANIFEST__)"
+# Output: PluginManifest(tools=[EchoTool()], skills_dir='skills', agents_dir='agents')
+```
+
+### Running with Plugin
+
+```bash
+# Run yoker with demo plugin
+uv run yoker --with yoker-plugin-demo --agents-definition plugin://yoker-plugin-demo/agents/demo
 
 # The agent can now use:
-# - demo:echo tool
-# - demo:greeting skill (via /greeting)
-# - demo:demo agent
+# - echo tool (namespaced as "echo" when loaded via plugin)
+# - greeting skill (via /greeting)
+# - demo agent definition
 ```
 
 ### Programmatic Loading
@@ -65,24 +87,24 @@ from yoker.tools import ToolRegistry
 from yoker.skills import SkillRegistry
 
 # Load the plugin
-plugin = load_plugin("demo")
+plugin = load_plugin("yoker_plugin_demo")
 
 # Register tools
 tool_registry = ToolRegistry()
 register_tools(plugin.tools, tool_registry, namespace="demo")
 
 # Load and register skills
-skills = load_skills_from_package("demo", skills_dir="skills")
+skills = load_skills_from_package("yoker_plugin_demo", skills_dir="skills")
 skill_registry = SkillRegistry()
 register_skills(skills, skill_registry, namespace="demo")
 
 # Load agents
-agents = load_agents_from_package("demo", agents_dir="agents")
+agents = load_agents_from_package("yoker_plugin_demo", agents_dir="agents")
 ```
 
 ## Testing
 
-The plugin includes comprehensive tests in `tests/test_demo_plugin.py` that validate:
+The plugin includes comprehensive tests that validate:
 
 - Plugin discovery and import
 - Manifest declaration
@@ -99,9 +121,13 @@ pytest tests/test_demo_plugin.py -v
 
 ## Plugin Development Notes
 
+### Package Naming
+
+**CRITICAL**: The package directory MUST NOT conflict with the main `yoker` package. Use a unique name like `yoker_plugin_demo` instead of `yoker`.
+
 ### Manifest
 
-The plugin exports `__YOKER_MANIFEST__` in both the main `__init__.py` and the `yoker` submodule for backward compatibility:
+The plugin exports `__YOKER_MANIFEST__` in `yoker_plugin_demo/__init__.py`:
 
 ```python
 __YOKER_MANIFEST__ = PluginManifest(
@@ -151,8 +177,17 @@ tools:
 System prompt content...
 ```
 
+## Why the Package Rename?
+
+The original structure had `yoker/` subdirectory which conflicts with the main yoker package when installed. The new structure uses `yoker_plugin_demo/` to:
+
+1. Avoid namespace collision with yoker package
+2. Allow both packages to be installed simultaneously
+3. Follow Python package naming best practices
+4. Make the plugin import path explicit (`import yoker_plugin_demo`)
+
 ## Current Limitations
 
-1. Skills must be at the package level (`demo/skills/`), not in the yoker submodule
+1. Skills must be at the package level (`yoker_plugin_demo/skills/`)
 2. Agent files must end with `.md` extension
-3. Skill files must NOT be named `SKILL.md` (reserved for future use)
+3. Skill files must be named `SKILL.md`

@@ -51,6 +51,125 @@ if TYPE_CHECKING:
 log = get_logger(__name__)
 
 
+def _load_agent_from_namespace_format(namespace_agent: str) -> "AgentDefinition | None":
+  """Load an agent definition from namespace:agent format.
+
+  Namespace format: <package>:<agent_name>
+  Example: "yoker_plugin_demo:demo"
+
+  This format is convenient shorthand for loading agents from plugins.
+
+  Args:
+    namespace_agent: Agent identifier in namespace:agent format.
+
+  Returns:
+    AgentDefinition if found, None if not found in any loaded plugin.
+  """
+  # Parse namespace:agent_name
+  if ":" not in namespace_agent:
+    return None
+
+  parts = namespace_agent.split(":", 1)
+  if len(parts) != 2:
+    return None
+
+  package, agent_name = parts
+  log.info("loading_agent_from_namespace", package=package, agent_name=agent_name)
+
+  # Load agents from package
+  from yoker.plugins import load_agents_from_package
+
+  agents = load_agents_from_package(package, agents_dir="agents")
+
+  # Find agent by name (with or without namespace)
+  for agent_def in agents:
+    # Check both namespaced and non-namespaced names
+    # Agent names from plugins are already namespaced (e.g., "yoker_plugin_demo:demo")
+    if agent_def.name == agent_name or agent_def.name == f"{package}:{agent_name}":
+      log.info(
+        "agent_loaded_from_namespace",
+        package=package,
+        agent_name=agent_name,
+        full_name=agent_def.name,
+      )
+      return agent_def
+
+  # Agent not found
+  log.debug(
+    "agent_not_found_in_namespace",
+    package=package,
+    agent_name=agent_name,
+    available_agents=[a.name for a in agents],
+  )
+  return None
+
+
+def _load_agent_from_plugin_url(plugin_url: str) -> "AgentDefinition":
+  """Load an agent definition from a plugin:// URL.
+
+  Plugin URL format: plugin://<package>/agents/<agent_name>
+
+  Args:
+    plugin_url: Plugin URL (e.g., "plugin://plugins.demo/agents/demo").
+
+  Returns:
+    AgentDefinition loaded from the plugin.
+
+  Raises:
+    ValueError: If URL format is invalid, plugin not found, or agent not found.
+  """
+  # Parse plugin://<package>/agents/<agent_name>
+  if not plugin_url.startswith("plugin://"):
+    raise ValueError(f"Invalid plugin URL: {plugin_url}")
+
+  # Remove plugin:// prefix
+  path = plugin_url[9:]  # len("plugin://") = 9
+
+  # Split into components: <package>/agents/<agent_name>
+  parts = path.split("/")
+
+  if len(parts) < 3 or parts[1] != "agents":
+    raise ValueError(
+      f"Invalid plugin URL format: {plugin_url}. Expected: plugin://<package>/agents/<agent_name>"
+    )
+
+  package = parts[0]
+  agent_name = parts[2]
+
+  log.info("loading_agent_from_plugin", package=package, agent_name=agent_name)
+
+  # Import the package to check if it exists
+  try:
+    import importlib
+
+    importlib.import_module(package)
+  except ImportError as e:
+    raise ValueError(f"Plugin package not found: {package}") from e
+
+  # Load agents from package
+  from yoker.plugins import load_agents_from_package
+
+  agents = load_agents_from_package(package, agents_dir="agents")
+
+  # Find agent by name (with or without namespace)
+  for agent_def in agents:
+    # Check both namespaced and non-namespaced names
+    if agent_def.name == agent_name or agent_def.name == f"{package}:{agent_name}":
+      log.info(
+        "agent_loaded_from_plugin",
+        package=package,
+        agent_name=agent_name,
+        full_name=agent_def.name,
+      )
+      return agent_def
+
+  # Agent not found - provide helpful error
+  available_agents = [a.name for a in agents]
+  raise ValueError(
+    f"Agent '{agent_name}' not found in plugin '{package}'. Available agents: {available_agents}"
+  )
+
+
 class Agent:
   """Asynchronous agent that chats with Ollama and uses tools.
 
@@ -121,23 +240,89 @@ class Agent:
 
     # Resolve agent definition from config if not explicitly provided
     resolved_agent_path: Path | str | None = agent_path
-    if agent_definition is None and agent_path is None:
+    resolved_agent_definition: AgentDefinition | None = agent_definition
+
+    # If agent_definition is explicitly provided, use it directly (ignore agent_path)
+    if agent_definition is not None:
+      # agent_definition takes precedence over agent_path
+      resolved_agent_path = None
+      log.info(
+        "agent_definition_provided",
+        name=agent_definition.name,
+      )
+    elif agent_path is not None:
+      # agent_path is provided (and agent_definition is None)
+      # Validate agent definition file exists (if not a plugin URL)
+      if not str(agent_path).startswith("plugin://"):
+        path = Path(agent_path)
+        if not path.exists():
+          raise ValueError(f"Agent definition file not found: {agent_path}")
+
+      # Handle plugin:// URL for agent definitions
+      if str(agent_path).startswith("plugin://"):
+        # Parse plugin://<package>/agents/<agent_name>
+        plugin_url = str(agent_path)
+        resolved_agent_definition = _load_agent_from_plugin_url(plugin_url)
+        resolved_agent_path = None  # Clear path since we loaded from plugin
+        log.info(
+          "agent_definition_loaded_from_plugin",
+          url=plugin_url,
+          name=resolved_agent_definition.name,
+        )
+      else:
+        # Load agent definition from file path
+        from yoker.agents import load_agent_definition
+
+        resolved_agent_definition = load_agent_definition(agent_path)
+        log.info(
+          "agent_definition_loaded_from_file",
+          path=str(agent_path),
+          name=resolved_agent_definition.name,
+        )
+    else:
+      # Neither agent_definition nor agent_path provided
       # Check if config has agents.definition
       if loaded_config.agents.definition:
-        definition_path = Path(loaded_config.agents.definition).expanduser()
-        if definition_path.exists():
-          resolved_agent_path = definition_path
+        definition_value = loaded_config.agents.definition
+
+        # Check if it's a plugin URL
+        if definition_value.startswith("plugin://"):
+          # Load agent from plugin
+          resolved_agent_definition = _load_agent_from_plugin_url(definition_value)
           log.info(
-            "agent_definition_loaded",
-            path=str(definition_path),
-            source="config",
+            "agent_definition_loaded_from_plugin_url",
+            url=definition_value,
+            name=resolved_agent_definition.name,
           )
+        elif ":" in definition_value and not Path(definition_value).exists():
+          # Could be namespace:agent format (e.g., "yoker_plugin_demo:demo")
+          # Try to load from plugin if it's not a file path
+          resolved_agent_definition = _load_agent_from_namespace_format(definition_value)
+          if resolved_agent_definition:
+            log.info(
+              "agent_definition_loaded_from_namespace",
+              definition=definition_value,
+              name=resolved_agent_definition.name,
+            )
+          else:
+            # Not found in plugins - treat as file path error
+            raise ValueError(f"Agent definition file not found: {definition_value}")
         else:
-          log.warning(
-            "agent_definition_not_found",
-            path=str(definition_path),
-            fallback="default_prompt",
-          )
+          # It's a file path
+          definition_path = Path(definition_value).expanduser()
+          if definition_path.exists():
+            # Load agent definition from config
+            from yoker.agents import load_agent_definition
+
+            resolved_agent_definition = load_agent_definition(definition_path)
+            log.info(
+              "agent_definition_loaded_from_config",
+              path=str(definition_path),
+              name=resolved_agent_definition.name,
+            )
+          else:
+            # Config has definition path but file doesn't exist - this is an error
+            raise ValueError(f"Agent definition file not found: {definition_value}")
 
     # Initialize async-specific client
     api_key = os.environ.get("OLLAMA_API_KEY")
@@ -157,7 +342,7 @@ class Agent:
       config=loaded_config,
       thinking_mode=thinking_mode,
       command_registry=command_registry,
-      agent_definition=agent_definition,
+      agent_definition=resolved_agent_definition,
       agent_path=resolved_agent_path,
       context_manager=context_manager,
       client=self._client,  # Pass AsyncClient for async web tools
@@ -177,37 +362,39 @@ class Agent:
         AgentTool(guardrail=self._core.guardrail, parent_agent=self)
       )
 
-    # Load skills from YOKER_SKILLS_PATH environment variable
-    from yoker.skills import SkillRegistry, load_skills_from_env
-    from yoker.tools import SkillTool
-
-    skills = load_skills_from_env()
-    if skills:
-      self._core.skill_registry = SkillRegistry()
-      self._core.skill_registry.update(skills)
-
-      # Register SkillTool so agent can invoke skills
-      self._core.tool_registry.register(SkillTool(skill_registry=self._core.skill_registry))
-
-      log.info(
-        "skills_loaded",
-        count=len(skills),
-        names=list(skills.keys()),
-      )
-
     # Load plugins (built-in first, then configured/CLI-specified)
     self._load_plugins(loaded_config, plugins)
 
-    # Add skill discovery block to context if skills are loaded
-    if self._core.skill_registry and self._core.skill_registry.count > 0:
+    # Load skills from configured directories
+    from yoker.skills import SkillRegistry, load_skills
+
+    if self._core.skill_registry is None:
+      self._core.skill_registry = SkillRegistry()
+
+    for directory in loaded_config.skills.directories:
+      try:
+        skills = load_skills(directory)
+        for _skill_name, skill in skills.items():
+          self._core.skill_registry.register(skill)
+        log.info("skills_loaded", count=len(skills), source=directory)
+      except Exception as e:
+        log.warning("skills_directory_load_failed", directory=directory, error=str(e))
+
+    # Add skill discovery block if skills loaded and discovery enabled
+    if self._core.skill_registry.count > 0 and loaded_config.skills.discovery:
       from yoker.skills import format_discovery_block
 
       skill_list = self._core.skill_registry.list_skills()
       discovery_block = format_discovery_block(skill_list)
-      # Add as system message before any agent definition
-      # This ensures skills are visible to the agent
       self.context.add_message("system", discovery_block)
       log.info("skill_discovery_added", skill_count=len(skill_list))
+
+    # Register SkillTool if enabled in config
+    if loaded_config.tools.skill.enabled:
+      from yoker.tools import SkillTool
+
+      self._core.tool_registry.register(SkillTool(skill_registry=self._core.skill_registry))
+      log.info("skill_tool_registered")
 
     log.info(
       "async_agent_initialized",
@@ -301,16 +488,9 @@ class Agent:
         2. Config-specified plugins - from config.plugins.packages
         3. CLI override plugins - from plugins parameter
 
-    Args:
-      config: Configuration object.
-      plugins_override: Optional list of plugins to load (overrides config).
-    """
-    """Load built-in and configured plugins.
-
-    Plugin Loading Order:
-        1. Built-in plugin (yoker) - always loaded first
-        2. Config-specified plugins - from config.plugins.packages
-        3. CLI override plugins - from plugins parameter
+    Security checks:
+        - Level 1: Global opt-in (config.plugins.enabled)
+        - Level 2: Per-plugin trust (config.plugins.trusted or user confirmation)
 
     Args:
       config: Configuration object.
@@ -320,14 +500,26 @@ class Agent:
       BUILTIN_AGENTS,
       BUILTIN_SKILLS,
       BUILTIN_TOOLS,
+      check_plugin_allowed,
+      check_plugins_enabled,
       load_plugins,
       register_agents,
       register_skills,
       register_tools,
     )
 
+    # Determine which plugins to load
+    plugin_packages = plugins_override if plugins_override is not None else config.plugins.packages
+
+    log.info(
+      "plugin_loading_started",
+      has_override=plugins_override is not None,
+      packages=plugin_packages if plugin_packages else [],
+    )
+
     # Load built-in plugin first (always)
     log.info("loading_builtin_plugin")
+    print("Loading built-in plugin: yoker")
 
     # Register built-in tools with "yoker" namespace
     for tool in BUILTIN_TOOLS:
@@ -372,20 +564,45 @@ class Agent:
       # AgentRegistry doesn't exist yet
       pass
 
-    # Determine which plugins to load
-    plugin_packages = plugins_override if plugins_override is not None else config.plugins.packages
+    log.info(
+      "builtin_agents_registered",
+      count=len(BUILTIN_AGENTS),
+      agents=[f"yoker:{a.name}" for a in BUILTIN_AGENTS] if BUILTIN_AGENTS else [],
+    )
 
     if not plugin_packages:
       log.info("no_plugins_configured")
       return
 
+    # Level 1: Check if plugins are enabled globally
+    if not check_plugins_enabled(config):
+      log.warning("plugins_disabled_aborting")
+      return
+
     # Load configured plugins
-    log.info("loading_plugins", packages=list(plugin_packages))
+    log.info("loading_plugins", packages=list(plugin_packages), count=len(plugin_packages))
 
-    loaded_plugins = load_plugins(list(plugin_packages))
+    try:
+      loaded_plugins = load_plugins(list(plugin_packages))
+    except ImportError as e:
+      print(f"  Error: Failed to load plugins: {e}")
+      log.error("plugin_import_error", error=str(e))
+      return
+    except Exception as e:
+      print(f"  Error: Failed to load plugins: {e}")
+      log.error("plugin_load_error", error=str(e))
+      return
 
-    # Register each plugin's components
+    # Register each plugin's components (with security check)
     for plugin in loaded_plugins:
+      print(f"Loading plugin: {plugin.source}")
+
+      # Level 2: Check if plugin is trusted
+      if not check_plugin_allowed(plugin.source, config, plugin):
+        print(f"  Plugin '{plugin.source}' not loaded.")
+        log.warning("plugin_not_allowed", package=plugin.source)
+        continue
+
       # Register tools with namespace
       if plugin.tools:
         registered_tools = register_tools(
@@ -393,6 +610,13 @@ class Agent:
           self.tool_registry,
           namespace=plugin.source,
         )
+        # Track plugin tools in AgentCore for known tools listing
+        # Use namespaced names from registered_tools
+        from yoker.plugins.registration import _clone_tool_with_name
+
+        for tool, namespaced_name in zip(plugin.tools, registered_tools, strict=True):
+          namespaced_tool = _clone_tool_with_name(tool, namespaced_name)
+          self._core.add_plugin_tool(namespaced_tool)
         log.info(
           "plugin_tools_registered",
           package=plugin.source,
@@ -422,11 +646,19 @@ class Agent:
           plugin.agents,
           namespace=plugin.source,
         )
+        # Store plugin agents for access by /agents command
+        for agent_def in plugin.agents:
+          self._core.add_plugin_agent(agent_def)
         log.info(
           "plugin_agents_registered",
           package=plugin.source,
           agents=registered_agents,
         )
+
+      # Print success message
+      print(
+        f"  Loaded plugin {plugin.source}: {len(plugin.tools)} tools, {len(plugin.skills)} skills, {len(plugin.agents)} agents"
+      )
 
       log.info(
         "plugin_loaded",

@@ -6,6 +6,7 @@
 
 env-dev: ## Install all dependencies (dev + docs)
 	uv sync --all-extras
+	uv pip install -e examples/plugins/demo
 
 env-run: ## Install runtime dependencies only
 	uv sync

@@ -4,6 +4,7 @@ Slash-commands are intercepted before being sent to the LLM and trigger
 Yoker functionality directly.
 """
 
+from yoker.commands.agents import create_agents_command
 from yoker.commands.base import Command
 from yoker.commands.context import create_context_command
 from yoker.commands.help import create_help_command
@@ -11,13 +12,16 @@ from yoker.commands.registry import CommandRegistry
 from yoker.commands.skill import create_skill_commands
 from yoker.commands.skills import create_skills_command
 from yoker.commands.think import create_think_command
+from yoker.commands.tools import create_tools_command
 
 __all__ = [
   "Command",
   "CommandRegistry",
+  "create_agents_command",
   "create_context_command",
   "create_help_command",
   "create_skill_commands",
   "create_skills_command",
   "create_think_command",
+  "create_tools_command",
 ]

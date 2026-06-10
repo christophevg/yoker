@@ -1,5 +1,7 @@
 """Tests for /skills slash command."""
 
+from unittest.mock import Mock
+
 from yoker.commands import CommandRegistry, create_skills_command
 from yoker.skills import Skill, SkillRegistry
 
@@ -10,10 +12,12 @@ class TestSkillsCommand:
   def test_create_skills_command_empty_registry(self):
     """Test /skills command with empty registry."""
     registry = SkillRegistry()
-    command = create_skills_command(registry)
+    config = Mock()
+    config.skills.directories = []
+    command = create_skills_command(registry, config)
 
     result = command.handler([])
-    assert "Available skills:" in result
+    assert "Loaded skills:" in result
     assert "No skills loaded" in result
 
   def test_create_skills_command_single_skill(self):
@@ -25,13 +29,15 @@ class TestSkillsCommand:
       content="Instructions for committing...",
     )
     registry.register(skill)
+    config = Mock()
+    config.skills.directories = []
 
-    command = create_skills_command(registry)
+    command = create_skills_command(registry, config)
     result = command.handler([])
 
-    assert "Available skills:" in result
-    assert "- commit: Guide git commits" in result
-    assert "No skills loaded" not in result
+    assert "Loaded skills:" in result
+    assert "commit" in result
+    assert "Guide git commits" in result
 
   def test_create_skills_command_multiple_skills(self):
     """Test /skills command with multiple skills."""
@@ -56,14 +62,19 @@ class TestSkillsCommand:
     registry.register(skill1)
     registry.register(skill2)
     registry.register(skill3)
+    config = Mock()
+    config.skills.directories = []
 
-    command = create_skills_command(registry)
+    command = create_skills_command(registry, config)
     result = command.handler([])
 
-    assert "Available skills:" in result
-    assert "- commit: Guide git commits" in result
-    assert "- review: Review code changes" in result
-    assert "- test: Run tests" in result
+    assert "Loaded skills:" in result
+    assert "commit" in result
+    assert "Guide git commits" in result
+    assert "review" in result
+    assert "Review code changes" in result
+    assert "test" in result
+    assert "Run tests" in result
 
   def test_skills_command_namespaced_skill(self):
     """Test /skills command with namespaced skill."""
@@ -75,12 +86,15 @@ class TestSkillsCommand:
       namespace="c3",
     )
     registry.register(skill)
+    config = Mock()
+    config.skills.directories = []
 
-    command = create_skills_command(registry)
+    command = create_skills_command(registry, config)
     result = command.handler([])
 
-    assert "Available skills:" in result
-    assert "- c3:commit: Guide git commits" in result
+    assert "Loaded skills:" in result
+    assert "c3:commit" in result
+    assert "Guide git commits" in result
 
   def test_skills_command_registered_in_command_registry(self):
     """Test that /skills command can be registered in CommandRegistry."""
@@ -91,15 +105,17 @@ class TestSkillsCommand:
       content="Commit instructions...",
     )
     skill_registry.register(skill)
+    config = Mock()
+    config.skills.directories = []
 
     command_registry = CommandRegistry()
-    skills_command = create_skills_command(skill_registry)
+    skills_command = create_skills_command(skill_registry, config)
     command_registry.register(skills_command)
 
     # Test dispatch
     result = command_registry.dispatch("/skills")
     assert result is not None
-    assert "Available skills:" in result
+    assert "Loaded skills:" in result
     assert "commit" in result
 
   def test_skills_command_ignores_args(self):
@@ -111,16 +127,18 @@ class TestSkillsCommand:
       content="Commit instructions...",
     )
     registry.register(skill)
+    config = Mock()
+    config.skills.directories = []
 
-    command = create_skills_command(registry)
+    command = create_skills_command(registry, config)
 
     # Arguments should be ignored
     result1 = command.handler([])
     result2 = command.handler(["ignored", "args"])
 
     assert result1 == result2
-    assert "Available skills:" in result1
-    assert "- commit: Guide git commits" in result1
+    assert "Loaded skills:" in result1
+    assert "commit" in result1
 
   def test_skills_command_sorted_output(self):
     """Test that skills are listed in sorted order."""
@@ -146,18 +164,20 @@ class TestSkillsCommand:
     registry.register(skill3)
     registry.register(skill1)
     registry.register(skill2)
+    config = Mock()
+    config.skills.directories = []
 
-    command = create_skills_command(registry)
+    command = create_skills_command(registry, config)
     result = command.handler([])
 
     # Verify sorted order (alpha, middle, zebra)
     lines = result.split("\n")
-    skill_lines = [line for line in lines if line.strip().startswith("-")]
+    skill_lines = [line for line in lines if "✓" in line]
 
     assert len(skill_lines) == 3
-    assert "- alpha: Alpha skill" in skill_lines[0]
-    assert "- middle: Middle skill" in skill_lines[1]
-    assert "- zebra: Zebra skill" in skill_lines[2]
+    assert "alpha" in skill_lines[0]
+    assert "middle" in skill_lines[1]
+    assert "zebra" in skill_lines[2]
 
   def test_skills_command_mixed_namespaced_and_regular(self):
     """Test /skills command with mix of namespaced and regular skills."""
@@ -183,12 +203,14 @@ class TestSkillsCommand:
     registry.register(skill1)
     registry.register(skill2)
     registry.register(skill3)
+    config = Mock()
+    config.skills.directories = []
 
-    command = create_skills_command(registry)
+    command = create_skills_command(registry, config)
     result = command.handler([])
 
-    assert "Available skills:" in result
+    assert "Loaded skills:" in result
     # c3:commit should come before commit (alphabetically)
-    assert "- c3:commit: Guide git commits" in result
-    assert "- commit: Guide git commits" in result
-    assert "- review: Review code" in result
+    assert "c3:commit" in result
+    assert "commit" in result
+    assert "review" in result

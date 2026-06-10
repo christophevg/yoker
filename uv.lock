@@ -8,6 +8,12 @@ resolution-markers = [
     "python_full_version < '3.11'",
 ]
 
+[manifest]
+members = [
+    "yoker",
+    "yoker-plugin-demo",
+]
+
 [[package]]
 name = "alabaster"
 version = "1.0.0"
@@ -2078,6 +2084,17 @@ requires-dist = [
     { name = "types-pyyaml", marker = "extra == 'dev'", specifier = ">=6.0" },
 ]
 provides-extras = ["dev", "docs"]
+
+[[package]]
+name = "yoker-plugin-demo"
+version = "0.1.0"
+source = { editable = "examples/plugins/demo" }
+dependencies = [
+    { name = "yoker" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "yoker", editable = "." }]
 
 [[package]]
 name = "zipp"

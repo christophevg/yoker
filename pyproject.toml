@@ -146,3 +146,6 @@ base_python = ["python3.11"]
 
 [tool.tox.env.py312]
 base_python = ["python3.12"]
+
+[tool.uv.workspace]
+members = ["examples/plugins/demo"]

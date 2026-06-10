@@ -4,15 +4,7 @@ Validates that the demo plugin can be discovered, loaded, and its components
 registered correctly.
 """
 
-import sys
-from pathlib import Path
-
 import pytest
-
-# Add examples/plugins to sys.path for testing
-EXAMPLES_PATH = Path(__file__).parent.parent / "examples" / "plugins"
-if str(EXAMPLES_PATH) not in sys.path:
-  sys.path.insert(0, str(EXAMPLES_PATH))
 
 
 class TestDemoPluginDiscovery:
@@ -20,16 +12,16 @@ class TestDemoPluginDiscovery:
 
   def test_demo_plugin_can_be_imported(self) -> None:
     """Demo plugin package should be importable."""
-    import demo
+    import yoker_plugin_demo
 
-    assert hasattr(demo, "__YOKER_MANIFEST__")
+    assert hasattr(yoker_plugin_demo, "__YOKER_MANIFEST__")
 
   def test_demo_plugin_yoker_submodule_can_be_imported(self) -> None:
     """Demo plugin yoker submodule should be importable."""
-    import demo.yoker
+    import yoker_plugin_demo
 
-    assert hasattr(demo.yoker, "__YOKER_MANIFEST__")
-    assert hasattr(demo.yoker, "EchoTool")
+    assert hasattr(yoker_plugin_demo, "__YOKER_MANIFEST__")
+    assert hasattr(yoker_plugin_demo, "EchoTool")
 
 
 class TestDemoPluginManifest:
@@ -37,7 +29,7 @@ class TestDemoPluginManifest:
 
   def test_manifest_has_echo_tool(self) -> None:
     """Manifest should declare EchoTool."""
-    from demo.yoker import __YOKER_MANIFEST__
+    from yoker_plugin_demo import __YOKER_MANIFEST__
 
     assert len(__YOKER_MANIFEST__.tools) == 1
     tool = __YOKER_MANIFEST__.tools[0]
@@ -45,13 +37,13 @@ class TestDemoPluginManifest:
 
   def test_manifest_declares_skills_dir(self) -> None:
     """Manifest should declare skills directory."""
-    from demo.yoker import __YOKER_MANIFEST__
+    from yoker_plugin_demo import __YOKER_MANIFEST__
 
     assert __YOKER_MANIFEST__.skills_dir == "skills"
 
   def test_manifest_declares_agents_dir(self) -> None:
     """Manifest should declare agents directory."""
-    from demo.yoker import __YOKER_MANIFEST__
+    from yoker_plugin_demo import __YOKER_MANIFEST__
 
     assert __YOKER_MANIFEST__.agents_dir == "agents"
 
@@ -62,7 +54,7 @@ class TestEchoTool:
   @pytest.mark.asyncio
   async def test_echo_tool_returns_input_with_prefix(self) -> None:
     """EchoTool should return input message with 'Echo: ' prefix."""
-    from demo.yoker import EchoTool
+    from yoker_plugin_demo import EchoTool
 
     tool = EchoTool()
     result = await tool.execute(message="Hello, World!")
@@ -73,7 +65,7 @@ class TestEchoTool:
   @pytest.mark.asyncio
   async def test_echo_tool_handles_empty_string(self) -> None:
     """EchoTool should handle empty string input."""
-    from demo.yoker import EchoTool
+    from yoker_plugin_demo import EchoTool
 
     tool = EchoTool()
     result = await tool.execute(message="")
@@ -84,7 +76,7 @@ class TestEchoTool:
   @pytest.mark.asyncio
   async def test_echo_tool_rejects_non_string(self) -> None:
     """EchoTool should reject non-string input."""
-    from demo.yoker import EchoTool
+    from yoker_plugin_demo import EchoTool
 
     tool = EchoTool()
     result = await tool.execute(message=123)
@@ -95,21 +87,21 @@ class TestEchoTool:
 
   def test_echo_tool_has_correct_name(self) -> None:
     """EchoTool should have 'echo' as its name."""
-    from demo.yoker import EchoTool
+    from yoker_plugin_demo import EchoTool
 
     tool = EchoTool()
     assert tool.name == "echo"
 
   def test_echo_tool_has_description(self) -> None:
     """EchoTool should have a description."""
-    from demo.yoker import EchoTool
+    from yoker_plugin_demo import EchoTool
 
     tool = EchoTool()
     assert tool.description != ""
 
   def test_echo_tool_has_valid_schema(self) -> None:
     """EchoTool should have a valid OpenAI function schema."""
-    from demo.yoker import EchoTool
+    from yoker_plugin_demo import EchoTool
 
     tool = EchoTool()
     schema = tool.get_schema()
@@ -127,10 +119,10 @@ class TestDemoPluginLoading:
     """Demo plugin should be loadable via load_plugin()."""
     from yoker.plugins import load_plugin
 
-    plugin = load_plugin("demo")
+    plugin = load_plugin("yoker_plugin_demo")
 
     assert plugin is not None
-    assert plugin.source == "demo"
+    assert plugin.source == "yoker_plugin_demo"
     assert len(plugin.tools) == 1
     assert plugin.tools[0].name == "echo"
 
@@ -138,20 +130,20 @@ class TestDemoPluginLoading:
     """Demo plugin should provide skills from skills directory."""
     from yoker.plugins import load_skills_from_package
 
-    skills = load_skills_from_package("demo", skills_dir="skills")
+    skills = load_skills_from_package("yoker_plugin_demo", skills_dir="skills")
 
     # Should load at least the greeting skill
     assert len(skills) >= 1
     greeting_skill = next((s for s in skills if s.name == "greeting"), None)
     assert greeting_skill is not None
-    assert greeting_skill.namespace == "demo"
-    assert greeting_skill.full_name == "demo:greeting"
+    assert greeting_skill.namespace == "yoker_plugin_demo"
+    assert greeting_skill.full_name == "yoker_plugin_demo:greeting"
 
   def test_load_demo_plugin_agents(self) -> None:
     """Demo plugin should provide agents from agents directory."""
     from yoker.plugins import load_agents_from_package
 
-    agents = load_agents_from_package("demo", agents_dir="agents")
+    agents = load_agents_from_package("yoker_plugin_demo", agents_dir="agents")
 
     # Should load at least the demo agent
     assert len(agents) >= 1
@@ -169,29 +161,29 @@ class TestDemoPluginRegistration:
     from yoker.plugins import load_plugin, register_tools
     from yoker.tools import ToolRegistry
 
-    plugin = load_plugin("demo")
+    plugin = load_plugin("yoker_plugin_demo")
     assert plugin is not None
 
     registry = ToolRegistry()
-    registered = register_tools(plugin.tools, registry, namespace="demo")
+    registered = register_tools(plugin.tools, registry, namespace="yoker_plugin_demo")
 
     assert len(registered) == 1
-    assert "demo:echo" in registered
-    assert registry.get("demo:echo") is not None
+    assert "yoker_plugin_demo:echo" in registered
+    assert registry.get("yoker_plugin_demo:echo") is not None
 
   def test_register_demo_skill_with_namespace(self) -> None:
     """Demo skill should be registerable with namespace prefix."""
     from yoker.plugins import load_skills_from_package, register_skills
     from yoker.skills import SkillRegistry
 
-    skills = load_skills_from_package("demo", skills_dir="skills")
+    skills = load_skills_from_package("yoker_plugin_demo", skills_dir="skills")
 
     registry = SkillRegistry()
-    registered = register_skills(skills, registry, namespace="demo")
+    registered = register_skills(skills, registry, namespace="yoker_plugin_demo")
 
     assert len(registered) >= 1
-    assert "demo:greeting" in registered
-    assert registry.get("demo:greeting") is not None
+    assert "yoker_plugin_demo:greeting" in registered
+    assert registry.get("yoker_plugin_demo:greeting") is not None
 
 
 class TestDemoPluginIntegration:
@@ -201,7 +193,7 @@ class TestDemoPluginIntegration:
     """load_plugin should discover skills from skills_dir declared in manifest."""
     from yoker.plugins import load_plugin
 
-    plugin = load_plugin("demo")
+    plugin = load_plugin("yoker_plugin_demo")
 
     assert plugin is not None
     # Plugin should have loaded skills from skills/ directory
@@ -216,13 +208,13 @@ class TestDemoPluginIntegration:
     assert greeting_skill is not None, (
       "greeting skill should be loaded from skills/greeting/SKILL.md"
     )
-    assert greeting_skill.namespace == "demo"
+    assert greeting_skill.namespace == "yoker_plugin_demo"
 
   def test_load_plugin_discovers_agents_from_directory(self) -> None:
     """load_plugin should discover agents from agents_dir declared in manifest."""
     from yoker.plugins import load_plugin
 
-    plugin = load_plugin("demo")
+    plugin = load_plugin("yoker_plugin_demo")
 
     assert plugin is not None
     # Plugin should have loaded agents from agents/ directory

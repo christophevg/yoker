@@ -29,7 +29,10 @@ class TestLoadPlugin:
     module.SKILLS = []
     module.AGENTS = []
 
-    with patch.dict(sys.modules, {"test_pkg.yoker": module}):
+    # Create mock package module
+    pkg_module = ModuleType("test_pkg")
+
+    with patch.dict(sys.modules, {"test_pkg": pkg_module, "test_pkg.yoker": module}):
       plugin = load_plugin("test_pkg")
 
       assert plugin is not None
@@ -52,7 +55,10 @@ class TestLoadPlugin:
     module.SKILLS = [skill]
     module.AGENTS = []
 
-    with patch.dict(sys.modules, {"test_pkg.yoker": module}):
+    # Create mock package module
+    pkg_module = ModuleType("test_pkg")
+
+    with patch.dict(sys.modules, {"test_pkg": pkg_module, "test_pkg.yoker": module}):
       plugin = load_plugin("test_pkg")
 
       assert plugin is not None
@@ -75,16 +81,21 @@ class TestLoadPlugin:
       raise ImportError(f"No module named '{name}'")
 
     with patch("importlib.import_module", side_effect=raise_import_error):
-      # ImportError from missing module returns None
+      # ImportError from missing package returns None
       plugin = load_plugin("missing_module")
       assert plugin is None
 
   def test_load_plugin_with_critical_error(self):
     """Test plugin that has a critical import error."""
 
+    # Create mock package module
+    pkg_module = ModuleType("broken_plugin")
+
     def raise_runtime_error(name):
       if name == "broken_plugin.yoker":
         raise RuntimeError("Critical plugin error")
+      if name == "broken_plugin":
+        return pkg_module
       raise ImportError(f"No module named '{name}'")
 
     with patch("importlib.import_module", side_effect=raise_runtime_error):
@@ -152,7 +163,19 @@ class TestLoadPlugins:
     module2.SKILLS = []
     module2.AGENTS = []
 
-    with patch.dict(sys.modules, {"pkg1.yoker": module1, "pkg2.yoker": module2}):
+    # Create mock package modules
+    pkg1_module = ModuleType("pkg1")
+    pkg2_module = ModuleType("pkg2")
+
+    with patch.dict(
+      sys.modules,
+      {
+        "pkg1": pkg1_module,
+        "pkg1.yoker": module1,
+        "pkg2": pkg2_module,
+        "pkg2.yoker": module2,
+      },
+    ):
       plugins = load_plugins(["pkg1", "pkg2"])
 
       assert len(plugins) == 2
@@ -168,7 +191,10 @@ class TestLoadPlugins:
     module.SKILLS = []
     module.AGENTS = []
 
-    with patch.dict(sys.modules, {"exists.yoker": module}):
+    # Create mock package module
+    pkg_module = ModuleType("exists")
+
+    with patch.dict(sys.modules, {"exists": pkg_module, "exists.yoker": module}):
       plugins = load_plugins(["exists", "nonexistent"])
 
       # Only existing plugins loaded
@@ -178,9 +204,14 @@ class TestLoadPlugins:
   def test_load_plugins_with_error(self):
     """Test loading plugins with critical error."""
 
+    # Create mock package module
+    pkg_module = ModuleType("broken")
+
     def raise_error(name):
       if name == "broken.yoker":
         raise RuntimeError("Plugin error")
+      if name == "broken":
+        return pkg_module
       raise ImportError(f"No module named '{name}'")
 
     with patch("importlib.import_module", side_effect=raise_error):
@@ -211,7 +242,9 @@ You are a test agent.
     assert agent_def.name == "pkg:test-agent"
     assert agent_def.description == "Test agent"
     assert agent_def.model == "llama3.2"
-    assert "read" in agent_def.tools
+    # Tools should be namespaced
+    assert "pkg:read" in agent_def.tools
+    assert "pkg:write" in agent_def.tools
 
   def test_load_agent_definition_without_namespace(self):
     """Test loading agent definition without namespace."""
