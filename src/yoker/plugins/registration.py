@@ -154,6 +154,13 @@ def register_skills(
   """
   registered = []
 
+  log.info(
+    "register_skills_started",
+    namespace=namespace,
+    skills_count=len(skills),
+    skill_names=[s.name for s in skills],
+  )
+
   for skill in skills:
     # Create namespaced skill
     # Skill is a frozen dataclass, so we create a new instance
@@ -208,21 +215,34 @@ def register_agents(
     This function prepares agents with namespace prefixes but does not
     register them with a registry. The registry parameter will be added
     when AgentRegistry is implemented.
+
+    Agents loaded from plugins are already namespaced (e.g., "yoker_plugin_demo:demo"),
+    so we check if the agent is already namespaced and use it as-is.
   """
   # Future implementation - prepare namespaced names
   registered = []
 
   for agent_def in agents:
-    # Create namespaced name
-    namespaced_name = f"{namespace}:{agent_def.name}"
+    # Check if agent is already namespaced
+    # Agents loaded from plugins via load_agent_definition_from_string are already namespaced
+    if ":" in agent_def.name:
+      # Already namespaced - use as-is
+      namespaced_name = agent_def.name
+      log.info(
+        "agent_already_namespaced",
+        name=agent_def.name,
+        namespace=namespace,
+      )
+    else:
+      # Add namespace prefix
+      namespaced_name = f"{namespace}:{agent_def.name}"
+      log.info(
+        "agent_prepared",
+        original_name=agent_def.name,
+        namespaced_name=namespaced_name,
+        namespace=namespace,
+      )
     registered.append(namespaced_name)
-
-    log.info(
-      "agent_prepared",
-      original_name=agent_def.name,
-      namespaced_name=namespaced_name,
-      namespace=namespace,
-    )
 
   return registered
 

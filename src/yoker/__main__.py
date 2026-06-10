@@ -24,11 +24,13 @@ from yoker import __version__
 from yoker.agent import Agent
 from yoker.commands import (
   CommandRegistry,
+  create_agents_command,
   create_context_command,
   create_help_command,
   create_skill_commands,
   create_skills_command,
   create_think_command,
+  create_tools_command,
 )
 from yoker.config import Config
 from yoker.events import (
@@ -38,7 +40,7 @@ from yoker.events import (
 )
 from yoker.exceptions import NetworkError
 from yoker.logging import configure_logging, get_logger
-from yoker.skills import SkillRegistry, load_skills, load_skills_from_env
+from yoker.skills import SkillRegistry
 
 if TYPE_CHECKING:
   from prompt_toolkit.shortcuts import PromptSession
@@ -131,9 +133,6 @@ def setup_logging(config: Config) -> None:
 def create_command_registry(agent: Agent, config: Config) -> CommandRegistry:
   """Create and populate the command registry.
 
-  Loads skills from configured directories and environment variables,
-  then registers skill commands alongside built-in commands.
-
   Args:
     agent: The agent instance (for state access).
     config: Configuration object.
@@ -143,52 +142,14 @@ def create_command_registry(agent: Agent, config: Config) -> CommandRegistry:
   """
   registry = CommandRegistry()
 
-  # Use agent's existing skill registry (populated by plugins) if available
-  # Otherwise create a new one
-  skill_registry = agent.skill_registry or SkillRegistry()
-
-  # Load from configured directories
-  for directory in config.skills.directories:
-    try:
-      skills = load_skills(directory)
-      for skill_name, skill in skills.items():
-        skill_registry.register(skill)
-        log.info("skill_loaded", name=skill_name, source=directory)
-    except Exception as e:
-      log.warning("skill_directory_load_failed", directory=directory, error=str(e))
-
-  # Load from environment variable (YOKER_SKILLS_PATH)
-  try:
-    env_skills = load_skills_from_env()
-    for skill_name, skill in env_skills.items():
-      skill_registry.register(skill)
-      log.info("skill_loaded_from_env", name=skill_name)
-  except Exception as e:
-    log.warning("skill_env_load_failed", error=str(e))
-
-  # Set skill registry on agent (if it wasn't already set)
-  if agent._core.skill_registry is None:
-    agent._core.skill_registry = skill_registry
-
-  # Add skill discovery block to context if skills are loaded
-  if skill_registry.count > 0:
-    from yoker.skills import format_discovery_block
-
-    skill_list = skill_registry.list_skills()
-    discovery_block = format_discovery_block(skill_list)
-    # Add as system message so the agent knows about available skills
-    agent.context.add_message("system", discovery_block)
-    log.info("skill_discovery_added", skill_count=len(skill_list))
-
-    # Register SkillTool so agent can invoke skills dynamically
-    from yoker.tools import SkillTool
-
-    agent._core.tool_registry.register(SkillTool(skill_registry=skill_registry))
-    log.info("skill_tool_registered")
+  # Get skill registry from agent (already populated by Agent.__init__)
+  skill_registry = agent.skill_registry
+  if skill_registry is None:
+    skill_registry = SkillRegistry()  # Empty registry as fallback
 
   # Register built-in commands
   registry.register(create_help_command(registry))
-  registry.register(create_skills_command(skill_registry))
+  registry.register(create_skills_command(skill_registry, config))
   registry.register(
     create_think_command(
       get_thinking_mode=lambda: agent.thinking_mode,
@@ -203,7 +164,19 @@ def create_command_registry(agent: Agent, config: Config) -> CommandRegistry:
     )
   )
 
-  # Register skill commands
+  # Register /tools command
+  registry.register(create_tools_command(agent._core.tool_registry, agent._core))
+
+  # Register /agents command
+  registry.register(
+    create_agents_command(
+      get_agent_definition=lambda: agent.agent_definition,
+      config=config,
+      get_plugin_agents=lambda: agent._core.plugin_agents,
+    )
+  )
+
+  # Register skill commands (if skills loaded)
   skill_commands = create_skill_commands(
     registry=skill_registry,
     get_skill_registry=lambda: skill_registry,
@@ -223,7 +196,7 @@ def create_command_registry(agent: Agent, config: Config) -> CommandRegistry:
 
   log.info(
     "skills_registered",
-    count=skill_registry.count,
+    count=skill_registry.count if skill_registry else 0,
     commands=[cmd.name for cmd in skill_commands],
   )
 
@@ -428,7 +401,11 @@ def main() -> None:
   session = create_prompt_session()
 
   # Create agent with config and optional plugin override
-  agent = Agent(config=config, plugins=plugin_packages if plugin_packages else None)
+  try:
+    agent = Agent(config=config, plugins=plugin_packages if plugin_packages else None)
+  except ValueError as e:
+    print(f"Error: {e}")
+    sys.exit(1)
 
   # Show agent info if loaded
   if agent.agent_definition:
