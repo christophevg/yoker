@@ -104,7 +104,7 @@ definition = "{agent_file.as_posix()}"
   def test_agent_definition_config_missing_file(
     self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
   ) -> None:
-    """Test that Agent falls back to default when config agent definition file is missing."""
+    """Test that missing agent definition file raises an error."""
     from yoker.agent import Agent
 
     # Create config file with missing agent definition
@@ -130,10 +130,10 @@ definition = "./agents/missing.md"
           "directory_permissions": SecurityAction.DONT_CHECK,
         },
       )
-      agent = Agent(config=config)
 
-    # Should have fallen back to default (no agent definition)
-    assert agent.agent_definition is None
+      # Should raise ValueError for missing file
+      with pytest.raises(ValueError, match="Agent definition file not found"):
+        Agent(config=config)
 
   def test_agent_definition_explicit_overrides_config(
     self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

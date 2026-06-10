@@ -446,6 +446,28 @@ class MkdirToolConfig(ToolConfig):
 
 
 @dataclass(frozen=True)
+class ExistenceToolConfig(ToolConfig):
+  """Existence tool configuration.
+
+  Attributes:
+    enabled: Whether the existence tool is enabled.
+  """
+
+  pass  # Inherits enabled: bool = True from ToolConfig
+
+
+@dataclass(frozen=True)
+class SkillToolConfig(ToolConfig):
+  """Skill tool configuration.
+
+  Attributes:
+    enabled: Whether the skill tool is enabled.
+  """
+
+  pass  # Inherits enabled: bool = True from ToolConfig
+
+
+@dataclass(frozen=True)
 class WebSearchToolConfig(ToolConfig):
   """Web search tool configuration.
 
@@ -518,9 +540,11 @@ class ToolsConfig:
     agent: Agent tool config.
     git: Git tool config.
     mkdir: Mkdir tool config.
+    existence: Existence tool config.
     websearch: Web search tool config.
     webfetch: Web fetch tool config.
     content_display: Content display configuration for write/update tools.
+    skill: Skill tool config.
   """
 
   list: ListToolConfig = field(default_factory=ListToolConfig)
@@ -531,9 +555,11 @@ class ToolsConfig:
   agent: AgentToolConfig = field(default_factory=AgentToolConfig)
   git: GitToolConfig = field(default_factory=GitToolConfig)
   mkdir: MkdirToolConfig = field(default_factory=MkdirToolConfig)
+  existence: ExistenceToolConfig = field(default_factory=ExistenceToolConfig)
   websearch: WebSearchToolConfig = field(default_factory=WebSearchToolConfig)
   webfetch: WebFetchToolConfig = field(default_factory=WebFetchToolConfig)
   content_display: ContentDisplayConfig = field(default_factory=ContentDisplayConfig)
+  skill: SkillToolConfig = field(default_factory=SkillToolConfig)
 
 
 @dataclass(frozen=True)
@@ -574,10 +600,14 @@ class PluginsConfig:
   """Plugin configuration.
 
   Attributes:
+    enabled: Whether plugins are enabled globally. Default: False.
     packages: List of plugin packages to load (e.g., ["pkgq", "c3"]).
+    trusted: Dictionary of trusted plugin names. Key is package name, value is True.
   """
 
+  enabled: bool = False
   packages: tuple[str, ...] = ()
+  trusted: dict[str, bool] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -649,9 +679,11 @@ __all__ = [
   "AgentToolConfig",
   "GitToolConfig",
   "MkdirToolConfig",
+  "ExistenceToolConfig",
   "WebSearchToolConfig",
   "WebFetchToolConfig",
   "ContentDisplayConfig",
+  "SkillToolConfig",
   "ToolsConfig",
   "AgentsConfig",
   "SkillsConfig",

@@ -46,6 +46,13 @@ from yoker.plugins.registration import (
   register_skills,
   register_tools,
 )
+from yoker.plugins.security import (
+  check_plugin_allowed,
+  check_plugins_enabled,
+  confirm_plugin,
+  is_trusted,
+  reset_session_trusted,
+)
 
 __all__ = [
   # Manifest
@@ -60,6 +67,12 @@ __all__ = [
   "register_tools",
   "register_skills",
   "register_agents",
+  # Security
+  "is_trusted",
+  "confirm_plugin",
+  "check_plugins_enabled",
+  "check_plugin_allowed",
+  "reset_session_trusted",
   # Built-in
   "BUILTIN_TOOLS",
   "BUILTIN_SKILLS",
