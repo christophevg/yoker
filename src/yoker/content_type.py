@@ -116,4 +116,3 @@ def _detect_from_extension(path: Path) -> str | None:
 
 
 __all__ = ["detect_content_type"]
-

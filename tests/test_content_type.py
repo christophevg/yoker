@@ -107,4 +107,3 @@ class TestDetectFromExtension:
     assert _detect_from_extension(Path("file.MD")) == "text/markdown"
     assert _detect_from_extension(Path("file.HTML")) == "text/html"
     assert _detect_from_extension(Path("file.JSON")) == "application/json"
-
