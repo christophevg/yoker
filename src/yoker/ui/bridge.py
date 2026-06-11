@@ -97,4 +97,3 @@ class UIBridge:
       prompt_tokens=event.prompt_eval_count,  # type: ignore[attr-defined]
       eval_tokens=event.eval_count,  # type: ignore[attr-defined]
     )
-

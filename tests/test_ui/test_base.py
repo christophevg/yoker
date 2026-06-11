@@ -170,7 +170,14 @@ class TestBaseUIHandler:
     handler.output_tool_content(
       "write", "write", "/tmp/file.txt", "content", "text/plain", {"lines": 10}
     )
-    assert ("write", "write", "/tmp/file.txt", "content", "text/plain", {"lines": 10}) in handler.tool_content
+    assert (
+      "write",
+      "write",
+      "/tmp/file.txt",
+      "content",
+      "text/plain",
+      {"lines": 10},
+    ) in handler.tool_content
 
   def test_stats_and_error(self):
     """Stats and error methods should store data correctly."""
@@ -182,4 +189,3 @@ class TestBaseUIHandler:
     error = ValueError("Test error")
     handler.output_error(error)
     assert error in handler.errors
-

@@ -41,4 +41,3 @@ class TestUIHandlerProtocol:
     assert hasattr(UIHandler, "start_thinking_stream")
     assert hasattr(UIHandler, "stream_thinking")
     assert hasattr(UIHandler, "end_thinking_stream")
-

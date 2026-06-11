@@ -226,4 +226,3 @@ class BaseUIHandler(ABC):
       total_length: Total thinking length.
     """
     ...
-

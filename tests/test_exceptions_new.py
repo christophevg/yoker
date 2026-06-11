@@ -1,6 +1,5 @@
 """Tests for exception classes."""
 
-
 from yoker.exceptions import (
   AgentError,
   ConfigurationError,
@@ -93,4 +92,3 @@ class TestExceptionHierarchy:
     for exc in exceptions:
       assert isinstance(exc, YokerError)
       assert isinstance(exc, Exception)
-
