@@ -485,7 +485,7 @@ class UpdateTool(Tool):
         return {
           "operation": operation,
           "path": str(resolved_path),
-          "content_type": "diff",
+          "content_type": "text/x-diff",  # MIME type for unified diff
           "content": diff_content,
           "metadata": metadata,
         }
@@ -494,7 +494,7 @@ class UpdateTool(Tool):
         return {
           "operation": operation,
           "path": str(resolved_path),
-          "content_type": "full",
+          "content_type": "text/plain",  # MIME type for plain text
           "content": new_content,
           "metadata": {
             "lines_modified": 1,
@@ -513,7 +513,7 @@ class UpdateTool(Tool):
       return {
         "operation": operation,
         "path": str(resolved_path),
-        "content_type": "full",
+        "content_type": "text/plain",  # MIME type for plain text
         "content": new_string,
         "metadata": {
           "line_number": line_num,
@@ -557,7 +557,7 @@ class UpdateTool(Tool):
         return {
           "operation": operation,
           "path": str(resolved_path),
-          "content_type": "diff",
+          "content_type": "text/x-diff",  # MIME type for unified diff
           "content": diff_content,
           "metadata": del_metadata,
         }
@@ -566,7 +566,7 @@ class UpdateTool(Tool):
         return {
           "operation": operation,
           "path": str(resolved_path),
-          "content_type": "full",
+          "content_type": "text/plain",  # MIME type for plain text
           "content": old_string,
           "metadata": {
             "line_number": int(line_number) if line_number is not None else 0,

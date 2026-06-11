@@ -16,7 +16,6 @@ from yoker.events import (
   ContentChunkEvent,
   ContentEndEvent,
   ContentStartEvent,
-  ErrorEvent,
   Event,
   EventHandler,
   EventRecorder,
@@ -84,7 +83,6 @@ __all__ = [
   "ContentEndEvent",
   "ToolCallEvent",
   "ToolResultEvent",
-  "ErrorEvent",
   # Context
   "ContextManager",
   "ContextStatistics",

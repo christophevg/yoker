@@ -72,11 +72,6 @@ class UIBridge:
           event.content_type,  # type: ignore[attr-defined]
           event.metadata,  # type: ignore[attr-defined]
         )
-      case EventType.ERROR:
-        # Convert to exception for UI
-        error_type = event.error_type  # type: ignore[attr-defined]
-        message = event.message  # type: ignore[attr-defined]
-        self.ui.output_error(Exception(f"{error_type}: {message}"))
       case EventType.COMMAND:
         self.ui.output_command_result(event.result)  # type: ignore[attr-defined]
       case EventType.SESSION_START | EventType.SESSION_END:

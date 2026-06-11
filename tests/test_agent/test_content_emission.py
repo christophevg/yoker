@@ -317,7 +317,7 @@ class TestAgentContentEventEmission:
     assert event.tool_name == "write"
     assert event.operation == "write"
     assert "myfile.txt" in event.path
-    assert event.content_type in ("summary", "full")
+    assert event.content_type in ("summary", "text/plain")
 
   def test_content_event_contains_content(self, tmp_path: Path, mocker: MockerFixture) -> None:
     """

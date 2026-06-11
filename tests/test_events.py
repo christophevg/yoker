@@ -14,7 +14,6 @@ from yoker.events import (
   CommandEvent,
   ConsoleEventHandler,
   ContentChunkEvent,
-  ErrorEvent,
   EventType,
   SessionEndEvent,
   SessionStartEvent,
@@ -53,7 +52,6 @@ class TestEventTypes:
       "TOOL_RESULT",
       "TOOL_CONTENT",
       "COMMAND",
-      "ERROR",
     ]
     actual = [et.name for et in EventType]
     assert set(expected) == set(actual)
@@ -104,6 +102,17 @@ class TestEventClasses:
     """Test ContentChunkEvent creation."""
     event = ContentChunkEvent(type=EventType.CONTENT_CHUNK, text="Hello world")
     assert event.text == "Hello world"
+    assert event.content_type == "text/plain"  # Default value
+
+  def test_content_chunk_event_with_content_type(self) -> None:
+    """Test ContentChunkEvent with custom content_type."""
+    event = ContentChunkEvent(
+      type=EventType.CONTENT_CHUNK,
+      text="# Heading\n\nContent",
+      content_type="text/markdown",
+    )
+    assert event.text == "# Heading\n\nContent"
+    assert event.content_type == "text/markdown"
 
   def test_tool_call_event(self) -> None:
     """Test ToolCallEvent creation."""
@@ -126,16 +135,6 @@ class TestEventClasses:
     assert event.tool_name == "read"
     assert event.result == "file contents"
     assert event.success is True
-
-  def test_error_event(self) -> None:
-    """Test ErrorEvent creation."""
-    event = ErrorEvent(
-      type=EventType.ERROR,
-      error_type="ValueError",
-      message="Something went wrong",
-    )
-    assert event.error_type == "ValueError"
-    assert event.message == "Something went wrong"
 
   def test_command_event(self) -> None:
     """Test CommandEvent creation."""
@@ -238,19 +237,6 @@ class TestConsoleEventHandler:
     )
     await handler(event)
     assert "read" not in output.getvalue().lower()
-
-  @pytest.mark.asyncio
-  async def test_handler_handles_error(self, console_handler: ConsoleEventHandler) -> None:
-    """Test that ErrorEvent is handled."""
-    event = ErrorEvent(
-      type=EventType.ERROR,
-      error_type="ValueError",
-      message="Something went wrong",
-    )
-    await console_handler(event)
-    output = console_handler.console.file.getvalue()  # type: ignore[attr-defined]
-    assert "Error" in output
-    assert "ValueError" in output
 
   @pytest.mark.asyncio
   async def test_handler_handles_command(self, console_handler: ConsoleEventHandler) -> None:

@@ -7,7 +7,6 @@ from yoker.events.types import (
   ContentChunkEvent,
   ContentEndEvent,
   ContentStartEvent,
-  ErrorEvent,
   EventType,
   ThinkingChunkEvent,
   ThinkingEndEvent,
@@ -210,26 +209,6 @@ class TestUIBridge:
       )
     )
     assert ("output_stats", 1500, 50, 100) in handler.calls
-
-  async def test_bridge_handles_error(self):
-    """UIBridge should convert error events to exceptions."""
-    handler = MockUIHandler()
-    bridge = UIBridge(handler)
-
-    await bridge(
-      ErrorEvent(
-        type=EventType.ERROR,
-        error_type="NetworkError",
-        message="Connection failed",
-      )
-    )
-
-    # Should have called output_error with exception
-    error_calls = [call for call in handler.calls if call[0] == "output_error"]
-    assert len(error_calls) == 1
-    error = error_calls[0][1]
-    assert isinstance(error, Exception)
-    assert "NetworkError: Connection failed" in str(error)
 
   async def test_bridge_handles_command(self):
     """UIBridge should dispatch command result events."""
