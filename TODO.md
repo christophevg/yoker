@@ -18,51 +18,6 @@
 
 ---
 
-### Phase 1: Foundation - UI Module Structure
-
-**Goal:** Create UI module structure with protocols and base classes.
-
-- [ ] **UI-001: Create UI module directory structure**
-  - Create `yoker/ui/` directory with empty `__init__.py`
-  - Create placeholder files: `handler.py`, `base.py`, `bridge.py`
-  - Reference: analysis/ui-separation-migration.md#phase-1-foundation
-  - Acceptance: Directory structure exists, imports work
-
-- [ ] **UI-002: Define UIHandler protocol**
-  - Add `UIHandler` protocol to `yoker/ui/handler.py`
-  - Include all methods: lifecycle, input, content output, diagnostic output, streaming
-  - Reference: analysis/ui-separation-ui-design.md#1-uihandler-protocol
-  - Acceptance: Protocol defined with all required methods, type hints complete
-
-- [ ] **UI-003: Create BaseUIHandler abstract class**
-  - Add `BaseUIHandler` to `yoker/ui/base.py`
-  - Implement state management (turn count, streaming state)
-  - Provide default implementations for convenience methods
-  - No formatting logic (implementation-specific)
-  - Reference: analysis/ui-separation-ui-design.md#3-base-ui-handler
-  - Acceptance: Abstract class with state management, clear abstract methods
-
-- [ ] **UI-004: Create UIBridge event dispatcher**
-  - Add `UIBridge` to `yoker/ui/bridge.py`
-  - Bridge EventHandler protocol to UIHandler protocol
-  - Dispatch events to appropriate UI methods
-  - Handle all event types (TURN_START, TURN_END, THINKING_*, CONTENT_*, TOOL_*, ERROR)
-  - Reference: analysis/ui-separation-ui-design.md#2-event-bridge
-  - Acceptance: Bridge dispatches all event types correctly
-
-- [ ] **UI-005: Update exceptions module**
-  - Verify `YokerError` base exception exists
-  - Ensure `NetworkError`, `ToolError`, `ConfigError`, `AgentError`, `SkillError` exist
-  - Add `recoverable` attribute to `NetworkError`
-  - Reference: analysis/ui-separation-errors.md#2-exception-hierarchy
-  - Acceptance: Exception hierarchy complete, documented
-
-- [ ] **UI-006: Export UI module public API**
-  - Update `yoker/ui/__init__.py`
-  - Export: `UIHandler`, `BaseUIHandler`, `UIBridge`
-  - Reference: analysis/ui-separation-migration.md#phase-1-foundation
-  - Acceptance: Public API imports correctly
-
 ---
 
 ### Phase 2: Content Types and Events
@@ -795,6 +750,49 @@
 ---
 
 ## Done
+
+### Phase 1: UI Module Structure (2026-06-11)
+
+- [x] **UI-001: Create UI module directory structure** (2026-06-11)
+  - Created `yoker/ui/` directory with empty `__init__.py`
+  - Created placeholder files: `handler.py`, `base.py`, `bridge.py`
+  - Reference: analysis/ui-separation-migration.md#phase-1-foundation
+  - Acceptance: Directory structure exists, imports work
+
+- [x] **UI-002: Define UIHandler protocol** (2026-06-11)
+  - Added `UIHandler` protocol to `yoker/ui/handler.py`
+  - Included all methods: lifecycle, input, content output, diagnostic output, streaming
+  - Reference: analysis/ui-separation-ui-design.md#1-uihandler-protocol
+  - Acceptance: Protocol defined with all required methods, type hints complete
+
+- [x] **UI-003: Create BaseUIHandler abstract class** (2026-06-11)
+  - Added `BaseUIHandler` to `yoker/ui/base.py`
+  - Implemented state management (turn count, streaming state)
+  - Provided default implementations for convenience methods
+  - No formatting logic (implementation-specific)
+  - Reference: analysis/ui-separation-ui-design.md#3-base-ui-handler
+  - Acceptance: Abstract class with state management, clear abstract methods
+
+- [x] **UI-004: Create UIBridge event dispatcher** (2026-06-11)
+  - Added `UIBridge` to `yoker/ui/bridge.py`
+  - Bridged EventHandler protocol to UIHandler protocol
+  - Dispatched events to appropriate UI methods
+  - Handled all event types (TURN_START, TURN_END, THINKING_*, CONTENT_*, TOOL_*, ERROR)
+  - Reference: analysis/ui-separation-ui-design.md#2-event-bridge
+  - Acceptance: Bridge dispatches all event types correctly
+
+- [x] **UI-005: Update exceptions module** (2026-06-11)
+  - Verified `YokerError` base exception exists
+  - Ensured `NetworkError`, `ToolError`, `ConfigError`, `AgentError`, `SkillError` exist
+  - Added `recoverable` attribute to `NetworkError`
+  - Reference: analysis/ui-separation-errors.md#2-exception-hierarchy
+  - Acceptance: Exception hierarchy complete, documented
+
+- [x] **UI-006: Export UI module public API** (2026-06-11)
+  - Updated `yoker/ui/__init__.py`
+  - Exported: `UIHandler`, `BaseUIHandler`, `UIBridge`
+  - Reference: analysis/ui-separation-migration.md#phase-1-foundation
+  - Acceptance: Public API imports correctly
 
 ### Phase 1.7: Async-First Agent Architecture
 
