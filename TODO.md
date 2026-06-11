@@ -1,5 +1,465 @@
 # TODO
 
+## Active: UI Separation Migration
+
+**Goal:** Separate UI from Agent in the yoker codebase, establishing a clean boundary where the Agent layer is purely event-driven and the UI layer handles all presentation.
+
+**Approach:** Clean break - no backward compatibility, no deprecation shims.
+
+**Related Analysis:**
+- [Overview and Architecture](analysis/ui-separation-overview.md)
+- [IO Operations Catalog](analysis/ui-separation-io-catalog.md)
+- [Error Handling Strategy](analysis/ui-separation-errors.md)
+- [Agent Module Refactoring](analysis/ui-separation-agent-module.md)
+- [UI Handler Design](analysis/ui-separation-ui-design.md)
+- [Migration Plan](analysis/ui-separation-migration.md)
+
+**Estimated Timeline:** 17-26 hours (3-4 days)
+
+---
+
+### Phase 1: Foundation - UI Module Structure
+
+**Goal:** Create UI module structure with protocols and base classes.
+
+- [ ] **UI-001: Create UI module directory structure**
+  - Create `yoker/ui/` directory with empty `__init__.py`
+  - Create placeholder files: `handler.py`, `base.py`, `bridge.py`
+  - Reference: analysis/ui-separation-migration.md#phase-1-foundation
+  - Acceptance: Directory structure exists, imports work
+
+- [ ] **UI-002: Define UIHandler protocol**
+  - Add `UIHandler` protocol to `yoker/ui/handler.py`
+  - Include all methods: lifecycle, input, content output, diagnostic output, streaming
+  - Reference: analysis/ui-separation-ui-design.md#1-uihandler-protocol
+  - Acceptance: Protocol defined with all required methods, type hints complete
+
+- [ ] **UI-003: Create BaseUIHandler abstract class**
+  - Add `BaseUIHandler` to `yoker/ui/base.py`
+  - Implement state management (turn count, streaming state)
+  - Provide default implementations for convenience methods
+  - No formatting logic (implementation-specific)
+  - Reference: analysis/ui-separation-ui-design.md#3-base-ui-handler
+  - Acceptance: Abstract class with state management, clear abstract methods
+
+- [ ] **UI-004: Create UIBridge event dispatcher**
+  - Add `UIBridge` to `yoker/ui/bridge.py`
+  - Bridge EventHandler protocol to UIHandler protocol
+  - Dispatch events to appropriate UI methods
+  - Handle all event types (TURN_START, TURN_END, THINKING_*, CONTENT_*, TOOL_*, ERROR)
+  - Reference: analysis/ui-separation-ui-design.md#2-event-bridge
+  - Acceptance: Bridge dispatches all event types correctly
+
+- [ ] **UI-005: Update exceptions module**
+  - Verify `YokerError` base exception exists
+  - Ensure `NetworkError`, `ToolError`, `ConfigError`, `AgentError`, `SkillError` exist
+  - Add `recoverable` attribute to `NetworkError`
+  - Reference: analysis/ui-separation-errors.md#2-exception-hierarchy
+  - Acceptance: Exception hierarchy complete, documented
+
+- [ ] **UI-006: Export UI module public API**
+  - Update `yoker/ui/__init__.py`
+  - Export: `UIHandler`, `BaseUIHandler`, `UIBridge`
+  - Reference: analysis/ui-separation-migration.md#phase-1-foundation
+  - Acceptance: Public API imports correctly
+
+---
+
+### Phase 2: Content Types and Events
+
+**Goal:** Update events to support content types where needed.
+
+**Dependency:** Phase 1 complete
+
+- [ ] **UI-007: Add content_type to ContentChunkEvent**
+  - Add `content_type: str = "text/plain"` field to `ContentChunkEvent`
+  - Update event creation in Agent
+  - Reference: analysis/ui-separation-io-catalog.md#31-events-with-variable-content-types
+  - Acceptance: ContentChunkEvent has content_type field, default "text/plain"
+
+- [ ] **UI-008: Verify ToolContentEvent content_type**
+  - Ensure `ToolContentEvent` has `content_type` field
+  - Document expected content types (text/plain, text/x-diff, application/json)
+  - Reference: analysis/ui-separation-io-catalog.md#31-events-with-variable-content-types
+  - Acceptance: Field exists, documented in code comments
+
+- [ ] **UI-009: Remove ErrorEvent**
+  - Remove `ErrorEvent` from `events/types.py`
+  - Remove any code that emits `ErrorEvent`
+  - Replace with exception raising
+  - Reference: analysis/ui-separation-errors.md#7-migration-notes
+  - Acceptance: ErrorEvent removed, exceptions used instead
+
+- [ ] **UI-010: Create content type detection utility**
+  - Create `yoker/content_type.py`
+  - Implement `detect_content_type(content: bytes, path: Path) -> str`
+  - Try library detection, fallback to extension, fallback to text/plain
+  - Reference: analysis/ui-separation-io-catalog.md#33-content-type-detection
+  - Acceptance: Utility detects content types, fallbacks work correctly
+
+- [ ] **UI-011: Update tools to set content_type**
+  - `ReadTool`: Detect content type from file
+  - `WriteTool`: Set content type to summary (or text/plain)
+  - `UpdateTool`: Set content type to diff (text/x-diff)
+  - `GitTool`: Use `--no-color`, set content type to text/plain
+  - Reference: analysis/ui-separation-io-catalog.md#42-tool-implementation
+  - Acceptance: All tools set content_type appropriately
+
+---
+
+### Phase 3: UI Implementations
+
+**Goal:** Create InteractiveUIHandler and BatchUIHandler.
+
+**Dependency:** Phases 1-2 complete
+
+#### Interactive UI Tasks
+
+- [ ] **UI-012: Create InteractiveUIHandler skeleton**
+  - Create `yoker/ui/interactive.py`
+  - Extend `BaseUIHandler`
+  - Initialize Rich console and prompt_toolkit session
+  - Reference: analysis/ui-separation-ui-design.md#4-interactive-ui-handler
+  - Acceptance: Class skeleton exists, initializes correctly
+
+- [ ] **UI-013: Implement interactive input handling**
+  - Implement `get_input()` with prompt_toolkit
+  - Support multiline input (Esc+Enter)
+  - Support command history
+  - Handle EOF and KeyboardInterrupt
+  - Reference: analysis/ui-separation-ui-design.md#interactive-ui-handler
+  - Acceptance: Input works, multiline supported, history works
+
+- [ ] **UI-014: Implement interactive lifecycle methods**
+  - Implement `start()` - print banner and config info
+  - Implement `shutdown()` - print goodbye message
+  - Reference: analysis/ui-separation-ui-design.md#interactive-ui-handler
+  - Acceptance: Lifecycle methods display appropriate messages
+
+- [ ] **UI-015: Implement interactive content streaming**
+  - Implement `start_content_stream()`, `stream_content()`, `end_content_stream()`
+  - Use Rich Live display for streaming
+  - Handle ANSI codes from LLM output
+  - Reference: analysis/ui-separation-ui-design.md#interactive-ui-handler
+  - Acceptance: Content streams with live display, ANSI preserved
+
+- [ ] **UI-016: Implement interactive thinking streaming**
+  - Implement thinking stream methods
+  - Show thinking in gray/dim style
+  - Respect `show_thinking` setting
+  - Reference: analysis/ui-separation-ui-design.md#interactive-ui-handler
+  - Acceptance: Thinking streams separately from content
+
+- [ ] **UI-017: Implement interactive tool output**
+  - Implement `output_tool_call()`, `output_tool_result()`, `output_tool_content()`
+  - Respect `show_tool_calls` setting
+  - Format tool information appropriately
+  - Reference: analysis/ui-separation-ui-design.md#interactive-ui-handler
+  - Acceptance: Tool calls and results displayed correctly
+
+- [ ] **UI-018: Implement interactive error display**
+  - Implement `output_error()` with Rich formatting
+  - Handle different error types (NetworkError, ToolError, etc.)
+  - Format based on error type and recoverability
+  - Reference: analysis/ui-separation-errors.md#42-interactive-implementation
+  - Acceptance: Errors displayed with appropriate formatting
+
+#### Batch UI Tasks
+
+- [ ] **UI-019: Create BatchUIHandler skeleton**
+  - Create `yoker/ui/batch.py`
+  - Extend `BaseUIHandler`
+  - Support stdin/stdout/stderr channels
+  - Reference: analysis/ui-separation-ui-design.md#5-batch-ui-handler
+  - Acceptance: Class skeleton exists, channels defined
+
+- [ ] **UI-020: Implement batch input handling**
+  - Implement `get_input()` from stdin
+  - Support predefined input messages (set_input_messages)
+  - Handle EOF
+  - Reference: analysis/ui-separation-ui-design.md#batch-ui-handler
+  - Acceptance: Input from stdin works, predefined messages supported
+
+- [ ] **UI-021: Implement batch output channels**
+  - Content → stdout
+  - Thinking, errors, stats → stderr
+  - No formatting, preserve ANSI
+  - Reference: analysis/ui-separation-ui-design.md#batch-ui-handler
+  - Acceptance: Output goes to correct channels
+
+- [ ] **UI-022: Implement batch streaming**
+  - Implement streaming methods (no buffering needed)
+  - Direct output to appropriate channels
+  - Respect show_thinking, show_tool_calls, show_stats settings
+  - Reference: analysis/ui-separation-ui-design.md#batch-ui-handler
+  - Acceptance: Streaming works without buffering
+
+#### Shared UI Tasks
+
+- [ ] **UI-023: Move LiveDisplay to UI layer**
+  - Create `yoker/ui/spinner.py`
+  - Move LiveDisplay implementation from wherever it is
+  - Reference: analysis/ui-separation-migration.md#phase-3-ui-implementations
+  - Acceptance: LiveDisplay available to InteractiveUIHandler
+
+- [ ] **UI-024: Update UI module exports**
+  - Update `yoker/ui/__init__.py`
+  - Export: `UIHandler`, `BaseUIHandler`, `UIBridge`, `InteractiveUIHandler`, `BatchUIHandler`
+  - Reference: analysis/ui-separation-migration.md#phase-3-ui-implementations
+  - Acceptance: All UI classes import correctly
+
+---
+
+### Phase 4: Refactor Agent Module
+
+**Goal:** Split agent.py into focused modules, remove session lifecycle.
+
+**Dependency:** Phase 1 complete
+
+**Note:** Can be done in parallel with Phases 2-3
+
+- [ ] **UI-025: Create agent package directory structure**
+  - Create `yoker/agent/` directory
+  - Create placeholder files: `__init__.py`, `core.py`, `agent.py`, `processing.py`, `tools.py`
+  - Reference: analysis/ui-separation-agent-module.md#2-target-structure
+  - Acceptance: Directory structure exists
+
+- [ ] **UI-026: Refactor ContextManager to be list-like**
+  - Modify `ContextManager` to extend `UserList`
+  - Implement `append()` to persist on add
+  - Agent sees context as a plain list
+  - Reference: analysis/ui-separation-overview.md#4-context-and-contextmanager
+  - Acceptance: ContextManager works as list, Agent can use plain list too
+
+- [ ] **UI-027: Move AgentCore to agent/core.py**
+  - Move `AgentCore` class from `base.py` to `agent/core.py`
+  - Include event handler management
+  - Include guardrail validation
+  - Reference: analysis/ui-separation-agent-module.md#41-agentcorepy
+  - Acceptance: AgentCore works in new location
+
+- [ ] **UI-028: Extract Agent initialization and properties**
+  - Create `Agent` class in `agent/agent.py`
+  - Move initialization and property accessors
+  - Delegate to AgentCore
+  - Reference: analysis/ui-separation-agent-module.md#42-agentagentpy
+  - Acceptance: Agent initializes correctly, properties work
+
+- [ ] **UI-029: Extract message processing logic**
+  - Create processing logic module in `agent/processing.py`
+  - Extract streaming, tool calls, event emission
+  - Keep as methods on Agent class (not separate)
+  - Reference: analysis/ui-separation-agent-module.md#43-agentprocessingpy
+  - Acceptance: Processing logic in agent module, not separate file
+
+- [ ] **UI-030: Extract tool registry building**
+  - Create `_build_tool_registry()` in `agent/tools.py`
+  - Move tool initialization logic
+  - Reference: analysis/ui-separation-agent-module.md#44-agenttoolspy
+  - Acceptance: Tool registry builds correctly
+
+- [ ] **UI-031: Remove Agent session lifecycle**
+  - Remove `begin_session()` and `end_session()` methods from Agent
+  - Remove `SessionStartEvent` and `SessionEndEvent` from events
+  - Agent lifecycle is create → use → discard
+  - Reference: analysis/ui-separation-overview.md#6-agent-lifecycle-no-session
+  - Acceptance: No session methods, no session events
+
+- [ ] **UI-032: Update context module for list-like interface**
+  - Create `context/` module if not exists
+  - Create `manager.py` with `ContextManager` extending `UserList`
+  - Create `basic.py` with `BasicContextManager`
+  - Create placeholder for `PersistenceContextManager`
+  - Reference: analysis/ui-separation-overview.md#45-module-structure
+  - Acceptance: Context module structure complete
+
+- [ ] **UI-033: Update imports throughout codebase**
+  - Update `yoker/__init__.py` to import from `yoker.agent`
+  - Update all imports from old locations
+  - Reference: analysis/ui-separation-agent-module.md#54-update-imports
+  - Acceptance: All imports work, tests pass
+
+- [ ] **UI-034: Remove old files**
+  - Delete `yoker/base.py`
+  - Delete `yoker/agent.py`
+  - Remove session events from `events/types.py`
+  - Reference: analysis/ui-separation-agent-module.md#55-remove-old-files
+  - Acceptance: Old files deleted, no references remain
+
+---
+
+### Phase 5: Slash Commands
+
+**Goal:** Move slash commands to UI layer.
+
+**Dependency:** Phases 3 and 4 complete
+
+- [ ] **UI-035: Create commands directory structure**
+  - Create `yoker/ui/commands/` directory
+  - Create `__init__.py` with command registry
+  - Create placeholder files for each command
+  - Reference: analysis/ui-separation-migration.md#phase-5-slash-commands
+  - Acceptance: Directory structure exists
+
+- [ ] **UI-036: Add Agent.inject_skill_context() method**
+  - Add method to inject skill context into conversation
+  - Used by skill invocation commands
+  - Reference: analysis/ui-separation-migration.md#phase-5-slash-commands
+  - Acceptance: Method works, skill context injected correctly
+
+- [ ] **UI-037: Move /help command to UI layer**
+  - Create `commands/help.py`
+  - Move help logic from `__main__.py`
+  - Command receives UIHandler, outputs via UIHandler
+  - Reference: analysis/ui-separation-migration.md#phase-5-slash-commands
+  - Acceptance: /help command works in new location
+
+- [ ] **UI-038: Move /think command to UI layer**
+  - Create `commands/think.py`
+  - Move think logic
+  - Command sets Agent thinking_mode state
+  - Reference: analysis/ui-separation-migration.md#phase-5-slash-commands
+  - Acceptance: /think command works
+
+- [ ] **UI-039: Move /skills command to UI layer**
+  - Create `commands/skills.py`
+  - Command queries Agent for skill list
+  - Outputs via UIHandler
+  - Reference: analysis/ui-separation-migration.md#phase-5-slash-commands
+  - Acceptance: /skills command works
+
+- [ ] **UI-040: Move /context command to UI layer**
+  - Create `commands/context.py`
+  - Command queries Agent for context state
+  - Outputs via UIHandler
+  - Reference: analysis/ui-separation-migration.md#phase-5-slash-commands
+  - Acceptance: /context command works
+
+- [ ] **UI-041: Create skill invocation command**
+  - Create `commands/skill_invoke.py`
+  - Handle `/<skill-name>` commands
+  - Call `Agent.inject_skill_context()`
+  - Reference: analysis/ui-separation-migration.md#phase-5-slash-commands
+  - Acceptance: Skill invocation works
+
+- [ ] **UI-042: Create command registry**
+  - Create registry in `yoker/ui/commands/__init__.py`
+  - Register all commands
+  - Provide dispatch mechanism
+  - Reference: analysis/ui-separation-migration.md#phase-5-slash-commands
+  - Acceptance: Command registry dispatches commands correctly
+
+---
+
+### Phase 6: Entry Point Refactoring
+
+**Goal:** Simplify __main__.py to thin dispatcher.
+
+**Dependency:** Phases 3, 4, 5 complete
+
+- [ ] **UI-043: Add UI configuration to Config**
+  - Add `UIConfig` dataclass to config
+  - Include mode, show_thinking, show_tool_calls, show_stats
+  - Reference: analysis/ui-separation-migration.md#phase-6-entry-point-refactoring
+  - Acceptance: Config has UI section
+
+- [ ] **UI-044: Create run_session() helper**
+  - Create session loop function
+  - Handle exception catching and UI error display
+  - Handle cleanup
+  - Reference: analysis/ui-separation-migration.md#phase-6-entry-point-refactoring
+  - Acceptance: Session loop works with UI handler
+
+- [ ] **UI-045: Refactor __main__.py to use UIHandler**
+  - Create UI handler based on mode (interactive or batch)
+  - Create UIBridge and connect to Agent
+  - Call `ui.start()` and `ui.shutdown()` directly
+  - Remove all print statements
+  - Reference: analysis/ui-separation-migration.md#phase-6-entry-point-refactoring
+  - Acceptance: __main__.py uses UI handler, no print statements
+
+- [ ] **UI-046: Implement mode selection logic**
+  - Parse CLI arguments for mode
+  - Create appropriate UI handler
+  - Wire up with Clevis config
+  - Reference: analysis/ui-separation-migration.md#phase-6-entry-point-refactoring
+  - Acceptance: Mode selection works (interactive vs batch)
+
+- [ ] **UI-047: Remove old command dispatch from __main__.py**
+  - Remove inline command handling
+  - Use command registry from UI layer
+  - Reference: analysis/ui-separation-migration.md#phase-6-entry-point-refactoring
+  - Acceptance: Command dispatch uses registry
+
+---
+
+### Phase 7: Remove Old Code
+
+**Goal:** Remove deprecated code and clean up.
+
+**Dependency:** All previous phases complete
+
+- [ ] **UI-048: Remove ConsoleEventHandler**
+  - Delete `yoker/events/handlers.py`
+  - Update `yoker/events/__init__.py`
+  - Verify all references removed
+  - Reference: analysis/ui-separation-migration.md#phase-7-remove-old-code
+  - Acceptance: ConsoleEventHandler removed, no references
+
+- [ ] **UI-049: Clean up imports**
+  - Remove unused imports from all files
+  - Update `__all__` exports
+  - Reference: analysis/ui-separation-migration.md#phase-7-remove-old-code
+  - Acceptance: No unused imports, exports clean
+
+- [ ] **UI-050: Remove old code from __main__.py**
+  - Remove all deprecated code paths
+  - Verify no dead code
+  - Reference: analysis/ui-separation-migration.md#phase-7-remove-old-code
+  - Acceptance: __main__.py is clean, minimal
+
+---
+
+### Phase 8: Final Polish
+
+**Goal:** Documentation and examples.
+
+**Dependency:** All previous phases complete
+
+- [ ] **UI-051: Update README.md**
+  - Document interactive mode usage
+  - Document batch mode usage
+  - Add library usage example
+  - Reference: analysis/ui-separation-migration.md#phase-8-final-polish
+  - Acceptance: README updated with new usage patterns
+
+- [ ] **UI-052: Create batch mode example**
+  - Create `examples/batch_mode.py`
+  - Show batch mode usage
+  - Reference: analysis/ui-separation-migration.md#phase-8-final-polish
+  - Acceptance: Example works correctly
+
+- [ ] **UI-053: Create library usage example**
+  - Create `examples/library_usage.py`
+  - Show how to use yoker as library
+  - Reference: analysis/ui-separation-migration.md#phase-8-final-polish
+  - Acceptance: Example works correctly
+
+- [ ] **UI-054: Create custom handler example**
+  - Create `examples/custom_handler.py`
+  - Show how to implement custom UIHandler
+  - Reference: analysis/ui-separation-migration.md#phase-8-final-polish
+  - Acceptance: Example works correctly
+
+- [ ] **UI-055: Update CLAUDE.md**
+  - Document new module structure
+  - Document UI layer architecture
+  - Update current state section
+  - Reference: analysis/ui-separation-migration.md#phase-8-final-polish
+  - Acceptance: CLAUDE.md reflects new architecture
+
+---
+
 ## P1: Critical Infrastructure
 
 ### Issue #16: Adopt Clevis for Configuration Management
@@ -17,6 +477,8 @@
   - **Priority:** P1 (Critical - blocks other work)
   - **See:** Issue #16
   - **Satisfies:** Configuration infrastructure modernization
+
+---
 
 ## MVP: Package Plugin System (Issue #14)
 
@@ -575,3 +1037,4 @@
 - [x] **Issue #9: Fix ~ in Storage Path** (2026-05-25)
   - Fixed tilde expansion bug
   - PR: #11
+
