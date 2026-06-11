@@ -33,11 +33,7 @@ from yoker.commands import (
   create_tools_command,
 )
 from yoker.config import Config
-from yoker.events import (
-  ConsoleEventHandler,
-  ErrorEvent,
-  EventType,
-)
+from yoker.events import ConsoleEventHandler
 from yoker.exceptions import NetworkError
 from yoker.logging import configure_logging, get_logger
 from yoker.skills import SkillRegistry
@@ -271,14 +267,8 @@ async def run_interactive_session(
                 print(f"\n[Fatal Network Error] {e}")
                 print("Unable to recover. Please restart the session.")
                 raise
-            except Exception as e:
-              await agent._emit(
-                ErrorEvent(
-                  type=EventType.ERROR,
-                  error_type=type(e).__name__,
-                  message=str(e),
-                )
-              )
+            except Exception:
+              # Let unexpected exceptions propagate - they'll be caught by the outer handler
               raise
           else:
             # Regular command - print result directly
@@ -317,14 +307,8 @@ async def run_interactive_session(
           print(f"\n[Error] Ollama error ({e.status_code}): {e}")
         continue
 
-  except Exception as e:
-    await agent._emit(
-      ErrorEvent(
-        type=EventType.ERROR,
-        error_type=type(e).__name__,
-        message=str(e),
-      )
-    )
+  except Exception:
+    # Let exceptions propagate to the main() function
     raise
 
 

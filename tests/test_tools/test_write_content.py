@@ -84,7 +84,7 @@ class TestWriteToolContentMetadataEmission:
     # Verify result
     assert result.success
     assert result.content_metadata is not None
-    assert result.content_metadata["content_type"] == "full"
+    assert result.content_metadata["content_type"] == "text/plain"
     assert result.content_metadata["content"] == "Line 1\nLine 2\n"
 
   @pytest.mark.asyncio
@@ -133,7 +133,7 @@ class TestWriteToolContentTruncation:
     # Verify result
     assert result.success
     assert result.content_metadata is not None
-    assert result.content_metadata["content_type"] == "full"
+    assert result.content_metadata["content_type"] == "text/plain"
     # Content should be truncated
     truncated_content = result.content_metadata["content"]
     assert truncated_content is not None
@@ -392,7 +392,7 @@ class TestWriteToolVerbosityLevels:
     # Verify result
     assert result.success
     assert result.content_metadata is not None
-    assert result.content_metadata["content_type"] == "full"
+    assert result.content_metadata["content_type"] == "text/plain"
     assert result.content_metadata["content"] == content
 
 
@@ -441,7 +441,7 @@ class TestWriteToolConfigIntegration:
     # Verify result - should show full content despite show_diff_for_updates=False
     assert result.success
     assert result.content_metadata is not None
-    assert result.content_metadata["content_type"] == "full"
+    assert result.content_metadata["content_type"] == "text/plain"
 
 
 class TestHelperFunctions:

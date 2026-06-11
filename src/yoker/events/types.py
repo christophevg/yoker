@@ -35,9 +35,6 @@ class EventType(Enum):
   # Command execution
   COMMAND = auto()
 
-  # Error
-  ERROR = auto()
-
 
 @dataclass(frozen=True, kw_only=True)
 class Event:
@@ -113,9 +110,16 @@ class ContentStartEvent(Event):
 
 @dataclass(frozen=True)
 class ContentChunkEvent(Event):
-  """Emitted for each chunk of content output."""
+  """Emitted for each chunk of content output.
+
+  Attributes:
+    text: The content text chunk.
+    content_type: MIME type of the content (default: "text/plain").
+      Possible values: "text/plain", "text/markdown", "text/html", etc.
+  """
 
   text: str
+  content_type: str = "text/plain"
 
 
 @dataclass(frozen=True)
@@ -153,7 +157,12 @@ class ToolContentEvent(Event):
     tool_name: Name of the tool (e.g., "write", "update").
     operation: Operation type (e.g., "write", "replace", "insert_before", "insert_after", "delete").
     path: Resolved file path.
-    content_type: Type of content ("full", "diff", "summary").
+    content_type: MIME type of the content. Common values:
+      - "text/plain": Plain text content (default)
+      - "text/x-diff": Unified diff format
+      - "application/json": JSON data
+      - "text/markdown": Markdown content
+      - "summary": Operation summary only (no content)
     content: Content to display (truncated if too large, None for summary type).
     metadata: Additional metadata (lines, bytes, is_new_file, is_overwrite, etc.).
   """
@@ -161,18 +170,9 @@ class ToolContentEvent(Event):
   tool_name: str
   operation: str
   path: str
-  content_type: str  # "full", "diff", "summary"
+  content_type: str  # MIME type (text/plain, text/x-diff, application/json, etc.) or "summary"
   content: str | None = None
   metadata: dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass(frozen=True)
-class ErrorEvent(Event):
-  """Emitted when an error occurs."""
-
-  error_type: str
-  message: str
-  details: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

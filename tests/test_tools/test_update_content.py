@@ -42,7 +42,7 @@ class TestUpdateToolReplaceOperation:
     assert result.success
     assert result.content_metadata is not None
     assert result.content_metadata["operation"] == "replace"
-    assert result.content_metadata["content_type"] == "diff"
+    assert result.content_metadata["content_type"] == "text/x-diff"
     assert result.content_metadata["content"] is not None
     # Diff should show old and new
     assert "-" in result.content_metadata["content"]
@@ -73,7 +73,7 @@ class TestUpdateToolReplaceOperation:
     # Verify result
     assert result.success
     assert result.content_metadata is not None
-    assert result.content_metadata["content_type"] == "diff"
+    assert result.content_metadata["content_type"] == "text/x-diff"
 
   @pytest.mark.asyncio
   async def test_replace_metadata(self, tmp_path: Path) -> None:
@@ -211,7 +211,7 @@ class TestUpdateToolInsertOperation:
     # Verify result
     assert result.success
     assert result.content_metadata is not None
-    assert result.content_metadata["content_type"] == "full"
+    assert result.content_metadata["content_type"] == "text/plain"
     assert result.content_metadata["content"] == "New line"
 
   @pytest.mark.asyncio
@@ -293,7 +293,7 @@ class TestUpdateToolDeleteOperation:
     # Verify result
     assert result.success
     assert result.content_metadata is not None
-    assert result.content_metadata["content_type"] == "diff"
+    assert result.content_metadata["content_type"] == "text/x-diff"
 
   @pytest.mark.asyncio
   async def test_delete_metadata_includes_line_number(self, tmp_path: Path) -> None:
@@ -442,7 +442,7 @@ class TestUpdateToolShowDiffFlag:
     # Verify result
     assert result.success
     assert result.content_metadata is not None
-    assert result.content_metadata["content_type"] == "diff"
+    assert result.content_metadata["content_type"] == "text/x-diff"
 
   @pytest.mark.asyncio
   async def test_show_diff_disabled(self, tmp_path: Path) -> None:
@@ -501,7 +501,7 @@ class TestUpdateToolShowDiffFlag:
     assert result.success
     assert result.content_metadata is not None
     # Inserts always show content, not diff
-    assert result.content_metadata["content_type"] == "full"
+    assert result.content_metadata["content_type"] == "text/plain"
     assert result.content_metadata["content"] == "New line"
 
 
@@ -589,7 +589,7 @@ class TestUpdateToolVerbosityLevels:
     # Verify result
     assert result.success
     assert result.content_metadata is not None
-    assert result.content_metadata["content_type"] == "diff"
+    assert result.content_metadata["content_type"] == "text/x-diff"
     assert result.content_metadata["content"] is not None
 
 

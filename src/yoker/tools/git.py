@@ -447,6 +447,7 @@ For diff and show, the path parameter can be a file to diff/show that file.
 
     Uses allowlist validation to prevent arbitrary command execution.
     All arguments are validated against operation schema.
+    Automatically adds --no-color for commands that support it.
 
     Args:
       operation: Git operation name (must be in allowed_operations).
@@ -463,6 +464,13 @@ For diff and show, the path parameter can be a file to diff/show that file.
 
     # Start with git command
     cmd: list[str] = ["git", operation]
+
+    # Add --no-color for operations that support it (to prevent ANSI codes in output)
+    # Only diff, log, and show support --no-color
+    # status uses --porcelain for machine-readable output
+    color_operations = {"diff", "log", "show"}
+    if operation in color_operations:
+      cmd.append("--no-color")
 
     # Get allowed arguments for this operation
     allowed_args = OPERATION_ARGS.get(operation, {})

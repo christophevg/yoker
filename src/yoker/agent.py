@@ -857,6 +857,7 @@ class Agent:
             ContentChunkEvent(
               type=EventType.CONTENT_CHUNK,
               text=chunk.message.content,
+              content_type="text/plain",  # LLM output is plain text by default
             )
           )
 

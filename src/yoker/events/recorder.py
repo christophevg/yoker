@@ -17,7 +17,6 @@ from yoker.events.types import (
   ContentChunkEvent,
   ContentEndEvent,
   ContentStartEvent,
-  ErrorEvent,
   Event,
   EventType,
   SessionEndEvent,
@@ -62,7 +61,7 @@ def serialize_event(event: Event) -> dict[str, Any]:
   elif isinstance(event, ThinkingEndEvent):
     data = {"total_length": event.total_length}
   elif isinstance(event, ContentChunkEvent):
-    data = {"text": event.text}
+    data = {"text": event.text, "content_type": event.content_type}
   elif isinstance(event, ContentEndEvent):
     data = {"total_length": event.total_length}
   elif isinstance(event, ToolCallEvent):
@@ -72,12 +71,6 @@ def serialize_event(event: Event) -> dict[str, Any]:
       "tool_name": event.tool_name,
       "result": event.result,
       "success": event.success,
-    }
-  elif isinstance(event, ErrorEvent):
-    data = {
-      "error_type": event.error_type,
-      "message": event.message,
-      "details": event.details,
     }
   elif isinstance(event, CommandEvent):
     data = {"command": event.command, "result": event.result}
@@ -152,6 +145,7 @@ def deserialize_event(entry: dict[str, Any]) -> Event:
         type=event_type,
         timestamp=timestamp,
         text=data["text"],
+        content_type=data.get("content_type", "text/plain"),
       )
     case EventType.CONTENT_END:
       return ContentEndEvent(
@@ -173,14 +167,6 @@ def deserialize_event(entry: dict[str, Any]) -> Event:
         tool_name=data["tool_name"],
         result=data["result"],
         success=data.get("success", True),
-      )
-    case EventType.ERROR:
-      return ErrorEvent(
-        type=event_type,
-        timestamp=timestamp,
-        error_type=data["error_type"],
-        message=data["message"],
-        details=data.get("details", {}),
       )
     case EventType.COMMAND:
       return CommandEvent(

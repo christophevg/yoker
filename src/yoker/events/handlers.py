@@ -13,7 +13,6 @@ from yoker.events.types import (
   ContentChunkEvent,
   ContentEndEvent,
   ContentStartEvent,
-  ErrorEvent,
   Event,
   EventType,
   SessionEndEvent,
@@ -30,7 +29,6 @@ from yoker.events.types import (
 
 # Styles for console output
 THINKING_STYLE = Style(color="bright_black", dim=True)
-ERROR_STYLE = Style(color="red", bold=True)
 TOOL_STYLE = Style(color="cyan")
 
 
@@ -136,8 +134,6 @@ class ConsoleEventHandler:
         self._handle_tool_result(event)  # type: ignore[arg-type]
       case EventType.TOOL_CONTENT:
         self._handle_tool_content(event)  # type: ignore[arg-type]
-      case EventType.ERROR:
-        self._handle_error(event)  # type: ignore[arg-type]
       case EventType.COMMAND:
         self._handle_command(event)  # type: ignore[arg-type]
 
@@ -535,13 +531,6 @@ class ConsoleEventHandler:
       original_lines = metadata.get("original_diff_lines", 0)
       remaining = original_lines - len(lines)
       self.console.print(f"  ... ({remaining} more lines)")
-
-  def _handle_error(self, event: ErrorEvent) -> None:
-    """Handle error event."""
-    self.console.print(
-      f"\n[Error] {event.error_type}: {event.message}",
-      style=ERROR_STYLE,
-    )
 
   def _handle_command(self, event: CommandEvent) -> None:
     """Handle command event."""

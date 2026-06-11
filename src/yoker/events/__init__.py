@@ -9,7 +9,6 @@ from yoker.events.types import (
   ContentChunkEvent,
   ContentEndEvent,
   ContentStartEvent,
-  ErrorEvent,
   Event,
   EventType,
   SessionEndEvent,
@@ -47,8 +46,6 @@ __all__ = [
   "ToolCallEvent",
   "ToolContentEvent",
   "ToolResultEvent",
-  # Error
-  "ErrorEvent",
   # Command
   "CommandEvent",
   # Handlers

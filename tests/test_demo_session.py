@@ -19,7 +19,6 @@ from yoker.events.types import (
   ContentChunkEvent,
   ContentEndEvent,
   ContentStartEvent,
-  ErrorEvent,
   EventType,
   SessionEndEvent,
   SessionStartEvent,
@@ -250,36 +249,6 @@ class TestSerializeEvent:
 
     assert result["data"]["success"] is False
 
-  def test_serialize_error_event(self) -> None:
-    """Test serializing ErrorEvent."""
-    timestamp = datetime(2026, 4, 21, 10, 30, 0)
-    event = ErrorEvent(
-      type=EventType.ERROR,
-      timestamp=timestamp,
-      error_type="ValueError",
-      message="Something went wrong",
-      details={"key": "value"},
-    )
-    result = serialize_event(event)
-
-    assert result["type"] == "ERROR"
-    assert result["data"]["error_type"] == "ValueError"
-    assert result["data"]["message"] == "Something went wrong"
-    assert result["data"]["details"] == {"key": "value"}
-
-  def test_serialize_error_event_no_details(self) -> None:
-    """Test serializing ErrorEvent without details."""
-    timestamp = datetime(2026, 4, 21, 10, 30, 0)
-    event = ErrorEvent(
-      type=EventType.ERROR,
-      timestamp=timestamp,
-      error_type="ValueError",
-      message="Something went wrong",
-    )
-    result = serialize_event(event)
-
-    assert result["data"]["details"] == {}
-
   def test_serialize_command_event(self) -> None:
     """Test serializing CommandEvent."""
     timestamp = datetime(2026, 4, 21, 10, 30, 0)
@@ -497,38 +466,6 @@ class TestDeserializeEvent:
 
     assert event.success is True
 
-  def test_deserialize_error_event(self) -> None:
-    """Test deserializing ErrorEvent."""
-    entry: dict[str, Any] = {
-      "type": "ERROR",
-      "timestamp": "2026-04-21T10:30:00",
-      "data": {
-        "error_type": "ValueError",
-        "message": "Something went wrong",
-        "details": {"key": "value"},
-      },
-    }
-    event = deserialize_event(entry)
-
-    assert isinstance(event, ErrorEvent)
-    assert event.error_type == "ValueError"
-    assert event.message == "Something went wrong"
-    assert event.details == {"key": "value"}
-
-  def test_deserialize_error_event_no_details(self) -> None:
-    """Test deserializing ErrorEvent without details."""
-    entry: dict[str, Any] = {
-      "type": "ERROR",
-      "timestamp": "2026-04-21T10:30:00",
-      "data": {
-        "error_type": "ValueError",
-        "message": "Something went wrong",
-      },
-    }
-    event = deserialize_event(entry)
-
-    assert event.details == {}
-
   def test_deserialize_command_event(self) -> None:
     """Test deserializing CommandEvent."""
     entry: dict[str, Any] = {
@@ -676,24 +613,6 @@ class TestSerializeDeserializeRoundTrip:
     assert deserialized.tool_name == original.tool_name
     assert deserialized.result == original.result
     assert deserialized.success == original.success
-
-  def test_roundtrip_error_event(self) -> None:
-    """Test round-trip for ErrorEvent."""
-    timestamp = datetime(2026, 4, 21, 10, 30, 0)
-    original = ErrorEvent(
-      type=EventType.ERROR,
-      timestamp=timestamp,
-      error_type="ValueError",
-      message="Something went wrong",
-      details={"key": "value"},
-    )
-
-    serialized = serialize_event(original)
-    deserialized = deserialize_event(serialized)
-
-    assert deserialized.error_type == original.error_type
-    assert deserialized.message == original.message
-    assert deserialized.details == original.details
 
   def test_roundtrip_command_event(self) -> None:
     """Test round-trip for CommandEvent."""

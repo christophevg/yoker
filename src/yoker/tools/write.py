@@ -369,7 +369,7 @@ class WriteTool(Tool):
     return {
       "operation": "write",
       "path": str(resolved_path),
-      "content_type": "full",
+      "content_type": "text/plain",  # MIME type for plain text content
       "content": truncated_content,
       "metadata": metadata,
     }
