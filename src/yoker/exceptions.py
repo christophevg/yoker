@@ -184,6 +184,41 @@ class PluginError(YokerError):
     return self.message
 
 
+class ToolError(YokerError):
+  """Exception for tool execution errors.
+
+  Raised when a tool fails during execution.
+
+  Attributes:
+    tool_name: Name of the tool that failed.
+  """
+
+  def __init__(self, tool_name: str, message: str) -> None:
+    self.tool_name = tool_name
+    super().__init__(f"{tool_name}: {message}")
+
+
+class AgentError(YokerError):
+  """Exception for agent-related errors.
+
+  Raised when the agent encounters an error during initialization or processing.
+  """
+
+
+class SkillError(YokerError):
+  """Exception for skill execution errors.
+
+  Raised when a skill fails during execution or is not found.
+
+  Attributes:
+    skill_name: Name of the skill that failed.
+  """
+
+  def __init__(self, skill_name: str, message: str) -> None:
+    self.skill_name = skill_name
+    super().__init__(f"Skill '{skill_name}': {message}")
+
+
 __all__ = [
   "YokerError",
   "ConfigurationError",
@@ -194,4 +229,8 @@ __all__ = [
   "PermissionViolationError",
   "NetworkError",
   "PluginError",
+  "ToolError",
+  "AgentError",
+  "SkillError",
 ]
+

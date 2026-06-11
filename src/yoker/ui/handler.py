@@ -1,0 +1,187 @@
+"""UIHandler protocol definition.
+
+This module defines the protocol that all UI handlers must implement.
+The protocol ensures consistent interface across different UI implementations
+(interactive, batch, API, etc.).
+"""
+
+from typing import Protocol
+
+
+class UIHandler(Protocol):
+  """Abstract interface for all UI operations.
+
+  All methods receive raw, unformatted data.
+  Implementations are responsible for formatting and output.
+
+  Input methods return None for no input (end of session).
+  Output methods should handle ANSI codes appropriately for their context.
+
+  Streaming:
+    Agent always streams by default.
+    UI implementations can buffer if needed.
+  """
+
+  # === Lifecycle ===
+
+  async def start(self, model: str, version: str, config: dict[str, object]) -> None:
+    """Start UI session. Called once at beginning.
+
+    Args:
+      model: Model name being used.
+      version: Yoker version.
+      config: Configuration summary (thinking_enabled, etc.).
+    """
+    ...
+
+  async def shutdown(self, reason: str) -> None:
+    """End UI session. Called once at end.
+
+    Args:
+      reason: Reason for ending ("quit", "error", "interrupt").
+    """
+    ...
+
+  # === Input ===
+
+  async def get_input(self, prompt: str = "> ") -> str | None:
+    """Get user input.
+
+    Args:
+      prompt: Prompt string to display.
+
+    Returns:
+      User input string, or None if end of input (EOF).
+    """
+    ...
+
+  # === Content Output (stdout in batch) ===
+
+  def output_content(self, content: str, content_type: str = "text/plain") -> None:
+    """Output content text.
+
+    Args:
+      content: Content text (may contain ANSI from LLM).
+      content_type: MIME type of content.
+    """
+    ...
+
+  def output_command_result(self, result: str) -> None:
+    """Output command result.
+
+    Args:
+      result: Command output text.
+    """
+    ...
+
+  # === Diagnostic Output (stderr in batch) ===
+
+  def output_thinking(self, text: str) -> None:
+    """Output thinking/trace text.
+
+    Args:
+      text: Thinking text (may contain ANSI from LLM).
+    """
+    ...
+
+  def output_tool_call(self, tool_name: str, args: dict[str, object]) -> None:
+    """Output tool call information.
+
+    Args:
+      tool_name: Name of tool being called.
+      args: Tool arguments (may be truncated for display).
+    """
+    ...
+
+  def output_tool_result(self, tool_name: str, success: bool, result: str) -> None:
+    """Output tool result status.
+
+    Args:
+      tool_name: Name of tool.
+      success: Whether tool succeeded.
+      result: Result text or error message.
+    """
+    ...
+
+  def output_tool_content(
+    self,
+    tool_name: str,
+    operation: str,
+    path: str,
+    content: str | None,
+    content_type: str,
+    metadata: dict[str, object],
+  ) -> None:
+    """Output tool content (file contents, diff, etc.).
+
+    Args:
+      tool_name: Name of tool.
+      operation: Operation type (read, write, update, etc.).
+      path: File path.
+      content: Content text (may be None for summary).
+      content_type: MIME type of content.
+      metadata: Additional metadata (lines, bytes, etc.).
+    """
+    ...
+
+  def output_stats(self, duration_ms: int, prompt_tokens: int, eval_tokens: int) -> None:
+    """Output turn statistics.
+
+    Args:
+      duration_ms: Duration in milliseconds.
+      prompt_tokens: Number of prompt tokens.
+      eval_tokens: Number of evaluation tokens.
+    """
+    ...
+
+  def output_error(self, error: Exception) -> None:
+    """Output error message.
+
+    Args:
+      error: Exception that occurred.
+    """
+    ...
+
+  # === Streaming ===
+
+  def start_content_stream(self) -> None:
+    """Start streaming content."""
+    ...
+
+  def stream_content(self, chunk: str, content_type: str = "text/plain") -> None:
+    """Stream content chunk.
+
+    Args:
+      chunk: Content chunk (may contain ANSI from LLM).
+      content_type: MIME type of content.
+    """
+    ...
+
+  def end_content_stream(self, total_length: int) -> None:
+    """End streaming content.
+
+    Args:
+      total_length: Total content length.
+    """
+    ...
+
+  def start_thinking_stream(self) -> None:
+    """Start streaming thinking."""
+    ...
+
+  def stream_thinking(self, chunk: str) -> None:
+    """Stream thinking chunk.
+
+    Args:
+      chunk: Thinking chunk (may contain ANSI from LLM).
+    """
+    ...
+
+  def end_thinking_stream(self, total_length: int) -> None:
+    """End streaming thinking.
+
+    Args:
+      total_length: Total thinking length.
+    """
+    ...
+
