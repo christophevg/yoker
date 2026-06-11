@@ -184,4 +184,3 @@ class UIHandler(Protocol):
       total_length: Total thinking length.
     """
     ...
-

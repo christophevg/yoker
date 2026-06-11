@@ -265,4 +265,3 @@ class TestUIBridge:
 
     # No errors should have been raised
     assert len(handler.calls) == 0
-
