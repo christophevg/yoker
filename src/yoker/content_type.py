@@ -24,7 +24,11 @@ def detect_content_type(content: bytes, path: Path) -> str:
   """
   # Strategy 1: Try library detection
   mime_type = _detect_with_library(content)
-  if mime_type:
+
+  # If library detected a specific type (not generic text/plain), use it
+  # text/plain is too generic - extension-based detection may provide
+  # more specific types like text/markdown
+  if mime_type and mime_type != "text/plain":
     return mime_type
 
   # Strategy 2: Fallback to extension-based detection
