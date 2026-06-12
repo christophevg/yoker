@@ -311,7 +311,7 @@ class WriteTool(Tool):
       return {
         "operation": "write",
         "path": str(resolved_path),
-        "content_type": "summary",
+        "content_type": "application/x-summary",
         "content": None,
         "metadata": {
           "lines": 0,
@@ -336,7 +336,7 @@ class WriteTool(Tool):
       return {
         "operation": "write",
         "path": str(resolved_path),
-        "content_type": "summary",
+        "content_type": "application/x-summary",
         "content": None,
         "metadata": {
           "lines": line_count,

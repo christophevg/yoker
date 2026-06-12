@@ -55,6 +55,9 @@ docs = [
   "sphinx-rtd-theme>=2.0.0",
   "myst-parser>=2.0.0",
 ]
+magic = [
+  "python-magic>=0.4.27",
+]
 
 [project.urls]
 Homepage = "https://github.com/christophevg/yoker"

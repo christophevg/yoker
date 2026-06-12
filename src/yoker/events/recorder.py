@@ -182,7 +182,7 @@ def deserialize_event(entry: dict[str, Any]) -> Event:
         tool_name=data["tool_name"],
         operation=data["operation"],
         path=data["path"],
-        content_type=data.get("content_type", "summary"),
+        content_type=data.get("content_type", "application/x-summary"),
         content=data.get("content"),
         metadata=data.get("metadata", {}),
       )

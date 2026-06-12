@@ -537,7 +537,7 @@ class TestUpdateToolVerbosityLevels:
     """
     Given: ContentDisplayConfig with verbosity="summary" and show_diff_for_updates=False
     When: UpdateTool executes replace
-    Then: content_metadata.content_type="summary" with operation info
+    Then: content_metadata.content_type="application/x-summary" with operation info
     """
     # Create UpdateTool with summary verbosity and no diffs
     config = Config(
@@ -559,7 +559,7 @@ class TestUpdateToolVerbosityLevels:
     # Verify result
     assert result.success
     assert result.content_metadata is not None
-    assert result.content_metadata["content_type"] == "summary"
+    assert result.content_metadata["content_type"] == "application/x-summary"
     assert result.content_metadata["content"] is None
 
   @pytest.mark.asyncio

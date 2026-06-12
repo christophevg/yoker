@@ -61,7 +61,7 @@ class TestToolResultContentMetadata:
 
   def test_content_metadata_optional_content(self) -> None:
     """
-    Given: A ToolResult with content_type="summary"
+    Given: A ToolResult with content_type="application/x-summary"
     When: Creating ToolResult
     Then: content field can be None (only metadata present)
     """
@@ -71,7 +71,7 @@ class TestToolResultContentMetadata:
       content_metadata={
         "operation": "write",
         "path": "/tmp/test.py",
-        "content_type": "summary",
+        "content_type": "application/x-summary",
         "content": None,
         "metadata": {"lines": 1, "is_new_file": True},
       },

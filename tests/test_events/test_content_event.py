@@ -67,7 +67,7 @@ class TestToolContentEventCreation:
   def test_content_event_creation_with_summary_content(self) -> None:
     """
     Given: A tool operation with summary content to display
-    When: Creating a ToolContentEvent with content_type="summary"
+    When: Creating a ToolContentEvent with content_type="application/x-summary"
     Then: Event contains summary metadata without full content
     """
     event = ToolContentEvent(
@@ -75,12 +75,12 @@ class TestToolContentEventCreation:
       tool_name="write",
       operation="write",
       path="/tmp/test.py",
-      content_type="summary",
+      content_type="application/x-summary",
       content=None,
       metadata={"lines": 10, "is_new_file": True},
     )
 
-    assert event.content_type == "summary"
+    assert event.content_type == "application/x-summary"
     assert event.content is None
     assert event.metadata["lines"] == 10
 

@@ -317,7 +317,7 @@ class TestAgentContentEventEmission:
     assert event.tool_name == "write"
     assert event.operation == "write"
     assert "myfile.txt" in event.path
-    assert event.content_type in ("summary", "text/plain")
+    assert event.content_type in ("application/x-summary", "text/plain")
 
   def test_content_event_contains_content(self, tmp_path: Path, mocker: MockerFixture) -> None:
     """
@@ -456,8 +456,8 @@ class TestAgentContentEventConstruction:
     assert event.tool_name == "write"
     assert event.operation == "write"
     assert "test.txt" in event.path
-    # content_type should be "summary" or "full"
-    assert event.content_type in ("summary", "full")
+    # content_type should be "application/x-summary" or "full"
+    assert event.content_type in ("application/x-summary", "full")
     # metadata should include lines count
     assert "lines" in event.metadata or event.content_type == "full"
 
@@ -881,7 +881,7 @@ class TestAgentContentEventErrorHandling:
     # Event should be created successfully even with default values
     assert isinstance(event, ToolContentEvent)
     assert event.operation is not None  # Has default ""
-    assert event.content_type is not None  # Has default "summary"
+    assert event.content_type is not None  # Has default "application/x-summary"
 
   def test_content_event_emission_does_not_affect_tool_result(
     self, tmp_path: Path, mocker: MockerFixture

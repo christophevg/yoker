@@ -400,7 +400,7 @@ class ConsoleEventHandler:
     filename = Path(event.path).name
 
     # Dispatch based on content_type
-    if event.content_type == "summary":
+    if event.content_type == "application/x-summary":
       self._show_summary(event, filename)
     elif event.content_type == "diff":
       self._show_diff_content(event, filename)
