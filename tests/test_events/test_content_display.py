@@ -37,7 +37,7 @@ class TestConsoleEventHandlerSilentMode:
       tool_name="write",
       operation="write",
       path="/path/to/file.txt",
-      content_type="summary",
+      content_type="application/x-summary",
       content=None,
       metadata={"lines": 10, "is_new_file": True},
     )
@@ -61,7 +61,7 @@ class TestConsoleEventHandlerSilentMode:
       tool_name="write",
       operation="write",
       path="/path/to/file.txt",
-      content_type="summary",
+      content_type="application/x-summary",
       content=None,
       metadata={"lines": 10, "is_new_file": True},
     )
@@ -93,7 +93,7 @@ class TestConsoleEventHandlerSummaryMode:
       tool_name="write",
       operation="write",
       path="/path/to/newfile.txt",
-      content_type="summary",
+      content_type="application/x-summary",
       content=None,
       metadata={"lines": 24, "is_new_file": True},
     )
@@ -116,7 +116,7 @@ class TestConsoleEventHandlerSummaryMode:
       tool_name="write",
       operation="write",
       path="/path/to/existing.txt",
-      content_type="summary",
+      content_type="application/x-summary",
       content=None,
       metadata={"lines": 42, "is_new_file": False, "is_overwrite": True},
     )
@@ -139,7 +139,7 @@ class TestConsoleEventHandlerSummaryMode:
       tool_name="update",
       operation="replace",
       path="/path/to/file.txt",
-      content_type="summary",
+      content_type="application/x-summary",
       content=None,
       metadata={"old_content": "old", "new_content": "new"},
     )
@@ -162,7 +162,7 @@ class TestConsoleEventHandlerSummaryMode:
       tool_name="update",
       operation="insert_after",
       path="/path/to/file.txt",
-      content_type="summary",
+      content_type="application/x-summary",
       content=None,
       metadata={"line_number": 42, "inserted_lines": 3},
     )
@@ -187,7 +187,7 @@ class TestConsoleEventHandlerSummaryMode:
       tool_name="update",
       operation="delete",
       path="/path/to/file.txt",
-      content_type="summary",
+      content_type="application/x-summary",
       content=None,
       metadata={"line_number": 15},
     )
@@ -527,7 +527,7 @@ class TestConsoleEventHandlerVisualConsistency:
       tool_name="write",
       operation="write",
       path="/path/to/file.txt",
-      content_type="summary",
+      content_type="application/x-summary",
       content=None,
       metadata={"lines": 10},
     )
@@ -548,7 +548,7 @@ class TestConsoleEventHandlerVisualConsistency:
       tool_name="write",
       operation="write",
       path="/very/long/path/to/some/file.txt",
-      content_type="summary",
+      content_type="application/x-summary",
       content=None,
       metadata={"lines": 10},
     )
@@ -626,7 +626,7 @@ class TestConsoleEventHandlerEdgeCases:
       tool_name="write",
       operation="write",
       path="/path/to/empty.txt",
-      content_type="summary",
+      content_type="application/x-summary",
       content=None,
       metadata={"lines": 0, "is_empty": True},
     )
@@ -647,7 +647,7 @@ class TestConsoleEventHandlerEdgeCases:
       tool_name="write",
       operation="write",
       path="/path/to/binary.bin",
-      content_type="summary",
+      content_type="application/x-summary",
       content=None,
       metadata={"is_binary": True, "bytes": 2048},
     )
@@ -730,7 +730,7 @@ class TestConsoleEventHandlerMethodDispatch:
       tool_name="write",
       operation="write",
       path="/path/to/file.txt",
-      content_type="summary",
+      content_type="application/x-summary",
       content=None,
       metadata={"lines": 10},
     )
@@ -759,7 +759,7 @@ class TestConsoleEventHandlerMethodDispatch:
       tool_name="write",
       operation="write",
       path="/path/to/file.txt",
-      content_type="summary",
+      content_type="application/x-summary",
       content=None,
       metadata={"lines": 10},
     )

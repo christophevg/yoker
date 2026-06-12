@@ -162,7 +162,8 @@ class ToolContentEvent(Event):
       - "text/x-diff": Unified diff format
       - "application/json": JSON data
       - "text/markdown": Markdown content
-      - "summary": Operation summary only (no content)
+      - "application/x-summary": Custom type indicating operation summary only (no content field)
+        Note: This is NOT a standard MIME type; it's a Yoker-specific marker for metadata-only display.
     content: Content to display (truncated if too large, None for summary type).
     metadata: Additional metadata (lines, bytes, is_new_file, is_overwrite, etc.).
   """
@@ -170,7 +171,7 @@ class ToolContentEvent(Event):
   tool_name: str
   operation: str
   path: str
-  content_type: str  # MIME type (text/plain, text/x-diff, application/json, etc.) or "summary"
+  content_type: str  # MIME type (text/plain, text/x-diff, etc.) or "application/x-summary"
   content: str | None = None
   metadata: dict[str, Any] = field(default_factory=dict)
 

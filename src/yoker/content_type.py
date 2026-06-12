@@ -39,6 +39,17 @@ def detect_content_type(content: bytes, path: Path) -> str:
 def _detect_with_library(content: bytes) -> str | None:
   """Try to detect content type using python-magic library.
 
+  Note: python-magic is an optional dependency that requires libmagic to be
+  installed on the system. If not available, the function falls back to
+  extension-based detection. To install python-magic with libmagic:
+
+    - macOS: brew install libmagic && pip install python-magic
+    - Ubuntu/Debian: apt-get install libmagic1 && pip install python-magic
+    - Windows: pip install python-magic (includes libmagic DLL)
+
+  Or install yoker with the magic extras group:
+    pip install yoker[magic]
+
   Args:
     content: Raw file content as bytes.
 
@@ -46,7 +57,7 @@ def _detect_with_library(content: bytes) -> str | None:
     MIME type if detection succeeds and is text/*, None otherwise.
   """
   try:
-    import magic  # type: ignore[import-not-found]
+    import magic
 
     mime = magic.from_buffer(content, mime=True)
     # Only return if it's a text type (to avoid binary types)
@@ -54,7 +65,7 @@ def _detect_with_library(content: bytes) -> str | None:
       return str(mime)
     return None
   except ImportError:
-    # python-magic not available
+    # python-magic not available, use extension-based fallback
     return None
 
 

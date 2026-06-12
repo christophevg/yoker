@@ -38,7 +38,7 @@ class TestWriteToolContentMetadataEmission:
     assert result.content_metadata is not None
     assert result.content_metadata["operation"] == "write"
     assert "new_file.txt" in result.content_metadata["path"]
-    assert result.content_metadata["content_type"] == "summary"
+    assert result.content_metadata["content_type"] == "application/x-summary"
     assert result.content_metadata["metadata"]["is_new_file"] is True
     assert result.content_metadata["metadata"]["lines"] == 2
 
@@ -257,7 +257,7 @@ class TestWriteToolEmptyFile:
     # Verify result
     assert result.success
     assert result.content_metadata is not None
-    assert result.content_metadata["content_type"] == "summary"
+    assert result.content_metadata["content_type"] == "application/x-summary"
     assert result.content_metadata["content"] is None
 
 
@@ -269,7 +269,7 @@ class TestWriteToolBinaryDetection:
     """
     Given: WriteTool writing binary content
     When: execute() is called
-    Then: content_metadata.content_type is "summary" (not "full")
+    Then: content_metadata.content_type == "application/x-summary" (not "full")
     """
     # Create WriteTool with content verbosity
     config = Config(tools=ToolsConfig(content_display=ContentDisplayConfig(verbosity="content")))
@@ -283,7 +283,7 @@ class TestWriteToolBinaryDetection:
     # Verify result
     assert result.success
     assert result.content_metadata is not None
-    assert result.content_metadata["content_type"] == "summary"
+    assert result.content_metadata["content_type"] == "application/x-summary"
     assert result.content_metadata["metadata"]["is_binary"] is True
 
   @pytest.mark.asyncio
@@ -357,7 +357,7 @@ class TestWriteToolVerbosityLevels:
     """
     Given: ContentDisplayConfig with verbosity="summary"
     When: WriteTool executes
-    Then: content_metadata.content_type="summary" with line count
+    Then: content_metadata.content_type == "application/x-summary" with line count
     """
     # Create WriteTool with summary verbosity (default)
     tool = WriteTool()
@@ -369,7 +369,7 @@ class TestWriteToolVerbosityLevels:
     # Verify result
     assert result.success
     assert result.content_metadata is not None
-    assert result.content_metadata["content_type"] == "summary"
+    assert result.content_metadata["content_type"] == "application/x-summary"
     assert result.content_metadata["content"] is None
     assert result.content_metadata["metadata"]["lines"] == 3
 

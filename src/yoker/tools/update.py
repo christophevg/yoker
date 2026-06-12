@@ -386,7 +386,7 @@ class UpdateTool(Tool):
       return {
         "operation": operation,
         "path": str(resolved_path),
-        "content_type": "summary",
+        "content_type": "application/x-summary",
         "content": None,
         "metadata": {
           "lines_modified": 1,
@@ -401,7 +401,7 @@ class UpdateTool(Tool):
       return {
         "operation": operation,
         "path": str(resolved_path),
-        "content_type": "summary",
+        "content_type": "application/x-summary",
         "content": None,
         "metadata": {
           "line_number": line_num,
@@ -414,7 +414,7 @@ class UpdateTool(Tool):
       return {
         "operation": operation,
         "path": str(resolved_path),
-        "content_type": "summary",
+        "content_type": "application/x-summary",
         "content": None,
         "metadata": {
           "line_number": int(line_number) if line_number is not None else 0,
