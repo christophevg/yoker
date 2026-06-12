@@ -68,8 +68,9 @@ def _detect_with_library(content: bytes) -> str | None:
     if mime and mime.startswith("text/"):
       return str(mime)
     return None
-  except ImportError:
-    # python-magic not available, use extension-based fallback
+  except Exception:
+    # python-magic not available or misconfigured (e.g., missing libmagic DLL),
+    # use extension-based fallback
     return None
 
 
