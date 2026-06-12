@@ -1028,7 +1028,9 @@ class Agent:
               tool_name=tool_name,
               operation=tool_result.content_metadata.get("operation", ""),
               path=tool_result.content_metadata.get("path", ""),
-              content_type=tool_result.content_metadata.get("content_type", "application/x-summary"),
+              content_type=tool_result.content_metadata.get(
+                "content_type", "application/x-summary"
+              ),
               content=tool_result.content_metadata.get("content"),
               metadata=tool_result.content_metadata.get("metadata", {}),
             )
