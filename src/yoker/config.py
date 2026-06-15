@@ -634,6 +634,27 @@ class LoggingConfig:
 
 
 @dataclass(frozen=True)
+class UIConfig:
+  """UI layer configuration.
+
+  Attributes:
+    mode: UI mode ('interactive' or 'batch').
+    show_thinking: Whether to display thinking output.
+    show_tool_calls: Whether to display tool call information.
+    show_stats: Whether to display turn statistics.
+  """
+
+  mode: str = "interactive"
+  show_thinking: bool = False
+  show_tool_calls: bool = False
+  show_stats: bool = False
+
+  def __post_init__(self) -> None:
+    """Validate UI configuration."""
+    validate_choice(self.mode, "ui.mode", ("interactive", "batch"))
+
+
+@dataclass(frozen=True)
 class Config:
   """Root configuration container.
 
@@ -647,6 +668,7 @@ class Config:
     skills: Skills configuration.
     plugins: Plugin configuration.
     logging: Logging configuration.
+    ui: UI layer configuration.
   """
 
   harness: HarnessConfig = field(default_factory=HarnessConfig)
@@ -658,6 +680,7 @@ class Config:
   skills: SkillsConfig = field(default_factory=SkillsConfig)
   plugins: PluginsConfig = field(default_factory=PluginsConfig)
   logging: LoggingConfig = field(default_factory=LoggingConfig)
+  ui: UIConfig = field(default_factory=UIConfig)
 
 
 __all__ = [
@@ -689,6 +712,7 @@ __all__ = [
   "SkillsConfig",
   "PluginsConfig",
   "LoggingConfig",
+  "UIConfig",
   # Helper function
   "get_yoker_config",
 ]

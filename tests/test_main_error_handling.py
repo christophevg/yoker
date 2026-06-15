@@ -2,7 +2,7 @@
 
 import sys
 from io import StringIO
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -16,19 +16,16 @@ class TestMainErrorHandling:
     test_args = ["yoker", "--agents-definition", "/nonexistent/agent.md"]
 
     with patch.object(sys, "argv", test_args):
-      with patch("sys.stdout", new_callable=StringIO) as mock_stdout:
-        # Mock create_prompt_session to avoid Windows console dependency
-        mock_session = MagicMock()
-        with patch("yoker.__main__.create_prompt_session", return_value=mock_session):
-          with pytest.raises(SystemExit) as exc_info:
-            from yoker.__main__ import main
+      with patch("sys.stderr", new_callable=StringIO) as mock_stderr:
+        with pytest.raises(SystemExit) as exc_info:
+          from yoker.__main__ import main
 
-            main()
+          main()
 
-          # Should exit with code 1
-          assert exc_info.value.code == 1
+        # Should exit with code 1
+        assert exc_info.value.code == 1
 
-          # Check error message in stdout (our catch block prints to stdout)
-          output = mock_stdout.getvalue()
-          assert "Error:" in output
-          assert "Agent definition file not found" in output
+        # Check error message in stderr
+        output = mock_stderr.getvalue()
+        assert "Error:" in output
+        assert "Agent definition file not found" in output

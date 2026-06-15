@@ -37,6 +37,7 @@ class InteractiveUIHandler(BaseUIHandler):
     history_file: Path | None = None,
     show_thinking: bool = True,
     show_tool_calls: bool = True,
+    show_stats: bool = True,
     wrap_width: int | None = None,
   ) -> None:
     """Initialize the interactive UI handler.
@@ -45,6 +46,7 @@ class InteractiveUIHandler(BaseUIHandler):
       history_file: Path to command history file.
       show_thinking: Whether to display thinking output.
       show_tool_calls: Whether to display tool call info.
+      show_stats: Whether to display turn statistics.
       wrap_width: Optional width for wrapping streamed output.
     """
     super().__init__()
@@ -52,6 +54,7 @@ class InteractiveUIHandler(BaseUIHandler):
     self.history_file = history_file or Path.home() / ".yoker_history"
     self.show_thinking = show_thinking
     self.show_tool_calls = show_tool_calls
+    self.show_stats = show_stats
     self.wrap_width = wrap_width
 
     # Live display managed across streams within a turn
@@ -308,13 +311,9 @@ class InteractiveUIHandler(BaseUIHandler):
       eval_tokens: Number of evaluation tokens.
     """
     if self._live:
-      self._live.show_stats(
-        duration_ms=duration_ms,
-        prompt_tokens=prompt_tokens,
-        eval_tokens=eval_tokens,
-      )
       self._exit_live()
-    else:
+
+    if self.show_stats:
       total_tokens = prompt_tokens + eval_tokens
       duration_s = duration_ms / 1000.0
       if duration_ms > 0 or total_tokens > 0:
