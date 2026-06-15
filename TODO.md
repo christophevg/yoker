@@ -20,48 +20,6 @@
 
 ---
 
-### Phase 2: Content Types and Events
-
-**Goal:** Update events to support content types where needed.
-
-**Dependency:** Phase 1 complete
-
-- [ ] **UI-007: Add content_type to ContentChunkEvent**
-  - Add `content_type: str = "text/plain"` field to `ContentChunkEvent`
-  - Update event creation in Agent
-  - Reference: analysis/ui-separation-io-catalog.md#31-events-with-variable-content-types
-  - Acceptance: ContentChunkEvent has content_type field, default "text/plain"
-
-- [ ] **UI-008: Verify ToolContentEvent content_type**
-  - Ensure `ToolContentEvent` has `content_type` field
-  - Document expected content types (text/plain, text/x-diff, application/json)
-  - Reference: analysis/ui-separation-io-catalog.md#31-events-with-variable-content-types
-  - Acceptance: Field exists, documented in code comments
-
-- [ ] **UI-009: Remove ErrorEvent**
-  - Remove `ErrorEvent` from `events/types.py`
-  - Remove any code that emits `ErrorEvent`
-  - Replace with exception raising
-  - Reference: analysis/ui-separation-errors.md#7-migration-notes
-  - Acceptance: ErrorEvent removed, exceptions used instead
-
-- [ ] **UI-010: Create content type detection utility**
-  - Create `yoker/content_type.py`
-  - Implement `detect_content_type(content: bytes, path: Path) -> str`
-  - Try library detection, fallback to extension, fallback to text/plain
-  - Reference: analysis/ui-separation-io-catalog.md#33-content-type-detection
-  - Acceptance: Utility detects content types, fallbacks work correctly
-
-- [ ] **UI-011: Update tools to set content_type**
-  - `ReadTool`: Detect content type from file
-  - `WriteTool`: Set content type to summary (or text/plain)
-  - `UpdateTool`: Set content type to diff (text/x-diff)
-  - `GitTool`: Use `--no-color`, set content type to text/plain
-  - Reference: analysis/ui-separation-io-catalog.md#42-tool-implementation
-  - Acceptance: All tools set content_type appropriately
-
----
-
 ### Phase 3: UI Implementations
 
 **Goal:** Create InteractiveUIHandler and BatchUIHandler.
@@ -794,6 +752,42 @@
   - Reference: analysis/ui-separation-migration.md#phase-1-foundation
   - Acceptance: Public API imports correctly
 
+### Phase 2: Content Types and Events (2026-06-15)
+
+- [x] **UI-007: Add content_type to ContentChunkEvent** (2026-06-15)
+  - Added `content_type: str = "text/plain"` field to `ContentChunkEvent`
+  - Updated event creation in Agent
+  - Reference: analysis/ui-separation-io-catalog.md#31-events-with-variable-content-types
+  - Acceptance: ContentChunkEvent has content_type field, default "text/plain"
+
+- [x] **UI-008: Verify ToolContentEvent content_type** (2026-06-15)
+  - Ensured `ToolContentEvent` has `content_type` field
+  - Documented expected content types (text/plain, text/x-diff, application/json)
+  - Reference: analysis/ui-separation-io-catalog.md#31-events-with-variable-content-types
+  - Acceptance: Field exists, documented in code comments
+
+- [x] **UI-009: Remove ErrorEvent** (2026-06-15)
+  - Removed `ErrorEvent` from `events/types.py`
+  - Removed any code that emits `ErrorEvent`
+  - Replaced with exception raising
+  - Reference: analysis/ui-separation-errors.md#7-migration-notes
+  - Acceptance: ErrorEvent removed, exceptions used instead
+
+- [x] **UI-010: Create content type detection utility** (2026-06-15)
+  - Created `yoker/content_type.py`
+  - Implemented `detect_content_type(content: bytes, path: Path) -> str`
+  - Library detection, fallback to extension, fallback to text/plain
+  - Reference: analysis/ui-separation-io-catalog.md#33-content-type-detection
+  - Acceptance: Utility detects content types, fallbacks work correctly
+
+- [x] **UI-011: Update tools to set content_type** (2026-06-15)
+  - `ReadTool`: Detect content type from file
+  - `WriteTool`: Set content type to summary (or text/plain)
+  - `UpdateTool`: Set content type to diff (text/x-diff)
+  - `GitTool`: Use `--no-color`, set content type to text/plain
+  - Reference: analysis/ui-separation-io-catalog.md#42-tool-implementation
+  - Acceptance: All tools set content_type appropriately
+
 ### Phase 1.7: Async-First Agent Architecture
 
 - [x] **1.7.1 Extract AgentCore Class** (2026-05-23)
@@ -1035,4 +1029,5 @@
 - [x] **Issue #9: Fix ~ in Storage Path** (2026-05-25)
   - Fixed tilde expansion bug
   - PR: #11
+
 
