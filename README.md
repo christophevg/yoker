@@ -113,6 +113,49 @@ See the `examples/` directory for more complete examples:
 - `examples/batch_mode.py` - Batch mode with predefined messages
 - `examples/library_usage.py` - Using Yoker as a library without the CLI
 - `examples/custom_handler.py` - Implementing a custom `UIHandler`
+- `examples/research_workflow.py` - Running a researcher agent programmatically
+
+## Plugins
+
+Yoker can load tools, skills, and agents from external Python packages via
+the `--with` argument. Packages declare what they provide through a
+`__YOKER_MANIFEST__` object in their top-level `__init__.py`.
+
+Install a plugin package (for example, the demo plugin in
+`examples/plugins/demo/`):
+
+```bash
+uv pip install -e examples/plugins/demo
+```
+
+Run Yoker with one or more plugins:
+
+```bash
+# Load a single plugin
+python -m yoker --with yoker_plugin_demo
+
+# Load multiple plugins
+python -m yoker --with yoker_plugin_demo --with another
+```
+
+When a plugin is loaded, its namespaced tools and skills become available to
+the agent. For example, after loading `yoker_plugin_demo` you can invoke its
+skill with a slash command:
+
+```bash
+python -m yoker --with yoker_plugin_demo
+/greeting
+```
+
+Or you can ask the agent to use a plugin tool by name:
+
+```text
+Use the echo tool to repeat "hello world"
+```
+
+See `examples/plugins/demo/README.md` for a complete walkthrough of creating
+a plugin package, declaring `__YOKER_MANIFEST__`, and providing tools, skills,
+and agent definitions.
 
 ## Why Yoker?
 
@@ -144,22 +187,22 @@ See [docs/rationale.md](docs/rationale.md) for the full rationale and comparison
 - [x] `web_fetch` tool - Fetch web content with SSRF protection, URL validation, and size limits
 - [x] `agent` tool - Spawn subagents with isolated context and recursion limits
 - [x] `skill` tool - Invoke skills dynamically by name with full content loading
-- [x] Slash commands - Built-in commands: `/help`, `/think on|off`
+- [x] Slash commands - Built-in commands: `/help`, `/think on|off`, `/skills`, `/context`, `/tools`, `/agents`
 - [x] Thinking mode - LLM reasoning trace with gray output
 - [x] Streaming - Real-time token streaming from Ollama
-- [x] Configuration - TOML-based configuration system
+- [x] Configuration - TOML-based configuration system via Clevis
 - [x] Agent definitions - Load agents from Markdown files with YAML frontmatter
+- [x] Package plugins - Load tools, skills, and agents from Python packages with `--with`
 - [x] Multiline input - `Esc+Enter` for newlines, `Enter` to submit
 - [x] Rich output - Styled terminal output with Rich
 - [x] Event-driven architecture - Library-first design with event emission
 - [x] Context persistence - Session resumption with JSONL storage
 - [x] Event logging - Full session replay capability
 - [x] Demo scripts - Generate documentation screenshots from Markdown scripts
-- [x] Update tool - Edit existing files with replace, insert, and delete operations
+- [x] Guardrails - Tool parameter validation and path/network guardrails
+- [x] Permissions - Static TOML-based access control
 
 **Planned Features:**
-- [ ] Guardrails - Tool parameter validation
-- [ ] Permissions - Static TOML-based access control
 - [ ] Multi-agent orchestration - Run coordinated agent teams
 - [ ] Backend providers - OpenAI, Anthropic, custom backends
 - [ ] Tool timing metrics - Performance tracking
@@ -183,6 +226,10 @@ The interactive session supports:
 |---------|-------------|
 | `/help` | Show available commands |
 | `/think on\|off` | Enable/disable LLM thinking trace |
+| `/skills` | List available skills |
+| `/context` | Show current conversation context |
+| `/tools` | List available tools and their availability |
+| `/agents` | Show loaded and available agents |
 
 ### Thinking Mode
 

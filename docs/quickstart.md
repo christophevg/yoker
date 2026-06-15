@@ -4,7 +4,10 @@
 
 Yoker provides an interactive chat interface with Ollama and tool calling capabilities.
 
-**Architecture**: Yoker uses an event-driven, library-first design. The Agent emits events (thinking chunks, content, tool calls) that handlers subscribe to. This makes the library usable in headless, web, and GUI contexts.
+**Architecture**: Yoker uses an event-driven, library-first design. The Agent emits events
+(thinking chunks, content, tool calls) that a `UIHandler` receives through a `UIBridge`.
+This makes the library usable in headless, web, and GUI contexts without terminal logic
+leaking into the agent.
 
 ```{image} _static/architecture-diagram.svg
 :alt: Architecture Diagram
@@ -33,83 +36,80 @@ pip install yoker
 python -m yoker
 ```
 
-Or with a configuration file:
+Or with an agent definition:
 
 ```bash
-python -m yoker --config yoker.toml
+python -m yoker --agents-definition examples/agents/researcher.md
 ```
 
 ### Library Usage (Headless)
 
+Yoker is designed to be embedded as a library. The example below uses the built-in
+`BatchUIHandler` and `UIBridge` to render agent events without the CLI.
+
 ```python
 import asyncio
-from yoker import Agent
-from yoker.events import Event, ContentChunkEvent
 
-# Create a custom async event handler (recommended)
-class MyAsyncHandler:
-    """Async event handler for processing events.
+from yoker import Agent, __version__
+from yoker.config import get_yoker_config
+from yoker.ui import BatchUIHandler, UIBridge
 
-    Async handlers are recommended for most use cases, especially when
-    performing I/O operations like writing to files, making network calls,
-    or interacting with databases.
-    """
-    async def __call__(self, event: Event) -> None:
-        if isinstance(event, ContentChunkEvent):
-            print(event.text, end='', flush=True)
-
-# Sync handlers are also supported for simple, fast operations
-class MySyncHandler:
-    """Sync handler for simple operations (no I/O).
-
-    Sync handlers are supported for cases where the handler just
-    performs fast, non-blocking operations like logging or counters.
-    """
-    def __call__(self, event: Event) -> None:
-        if isinstance(event, ContentChunkEvent):
-            print(event.text, end='', flush=True)
 
 async def main():
-    # Create agent and attach async handler
-    agent = Agent(model="llama3.2")
-    agent.add_event_handler(MyAsyncHandler())
+    # Load configuration from environment variables, ~/.yoker.toml,
+    # ./yoker.toml, and built-in defaults.
+    config = get_yoker_config(cli=False)
 
-    # Use the agent programmatically (all methods are async)
-    await agent.begin_session()
-    await agent.process("What is 2+2?")
-    await agent.end_session()
+    # Create the agent. All heavy lifting (context, tools, guardrails)
+    # is configured from the Config object.
+    agent = Agent(config=config)
 
-# Run the async main function
+    # Create a UI handler and bridge agent events to it.
+    ui = BatchUIHandler(show_thinking=True, show_tool_calls=True)
+    bridge = UIBridge(ui)
+    agent.add_event_handler(bridge)
+
+    # Start the UI, process a message, then shut down.
+    await ui.start(agent.model, __version__, {})
+    try:
+        await agent.process("What is 2+2?")
+    finally:
+        await ui.shutdown("complete")
+
+
 asyncio.run(main())
 ```
+
+For a fully custom integration, implement the `UIHandler` protocol (or extend
+`BaseUIHandler`) and wire it through `UIBridge`. See `examples/custom_handler.py`
+for a minimal custom handler.
 
 ### Async Model
 
 Yoker is built with an async-first architecture:
 
-- **All Agent methods are async**: `begin_session()`, `process()`, and `end_session()` are all coroutines
-- **Event handlers can be async**: Handlers receive events in the same asyncio task as `process()`
-- **No thread pool bridging needed**: Async handlers can directly `await` I/O operations
+- **All Agent methods are async**: `process()` is a coroutine.
+- **UI handlers are async**: Input, lifecycle, and streaming methods use `await`.
+- **Event handlers can be sync or async**: Handlers receive events in the same asyncio
+task as `process()`.
 
 ```python
 class DatabaseHandler:
     """Example async handler writing to a database."""
-    
+
     def __init__(self, db_connection):
         self.db = db_connection
-    
-    async def __call__(self, event: Event) -> None:
-        if isinstance(event, ContentEndEvent):
+
+    async def __call__(self, event) -> None:
+        if isinstance(event, TurnEndEvent):
             # Direct await - no run_coroutine_threadsafe needed!
-            await self.db.save_response(event.total_length)
+            await self.db.save_response(event.response)
+
 
 async def main():
     agent = Agent(model="llama3.2")
     agent.add_event_handler(DatabaseHandler(db))
-    
-    await agent.begin_session()
-    await agent.process("Hello")  # Handler runs in same event loop
-    await agent.end_session()
+    await agent.process("Hello")  # Handler runs in the same event loop
 ```
 
 **Threading Model:**
@@ -120,13 +120,14 @@ async def main():
 | Interactive CLI | Main asyncio event loop |
 | Web server (FastAPI) | Request handler's event loop |
 
-Handlers run synchronously within the asyncio event loop. For long-running operations, use async handlers that yield control (e.g., `await asyncio.sleep(0)`) or offload to a separate executor.
+Handlers run synchronously within the asyncio event loop. For long-running operations,
+use async handlers that yield control (for example, `await asyncio.sleep(0)`) or offload
+to a separate executor.
 
 ### Interactive Session
 
 ```
-Yoker v0.3.0 - Using model: glm-5:cloud
-Thinking mode: enabled (use /think on|off to toggle)
+Yoker v0.4.0 - Using model: llama3.2:latest
 Type /help for available commands.
 Press Ctrl+D (or Ctrl+Z on Windows) to quit.
 
@@ -136,6 +137,10 @@ Available commands:
 
   /help - Show available commands
   /think - Enable/disable thinking mode: /think [on|off]
+  /skills - List available skills
+  /context - Show current conversation context
+  /tools - List all known tools with availability
+  /agents - Show loaded agent and known agents
 
 Type a message without / prefix to chat with the LLM.
 
@@ -166,6 +171,14 @@ The session supports:
 |---------|-------------|
 | `/help` | Show available commands |
 | `/think on\|off` | Enable/disable LLM thinking trace |
+| `/skills` | List available skills |
+| `/context` | Show current conversation context |
+| `/tools` | List all known tools with availability |
+| `/agents` | Show loaded agent and known agents |
+
+Any command name that matches a loaded skill is treated as a skill invocation. For
+example, if a skill named `example` is loaded, `/example` injects the skill content
+into the conversation.
 
 ### Thinking Mode
 
@@ -184,64 +197,79 @@ Based on my analysis, here's what I found...
 
 ```bash
 python -m yoker --help
+```
 
-Options:
-  -c, --config PATH    Path to configuration file (default: yoker.toml)
-  -m, --model MODEL    Model to use (overrides config)
-  -a, --agent PATH     Path to agent definition file (Markdown with frontmatter)
+Key options generated from the Clevis configuration schema:
+
+| Flag | Description |
+|------|-------------|
+| `--backend-ollama-model MODEL` | Model to use (overrides config) |
+| `--agents-definition PATH` | Path to agent definition file (Markdown with frontmatter) |
+| `--ui-mode interactive\|batch` | Run in interactive or batch mode |
+| `--ui-show-thinking` | Show thinking output |
+| `--ui-show-tool-calls` | Show tool call information |
+| `--ui-show-stats` | Show turn statistics |
+| `--with PACKAGE` | Load a Python package plugin (repeatable) |
+
+The `--with` argument is intercepted before Clevis parses the rest of the command line,
+so it can be combined with any other option:
+
+```bash
+python -m yoker --with yoker_plugin_demo --agents-definition examples/agents/researcher.md
 ```
 
 ### Session Persistence
 
-Yoker supports session persistence for resuming conversations:
+Yoker supports session persistence for resuming conversations. Configure it in
+`yoker.toml`:
 
-```bash
-# Start a session with persistence
-python -m yoker --persist
-
-# Resume a previous session
-python -m yoker --resume <session_id>
+```toml
+[context]
+manager = "basic_persistence"
+storage_path = "./context"
+session_id = "auto"
+persist_after_turn = true
 ```
 
-When using `--persist`, the session is saved after each turn. Use `--resume` to continue a previous session with full context restored.
+When `persist_after_turn` is true, the session is saved after each turn. To resume a
+specific session, set `session_id` to the previously generated id.
 
 **Programmatic usage:**
 
 ```python
 import asyncio
 from pathlib import Path
-from yoker.agent import Agent
-from yoker.context import BasicPersistenceContextManager
+
+from yoker import Agent
+from yoker.config import get_yoker_config
+from yoker.context import PersistenceContextManager
+
 
 async def main():
+    config = get_yoker_config(cli=False)
+
     # Create context manager for persistence
-    context = BasicPersistenceContextManager(
-      storage_path=Path(".yoker/sessions"),
-      session_id="my-session"
+    context = PersistenceContextManager(
+        storage_path=Path(".yoker/sessions"),
+        session_id="my-session",
     )
 
     # Create agent with context
-    agent = Agent(context_manager=context)
+    agent = Agent(config=config, context_manager=context)
 
     # Use the agent (all methods are async)
-    await agent.begin_session()
     await agent.process("What is 2+2?")
-    await agent.end_session()
 
-    # Later, resume the session
-    context = BasicPersistenceContextManager(
-      storage_path=Path(".yoker/sessions"),
-      session_id="my-session"
-    )
-    agent = Agent(context_manager=context)
-    # Context is automatically loaded
+    # Later, create another PersistenceContextManager with the same
+    # session_id to load the previous conversation automatically.
+
 
 asyncio.run(main())
 ```
 
 ## Tools
 
-Yoker provides several tools for file operations and subagent spawning:
+Yoker provides several tools for file operations, web access, and subagent spawning:
 
 | Tool | Description |
 |------|-------------|
@@ -254,6 +282,9 @@ Yoker provides several tools for file operations and subagent spawning:
 | `mkdir` | Create directories with parent creation |
 | `git` | Git operations with permission-controlled commit/push |
 | `agent` | Spawn subagents with isolated context |
+| `skill` | Invoke skills dynamically by name |
+| `web_search` | Web search with SSRF protection and domain filtering |
+| `web_fetch` | Fetch web content with SSRF protection and URL validation |
 
 ### Agent Tool
 
@@ -285,28 +316,45 @@ The `skill` tool allows the agent to invoke skills dynamically by name:
 > use the example skill
 
 [Tool Call] skill(skill_name="example")
-
-<command-message>
-<command-name>example</command-name>
-<command-args></command-args>
-</command-message>
-
-Base directory for this skill:
-
-# Example Skill
-
-This is an example skill for testing purposes.
 ```
 
 Key features:
-- **Dynamic loading**: Skills are loaded from `YOKER_SKILLS_PATH` environment variable
+- **Dynamic loading**: Skills are loaded from configured `skills.directories`
 - **Full content**: Returns the complete skill content for the agent to follow
 - **Args support**: Pass arguments to skills via the `args` parameter
-- **Discovery**: Available skills shown in system reminder
+- **Discovery**: Available skills shown in the system reminder
+
+## Plugins
+
+External Python packages can provide tools, skills, and agents through the plugin
+system. A plugin declares its components with a `__YOKER_MANIFEST__` object in its
+top-level package `__init__.py`.
+
+Install the demo plugin and run Yoker with it:
+
+```bash
+uv pip install -e examples/plugins/demo
+python -m yoker --with yoker_plugin_demo
+```
+
+Load multiple plugins by repeating `--with`:
+
+```bash
+python -m yoker --with yoker_plugin_demo --with pkgq
+```
+
+Inside the session, plugin skills are invoked by name:
+
+```
+> /greeting
+```
+
+See `examples/plugins/demo/README.md` for a complete plugin development guide.
 
 ## Agent Definitions
 
-Yoker supports loading agent definitions from Markdown files with YAML frontmatter. This allows you to define custom system prompts and tool availability.
+Yoker supports loading agent definitions from Markdown files with YAML frontmatter.
+This allows you to define custom system prompts and tool availability.
 
 ### Agent Definition Format
 
@@ -335,26 +383,25 @@ You are a research assistant specialized in finding and analyzing information.
 
 ```bash
 # Load an agent definition
-python -m yoker --agent examples/agents/researcher.md
+python -m yoker --agents-definition examples/agents/researcher.md
 ```
 
 Programmatically:
 
 ```python
-from yoker.agent import Agent
+from yoker import Agent
 from yoker.agents import load_agent_definition, validate_agent_definition
-from yoker.config import load_config
+from yoker.config import get_yoker_config
 
 # Load configuration and agent
-config = load_config("yoker.toml")
-agent_def = load_agent_definition("agents/researcher.md")
+config = get_yoker_config(cli=False)
+agent_def = load_agent_definition("examples/agents/researcher.md")
 
 # Validate agent tools against config
 warnings = validate_agent_definition(agent_def, config.tools)
 
 # Create agent with definition
 agent = Agent(config=config, agent_definition=agent_def)
-# agent.messages[0] now contains the system prompt from the Markdown body
 ```
 
 ### Example Agents
@@ -388,13 +435,12 @@ timeout_seconds = 60
 temperature = 0.7
 top_p = 0.9
 
+[agents]
+definition = "./agents/researcher.md"  # Optional: agent definition file
+
 [tools.read]
 enabled = true
-allowed_extensions = [".txt", ".md", ".py", ".json"]
-
-[logging]
-format = "json"
-include_tool_calls = true
+allowed_extensions = [".txt", ".md", ".py"]
 ```
 
 See `examples/yoker.toml` for the full configuration reference.
@@ -407,7 +453,7 @@ Yoker auto-discovers configuration files in this order:
 2. `~/.yoker.toml` (user home directory)
 3. Built-in defaults
 
-You can also specify an explicit config file:
+You can also specify an explicit config file with Clevis:
 
 ```bash
 python -m yoker --config path/to/config.toml

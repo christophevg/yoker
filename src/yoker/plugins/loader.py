@@ -1,7 +1,10 @@
 """Plugin loader for Yoker.
 
-Discovers and loads plugins from Python packages by importing {package}.yoker
-module and extracting TOOLS, SKILLS, and AGENTS lists.
+Discovers and loads plugins from Python packages. The modern pattern is to
+expose a `__YOKER_MANIFEST__` object in the package's top-level `__init__.py`.
+For backwards compatibility, the loader also falls back to importing a
+`{package}.yoker` submodule and reading `TOOLS`, `SKILLS`, and `AGENTS` lists.
+New plugins should always use `__YOKER_MANIFEST__`.
 """
 
 import importlib
@@ -41,10 +44,11 @@ class PluginComponents:
 def load_plugin(package_name: str) -> PluginComponents | None:
   """Load plugin components from a package.
 
-  Attempts to import package and extract TOOLS, SKILLS, and AGENTS lists.
   Supports two patterns:
-    1. Package with __YOKER_MANIFEST__ directly (e.g., yoker_plugin_demo)
-    2. Legacy {package}.yoker submodule (e.g., pkgq.yoker)
+    1. Preferred: package exposes `__YOKER_MANIFEST__` directly
+       (e.g., `yoker_plugin_demo.__YOKER_MANIFEST__`).
+    2. Legacy: package provides a `{package}.yoker` submodule with
+       `TOOLS`, `SKILLS`, and `AGENTS` lists.
 
   Args:
     package_name: Python package name (e.g., "pkgq", "c3", "yoker_plugin_demo").
@@ -114,12 +118,7 @@ def _load_from_module(module: object, package_name: str) -> PluginComponents:
   Returns:
     PluginComponents with loaded tools, skills, and agents.
   """
-  # Extract component lists
-  tools = _extract_list(module, "TOOLS")
-  skills = _extract_list(module, "SKILLS")
-  agents = _extract_list(module, "AGENTS")
-
-  # Extract component lists
+  # Extract component lists from explicit attributes.
   tools = _extract_list(module, "TOOLS")
   skills = _extract_list(module, "SKILLS")
   agents = _extract_list(module, "AGENTS")
@@ -284,8 +283,10 @@ def load_skills_from_package(
   """Load skills from package's skills/ folder using importlib.resources.
 
   Supports two patterns:
-    1. Package with skills directly (e.g., yoker_plugin_demo/skills/)
-    2. Legacy {package}.yoker submodule (e.g., pkgq.yoker/skills/)
+    1. Preferred: skills live directly inside the package (e.g.,
+       `yoker_plugin_demo/skills/`).
+    2. Legacy: skills live inside the `{package}.yoker` submodule
+       (e.g., `pkgq.yoker/skills/`).
 
   Args:
     package: Package name (e.g., "pkgq", "yoker_plugin_demo").
@@ -555,8 +556,10 @@ def load_agents_from_package(
   """Load agents from package's agents/ folder.
 
   Supports two patterns:
-    1. Package with agents directly (e.g., yoker_plugin_demo/agents/)
-    2. Legacy {package}.yoker submodule (e.g., pkgq.yoker/agents/)
+    1. Preferred: agent definitions live directly inside the package
+       (e.g., `yoker_plugin_demo/agents/`).
+    2. Legacy: agent definitions live inside the `{package}.yoker`
+       submodule (e.g., `pkgq.yoker/agents/`).
 
   Args:
     package: Package name (e.g., "pkgq", "yoker_plugin_demo").

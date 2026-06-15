@@ -20,25 +20,6 @@
 
 ---
 
-## P1: Critical Infrastructure
-
-### Issue #16: Adopt Clevis for Configuration Management
-
-- [ ] **16.1 Migrate Configuration System to Clevis**
-  - Replace custom yoker/config/ module (~700 lines) with Clevis package
-  - Migrate config/loader.py to Clevis loader pattern
-  - Migrate config/schema.py to Clevis schema with frozen dataclasses
-  - Migrate config/validator.py to Clevis validation hooks
-  - Preserve custom validation via `__post_init__` on config classes
-  - Support environment variables via TOML interpolation (Clevis native)
-  - Implement configuration discovery: user < project < CLI (Clevis pattern)
-  - Ensure minimal breaking changes to public config file format
-  - **Estimated time:** 4-6 hours
-  - **Priority:** P1 (Critical - blocks other work)
-  - **See:** Issue #16
-  - **Satisfies:** Configuration infrastructure modernization
-
----
 
 ## MVP: Package Plugin System (Issue #14)
 
@@ -96,38 +77,26 @@
 
 **Milestone:** Packages can register components via `yoker` module namespace.
 
-- [ ] **3.1 Package Plugin Discovery**
-  - Import `{package}.yoker` module if present (using importlib)
-  - Extract `TOOLS`, `SKILLS`, `AGENTS` lists from module
-  - Handle graceful failure when package lacks yoker support
-  - Implement namespace format: `{package}:{tool|skill|agent}` (e.g., `pkgq:find`)
-  - Register discovered components with respective registries
-  - Write unit tests for plugin discovery and registration
-  - **Estimated time:** 2-3 hours
-  - **Satisfies:** Package integration capability
-  - **See:** Issue #14
-
-- [ ] **3.2 CLI --with Argument**
+- [x] **3.2 CLI --with Argument** (2026-06-15)
   - Add `--with <package>` argument to `__main__.py`
   - Support multiple packages: `--with pkgq --with another`
-  - Load packages before agent starts (in `main_async()`)
+  - Load packages before agent starts (in `main()`)
   - Handle package import errors with user-friendly messages
   - Update README.md with `--with` usage examples
   - Write unit tests for CLI argument handling
-  - **Estimated time:** 1-2 hours
   - **Depends on:** 3.1
   - **Satisfies:** User-facing package integration
 
 ### Phase 5: Polish (Post-MVP)
 
-- [ ] **5.1 Error Handling**
+- [x] **5.1 Error Handling** (2026-06-15)
   - Define error codes and messages
   - Implement graceful error recovery
   - Add user-friendly error messages
   - Ensure all exceptions are handled
   - **Priority:** P2
 
-- [ ] **5.2 Documentation**
+- [x] **5.2 Documentation** (2026-06-15)
   - Write README with quick start guide
   - Document all configuration options
   - Write API documentation (Sphinx autodoc)
@@ -135,7 +104,7 @@
   - Publish to ReadTheDocs
   - **Priority:** P2
 
-- [ ] **5.3 Testing**
+- [x] **5.3 Testing** (2026-06-15)
   - Achieve high test coverage (>80%)
   - Add integration tests for full flows
   - Add guardrail enforcement tests
@@ -152,7 +121,7 @@
   - Upload to PyPI
   - **Priority:** P3
 
-- [ ] **6.2 Examples and Tutorials**
+- [x] **6.2 Examples and Tutorials** (2026-06-15)
   - Create basic example
   - Create research workflow example
   - Write tutorial documentation
@@ -355,6 +324,30 @@
 ---
 
 ## Done
+
+### Completed 2026-06-15
+
+- [x] **16.1 Migrate Configuration System to Clevis** (2026-06-15)
+  - Replaced custom yoker/config/ module with Clevis package
+  - Migrated config/loader.py to Clevis loader pattern
+  - Migrated config/schema.py to Clevis schema with frozen dataclasses
+  - Migrated config/validator.py to Clevis validation hooks
+  - Preserved custom validation via `__post_init__` on config classes
+  - Supported environment variables via TOML interpolation (Clevis native)
+  - Implemented configuration discovery: user < project < CLI (Clevis pattern)
+  - Ensured minimal breaking changes to public config file format
+  - **See:** Issue #16
+  - **Satisfies:** Configuration infrastructure modernization
+
+- [x] **3.1 Package Plugin Discovery** (2026-06-15)
+  - Import `{package}.yoker` module if present (using importlib)
+  - Extract `TOOLS`, `SKILLS`, `AGENTS` lists from module
+  - Handle graceful failure when package lacks yoker support
+  - Implement namespace format: `{package}:{tool|skill|agent}` (e.g., `pkgq:find`)
+  - Register discovered components with respective registries
+  - Write unit tests for plugin discovery and registration
+  - **See:** Issue #14
+  - **Satisfies:** Package integration capability
 
 ### Phase 1: UI Module Structure (2026-06-11)
 
