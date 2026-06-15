@@ -28,8 +28,6 @@ Event system for library-first design. The Agent emits events that handlers can 
 
 | Event | Description |
 |-------|-------------|
-| `SessionStartEvent` | Emitted when agent session begins |
-| `SessionEndEvent` | Emitted when agent session ends |
 | `TurnStartEvent` | Emitted when processing a user message begins |
 | `TurnEndEvent` | Emitted when processing a user message completes |
 | `ThinkingStartEvent` | Emitted when LLM thinking output begins |
@@ -40,20 +38,14 @@ Event system for library-first design. The Agent emits events that handlers can 
 | `ContentEndEvent` | Emitted when content output ends |
 | `ToolCallEvent` | Emitted when a tool is called |
 | `ToolResultEvent` | Emitted when a tool returns a result |
-| `ErrorEvent` | Emitted when an error occurs |
+| `ToolContentEvent` | Emitted when a tool produces display content |
+| `CommandEvent` | Emitted when a slash command is replayed |
 
-**EventHandler Protocol:**
+Handlers are plain callables that receive `Event` objects. Register them with `agent.add_event_handler()`.
 
-```python
-from yoker.events import EventHandler, Event
+### `yoker.ui`
 
-class MyHandler:
-    def __call__(self, event: Event) -> None:
-        if hasattr(event, 'text'):
-            print(event.text)
-
-agent.add_event_handler(MyHandler())
-```
+User interface layer. Provides `UIHandler` implementations and the `UIBridge` that routes agent events to UI methods.
 
 ### `yoker.tools`
 

@@ -60,6 +60,13 @@ class TestInteractiveUIHandlerInitialization:
     handler = InteractiveUIHandler()
     assert handler._session is not None
 
+  def test_init_accepts_custom_console(self):
+    """Should use provided console instead of creating a new one."""
+    output = StringIO()
+    console = make_console(output)
+    handler = InteractiveUIHandler(console=console)
+    assert handler.console is console
+
 
 class TestInteractiveUIHandlerLifecycle:
   """Tests for InteractiveUIHandler lifecycle methods."""
@@ -145,6 +152,24 @@ class TestInteractiveUIHandlerInput:
 
     result = await handler.get_input()
     assert result is None
+
+  @pytest.mark.asyncio
+  async def test_get_input_uses_predefined_messages(self):
+    """get_input should return predefined messages in order."""
+    handler = InteractiveUIHandler()
+    handler.set_input_messages(["hello", "world"])
+
+    assert await handler.get_input() == "hello"
+    assert await handler.get_input() == "world"
+
+  @pytest.mark.asyncio
+  async def test_get_input_returns_none_after_predefined_messages(self):
+    """get_input should return None when predefined messages are exhausted."""
+    handler = InteractiveUIHandler()
+    handler.set_input_messages(["only one"])
+
+    assert await handler.get_input() == "only one"
+    assert await handler.get_input() is None
 
 
 class TestInteractiveUIHandlerContentStreaming:

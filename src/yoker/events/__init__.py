@@ -1,9 +1,7 @@
 """Event system for Yoker agents."""
 
-from yoker.events.handlers import ConsoleEventHandler, EventHandler
 from yoker.events.recorder import EventRecorder, deserialize_event, serialize_event
 from yoker.events.replay import EventReplayAgent
-from yoker.events.spinner import LiveDisplay, live_display
 from yoker.events.types import (
   CommandEvent,
   ContentChunkEvent,
@@ -25,7 +23,6 @@ __all__ = [
   # Base
   "Event",
   "EventType",
-  "EventHandler",
   # Turn
   "TurnStartEvent",
   "TurnEndEvent",
@@ -43,14 +40,9 @@ __all__ = [
   "ToolResultEvent",
   # Command
   "CommandEvent",
-  # Handlers
-  "ConsoleEventHandler",
   # Recording and Replay
   "EventRecorder",
   "EventReplayAgent",
   "serialize_event",
   "deserialize_event",
-  # Live Display
-  "LiveDisplay",
-  "live_display",
 ]

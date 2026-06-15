@@ -31,7 +31,7 @@ class EventReplayAgent:
 
   Example:
     agent = EventReplayAgent(Path("session.jsonl"))
-    agent.add_event_handler(ConsoleEventHandler(console))
+    agent.add_event_handler(lambda event: print(event))
     await agent.process("Hello")  # Replays events for "Hello" turn
   """
 
