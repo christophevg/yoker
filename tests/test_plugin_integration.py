@@ -78,14 +78,16 @@ class TestPluginSkillCommands:
     assert result.startswith("__SKILL_INJECTION__")
     assert "yoker_plugin_demo:greeting" in result
 
-  def test_full_command_registry_flow(self, agent_with_demo_plugin, demo_plugin_config):
-    """Test the complete flow as it happens in __main__.py."""
-    from yoker.__main__ import create_command_registry
+  @pytest.mark.asyncio
+  async def test_full_command_registry_flow(self, agent_with_demo_plugin, demo_plugin_config):
+    """Test the complete UI-layer command registry flow."""
+    from unittest.mock import AsyncMock, patch
 
-    # This simulates what happens in __main__.py
-    registry = create_command_registry(agent_with_demo_plugin, demo_plugin_config)
+    from yoker.ui import BatchUIHandler
+    from yoker.ui.commands import create_default_registry
 
-    # Should have both built-in and skill commands
+    registry = create_default_registry()
+
     command_names = registry.names
 
     # Built-in commands
@@ -94,21 +96,34 @@ class TestPluginSkillCommands:
     assert "think" in command_names
     assert "context" in command_names
 
-    # Plugin skill command
-    assert "yoker_plugin_demo:greeting" in command_names
+    # Plugin skill is not registered as an explicit command; it is invoked
+    # dynamically via the skill registry.
+    assert "yoker_plugin_demo:greeting" not in command_names
+
+    ui = BatchUIHandler()
 
     # Test dispatch
-    help_result = registry.dispatch("/help")
+    help_result = await registry.dispatch("/help", agent_with_demo_plugin, ui)
     assert help_result is not None
-    assert "yoker_plugin_demo:greeting" in help_result
 
-    skills_result = registry.dispatch("/skills")
+    skills_result = await registry.dispatch("/skills", agent_with_demo_plugin, ui)
     assert skills_result is not None
     assert "yoker_plugin_demo:greeting" in skills_result
 
-    skill_result = registry.dispatch("/yoker_plugin_demo:greeting")
-    assert skill_result is not None
-    assert skill_result.startswith("__SKILL_INJECTION__")
+    # Test dynamic skill invocation
+    with (
+      patch.object(agent_with_demo_plugin, "inject_skill_context") as mock_inject,
+      patch.object(agent_with_demo_plugin, "process", new_callable=AsyncMock) as mock_process,
+    ):
+      result = await registry.dispatch(
+        "/yoker_plugin_demo:greeting hello",
+        agent_with_demo_plugin,
+        ui,
+      )
+
+    assert result is None
+    mock_inject.assert_called_once_with("yoker_plugin_demo:greeting", "hello")
+    mock_process.assert_awaited_once_with("hello")
 
   def test_plugin_tool_namespace_in_tools_command(self, agent_with_demo_plugin):
     """Plugin tools should show namespaced names in /tools command."""
