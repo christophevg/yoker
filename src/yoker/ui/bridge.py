@@ -74,9 +74,6 @@ class UIBridge:
         )
       case EventType.COMMAND:
         self.ui.output_command_result(event.result)  # type: ignore[attr-defined]
-      case EventType.SESSION_START | EventType.SESSION_END:
-        # These should not be emitted anymore, but handle gracefully
-        pass
       case _:
         # Unknown event type - ignore
         pass

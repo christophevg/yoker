@@ -13,16 +13,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from yoker.events.recorder import deserialize_event
-from yoker.events.types import (
-  CommandEvent,
-  Event,
-  SessionStartEvent,
-  TurnEndEvent,
-  TurnStartEvent,
-)
+from yoker.events.types import CommandEvent, Event, TurnEndEvent, TurnStartEvent
 
 if TYPE_CHECKING:
-  from yoker.base import EventCallback
+  from yoker.agent.core import EventCallback
 
 
 class EventReplayAgent:
@@ -58,19 +52,11 @@ class EventReplayAgent:
     self._model = "replay"
     self._handlers: list[EventCallback] = []
 
-    # Load events from JSONL
     with open(events_path) as f:
       for line in f:
         entry = json.loads(line)
         event = deserialize_event(entry)
         self.events.append(event)
-
-    # Extract model from first SESSION_START event
-    for event in self.events:
-      if isinstance(event, SessionStartEvent):
-        self._model = event.model
-        self.thinking_enabled = event.thinking_enabled
-        break
 
   @property
   def model(self) -> str:
@@ -90,14 +76,6 @@ class EventReplayAgent:
     """
     self._handlers.append(handler)
 
-  async def begin_session(self) -> None:
-    """No-op for replay agent - session already in event log."""
-    pass
-
-  async def end_session(self, reason: str = "quit") -> None:
-    """No-op for replay agent."""
-    pass
-
   async def process(self, message: str) -> str:
     """Replay events for one turn.
 
@@ -110,30 +88,27 @@ class EventReplayAgent:
     Returns:
       The response text from the replayed turn.
     """
-    # Find TURN_START with matching message
+    # Find the matching TURN_START event
     while self.index < len(self.events):
       evt = self.events[self.index]
-      self.index += 1
 
-      if isinstance(evt, TurnStartEvent):
-        # Check if this matches our message
-        if evt.message == message:
-          break
-      elif self.index == 1:  # No TURN_START found yet, just start from current
+      if isinstance(evt, TurnStartEvent) and evt.message == message:
         break
 
-    # Replay events until TURN_END
+      self.index += 1
+    else:
+      # No matching turn found
+      return ""
+
     response = ""
     while self.index < len(self.events):
       evt = self.events[self.index]
 
-      # Emit to handlers (supports both sync and async handlers)
       await self._emit(evt)
 
-      # Capture response from TURN_END
       if isinstance(evt, TurnEndEvent):
         response = evt.response
-        self.index += 1  # Move past TURN_END
+        self.index += 1
         break
 
       self.index += 1
@@ -151,19 +126,16 @@ class EventReplayAgent:
     Returns:
       The command result, or empty string if not found.
     """
-    # Find COMMAND event with matching command
     while self.index < len(self.events):
       evt = self.events[self.index]
       self.index += 1
 
       if isinstance(evt, CommandEvent):
-        # Check if this matches our command
         if evt.command == command:
-          # Emit to handlers
           await self._emit(evt)
           return evt.result
 
-    return ""  # Command not found
+    return ""
 
   async def _emit(self, event: Event) -> None:
     """Emit an event to all registered handlers asynchronously.
@@ -175,20 +147,12 @@ class EventReplayAgent:
     """
     for handler in self._handlers:
       try:
-        # Check if handler is async: either a coroutine function or an instance
-        # with an async __call__ method.
-        # inspect.iscoroutinefunction(instance) returns False for instances with
-        # async __call__, but inspect.iscoroutinefunction(instance.__call__)
-        # returns True.
         call_fn = getattr(handler, "__call__", handler)  # noqa: B004
         if inspect.iscoroutinefunction(call_fn):
-          # Async handler - await it
           await handler(event)  # type: ignore[misc]
         else:
-          # Sync handler - call directly
           handler(event)
       except Exception:
-        # Ignore handler errors during replay
         pass
 
 

@@ -182,7 +182,7 @@ class TestAgentContentEventEmission:
       )
     )
 
-    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
+    mocker.patch("yoker.agent.agent.AsyncClient", return_value=mock_client)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
@@ -221,7 +221,7 @@ class TestAgentContentEventEmission:
       )
     )
 
-    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
+    mocker.patch("yoker.agent.agent.AsyncClient", return_value=mock_client)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
@@ -256,7 +256,7 @@ class TestAgentContentEventEmission:
       )
     )
 
-    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
+    mocker.patch("yoker.agent.agent.AsyncClient", return_value=mock_client)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
@@ -301,7 +301,7 @@ class TestAgentContentEventEmission:
       )
     )
 
-    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
+    mocker.patch("yoker.agent.agent.AsyncClient", return_value=mock_client)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
@@ -340,7 +340,7 @@ class TestAgentContentEventEmission:
       )
     )
 
-    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
+    mocker.patch("yoker.agent.agent.AsyncClient", return_value=mock_client)
 
     # Configure for content verbosity
     from yoker.config import BackendConfig, ContentDisplayConfig, OllamaConfig, ToolsConfig
@@ -397,7 +397,7 @@ class TestAgentContentEventEmission:
       )
     )
 
-    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
+    mocker.patch("yoker.agent.agent.AsyncClient", return_value=mock_client)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
@@ -441,7 +441,7 @@ class TestAgentContentEventConstruction:
       )
     )
 
-    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
+    mocker.patch("yoker.agent.agent.AsyncClient", return_value=mock_client)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
@@ -493,7 +493,7 @@ class TestAgentContentEventConstruction:
       )
     )
 
-    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
+    mocker.patch("yoker.agent.agent.AsyncClient", return_value=mock_client)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
@@ -530,7 +530,7 @@ class TestAgentContentEventConstruction:
       )
     )
 
-    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
+    mocker.patch("yoker.agent.agent.AsyncClient", return_value=mock_client)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
@@ -569,7 +569,7 @@ class TestAgentContentEventEmissionOrder:
       )
     )
 
-    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
+    mocker.patch("yoker.agent.agent.AsyncClient", return_value=mock_client)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
@@ -620,7 +620,7 @@ class TestAgentContentEventEmissionOrder:
       )
     )
 
-    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
+    mocker.patch("yoker.agent.agent.AsyncClient", return_value=mock_client)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
@@ -666,7 +666,7 @@ class TestAgentContentEventEmissionOrder:
       )
     )
 
-    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
+    mocker.patch("yoker.agent.agent.AsyncClient", return_value=mock_client)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
@@ -715,7 +715,7 @@ class TestAgentContentEventWithMultipleTools:
       )
     )
 
-    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
+    mocker.patch("yoker.agent.agent.AsyncClient", return_value=mock_client)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
@@ -783,7 +783,7 @@ class TestAgentContentEventWithMultipleTools:
       )
     )
 
-    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
+    mocker.patch("yoker.agent.agent.AsyncClient", return_value=mock_client)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
@@ -826,7 +826,7 @@ class TestAgentContentEventErrorHandling:
       )
     )
 
-    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
+    mocker.patch("yoker.agent.agent.AsyncClient", return_value=mock_client)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
@@ -866,7 +866,7 @@ class TestAgentContentEventErrorHandling:
       )
     )
 
-    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
+    mocker.patch("yoker.agent.agent.AsyncClient", return_value=mock_client)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
@@ -906,7 +906,7 @@ class TestAgentContentEventErrorHandling:
       )
     )
 
-    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
+    mocker.patch("yoker.agent.agent.AsyncClient", return_value=mock_client)
 
     agent = Agent(config=Config())
 

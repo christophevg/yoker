@@ -2,7 +2,7 @@
 
 import pytest
 
-from yoker.base import AgentCore
+from yoker.agent.core import AgentCore
 from yoker.config import (
   Config,
   ExistenceToolConfig,

@@ -26,7 +26,8 @@ from pathlib import Path
 
 from rich.console import Console
 
-from yoker.agent import Agent, EventCallback
+from yoker.agent import Agent
+from yoker.agent.core import EventCallback
 from yoker.commands import (
   CommandRegistry,
   create_context_command,
@@ -36,7 +37,7 @@ from yoker.commands import (
   create_think_command,
 )
 from yoker.config import Config
-from yoker.context import BasicPersistenceContextManager
+from yoker.context import PersistenceContextManager
 from yoker.demo import DemoScript, load_demo_script, load_demo_scripts
 from yoker.events import (
   CommandEvent,
@@ -257,7 +258,7 @@ async def run_demo_session(
   event_recorder: EventRecorder | None = None
 
   # Initialize context manager (used in real LLM mode)
-  context_manager: BasicPersistenceContextManager | None = None
+  context_manager: PersistenceContextManager | None = None
 
   if is_replay_mode:
     # Replay mode: use EventReplayAgent to replay events
@@ -281,7 +282,7 @@ async def run_demo_session(
     # Create context manager for persistence or resumption
     if persist or resume:
       session_id = resume if resume else "auto"
-      context_manager = BasicPersistenceContextManager(
+      context_manager = PersistenceContextManager(
         storage_path=Path(config.context.storage_path),
         session_id=session_id,
       )
@@ -362,10 +363,6 @@ async def run_demo_session(
     empty_registry = SkillRegistry()
     command_registry.register(create_skills_command(empty_registry))
 
-  # Begin session (emits SESSION_START event for real LLM mode)
-  if not is_replay_mode:
-    await agent.begin_session()
-
   # Print mode-specific info
   if is_replay_mode:
     console.print(f"[bold cyan]Yoker v0.1.0[/] - Using model: [green]{agent.model}[/]")
@@ -435,10 +432,6 @@ async def run_demo_session(
     # In replay mode, events are emitted by EventReplayAgent
     # In real LLM mode, events are emitted by Agent
     # ConsoleEventHandler prints the output in both cases
-
-  # End session (emits SESSION_END event for real LLM mode)
-  if not is_replay_mode:
-    await agent.end_session()
 
   # Print session footer
   console.print("\n[bold cyan]Session complete.[/]")

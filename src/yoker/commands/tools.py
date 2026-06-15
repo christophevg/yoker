@@ -7,7 +7,7 @@ from yoker.commands.base import Command
 from yoker.tools import ToolRegistry
 
 if TYPE_CHECKING:
-  from yoker.base import AgentCore
+  from yoker.agent.core import AgentCore
 
 
 def create_tools_command(registry: ToolRegistry, agent_core: "AgentCore") -> Command:

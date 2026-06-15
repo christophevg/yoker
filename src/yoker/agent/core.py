@@ -7,29 +7,17 @@ and utilities for the async-only Agent implementation.
   This class is for internal use. Use Agent instead.
 """
 
-import os
 from collections.abc import Callable, Coroutine
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from dotenv import load_dotenv
 
+from yoker.agent.tools import build_tool_registry
 from yoker.config import Config
 from yoker.logging import get_logger
 from yoker.thinking import ThinkingMode
 from yoker.tools import Tool, ToolRegistry
-from yoker.tools.existence import ExistenceTool
-from yoker.tools.git import GitTool
-from yoker.tools.list import ListTool
-from yoker.tools.mkdir import MkdirTool
-from yoker.tools.read import ReadTool
-from yoker.tools.search import SearchTool
-from yoker.tools.update import UpdateTool
-from yoker.tools.web_backend import OllamaWebFetchBackend, OllamaWebSearchBackend
-from yoker.tools.web_guardrail import WebGuardrail, WebGuardrailConfig
-from yoker.tools.webfetch import WebFetchTool
-from yoker.tools.websearch import WebSearchTool
-from yoker.tools.write import WriteTool
 
 if TYPE_CHECKING:
   from ollama import AsyncClient
@@ -188,19 +176,21 @@ class AgentCore:
     self._guardrail: PathGuardrail = PathGuardrail(self._config)
 
     # Build tool registry filtered by agent definition
-    self._tool_registry = self._build_tool_registry(client)
+    self._tool_registry = build_tool_registry(
+      self._config,
+      self._guardrail,
+      agent_definition=self._agent_definition,
+      client=client,
+    )
 
     # Initialize context manager
     if context_manager is not None:
       self._context = context_manager
     else:
       # Create default in-memory context manager
-      from yoker.context import BasicPersistenceContextManager
+      from yoker.context import BasicContextManager
 
-      self._context = BasicPersistenceContextManager(
-        storage_path=Path(self._config.context.storage_path),
-        session_id=self._config.context.session_id,
-      )
+      self._context = BasicContextManager()
 
     # Add system prompt to context (skip if already exists, e.g., on resume)
     messages = self._context.get_messages()
@@ -234,9 +224,6 @@ class AgentCore:
 
     # Verify guardrails are enforced (SEC-5)
     self._validate_guardrails_enforced()
-
-    # Note: Logging happens in Agent after AgentTool is registered
-    # This ensures the tool list is complete in the log
 
   @property
   def config(self) -> Config:
@@ -350,17 +337,6 @@ class AgentCore:
 
     Args:
       handler: Callable that receives Event objects.
-
-    Example:
-      def my_handler(event: Event):
-          if isinstance(event, ContentChunkEvent):
-              print(event.text, end='', flush=True)
-
-      agent.add_event_handler(my_handler)
-
-    Security Note:
-      Handler registration is logged for audit purposes.
-      Handlers should complete quickly (<100ms) to avoid blocking the event loop.
     """
     self._event_handlers.append(handler)
 
@@ -383,129 +359,6 @@ class AgentCore:
     """
     return self._event_handlers.copy()
 
-  def _build_tool_registry(self, client: "AsyncClient | None" = None) -> ToolRegistry:
-    """Build a tool registry filtered by agent definition.
-
-    If an agent definition is loaded, only registers tools listed in
-    the agent's tools field. Otherwise, registers all default tools.
-
-    All filesystem tools are created with the agent's guardrail injected
-    for defense-in-depth validation.
-
-    Tools are only registered if their enabled flag is True in config.
-
-    Args:
-      client: Optional AsyncClient for tools that need it (e.g., WebSearch).
-
-    Returns:
-      ToolRegistry with available tools for this agent.
-    """
-    registry = ToolRegistry()
-
-    # Create tools with guardrail injected for defense-in-depth
-    # Only add tools that are enabled in config
-    tools: list[Tool] = []
-
-    if self._config.tools.read.enabled:
-      tools.append(ReadTool(guardrail=self._guardrail))
-
-    if self._config.tools.list.enabled:
-      tools.append(ListTool(guardrail=self._guardrail))
-
-    if self._config.tools.write.enabled:
-      tools.append(WriteTool(guardrail=self._guardrail))
-
-    if self._config.tools.update.enabled:
-      tools.append(UpdateTool(guardrail=self._guardrail))
-
-    if self._config.tools.search.enabled:
-      tools.append(SearchTool(guardrail=self._guardrail))
-
-    if self._config.tools.existence.enabled:
-      tools.append(ExistenceTool(guardrail=self._guardrail))
-
-    if self._config.tools.mkdir.enabled:
-      tools.append(MkdirTool(guardrail=self._guardrail))
-
-    if self._config.tools.git.enabled:
-      tools.append(
-        GitTool(
-          config=self._config.tools.git,
-          guardrail=self._guardrail,
-          permission_handlers=self._config.permissions.handlers,
-        )
-      )
-
-    # Add WebSearchTool only if API key is available and client is provided
-    if (
-      self._config.tools.websearch.enabled
-      and os.environ.get("OLLAMA_API_KEY")
-      and client is not None
-    ):
-      # Create guardrails with configuration from tool configs
-      websearch_config = WebGuardrailConfig(
-        max_query_length=self._config.tools.websearch.max_query_length,
-        domain_allowlist=self._config.tools.websearch.domain_allowlist,
-        domain_blocklist=self._config.tools.websearch.domain_blocklist,
-        requests_per_minute=self._config.tools.websearch.requests_per_minute,
-        requests_per_hour=self._config.tools.websearch.requests_per_hour,
-        block_private_cidrs=self._config.tools.websearch.block_private_cidrs,
-        timeout_seconds=self._config.tools.websearch.timeout_seconds,
-      )
-      tools.append(
-        WebSearchTool(
-          backend=OllamaWebSearchBackend(async_client=client),
-          guardrail=WebGuardrail(config=websearch_config),
-        )
-      )
-
-    if (
-      self._config.tools.webfetch.enabled
-      and os.environ.get("OLLAMA_API_KEY")
-      and client is not None
-    ):
-      webfetch_config = WebGuardrailConfig(
-        domain_allowlist=self._config.tools.webfetch.domain_allowlist,
-        domain_blocklist=self._config.tools.webfetch.domain_blocklist,
-        block_private_cidrs=self._config.tools.webfetch.block_private_cidrs,
-        require_https=self._config.tools.webfetch.require_https,
-        timeout_seconds=self._config.tools.webfetch.timeout_seconds,
-      )
-      tools.append(
-        WebFetchTool(
-          backend=OllamaWebFetchBackend(async_client=client),
-          guardrail=WebGuardrail(config=webfetch_config),
-        )
-      )
-
-    # Log if web tools are unavailable
-    if not os.environ.get("OLLAMA_API_KEY"):
-      log.warning("web_search_unavailable", reason="OLLAMA_API_KEY not set")
-      log.warning("web_fetch_unavailable", reason="OLLAMA_API_KEY not set")
-
-    # Filter by agent definition if present
-    if self._agent_definition is not None:
-      # Agent definition's tools list is namespaced
-      # We need to map namespaced names to actual tool names
-      allowed_tools = {t.lower() for t in self._agent_definition.tools}
-
-      for tool in tools:
-        # Check if tool is allowed (with or without namespace)
-        # Built-in tools are registered as "name" but agent may specify "yoker:name"
-        tool_name_lower = tool.name.lower()
-        yoker_tool_name = f"yoker:{tool_name_lower}"
-
-        # Tool is allowed if:
-        # 1. Plain name matches (backward compatibility)
-        # 2. yoker: prefix version matches
-        if tool_name_lower in allowed_tools or yoker_tool_name in allowed_tools:
-          registry.register(tool)
-    else:
-      for tool in tools:
-        registry.register(tool)
-
-    return registry
-
   def get_known_tools(self) -> list[Tool]:
     """Get list of all known built-in tools.
 
@@ -517,8 +370,6 @@ class AgentCore:
     Returns:
       List of Tool instances for built-in tools.
     """
-    # Create tool instances without guardrails for metadata access
-    # (descriptions don't require guardrails)
     from yoker.tools import (
       ExistenceTool,
       ListTool,
@@ -530,8 +381,6 @@ class AgentCore:
       WriteTool,
     )
 
-    # Note: These are fresh instances without guardrails,
-    # used only for metadata (name, description)
     tools: list[Tool] = []
 
     if self._config.tools.read.enabled:

@@ -224,23 +224,14 @@ class TestUIBridge:
     )
     assert ("output_command_result", "Available commands: ...") in handler.calls
 
-  async def test_bridge_ignores_session_events(self):
-    """UIBridge should ignore session start/end events gracefully."""
+  async def test_bridge_ignores_turn_start(self):
+    """UIBridge should ignore TURN_START event gracefully."""
+    from yoker.events.types import TurnStartEvent
+
     handler = MockUIHandler()
     bridge = UIBridge(handler)
 
-    # These events should be handled gracefully (no errors)
-    from yoker.events.types import SessionEndEvent, SessionStartEvent
+    await bridge(TurnStartEvent(type=EventType.TURN_START, message="hello"))
 
-    await bridge(
-      SessionStartEvent(
-        type=EventType.SESSION_START,
-        model="model",
-        thinking_enabled=True,
-      )
-    )
-
-    await bridge(SessionEndEvent(type=EventType.SESSION_END, reason="quit"))
-
-    # No errors should have been raised
+    # No UI methods should be called for TURN_START
     assert len(handler.calls) == 0

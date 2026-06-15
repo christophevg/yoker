@@ -8,9 +8,9 @@ from pathlib import Path
 import pytest
 
 from yoker.context import (
-  BasicPersistenceContextManager,
   ContextManager,
   ContextStatistics,
+  PersistenceContextManager,
   SessionMetadata,
 )
 from yoker.context.validator import (
@@ -156,22 +156,22 @@ class TestSafePath:
     assert is_safe_path(tmp_path, tmp_path) is True
 
 
-class TestBasicPersistenceContextManager:
-  """Tests for BasicPersistenceContextManager."""
+class TestPersistenceContextManager:
+  """Tests for PersistenceContextManager."""
 
   def test_init_auto_session_id(self, tmp_path: Path) -> None:
     """Test initialization with auto-generated session ID."""
-    cm = BasicPersistenceContextManager(tmp_path)
+    cm = PersistenceContextManager(tmp_path)
     assert len(cm.get_session_id()) >= 8
 
   def test_init_custom_session_id(self, tmp_path: Path) -> None:
     """Test initialization with custom session ID."""
-    cm = BasicPersistenceContextManager(tmp_path, session_id="custom-session-123")
+    cm = PersistenceContextManager(tmp_path, session_id="custom-session-123")
     assert cm.get_session_id() == "custom-session-123"
 
   def test_add_message(self, tmp_path: Path) -> None:
     """Test adding messages."""
-    cm = BasicPersistenceContextManager(tmp_path, session_id="test-session")
+    cm = PersistenceContextManager(tmp_path, session_id="test-session")
 
     cm.add_message("user", "Hello")
     cm.add_message("assistant", "Hi there!")
@@ -183,7 +183,7 @@ class TestBasicPersistenceContextManager:
 
   def test_add_tool_result(self, tmp_path: Path) -> None:
     """Test adding tool results."""
-    cm = BasicPersistenceContextManager(tmp_path, session_id="test-session")
+    cm = PersistenceContextManager(tmp_path, session_id="test-session")
 
     cm.add_tool_result("read", "tool-123", "file content", success=True)
 
@@ -194,7 +194,7 @@ class TestBasicPersistenceContextManager:
 
   def test_turn_lifecycle(self, tmp_path: Path) -> None:
     """Test turn start and end."""
-    cm = BasicPersistenceContextManager(tmp_path, session_id="test-session")
+    cm = PersistenceContextManager(tmp_path, session_id="test-session")
 
     cm.start_turn("Hello")
     cm.end_turn("Hi there!")
@@ -205,7 +205,7 @@ class TestBasicPersistenceContextManager:
 
   def test_statistics(self, tmp_path: Path) -> None:
     """Test statistics tracking."""
-    cm = BasicPersistenceContextManager(tmp_path, session_id="test-session")
+    cm = PersistenceContextManager(tmp_path, session_id="test-session")
 
     cm.start_turn("Hello")
     cm.add_tool_result("read", "tool-1", "content")
@@ -222,14 +222,14 @@ class TestBasicPersistenceContextManager:
     session_id = "test-session-save"
 
     # Create and save context
-    cm1 = BasicPersistenceContextManager(tmp_path, session_id=session_id)
+    cm1 = PersistenceContextManager(tmp_path, session_id=session_id)
     cm1.add_message("user", "Hello")
     cm1.add_message("assistant", "Hi!")
     cm1.save()
     cm1.close()
 
     # Load context
-    cm2 = BasicPersistenceContextManager(tmp_path, session_id=session_id)
+    cm2 = PersistenceContextManager(tmp_path, session_id=session_id)
     loaded = cm2.load()
 
     assert loaded is True
@@ -243,7 +243,7 @@ class TestBasicPersistenceContextManager:
 
   def test_load_nonexistent(self, tmp_path: Path) -> None:
     """Test loading non-existent session."""
-    cm = BasicPersistenceContextManager(tmp_path, session_id="nonexistent")
+    cm = PersistenceContextManager(tmp_path, session_id="nonexistent")
     loaded = cm.load()
     assert loaded is False
 
@@ -251,7 +251,7 @@ class TestBasicPersistenceContextManager:
     """Test deleting context."""
     session_id = "test-delete"
 
-    cm = BasicPersistenceContextManager(tmp_path, session_id=session_id)
+    cm = PersistenceContextManager(tmp_path, session_id=session_id)
     cm.add_message("user", "Test")
     cm.save()
 
@@ -259,18 +259,18 @@ class TestBasicPersistenceContextManager:
     cm.delete()
 
     # Verify deleted
-    cm2 = BasicPersistenceContextManager(tmp_path, session_id=session_id)
+    cm2 = PersistenceContextManager(tmp_path, session_id=session_id)
     assert cm2.load() is False
 
   def test_delete_nonexistent_raises(self, tmp_path: Path) -> None:
     """Test deleting non-existent session raises error."""
-    cm = BasicPersistenceContextManager(tmp_path, session_id="nonexistent-delete")
+    cm = PersistenceContextManager(tmp_path, session_id="nonexistent-delete")
     with pytest.raises(SessionNotFoundError):
       cm.delete()
 
   def test_clear(self, tmp_path: Path) -> None:
     """Test clearing context."""
-    cm = BasicPersistenceContextManager(tmp_path, session_id="test-clear")
+    cm = PersistenceContextManager(tmp_path, session_id="test-clear")
 
     cm.add_message("user", "Hello")
     cm.clear()
@@ -285,7 +285,7 @@ class TestBasicPersistenceContextManager:
     """Test JSONL file format."""
     session_id = "test-jsonl"
 
-    cm = BasicPersistenceContextManager(tmp_path, session_id=session_id)
+    cm = PersistenceContextManager(tmp_path, session_id=session_id)
     cm.add_message("user", "Hello")
     cm.save()
 
@@ -313,7 +313,7 @@ class TestBasicPersistenceContextManager:
     file_path = tmp_path / f"{session_id}.jsonl"
     file_path.write_text('{"type": "session_start", "data": {}}\ninvalid json\n')
 
-    cm = BasicPersistenceContextManager(tmp_path, session_id=session_id)
+    cm = PersistenceContextManager(tmp_path, session_id=session_id)
     with pytest.raises(ContextCorruptionError) as exc_info:
       cm.load()
 
@@ -321,7 +321,7 @@ class TestBasicPersistenceContextManager:
 
   def test_directory_permissions(self, tmp_path: Path) -> None:
     """Test that storage directory has secure permissions."""
-    cm = BasicPersistenceContextManager(tmp_path, session_id="test-perms")
+    cm = PersistenceContextManager(tmp_path, session_id="test-perms")
     cm.save()
 
     # Check directory permissions (skip on Windows)
@@ -333,8 +333,8 @@ class TestBasicPersistenceContextManager:
     cm.delete()
 
   def test_context_manager_protocol(self, tmp_path: Path) -> None:
-    """Test that BasicPersistenceContextManager implements ContextManager protocol."""
-    cm = BasicPersistenceContextManager(tmp_path, session_id="test-protocol")
+    """Test that PersistenceContextManager implements ContextManager protocol."""
+    cm = PersistenceContextManager(tmp_path, session_id="test-protocol")
     assert isinstance(cm, ContextManager)
 
   def test_tilde_expansion_in_storage_path(
@@ -350,7 +350,7 @@ class TestBasicPersistenceContextManager:
     monkeypatch.setenv("USERPROFILE", str(tmp_path))
 
     # Create context manager with tilde path
-    cm = BasicPersistenceContextManager(
+    cm = PersistenceContextManager(
       storage_path="~/.cache/yoker/sessions",
       session_id="test-tilde-expansion",
     )
@@ -387,7 +387,7 @@ class TestListSessions:
     from yoker.context import list_sessions
 
     # Create a session with some messages
-    cm = BasicPersistenceContextManager(tmp_path, session_id="test-session-1")
+    cm = PersistenceContextManager(tmp_path, session_id="test-session-1")
     cm.start_turn("Hello, how are you?")
     cm.end_turn("I'm doing well, thank you!")
     cm.save()
@@ -407,7 +407,7 @@ class TestListSessions:
     from yoker.context import list_sessions
 
     # Create first session
-    cm1 = BasicPersistenceContextManager(tmp_path, session_id="session-older")
+    cm1 = PersistenceContextManager(tmp_path, session_id="session-older")
     cm1.start_turn("First message")
     cm1.end_turn("First response")
     cm1.save()
@@ -416,7 +416,7 @@ class TestListSessions:
     time.sleep(0.01)  # Ensure different timestamps
 
     # Create second session
-    cm2 = BasicPersistenceContextManager(tmp_path, session_id="session-newer")
+    cm2 = PersistenceContextManager(tmp_path, session_id="session-newer")
     cm2.start_turn("Second message")
     cm2.end_turn("Second response")
     cm2.save()
@@ -432,7 +432,7 @@ class TestListSessions:
     """Test that last_message contains preview of last user message."""
     from yoker.context import list_sessions
 
-    cm = BasicPersistenceContextManager(tmp_path, session_id="test-preview")
+    cm = PersistenceContextManager(tmp_path, session_id="test-preview")
     cm.start_turn("Hello there!")
     cm.end_turn("Hi! How can I help?")
     cm.start_turn("What is the weather?")
@@ -451,7 +451,7 @@ class TestListSessions:
 
     long_message = "A" * 200  # 200 characters
 
-    cm = BasicPersistenceContextManager(tmp_path, session_id="test-long")
+    cm = PersistenceContextManager(tmp_path, session_id="test-long")
     cm.start_turn(long_message)
     cm.end_turn("Response")
     cm.save()
@@ -468,7 +468,7 @@ class TestListSessions:
     from yoker.context import list_sessions
 
     # Create valid session
-    cm = BasicPersistenceContextManager(tmp_path, session_id="valid-session")
+    cm = PersistenceContextManager(tmp_path, session_id="valid-session")
     cm.start_turn("Hello")
     cm.end_turn("Hi!")
     cm.save()
@@ -486,7 +486,7 @@ class TestListSessions:
     """Test that all SessionMetadata fields are populated correctly."""
     from yoker.context import list_sessions
 
-    cm = BasicPersistenceContextManager(tmp_path, session_id="full-metadata")
+    cm = PersistenceContextManager(tmp_path, session_id="full-metadata")
     cm.start_turn("Message 1")
     cm.end_turn("Response 1")
     cm.start_turn("Message 2")
@@ -511,20 +511,20 @@ class TestListSessions:
     """Test that default storage path is used when not provided."""
     from yoker.context import DEFAULT_STORAGE_PATH
 
-    cm = BasicPersistenceContextManager()
+    cm = PersistenceContextManager()
     assert cm._storage_path == DEFAULT_STORAGE_PATH
 
   def test_resume_existing_session(self, tmp_path: Path) -> None:
     """Test resuming an existing session."""
     # Create a session
-    cm1 = BasicPersistenceContextManager(tmp_path, session_id="test-resume")
+    cm1 = PersistenceContextManager(tmp_path, session_id="test-resume")
     cm1.start_turn("Hello")
     cm1.end_turn("Hi there!")
     cm1.save()
     cm1.close()
 
     # Resume the session
-    cm2 = BasicPersistenceContextManager.resume("test-resume", storage_path=tmp_path)
+    cm2 = PersistenceContextManager.resume("test-resume", storage_path=tmp_path)
 
     # Verify the session was loaded
     assert cm2.get_statistics().message_count == 2
@@ -538,7 +538,7 @@ class TestListSessions:
     from yoker.exceptions import SessionNotFoundError
 
     with pytest.raises(SessionNotFoundError):
-      BasicPersistenceContextManager.resume("nonexistent", storage_path=tmp_path)
+      PersistenceContextManager.resume("nonexistent", storage_path=tmp_path)
 
   def test_list_sessions_default_path(self, tmp_path: Path, monkeypatch) -> None:
     """Test list_sessions with default path."""
@@ -547,10 +547,10 @@ class TestListSessions:
 
     # Use tmp_path as the default storage path
     monkeypatch.setattr("yoker.context.session.DEFAULT_STORAGE_PATH", tmp_path)
-    monkeypatch.setattr("yoker.context.basic.DEFAULT_STORAGE_PATH", tmp_path)
+    monkeypatch.setattr("yoker.context.persistence.DEFAULT_STORAGE_PATH", tmp_path)
 
     # Create a session
-    cm = BasicPersistenceContextManager(session_id="test-default")
+    cm = PersistenceContextManager(session_id="test-default")
     cm._storage_path = tmp_path  # Override to use tmp_path
     cm._file_path = tmp_path / "test-default.jsonl"
     cm.start_turn("Test")

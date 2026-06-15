@@ -19,8 +19,6 @@ from yoker.events.types import (
   ContentStartEvent,
   Event,
   EventType,
-  SessionEndEvent,
-  SessionStartEvent,
   ThinkingChunkEvent,
   ThinkingEndEvent,
   ThinkingStartEvent,
@@ -44,15 +42,7 @@ def serialize_event(event: Event) -> dict[str, Any]:
   data: dict[str, Any] = {}
   timestamp = event.timestamp.isoformat()
 
-  if isinstance(event, SessionStartEvent):
-    data = {
-      "model": event.model,
-      "thinking_enabled": event.thinking_enabled,
-      "config_summary": event.config_summary,
-    }
-  elif isinstance(event, SessionEndEvent):
-    data = {"reason": event.reason}
-  elif isinstance(event, TurnStartEvent):
+  if isinstance(event, TurnStartEvent):
     data = {"message": event.message}
   elif isinstance(event, TurnEndEvent):
     data = {"response": event.response, "tool_calls_count": event.tool_calls_count}
@@ -71,6 +61,15 @@ def serialize_event(event: Event) -> dict[str, Any]:
       "tool_name": event.tool_name,
       "result": event.result,
       "success": event.success,
+    }
+  elif isinstance(event, ToolContentEvent):
+    data = {
+      "tool_name": event.tool_name,
+      "operation": event.operation,
+      "path": event.path,
+      "content_type": event.content_type,
+      "content": event.content,
+      "metadata": event.metadata,
     }
   elif isinstance(event, CommandEvent):
     data = {"command": event.command, "result": event.result}
@@ -97,20 +96,6 @@ def deserialize_event(entry: dict[str, Any]) -> Event:
   data = entry.get("data", {})
 
   match event_type:
-    case EventType.SESSION_START:
-      return SessionStartEvent(
-        type=event_type,
-        timestamp=timestamp,
-        model=data["model"],
-        thinking_enabled=data["thinking_enabled"],
-        config_summary=data.get("config_summary", {}),
-      )
-    case EventType.SESSION_END:
-      return SessionEndEvent(
-        type=event_type,
-        timestamp=timestamp,
-        reason=data["reason"],
-      )
     case EventType.TURN_START:
       return TurnStartEvent(
         type=event_type,
@@ -168,13 +153,6 @@ def deserialize_event(entry: dict[str, Any]) -> Event:
         result=data["result"],
         success=data.get("success", True),
       )
-    case EventType.COMMAND:
-      return CommandEvent(
-        type=event_type,
-        timestamp=timestamp,
-        command=data["command"],
-        result=data["result"],
-      )
     case EventType.TOOL_CONTENT:
       return ToolContentEvent(
         type=event_type,
@@ -185,6 +163,13 @@ def deserialize_event(entry: dict[str, Any]) -> Event:
         content_type=data.get("content_type", "application/x-summary"),
         content=data.get("content"),
         metadata=data.get("metadata", {}),
+      )
+    case EventType.COMMAND:
+      return CommandEvent(
+        type=event_type,
+        timestamp=timestamp,
+        command=data["command"],
+        result=data["result"],
       )
     case _:
       raise ValueError(f"Unknown event type: {event_type}")

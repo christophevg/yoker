@@ -15,8 +15,6 @@ from yoker.events import (
   ConsoleEventHandler,
   ContentChunkEvent,
   EventType,
-  SessionEndEvent,
-  SessionStartEvent,
   ThinkingChunkEvent,
   ToolCallEvent,
   ToolResultEvent,
@@ -38,8 +36,6 @@ class TestEventTypes:
   def test_event_type_count(self) -> None:
     """Test that all expected event types exist."""
     expected = [
-      "SESSION_START",
-      "SESSION_END",
       "TURN_START",
       "TURN_END",
       "THINKING_START",
@@ -59,23 +55,6 @@ class TestEventTypes:
 
 class TestEventClasses:
   """Tests for event dataclasses."""
-
-  def test_session_start_event(self) -> None:
-    """Test SessionStartEvent creation."""
-    event = SessionStartEvent(
-      type=EventType.SESSION_START,
-      model="test-model",
-      thinking_enabled=True,
-    )
-    assert event.model == "test-model"
-    assert event.thinking_enabled is True
-    assert event.type == EventType.SESSION_START
-
-  def test_session_end_event(self) -> None:
-    """Test SessionEndEvent creation."""
-    event = SessionEndEvent(type=EventType.SESSION_END, reason="quit")
-    assert event.reason == "quit"
-    assert event.type == EventType.SESSION_END
 
   def test_turn_start_event(self) -> None:
     """Test TurnStartEvent creation."""
@@ -170,27 +149,6 @@ class TestConsoleEventHandler:
     event = ContentChunkEvent(type=EventType.CONTENT_CHUNK, text="Hello")
     await console_handler(event)
     assert "Hello" in console_handler.console.file.getvalue()  # type: ignore[attr-defined]
-
-  @pytest.mark.asyncio
-  async def test_handler_handles_session_start(self, console_handler: ConsoleEventHandler) -> None:
-    """Test that SessionStartEvent is handled."""
-    event = SessionStartEvent(
-      type=EventType.SESSION_START,
-      model="llama3.2",
-      thinking_enabled=True,
-    )
-    await console_handler(event)
-    output = console_handler.console.file.getvalue()  # type: ignore[attr-defined]
-    assert "llama3.2" in output
-    assert "enabled" in output
-
-  @pytest.mark.asyncio
-  async def test_handler_handles_session_end(self, console_handler: ConsoleEventHandler) -> None:
-    """Test that SessionEndEvent is handled."""
-    event = SessionEndEvent(type=EventType.SESSION_END, reason="quit")
-    await console_handler(event)
-    output = console_handler.console.file.getvalue()  # type: ignore[attr-defined]
-    assert "Goodbye" in output
 
   @pytest.mark.asyncio
   async def test_handler_handles_thinking_chunk(self, console_handler: ConsoleEventHandler) -> None:
@@ -330,7 +288,6 @@ class TestAgentEventEmission:
 
   def test_agent_emits_events_during_process(self, mocker: MockerFixture) -> None:
     """Test that Agent emits events during process()."""
-    # Mock the ollama client
     mock_client = mocker.MagicMock()
 
     class AsyncIter:
@@ -361,7 +318,7 @@ class TestAgentEventEmission:
 
     mock_client.chat = AsyncMock(return_value=AsyncIter([mock_chunk]))
 
-    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
+    mocker.patch("yoker.agent.agent.AsyncClient", return_value=mock_client)
 
     from yoker.agent import Agent
 
@@ -371,10 +328,8 @@ class TestAgentEventEmission:
 
     asyncio.run(agent.process("Hi"))
 
-    # Check that events were emitted
     assert len(collector.events) > 0
 
-    # Check for specific event types
     event_types = [e.type for e in collector.events]
     assert EventType.TURN_START in event_types
     assert EventType.TURN_END in event_types
@@ -393,22 +348,3 @@ class TestAgentEventEmission:
 
     agent.remove_event_handler(handler)
     assert handler not in agent._event_handlers
-
-  def test_agent_emits_session_events(self) -> None:
-    """Test that Agent emits session events via begin_session/end_session."""
-    from yoker.agent import Agent
-
-    agent = Agent(config=Config())
-    collector = TestEventCollector()
-    agent.add_event_handler(collector)
-
-    # Begin session
-    asyncio.run(agent.begin_session())
-
-    # End session
-    asyncio.run(agent.end_session(reason="quit"))
-
-    # Check session events
-    event_types = [e.type for e in collector.events]
-    assert EventType.SESSION_START in event_types
-    assert EventType.SESSION_END in event_types

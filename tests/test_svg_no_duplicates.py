@@ -11,11 +11,11 @@ from yoker.events.types import (
   ContentEndEvent,
   ContentStartEvent,
   EventType,
-  SessionEndEvent,
-  SessionStartEvent,
   ThinkingChunkEvent,
   ThinkingEndEvent,
   ThinkingStartEvent,
+  ToolCallEvent,
+  ToolResultEvent,
   TurnEndEvent,
   TurnStartEvent,
 )
@@ -28,16 +28,6 @@ class TestSVGNoDuplicates:
     """Verify session header appears only once in SVG."""
     console = Console(record=True, width=80)
     handler = ConsoleEventHandler(console=console, version="1.2.3")
-
-    # Session start
-    handler._handle_session_start(
-      SessionStartEvent(
-        type=EventType.SESSION_START,
-        model="test-model",
-        thinking_enabled=True,
-        config_summary={},
-      )
-    )
 
     # Turn
     handler._handle_turn_start(TurnStartEvent(type=EventType.TURN_START, message="test"))
@@ -54,9 +44,6 @@ class TestSVGNoDuplicates:
       )
     )
 
-    # Session end
-    handler._handle_session_end(SessionEndEvent(type=EventType.SESSION_END, reason="quit"))
-
     # Save and check
     with tempfile.NamedTemporaryFile(mode="w", suffix=".svg", delete=False) as f:
       svg_path = f.name
@@ -65,13 +52,11 @@ class TestSVGNoDuplicates:
       console.save_svg(svg_path)
       svg_content = Path(svg_path).read_text(encoding="utf-8")
 
-      # Count occurrences of Yoker (appears at least once in header)
-      yoker_count = svg_content.count("Yoker")
-      assert yoker_count >= 1, f"Yoker should appear at least once, found {yoker_count} times"
-
-      # Count occurrences of model name
-      model_count = svg_content.count("test-model")
-      assert model_count >= 1, f"Model should appear at least once, found {model_count} times"
+      # Response should appear at least once
+      response_count = svg_content.count("Response")
+      assert response_count >= 1, (
+        f"Response should appear at least once, found {response_count} times"
+      )
     finally:
       Path(svg_path).unlink()
 
@@ -140,8 +125,6 @@ class TestSVGNoDuplicates:
     handler._handle_turn_start(TurnStartEvent(type=EventType.TURN_START, message="test"))
 
     # Tool call
-    from yoker.events.types import ToolCallEvent, ToolResultEvent
-
     handler._handle_tool_call(
       ToolCallEvent(
         type=EventType.TOOL_CALL,

@@ -5,7 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from yoker.agent import Agent, _load_agent_from_plugin_url
+from yoker.agent import Agent
+from yoker.agent.agent import _load_agent_from_plugin_url
 
 
 class TestAgentDefinitionFileValidation:
