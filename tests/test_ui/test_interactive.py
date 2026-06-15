@@ -12,7 +12,6 @@ from yoker.exceptions import NetworkError, ToolError
 from yoker.ui import InteractiveUIHandler
 from yoker.ui.spinner import LiveDisplay
 
-
 if sys.platform == "win32":
   pytest.skip(
     "prompt_toolkit interactive tests require a Windows console",
