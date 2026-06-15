@@ -13,6 +13,7 @@ from yoker.config import (
   OllamaConfig,
   OllamaParameters,
   PermissionsConfig,
+  UIConfig,
 )
 from yoker.exceptions import ValidationError
 
@@ -55,6 +56,26 @@ class TestConfigSchema:
     assert config.agents.directory == ""
     assert config.logging.format == "text"
     assert config.logging.level == "INFO"
+    assert config.ui.mode == "interactive"
+    assert config.ui.show_thinking is False
+    assert config.ui.show_tool_calls is False
+    assert config.ui.show_stats is False
+
+  def test_ui_config_defaults(self) -> None:
+    """Test UIConfig default values."""
+    ui = UIConfig()
+    assert ui.mode == "interactive"
+    assert ui.show_thinking is False
+    assert ui.show_tool_calls is False
+    assert ui.show_stats is False
+
+  def test_ui_config_batch_mode(self) -> None:
+    """Test UIConfig can be configured for batch mode."""
+    ui = UIConfig(mode="batch", show_thinking=True, show_tool_calls=True, show_stats=True)
+    assert ui.mode == "batch"
+    assert ui.show_thinking is True
+    assert ui.show_tool_calls is True
+    assert ui.show_stats is True
 
   def test_frozen_dataclass(self) -> None:
     """Test that config classes are frozen (immutable)."""
@@ -108,6 +129,12 @@ class TestConfigValidation:
       Config(permissions=PermissionsConfig(filesystem_paths=()))
     assert "permissions.filesystem_paths" in str(exc_info.value)
     assert "must not be empty" in str(exc_info.value).lower()
+
+  def test_validate_invalid_ui_mode(self) -> None:
+    """Test validation catches invalid UI mode."""
+    with pytest.raises(ValidationError) as exc_info:
+      Config(ui=UIConfig(mode="invalid"))
+    assert "ui.mode" in str(exc_info.value)
 
 
 class TestClevisIntegration:
