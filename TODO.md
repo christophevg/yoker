@@ -18,33 +18,6 @@
 
 ---
 
-### Phase 7: Remove Old Code
-
-**Goal:** Remove deprecated code and clean up.
-
-**Dependency:** All previous phases complete
-
-- [ ] **UI-048: Remove ConsoleEventHandler**
-  - Delete `yoker/events/handlers.py`
-  - Update `yoker/events/__init__.py`
-  - Verify all references removed
-  - Reference: analysis/ui-separation-migration.md#phase-7-remove-old-code
-  - Acceptance: ConsoleEventHandler removed, no references
-
-- [ ] **UI-049: Clean up imports**
-  - Remove unused imports from all files
-  - Update `__all__` exports
-  - Reference: analysis/ui-separation-migration.md#phase-7-remove-old-code
-  - Acceptance: No unused imports, exports clean
-
-- [ ] **UI-050: Remove old code from __main__.py**
-  - Remove all deprecated code paths
-  - Verify no dead code
-  - Reference: analysis/ui-separation-migration.md#phase-7-remove-old-code
-  - Acceptance: __main__.py is clean, minimal
-
----
-
 ### Phase 8: Final Polish
 
 **Goal:** Documentation and examples.
@@ -767,6 +740,29 @@
   - Use command registry from UI layer
   - Reference: analysis/ui-separation-migration.md#phase-6-entry-point-refactoring
   - Acceptance: Command dispatch uses registry
+
+### Phase 7: Remove Old Code (2026-06-15)
+
+**PR:** #26
+
+- [x] **UI-048: Remove ConsoleEventHandler** (2026-06-15)
+  - Delete `yoker/events/handlers.py`
+  - Update `yoker/events/__init__.py`
+  - Verify all references removed
+  - Reference: analysis/ui-separation-migration.md#phase-7-remove-old-code
+  - Acceptance: ConsoleEventHandler removed, no references
+
+- [x] **UI-049: Clean up imports** (2026-06-15)
+  - Remove unused imports from all files
+  - Update `__all__` exports
+  - Reference: analysis/ui-separation-migration.md#phase-7-remove-old-code
+  - Acceptance: No unused imports, exports clean
+
+- [x] **UI-050: Remove old code from __main__.py** (2026-06-15)
+  - Remove all deprecated code paths
+  - Verify no dead code
+  - Reference: analysis/ui-separation-migration.md#phase-7-remove-old-code
+  - Acceptance: __main__.py is clean, minimal
 
 ### Phase 1.7: Async-First Agent Architecture
 
