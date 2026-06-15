@@ -18,81 +18,6 @@
 
 ---
 
-### Phase 4: Refactor Agent Module
-
-**Goal:** Split agent.py into focused modules, remove session lifecycle.
-
-**Dependency:** Phases 1-3 complete
-
-- [ ] **UI-025: Create agent package directory structure**
-  - Create `yoker/agent/` directory
-  - Create placeholder files: `__init__.py`, `core.py`, `agent.py`, `processing.py`, `tools.py`
-  - Reference: analysis/ui-separation-agent-module.md#2-target-structure
-  - Acceptance: Directory structure exists
-
-- [ ] **UI-026: Refactor ContextManager to be list-like**
-  - Modify `ContextManager` to extend `UserList`
-  - Implement `append()` to persist on add
-  - Agent sees context as a plain list
-  - Reference: analysis/ui-separation-overview.md#4-context-and-contextmanager
-  - Acceptance: ContextManager works as list, Agent can use plain list too
-
-- [ ] **UI-027: Move AgentCore to agent/core.py**
-  - Move `AgentCore` class from `base.py` to `agent/core.py`
-  - Include event handler management
-  - Include guardrail validation
-  - Reference: analysis/ui-separation-agent-module.md#41-agentcorepy
-  - Acceptance: AgentCore works in new location
-
-- [ ] **UI-028: Extract Agent initialization and properties**
-  - Create `Agent` class in `agent/agent.py`
-  - Move initialization and property accessors
-  - Delegate to AgentCore
-  - Reference: analysis/ui-separation-agent-module.md#42-agentagentpy
-  - Acceptance: Agent initializes correctly, properties work
-
-- [ ] **UI-029: Extract message processing logic**
-  - Create processing logic module in `agent/processing.py`
-  - Extract streaming, tool calls, event emission
-  - Keep as methods on Agent class (not separate)
-  - Reference: analysis/ui-separation-agent-module.md#43-agentprocessingpy
-  - Acceptance: Processing logic in agent module, not separate file
-
-- [ ] **UI-030: Extract tool registry building**
-  - Create `_build_tool_registry()` in `agent/tools.py`
-  - Move tool initialization logic
-  - Reference: analysis/ui-separation-agent-module.md#44-agenttoolspy
-  - Acceptance: Tool registry builds correctly
-
-- [ ] **UI-031: Remove Agent session lifecycle**
-  - Remove `begin_session()` and `end_session()` methods from Agent
-  - Remove `SessionStartEvent` and `SessionEndEvent` from events
-  - Agent lifecycle is create → use → discard
-  - Reference: analysis/ui-separation-overview.md#6-agent-lifecycle-no-session
-  - Acceptance: No session methods, no session events
-
-- [ ] **UI-032: Update context module for list-like interface**
-  - Create `context/` module if not exists
-  - Create `manager.py` with `ContextManager` extending `UserList`
-  - Create `basic.py` with `BasicContextManager`
-  - Create placeholder for `PersistenceContextManager`
-  - Reference: analysis/ui-separation-overview.md#45-module-structure
-  - Acceptance: Context module structure complete
-
-- [ ] **UI-033: Update imports throughout codebase**
-  - Update `yoker/__init__.py` to import from `yoker.agent`
-  - Update all imports from old locations
-  - Reference: analysis/ui-separation-agent-module.md#54-update-imports
-  - Acceptance: All imports work, tests pass
-
-- [ ] **UI-034: Remove old files**
-  - Delete `yoker/base.py`
-  - Delete `yoker/agent.py`
-  - Remove session events from `events/types.py`
-  - Reference: analysis/ui-separation-agent-module.md#55-remove-old-files
-  - Acceptance: Old files deleted, no references remain
-
----
 
 ### Phase 5: Slash Commands
 
@@ -779,6 +704,78 @@
   - Export: `UIHandler`, `BaseUIHandler`, `UIBridge`, `InteractiveUIHandler`, `BatchUIHandler`
   - Reference: analysis/ui-separation-migration.md#phase-3-ui-implementations
   - Acceptance: All UI classes import correctly
+
+### Phase 4: Refactor Agent Module (2026-06-15)
+
+**PR:** #23
+
+- [x] **UI-025: Create agent package directory structure** (2026-06-15)
+  - Created `yoker/agent/` directory
+  - Created placeholder files: `__init__.py`, `core.py`, `agent.py`, `processing.py`, `tools.py`
+  - Reference: analysis/ui-separation-agent-module.md#2-target-structure
+  - Acceptance: Directory structure exists
+
+- [x] **UI-026: Refactor ContextManager to be list-like** (2026-06-15)
+  - Modified `ContextManager` to extend `UserList`
+  - Implemented `append()` to persist on add
+  - Agent sees context as a plain list
+  - Reference: analysis/ui-separation-overview.md#4-context-and-contextmanager
+  - Acceptance: ContextManager works as list, Agent can use plain list too
+
+- [x] **UI-027: Move AgentCore to agent/core.py** (2026-06-15)
+  - Moved `AgentCore` class from `base.py` to `agent/core.py`
+  - Included event handler management
+  - Included guardrail validation
+  - Reference: analysis/ui-separation-agent-module.md#41-agentcorepy
+  - Acceptance: AgentCore works in new location
+
+- [x] **UI-028: Extract Agent initialization and properties** (2026-06-15)
+  - Created `Agent` class in `agent/agent.py`
+  - Moved initialization and property accessors
+  - Delegated to AgentCore
+  - Reference: analysis/ui-separation-agent-module.md#42-agentagentpy
+  - Acceptance: Agent initializes correctly, properties work
+
+- [x] **UI-029: Extract message processing logic** (2026-06-15)
+  - Created processing logic module in `agent/processing.py`
+  - Extracted streaming, tool calls, event emission
+  - Kept as methods on Agent class (not separate)
+  - Reference: analysis/ui-separation-agent-module.md#43-agentprocessingpy
+  - Acceptance: Processing logic in agent module, not separate file
+
+- [x] **UI-030: Extract tool registry building** (2026-06-15)
+  - Created `_build_tool_registry()` in `agent/tools.py`
+  - Moved tool initialization logic
+  - Reference: analysis/ui-separation-agent-module.md#44-agenttoolspy
+  - Acceptance: Tool registry builds correctly
+
+- [x] **UI-031: Remove Agent session lifecycle** (2026-06-15)
+  - Removed `begin_session()` and `end_session()` methods from Agent
+  - Removed `SessionStartEvent` and `SessionEndEvent` from events
+  - Agent lifecycle is create → use → discard
+  - Reference: analysis/ui-separation-overview.md#6-agent-lifecycle-no-session
+  - Acceptance: No session methods, no session events
+
+- [x] **UI-032: Update context module for list-like interface** (2026-06-15)
+  - Created `context/` module
+  - Created `manager.py` with `ContextManager` extending `UserList`
+  - Created `basic.py` with `BasicContextManager`
+  - Created placeholder for `PersistenceContextManager`
+  - Reference: analysis/ui-separation-overview.md#45-module-structure
+  - Acceptance: Context module structure complete
+
+- [x] **UI-033: Update imports throughout codebase** (2026-06-15)
+  - Updated `yoker/__init__.py` to import from `yoker.agent`
+  - Updated all imports from old locations
+  - Reference: analysis/ui-separation-agent-module.md#54-update-imports
+  - Acceptance: All imports work, tests pass
+
+- [x] **UI-034: Remove old files** (2026-06-15)
+  - Deleted `yoker/base.py`
+  - Deleted `yoker/agent.py`
+  - Removed session events from `events/types.py`
+  - Reference: analysis/ui-separation-agent-module.md#55-remove-old-files
+  - Acceptance: Old files deleted, no references remain
 
 ### Phase 1.7: Async-First Agent Architecture
 
