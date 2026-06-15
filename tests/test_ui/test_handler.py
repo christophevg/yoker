@@ -1,6 +1,28 @@
-"""Tests for UIHandler protocol."""
+"""Tests for UIHandler protocol and public API."""
 
-from yoker.ui import UIHandler
+from yoker.ui import (
+  BaseUIHandler,
+  BatchUIHandler,
+  InteractiveUIHandler,
+  LiveDisplay,
+  UIBridge,
+  UIHandler,
+  live_display,
+)
+
+
+class TestUIHandlerPublicAPI:
+  """Tests for UI module public API exports."""
+
+  def test_all_classes_exported(self):
+    """All expected classes should be importable from yoker.ui."""
+    assert UIHandler is not None
+    assert BaseUIHandler is not None
+    assert UIBridge is not None
+    assert InteractiveUIHandler is not None
+    assert BatchUIHandler is not None
+    assert LiveDisplay is not None
+    assert live_display is not None
 
 
 class TestUIHandlerProtocol:
