@@ -1,5 +1,7 @@
 """Tests for yoker agent module."""
 
+import pytest
+
 from yoker.agent import Agent
 from yoker.config import BackendConfig, Config, OllamaConfig
 
@@ -50,3 +52,35 @@ class TestAgent:
     """Test that agent tool is available in tool registry."""
     agent = Agent(config=Config())
     assert agent.tool_registry.get("agent") is not None
+
+  def test_inject_skill_context_adds_system_message(self) -> None:
+    """Test that inject_skill_context appends a system message."""
+    agent = Agent(config=Config())
+    agent._core.skill_registry = None
+    from yoker.skills import Skill, SkillRegistry
+
+    skill_registry = SkillRegistry()
+    skill_registry.register(
+      Skill(name="commit", description="Guide commits", content="Commit instructions")
+    )
+    agent._core.skill_registry = skill_registry
+
+    initial_count = len(agent.context.get_messages())
+    agent.inject_skill_context("commit", "fix bug")
+
+    messages = agent.context.get_messages()
+    assert len(messages) == initial_count + 1
+    last_message = messages[-1]
+    assert last_message["role"] == "system"
+    assert "commit" in last_message["content"]
+    assert "fix bug" in last_message["content"]
+    assert "Commit instructions" in last_message["content"]
+
+  def test_inject_skill_context_unknown_skill_raises(self) -> None:
+    """Test that inject_skill_context raises SkillError for unknown skills."""
+    from yoker.exceptions import SkillError
+
+    agent = Agent(config=Config())
+
+    with pytest.raises(SkillError):
+      agent.inject_skill_context("unknown")

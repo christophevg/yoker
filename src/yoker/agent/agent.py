@@ -593,5 +593,43 @@ class Agent(ProcessingMixin):
     """
     self._core.remove_event_handler(handler)
 
+  def inject_skill_context(self, skill_name: str, args: str | None = None) -> None:
+    """Inject skill context into the conversation.
+
+    Looks up the skill in the agent's skill registry and appends a system
+    message containing the formatted invocation block. This is the same
+    method used by SkillTool when the LLM invokes a skill.
+
+    Args:
+      skill_name: Name of the skill to invoke (may include namespace).
+      args: Optional arguments passed to the skill.
+
+    Raises:
+      SkillError: If the skill is not found in the registry.
+    """
+    from yoker.exceptions import SkillError
+    from yoker.skills import format_invocation_block
+
+    registry = self.skill_registry
+    if registry is None:
+      raise SkillError(skill_name, "No skill registry available")
+
+    skill = registry.get(skill_name)
+    if skill is None:
+      available = ", ".join(registry.names)
+      raise SkillError(
+        skill_name,
+        f"Unknown skill. Available skills: {available}" if available else "Unknown skill",
+      )
+
+    content = format_invocation_block(skill, args or "")
+    self.context.add_message("system", content)
+    log.info(
+      "skill_context_injected",
+      skill_name=skill_name,
+      skill_full_name=skill.full_name,
+      has_args=bool(args),
+    )
+
 
 __all__ = ["Agent"]

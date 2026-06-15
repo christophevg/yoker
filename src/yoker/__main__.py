@@ -22,21 +22,12 @@ from clevis import get_config
 
 from yoker import __version__
 from yoker.agent import Agent
-from yoker.commands import (
-  CommandRegistry,
-  create_agents_command,
-  create_context_command,
-  create_help_command,
-  create_skill_commands,
-  create_skills_command,
-  create_think_command,
-  create_tools_command,
-)
 from yoker.config import Config
 from yoker.events import ConsoleEventHandler
 from yoker.exceptions import NetworkError
 from yoker.logging import configure_logging, get_logger
-from yoker.skills import SkillRegistry
+from yoker.ui import BatchUIHandler, UIHandler
+from yoker.ui.commands import CommandRegistry, create_default_registry
 
 if TYPE_CHECKING:
   from prompt_toolkit.shortcuts import PromptSession
@@ -127,80 +118,31 @@ def setup_logging(config: Config) -> None:
 
 
 def create_command_registry(agent: Agent, config: Config) -> CommandRegistry:
-  """Create and populate the command registry.
+  """Create and populate the UI command registry.
 
   Args:
     agent: The agent instance (for state access).
-    config: Configuration object.
+    config: Configuration object (kept for API compatibility).
 
   Returns:
-    Populated CommandRegistry.
+    Populated CommandRegistry from the UI layer.
   """
-  registry = CommandRegistry()
-
-  # Get skill registry from agent (already populated by Agent.__init__)
-  skill_registry = agent.skill_registry
-  if skill_registry is None:
-    skill_registry = SkillRegistry()  # Empty registry as fallback
-
-  # Register built-in commands
-  registry.register(create_help_command(registry))
-  registry.register(create_skills_command(skill_registry, config))
-  registry.register(
-    create_think_command(
-      get_thinking_mode=lambda: agent.thinking_mode,
-      set_thinking_mode=lambda mode: setattr(agent, "thinking_mode", mode),
-    )
-  )
-  registry.register(
-    create_context_command(
-      get_session_id=lambda: agent.context.get_session_id(),
-      get_statistics=lambda: agent.context.get_statistics(),
-      get_messages=lambda: agent.context.get_messages(),
-    )
-  )
-
-  # Register /tools command
-  registry.register(create_tools_command(agent._core.tool_registry, agent._core))
-
-  # Register /agents command
-  registry.register(
-    create_agents_command(
-      get_agent_definition=lambda: agent.agent_definition,
-      config=config,
-      get_plugin_agents=lambda: agent._core.plugin_agents,
-    )
-  )
-
-  # Register skill commands (if skills loaded)
-  skill_commands = create_skill_commands(
-    registry=skill_registry,
-    get_skill_registry=lambda: skill_registry,
-  )
-  log.info(
-    "skill_commands_created",
-    count=len(skill_commands),
-    commands=[cmd.name for cmd in skill_commands],
-  )
-  for command in skill_commands:
-    try:
-      registry.register(command)
-      log.info("skill_command_registered", name=command.name, description=command.description)
-    except ValueError as e:
-      # Command already exists (e.g., duplicate skill name)
-      log.warning("skill_command_duplicate", name=command.name, error=str(e))
+  registry = create_default_registry()
 
   log.info(
-    "skills_registered",
-    count=skill_registry.count if skill_registry else 0,
-    commands=[cmd.name for cmd in skill_commands],
+    "command_registry_created",
+    commands=registry.names,
+    skill_count=agent.skill_registry.count if agent.skill_registry else 0,
   )
 
   return registry
 
 
 async def run_interactive_session(
-  agent: Agent, command_registry: CommandRegistry, session: "PromptSession[str]"
+  agent: Agent,
+  command_registry: CommandRegistry,
+  session: "PromptSession[str]",
+  ui: "UIHandler",
 ) -> None:
   """Run the interactive agent session asynchronously.
 
@@ -208,6 +150,7 @@ async def run_interactive_session(
     agent: The agent instance.
     command_registry: Command registry for slash-commands.
     session: PromptSession for user input.
+    ui: UI handler for command output and errors.
   """
   from ollama import ResponseError
 
@@ -224,50 +167,32 @@ async def run_interactive_session(
       if not user_input.strip():
         continue
 
-      # Handle commands
+      # Handle slash-commands through the UI-layer registry.
       if user_input.startswith("/"):
-        result = command_registry.dispatch(user_input)
-        if result:
-          # Check if this is a skill injection
-          from yoker.commands.skill import extract_skill_content, is_skill_injection
-
-          if is_skill_injection(result):
-            # Inject skill content as system message (invisible to user)
-            skill_content = extract_skill_content(result)
-            agent.context.add_message("system", skill_content)
-
-            # Extract skill name and args for logging
-            parts = user_input[1:].split(maxsplit=1)
-            skill_name = parts[0]
-            skill_args = parts[1] if len(parts) > 1 else ""
-            log.info("skill_injected", skill_name=skill_name, args=skill_args)
-
-            # Process with agent - the skill content is now in context
-            # Send appropriate prompt based on whether args were provided
-            try:
-              if skill_args:
-                # If args provided, send them as the user message
-                # The agent sees skill context + user's args
-                await agent.process(skill_args)
-              else:
-                # If no args, send minimal prompt indicating skill invocation
-                # The agent sees skill context + invocation request
-                await agent.process("Execute the skill as requested.")
-              print()  # Blank line after response
-            except NetworkError as e:
-              if e.recoverable:
-                print(f"\n[Network Error] {e}")
-                print("Your message was preserved. You can try again or type a new message.")
-              else:
-                print(f"\n[Fatal Network Error] {e}")
-                print("Unable to recover. Please restart the session.")
-                raise
-            except Exception:
-              # Let unexpected exceptions propagate - they'll be caught by the outer handler
-              raise
+        try:
+          result = await command_registry.dispatch(user_input, agent, ui)
+          if result is not None:
+            ui.output_command_result(result)
+        except NetworkError as e:
+          if e.recoverable:
+            print(f"\n[Network Error] {e}")
+            print("Your message was preserved. You can try again or type a new message.")
           else:
-            # Regular command - print result directly
-            print(f"{result}\n")
+            print(f"\n[Fatal Network Error] {e}")
+            print("Unable to recover. Please restart the session.")
+            raise
+        except ResponseError as e:
+          # Handle Ollama API errors gracefully - allow retry
+          if e.status_code == 503:
+            print("\n[Error] Ollama server is overloaded. Please wait a moment and try again.")
+          elif e.status_code == 404:
+            print("\n[Error] Model not found. Check that the model is available.")
+          elif e.status_code in (401, 403):
+            print("\n[Error] Authentication failed. Check your Ollama configuration.")
+          elif e.status_code == 500:
+            print(f"\n[Error] Ollama internal error: {e}")
+          else:
+            print(f"\n[Error] Ollama error ({e.status_code}): {e}")
         continue
 
       # Process message (output is streamed via events)
@@ -396,6 +321,10 @@ def main() -> None:
   # Create command registry with agent access
   command_registry = create_command_registry(agent, config)
 
+  # Create a simple UI handler for slash-command output.
+  # In Phase 6 this will be replaced by the full interactive/batch UI.
+  ui: UIHandler = BatchUIHandler(stdout=sys.stdout, stderr=sys.stderr)
+
   # Create and attach console handler
   console_handler = ConsoleEventHandler(
     show_thinking=True,
@@ -405,7 +334,7 @@ def main() -> None:
   agent.add_event_handler(console_handler)
 
   # Run interactive session
-  asyncio.run(run_interactive_session(agent, command_registry, session))
+  asyncio.run(run_interactive_session(agent, command_registry, session, ui))
 
 
 if __name__ == "__main__":
