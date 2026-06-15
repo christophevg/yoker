@@ -1,6 +1,8 @@
 # TODO
 
-## Active: UI Separation Migration
+## Active: UI Separation Migration (Complete)
+
+**Status:** Completed 2026-06-15 via PR #27
 
 **Goal:** Separate UI from Agent in the yoker codebase, establishing a clean boundary where the Agent layer is purely event-driven and the UI layer handles all presentation.
 
@@ -14,47 +16,7 @@
 - [UI Handler Design](analysis/ui-separation-ui-design.md)
 - [Migration Plan](analysis/ui-separation-migration.md)
 
-**Estimated Timeline:** 17-26 hours (3-4 days)
-
----
-
-### Phase 8: Final Polish
-
-**Goal:** Documentation and examples.
-
-**Dependency:** All previous phases complete
-
-- [x] **UI-051: Update README.md**
-  - Document interactive mode usage
-  - Document batch mode usage
-  - Add library usage example
-  - Reference: analysis/ui-separation-migration.md#phase-8-final-polish
-  - Acceptance: README updated with new usage patterns
-
-- [x] **UI-052: Create batch mode example**
-  - Create `examples/batch_mode.py`
-  - Show batch mode usage
-  - Reference: analysis/ui-separation-migration.md#phase-8-final-polish
-  - Acceptance: Example works correctly
-
-- [x] **UI-053: Create library usage example**
-  - Create `examples/library_usage.py`
-  - Show how to use yoker as library
-  - Reference: analysis/ui-separation-migration.md#phase-8-final-polish
-  - Acceptance: Example works correctly
-
-- [x] **UI-054: Create custom handler example**
-  - Create `examples/custom_handler.py`
-  - Show how to implement custom UIHandler
-  - Reference: analysis/ui-separation-migration.md#phase-8-final-polish
-  - Acceptance: Example works correctly
-
-- [x] **UI-055: Update CLAUDE.md**
-  - Document new module structure
-  - Document UI layer architecture
-  - Update current state section
-  - Reference: analysis/ui-separation-migration.md#phase-8-final-polish
-  - Acceptance: CLAUDE.md reflects new architecture
+**Outcome:** All migration phases complete (UI-001 through UI-055). PR #27 merged the final documentation and examples.
 
 ---
 
@@ -763,6 +725,46 @@
   - Verify no dead code
   - Reference: analysis/ui-separation-migration.md#phase-7-remove-old-code
   - Acceptance: __main__.py is clean, minimal
+
+### Phase 8: Final Polish (2026-06-15)
+
+**PR:** #27
+
+**Goal:** Documentation and examples.
+
+**Dependency:** All previous phases complete
+
+- [x] **UI-051: Update README.md** (2026-06-15)
+  - Document interactive mode usage
+  - Document batch mode usage
+  - Add library usage example
+  - Reference: analysis/ui-separation-migration.md#phase-8-final-polish
+  - Acceptance: README updated with new usage patterns
+
+- [x] **UI-052: Create batch mode example** (2026-06-15)
+  - Create `examples/batch_mode.py`
+  - Show batch mode usage
+  - Reference: analysis/ui-separation-migration.md#phase-8-final-polish
+  - Acceptance: Example works correctly
+
+- [x] **UI-053: Create library usage example** (2026-06-15)
+  - Create `examples/library_usage.py`
+  - Show how to use yoker as library
+  - Reference: analysis/ui-separation-migration.md#phase-8-final-polish
+  - Acceptance: Example works correctly
+
+- [x] **UI-054: Create custom handler example** (2026-06-15)
+  - Create `examples/custom_handler.py`
+  - Show how to implement custom UIHandler
+  - Reference: analysis/ui-separation-migration.md#phase-8-final-polish
+  - Acceptance: Example works correctly
+
+- [x] **UI-055: Update CLAUDE.md** (2026-06-15)
+  - Document new module structure
+  - Document UI layer architecture
+  - Update current state section
+  - Reference: analysis/ui-separation-migration.md#phase-8-final-polish
+  - Acceptance: CLAUDE.md reflects new architecture
 
 ### Phase 1.7: Async-First Agent Architecture
 
