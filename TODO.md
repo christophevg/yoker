@@ -24,32 +24,32 @@
 
 **Dependency:** All previous phases complete
 
-- [ ] **UI-051: Update README.md**
+- [x] **UI-051: Update README.md**
   - Document interactive mode usage
   - Document batch mode usage
   - Add library usage example
   - Reference: analysis/ui-separation-migration.md#phase-8-final-polish
   - Acceptance: README updated with new usage patterns
 
-- [ ] **UI-052: Create batch mode example**
+- [x] **UI-052: Create batch mode example**
   - Create `examples/batch_mode.py`
   - Show batch mode usage
   - Reference: analysis/ui-separation-migration.md#phase-8-final-polish
   - Acceptance: Example works correctly
 
-- [ ] **UI-053: Create library usage example**
+- [x] **UI-053: Create library usage example**
   - Create `examples/library_usage.py`
   - Show how to use yoker as library
   - Reference: analysis/ui-separation-migration.md#phase-8-final-polish
   - Acceptance: Example works correctly
 
-- [ ] **UI-054: Create custom handler example**
+- [x] **UI-054: Create custom handler example**
   - Create `examples/custom_handler.py`
   - Show how to implement custom UIHandler
   - Reference: analysis/ui-separation-migration.md#phase-8-final-polish
   - Acceptance: Example works correctly
 
-- [ ] **UI-055: Update CLAUDE.md**
+- [x] **UI-055: Update CLAUDE.md**
   - Document new module structure
   - Document UI layer architecture
   - Update current state section
