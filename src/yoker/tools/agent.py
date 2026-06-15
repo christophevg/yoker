@@ -14,7 +14,7 @@ from yoker.logging import get_logger
 from yoker.tools.base import Tool, ToolResult
 
 if TYPE_CHECKING:
-  from yoker.agent import Agent
+  from yoker.agent.agent import Agent
   from yoker.tools.guardrails import Guardrail
 
 log = get_logger(__name__)
@@ -283,7 +283,7 @@ class AgentTool(Tool):
     """
     from yoker.agent import Agent
     from yoker.agents import load_agent_definition
-    from yoker.context import BasicPersistenceContextManager
+    from yoker.context import PersistenceContextManager
 
     # Load agent definition
     agent_def = load_agent_definition(agent_path)
@@ -304,7 +304,7 @@ class AgentTool(Tool):
     # Security: Use UUID4 for unpredictable session IDs
     fresh_session_id = f"{parent_session}_{str(uuid.uuid4())[:8]}"
 
-    fresh_context = BasicPersistenceContextManager(
+    fresh_context = PersistenceContextManager(
       storage_path=storage_path,
       session_id=fresh_session_id,
     )

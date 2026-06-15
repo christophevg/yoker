@@ -21,8 +21,8 @@ class TestIssue1AgentModelOverride:
 
   def test_agent_model_overrides_config(self) -> None:
     """Agent definition's model should override config's model."""
+    from yoker.agent.core import AgentCore
     from yoker.agents import AgentDefinition
-    from yoker.base import AgentCore
     from yoker.config import Config
     from yoker.thinking import ThinkingMode
 
@@ -46,8 +46,8 @@ class TestIssue1AgentModelOverride:
 
   def test_agent_without_model_uses_config(self) -> None:
     """Agent without model should use config's model."""
+    from yoker.agent.core import AgentCore
     from yoker.agents import AgentDefinition
-    from yoker.base import AgentCore
     from yoker.config import Config
     from yoker.thinking import ThinkingMode
 
@@ -140,8 +140,8 @@ class TestIssue3ToolAvailability:
 
   def test_yoker_namespace_resolves_to_builtin(self) -> None:
     """yoker:read should resolve to read in tool registry."""
+    from yoker.agent.core import AgentCore
     from yoker.agents import AgentDefinition
-    from yoker.base import AgentCore
     from yoker.config import Config
     from yoker.thinking import ThinkingMode
 
@@ -162,8 +162,8 @@ class TestIssue3ToolAvailability:
 
   def test_mixed_namespaces_filter_correctly(self) -> None:
     """Agent with mixed tool namespaces should filter correctly."""
+    from yoker.agent.core import AgentCore
     from yoker.agents import AgentDefinition
-    from yoker.base import AgentCore
     from yoker.config import Config
     from yoker.thinking import ThinkingMode
 
@@ -258,8 +258,8 @@ class TestEndToEndDemoPlugin:
 
   def test_tool_availability_command_output(self) -> None:
     """Tool availability should show correct markers."""
+    from yoker.agent.core import AgentCore
     from yoker.agents import AgentDefinition
-    from yoker.base import AgentCore
     from yoker.commands.tools import create_tools_command
     from yoker.config import Config
     from yoker.thinking import ThinkingMode

@@ -524,7 +524,7 @@ class TestAgentToolContextIsolation:
     # Track context creation
     created_contexts = []
 
-    with patch("yoker.context.BasicPersistenceContextManager") as mock_context_class:
+    with patch("yoker.context.PersistenceContextManager") as mock_context_class:
       mock_context = MagicMock()
       mock_context_class.return_value = mock_context
       created_contexts.append(mock_context)

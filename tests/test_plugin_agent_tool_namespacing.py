@@ -21,8 +21,8 @@ class TestAgentModelOverride:
 
   def test_agent_model_overrides_config(self, tmp_path: Path) -> None:
     """Agent definition's model should override config's model."""
+    from yoker.agent.core import AgentCore
     from yoker.agents import AgentDefinition
-    from yoker.base import AgentCore
     from yoker.config import Config
     from yoker.thinking import ThinkingMode
 
@@ -52,8 +52,8 @@ class TestAgentModelOverride:
 
   def test_agent_without_model_uses_config(self, tmp_path: Path) -> None:
     """Agent without model should use config's model."""
+    from yoker.agent.core import AgentCore
     from yoker.agents import AgentDefinition
-    from yoker.base import AgentCore
     from yoker.config import Config
     from yoker.thinking import ThinkingMode
 
@@ -162,8 +162,8 @@ class TestToolAvailability:
 
   def test_tool_availability_with_agent_definition(self) -> None:
     """Tools should only show as available if in agent's allowed tools."""
+    from yoker.agent.core import AgentCore
     from yoker.agents import AgentDefinition
-    from yoker.base import AgentCore
     from yoker.config import Config
     from yoker.thinking import ThinkingMode
 
@@ -193,7 +193,7 @@ class TestToolAvailability:
 
   def test_tool_availability_without_agent(self) -> None:
     """All tools should be available when no agent definition is loaded."""
-    from yoker.base import AgentCore
+    from yoker.agent.core import AgentCore
     from yoker.config import Config
     from yoker.thinking import ThinkingMode
 

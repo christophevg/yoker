@@ -211,19 +211,14 @@ async def run_interactive_session(
   """
   from ollama import ResponseError
 
-  # Begin session
-  await agent.begin_session()
-
   try:
     while True:
       try:
         user_input = await prompt_input_async("> ", session)
       except EOFError:
-        await agent.end_session(reason="quit")
         break
       except KeyboardInterrupt:
         print()  # Newline after ^C
-        await agent.end_session(reason="interrupt")
         break
 
       if not user_input.strip():

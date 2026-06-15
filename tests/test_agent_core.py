@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from yoker.base import DEFAULT_SYSTEM_PROMPT, AgentCore
+from yoker.agent.core import DEFAULT_SYSTEM_PROMPT, AgentCore
 from yoker.config import BackendConfig, Config, OllamaConfig
 from yoker.thinking import ThinkingMode
 
@@ -379,9 +379,9 @@ class TestAgentCoreContextManager:
 
   def test_context_manager_parameter(self) -> None:
     """Test that custom context manager is used."""
-    from yoker.context import BasicPersistenceContextManager
+    from yoker.context import PersistenceContextManager
 
-    custom_context = BasicPersistenceContextManager(
+    custom_context = PersistenceContextManager(
       storage_path="custom_storage",
       session_id="custom-session-123",
     )
@@ -393,7 +393,7 @@ class TestAgentCoreContextManager:
   def test_context_manager_persists_system_prompt(self) -> None:
     """Test that custom context manager receives system prompt."""
     from yoker.agents import AgentDefinition
-    from yoker.context import BasicPersistenceContextManager
+    from yoker.context import PersistenceContextManager
 
     agent_def = AgentDefinition(
       name="test",
@@ -401,7 +401,7 @@ class TestAgentCoreContextManager:
       tools=("read",),
       system_prompt="Custom system prompt for context test.",
     )
-    custom_context = BasicPersistenceContextManager(
+    custom_context = PersistenceContextManager(
       storage_path="test_storage",
       session_id="test-session",
     )
@@ -525,11 +525,16 @@ class TestAgentCoreGuardrailValidation:
     mock_tool = MockTool()
     mock_registry.register(mock_tool)
 
-    # Monkey-patch the _build_tool_registry to return our mock registry
-    def mock_build_registry(self: object, client: object = None) -> ToolRegistry:
+    # Monkey-patch build_tool_registry to return our mock registry
+    def mock_build_registry(
+      config: object,
+      guardrail: object,
+      agent_definition: object = None,
+      client: object = None,
+    ) -> ToolRegistry:
       return mock_registry
 
-    monkeypatch.setattr(AgentCore, "_build_tool_registry", mock_build_registry)
+    monkeypatch.setattr("yoker.agent.core.build_tool_registry", mock_build_registry)
 
     # AgentCore initialization should raise RuntimeError for missing guardrail
     with pytest.raises(RuntimeError, match="missing guardrail"):

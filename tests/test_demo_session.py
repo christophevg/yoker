@@ -20,8 +20,6 @@ from yoker.events.types import (
   ContentEndEvent,
   ContentStartEvent,
   EventType,
-  SessionEndEvent,
-  SessionStartEvent,
   ThinkingChunkEvent,
   ThinkingEndEvent,
   ThinkingStartEvent,
@@ -41,51 +39,6 @@ from demo_session import (  # noqa: E402
 
 class TestSerializeEvent:
   """Tests for serialize_event function."""
-
-  def test_serialize_session_start_event(self) -> None:
-    """Test serializing SessionStartEvent."""
-    timestamp = datetime(2026, 4, 21, 10, 30, 0)
-    event = SessionStartEvent(
-      type=EventType.SESSION_START,
-      timestamp=timestamp,
-      model="llama3.2",
-      thinking_enabled=True,
-      config_summary={"key": "value"},
-    )
-    result = serialize_event(event)
-
-    assert result["type"] == "SESSION_START"
-    assert result["timestamp"] == "2026-04-21T10:30:00"
-    assert result["data"]["model"] == "llama3.2"
-    assert result["data"]["thinking_enabled"] is True
-    assert result["data"]["config_summary"] == {"key": "value"}
-
-  def test_serialize_session_start_event_no_config(self) -> None:
-    """Test serializing SessionStartEvent without config_summary."""
-    timestamp = datetime(2026, 4, 21, 10, 30, 0)
-    event = SessionStartEvent(
-      type=EventType.SESSION_START,
-      timestamp=timestamp,
-      model="llama3.2",
-      thinking_enabled=True,
-    )
-    result = serialize_event(event)
-
-    assert result["data"]["config_summary"] == {}
-
-  def test_serialize_session_end_event(self) -> None:
-    """Test serializing SessionEndEvent."""
-    timestamp = datetime(2026, 4, 21, 10, 30, 0)
-    event = SessionEndEvent(
-      type=EventType.SESSION_END,
-      timestamp=timestamp,
-      reason="quit",
-    )
-    result = serialize_event(event)
-
-    assert result["type"] == "SESSION_END"
-    assert result["timestamp"] == "2026-04-21T10:30:00"
-    assert result["data"]["reason"] == "quit"
 
   def test_serialize_turn_start_event(self) -> None:
     """Test serializing TurnStartEvent."""
@@ -269,52 +222,6 @@ class TestSerializeEvent:
 class TestDeserializeEvent:
   """Tests for deserialize_event function."""
 
-  def test_deserialize_session_start_event(self) -> None:
-    """Test deserializing SessionStartEvent."""
-    entry: dict[str, Any] = {
-      "type": "SESSION_START",
-      "timestamp": "2026-04-21T10:30:00",
-      "data": {
-        "model": "llama3.2",
-        "thinking_enabled": True,
-        "config_summary": {"key": "value"},
-      },
-    }
-    event = deserialize_event(entry)
-
-    assert isinstance(event, SessionStartEvent)
-    assert event.type == EventType.SESSION_START
-    assert event.timestamp == datetime(2026, 4, 21, 10, 30, 0)
-    assert event.model == "llama3.2"
-    assert event.thinking_enabled is True
-    assert event.config_summary == {"key": "value"}
-
-  def test_deserialize_session_start_event_no_config(self) -> None:
-    """Test deserializing SessionStartEvent without config_summary."""
-    entry: dict[str, Any] = {
-      "type": "SESSION_START",
-      "timestamp": "2026-04-21T10:30:00",
-      "data": {
-        "model": "llama3.2",
-        "thinking_enabled": True,
-      },
-    }
-    event = deserialize_event(entry)
-
-    assert event.config_summary == {}
-
-  def test_deserialize_session_end_event(self) -> None:
-    """Test deserializing SessionEndEvent."""
-    entry: dict[str, Any] = {
-      "type": "SESSION_END",
-      "timestamp": "2026-04-21T10:30:00",
-      "data": {"reason": "quit"},
-    }
-    event = deserialize_event(entry)
-
-    assert isinstance(event, SessionEndEvent)
-    assert event.reason == "quit"
-
   def test_deserialize_turn_start_event(self) -> None:
     """Test deserializing TurnStartEvent."""
     entry: dict[str, Any] = {
@@ -486,42 +393,6 @@ class TestDeserializeEvent:
 class TestSerializeDeserializeRoundTrip:
   """Tests for round-trip serialization/deserialization."""
 
-  def test_roundtrip_session_start_event(self) -> None:
-    """Test round-trip for SessionStartEvent."""
-    timestamp = datetime(2026, 4, 21, 10, 30, 0)
-    original = SessionStartEvent(
-      type=EventType.SESSION_START,
-      timestamp=timestamp,
-      model="llama3.2",
-      thinking_enabled=True,
-      config_summary={"key": "value"},
-    )
-
-    serialized = serialize_event(original)
-    deserialized = deserialize_event(serialized)
-
-    assert deserialized.type == original.type
-    assert deserialized.timestamp == original.timestamp
-    assert deserialized.model == original.model
-    assert deserialized.thinking_enabled == original.thinking_enabled
-    assert deserialized.config_summary == original.config_summary
-
-  def test_roundtrip_session_end_event(self) -> None:
-    """Test round-trip for SessionEndEvent."""
-    timestamp = datetime(2026, 4, 21, 10, 30, 0)
-    original = SessionEndEvent(
-      type=EventType.SESSION_END,
-      timestamp=timestamp,
-      reason="quit",
-    )
-
-    serialized = serialize_event(original)
-    deserialized = deserialize_event(serialized)
-
-    assert deserialized.type == original.type
-    assert deserialized.timestamp == original.timestamp
-    assert deserialized.reason == original.reason
-
   def test_roundtrip_turn_start_event(self) -> None:
     """Test round-trip for TurnStartEvent."""
     timestamp = datetime(2026, 4, 21, 10, 30, 0)
@@ -647,30 +518,22 @@ class TestEventRecorder:
     log_path = tmp_path / "events.jsonl"
     recorder = EventRecorder(log_path)
 
-    event = SessionStartEvent(
-      type=EventType.SESSION_START,
-      model="llama3.2",
-      thinking_enabled=True,
+    event = TurnStartEvent(
+      type=EventType.TURN_START,
+      message="Hello",
     )
     recorder(event)
     recorder.close()
 
     content = log_path.read_text()
-    assert "SESSION_START" in content
-    assert "llama3.2" in content
+    assert "TURN_START" in content
+    assert "Hello" in content
 
   def test_recorder_writes_multiple_events(self, tmp_path: Path) -> None:
     """Test that EventRecorder writes multiple events."""
     log_path = tmp_path / "events.jsonl"
     recorder = EventRecorder(log_path)
 
-    recorder(
-      SessionStartEvent(
-        type=EventType.SESSION_START,
-        model="llama3.2",
-        thinking_enabled=True,
-      )
-    )
     recorder(
       TurnStartEvent(
         type=EventType.TURN_START,
@@ -686,12 +549,11 @@ class TestEventRecorder:
     recorder.close()
 
     lines = log_path.read_text().strip().split("\n")
-    assert len(lines) == 3
+    assert len(lines) == 2
 
     entries = [json.loads(line) for line in lines]
-    assert entries[0]["type"] == "SESSION_START"
-    assert entries[1]["type"] == "TURN_START"
-    assert entries[2]["type"] == "TURN_END"
+    assert entries[0]["type"] == "TURN_START"
+    assert entries[1]["type"] == "TURN_END"
 
   def test_recorder_flushes_after_write(self, tmp_path: Path) -> None:
     """Test that EventRecorder flushes after each write."""
@@ -751,11 +613,6 @@ class TestEventReplayAgent:
     events_path = tmp_path / "events.jsonl"
 
     events = [
-      SessionStartEvent(
-        type=EventType.SESSION_START,
-        model="llama3.2",
-        thinking_enabled=True,
-      ),
       TurnStartEvent(
         type=EventType.TURN_START,
         message="Hello",
@@ -772,10 +629,6 @@ class TestEventReplayAgent:
         type=EventType.TURN_END,
         response="Hi there!",
       ),
-      SessionEndEvent(
-        type=EventType.SESSION_END,
-        reason="quit",
-      ),
     ]
 
     with open(events_path, "w") as f:
@@ -788,19 +641,13 @@ class TestEventReplayAgent:
     """Test that EventReplayAgent loads events from file."""
     agent = EventReplayAgent(events_file)
 
-    assert len(agent.events) == 6
+    assert len(agent.events) == 4
 
-  def test_agent_extracts_model_from_session_start(self, events_file: Path) -> None:
-    """Test that EventReplayAgent extracts model from SESSION_START."""
+  def test_agent_default_model(self, events_file: Path) -> None:
+    """Test that EventReplayAgent defaults to replay model."""
     agent = EventReplayAgent(events_file)
 
-    assert agent.model == "llama3.2"
-
-  def test_agent_extracts_thinking_enabled(self, events_file: Path) -> None:
-    """Test that EventReplayAgent extracts thinking_enabled from SESSION_START."""
-    agent = EventReplayAgent(events_file)
-
-    assert agent.thinking_enabled is True
+    assert agent.model == "replay"
 
   def test_agent_add_event_handler(self, events_file: Path) -> None:
     """Test adding event handlers to the replay agent."""
@@ -811,20 +658,6 @@ class TestEventReplayAgent:
 
     agent.add_event_handler(handler)
     assert handler in agent._handlers
-
-  async def test_agent_begin_session_noop(self, events_file: Path) -> None:
-    """Test that begin_session is a no-op."""
-    agent = EventReplayAgent(events_file)
-
-    # Should not raise
-    await agent.begin_session()
-
-  async def test_agent_end_session_noop(self, events_file: Path) -> None:
-    """Test that end_session is a no-op."""
-    agent = EventReplayAgent(events_file)
-
-    # Should not raise
-    await agent.end_session(reason="test")
 
   async def test_agent_process_replays_events_to_handlers(self, events_file: Path) -> None:
     """Test that process() replays events to handlers."""
@@ -854,26 +687,11 @@ class TestEventReplayAgent:
 
     assert response == "Hi there!"
 
-  async def test_agent_process_matches_message(self, events_file: Path) -> None:
-    """Test that process() finds TURN_START with matching message."""
-    agent = EventReplayAgent(events_file)
-
-    # First call should find "Hello" message
-    await agent.process("Hello")
-
-    # After processing, index should be at TURN_END
-    # The next process would search for another matching turn
-
   async def test_agent_process_multiple_turns(self, tmp_path: Path) -> None:
     """Test processing multiple turns from events file."""
     events_path = tmp_path / "events.jsonl"
 
     events = [
-      SessionStartEvent(
-        type=EventType.SESSION_START,
-        model="llama3.2",
-        thinking_enabled=True,
-      ),
       TurnStartEvent(
         type=EventType.TURN_START,
         message="First message",
@@ -906,10 +724,6 @@ class TestEventReplayAgent:
         type=EventType.TURN_END,
         response="Second response",
       ),
-      SessionEndEvent(
-        type=EventType.SESSION_END,
-        reason="quit",
-      ),
     ]
 
     with open(events_path, "w") as f:
@@ -929,11 +743,6 @@ class TestEventReplayAgent:
     events_path = tmp_path / "events.jsonl"
 
     events = [
-      SessionStartEvent(
-        type=EventType.SESSION_START,
-        model="llama3.2",
-        thinking_enabled=True,
-      ),
       CommandEvent(
         type=EventType.COMMAND,
         command="/help",
@@ -982,11 +791,6 @@ class TestEventReplayAgent:
     events_path = tmp_path / "events.jsonl"
 
     events = [
-      SessionStartEvent(
-        type=EventType.SESSION_START,
-        model="llama3.2",
-        thinking_enabled=True,
-      ),
       CommandEvent(
         type=EventType.COMMAND,
         command="/help",
@@ -1009,11 +813,6 @@ class TestEventReplayAgent:
     events_path = tmp_path / "events.jsonl"
 
     events = [
-      SessionStartEvent(
-        type=EventType.SESSION_START,
-        model="llama3.2",
-        thinking_enabled=True,
-      ),
       CommandEvent(
         type=EventType.COMMAND,
         command="/help",
@@ -1174,15 +973,9 @@ class TestReplayInput:
     events_path = tmp_path / "events.jsonl"
 
     events = [
-      SessionStartEvent(
-        type=EventType.SESSION_START,
-        model="test",
-        thinking_enabled=True,
-      ),
       TurnStartEvent(type=EventType.TURN_START, message="Hello"),
       ContentChunkEvent(type=EventType.CONTENT_CHUNK, text="Response"),
       TurnStartEvent(type=EventType.TURN_START, message="World"),
-      SessionEndEvent(type=EventType.SESSION_END, reason="quit"),
     ]
 
     with open(events_path, "w") as f:
@@ -1198,11 +991,6 @@ class TestReplayInput:
     events_path = tmp_path / "events.jsonl"
 
     events = [
-      SessionStartEvent(
-        type=EventType.SESSION_START,
-        model="test",
-        thinking_enabled=True,
-      ),
       CommandEvent(type=EventType.COMMAND, command="/help", result="Help output"),
       TurnStartEvent(type=EventType.TURN_START, message="Hello"),
       CommandEvent(type=EventType.COMMAND, command="/think on", result="Thinking enabled"),

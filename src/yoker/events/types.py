@@ -9,10 +9,6 @@ from typing import Any
 class EventType(Enum):
   """Enumeration of all event types."""
 
-  # Session lifecycle
-  SESSION_START = auto()
-  SESSION_END = auto()
-
   # Turn lifecycle
   TURN_START = auto()
   TURN_END = auto()
@@ -42,22 +38,6 @@ class Event:
 
   type: EventType
   timestamp: datetime = field(default_factory=datetime.now)
-
-
-@dataclass(frozen=True)
-class SessionStartEvent(Event):
-  """Emitted when agent session starts."""
-
-  model: str
-  thinking_enabled: bool
-  config_summary: dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass(frozen=True)
-class SessionEndEvent(Event):
-  """Emitted when agent session ends."""
-
-  reason: str  # "quit", "error", "interrupt"
 
 
 @dataclass(frozen=True)
@@ -150,9 +130,6 @@ class ToolResultEvent(Event):
 class ToolContentEvent(Event):
   """Emitted when a tool has content to display (write/update operations).
 
-  This event is optional - tools can emit it when they have meaningful
-  content to show. The event handler can choose to display or ignore it.
-
   Attributes:
     tool_name: Name of the tool (e.g., "write", "update").
     operation: Operation type (e.g., "write", "replace", "insert_before", "insert_after", "delete").
@@ -163,7 +140,6 @@ class ToolContentEvent(Event):
       - "application/json": JSON data
       - "text/markdown": Markdown content
       - "application/x-summary": Custom type indicating operation summary only (no content field)
-        Note: This is NOT a standard MIME type; it's a Yoker-specific marker for metadata-only display.
     content: Content to display (truncated if too large, None for summary type).
     metadata: Additional metadata (lines, bytes, is_new_file, is_overwrite, etc.).
   """
@@ -171,7 +147,7 @@ class ToolContentEvent(Event):
   tool_name: str
   operation: str
   path: str
-  content_type: str  # MIME type (text/plain, text/x-diff, etc.) or "application/x-summary"
+  content_type: str
   content: str | None = None
   metadata: dict[str, Any] = field(default_factory=dict)
 

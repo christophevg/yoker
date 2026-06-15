@@ -5,36 +5,16 @@ and uses tools. All I/O operations are async.
 """
 
 import inspect
-import json
 import os
-from collections.abc import Awaitable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING
 
-import httpx
 from ollama import AsyncClient
 
-from yoker.base import AgentCore, EventCallback
+from yoker.agent.core import AgentCore, EventCallback
+from yoker.agent.processing import ProcessingMixin
 from yoker.config import Config
-from yoker.events import (
-  ContentChunkEvent,
-  ContentEndEvent,
-  ContentStartEvent,
-  Event,
-  EventType,
-  SessionEndEvent,
-  SessionStartEvent,
-  ThinkingChunkEvent,
-  ThinkingEndEvent,
-  ThinkingStartEvent,
-  ToolCallEvent,
-  ToolContentEvent,
-  ToolResultEvent,
-  TurnEndEvent,
-  TurnStartEvent,
-)
-from yoker.exceptions import NetworkError
-from yoker.logging import get_logger, log_timing
+from yoker.logging import get_logger
 from yoker.skills import SkillRegistry
 from yoker.thinking import ThinkingMode
 from yoker.tools import ToolRegistry
@@ -43,9 +23,7 @@ from yoker.tools.agent import AgentTool
 if TYPE_CHECKING:
   from yoker.agents import AgentDefinition
   from yoker.commands import CommandRegistry
-  from yoker.config import Config
   from yoker.context import ContextManager
-  from yoker.skills import SkillRegistry
   from yoker.tools.path_guardrail import PathGuardrail
 
 log = get_logger(__name__)
@@ -57,15 +35,12 @@ def _load_agent_from_namespace_format(namespace_agent: str) -> "AgentDefinition 
   Namespace format: <package>:<agent_name>
   Example: "yoker_plugin_demo:demo"
 
-  This format is convenient shorthand for loading agents from plugins.
-
   Args:
     namespace_agent: Agent identifier in namespace:agent format.
 
   Returns:
     AgentDefinition if found, None if not found in any loaded plugin.
   """
-  # Parse namespace:agent_name
   if ":" not in namespace_agent:
     return None
 
@@ -76,15 +51,11 @@ def _load_agent_from_namespace_format(namespace_agent: str) -> "AgentDefinition 
   package, agent_name = parts
   log.info("loading_agent_from_namespace", package=package, agent_name=agent_name)
 
-  # Load agents from package
   from yoker.plugins import load_agents_from_package
 
   agents = load_agents_from_package(package, agents_dir="agents")
 
-  # Find agent by name (with or without namespace)
   for agent_def in agents:
-    # Check both namespaced and non-namespaced names
-    # Agent names from plugins are already namespaced (e.g., "yoker_plugin_demo:demo")
     if agent_def.name == agent_name or agent_def.name == f"{package}:{agent_name}":
       log.info(
         "agent_loaded_from_namespace",
@@ -94,7 +65,6 @@ def _load_agent_from_namespace_format(namespace_agent: str) -> "AgentDefinition 
       )
       return agent_def
 
-  # Agent not found
   log.debug(
     "agent_not_found_in_namespace",
     package=package,
@@ -118,14 +88,10 @@ def _load_agent_from_plugin_url(plugin_url: str) -> "AgentDefinition":
   Raises:
     ValueError: If URL format is invalid, plugin not found, or agent not found.
   """
-  # Parse plugin://<package>/agents/<agent_name>
   if not plugin_url.startswith("plugin://"):
     raise ValueError(f"Invalid plugin URL: {plugin_url}")
 
-  # Remove plugin:// prefix
-  path = plugin_url[9:]  # len("plugin://") = 9
-
-  # Split into components: <package>/agents/<agent_name>
+  path = plugin_url[9:]
   parts = path.split("/")
 
   if len(parts) < 3 or parts[1] != "agents":
@@ -138,7 +104,6 @@ def _load_agent_from_plugin_url(plugin_url: str) -> "AgentDefinition":
 
   log.info("loading_agent_from_plugin", package=package, agent_name=agent_name)
 
-  # Import the package to check if it exists
   try:
     import importlib
 
@@ -146,14 +111,11 @@ def _load_agent_from_plugin_url(plugin_url: str) -> "AgentDefinition":
   except ImportError as e:
     raise ValueError(f"Plugin package not found: {package}") from e
 
-  # Load agents from package
   from yoker.plugins import load_agents_from_package
 
   agents = load_agents_from_package(package, agents_dir="agents")
 
-  # Find agent by name (with or without namespace)
   for agent_def in agents:
-    # Check both namespaced and non-namespaced names
     if agent_def.name == agent_name or agent_def.name == f"{package}:{agent_name}":
       log.info(
         "agent_loaded_from_plugin",
@@ -163,14 +125,13 @@ def _load_agent_from_plugin_url(plugin_url: str) -> "AgentDefinition":
       )
       return agent_def
 
-  # Agent not found - provide helpful error
   available_agents = [a.name for a in agents]
   raise ValueError(
     f"Agent '{agent_name}' not found in plugin '{package}'. Available agents: {available_agents}"
   )
 
 
-class Agent:
+class Agent(ProcessingMixin):
   """Asynchronous agent that chats with Ollama and uses tools.
 
   This implementation uses composition with AgentCore for shared state.
@@ -228,49 +189,38 @@ class Agent:
       plugins: Optional list of plugin packages to load (overrides config).
       _recursion_depth: Internal parameter for subagent recursion tracking.
     """
-    # Load configuration using Clevis (handles env vars, user config, project config)
-    # Clevis handles environment variable interpolation via envtoml/tomlev
     from yoker.config import get_yoker_config
 
-    # Use cli=False for library mode (no CLI argument parsing)
     loaded_config = config if config is not None else get_yoker_config(cli=False)
 
     config_source = "explicit" if config is not None else "discovered"
     log.info("config_loaded", source=config_source)
 
-    # Resolve agent definition from config if not explicitly provided
     resolved_agent_path: Path | str | None = agent_path
     resolved_agent_definition: AgentDefinition | None = agent_definition
 
-    # If agent_definition is explicitly provided, use it directly (ignore agent_path)
     if agent_definition is not None:
-      # agent_definition takes precedence over agent_path
       resolved_agent_path = None
       log.info(
         "agent_definition_provided",
         name=agent_definition.name,
       )
     elif agent_path is not None:
-      # agent_path is provided (and agent_definition is None)
-      # Validate agent definition file exists (if not a plugin URL)
       if not str(agent_path).startswith("plugin://"):
         path = Path(agent_path)
         if not path.exists():
           raise ValueError(f"Agent definition file not found: {agent_path}")
 
-      # Handle plugin:// URL for agent definitions
       if str(agent_path).startswith("plugin://"):
-        # Parse plugin://<package>/agents/<agent_name>
         plugin_url = str(agent_path)
         resolved_agent_definition = _load_agent_from_plugin_url(plugin_url)
-        resolved_agent_path = None  # Clear path since we loaded from plugin
+        resolved_agent_path = None
         log.info(
           "agent_definition_loaded_from_plugin",
           url=plugin_url,
           name=resolved_agent_definition.name,
         )
       else:
-        # Load agent definition from file path
         from yoker.agents import load_agent_definition
 
         resolved_agent_definition = load_agent_definition(agent_path)
@@ -280,14 +230,10 @@ class Agent:
           name=resolved_agent_definition.name,
         )
     else:
-      # Neither agent_definition nor agent_path provided
-      # Check if config has agents.definition
       if loaded_config.agents.definition:
         definition_value = loaded_config.agents.definition
 
-        # Check if it's a plugin URL
         if definition_value.startswith("plugin://"):
-          # Load agent from plugin
           resolved_agent_definition = _load_agent_from_plugin_url(definition_value)
           log.info(
             "agent_definition_loaded_from_plugin_url",
@@ -295,8 +241,6 @@ class Agent:
             name=resolved_agent_definition.name,
           )
         elif ":" in definition_value and not Path(definition_value).exists():
-          # Could be namespace:agent format (e.g., "yoker_plugin_demo:demo")
-          # Try to load from plugin if it's not a file path
           resolved_agent_definition = _load_agent_from_namespace_format(definition_value)
           if resolved_agent_definition:
             log.info(
@@ -305,13 +249,10 @@ class Agent:
               name=resolved_agent_definition.name,
             )
           else:
-            # Not found in plugins - treat as file path error
             raise ValueError(f"Agent definition file not found: {definition_value}")
         else:
-          # It's a file path
           definition_path = Path(definition_value).expanduser()
           if definition_path.exists():
-            # Load agent definition from config
             from yoker.agents import load_agent_definition
 
             resolved_agent_definition = load_agent_definition(definition_path)
@@ -321,10 +262,8 @@ class Agent:
               name=resolved_agent_definition.name,
             )
           else:
-            # Config has definition path but file doesn't exist - this is an error
             raise ValueError(f"Agent definition file not found: {definition_value}")
 
-    # Initialize async-specific client
     api_key = os.environ.get("OLLAMA_API_KEY")
     if api_key:
       self._client = AsyncClient(
@@ -336,8 +275,6 @@ class Agent:
       self._client = AsyncClient(host=base_url)
       log.info("async_ollama_client_initialized", host=base_url, auth="none")
 
-    # Delegate initialization to AgentCore for shared state
-    # Pass AsyncClient for async web tools (WebSearch/WebFetch)
     self._core = AgentCore(
       config=loaded_config,
       thinking_mode=thinking_mode,
@@ -345,12 +282,10 @@ class Agent:
       agent_definition=resolved_agent_definition,
       agent_path=resolved_agent_path,
       context_manager=context_manager,
-      client=self._client,  # Pass AsyncClient for async web tools
+      client=self._client,
       _recursion_depth=_recursion_depth,
     )
 
-    # Register AgentTool (needs reference to parent agent for subagent spawning)
-    # This must happen after AgentCore is initialized but before agent is used
     if self._core.agent_definition is not None:
       allowed_tools = {t.lower() for t in self._core.agent_definition.tools}
       if "agent" in allowed_tools:
@@ -362,10 +297,8 @@ class Agent:
         AgentTool(guardrail=self._core.guardrail, parent_agent=self)
       )
 
-    # Load plugins (built-in first, then configured/CLI-specified)
     self._load_plugins(loaded_config, plugins)
 
-    # Load skills from configured directories
     from yoker.skills import SkillRegistry, load_skills
 
     if self._core.skill_registry is None:
@@ -380,7 +313,6 @@ class Agent:
       except Exception as e:
         log.warning("skills_directory_load_failed", directory=directory, error=str(e))
 
-    # Add skill discovery block if skills loaded and discovery enabled
     if self._core.skill_registry.count > 0 and loaded_config.skills.discovery:
       from yoker.skills import format_discovery_block
 
@@ -389,7 +321,6 @@ class Agent:
       self.context.add_message("system", discovery_block)
       log.info("skill_discovery_added", skill_count=len(skill_list))
 
-    # Register SkillTool if enabled in config
     if loaded_config.tools.skill.enabled:
       from yoker.tools import SkillTool
 
@@ -404,7 +335,6 @@ class Agent:
       available_tools=self.tool_registry.names,
     )
 
-  # Property delegations to AgentCore
   @property
   def config(self) -> "Config":
     """Configuration object."""
@@ -462,7 +392,7 @@ class Agent:
 
   @property
   def _event_handlers(self) -> list[EventCallback]:
-    """Event handlers storage (internal, for backward compatibility)."""
+    """Event handlers storage (internal)."""
     return self._core._event_handlers
 
   @property
@@ -470,7 +400,6 @@ class Agent:
     """AsyncClient for Ollama API communication."""
     return self._client
 
-  # Access to guardrail for tool validation
   @property
   def _guardrail(self) -> "PathGuardrail":
     """Path guardrail for filesystem tool validation."""
@@ -482,15 +411,6 @@ class Agent:
     plugins_override: list[str] | None = None,
   ) -> None:
     """Load built-in and configured plugins.
-
-    Plugin Loading Order:
-        1. Built-in plugin (yoker) - always loaded first
-        2. Config-specified plugins - from config.plugins.packages
-        3. CLI override plugins - from plugins parameter
-
-    Security checks:
-        - Level 1: Global opt-in (config.plugins.enabled)
-        - Level 2: Per-plugin trust (config.plugins.trusted or user confirmation)
 
     Args:
       config: Configuration object.
@@ -508,7 +428,6 @@ class Agent:
       register_tools,
     )
 
-    # Determine which plugins to load
     plugin_packages = plugins_override if plugins_override is not None else config.plugins.packages
 
     log.info(
@@ -517,14 +436,11 @@ class Agent:
       packages=plugin_packages if plugin_packages else [],
     )
 
-    # Load built-in plugin first (always)
     log.info("loading_builtin_plugin")
     print("Loading built-in plugin: yoker")
 
-    # Register built-in tools with "yoker" namespace
     for tool in BUILTIN_TOOLS:
       namespaced_name = f"yoker:{tool.name}"
-      # Clone tool with namespaced name
       from yoker.plugins.registration import _clone_tool_with_name
 
       namespaced_tool = _clone_tool_with_name(tool, namespaced_name)
@@ -536,9 +452,7 @@ class Agent:
       tools=[f"yoker:{t.name}" for t in BUILTIN_TOOLS],
     )
 
-    # Register built-in skills with "yoker" namespace
     for skill in BUILTIN_SKILLS:
-      # Create namespaced skill
       from dataclasses import fields as dataclass_fields
 
       from yoker.skills import Skill
@@ -547,7 +461,6 @@ class Agent:
       field_values["namespace"] = "yoker"
       namespaced_skill = Skill(**field_values)
 
-      # Ensure skill registry exists
       if self._core.skill_registry is None:
         self._core.skill_registry = SkillRegistry()
 
@@ -559,9 +472,7 @@ class Agent:
       skills=[f"yoker:{s.name}" for s in BUILTIN_SKILLS],
     )
 
-    # Register built-in agents (future)
     for _agent_def in BUILTIN_AGENTS:
-      # AgentRegistry doesn't exist yet
       pass
 
     log.info(
@@ -574,12 +485,10 @@ class Agent:
       log.info("no_plugins_configured")
       return
 
-    # Level 1: Check if plugins are enabled globally
     if not check_plugins_enabled(config):
       log.warning("plugins_disabled_aborting")
       return
 
-    # Load configured plugins
     log.info("loading_plugins", packages=list(plugin_packages), count=len(plugin_packages))
 
     try:
@@ -593,25 +502,20 @@ class Agent:
       log.error("plugin_load_error", error=str(e))
       return
 
-    # Register each plugin's components (with security check)
     for plugin in loaded_plugins:
       print(f"Loading plugin: {plugin.source}")
 
-      # Level 2: Check if plugin is trusted
       if not check_plugin_allowed(plugin.source, config, plugin):
         print(f"  Plugin '{plugin.source}' not loaded.")
         log.warning("plugin_not_allowed", package=plugin.source)
         continue
 
-      # Register tools with namespace
       if plugin.tools:
         registered_tools = register_tools(
           plugin.tools,
           self.tool_registry,
           namespace=plugin.source,
         )
-        # Track plugin tools in AgentCore for known tools listing
-        # Use namespaced names from registered_tools
         from yoker.plugins.registration import _clone_tool_with_name
 
         for tool, namespaced_name in zip(plugin.tools, registered_tools, strict=True):
@@ -623,9 +527,7 @@ class Agent:
           tools=registered_tools,
         )
 
-      # Register skills with namespace
       if plugin.skills:
-        # Ensure skill registry exists
         if self._core.skill_registry is None:
           self._core.skill_registry = SkillRegistry()
 
@@ -640,13 +542,11 @@ class Agent:
           skills=registered_skills,
         )
 
-      # Register agents (future)
       if plugin.agents:
         registered_agents = register_agents(
           plugin.agents,
           namespace=plugin.source,
         )
-        # Store plugin agents for access by /agents command
         for agent_def in plugin.agents:
           self._core.add_plugin_agent(agent_def)
         log.info(
@@ -655,7 +555,6 @@ class Agent:
           agents=registered_agents,
         )
 
-      # Print success message
       print(
         f"  Loaded plugin {plugin.source}: {len(plugin.tools)} tools, {len(plugin.skills)} skills, {len(plugin.agents)} agents"
       )
@@ -668,36 +567,13 @@ class Agent:
         agents=len(plugin.agents),
       )
 
-  # Event handler methods delegate to core
   def add_event_handler(self, handler: EventCallback) -> None:
     """Register an event handler.
 
-    Event handlers receive all events emitted during agent processing.
-    Handlers can access potentially sensitive data (tool results, file contents).
-    Only register handlers from trusted sources.
-
-    Supports both sync and async handlers:
-      - Sync handlers: def handler(event: Event) -> None
-      - Async handlers: async def handler(event: Event) -> None
-
     Args:
       handler: Callable that receives Event objects.
-
-    Example:
-      def my_handler(event: Event):
-          if isinstance(event, ContentChunkEvent):
-              print(event.text, end='', flush=True)
-
-      agent.add_event_handler(my_handler)
-
-    Security Note (SEC-ASYNC-1):
-      Handler registration is logged for audit purposes.
     """
     handler_name = getattr(handler, "__name__", str(handler))
-    # Get the __call__ method if handler is an instance, otherwise use handler
-    # This is needed because inspect.iscoroutinefunction(instance) returns False
-    # for instances with async __call__, but inspect.iscoroutinefunction(instance.__call__)
-    # returns True.
     call_fn = getattr(handler, "__call__", handler)  # noqa: B004
     log.info(
       "handler_registered",
@@ -716,382 +592,6 @@ class Agent:
       ValueError: If the handler is not registered.
     """
     self._core.remove_event_handler(handler)
-
-  async def _emit(self, event: Event) -> None:
-    """Emit an event to all registered handlers asynchronously.
-
-    Supports both sync and async handlers for backward compatibility.
-    Sync handlers are called directly, async handlers are awaited.
-
-    Security Note (SEC-ASYNC-5):
-      Event emission does not guard against slow sync handlers.
-      Handlers should complete quickly to avoid blocking the event loop.
-
-    Args:
-      event: The event to emit.
-    """
-    for handler in self._core.get_event_handlers():
-      try:
-        # Check if handler is async: either a coroutine function or an instance
-        # with an async __call__ method.
-        # inspect.iscoroutinefunction(instance) returns False for instances with
-        # async __call__, but inspect.iscoroutinefunction(instance.__call__) returns True.
-        call_fn = getattr(handler, "__call__", handler)  # noqa: B004
-        if inspect.iscoroutinefunction(call_fn):
-          # Async handler - await it
-          # mypy doesn't narrow the type, so we cast to help it
-          await cast("Awaitable[None]", handler(event))
-        else:
-          # Sync handler - call directly
-          # Note: This runs in the async context and could block
-          handler(event)
-      except Exception as e:
-        log.error(
-          "event_handler_error",
-          handler=handler.__name__,
-          event_type=event.type,
-          error=str(e),
-        )
-
-  async def process(self, message: str) -> str:
-    """Process a single message and return the response asynchronously.
-
-    Handles tool calls internally until a final response is ready.
-    Uses streaming when thinking is enabled.
-
-    Emits events during processing:
-    - TURN_START
-    - THINKING_START/CHUNK/END (if enabled)
-    - CONTENT_START/CHUNK/END
-    - TOOL_CALL/RESULT (if tools called)
-    - TURN_END
-
-    Args:
-      message: User message to process.
-
-    Returns:
-      Assistant's response text.
-
-    Raises:
-      NetworkError: If communication with Ollama fails.
-    """
-    log.info("async_turn_started", message_preview=message[:50])
-    await self._emit(TurnStartEvent(type=EventType.TURN_START, message=message))
-    self.context.start_turn(message)
-
-    # Process with model, handling tool calls in a loop
-    while True:
-      # Use streaming for better UX
-      try:
-        stream = await self._client.chat(
-          model=self.model,
-          messages=self.context.get_context(),
-          tools=self.tool_registry.get_schemas(),
-          think=self.thinking_mode.is_enabled,
-          stream=True,
-        )
-      except (
-        httpx.RemoteProtocolError,
-        httpx.ConnectError,
-        httpx.ReadError,
-        httpx.WriteError,
-        httpx.ConnectTimeout,
-        httpx.ReadTimeout,
-      ) as e:
-        # Wrap network errors with recovery information
-        log.error("network_error", error_type=type(e).__name__, message=str(e))
-        raise NetworkError(
-          f"Network error: {e}",
-          original_error=e,
-          recoverable=True,
-        ) from e
-
-      # Accumulate partial fields
-      content = ""
-      thinking = ""
-      tool_calls: list[Any] = []
-      in_thinking = False
-      in_content = False
-
-      # Track stats from last chunk
-      prompt_eval_count = 0
-      eval_count = 0
-      total_duration_ms = 0
-
-      async for chunk in stream:
-        # Capture stats from done chunk
-        if chunk.done:
-          prompt_eval_count = chunk.prompt_eval_count or 0
-          eval_count = chunk.eval_count or 0
-          total_duration_ms = (chunk.total_duration or 0) // 1_000_000  # ns to ms
-
-        # Handle thinking output
-        if chunk.message.thinking:
-          if not in_thinking and self.thinking_mode.is_visible:
-            in_thinking = True
-            await self._emit(ThinkingStartEvent(type=EventType.THINKING_START))
-          thinking += chunk.message.thinking
-          if self.thinking_mode.is_visible:
-            await self._emit(
-              ThinkingChunkEvent(
-                type=EventType.THINKING_CHUNK,
-                text=chunk.message.thinking,
-              )
-            )
-
-        # Handle content output
-        if chunk.message.content:
-          if in_thinking and self.thinking_mode.is_visible:
-            in_thinking = False
-            await self._emit(
-              ThinkingEndEvent(
-                type=EventType.THINKING_END,
-                total_length=len(thinking),
-              )
-            )
-          if not in_content:
-            in_content = True
-            await self._emit(ContentStartEvent(type=EventType.CONTENT_START))
-          content += chunk.message.content
-          await self._emit(
-            ContentChunkEvent(
-              type=EventType.CONTENT_CHUNK,
-              text=chunk.message.content,
-              content_type="text/plain",  # LLM output is plain text by default
-            )
-          )
-
-        # Handle tool calls
-        if chunk.message.tool_calls:
-          tool_calls.extend(chunk.message.tool_calls)
-
-      # End content if we were streaming
-      if in_content:
-        await self._emit(
-          ContentEndEvent(
-            type=EventType.CONTENT_END,
-            total_length=len(content),
-          )
-        )
-      elif in_thinking and self.thinking_mode.is_visible:
-        # No content, but thinking ended
-        await self._emit(
-          ThinkingEndEvent(
-            type=EventType.THINKING_END,
-            total_length=len(thinking),
-          )
-        )
-
-      # If no tool calls, we're done with this turn
-      if not tool_calls:
-        # Include thinking in context if present
-        self.context.end_turn(content, thinking=thinking if thinking else None)
-        await self._emit(
-          TurnEndEvent(
-            type=EventType.TURN_END,
-            response=content,
-            tool_calls_count=len(tool_calls),
-            prompt_eval_count=prompt_eval_count,
-            eval_count=eval_count,
-            total_duration_ms=total_duration_ms,
-          )
-        )
-
-        log.info(
-          "async_turn_completed",
-          response_length=len(content),
-          tool_calls_count=len(tool_calls),
-        )
-
-        # Persist context if configured
-        if self.config.context.persist_after_turn:
-          self.context.save()
-
-        return content
-
-      # Deduplicate tool calls (LLM may send duplicates in streaming)
-      # Use tool call ID if available, otherwise use name+args
-      seen_calls: set[str] = set()
-      unique_calls: list[Any] = []
-      for call in tool_calls:
-        # Prefer tool call ID for deduplication
-        call_id = getattr(call, "id", None)
-        if call_id:
-          call_key = call_id
-        else:
-          # Fallback to tool name + arguments
-          args_str = json.dumps(call.function.arguments, sort_keys=True)
-          call_key = f"{call.function.name}:{args_str}"
-        if call_key not in seen_calls:
-          seen_calls.add(call_key)
-          unique_calls.append(call)
-        else:
-          # Log when a duplicate is detected
-          log.info(
-            "tool_call_duplicate_detected",
-            tool=call.function.name,
-            call_key=call_key,
-          )
-
-      # Log summary if duplicates were found
-      if len(tool_calls) != len(unique_calls):
-        log.info(
-          "tool_calls_deduplicated",
-          original_count=len(tool_calls),
-          unique_count=len(unique_calls),
-        )
-
-      # Add assistant message with tool_calls to context BEFORE executing
-      # This is required for the LLM to understand what tools were called
-      if unique_calls:
-        # Format tool_calls for Ollama API
-        formatted_calls = [
-          {
-            "id": getattr(call, "id", f"call_{i}"),
-            "function": {
-              "name": call.function.name,
-              "arguments": call.function.arguments,
-            },
-          }
-          for i, call in enumerate(unique_calls)
-        ]
-        # Include thinking content if present
-        self.context.add_tool_calls(
-          formatted_calls,
-          thinking=thinking if thinking else None,
-        )
-
-      # Process tool calls
-      for call in unique_calls:
-        tool_name = call.function.name
-        tool_args = call.function.arguments
-
-        await self._emit(
-          ToolCallEvent(
-            type=EventType.TOOL_CALL,
-            tool_name=tool_name,
-            arguments=tool_args,
-          )
-        )
-
-        log.debug("async_tool_call", tool=tool_name, args=tool_args)
-
-        tool = self.tool_registry.get(tool_name)
-        if tool is None:
-          result = f"Error: Unknown tool '{tool_name}'"
-          success = False
-          log.warning("tool_not_found", tool=tool_name)
-        else:
-          # Validate tool parameters through guardrail (SEC-ASYNC-5)
-          # Guardrails remain synchronous to prevent timing attacks
-          validation = self._guardrail.validate(tool_name, tool_args)
-          if not validation.valid:
-            log.info("guardrail_blocked", tool=tool_name, reason=validation.reason)
-            result = f"Error: {validation.reason}"
-            success = False
-          else:
-            if self.config.logging.include_permission_checks:
-              log.info(
-                "guardrail_allowed",
-                tool=tool_name,
-                path=tool_args.get("path"),
-              )
-            try:
-              with log_timing("tool_execution", tool=tool_name):
-                tool_result = await tool.execute(**tool_args)
-              success = tool_result.success
-              if success:
-                result = str(tool_result.result)
-              else:
-                result = f"Error: {tool_result.error}"
-            except Exception as e:
-              result = f"Error executing tool: {e}"
-              success = False
-              log.error("tool_error", tool=tool_name, error=str(e))
-
-        log.debug("async_tool_result", tool=tool_name, success=success)
-
-        await self._emit(
-          ToolResultEvent(
-            type=EventType.TOOL_RESULT,
-            tool_name=tool_name,
-            result=str(result),
-            success=success,
-          )
-        )
-
-        # Emit ToolContentEvent if content_metadata is present
-        if success and tool_result.content_metadata is not None:
-          await self._emit(
-            ToolContentEvent(
-              type=EventType.TOOL_CONTENT,
-              tool_name=tool_name,
-              operation=tool_result.content_metadata.get("operation", ""),
-              path=tool_result.content_metadata.get("path", ""),
-              content_type=tool_result.content_metadata.get(
-                "content_type", "application/x-summary"
-              ),
-              content=tool_result.content_metadata.get("content"),
-              metadata=tool_result.content_metadata.get("metadata", {}),
-            )
-          )
-
-        # Add tool result to context
-        self.context.add_tool_result(
-          tool_name=tool_name,
-          tool_id=getattr(call, "id", tool_name),
-          result=str(result),
-          success=success,
-        )
-
-  async def begin_session(self) -> None:
-    """Begin an agent session asynchronously.
-
-    Emits SESSION_START event with session metadata.
-    Saves context to persist session state.
-    Call this before processing messages.
-    """
-    # Save context to ensure session_start record is written
-    self.context.save()
-
-    log.info(
-      "async_session_started",
-      model=self.model,
-      session_id=self.context.get_session_id(),
-      thinking_mode=self.thinking_mode.value,
-    )
-
-    await self._emit(
-      SessionStartEvent(
-        type=EventType.SESSION_START,
-        model=self.model,
-        thinking_enabled=self.thinking_mode.is_enabled,
-      )
-    )
-
-  async def end_session(self, reason: str = "quit") -> None:
-    """End an agent session asynchronously.
-
-    Emits SESSION_END event.
-    Closes context to ensure all data is persisted.
-    Call this when done processing messages.
-
-    Args:
-      reason: Reason for ending the session (e.g., "quit", "error", "interrupt").
-    """
-    # Close context to write session_end record
-    # Note: context.close() is synchronous but safe to call in async context
-    # (it writes to a file, which is a non-blocking operation for small writes)
-    self.context.close()
-
-    log.info("async_session_ended", reason=reason)
-
-    await self._emit(
-      SessionEndEvent(
-        type=EventType.SESSION_END,
-        reason=reason,
-      )
-    )
 
 
 __all__ = ["Agent"]

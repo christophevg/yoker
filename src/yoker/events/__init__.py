@@ -11,8 +11,6 @@ from yoker.events.types import (
   ContentStartEvent,
   Event,
   EventType,
-  SessionEndEvent,
-  SessionStartEvent,
   ThinkingChunkEvent,
   ThinkingEndEvent,
   ThinkingStartEvent,
@@ -28,9 +26,6 @@ __all__ = [
   "Event",
   "EventType",
   "EventHandler",
-  # Session
-  "SessionStartEvent",
-  "SessionEndEvent",
   # Turn
   "TurnStartEvent",
   "TurnEndEvent",

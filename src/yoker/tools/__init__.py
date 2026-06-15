@@ -31,7 +31,7 @@ from .websearch import WebSearchTool
 from .write import WriteTool
 
 if TYPE_CHECKING:
-  from yoker.agent import Agent
+  from yoker.agent.agent import Agent
 
 
 def create_default_registry(parent_agent: "Agent | None" = None) -> ToolRegistry:

@@ -15,8 +15,6 @@ from yoker.events.types import (
   ContentStartEvent,
   Event,
   EventType,
-  SessionEndEvent,
-  SessionStartEvent,
   ThinkingChunkEvent,
   ThinkingEndEvent,
   ThinkingStartEvent,
@@ -108,10 +106,6 @@ class ConsoleEventHandler:
       event: The event to handle.
     """
     match event.type:
-      case EventType.SESSION_START:
-        self._handle_session_start(event)  # type: ignore[arg-type]
-      case EventType.SESSION_END:
-        self._handle_session_end(event)  # type: ignore[arg-type]
       case EventType.TURN_START:
         self._handle_turn_start(event)  # type: ignore[arg-type]
       case EventType.TURN_END:
@@ -137,27 +131,11 @@ class ConsoleEventHandler:
       case EventType.COMMAND:
         self._handle_command(event)  # type: ignore[arg-type]
 
-  def _handle_session_start(self, event: SessionStartEvent) -> None:
-    """Handle session start event."""
-    self.console.print(f"Yoker v{self.version} - Using model: {event.model}")
-    thinking_status = "enabled" if event.thinking_enabled else "disabled"
-    self.console.print(f"Thinking mode: {thinking_status} (use /think on|off to toggle)")
-    self.console.print("Type /help for available commands.")
-    self.console.print("Press Ctrl+D (or Ctrl+Z on Windows) to quit.\n")
-
-  def _handle_session_end(self, event: SessionEndEvent) -> None:
-    """Handle session end event."""
-    self.console.print("\nGoodbye!")
-
   def _handle_turn_start(self, event: TurnStartEvent) -> None:
     """Handle turn start event."""
     # Reset flags for new turn
     self._thinking_shown = False
     self._content_shown = False
-    # Note: LiveDisplay is created lazily in _handle_thinking_start or
-    # _handle_content_start when content actually starts. This prevents
-    # showing a "Processing..." spinner during replay mode where events
-    # come immediately without real-time delays.
 
   def _handle_turn_end(self, event: TurnEndEvent) -> None:
     """Handle turn end event."""
