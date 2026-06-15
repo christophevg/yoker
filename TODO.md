@@ -18,48 +18,6 @@
 
 ---
 
-### Phase 6: Entry Point Refactoring
-
-**Goal:** Simplify __main__.py to thin dispatcher.
-
-**Dependency:** Phases 3, 4, 5 complete
-
-- [ ] **UI-043: Add UI configuration to Config**
-  - Add `UIConfig` dataclass to config
-  - Include mode, show_thinking, show_tool_calls, show_stats
-  - Reference: analysis/ui-separation-migration.md#phase-6-entry-point-refactoring
-  - Acceptance: Config has UI section
-
-- [ ] **UI-044: Create run_session() helper**
-  - Create session loop function
-  - Handle exception catching and UI error display
-  - Handle cleanup
-  - Reference: analysis/ui-separation-migration.md#phase-6-entry-point-refactoring
-  - Acceptance: Session loop works with UI handler
-
-- [ ] **UI-045: Refactor __main__.py to use UIHandler**
-  - Create UI handler based on mode (interactive or batch)
-  - Create UIBridge and connect to Agent
-  - Call `ui.start()` and `ui.shutdown()` directly
-  - Remove all print statements
-  - Reference: analysis/ui-separation-migration.md#phase-6-entry-point-refactoring
-  - Acceptance: __main__.py uses UI handler, no print statements
-
-- [ ] **UI-046: Implement mode selection logic**
-  - Parse CLI arguments for mode
-  - Create appropriate UI handler
-  - Wire up with Clevis config
-  - Reference: analysis/ui-separation-migration.md#phase-6-entry-point-refactoring
-  - Acceptance: Mode selection works (interactive vs batch)
-
-- [ ] **UI-047: Remove old command dispatch from __main__.py**
-  - Remove inline command handling
-  - Use command registry from UI layer
-  - Reference: analysis/ui-separation-migration.md#phase-6-entry-point-refactoring
-  - Acceptance: Command dispatch uses registry
-
----
-
 ### Phase 7: Remove Old Code
 
 **Goal:** Remove deprecated code and clean up.
@@ -771,6 +729,44 @@
   - Provide dispatch mechanism
   - Reference: analysis/ui-separation-migration.md#phase-5-slash-commands
   - Acceptance: Command registry dispatches commands correctly
+
+### Phase 6: Entry Point Refactoring (2026-06-15)
+
+**PR:** #25
+
+- [x] **UI-043: Add UI configuration to Config** (2026-06-15)
+  - Add `UIConfig` dataclass to config
+  - Include mode, show_thinking, show_tool_calls, show_stats
+  - Reference: analysis/ui-separation-migration.md#phase-6-entry-point-refactoring
+  - Acceptance: Config has UI section
+
+- [x] **UI-044: Create run_session() helper** (2026-06-15)
+  - Create session loop function
+  - Handle exception catching and UI error display
+  - Handle cleanup
+  - Reference: analysis/ui-separation-migration.md#phase-6-entry-point-refactoring
+  - Acceptance: Session loop works with UI handler
+
+- [x] **UI-045: Refactor __main__.py to use UIHandler** (2026-06-15)
+  - Create UI handler based on mode (interactive or batch)
+  - Create UIBridge and connect to Agent
+  - Call `ui.start()` and `ui.shutdown()` directly
+  - Remove all print statements
+  - Reference: analysis/ui-separation-migration.md#phase-6-entry-point-refactoring
+  - Acceptance: __main__.py uses UI handler, no print statements
+
+- [x] **UI-046: Implement mode selection logic** (2026-06-15)
+  - Parse CLI arguments for mode
+  - Create appropriate UI handler
+  - Wire up with Clevis config
+  - Reference: analysis/ui-separation-migration.md#phase-6-entry-point-refactoring
+  - Acceptance: Mode selection works (interactive vs batch)
+
+- [x] **UI-047: Remove old command dispatch from __main__.py** (2026-06-15)
+  - Remove inline command handling
+  - Use command registry from UI layer
+  - Reference: analysis/ui-separation-migration.md#phase-6-entry-point-refactoring
+  - Acceptance: Command dispatch uses registry
 
 ### Phase 1.7: Async-First Agent Architecture
 
