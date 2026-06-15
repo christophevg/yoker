@@ -18,70 +18,6 @@
 
 ---
 
-
-### Phase 5: Slash Commands
-
-**Goal:** Move slash commands to UI layer.
-
-**Dependency:** Phases 3 and 4 complete
-
-- [ ] **UI-035: Create commands directory structure**
-  - Create `yoker/ui/commands/` directory
-  - Create `__init__.py` with command registry
-  - Create placeholder files for each command
-  - Reference: analysis/ui-separation-migration.md#phase-5-slash-commands
-  - Acceptance: Directory structure exists
-
-- [ ] **UI-036: Add Agent.inject_skill_context() method**
-  - Add method to inject skill context into conversation
-  - Used by skill invocation commands
-  - Reference: analysis/ui-separation-migration.md#phase-5-slash-commands
-  - Acceptance: Method works, skill context injected correctly
-
-- [ ] **UI-037: Move /help command to UI layer**
-  - Create `commands/help.py`
-  - Move help logic from `__main__.py`
-  - Command receives UIHandler, outputs via UIHandler
-  - Reference: analysis/ui-separation-migration.md#phase-5-slash-commands
-  - Acceptance: /help command works in new location
-
-- [ ] **UI-038: Move /think command to UI layer**
-  - Create `commands/think.py`
-  - Move think logic
-  - Command sets Agent thinking_mode state
-  - Reference: analysis/ui-separation-migration.md#phase-5-slash-commands
-  - Acceptance: /think command works
-
-- [ ] **UI-039: Move /skills command to UI layer**
-  - Create `commands/skills.py`
-  - Command queries Agent for skill list
-  - Outputs via UIHandler
-  - Reference: analysis/ui-separation-migration.md#phase-5-slash-commands
-  - Acceptance: /skills command works
-
-- [ ] **UI-040: Move /context command to UI layer**
-  - Create `commands/context.py`
-  - Command queries Agent for context state
-  - Outputs via UIHandler
-  - Reference: analysis/ui-separation-migration.md#phase-5-slash-commands
-  - Acceptance: /context command works
-
-- [ ] **UI-041: Create skill invocation command**
-  - Create `commands/skill_invoke.py`
-  - Handle `/<skill-name>` commands
-  - Call `Agent.inject_skill_context()`
-  - Reference: analysis/ui-separation-migration.md#phase-5-slash-commands
-  - Acceptance: Skill invocation works
-
-- [ ] **UI-042: Create command registry**
-  - Create registry in `yoker/ui/commands/__init__.py`
-  - Register all commands
-  - Provide dispatch mechanism
-  - Reference: analysis/ui-separation-migration.md#phase-5-slash-commands
-  - Acceptance: Command registry dispatches commands correctly
-
----
-
 ### Phase 6: Entry Point Refactoring
 
 **Goal:** Simplify __main__.py to thin dispatcher.
@@ -776,6 +712,65 @@
   - Removed session events from `events/types.py`
   - Reference: analysis/ui-separation-agent-module.md#55-remove-old-files
   - Acceptance: Old files deleted, no references remain
+
+### Phase 5: Slash Commands (2026-06-15)
+
+**PR:** #24
+
+- [x] **UI-035: Create commands directory structure** (2026-06-15)
+  - Create `yoker/ui/commands/` directory
+  - Create `__init__.py` with command registry
+  - Create placeholder files for each command
+  - Reference: analysis/ui-separation-migration.md#phase-5-slash-commands
+  - Acceptance: Directory structure exists
+
+- [x] **UI-036: Add Agent.inject_skill_context() method** (2026-06-15)
+  - Add method to inject skill context into conversation
+  - Used by skill invocation commands
+  - Reference: analysis/ui-separation-migration.md#phase-5-slash-commands
+  - Acceptance: Method works, skill context injected correctly
+
+- [x] **UI-037: Move /help command to UI layer** (2026-06-15)
+  - Create `commands/help.py`
+  - Move help logic from `__main__.py`
+  - Command receives UIHandler, outputs via UIHandler
+  - Reference: analysis/ui-separation-migration.md#phase-5-slash-commands
+  - Acceptance: /help command works in new location
+
+- [x] **UI-038: Move /think command to UI layer** (2026-06-15)
+  - Create `commands/think.py`
+  - Move think logic
+  - Command sets Agent thinking_mode state
+  - Reference: analysis/ui-separation-migration.md#phase-5-slash-commands
+  - Acceptance: /think command works
+
+- [x] **UI-039: Move /skills command to UI layer** (2026-06-15)
+  - Create `commands/skills.py`
+  - Command queries Agent for skill list
+  - Outputs via UIHandler
+  - Reference: analysis/ui-separation-migration.md#phase-5-slash-commands
+  - Acceptance: /skills command works
+
+- [x] **UI-040: Move /context command to UI layer** (2026-06-15)
+  - Create `commands/context.py`
+  - Command queries Agent for context state
+  - Outputs via UIHandler
+  - Reference: analysis/ui-separation-migration.md#phase-5-slash-commands
+  - Acceptance: /context command works
+
+- [x] **UI-041: Create skill invocation command** (2026-06-15)
+  - Create `commands/skill_invoke.py`
+  - Handle `/<skill-name>` commands
+  - Call `Agent.inject_skill_context()`
+  - Reference: analysis/ui-separation-migration.md#phase-5-slash-commands
+  - Acceptance: Skill invocation works
+
+- [x] **UI-042: Create command registry** (2026-06-15)
+  - Create registry in `yoker/ui/commands/__init__.py`
+  - Register all commands
+  - Provide dispatch mechanism
+  - Reference: analysis/ui-separation-migration.md#phase-5-slash-commands
+  - Acceptance: Command registry dispatches commands correctly
 
 ### Phase 1.7: Async-First Agent Architecture
 
