@@ -28,14 +28,14 @@
 
 #### Interactive UI Tasks
 
-- [ ] **UI-012: Create InteractiveUIHandler skeleton**
+- [x] **UI-012: Create InteractiveUIHandler skeleton** (2026-06-15)
   - Create `yoker/ui/interactive.py`
   - Extend `BaseUIHandler`
   - Initialize Rich console and prompt_toolkit session
   - Reference: analysis/ui-separation-ui-design.md#4-interactive-ui-handler
   - Acceptance: Class skeleton exists, initializes correctly
 
-- [ ] **UI-013: Implement interactive input handling**
+- [x] **UI-013: Implement interactive input handling** (2026-06-15)
   - Implement `get_input()` with prompt_toolkit
   - Support multiline input (Esc+Enter)
   - Support command history
@@ -43,34 +43,34 @@
   - Reference: analysis/ui-separation-ui-design.md#interactive-ui-handler
   - Acceptance: Input works, multiline supported, history works
 
-- [ ] **UI-014: Implement interactive lifecycle methods**
+- [x] **UI-014: Implement interactive lifecycle methods** (2026-06-15)
   - Implement `start()` - print banner and config info
   - Implement `shutdown()` - print goodbye message
   - Reference: analysis/ui-separation-ui-design.md#interactive-ui-handler
   - Acceptance: Lifecycle methods display appropriate messages
 
-- [ ] **UI-015: Implement interactive content streaming**
+- [x] **UI-015: Implement interactive content streaming** (2026-06-15)
   - Implement `start_content_stream()`, `stream_content()`, `end_content_stream()`
   - Use Rich Live display for streaming
   - Handle ANSI codes from LLM output
   - Reference: analysis/ui-separation-ui-design.md#interactive-ui-handler
   - Acceptance: Content streams with live display, ANSI preserved
 
-- [ ] **UI-016: Implement interactive thinking streaming**
+- [x] **UI-016: Implement interactive thinking streaming** (2026-06-15)
   - Implement thinking stream methods
   - Show thinking in gray/dim style
   - Respect `show_thinking` setting
   - Reference: analysis/ui-separation-ui-design.md#interactive-ui-handler
   - Acceptance: Thinking streams separately from content
 
-- [ ] **UI-017: Implement interactive tool output**
+- [x] **UI-017: Implement interactive tool output** (2026-06-15)
   - Implement `output_tool_call()`, `output_tool_result()`, `output_tool_content()`
   - Respect `show_tool_calls` setting
   - Format tool information appropriately
   - Reference: analysis/ui-separation-ui-design.md#interactive-ui-handler
   - Acceptance: Tool calls and results displayed correctly
 
-- [ ] **UI-018: Implement interactive error display**
+- [x] **UI-018: Implement interactive error display** (2026-06-15)
   - Implement `output_error()` with Rich formatting
   - Handle different error types (NetworkError, ToolError, etc.)
   - Format based on error type and recoverability
@@ -79,28 +79,28 @@
 
 #### Batch UI Tasks
 
-- [ ] **UI-019: Create BatchUIHandler skeleton**
+- [x] **UI-019: Create BatchUIHandler skeleton** (2026-06-15)
   - Create `yoker/ui/batch.py`
   - Extend `BaseUIHandler`
   - Support stdin/stdout/stderr channels
   - Reference: analysis/ui-separation-ui-design.md#5-batch-ui-handler
   - Acceptance: Class skeleton exists, channels defined
 
-- [ ] **UI-020: Implement batch input handling**
+- [x] **UI-020: Implement batch input handling** (2026-06-15)
   - Implement `get_input()` from stdin
   - Support predefined input messages (set_input_messages)
   - Handle EOF
   - Reference: analysis/ui-separation-ui-design.md#batch-ui-handler
   - Acceptance: Input from stdin works, predefined messages supported
 
-- [ ] **UI-021: Implement batch output channels**
+- [x] **UI-021: Implement batch output channels** (2026-06-15)
   - Content → stdout
   - Thinking, errors, stats → stderr
   - No formatting, preserve ANSI
   - Reference: analysis/ui-separation-ui-design.md#batch-ui-handler
   - Acceptance: Output goes to correct channels
 
-- [ ] **UI-022: Implement batch streaming**
+- [x] **UI-022: Implement batch streaming** (2026-06-15)
   - Implement streaming methods (no buffering needed)
   - Direct output to appropriate channels
   - Respect show_thinking, show_tool_calls, show_stats settings
@@ -109,13 +109,13 @@
 
 #### Shared UI Tasks
 
-- [ ] **UI-023: Move LiveDisplay to UI layer**
+- [x] **UI-023: Move LiveDisplay to UI layer** (2026-06-15)
   - Create `yoker/ui/spinner.py`
   - Move LiveDisplay implementation from wherever it is
   - Reference: analysis/ui-separation-migration.md#phase-3-ui-implementations
   - Acceptance: LiveDisplay available to InteractiveUIHandler
 
-- [ ] **UI-024: Update UI module exports**
+- [x] **UI-024: Update UI module exports** (2026-06-15)
   - Update `yoker/ui/__init__.py`
   - Export: `UIHandler`, `BaseUIHandler`, `UIBridge`, `InteractiveUIHandler`, `BatchUIHandler`
   - Reference: analysis/ui-separation-migration.md#phase-3-ui-implementations
