@@ -26,6 +26,10 @@ class TestCreateUI:
     assert ui.show_tool_calls is True
     assert ui.show_stats is True
 
+  @pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="Interactive UI tests require a Windows console",
+  )
   def test_create_ui_returns_interactive_by_default(self):
     """_create_ui should return InteractiveUIHandler for interactive mode."""
     from yoker.__main__ import _create_ui
