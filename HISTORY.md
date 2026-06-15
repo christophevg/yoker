@@ -1,5 +1,30 @@
 # Yoker Version History
 
+## 0.5.0 (2026-06-15)
+
+### New Features
+- UI Separation migration complete: Agent layer is purely event-driven, UI layer owns all presentation
+- Added `UIHandler` protocol and built-in `InteractiveUIHandler` and `BatchUIHandler`
+- Added `UIBridge` to dispatch agent events to UI handlers without terminal logic in the agent
+- Added package plugin system: load tools, skills, and agents from Python packages via `--with <package>`
+- Added `__YOKER_MANIFEST__` plugin declaration format
+- Added content type detection utility (`yoker.content_type`)
+- Tools now emit `ToolContentEvent` with appropriate MIME types (text/plain, text/x-diff, application/json)
+- Added slash commands: `/skills`, `/context`, `/tools`, `/agents`
+- Migrated configuration system to Clevis with auto-generated CLI arguments and environment variable support
+
+### Architecture
+- Removed `Agent.begin_session()` and `Agent.end_session()`; agent lifecycle is now create → use → discard
+- Removed `ConsoleEventHandler`; all terminal output is handled by `UIHandler` implementations
+- Refactored `Agent` into `yoker.agent` package with `AgentCore`, `Agent`, `processing`, and `tools` modules
+- `ContextManager` is now list-like and extends `UserList`
+
+### Bug Fixes
+- Graceful handling of non-recoverable `NetworkError` in the CLI session loop
+- Fixed content type detection fallbacks for unknown file types
+
+---
+
 ## 0.4.0 (2026-05-26)
 
 ### New Features

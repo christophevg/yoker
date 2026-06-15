@@ -1,0 +1,141 @@
+# Full Yoker configuration reference.
+# Copy this file to ./yoker.toml or ~/.yoker.toml and adjust as needed.
+# Yoker auto-discovers ./yoker.toml first, then ~/.yoker.toml, then defaults.
+
+[harness]
+name = "my-yoke"
+version = "1.0"
+log_level = "INFO"
+
+[backend]
+provider = "ollama"
+
+[backend.ollama]
+base_url = "http://localhost:11434"
+model = "llama3.2:latest"
+timeout_seconds = 60
+
+[backend.ollama.parameters]
+temperature = 0.7
+top_p = 0.9
+top_k = 40
+num_ctx = 4096
+
+[context]
+manager = "basic_persistence"
+storage_path = "./context"
+session_id = "auto"
+persist_after_turn = true
+
+[permissions]
+filesystem_paths = ["."]
+network_access = "none"
+max_file_size_kb = 500
+max_recursion_depth = 3
+
+[tools.list]
+enabled = true
+max_depth = 5
+max_entries = 2000
+
+[tools.read]
+enabled = true
+allowed_extensions = [
+  ".txt",
+  ".md",
+  ".json",
+  ".yaml",
+  ".yml",
+  ".toml",
+  ".py",
+  ".js",
+  ".ts",
+  ".html",
+  ".css",
+]
+
+[tools.write]
+enabled = true
+allow_overwrite = false
+max_size_kb = 1000
+
+[tools.update]
+enabled = true
+require_exact_match = true
+max_diff_size_kb = 100
+
+[tools.search]
+enabled = true
+max_regex_complexity = "medium"
+max_results = 500
+timeout_ms = 10000
+
+[tools.agent]
+enabled = true
+max_recursion_depth = 3
+timeout_seconds = 300
+
+[tools.git]
+enabled = true
+allowed_commands = ["status", "log", "diff", "branch", "show"]
+requires_permission = ["commit", "push"]
+
+[tools.mkdir]
+enabled = true
+max_depth = 20
+
+[tools.websearch]
+enabled = true
+backend = "ollama"
+max_results = 10
+max_query_length = 500
+timeout_seconds = 30
+
+[tools.webfetch]
+enabled = true
+backend = "ollama"
+timeout_seconds = 30
+max_size_kb = 2048
+max_redirects = 5
+
+[tools.content_display]
+verbosity = "summary"
+max_content_lines = 50
+max_content_bytes = 4096
+show_diff_for_updates = true
+max_diff_lines = 30
+
+[agents]
+# Path to a specific agent definition (Markdown with YAML frontmatter).
+# Supports filesystem paths and plugin:// URLs.
+definition = ""
+# Directory scanned by the /agents command.
+directory = "./agents"
+default_type = "main"
+
+[skills]
+# Directories scanned for skill definitions.
+directories = ["./skills"]
+# Show a skill discovery block at startup.
+discovery = true
+
+[plugins]
+# Enable package plugin loading globally.
+enabled = true
+# Plugin packages to load automatically.
+packages = []
+# Trusted plugin names: key = package name, value = true.
+trusted = {}
+
+[logging]
+level = "INFO"
+format = "text"
+file = ""
+include_tool_calls = true
+include_permission_checks = true
+
+[ui]
+mode = "interactive"
+show_thinking = false
+show_tool_calls = false
+show_stats = false
