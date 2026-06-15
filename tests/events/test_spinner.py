@@ -2,7 +2,7 @@
 
 from rich.console import Console
 
-from yoker.events.spinner import LiveDisplay, live_display
+from yoker.ui.spinner import LiveDisplay, live_display
 
 
 class TestLiveDisplay:

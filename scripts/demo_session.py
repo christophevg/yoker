@@ -12,10 +12,6 @@ Usage:
     python scripts/demo_session.py --script demos/session.md --log
     python scripts/demo_session.py --script demos/session.md --replay
     python scripts/demo_session.py --output media/custom.svg
-
-Output:
-    Per-script SVG files defined in each demo script's frontmatter.
-    Default script generates media/session.svg (with timestamped backup).
 """
 
 import argparse
@@ -27,26 +23,26 @@ from pathlib import Path
 from rich.console import Console
 
 from yoker.agent import Agent
-from yoker.agent.core import EventCallback
 from yoker.commands import (
   CommandRegistry,
-  create_context_command,
   create_help_command,
-  create_skill_commands,
   create_skills_command,
   create_think_command,
 )
-from yoker.config import Config
+from yoker.commands.skill import (
+  create_skill_commands,
+  extract_skill_content,
+  is_skill_injection,
+)
 from yoker.context import PersistenceContextManager
 from yoker.demo import DemoScript, load_demo_script, load_demo_scripts
 from yoker.events import (
   CommandEvent,
-  ConsoleEventHandler,
-  Event,
   EventRecorder,
   EventReplayAgent,
   EventType,
 )
+from yoker.ui import InteractiveUIHandler, UIBridge
 
 # Media directory for session screenshots
 MEDIA_DIR = Path("media")
@@ -221,6 +217,15 @@ async def run_demo_session(
   # Rich handles word-aware wrapping automatically at this width
   console = Console(record=True, width=CONSOLE_WIDTH)
 
+  # Create UI handler wired to the recording console
+  ui = InteractiveUIHandler(
+    console=console,
+    show_thinking=True,
+    show_tool_calls=True,
+    show_stats=True,
+  )
+  bridge = UIBridge(ui)
+
   # Create media directory
   MEDIA_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -263,14 +268,8 @@ async def run_demo_session(
   if is_replay_mode:
     # Replay mode: use EventReplayAgent to replay events
     agent = EventReplayAgent(events_path)
-    # Attach console event handler for output
-    handler = ConsoleEventHandler(
-      console=console,
-      show_thinking=agent.thinking_enabled,
-      show_tool_calls=True,
-      # No wrap_width - use Rich's natural word-aware wrapping
-    )
-    agent.add_event_handler(handler)
+    ui.show_thinking = agent.thinking_enabled
+    agent.add_event_handler(bridge)
     get_input = ReplayInput(events_path)
     messages = []  # Will be read from file
   else:
@@ -289,7 +288,7 @@ async def run_demo_session(
       if resume:
         loaded = context_manager.load()
         if not loaded:
-          console.print(f"[yellow]Warning: Session {resume} not found. Starting fresh.[/]\n")
+          ui.console.print(f"[yellow]Warning: Session {resume} not found. Starting fresh.[/]\n")
 
     # Create agent with event-driven architecture
     agent = Agent(
@@ -297,30 +296,23 @@ async def run_demo_session(
       agent_path=agent_path,
       context_manager=context_manager,
     )
-    # Attach console event handler for output
-    handler = ConsoleEventHandler(
-      console=console,
-      show_thinking=True,
-      show_tool_calls=True,
-      # No wrap_width - use Rich's natural word-aware wrapping
-    )
-    agent.add_event_handler(handler)
+    agent.add_event_handler(bridge)
 
     # Show agent info if loaded
     if agent.agent_definition:
-      print(f"Loaded agent: {agent.agent_definition.name}")
-      print(f"  Description: {agent.agent_definition.description}")
-      print()
+      ui.console.print(f"Loaded agent: {agent.agent_definition.name}")
+      ui.console.print(f"  Description: {agent.agent_definition.description}")
+      ui.console.print()
 
     # Show session info
     if context_manager:
       stats = context_manager.get_statistics()
-      console.print(f"[dim]Session ID: {context_manager.get_session_id()}[/]")
+      ui.console.print(f"[dim]Session ID: {context_manager.get_session_id()}[/]")
       if resume and stats.turn_count > 0:
-        console.print(
+        ui.console.print(
           f"[dim]Resumed: {stats.turn_count} turns, {stats.tool_call_count} tool calls[/]"
         )
-      console.print("")
+      ui.console.print("")
 
     # Add event recorder if requested
     if log and script.events:
@@ -332,6 +324,9 @@ async def run_demo_session(
     # Create input function from script messages
     messages = list(script.messages)
     get_input = PredefinedInput(messages)
+
+  # Feed predefined messages to the UI handler so it does not read from terminal
+  ui.set_input_messages(get_input.messages)
 
   # Create command registry
   command_registry = CommandRegistry()
@@ -345,8 +340,6 @@ async def run_demo_session(
 
   # Register skill commands if skills are loaded
   if agent.skill_registry:
-    from yoker.commands.skill import create_skill_commands
-
     skill_commands = create_skill_commands(
       registry=agent.skill_registry,
       get_skill_registry=lambda: agent.skill_registry,
@@ -365,17 +358,17 @@ async def run_demo_session(
 
   # Print mode-specific info
   if is_replay_mode:
-    console.print(f"[bold cyan]Yoker v0.1.0[/] - Using model: [green]{agent.model}[/]")
-    console.print("[dim]Replay mode - using logged events[/]")
-    console.print("")
+    ui.console.print(f"[bold cyan]Yoker v0.1.0[/] - Using model: [green]{agent.model}[/]")
+    ui.console.print("[dim]Replay mode - using logged events[/]")
+    ui.console.print("")
   elif log:
-    console.print(f"[dim]Logging events to {script.events}[/]")
+    ui.console.print(f"[dim]Logging events to {script.events}[/]")
 
   # Process each message
   for message in get_input.messages if hasattr(get_input, "messages") else []:
     # User input should be plain text in the SVG recording
     # Use console.print with all Rich features disabled
-    console.print(f"> {message}", markup=False, highlight=False)
+    ui.console.print(f"> {message}", markup=False, highlight=False)
 
     # Check if this is a command
     if message.startswith("/"):
@@ -387,8 +380,6 @@ async def run_demo_session(
         result = command_registry.dispatch(message)
         if result:
           # Check if this is a skill injection
-          from yoker.commands.skill import is_skill_injection, extract_skill_content
-
           if is_skill_injection(result):
             # Inject skill content as system message (invisible to user)
             skill_content = extract_skill_content(result)
@@ -416,8 +407,8 @@ async def run_demo_session(
             else:
               await agent.process("Execute the skill as requested.")
           else:
-            # Regular command - print result directly
-            console.print(f"{result}\n")
+            # Regular command - render via UI handler
+            ui.output_command_result(result)
             # Log command event if logging is enabled
             if event_recorder is not None:
               command_event = CommandEvent(
@@ -428,26 +419,26 @@ async def run_demo_session(
               event_recorder(command_event)
       continue
 
-    response = await agent.process(message)
+    await agent.process(message)
     # In replay mode, events are emitted by EventReplayAgent
     # In real LLM mode, events are emitted by Agent
-    # ConsoleEventHandler prints the output in both cases
+    # The UIBridge routes events to the UI handler, which renders to the console
 
   # Print session footer
-  console.print("\n[bold cyan]Session complete.[/]")
+  ui.console.print("\n[bold cyan]Session complete.[/]")
 
   # Show statistics if context manager was used
   if context_manager is not None:
     stats = context_manager.get_statistics()
-    console.print(f"[dim]Session: {context_manager.get_session_id()}[/]")
-    console.print(
+    ui.console.print(f"[dim]Session: {context_manager.get_session_id()}[/]")
+    ui.console.print(
       f"[dim]Statistics: {stats.turn_count} turns, "
       f"{stats.message_count} messages, {stats.tool_call_count} tool calls[/]"
     )
 
   # Save SVG
   console.save_svg(str(svg_path), code_format=EMOJI_SVG_FORMAT)
-  console.print(f"\n[dim]Saved session to: {svg_path}[/]")
+  ui.console.print(f"\n[dim]Saved session to: {svg_path}[/]")
 
   # Clean up temp files and directories after demo
   _cleanup_temp_files()
@@ -585,4 +576,3 @@ def main() -> None:
 
 if __name__ == "__main__":
   main()
-

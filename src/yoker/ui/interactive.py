@@ -39,6 +39,7 @@ class InteractiveUIHandler(BaseUIHandler):
     show_tool_calls: bool = True,
     show_stats: bool = True,
     wrap_width: int | None = None,
+    console: Console | None = None,
   ) -> None:
     """Initialize the interactive UI handler.
 
@@ -48,9 +49,10 @@ class InteractiveUIHandler(BaseUIHandler):
       show_tool_calls: Whether to display tool call info.
       show_stats: Whether to display turn statistics.
       wrap_width: Optional width for wrapping streamed output.
+      console: Optional Rich console (default: new Console).
     """
     super().__init__()
-    self.console = Console()
+    self.console = console if console is not None else Console()
     self.history_file = history_file or Path.home() / ".yoker_history"
     self.show_thinking = show_thinking
     self.show_tool_calls = show_tool_calls
@@ -64,8 +66,25 @@ class InteractiveUIHandler(BaseUIHandler):
     self._thinking_shown = False
     self._content_shown = False
 
+    # Optional predefined input source for scripted/demo usage
+    self._input_source: list[str] | None = None
+    self._input_index = 0
+
     # Create prompt session with custom key bindings
     self._session = self._create_session()
+
+  def set_input_messages(self, messages: list[str]) -> None:
+    """Set predefined input messages for scripted sessions.
+
+    When set, get_input returns these messages sequentially instead of
+    reading from the terminal. This is useful for demos, tests, and
+    screenshot generation.
+
+    Args:
+      messages: List of input messages to return sequentially.
+    """
+    self._input_source = messages
+    self._input_index = 0
 
   def _create_session(self) -> PromptSession[str]:
     """Create prompt session with multiline support.
@@ -135,7 +154,7 @@ class InteractiveUIHandler(BaseUIHandler):
   # === Input ===
 
   async def get_input(self, prompt: str = "> ") -> str | None:
-    """Get user input from prompt_toolkit.
+    """Get user input from prompt_toolkit or predefined source.
 
     Args:
       prompt: Prompt string to display.
@@ -143,6 +162,13 @@ class InteractiveUIHandler(BaseUIHandler):
     Returns:
       User input string, or None if end of input (EOF) or interrupt.
     """
+    if self._input_source is not None:
+      if self._input_index >= len(self._input_source):
+        return None
+      message = self._input_source[self._input_index]
+      self._input_index += 1
+      return message
+
     try:
       result: str = await self._session.prompt_async(prompt)
       return result

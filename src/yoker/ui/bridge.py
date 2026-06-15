@@ -1,7 +1,7 @@
 """UIBridge event dispatcher.
 
-This module provides the bridge between the EventHandler protocol and
-the UIHandler protocol, dispatching events to appropriate UI methods.
+This module provides the bridge between agent events and the UIHandler
+protocol, dispatching events to appropriate UI methods.
 """
 
 from yoker.events.types import Event, EventType
@@ -9,7 +9,7 @@ from yoker.ui.handler import UIHandler
 
 
 class UIBridge:
-  """Bridge between EventHandler protocol and UIHandler.
+  """Bridge between agent events and UIHandler.
 
   Receives events from Agent and calls appropriate UIHandler methods.
   This allows the agent to remain independent of UI implementation details.

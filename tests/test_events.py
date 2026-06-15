@@ -1,18 +1,15 @@
 """Tests for yoker events module."""
 
 import asyncio
-from io import StringIO
 from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
 from pytest_mock import MockerFixture
-from rich.console import Console
 
 from yoker.config import Config
 from yoker.events import (
   CommandEvent,
-  ConsoleEventHandler,
   ContentChunkEvent,
   EventType,
   ThinkingChunkEvent,
@@ -131,146 +128,6 @@ class TestEventClasses:
     event = ContentChunkEvent(type=EventType.CONTENT_CHUNK, text="test")
     with pytest.raises(AttributeError):
       event.text = "modified"  # type: ignore[misc]
-
-
-class TestConsoleEventHandler:
-  """Tests for ConsoleEventHandler."""
-
-  @pytest.fixture
-  def console_handler(self) -> ConsoleEventHandler:
-    """Create a ConsoleEventHandler with captured output."""
-    output = StringIO()
-    console = Console(file=output, force_terminal=False)
-    return ConsoleEventHandler(console=console, show_thinking=True, show_tool_calls=True)
-
-  @pytest.mark.asyncio
-  async def test_handler_handles_content_chunk(self, console_handler: ConsoleEventHandler) -> None:
-    """Test that ContentChunkEvent is handled."""
-    event = ContentChunkEvent(type=EventType.CONTENT_CHUNK, text="Hello")
-    await console_handler(event)
-    assert "Hello" in console_handler.console.file.getvalue()  # type: ignore[attr-defined]
-
-  @pytest.mark.asyncio
-  async def test_handler_handles_thinking_chunk(self, console_handler: ConsoleEventHandler) -> None:
-    """Test that ThinkingChunkEvent is handled."""
-    event = ThinkingChunkEvent(type=EventType.THINKING_CHUNK, text="reasoning...")
-    await console_handler(event)
-    assert "reasoning" in console_handler.console.file.getvalue()  # type: ignore[attr-defined]
-
-  @pytest.mark.asyncio
-  async def test_handler_hides_thinking_when_disabled(self) -> None:
-    """Test that thinking output is hidden when show_thinking=False."""
-    output = StringIO()
-    console = Console(file=output, force_terminal=False)
-    handler = ConsoleEventHandler(console=console, show_thinking=False)
-    event = ThinkingChunkEvent(type=EventType.THINKING_CHUNK, text="reasoning...")
-    await handler(event)
-    # Thinking should not appear in output
-    assert "reasoning" not in output.getvalue()
-
-  @pytest.mark.asyncio
-  async def test_handler_handles_tool_call(self, console_handler: ConsoleEventHandler) -> None:
-    """Test that ToolCallEvent is handled."""
-    event = ToolCallEvent(
-      type=EventType.TOOL_CALL,
-      tool_name="read",
-      arguments={"path": "/tmp/test.txt"},
-    )
-    await console_handler(event)
-    output = console_handler.console.file.getvalue()  # type: ignore[attr-defined]
-    # New format: "Read tool: test.txt"
-    assert "Read" in output
-    assert "test.txt" in output
-
-  @pytest.mark.asyncio
-  async def test_handler_hides_tool_calls_when_disabled(self) -> None:
-    """Test that tool calls are hidden when show_tool_calls=False."""
-    output = StringIO()
-    console = Console(file=output, force_terminal=False)
-    handler = ConsoleEventHandler(console=console, show_tool_calls=False)
-    event = ToolCallEvent(
-      type=EventType.TOOL_CALL,
-      tool_name="read",
-      arguments={"path": "/tmp/test.txt"},
-    )
-    await handler(event)
-    assert "read" not in output.getvalue().lower()
-
-  @pytest.mark.asyncio
-  async def test_handler_handles_command(self, console_handler: ConsoleEventHandler) -> None:
-    """Test that CommandEvent is handled."""
-    event = CommandEvent(
-      type=EventType.COMMAND,
-      command="/help",
-      result="Available commands:\n  /help - Show help\n  /think - Toggle thinking",
-    )
-    await console_handler(event)
-    output = console_handler.console.file.getvalue()  # type: ignore[attr-defined]
-    assert "Available commands" in output
-    assert "/help" in output
-
-  @pytest.mark.asyncio
-  async def test_handler_handles_command_empty_result(
-    self, console_handler: ConsoleEventHandler
-  ) -> None:
-    """Test that CommandEvent with empty result doesn't print anything."""
-    event = CommandEvent(
-      type=EventType.COMMAND,
-      command="/unknown",
-      result="",
-    )
-    await console_handler(event)
-    output = console_handler.console.file.getvalue()  # type: ignore[attr-defined]
-    # Empty result should not produce output
-    assert output == ""
-
-  def test_handler_extract_filename_with_file_path(self) -> None:
-    """Test _extract_filename with file_path argument."""
-    handler = ConsoleEventHandler()
-    result = handler._extract_filename({"file_path": "/path/to/test.txt"})
-    assert result == "test.txt"
-
-  def test_handler_extract_filename_with_path(self) -> None:
-    """Test _extract_filename with path argument."""
-    handler = ConsoleEventHandler()
-    result = handler._extract_filename({"path": "/tmp/myfile.py"})
-    assert result == "myfile.py"
-
-  def test_handler_extract_filename_fallback(self) -> None:
-    """Test _extract_filename fallback to first argument value."""
-    handler = ConsoleEventHandler()
-    result = handler._extract_filename({"query": "some query"})
-    assert result == "some query"
-
-  def test_handler_extract_filename_empty_args(self) -> None:
-    """Test _extract_filename with empty arguments."""
-    handler = ConsoleEventHandler()
-    result = handler._extract_filename({})
-    assert result == ""
-
-  def test_handler_capitalize(self) -> None:
-    """Test _capitalize helper."""
-    handler = ConsoleEventHandler()
-    assert handler._capitalize("read") == "Read"
-    assert handler._capitalize("Read") == "Read"
-    assert handler._capitalize("") == ""
-
-  @pytest.mark.asyncio
-  async def test_handler_tool_call_display_format(
-    self, console_handler: ConsoleEventHandler
-  ) -> None:
-    """Test that tool call display shows filename only."""
-    event = ToolCallEvent(
-      type=EventType.TOOL_CALL,
-      tool_name="read",
-      arguments={"file_path": "/long/path/to/some/file.py"},
-    )
-    await console_handler(event)
-    output = console_handler.console.file.getvalue()  # type: ignore[attr-defined]
-    # Should show capitalized tool name and filename only
-    assert "Read tool: file.py" in output
-    # Should NOT show full path
-    assert "/long/path" not in output
 
 
 class TestEventCollector:

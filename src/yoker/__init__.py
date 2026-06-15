@@ -5,7 +5,7 @@ One who yokes - the agent noun from "yoke" (PIE *yeug-* meaning "to join").
 Pairs with "clitic" (both are joining tools).
 """
 
-from yoker.agent import Agent, AgentCore
+from yoker.agent import Agent, AgentCore, EventCallback
 from yoker.agents import AgentDefinition, load_agent_definition
 from yoker.commands import Command, CommandRegistry, create_help_command, create_think_command
 from yoker.config import Config
@@ -16,12 +16,10 @@ from yoker.context import (
   PersistenceContextManager,
 )
 from yoker.events import (
-  ConsoleEventHandler,
   ContentChunkEvent,
   ContentEndEvent,
   ContentStartEvent,
   Event,
-  EventHandler,
   EventRecorder,
   EventReplayAgent,
   EventType,
@@ -56,6 +54,7 @@ __all__ = [
   # Core classes
   "Agent",
   "AgentCore",
+  "EventCallback",
   # Agents
   "AgentDefinition",
   "load_agent_definition",
@@ -71,8 +70,6 @@ __all__ = [
   # Events
   "Event",
   "EventType",
-  "EventHandler",
-  "ConsoleEventHandler",
   "TurnStartEvent",
   "TurnEndEvent",
   "ThinkingStartEvent",
