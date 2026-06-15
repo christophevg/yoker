@@ -1,5 +1,6 @@
 """Tests for InteractiveUIHandler."""
 
+import sys
 from io import StringIO
 from pathlib import Path
 from unittest.mock import AsyncMock
@@ -10,6 +11,13 @@ from rich.console import Console
 from yoker.exceptions import NetworkError, ToolError
 from yoker.ui import InteractiveUIHandler
 from yoker.ui.spinner import LiveDisplay
+
+
+if sys.platform == "win32":
+  pytest.skip(
+    "prompt_toolkit interactive tests require a Windows console",
+    allow_module_level=True,
+  )
 
 
 def make_console(output: StringIO) -> Console:
