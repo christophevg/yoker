@@ -18,6 +18,8 @@ pip install yoker
 
 ## Quick Start
 
+Run Yoker interactively (default):
+
 ```bash
 python -m yoker
 ```
@@ -25,12 +27,92 @@ python -m yoker
 Or with an agent definition:
 
 ```bash
-python -m yoker --agent examples/agents/researcher.md
+python -m yoker --agents-definition examples/agents/researcher.md
 ```
 
 Example session:
 
 ![Yoker Session](https://raw.githubusercontent.com/christophevg/yoker/master/media/session.svg)
+
+## Usage Modes
+
+Yoker supports three ways to run: interactive CLI, batch/non-interactive, and as a library.
+
+### Interactive Mode
+
+Interactive mode is the default. It provides a rich terminal UI with multiline input, command history, streaming output, and tool call display.
+
+```bash
+python -m yoker
+
+# With an agent definition
+python -m yoker --agents-definition examples/agents/researcher.md
+
+# Hide tool calls and statistics
+python -m yoker --ui-mode interactive
+```
+
+See [Interactive Input](#interactive-input) and [Slash Commands](#slash-commands) for the available keyboard shortcuts and commands.
+
+### Batch Mode
+
+Batch mode reads input from stdin and writes response content to stdout. Thinking, tool calls, errors, and statistics are written to stderr. This makes Yoker usable in pipelines and scripts.
+
+```bash
+# Single prompt
+python -m yoker --ui-mode batch
+Hello, how can you help me?
+^D
+
+# Pipe input
+printf "Hello\nWhat is 2+2?\n" | python -m yoker --ui-mode batch
+
+# Show thinking and tool calls on stderr
+printf "Hello\n" | python -m yoker --ui-mode batch --ui-show-thinking --ui-show-tool-calls
+```
+
+Batch mode options:
+
+| Flag | Effect |
+|------|--------|
+| `--ui-mode batch` | Enable batch mode |
+| `--ui-show-thinking` | Print thinking/trace output to stderr |
+| `--ui-show-tool-calls` | Print tool call information to stderr |
+| `--ui-show-stats` | Print turn statistics to stderr |
+
+### Library Usage
+
+Yoker is designed to be embedded as a library. The `Agent` class emits events; your application implements a `UIHandler` (or uses the built-in handlers) and wires events through `UIBridge`.
+
+```python
+import asyncio
+from yoker import Agent, __version__
+from yoker.config import get_yoker_config
+from yoker.ui import BatchUIHandler, UIBridge
+
+async def main():
+  config = get_yoker_config(cli=False)
+  agent = Agent(config=config)
+
+  ui = BatchUIHandler(show_thinking=True, show_tool_calls=True)
+  bridge = UIBridge(ui)
+  agent.add_event_handler(bridge)
+
+  await ui.start(agent.model, __version__, {})
+  try:
+    response = await agent.process("Hello, how can you help me?")
+    print(response)
+  finally:
+    await ui.shutdown("complete")
+
+asyncio.run(main())
+```
+
+See the `examples/` directory for more complete examples:
+
+- `examples/batch_mode.py` - Batch mode with predefined messages
+- `examples/library_usage.py` - Using Yoker as a library without the CLI
+- `examples/custom_handler.py` - Implementing a custom `UIHandler`
 
 ## Why Yoker?
 
@@ -178,11 +260,20 @@ See `examples/yoker.toml` for the full configuration reference.
 
 ## Architecture
 
-Yoker uses an **event-driven architecture** for library-first design. The Agent emits events; application code handles UI.
+Yoker uses an **event-driven architecture** for library-first design. The Agent emits events; the UI layer receives them through `UIBridge` and decides how to present them.
 
 ![Architecture Diagram](https://raw.githubusercontent.com/christophevg/yoker/master/media/architecture-diagram.svg)
 
-**Event Types**: Session (start/end), Turn (start/end), Thinking (start/chunk/end), Content (start/chunk/end), Tool (call/result), Error, Command
+**Agent layer** (`yoker.agent`): Configuration, context management, tool execution, and event emission. It has no terminal or presentation logic.
+
+**UI layer** (`yoker.ui`): Implements the `UIHandler` protocol. Built-in implementations:
+
+- `InteractiveUIHandler` - Rich terminal UI with streaming output
+- `BatchUIHandler` - stdin/stdout/stderr for scripts and pipelines
+
+**Bridge** (`yoker.ui.UIBridge`): Converts agent events into `UIHandler` method calls so the agent stays independent of presentation details.
+
+**Event Types**: Turn (start/end), Thinking (start/chunk/end), Content (start/chunk/end), Tool (call/result/content), Command
 
 ## Documentation
 
@@ -197,7 +288,7 @@ Yoker uses an **event-driven architecture** for library-first design. The Agent 
 ```bash
 git clone https://github.com/christophevg/yoker.git
 cd yoker
-make setup    # Create virtual environment and install dependencies
+make env-dev  # Create virtual environment and install dependencies
 
 make test     # Run tests with coverage
 make check    # Type checking + linting
