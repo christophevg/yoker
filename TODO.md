@@ -114,11 +114,12 @@
 ### Phase 6: Release Preparation
 
 - [ ] **6.1 PyPI Package**
-  - Finalize pyproject.toml metadata
-  - Create release notes
-  - Test installation from source distribution
-  - Upload to TestPyPI
-  - Upload to PyPI
+  - [x] Create release notes (HISTORY.md updated for v0.5.0)
+  - [ ] Finalize pyproject.toml metadata
+  - [ ] Test installation from source distribution
+  - [ ] Upload to TestPyPI
+  - [ ] Upload to PyPI
+  - **Note:** The actual PyPI/TestPyPI upload step cannot be performed by an agent because it requires release manager credentials and authorization. This task remains open pending release manager execution.
   - **Priority:** P3
 
 - [x] **6.2 Examples and Tutorials** (2026-06-15)
