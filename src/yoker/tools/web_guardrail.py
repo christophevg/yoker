@@ -15,7 +15,7 @@ import time
 from collections import defaultdict
 from dataclasses import dataclass, field
 from threading import Lock
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 from urllib.parse import unquote, urlparse
 
 from .base import ValidationResult
@@ -137,7 +137,7 @@ class WebGuardrail(Guardrail):
     self._rate_limit_lock = Lock()
     self._rate_limits: dict[str, RateLimitState] = defaultdict(RateLimitState)
 
-  def validate(self, tool_name: str, params: dict[str, Any]) -> ValidationResult:
+  def validate(self, tool_name: str, value: str) -> ValidationResult:
     """Validate web search parameters.
 
     Steps:
@@ -157,9 +157,10 @@ class WebGuardrail(Guardrail):
       ValidationResult with success/failure and reason.
     """
     # Step 1: Validate query parameter
-    query = params.get("query", "")
-    if not query:
-      return ValidationResult(valid=False, reason="Query is required")
+    # if not query:
+    #   return ValidationResult(valid=False, reason="Query is required")
+
+    query = value  # rename for internal clarity
 
     # Strip whitespace and check
     stripped_query = query.strip()
@@ -197,11 +198,11 @@ class WebGuardrail(Guardrail):
     if sensitive_error:
       return ValidationResult(valid=False, reason=sensitive_error)
 
-    # Step 7: Check rate limits
-    user_id = params.get("_user_id", "default")
-    rate_error = self._check_rate_limit(user_id)
-    if rate_error:
-      return ValidationResult(valid=False, reason=rate_error)
+    # TODO: remove/clean up: This isn't used anywhere: Step 7: Check rate limits
+    # user_id = params.get("_user_id", "default")
+    # rate_error = self._check_rate_limit(user_id)
+    # if rate_error:
+    #   return ValidationResult(valid=False, reason=rate_error)
 
     return ValidationResult(valid=True)
 
@@ -546,55 +547,6 @@ class WebGuardrail(Guardrail):
         if state.concurrent_requests > 0:
           state.concurrent_requests -= 1
 
-  def validate_url(self, url: str) -> ValidationResult:
-    """Validate a URL for web fetch.
-
-    Steps:
-      1. Validate URL format (scheme, host, etc.).
-      2. Check for SSRF attempts (private IPs, metadata endpoints).
-      3. Check domain allowlist if configured.
-      4. Check domain blocklist if configured.
-      5. Check HTTPS requirement if configured.
-
-    Args:
-      url: URL string to validate.
-
-    Returns:
-      ValidationResult with success/failure and reason.
-    """
-    # Parse URL
-    try:
-      parsed = urlparse(url)
-    except Exception:
-      return ValidationResult(valid=False, reason="Invalid URL format")
-
-    # Check scheme
-    if self._config.require_https and parsed.scheme != "https":
-      return ValidationResult(valid=False, reason="Only HTTPS URLs are allowed")
-
-    # Extract host
-    host = parsed.hostname
-    if not host:
-      return ValidationResult(valid=False, reason="URL must have a host")
-
-    # Check SSRF (private IPs, metadata endpoints)
-    if self._config.block_private_cidrs:
-      ssrf_error = self._check_ssrf_for_host(host)
-      if ssrf_error:
-        return ValidationResult(valid=False, reason=ssrf_error)
-
-    # Check domain allowlist
-    if self._config.domain_allowlist:
-      if not self._domain_matches_list(host, self._config.domain_allowlist):
-        return ValidationResult(valid=False, reason=f"Domain not in allowlist: {host}")
-
-    # Check domain blocklist
-    if self._config.domain_blocklist:
-      if self._domain_matches_list(host, self._config.domain_blocklist):
-        return ValidationResult(valid=False, reason=f"Domain is blocked: {host}")
-
-    return ValidationResult(valid=True)
-
   def _check_ssrf_for_host(self, host: str) -> str | None:
     """Check if a host resolves to a private IP.
 
@@ -627,6 +579,63 @@ class WebGuardrail(Guardrail):
         return f"SSRF blocked: domain may resolve to private IP ({host})"
 
     return None
+
+
+class QueryWebGuardrail(WebGuardrail):
+  pass
+
+
+class UrlWebGuardrail(WebGuardrail):
+  def validate(self, tool_name: str, value: str) -> ValidationResult:
+    """Validate a URL for web fetch.
+
+    Steps:
+      1. Validate URL format (scheme, host, etc.).
+      2. Check for SSRF attempts (private IPs, metadata endpoints).
+      3. Check domain allowlist if configured.
+      4. Check domain blocklist if configured.
+      5. Check HTTPS requirement if configured.
+
+    Args:
+      url: URL string to validate.
+
+    Returns:
+      ValidationResult with success/failure and reason.
+    """
+    url = value  # rename for internal clarity
+
+    # Parse URL
+    try:
+      parsed = urlparse(url)
+    except Exception:
+      return ValidationResult(valid=False, reason="Invalid URL format")
+
+    # Check scheme
+    if self._config.require_https and parsed.scheme != "https":
+      return ValidationResult(valid=False, reason="Only HTTPS URLs are allowed")
+
+    # Extract host
+    host = parsed.hostname
+    if not host:
+      return ValidationResult(valid=False, reason="URL must have a host")
+
+    # Check SSRF (private IPs, metadata endpoints)
+    if self._config.block_private_cidrs:
+      ssrf_error = self._check_ssrf_for_host(host)
+      if ssrf_error:
+        return ValidationResult(valid=False, reason=ssrf_error)
+
+    # Check domain allowlist
+    if self._config.domain_allowlist:
+      if not self._domain_matches_list(host, self._config.domain_allowlist):
+        return ValidationResult(valid=False, reason=f"Domain not in allowlist: {host}")
+
+    # Check domain blocklist
+    if self._config.domain_blocklist:
+      if self._domain_matches_list(host, self._config.domain_blocklist):
+        return ValidationResult(valid=False, reason=f"Domain is blocked: {host}")
+
+    return ValidationResult(valid=True)
 
 
 __all__ = [

@@ -1,129 +1,106 @@
-"""Tests for Tool base class."""
+"""Tests for ToolResult and ValidationResult base types."""
 
-from pathlib import Path
-from unittest.mock import MagicMock
+import pytest
 
-from yoker.tools.base import Tool, ToolResult, ValidationResult
-from yoker.tools.registry import ToolRegistry
+from yoker.tools.base import ToolResult, ValidationResult
 
 
-class ConcreteTool(Tool):
-  """Concrete implementation of Tool for testing."""
+class TestToolResult:
+  """Tests for ToolResult dataclass."""
 
-  @property
-  def name(self) -> str:
-    return "test_tool"
+  def test_default_success_result(self) -> None:
+    """
+    Given: A successful ToolResult with no result text
+    When: Accessing its attributes
+    Then: success is True, result is empty, error is None, metadata is None
+    """
+    result = ToolResult(success=True)
 
-  @property
-  def description(self) -> str:
-    return "Test tool for unit tests"
+    assert result.success is True
+    assert result.result == ""
+    assert result.error is None
+    assert result.content_metadata is None
 
-  def get_schema(self) -> dict:
-    return {"type": "function", "function": {"name": self.name, "description": self.description}}
+  def test_success_with_result_text(self) -> None:
+    """
+    Given: A successful ToolResult with result text
+    When: Accessing its attributes
+    Then: result contains the provided text
+    """
+    result = ToolResult(success=True, result="hello")
 
-  async def execute(self, **kwargs) -> ToolResult:
-    return ToolResult(success=True, result="test")
+    assert result.result == "hello"
+    assert result.error is None
 
+  def test_error_result(self) -> None:
+    """
+    Given: A failed ToolResult with an error message
+    When: Accessing its attributes
+    Then: success is False and error is set
+    """
+    result = ToolResult(success=False, error="something went wrong")
 
-class TestToolExists:
-  """Tests for Tool.exists method."""
+    assert result.success is False
+    assert result.error == "something went wrong"
+    assert result.result == ""
 
-  def test_exists_without_guardrail_returns_true_for_existing_file(self, tmp_path: Path) -> None:
-    """Without guardrail, exists() returns True for existing file."""
-    test_file = tmp_path / "test.txt"
-    test_file.write_text("content")
+  def test_structured_result(self) -> None:
+    """
+    Given: A ToolResult carrying structured data
+    When: Accessing its result attribute
+    Then: Returns the provided dictionary
+    """
+    data = {"files": ["a.txt", "b.txt"]}
+    result = ToolResult(success=True, result=data)
 
-    tool = ConcreteTool()
-    assert tool.exists(str(test_file)) is True
+    assert result.result == data
 
-  def test_exists_without_guardrail_returns_false_for_nonexistent_file(
-    self, tmp_path: Path
-  ) -> None:
-    """Without guardrail, exists() returns False for nonexistent file."""
-    tool = ConcreteTool()
-    assert tool.exists(str(tmp_path / "nonexistent.txt")) is False
+  def test_content_metadata(self) -> None:
+    """
+    Given: A ToolResult with content metadata
+    When: Accessing its content_metadata attribute
+    Then: Returns the provided metadata dictionary
+    """
+    metadata = {"operation": "read", "path": "/tmp/file.txt"}
+    result = ToolResult(success=True, result="content", content_metadata=metadata)
 
-  def test_exists_without_guardrail_returns_true_for_existing_directory(
-    self, tmp_path: Path
-  ) -> None:
-    """Without guardrail, exists() returns True for existing directory."""
-    tool = ConcreteTool()
-    assert tool.exists(str(tmp_path)) is True
+    assert result.content_metadata == metadata
 
-  def test_exists_with_guardrail_validates_before_checking(self, tmp_path: Path) -> None:
-    """With guardrail, exists() validates path before checking existence."""
-    test_file = tmp_path / "test.txt"
-    test_file.write_text("content")
+  def test_immutability(self) -> None:
+    """
+    Given: A ToolResult instance
+    When: Attempting to mutate an attribute
+    Then: Raises FrozenInstanceError
+    """
+    result = ToolResult(success=True, result="content")
 
-    # Create mock guardrail that rejects all paths
-    mock_guardrail = MagicMock()
-    mock_guardrail.validate.return_value = ValidationResult(
-      valid=False, reason="Path rejected by guardrail"
-    )
+    from dataclasses import FrozenInstanceError
 
-    tool = ConcreteTool(guardrail=mock_guardrail)
-
-    # Even though file exists, guardrail blocks it
-    assert tool.exists(str(test_file)) is False
-    mock_guardrail.validate.assert_called_once_with("test_tool", {"path": str(test_file)})
-
-  def test_exists_with_guardrail_passes_when_valid(self, tmp_path: Path) -> None:
-    """When guardrail validates, exists() checks file existence."""
-    test_file = tmp_path / "test.txt"
-    test_file.write_text("content")
-
-    # Create mock guardrail that allows all paths
-    mock_guardrail = MagicMock()
-    mock_guardrail.validate.return_value = ValidationResult(valid=True)
-
-    tool = ConcreteTool(guardrail=mock_guardrail)
-
-    assert tool.exists(str(test_file)) is True
-    mock_guardrail.validate.assert_called_once_with("test_tool", {"path": str(test_file)})
-
-  def test_exists_with_guardrail_rejects_nonexistent_path(self, tmp_path: Path) -> None:
-    """When guardrail validates but file doesn't exist, returns False."""
-    nonexistent = tmp_path / "nonexistent.txt"
-
-    # Create mock guardrail that allows all paths
-    mock_guardrail = MagicMock()
-    mock_guardrail.validate.return_value = ValidationResult(valid=True)
-
-    tool = ConcreteTool(guardrail=mock_guardrail)
-
-    assert tool.exists(str(nonexistent)) is False
+    with pytest.raises(FrozenInstanceError):
+      result.success = False  # type: ignore[misc]
 
 
-class TestToolRegistryExists:
-  """Tests for ToolRegistry.exists method."""
+class TestValidationResult:
+  """Tests for ValidationResult dataclass."""
 
-  def test_exists_returns_false_for_unregistered_tool(self, tmp_path: Path) -> None:
-    """Registry.exists returns False if tool not found."""
-    registry = ToolRegistry()
-    assert registry.exists("nonexistent", str(tmp_path)) is False
+  def test_valid_result(self) -> None:
+    """
+    Given: A valid ValidationResult
+    When: Accessing its attributes
+    Then: valid is True and reason is None
+    """
+    validation = ValidationResult(valid=True)
 
-  def test_exists_delegates_to_tool(self, tmp_path: Path) -> None:
-    """Registry.exists delegates to the registered tool's exists method."""
-    test_file = tmp_path / "test.txt"
-    test_file.write_text("content")
+    assert validation.valid is True
+    assert validation.reason is None
 
-    tool = ConcreteTool()
-    registry = ToolRegistry()
-    registry.register(tool)
+  def test_invalid_result_with_reason(self) -> None:
+    """
+    Given: An invalid ValidationResult with a reason
+    When: Accessing its attributes
+    Then: valid is False and reason is set
+    """
+    validation = ValidationResult(valid=False, reason="path outside allowed directories")
 
-    assert registry.exists("test_tool", str(test_file)) is True
-
-  def test_exists_returns_false_when_tool_rejects_path(self, tmp_path: Path) -> None:
-    """Registry.exists returns False when tool's guardrail rejects."""
-    test_file = tmp_path / "test.txt"
-    test_file.write_text("content")
-
-    # Create mock guardrail that rejects all paths
-    mock_guardrail = MagicMock()
-    mock_guardrail.validate.return_value = ValidationResult(valid=False, reason="Path rejected")
-
-    tool = ConcreteTool(guardrail=mock_guardrail)
-    registry = ToolRegistry()
-    registry.register(tool)
-
-    assert registry.exists("test_tool", str(test_file)) is False
+    assert validation.valid is False
+    assert validation.reason == "path outside allowed directories"

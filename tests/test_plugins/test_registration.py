@@ -7,7 +7,7 @@ from yoker.plugins.registration import (
   register_tools,
 )
 from yoker.skills import Skill, SkillRegistry
-from yoker.tools import ReadTool, ToolRegistry
+from yoker.tools import ToolRegistry, make_list_tool, make_read_tool
 
 
 class TestRegisterTools:
@@ -16,7 +16,7 @@ class TestRegisterTools:
   def test_register_tools_with_namespace(self):
     """Test tool registration with namespace."""
     registry = ToolRegistry()
-    tools = [ReadTool()]
+    tools = [make_read_tool()]
 
     registered = register_tools(tools, registry, namespace="pkgq")
 
@@ -26,10 +26,8 @@ class TestRegisterTools:
 
   def test_register_tools_multiple(self):
     """Test registering multiple tools."""
-    from yoker.tools import ListTool
-
     registry = ToolRegistry()
-    tools = [ReadTool(), ListTool()]
+    tools = [make_read_tool(), make_list_tool()]
 
     registered = register_tools(tools, registry, namespace="pkgq")
 
@@ -40,7 +38,7 @@ class TestRegisterTools:
   def test_register_tools_collision(self):
     """Test tool name collision detection."""
     registry = ToolRegistry()
-    tools = [ReadTool()]
+    tools = [make_read_tool()]
 
     # Register first tool
     register_tools(tools, registry, namespace="pkgq")
@@ -52,7 +50,7 @@ class TestRegisterTools:
   def test_register_tools_different_namespaces(self):
     """Test registering same tool under different namespaces."""
     registry = ToolRegistry()
-    tools = [ReadTool()]
+    tools = [make_read_tool()]
 
     # Register under different namespaces
     registered1 = register_tools(tools, registry, namespace="pkg1")
@@ -143,21 +141,6 @@ class TestRegisterSkills:
     assert len(registered2) == 1
     assert registry.get("pkg1:test-skill") is not None
     assert registry.get("pkg2:test-skill") is not None
-
-
-class TestCloneToolWithName:
-  """Tests for _clone_tool_with_name helper."""
-
-  def test_clone_tool_preserves_attributes(self):
-    """Test that cloning preserves tool attributes."""
-    from yoker.plugins.registration import _clone_tool_with_name
-
-    original = ReadTool()
-    cloned = _clone_tool_with_name(original, "new:read")
-
-    assert cloned.name == "new:read"
-    # Other attributes should be preserved
-    assert cloned.description == original.description
 
 
 class TestCloneAgentWithName:

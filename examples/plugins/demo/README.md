@@ -4,16 +4,16 @@ This is a demonstration plugin for the Yoker plugin system. It shows how to crea
 
 ## Components
 
-### 1. EchoTool
+### 1. Echo Tool
 
 A simple tool that echoes back input messages with a prefix.
 
 ```python
-from yoker_plugin_demo import EchoTool
+from yoker.tools import ToolRegistry
+from yoker_plugin_demo.tools import echo
 
-tool = EchoTool()
-result = await tool.execute(message="Hello")
-# Result: "Echo: Hello"
+registry = ToolRegistry()
+registry.register(echo)
 ```
 
 ### 2. Greeting Skill
@@ -36,7 +36,7 @@ examples/plugins/demo/
   README.md               # This file
   yoker_plugin_demo/      # Plugin package (NO conflict with yoker!)
     __init__.py           # Plugin manifest with __YOKER_MANIFEST__
-    tools.py              # EchoTool implementation
+    tools.py              # echo tool implementation
     agents/
       demo.md             # Demo agent definition
     skills/
@@ -63,14 +63,15 @@ uv pip install -e .
 ```bash
 # Verify installation
 python -c "import yoker_plugin_demo; print(yoker_plugin_demo.__YOKER_MANIFEST__)"
-# Output: PluginManifest(tools=[EchoTool()], skills_dir='skills', agents_dir='agents')
+# Output: PluginManifest(tools=[<function echo at 0x...>], skills_dir='skills', agents_dir='agents')
 ```
 
 ### Running with Plugin
 
 ```bash
 # Run yoker with demo plugin
-uv run yoker --with yoker-plugin-demo --agents-definition plugin://yoker-plugin-demo/agents/demo
+# (requires [plugins] enabled = true and [plugins.trusted] yoker_plugin_demo = true)
+uv run yoker --with yoker-plugin-demo --agent demo
 
 # The agent can now use:
 # - echo tool (namespaced as "echo" when loaded via plugin)
@@ -104,7 +105,7 @@ agents = load_agents_from_package("yoker_plugin_demo", agents_dir="agents")
 
 ## Testing
 
-The plugin includes comprehensive tests that validate:
+The demo plugin is exercised through Yoker's main test suite, which validates:
 
 - Plugin discovery and import
 - Manifest declaration
@@ -113,10 +114,10 @@ The plugin includes comprehensive tests that validate:
 - Agent loading
 - Registration with namespaces
 
-Run tests:
+Run the relevant tests from the project root:
 
 ```bash
-pytest tests/test_demo_plugin.py -v
+pytest tests/test_plugins/test_loader.py -v
 ```
 
 ## Plugin Development Notes
@@ -131,7 +132,7 @@ The plugin exports `__YOKER_MANIFEST__` in `yoker_plugin_demo/__init__.py`:
 
 ```python
 __YOKER_MANIFEST__ = PluginManifest(
-  tools=[EchoTool()],
+  tools=[echo],
   skills_dir="skills",
   agents_dir="agents",
 )
@@ -139,10 +140,10 @@ __YOKER_MANIFEST__ = PluginManifest(
 
 ### Tools
 
-Tools must:
-1. Inherit from `yoker.tools.base.Tool`
-2. Implement `name`, `description`, `get_schema()`, and `execute()` methods
-3. Return `ToolResult` from `execute()`
+Tools are plain functions or callable class instances:
+1. Annotate string parameters with `yoker.annotations` markers (`Path`, `Url`, `Query`, `Text`).
+2. Use the function/class docstring as the tool description, or set `__yoker_description__`.
+3. Return any JSON-serializable value; the harness wraps results and exceptions in `ToolResult`.
 
 ### Skills
 

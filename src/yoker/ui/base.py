@@ -4,7 +4,13 @@ This module provides a base implementation with state management,
 allowing subclasses to focus on platform-specific formatting.
 """
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+  from yoker.agent import Agent
 
 
 class BaseUIHandler(ABC):
@@ -75,13 +81,11 @@ class BaseUIHandler(ABC):
   # === Abstract Methods ===
 
   @abstractmethod
-  async def start(self, model: str, version: str, config: dict[str, object]) -> None:
+  async def start(self, agent: Agent) -> None:
     """Start UI session.
 
     Args:
-      model: Model name being used.
-      version: Yoker version.
-      config: Configuration summary.
+      agent: The Agent instance this UI session is serving.
     """
     ...
 

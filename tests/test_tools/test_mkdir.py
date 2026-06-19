@@ -1,4 +1,4 @@
-"""Tests for MkdirTool implementation.
+"""Tests for mkdir tool implementation.
 
 These tests verify the behavior of the directory creation tool,
 including basic creation, idempotency, security guardrails,
@@ -18,39 +18,45 @@ from yoker.config import (
   ReadToolConfig,
   ToolsConfig,
 )
-from yoker.tools.mkdir import MkdirTool
+from yoker.tools import ToolRegistry, make_existence_tool, make_list_tool, make_mkdir_tool
 from yoker.tools.path_guardrail import PathGuardrail
 
 
+def _mkdir_spec():
+  """Create and register the mkdir tool."""
+  registry = ToolRegistry()
+  return registry.register(make_mkdir_tool())
+
+
 class TestMkdirToolSchema:
-  """Tests for MkdirTool schema and properties."""
+  """Tests for mkdir tool schema and properties."""
 
   def test_name(self) -> None:
     """
-    Given: A MkdirTool instance
-    When: Checking the tool name property
+    Given: A mkdir tool spec
+    When: Checking the spec name
     Then: Returns 'mkdir'
     """
-    tool = MkdirTool()
-    assert tool.name == "mkdir"
+    spec = _mkdir_spec()
+    assert spec.name == "mkdir"
 
   def test_description(self) -> None:
     """
-    Given: A MkdirTool instance
-    When: Checking the tool description property
+    Given: A mkdir tool spec
+    When: Checking the spec description
     Then: Returns description about creating directories
     """
-    tool = MkdirTool()
-    assert "directory" in tool.description.lower()
+    spec = _mkdir_spec()
+    assert "directory" in spec.description.lower()
 
   def test_schema_structure(self) -> None:
     """
-    Given: A MkdirTool instance
+    Given: A mkdir tool spec
     When: Getting the Ollama-compatible schema
     Then: Schema has correct structure with path parameter and optional recursive
     """
-    tool = MkdirTool()
-    schema = tool.get_schema()
+    spec = _mkdir_spec()
+    schema = spec.schema
 
     assert schema["type"] == "function"
     assert schema["function"]["name"] == "mkdir"
@@ -59,12 +65,12 @@ class TestMkdirToolSchema:
 
   def test_schema_path_required(self) -> None:
     """
-    Given: The MkdirTool schema
+    Given: The mkdir tool schema
     When: Checking required parameters
     Then: 'path' is required, 'recursive' is optional
     """
-    tool = MkdirTool()
-    schema = tool.get_schema()
+    spec = _mkdir_spec()
+    schema = spec.schema
 
     required = schema["function"]["parameters"]["required"]
     assert "path" in required
@@ -86,9 +92,9 @@ class TestMkdirToolBasicCreation:
     When: Calling execute with path parameter
     Then: Directory is created and result shows created=True
     """
-    tool = MkdirTool()
+    spec = _mkdir_spec()
     new_dir = temp_dir / "newdir"
-    result = await tool.execute(path=str(new_dir))
+    result = await spec.execute(path=str(new_dir))
 
     assert result.success
     assert result.result["created"] is True
@@ -102,9 +108,9 @@ class TestMkdirToolBasicCreation:
     When: Calling execute
     Then: All parent directories are created
     """
-    tool = MkdirTool()
+    spec = _mkdir_spec()
     nested_path = temp_dir / "a" / "b" / "c"
-    result = await tool.execute(path=str(nested_path), recursive=True)
+    result = await spec.execute(path=str(nested_path), recursive=True)
 
     assert result.success
     assert result.result["created"] is True
@@ -119,9 +125,9 @@ class TestMkdirToolBasicCreation:
     When: Parent directory doesn't exist
     Then: Returns error about missing parent
     """
-    tool = MkdirTool()
+    spec = _mkdir_spec()
     nested_path = temp_dir / "newdir" / "nested"
-    result = await tool.execute(path=str(nested_path), recursive=False)
+    result = await spec.execute(path=str(nested_path), recursive=False)
 
     assert not result.success
     assert "parent" in result.error.lower()
@@ -134,14 +140,14 @@ class TestMkdirToolBasicCreation:
     When: Calling execute
     Then: Only missing directories are created
     """
-    tool = MkdirTool()
+    spec = _mkdir_spec()
     # Create parent
     parent = temp_dir / "parent"
     parent.mkdir()
 
     # Create nested directory with recursive
     nested_path = parent / "child" / "grandchild"
-    result = await tool.execute(path=str(nested_path), recursive=True)
+    result = await spec.execute(path=str(nested_path), recursive=True)
 
     assert result.success
     assert result.result["created"] is True
@@ -165,9 +171,9 @@ class TestMkdirToolIdempotency:
     When: Calling execute
     Then: Returns success with created=False and message about existing directory
     """
-    tool = MkdirTool()
+    spec = _mkdir_spec()
     existing_dir = temp_structure / "existing_dir"
-    result = await tool.execute(path=str(existing_dir))
+    result = await spec.execute(path=str(existing_dir))
 
     assert result.success
     assert result.result["created"] is False
@@ -180,9 +186,9 @@ class TestMkdirToolIdempotency:
     When: Calling execute
     Then: Returns success with created=False (idempotent)
     """
-    tool = MkdirTool()
+    spec = _mkdir_spec()
     existing_dir = temp_structure / "existing_dir"
-    result = await tool.execute(path=str(existing_dir), recursive=True)
+    result = await spec.execute(path=str(existing_dir), recursive=True)
 
     assert result.success
     assert result.result["created"] is False
@@ -195,12 +201,12 @@ class TestMkdirToolIdempotency:
     When: Calling execute
     Then: Returns generic error about path not accessible
     """
-    tool = MkdirTool()
+    spec = _mkdir_spec()
     # Create a file at the path
     file_path = temp_structure / "file.txt"
     file_path.write_text("content")
 
-    result = await tool.execute(path=str(file_path))
+    result = await spec.execute(path=str(file_path))
 
     assert not result.success
     assert "not accessible" in result.error.lower()
@@ -216,14 +222,14 @@ class TestMkdirToolSymlinkRejection:
     When: Calling execute
     Then: Returns error about path not accessible
     """
-    tool = MkdirTool()
+    spec = _mkdir_spec()
     # Create a directory and a symlink to it
     target_dir = tmp_path / "target"
     target_dir.mkdir()
     symlink_path = tmp_path / "link_to_dir"
     symlink_path.symlink_to(target_dir)
 
-    result = await tool.execute(path=str(symlink_path))
+    result = await spec.execute(path=str(symlink_path))
 
     assert not result.success
     assert "not accessible" in result.error.lower()
@@ -235,7 +241,7 @@ class TestMkdirToolSymlinkRejection:
     When: Calling execute
     Then: Returns error about path not accessible
     """
-    tool = MkdirTool()
+    spec = _mkdir_spec()
     # Create target directory
     target = tmp_path / "target"
     target.mkdir()
@@ -243,7 +249,7 @@ class TestMkdirToolSymlinkRejection:
     symlink = tmp_path / "symlink"
     symlink.symlink_to(target)
 
-    result = await tool.execute(path=str(symlink))
+    result = await spec.execute(path=str(symlink))
 
     assert not result.success
     assert "not accessible" in result.error.lower()
@@ -255,7 +261,7 @@ class TestMkdirToolSymlinkRejection:
     When: Calling execute
     Then: Returns error about path not accessible
     """
-    tool = MkdirTool()
+    spec = _mkdir_spec()
     # Create target directory and symlink
     target = tmp_path / "target"
     target.mkdir()
@@ -263,7 +269,7 @@ class TestMkdirToolSymlinkRejection:
     symlink.symlink_to(target)
 
     # Try to create a subdirectory through the symlink
-    result = await tool.execute(path=str(symlink / "subdir"))
+    result = await spec.execute(path=str(symlink / "subdir"))
 
     # This should work because realpath resolves the symlink
     # The test expects rejection of symlinks at the input path itself
@@ -278,21 +284,21 @@ class TestMkdirToolPathTraversal:
   async def test_path_traversal_blocked(self, tmp_path: Path) -> None:
     """
     Given: A path with traversal sequence like ../../../etc/newdir
-    When: Calling execute
-    Then: Path is resolved and guardrail blocks if outside allowed directories
+    When: Validating the path against the guardrail
+    Then: Guardrail blocks the resolved path as outside allowed directories
     """
     # Create config with restricted filesystem_paths
     config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
     guardrail = PathGuardrail(config)
-    tool = MkdirTool(guardrail=guardrail)
+    spec = _mkdir_spec()
 
     # Try to traverse outside allowed path
     traversal_path = str(tmp_path / ".." / ".." / ".." / "etc" / "newdir")
-    result = await tool.execute(path=traversal_path)
+    validation = guardrail.validate(spec.name, {"path": traversal_path})
 
     # Should fail because resolved path is outside allowed directories
-    assert not result.success
-    assert "outside allowed" in result.error.lower()
+    assert not validation.valid
+    assert "outside allowed" in validation.reason.lower()
 
   @pytest.mark.asyncio
   async def test_relative_path_resolved(self, tmp_path: Path) -> None:
@@ -301,13 +307,13 @@ class TestMkdirToolPathTraversal:
     When: Calling execute
     Then: Path is resolved to absolute path in result
     """
-    tool = MkdirTool()
+    spec = _mkdir_spec()
 
     # Change to temp directory
     original_cwd = os.getcwd()
     try:
       os.chdir(tmp_path)
-      result = await tool.execute(path="newdir")
+      result = await spec.execute(path="newdir")
 
       assert result.success
       # Path should be absolute
@@ -323,11 +329,11 @@ class TestMkdirToolPathTraversal:
     When: Calling execute
     Then: Path is normalized without ./ in result
     """
-    tool = MkdirTool()
+    spec = _mkdir_spec()
 
     # Create a subdirectory path with ./
     dotted_path = str(tmp_path / "." / "newdir")
-    result = await tool.execute(path=dotted_path)
+    result = await spec.execute(path=dotted_path)
 
     assert result.success
     # Path should not contain ./
@@ -362,77 +368,77 @@ class TestMkdirToolBlockedPatterns:
   async def test_blocked_pattern_git_directory(self, tmp_path: Path) -> None:
     """
     Given: A path containing .git directory
-    When: Calling execute with guardrail
-    Then: Returns error about blocked pattern
+    When: Validating the path against the guardrail
+    Then: Guardrail reports a blocked pattern
     """
     config = Config(
       permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)),
       tools=ToolsConfig(read=ReadToolConfig(blocked_patterns=(r"\.git",))),
     )
     guardrail = PathGuardrail(config)
-    tool = MkdirTool(guardrail=guardrail)
+    spec = _mkdir_spec()
 
-    result = await tool.execute(path=str(tmp_path / ".git"))
+    validation = guardrail.validate(spec.name, {"path": str(tmp_path / ".git")})
 
-    assert not result.success
-    assert "blocked pattern" in result.error.lower()
+    assert not validation.valid
+    assert "blocked pattern" in validation.reason.lower()
 
   @pytest.mark.asyncio
   async def test_blocked_pattern_ssh_directory(self, tmp_path: Path) -> None:
     """
     Given: A path containing .ssh directory
-    When: Calling execute with guardrail
-    Then: Returns error about blocked pattern
+    When: Validating the path against the guardrail
+    Then: Guardrail reports a blocked pattern
     """
     config = Config(
       permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)),
       tools=ToolsConfig(read=ReadToolConfig(blocked_patterns=(r"\.ssh",))),
     )
     guardrail = PathGuardrail(config)
-    tool = MkdirTool(guardrail=guardrail)
+    spec = _mkdir_spec()
 
-    result = await tool.execute(path=str(tmp_path / ".ssh"))
+    validation = guardrail.validate(spec.name, {"path": str(tmp_path / ".ssh")})
 
-    assert not result.success
-    assert "blocked pattern" in result.error.lower()
+    assert not validation.valid
+    assert "blocked pattern" in validation.reason.lower()
 
   @pytest.mark.asyncio
   async def test_blocked_pattern_aws_directory(self, tmp_path: Path) -> None:
     """
     Given: A path containing .aws directory
-    When: Calling execute with guardrail
-    Then: Returns error about blocked pattern
+    When: Validating the path against the guardrail
+    Then: Guardrail reports a blocked pattern
     """
     config = Config(
       permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)),
       tools=ToolsConfig(read=ReadToolConfig(blocked_patterns=(r"\.aws",))),
     )
     guardrail = PathGuardrail(config)
-    tool = MkdirTool(guardrail=guardrail)
+    spec = _mkdir_spec()
 
-    result = await tool.execute(path=str(tmp_path / ".aws"))
+    validation = guardrail.validate(spec.name, {"path": str(tmp_path / ".aws")})
 
-    assert not result.success
-    assert "blocked pattern" in result.error.lower()
+    assert not validation.valid
+    assert "blocked pattern" in validation.reason.lower()
 
   @pytest.mark.asyncio
   async def test_blocked_pattern_env_directory(self, tmp_path: Path) -> None:
     """
     Given: A path containing .env or credentials pattern
-    When: Calling execute with guardrail
-    Then: Returns error about blocked pattern
+    When: Validating the path against the guardrail
+    Then: Guardrail reports a blocked pattern
     """
     config = Config(
       permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)),
       tools=ToolsConfig(read=ReadToolConfig(blocked_patterns=(r"\.env", "credentials"))),
     )
     guardrail = PathGuardrail(config)
-    tool = MkdirTool(guardrail=guardrail)
+    spec = _mkdir_spec()
 
-    result = await tool.execute(path=str(tmp_path / ".env"))
+    validation = guardrail.validate(spec.name, {"path": str(tmp_path / ".env")})
 
-    assert not result.success
-    assert "blocked pattern" in result.error.lower()
+    assert not validation.valid
+    assert "blocked pattern" in validation.reason.lower()
 
 
 class TestMkdirToolDepthLimit:
@@ -445,13 +451,13 @@ class TestMkdirToolDepthLimit:
     When: Calling execute with recursive=True
     Then: All directories are created successfully
     """
-    tool = MkdirTool()
+    spec = _mkdir_spec()
     # Create path within depth limit
     path = tmp_path
     for i in range(10):
       path = path / f"level{i}"
 
-    result = await tool.execute(path=str(path), recursive=True)
+    result = await spec.execute(path=str(path), recursive=True)
 
     assert result.success
     assert path.is_dir()
@@ -460,69 +466,71 @@ class TestMkdirToolDepthLimit:
   async def test_depth_exceeds_limit_with_guardrail(self, tmp_path: Path) -> None:
     """
     Given: A guardrail with max_depth=5
-    When: Creating deeply nested directories (e.g., 10 levels)
-    Then: Returns error about depth limit exceeded
+    When: Validating a deeply nested path (e.g., 10 levels)
+    Then: Guardrail reports depth limit exceeded
     """
     config = Config(
       permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)),
       tools=ToolsConfig(mkdir=MkdirToolConfig(max_depth=5)),
     )
     guardrail = PathGuardrail(config)
-    tool = MkdirTool(guardrail=guardrail)
+    spec = _mkdir_spec()
 
     # Create path exceeding depth limit (10 levels deep)
     path = tmp_path
     for i in range(10):
       path = path / f"level{i}"
 
-    result = await tool.execute(path=str(path), recursive=True)
+    validation = guardrail.validate(spec.name, {"path": str(path)})
 
-    assert not result.success
-    assert "depth" in result.error.lower()
-    assert "exceeds" in result.error.lower()
+    assert not validation.valid
+    assert "depth" in validation.reason.lower()
+    assert "exceeds" in validation.reason.lower()
 
   @pytest.mark.asyncio
   async def test_depth_at_limit_with_guardrail(self, tmp_path: Path) -> None:
     """
     Given: A guardrail with max_depth=5
-    When: Creating directories exactly at the depth limit
-    Then: Creation is rejected (depth at limit exceeds it)
+    When: Validating a path exactly at the depth limit
+    Then: Guardrail rejects it (depth at limit exceeds it)
     """
     config = Config(
       permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)),
       tools=ToolsConfig(mkdir=MkdirToolConfig(max_depth=5)),
     )
     guardrail = PathGuardrail(config)
-    tool = MkdirTool(guardrail=guardrail)
+    spec = _mkdir_spec()
 
     # Create path exactly at depth limit (5 levels)
     path = tmp_path / "a" / "b" / "c" / "d" / "e"
 
-    result = await tool.execute(path=str(path), recursive=True)
+    validation = guardrail.validate(spec.name, {"path": str(path)})
 
-    assert not result.success
-    assert "depth" in result.error.lower()
-    assert "exceeds" in result.error.lower()
+    assert not validation.valid
+    assert "depth" in validation.reason.lower()
+    assert "exceeds" in validation.reason.lower()
 
   @pytest.mark.asyncio
   async def test_depth_below_limit_with_guardrail(self, tmp_path: Path) -> None:
     """
     Given: A guardrail with max_depth=5
-    When: Creating directories below the depth limit (e.g., 3 levels)
-    Then: Directories are created successfully
+    When: Validating and creating directories below the depth limit
+    Then: Guardrail allows the path and directories are created successfully
     """
     config = Config(
       permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)),
       tools=ToolsConfig(mkdir=MkdirToolConfig(max_depth=5)),
     )
     guardrail = PathGuardrail(config)
-    tool = MkdirTool(guardrail=guardrail)
+    spec = _mkdir_spec()
 
     # Create path below depth limit (3 levels)
     path = tmp_path / "a" / "b" / "c"
 
-    result = await tool.execute(path=str(path), recursive=True)
+    validation = guardrail.validate(spec.name, {"path": str(path)})
+    assert validation.valid
 
+    result = await spec.execute(path=str(path), recursive=True)
     assert result.success
     assert path.is_dir()
 
@@ -530,17 +538,19 @@ class TestMkdirToolDepthLimit:
   async def test_depth_limit_with_guardrail(self, tmp_path: Path) -> None:
     """
     Given: A guardrail configured with default depth limit (20)
-    When: Creating deeply nested directories
-    Then: Guardrail enforces the default depth limit
+    When: Validating a nested path and creating directories
+    Then: Guardrail allows the path and directories are created
     """
     config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
     guardrail = PathGuardrail(config)
-    tool = MkdirTool(guardrail=guardrail)
+    spec = _mkdir_spec()
 
     # Create path well within default limit
     path = tmp_path / "a" / "b" / "c" / "d" / "e"
-    result = await tool.execute(path=str(path), recursive=True)
+    validation = guardrail.validate(spec.name, {"path": str(path)})
+    assert validation.valid
 
+    result = await spec.execute(path=str(path), recursive=True)
     assert result.success
 
   @pytest.mark.asyncio
@@ -550,13 +560,13 @@ class TestMkdirToolDepthLimit:
     When: Creating deeply nested directories
     Then: Directories are created regardless of depth
     """
-    tool = MkdirTool()
+    spec = _mkdir_spec()
     # Create a deeply nested path (25 levels)
     path = tmp_path
     for i in range(25):
       path = path / f"level{i}"
 
-    result = await tool.execute(path=str(path), recursive=True)
+    result = await spec.execute(path=str(path), recursive=True)
     assert result.success
 
 
@@ -570,8 +580,8 @@ class TestMkdirToolValidation:
     When: Calling execute
     Then: Returns error about path cannot be empty
     """
-    tool = MkdirTool()
-    result = await tool.execute(path="")
+    spec = _mkdir_spec()
+    result = await spec.execute(path="")
 
     assert not result.success
     assert "empty" in result.error.lower()
@@ -583,8 +593,8 @@ class TestMkdirToolValidation:
     When: Calling execute
     Then: Returns error about path cannot be empty
     """
-    tool = MkdirTool()
-    result = await tool.execute(path="   ")
+    spec = _mkdir_spec()
+    result = await spec.execute(path="   ")
 
     assert not result.success
     assert "empty" in result.error.lower()
@@ -596,21 +606,21 @@ class TestMkdirToolValidation:
     When: Calling execute
     Then: Returns error about invalid path parameter
     """
-    tool = MkdirTool()
-    result = await tool.execute(path=123)  # type: ignore
+    spec = _mkdir_spec()
+    result = await spec.execute(path=123)  # type: ignore
 
     assert not result.success
     assert "invalid" in result.error.lower()
 
   @pytest.mark.asyncio
-  async def test_path_with_null_bytes(self) -> None:
+  async def test_path_with_null_bytes(self, tmp_path: Path) -> None:
     """
     Given: A path containing null bytes
     When: Calling execute
     Then: Returns error about invalid path
     """
-    tool = MkdirTool()
-    result = await tool.execute(path="/tmp/test\x00dir")
+    spec = _mkdir_spec()
+    result = await spec.execute(path="/tmp/test\x00dir")
 
     assert not result.success
     assert "invalid" in result.error.lower()
@@ -623,37 +633,39 @@ class TestMkdirToolWithGuardrail:
   async def test_guardrail_blocks_path(self, tmp_path: Path) -> None:
     """
     Given: A guardrail that blocks the requested path
-    When: Calling execute
-    Then: Returns error from guardrail, directory not created
+    When: Validating the path
+    Then: Guardrail reports path outside allowed directories
     """
     # Create guardrail that only allows specific path
     allowed_path = tmp_path / "allowed"
     allowed_path.mkdir()
     config = Config(permissions=PermissionsConfig(filesystem_paths=(str(allowed_path),)))
     guardrail = PathGuardrail(config)
-    tool = MkdirTool(guardrail=guardrail)
+    spec = _mkdir_spec()
 
     blocked_path = tmp_path / "blocked" / "newdir"
-    result = await tool.execute(path=str(blocked_path))
+    validation = guardrail.validate(spec.name, {"path": str(blocked_path)})
 
-    assert not result.success
-    assert "outside allowed" in result.error.lower()
+    assert not validation.valid
+    assert "outside allowed" in validation.reason.lower()
     assert not blocked_path.exists()
 
   @pytest.mark.asyncio
   async def test_guardrail_allows_path(self, tmp_path: Path) -> None:
     """
     Given: A guardrail that allows the requested path
-    When: Calling execute
+    When: Validating and then calling execute
     Then: Directory is created successfully
     """
     config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
     guardrail = PathGuardrail(config)
-    tool = MkdirTool(guardrail=guardrail)
+    spec = _mkdir_spec()
 
     new_dir = tmp_path / "newdir"
-    result = await tool.execute(path=str(new_dir))
+    validation = guardrail.validate(spec.name, {"path": str(new_dir)})
+    assert validation.valid
 
+    result = await spec.execute(path=str(new_dir))
     assert result.success
     assert result.result["created"] is True
     assert new_dir.is_dir()
@@ -665,9 +677,9 @@ class TestMkdirToolWithGuardrail:
     When: Calling execute with valid path
     Then: Directory is created successfully
     """
-    tool = MkdirTool()  # No guardrail
+    spec = _mkdir_spec()  # No guardrail
     new_dir = tmp_path / "newdir"
-    result = await tool.execute(path=str(new_dir))
+    result = await spec.execute(path=str(new_dir))
 
     assert result.success
     assert result.result["created"] is True
@@ -677,35 +689,35 @@ class TestMkdirToolWithGuardrail:
   async def test_guardrail_blocks_outside_allowed_directories(self, tmp_path: Path) -> None:
     """
     Given: A path outside configured filesystem_paths
-    When: Calling execute with guardrail
-    Then: Returns error about path outside allowed directories
+    When: Validating the path against the guardrail
+    Then: Guardrail reports path outside allowed directories
     """
     config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
     guardrail = PathGuardrail(config)
-    tool = MkdirTool(guardrail=guardrail)
+    spec = _mkdir_spec()
 
     # Try to create outside allowed path
     outside_path = tmp_path.parent / "outside_newdir"
-    result = await tool.execute(path=str(outside_path))
+    validation = guardrail.validate(spec.name, {"path": str(outside_path)})
 
-    assert not result.success
-    assert "outside allowed" in result.error.lower()
+    assert not validation.valid
+    assert "outside allowed" in validation.reason.lower()
 
   @pytest.mark.asyncio
   async def test_guardrail_validates_before_creation(self, tmp_path: Path) -> None:
     """
     Given: A guardrail configuration
-    When: Calling execute
-    Then: Guardrail validation happens before any filesystem operations
+    When: Validating a blocked pattern path
+    Then: Guardrail rejects the path before any filesystem operations
     """
     config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
     guardrail = PathGuardrail(config)
-    tool = MkdirTool(guardrail=guardrail)
+    spec = _mkdir_spec()
 
     # Try blocked pattern
-    result = await tool.execute(path=str(tmp_path / ".ssh"))
+    validation = guardrail.validate(spec.name, {"path": str(tmp_path / ".ssh")})
 
-    assert not result.success
+    assert not validation.valid
     # Directory should not be created
     assert not (tmp_path / ".ssh").exists()
 
@@ -720,12 +732,12 @@ class TestMkdirToolErrorHandling:
     When: Calling execute
     Then: Returns error about permission denied
     """
-    tool = MkdirTool()
+    spec = _mkdir_spec()
 
     # Mock mkdir to raise PermissionError
     with mocker.patch.object(Path, "mkdir", side_effect=PermissionError("Permission denied")):
       new_dir = tmp_path / "newdir"
-      result = await tool.execute(path=str(new_dir))
+      result = await spec.execute(path=str(new_dir))
 
       assert not result.success
       assert "permission" in result.error.lower()
@@ -737,12 +749,12 @@ class TestMkdirToolErrorHandling:
     When: Calling execute
     Then: Returns error about directory creation failure
     """
-    tool = MkdirTool()
+    spec = _mkdir_spec()
 
     # Mock mkdir to raise OSError
     with mocker.patch.object(Path, "mkdir", side_effect=OSError("OS error")):
       new_dir = tmp_path / "newdir"
-      result = await tool.execute(path=str(new_dir))
+      result = await spec.execute(path=str(new_dir))
 
       assert not result.success
       assert "error" in result.error.lower()
@@ -754,11 +766,11 @@ class TestMkdirToolErrorHandling:
     When: Calling execute
     Then: Returns error about invalid path
     """
-    tool = MkdirTool()
+    spec = _mkdir_spec()
 
     # Mock os.path.realpath to raise OSError
     with mocker.patch("os.path.realpath", side_effect=OSError("Resolution failed")):
-      result = await tool.execute(path="/tmp/test")
+      result = await spec.execute(path="/tmp/test")
 
       assert not result.success
       assert "invalid" in result.error.lower()
@@ -770,12 +782,12 @@ class TestMkdirToolErrorHandling:
     When: Calling execute
     Then: Returns error about permission denied
     """
-    tool = MkdirTool()
+    spec = _mkdir_spec()
 
     # Mock exists to raise PermissionError
     with mocker.patch.object(Path, "exists", side_effect=PermissionError("Permission denied")):
       new_dir = tmp_path / "newdir"
-      result = await tool.execute(path=str(new_dir))
+      result = await spec.execute(path=str(new_dir))
 
       assert not result.success
       assert "permission" in result.error.lower()
@@ -791,9 +803,9 @@ class TestMkdirToolPathResolution:
     When: Calling execute
     Then: Result contains the resolved absolute path
     """
-    tool = MkdirTool()
+    spec = _mkdir_spec()
     abs_path = str(tmp_path / "newdir")
-    result = await tool.execute(path=abs_path)
+    result = await spec.execute(path=abs_path)
 
     assert result.success
     assert os.path.isabs(result.result["path"])
@@ -806,14 +818,14 @@ class TestMkdirToolPathResolution:
     When: Calling execute
     Then: Path is normalized in result
     """
-    tool = MkdirTool()
+    spec = _mkdir_spec()
     # Create a parent directory first
     parent = tmp_path / "parent"
     parent.mkdir()
 
     # Path with redundant .. and back to parent
     path = str(tmp_path / "parent" / ".." / "parent" / "child")
-    result = await tool.execute(path=path)
+    result = await spec.execute(path=path)
 
     assert result.success
     # The result should be normalized
@@ -826,15 +838,15 @@ class TestMkdirToolPathResolution:
     When: Calling execute multiple times
     Then: All resolve to the same canonical path
     """
-    tool = MkdirTool()
+    spec = _mkdir_spec()
     original_cwd = os.getcwd()
 
     try:
       os.chdir(tmp_path)
 
       # Create with different path forms
-      result1 = await tool.execute(path="newdir1")
-      result2 = await tool.execute(path="./newdir2")
+      result1 = await spec.execute(path="newdir1")
+      result2 = await spec.execute(path="./newdir2")
 
       # All should be absolute paths
       assert os.path.isabs(result1.result["path"])
@@ -854,9 +866,9 @@ class TestMkdirToolReturnFormat:
     When: Calling execute
     Then: Returns {created: true, path: str}
     """
-    tool = MkdirTool()
+    spec = _mkdir_spec()
     new_dir = tmp_path / "newdir"
-    result = await tool.execute(path=str(new_dir))
+    result = await spec.execute(path=str(new_dir))
 
     assert result.success
     assert "created" in result.result
@@ -871,11 +883,11 @@ class TestMkdirToolReturnFormat:
     When: Calling execute
     Then: Returns {created: false, path: str, message: str}
     """
-    tool = MkdirTool()
+    spec = _mkdir_spec()
     existing_dir = tmp_path / "existing"
     existing_dir.mkdir()
 
-    result = await tool.execute(path=str(existing_dir))
+    result = await spec.execute(path=str(existing_dir))
 
     assert result.success
     assert result.result["created"] is False
@@ -890,8 +902,8 @@ class TestMkdirToolReturnFormat:
     When: Calling execute
     Then: Returns ToolResult with success=False and error message
     """
-    tool = MkdirTool()
-    result = await tool.execute(path="")
+    spec = _mkdir_spec()
+    result = await spec.execute(path="")
 
     assert not result.success
     assert result.error is not None
@@ -904,12 +916,12 @@ class TestMkdirToolReturnFormat:
     When: Calling execute
     Then: Returned path is absolute
     """
-    tool = MkdirTool()
+    spec = _mkdir_spec()
     original_cwd = os.getcwd()
 
     try:
       os.chdir(tmp_path)
-      result = await tool.execute(path="newdir")
+      result = await spec.execute(path="newdir")
 
       assert result.success
       assert os.path.isabs(result.result["path"])
@@ -927,8 +939,8 @@ class TestMkdirToolSpecialCases:
     When: Calling execute
     Then: Returns success with created=False (already exists)
     """
-    tool = MkdirTool()
-    result = await tool.execute(path=".")
+    spec = _mkdir_spec()
+    result = await spec.execute(path=".")
 
     assert result.success
     assert result.result["created"] is False
@@ -941,12 +953,12 @@ class TestMkdirToolSpecialCases:
     When: Calling execute
     Then: Returns success with created=False (already exists)
     """
-    tool = MkdirTool()
+    spec = _mkdir_spec()
     original_cwd = os.getcwd()
 
     try:
       os.chdir(tmp_path)
-      result = await tool.execute(path="..")
+      result = await spec.execute(path="..")
 
       assert result.success
       assert result.result["created"] is False
@@ -960,12 +972,10 @@ class TestMkdirToolSpecialCases:
     When: Calling execute with guardrail allowing /tmp
     Then: Creates directory successfully
     """
-    config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
-    guardrail = PathGuardrail(config)
-    tool = MkdirTool(guardrail=guardrail)
+    spec = _mkdir_spec()
 
     new_dir = tmp_path / "newdir"
-    result = await tool.execute(path=str(new_dir))
+    result = await spec.execute(path=str(new_dir))
 
     assert result.success
     assert result.result["created"] is True
@@ -978,9 +988,9 @@ class TestMkdirToolSpecialCases:
     When: Calling execute
     Then: Creates directory successfully
     """
-    tool = MkdirTool()
+    spec = _mkdir_spec()
     dir_with_spaces = tmp_path / "dir with spaces"
-    result = await tool.execute(path=str(dir_with_spaces))
+    result = await spec.execute(path=str(dir_with_spaces))
 
     assert result.success
     assert result.result["created"] is True
@@ -993,9 +1003,9 @@ class TestMkdirToolSpecialCases:
     When: Calling execute
     Then: Creates directory successfully
     """
-    tool = MkdirTool()
+    spec = _mkdir_spec()
     unicode_dir = tmp_path / "unicode_目录_🎉"
-    result = await tool.execute(path=str(unicode_dir))
+    result = await spec.execute(path=str(unicode_dir))
 
     assert result.success
     assert result.result["created"] is True
@@ -1008,9 +1018,9 @@ class TestMkdirToolSpecialCases:
     When: Calling execute
     Then: All intermediate directories are created
     """
-    tool = MkdirTool()
+    spec = _mkdir_spec()
     deep_path = tmp_path / "a" / "b" / "c" / "d" / "e"
-    result = await tool.execute(path=str(deep_path), recursive=True)
+    result = await spec.execute(path=str(deep_path), recursive=True)
 
     assert result.success
     assert result.result["created"] is True
@@ -1022,25 +1032,23 @@ class TestMkdirToolSpecialCases:
 
 
 class TestMkdirToolIntegration:
-  """Integration tests for MkdirTool with other components."""
+  """Integration tests for mkdir tool with other components."""
 
   @pytest.mark.asyncio
   async def test_create_then_check_existence(self, tmp_path: Path) -> None:
     """
-    Given: MkdirTool creates a directory
-    When: Checking existence with ExistenceTool
-    Then: ExistenceTool reports directory exists
+    Given: mkdir tool creates a directory
+    When: Checking existence with existence tool
+    Then: Existence tool reports directory exists
     """
-    from yoker.tools.existence import ExistenceTool
-
-    mkdir_tool = MkdirTool()
-    existence_tool = ExistenceTool()
+    mkdir_spec = _mkdir_spec()
+    existence_spec = ToolRegistry().register(make_existence_tool())
 
     new_dir = tmp_path / "newdir"
-    mkdir_result = await mkdir_tool.execute(path=str(new_dir))
+    mkdir_result = await mkdir_spec.execute(path=str(new_dir))
     assert mkdir_result.success
 
-    existence_result = await existence_tool.execute(path=str(new_dir))
+    existence_result = await existence_spec.execute(path=str(new_dir))
     assert existence_result.success
     assert existence_result.result["exists"] is True
     assert existence_result.result["type"] == "directory"
@@ -1048,20 +1056,18 @@ class TestMkdirToolIntegration:
   @pytest.mark.asyncio
   async def test_create_then_list_directory(self, tmp_path: Path) -> None:
     """
-    Given: MkdirTool creates a directory
-    When: Listing parent directory with ListTool
+    Given: mkdir tool creates a directory
+    When: Listing parent directory with list tool
     Then: New directory appears in listing
     """
-    from yoker.tools.list import ListTool
-
-    mkdir_tool = MkdirTool()
-    list_tool = ListTool()
+    mkdir_spec = _mkdir_spec()
+    list_spec = ToolRegistry().register(make_list_tool())
 
     new_dir = tmp_path / "newdir"
-    mkdir_result = await mkdir_tool.execute(path=str(new_dir))
+    mkdir_result = await mkdir_spec.execute(path=str(new_dir))
     assert mkdir_result.success
 
-    list_result = await list_tool.execute(path=str(tmp_path))
+    list_result = await list_spec.execute(path=str(tmp_path))
     assert list_result.success
     assert "newdir" in list_result.result
 
@@ -1072,12 +1078,10 @@ class TestMkdirToolIntegration:
     When: Creating directory within allowed path
     Then: Directory is created successfully
     """
-    config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
-    guardrail = PathGuardrail(config)
-    tool = MkdirTool(guardrail=guardrail)
+    spec = _mkdir_spec()
 
     new_dir = tmp_path / "newdir"
-    result = await tool.execute(path=str(new_dir))
+    result = await spec.execute(path=str(new_dir))
 
     assert result.success
     assert result.result["created"] is True

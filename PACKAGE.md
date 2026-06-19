@@ -294,7 +294,43 @@ from yoker.events import (
 
 ### Tools
 
+Yoker tools are plain Python functions or callable classes. There is no base class to inherit from. The framework introspects the callable's signature and `Annotated` parameter markers to derive the tool name, description, JSON schema, and guardrail mapping.
+
+```python
+from typing import Annotated
+from yoker.annotations import Path, Text
+from yoker.tools import ToolRegistry
+
+def read_file(
+  path: Annotated[str, Path("Path to the file to read")],
+  encoding: Annotated[str, Text("File encoding")] = "utf-8",
+) -> str:
+  """Read a file and return its contents."""
+  with open(path, encoding=encoding) as f:
+    return f.read()
+
+registry = ToolRegistry()
+registry.register(read_file)
+```
+
+A callable class works the same way: `registry.register(MyTool())` reads the instance's `__call__` signature. Use the optional `@tool(name=..., description=...)` decorator from `yoker.annotations` to override the name or description inferred from the callable.
+
 Built-in tools are registered under the `yoker:` namespace. See the [Tools List](#tools-list) for all available tools.
+
+### Guardrails
+
+Yoker uses a schema-driven guardrail system. String parameters are annotated with a marker from `yoker.annotations`:
+
+| Marker | Guardrail applies to |
+|--------|----------------------|
+| `Path` | Filesystem paths (`PathGuardrail`) |
+| `Url`  | URLs (`WebGuardrail.validate_url`) |
+| `Query` | Web search queries (`WebGuardrail.validate`) |
+| `Text` | Plain text; no guardrail |
+
+When a callable is registered, `build_tool_spec()` extracts the marker from each `Annotated[str, Marker(...)]` parameter and stores its functional type in the resulting `ToolSpec.guards`. The marker description is kept in the JSON schema; the guardrail metadata is stripped before the schema is sent to the model, keeping it Ollama-compatible. At execution time, the harness dispatches the matching guardrail centrally, so the tool itself stays a plain function.
+
+Plugin and custom tool authors should annotate all string parameters with the appropriate marker. Plain `str` parameters without a marker are accepted but produce a warning, indicating that the parameter is not covered by a guardrail.
 
 ### Agent Definitions
 
@@ -321,15 +357,43 @@ from yoker import Agent
 agent = Agent(agent_path="agents/researcher.md")
 ```
 
-Agent definitions can also be loaded from plugins:
+Tool references in agent definitions follow these rules:
+
+- **Built-in tools** may be referenced with or without the `yoker:` prefix (e.g., `read` or `yoker:read`).
+- **Built-in tool matching is case-insensitive** (e.g., `Read`, `READ`, and `read` all resolve to the same tool).
+- **Plugin tools** must always be referenced with their full namespace prefix (e.g., `pkgq:search`).
+- A warning is logged at agent load time for any requested tool that is not available in the final registry.
+
+Agent definitions can also be loaded from plugins. Load the plugin with
+`--with <pkg>` and reference the agent by name (resolved through the
+agent registry populated from configured directories and loaded plugins):
 
 ```bash
-python -m yoker --agents-definition plugin://pkgq/agents/researcher
+python -m yoker --with pkgq --agent researcher
 ```
+
+A bare name matches a unique agent `simple_name` across namespaces; a
+namespaced name (`pkgq:researcher`) matches exactly. Loading a plugin
+requires `[plugins] enabled = true` and the package to be trusted (see
+`[plugins.trusted]`).
 
 ### Plugins
 
-Plugins are Python packages that expose tools, skills, and agents through a `yoker` submodule or `__YOKER_MANIFEST__`.
+Plugins are Python packages that expose tools, skills, and agents through a top-level `__YOKER_MANIFEST__` object. Tools are provided as functions or callable class instances.
+
+```python
+from typing import Annotated
+from yoker.annotations import Text
+from yoker.plugins import PluginManifest
+
+def echo(message: Annotated[str, Text("Message to echo")]) -> str:
+  """Echo back the input message."""
+  return f"Echo: {message}"
+
+__YOKER_MANIFEST__ = PluginManifest(
+  tools=[echo],
+)
+```
 
 Load via CLI:
 
@@ -353,6 +417,29 @@ Plugin components are namespaced:
 - Agents: `pkgq:researcher`
 
 ## Common Patterns
+
+### Logging
+
+By default, both library and CLI usage are quiet (WARNING level and above).
+`Agent()` automatically applies the `[logging]` settings from the loaded
+`yoker.toml` (or defaults) the first time it initializes, unless logging has
+already been configured explicitly (for example by `python -m yoker`).
+
+To enable informational logs, set the level in `yoker.toml`:
+
+```toml
+[logging]
+level = "INFO"
+```
+
+Or set the environment variable `YOKER_LOGGING_LEVEL=INFO`.
+
+Programmatically:
+
+```python
+from yoker import configure_logging
+configure_logging(level="INFO")
+```
 
 ### Loading configuration programmatically
 
@@ -449,8 +536,10 @@ src/yoker/
 ├── __main__.py          # CLI entry point
 ├── agent/               # Agent implementation
 │   ├── agent.py         # Public Agent class
-│   ├── core.py          # AgentCore shared state
-│   ├── processing.py    # Message/tool processing
+│   ├── _plugins.py      # Plugin loading helpers
+│   ├── _processing.py   # Message/tool processing
+│   ├── _setup.py        # Client, guardrail, registry setup
+│   ├── _tools.py        # Built-in tool filtering
 │   └── tools.py         # Agent-specific tool setup
 ├── agents/              # Agent definition parsing
 ├── commands/            # Core command definitions
@@ -465,11 +554,16 @@ src/yoker/
 ├── exceptions.py        # Exception hierarchy
 ├── logging.py           # Structured logging
 ├── plugins/             # Plugin loading and registration
-│   ├── builtin.py
-│   ├── loader.py
+│   ├── __init__.py
+│   ├── agents.py        # Agent definition loading
+│   ├── builtin.py       # Built-in yoker plugin manifest
+│   ├── loader.py        # Plugin package discovery
 │   ├── manifest.py
-│   ├── registration.py
-│   └── security.py
+│   ├── registration.py  # Component registration
+│   ├── resources.py     # Package resource helpers
+│   ├── security.py      # Plugin trust checks
+│   ├── skills.py        # Plugin skill discovery
+│   └── urls.py          # plugin:// URL parsing
 ├── skills/              # Skill definitions and registry
 ├── thinking.py          # Thinking mode enum
 ├── tools/               # Tool implementations

@@ -132,7 +132,7 @@ definition = "./agents/missing.md"
       )
 
       # Should raise ValueError for missing file
-      with pytest.raises(ValueError, match="Agent definition file not found"):
+      with pytest.raises(ValueError, match=r"Agent not found: \./agents/missing\.md"):
         Agent(config=config)
 
   def test_agent_definition_explicit_overrides_config(

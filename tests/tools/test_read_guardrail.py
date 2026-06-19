@@ -1,8 +1,10 @@
-"""Integration tests for ReadTool with real PathGuardrail.
+"""Integration tests for read tool with real PathGuardrail.
 
-Tests that ReadTool properly integrates with PathGuardrail for
+Tests that the read tool integrates with PathGuardrail for
 path traversal prevention, blocked patterns, extension filtering,
-and size limits.
+and size limits. Guardrails are enforced centrally by the harness,
+so this module validates the PathGuardrail decisions that the Agent
+would apply before calling the read tool.
 """
 
 from pathlib import Path
@@ -21,12 +23,18 @@ from yoker.config import (
   UpdateToolConfig,
   WriteToolConfig,
 )
-from yoker.tools import ReadTool
+from yoker.tools import ToolRegistry, make_read_tool
 from yoker.tools.path_guardrail import PathGuardrail
 
 
+def _read_spec():
+  """Create and register the read tool."""
+  registry = ToolRegistry()
+  return registry.register(make_read_tool())
+
+
 class TestReadToolGuardrailIntegration:
-  """Integration tests for ReadTool with PathGuardrail."""
+  """Integration tests for read tool with PathGuardrail."""
 
   @pytest.fixture
   def restricted_config(self, tmp_path: Path) -> Config:
@@ -64,120 +72,111 @@ class TestReadToolGuardrailIntegration:
 
   @pytest.mark.asyncio
   async def test_allowed_path_allows(self, tmp_path: Path, guardrail: PathGuardrail) -> None:
-    """ReadTool allows files within allowed paths."""
+    """Read tool allows files within allowed paths."""
     file_path = tmp_path / "test.txt"
     file_path.write_text("hello world")
-    tool = ReadTool(guardrail=guardrail)
-    result = await tool.execute(path=str(file_path))
+    spec = _read_spec()
+    validation = guardrail.validate(spec.name, {"path": str(file_path)})
+    assert validation.valid
+    result = await spec.execute(path=str(file_path))
     assert result.success is True
     assert result.result == "hello world"
 
-  @pytest.mark.asyncio
-  async def test_path_traversal_blocked(self, tmp_path: Path, guardrail: PathGuardrail) -> None:
-    """ReadTool blocks path traversal outside allowed paths."""
-    tool = ReadTool(guardrail=guardrail)
-    result = await tool.execute(path=str(tmp_path / ".." / ".." / "etc" / "passwd"))
-    assert result.success is False
-    assert "outside allowed" in result.error.lower()
+  def test_path_traversal_blocked(self, tmp_path: Path, guardrail: PathGuardrail) -> None:
+    """PathGuardrail blocks path traversal outside allowed paths."""
+    spec = _read_spec()
+    validation = guardrail.validate(
+      spec.name, {"path": str(tmp_path / ".." / ".." / "etc" / "passwd")}
+    )
+    assert not validation.valid
+    assert "outside allowed" in (validation.reason or "").lower()
 
-  @pytest.mark.asyncio
-  async def test_blocked_pattern_env_blocked(
-    self, tmp_path: Path, guardrail: PathGuardrail
-  ) -> None:
-    """ReadTool blocks files matching blocked patterns."""
+  def test_blocked_pattern_env_blocked(self, tmp_path: Path, guardrail: PathGuardrail) -> None:
+    """PathGuardrail blocks files matching blocked patterns."""
     env_file = tmp_path / ".env"
     env_file.write_text("SECRET_KEY=abc")
-    tool = ReadTool(guardrail=guardrail)
-    result = await tool.execute(path=str(env_file))
-    assert result.success is False
-    assert "blocked" in result.error.lower()
+    spec = _read_spec()
+    validation = guardrail.validate(spec.name, {"path": str(env_file)})
+    assert not validation.valid
+    assert "blocked" in (validation.reason or "").lower()
 
-  @pytest.mark.asyncio
-  async def test_blocked_pattern_secret_blocked(
-    self, tmp_path: Path, guardrail: PathGuardrail
-  ) -> None:
-    """ReadTool blocks files with 'secret' in name."""
+  def test_blocked_pattern_secret_blocked(self, tmp_path: Path, guardrail: PathGuardrail) -> None:
+    """PathGuardrail blocks files with 'secret' in name."""
     secret_file = tmp_path / "secrets.txt"
     secret_file.write_text("top secret")
-    tool = ReadTool(guardrail=guardrail)
-    result = await tool.execute(path=str(secret_file))
-    assert result.success is False
-    assert "blocked" in result.error.lower()
+    spec = _read_spec()
+    validation = guardrail.validate(spec.name, {"path": str(secret_file)})
+    assert not validation.valid
+    assert "blocked" in (validation.reason or "").lower()
 
-  @pytest.mark.asyncio
-  async def test_extension_filtering_blocked(
-    self, tmp_path: Path, guardrail: PathGuardrail
-  ) -> None:
-    """ReadTool blocks files with disallowed extensions."""
+  def test_extension_filtering_blocked(self, tmp_path: Path, guardrail: PathGuardrail) -> None:
+    """PathGuardrail blocks files with disallowed extensions."""
     pem_file = tmp_path / "key.pem"
     pem_file.write_text("-----BEGIN KEY-----")
-    tool = ReadTool(guardrail=guardrail)
-    result = await tool.execute(path=str(pem_file))
-    assert result.success is False
-    assert "extension" in result.error.lower()
+    spec = _read_spec()
+    validation = guardrail.validate(spec.name, {"path": str(pem_file)})
+    assert not validation.valid
+    assert "extension" in (validation.reason or "").lower()
 
   @pytest.mark.asyncio
   async def test_extension_filtering_allowed(
     self, tmp_path: Path, guardrail: PathGuardrail
   ) -> None:
-    """ReadTool allows files with allowed extensions."""
+    """Read tool allows files with allowed extensions."""
     md_file = tmp_path / "readme.md"
     md_file.write_text("# Hello")
-    tool = ReadTool(guardrail=guardrail)
-    result = await tool.execute(path=str(md_file))
+    spec = _read_spec()
+    validation = guardrail.validate(spec.name, {"path": str(md_file)})
+    assert validation.valid
+    result = await spec.execute(path=str(md_file))
     assert result.success is True
     assert result.result == "# Hello"
 
-  @pytest.mark.asyncio
-  async def test_size_limit_blocked(self, tmp_path: Path, guardrail: PathGuardrail) -> None:
-    """ReadTool blocks files exceeding size limit."""
+  def test_size_limit_blocked(self, tmp_path: Path, guardrail: PathGuardrail) -> None:
+    """PathGuardrail blocks files exceeding size limit."""
     large_file = tmp_path / "large.txt"
     large_file.write_text("x" * 20 * 1024)  # 20KB > 10KB limit
-    tool = ReadTool(guardrail=guardrail)
-    result = await tool.execute(path=str(large_file))
-    assert result.success is False
-    assert "size" in result.error.lower()
+    spec = _read_spec()
+    validation = guardrail.validate(spec.name, {"path": str(large_file)})
+    assert not validation.valid
+    assert "size" in (validation.reason or "").lower()
 
   @pytest.mark.asyncio
   async def test_symlink_outside_root_blocked(
     self, tmp_path: Path, guardrail: PathGuardrail
   ) -> None:
-    """ReadTool blocks symlinks pointing outside allowed paths."""
+    """Read tool blocks symlinks pointing outside allowed paths."""
     # Create a file outside the allowed root
     outside = tmp_path.parent / "outside.txt"
     outside.write_text("outside content")
     # Create a symlink inside the allowed root pointing outside
     link = tmp_path / "link.txt"
     link.symlink_to(outside)
-    tool = ReadTool(guardrail=guardrail)
-    result = await tool.execute(path=str(link))
+    spec = _read_spec()
+    result = await spec.execute(path=str(link))
     # Tool-layer blocks symlinks before guardrail even runs
     assert result.success is False
     assert "symlink" in result.error.lower()
 
-  @pytest.mark.asyncio
-  async def test_absolute_path_outside_blocked(
-    self, tmp_path: Path, guardrail: PathGuardrail
-  ) -> None:
-    """ReadTool blocks absolute paths outside allowed directories."""
-    tool = ReadTool(guardrail=guardrail)
-    result = await tool.execute(path="/etc/passwd")
-    assert result.success is False
-    assert "outside allowed" in result.error.lower()
+  def test_absolute_path_outside_blocked(self, tmp_path: Path, guardrail: PathGuardrail) -> None:
+    """PathGuardrail blocks absolute paths outside allowed directories."""
+    spec = _read_spec()
+    validation = guardrail.validate(spec.name, {"path": "/etc/passwd"})
+    assert not validation.valid
+    assert "outside allowed" in (validation.reason or "").lower()
 
-  @pytest.mark.asyncio
-  async def test_empty_path_blocked(self, guardrail: PathGuardrail) -> None:
-    """ReadTool blocks empty path parameter."""
-    tool = ReadTool(guardrail=guardrail)
-    result = await tool.execute(path="")
-    assert result.success is False
+  def test_empty_path_blocked(self, guardrail: PathGuardrail) -> None:
+    """PathGuardrail blocks empty path parameter."""
+    spec = _read_spec()
+    validation = guardrail.validate(spec.name, {"path": ""})
+    assert not validation.valid
 
   @pytest.mark.asyncio
   async def test_no_guardrail_tool_validates_internally(self, tmp_path: Path) -> None:
-    """ReadTool without guardrail still validates path existence and symlinks."""
+    """Read tool without guardrail still validates path existence and symlinks."""
     file_path = tmp_path / "test.txt"
     file_path.write_text("hello")
-    tool = ReadTool()  # No guardrail
-    result = await tool.execute(path=str(file_path))
+    spec = _read_spec()  # No guardrail
+    result = await spec.execute(path=str(file_path))
     assert result.success is True
     assert result.result == "hello"

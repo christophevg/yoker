@@ -1,47 +1,39 @@
-"""Tests for WriteTool."""
+"""Tests for write tool."""
 
 import platform
 from pathlib import Path
 
 import pytest
 
-from yoker.config import Config, ToolsConfig, WriteToolConfig
-from yoker.tools import WriteTool
-from yoker.tools.base import ToolResult, ValidationResult
+from yoker.config import Config, PermissionsConfig, ToolsConfig, WriteToolConfig
+from yoker.tools import ToolRegistry, make_write_tool
+from yoker.tools.base import ToolResult
+from yoker.tools.path_guardrail import PathGuardrail
 
 
-class FakeGuardrail:
-  """Fake guardrail for testing WriteTool integration."""
-
-  def __init__(self, allow: bool = True, reason: str = "blocked") -> None:
-    self.allow = allow
-    self.reason = reason
-    self.calls: list[tuple[str, dict]] = []
-
-  def validate(self, tool_name: str, params: dict) -> ValidationResult:
-    self.calls.append((tool_name, params))
-    if self.allow:
-      return ValidationResult(valid=True)
-    return ValidationResult(valid=False, reason=self.reason)
+def _write_spec(config: Config | None = None):
+  """Create and register the write tool."""
+  registry = ToolRegistry()
+  return registry.register(make_write_tool(config))
 
 
 class TestWriteTool:
-  """Tests for WriteTool."""
+  """Tests for the write tool."""
 
   def test_name(self) -> None:
-    """WriteTool has correct name."""
-    tool = WriteTool()
-    assert tool.name == "write"
+    """write tool has correct name."""
+    spec = _write_spec()
+    assert spec.name == "write"
 
   def test_description(self) -> None:
-    """WriteTool has description."""
-    tool = WriteTool()
-    assert "Write" in tool.description
+    """write tool has description."""
+    spec = _write_spec()
+    assert "Write" in spec.description
 
   def test_schema(self) -> None:
-    """WriteTool schema has required fields."""
-    tool = WriteTool()
-    schema = tool.get_schema()
+    """write tool schema has required fields."""
+    spec = _write_spec()
+    schema = spec.schema
     assert schema["type"] == "function"
     func = schema["function"]
     assert func["name"] == "write"
@@ -55,10 +47,10 @@ class TestWriteTool:
 
   @pytest.mark.asyncio
   async def test_write_new_file(self, tmp_path: Path) -> None:
-    """WriteTool writes content to a new file."""
+    """write tool writes content to a new file."""
     file_path = tmp_path / "test.txt"
-    tool = WriteTool()
-    result = await tool.execute(path=str(file_path), content="hello world")
+    spec = _write_spec()
+    result = await spec.execute(path=str(file_path), content="hello world")
     assert result.success is True
     assert result.result == "File written successfully"
     assert result.error is None
@@ -66,115 +58,120 @@ class TestWriteTool:
 
   @pytest.mark.asyncio
   async def test_write_overwrite_blocked(self, tmp_path: Path) -> None:
-    """WriteTool blocks overwrite when allow_overwrite=False."""
+    """write tool blocks overwrite when allow_overwrite=False."""
     file_path = tmp_path / "existing.txt"
     file_path.write_text("old content")
     config = Config(tools=ToolsConfig(write=WriteToolConfig(allow_overwrite=False)))
-    tool = WriteTool(config=config)
-    result = await tool.execute(path=str(file_path), content="new content")
+    spec = _write_spec(config)
+    result = await spec.execute(path=str(file_path), content="new content")
     assert result.success is False
     assert "overwrite" in result.error.lower()
     assert file_path.read_text(encoding="utf-8") == "old content"
 
   @pytest.mark.asyncio
   async def test_write_overwrite_allowed(self, tmp_path: Path) -> None:
-    """WriteTool allows overwrite when allow_overwrite=True."""
+    """write tool allows overwrite when allow_overwrite=True."""
     file_path = tmp_path / "existing.txt"
     file_path.write_text("old content")
     config = Config(tools=ToolsConfig(write=WriteToolConfig(allow_overwrite=True)))
-    tool = WriteTool(config=config)
-    result = await tool.execute(path=str(file_path), content="new content")
+    spec = _write_spec(config)
+    result = await spec.execute(path=str(file_path), content="new content")
     assert result.success is True
     assert file_path.read_text(encoding="utf-8") == "new content"
 
   @pytest.mark.asyncio
-  async def test_write_with_guardrail_blocks(self) -> None:
-    """WriteTool with guardrail blocks unauthorized paths."""
-    guardrail = FakeGuardrail(allow=False, reason="outside allowed")
-    tool = WriteTool(guardrail=guardrail)
-    result = await tool.execute(path="/etc/passwd", content="data")
-    assert result.success is False
-    assert result.error == "outside allowed"
-    assert guardrail.calls == [("write", {"path": "/etc/passwd", "content": "data"})]
+  async def test_write_with_guardrail_blocks(self, tmp_path: Path) -> None:
+    """Path guardrail blocks paths outside allowed directories for write."""
+    config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
+    guardrail = PathGuardrail(config)
+    spec = _write_spec()
+    validation = guardrail.validate(spec.name, {"path": "/etc/passwd", "content": "data"})
+    assert not validation.valid
+    assert "outside allowed" in (validation.reason or "").lower()
 
   @pytest.mark.asyncio
   async def test_write_with_guardrail_allows(self, tmp_path: Path) -> None:
-    """WriteTool with guardrail allows authorized paths."""
+    """Path guardrail allows paths inside allowed directories for write."""
     file_path = tmp_path / "test.txt"
-    guardrail = FakeGuardrail(allow=True)
-    tool = WriteTool(guardrail=guardrail)
-    result = await tool.execute(path=str(file_path), content="allowed content")
+    config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
+    guardrail = PathGuardrail(config)
+    spec = _write_spec()
+    validation = guardrail.validate(
+      spec.name, {"path": str(file_path), "content": "allowed content"}
+    )
+    assert validation.valid
+    result = await spec.execute(path=str(file_path), content="allowed content")
     assert result.success is True
     assert file_path.read_text(encoding="utf-8") == "allowed content"
-    assert guardrail.calls == [("write", {"path": str(file_path), "content": "allowed content"})]
 
   @pytest.mark.asyncio
   async def test_write_rejects_symlink(self, tmp_path: Path) -> None:
-    """WriteTool rejects writing to symlinks."""
+    """write tool rejects writing to symlinks."""
     target = tmp_path / "target.txt"
     target.write_text("secret")
     link = tmp_path / "link.txt"
     link.symlink_to(target)
-    tool = WriteTool()
-    result = await tool.execute(path=str(link), content="new data")
+    spec = _write_spec()
+    result = await spec.execute(path=str(link), content="new data")
     assert result.success is False
     assert "symlink" in result.error.lower()
 
   @pytest.mark.asyncio
   async def test_write_create_parents_false(self, tmp_path: Path) -> None:
-    """WriteTool returns error when parent missing and create_parents=False."""
+    """write tool returns error when parent missing and create_parents=False."""
     file_path = tmp_path / "missing" / "test.txt"
-    tool = WriteTool()
-    result = await tool.execute(path=str(file_path), content="data", create_parents=False)
+    spec = _write_spec()
+    result = await spec.execute(path=str(file_path), content="data", create_parents=False)
     assert result.success is False
     assert "parent directory" in result.error.lower()
 
   @pytest.mark.asyncio
   async def test_write_create_parents_true(self, tmp_path: Path) -> None:
-    """WriteTool creates parents when create_parents=True."""
+    """write tool creates parents when create_parents=True."""
     file_path = tmp_path / "missing" / "test.txt"
-    tool = WriteTool()
-    result = await tool.execute(path=str(file_path), content="data", create_parents=True)
+    spec = _write_spec()
+    result = await spec.execute(path=str(file_path), content="data", create_parents=True)
     assert result.success is True
     assert file_path.read_text(encoding="utf-8") == "data"
 
   @pytest.mark.asyncio
   async def test_write_missing_path(self) -> None:
-    """WriteTool handles missing path parameter."""
-    tool = WriteTool()
-    result = await tool.execute(content="data")
+    """write tool handles missing path parameter."""
+    spec = _write_spec()
+    result = await spec.execute(content="data")
     assert result.success is False
-    assert "invalid path" in result.error.lower()
+    assert "missing a required argument" in result.error.lower()
+    assert "path" in result.error
 
   @pytest.mark.asyncio
-  async def test_write_missing_content(self, tmp_path: Path) -> None:
-    """WriteTool writes empty file when content is omitted."""
+  async def test_write_empty_content(self, tmp_path: Path) -> None:
+    """write tool writes empty file when content is empty string."""
     file_path = tmp_path / "empty_file.txt"
-    tool = WriteTool()
-    result = await tool.execute(path=str(file_path))
+    spec = _write_spec()
+    result = await spec.execute(path=str(file_path), content="")
     assert result.success is True
     assert result.result == "File written successfully"
     assert file_path.read_text(encoding="utf-8") == ""
 
   @pytest.mark.asyncio
   async def test_write_non_string_path(self) -> None:
-    """WriteTool handles non-string path parameter."""
-    tool = WriteTool()
-    result = await tool.execute(path=123, content="data")  # type: ignore
+    """write tool handles non-string path parameter."""
+    spec = _write_spec()
+    result = await spec.execute(path=123, content="data")  # type: ignore
     assert result.success is False
     assert result.error == "Invalid path parameter"
 
   @pytest.mark.asyncio
   async def test_write_non_string_content(self) -> None:
-    """WriteTool handles non-string content parameter."""
-    tool = WriteTool()
-    result = await tool.execute(path="/tmp/test.txt", content=123)  # type: ignore
+    """write tool handles non-string content parameter."""
+    spec = _write_spec()
+    result = await spec.execute(path="/tmp/test.txt", content=123)  # type: ignore
     assert result.success is False
     assert result.error == "Invalid content parameter"
 
   @pytest.mark.asyncio
   async def test_write_permission_denied(self, tmp_path: Path, monkeypatch) -> None:
-    """WriteTool returns sanitized error on permission denied."""
+    """write tool returns sanitized error on permission denied."""
     file_path = tmp_path / "readonly.txt"
     file_path.write_text("existing")
 
@@ -183,27 +180,27 @@ class TestWriteTool:
 
     monkeypatch.setattr(Path, "write_text", mock_write_text)
     config = Config(tools=ToolsConfig(write=WriteToolConfig(allow_overwrite=True)))
-    tool = WriteTool(config=config)
-    result = await tool.execute(path=str(file_path), content="new data")
+    spec = _write_spec(config)
+    result = await spec.execute(path=str(file_path), content="new data")
     assert result.success is False
     assert "permission denied" in result.error.lower()
     assert str(file_path) not in result.error
 
   @pytest.mark.asyncio
   async def test_write_sanitizes_error_messages(self, tmp_path: Path) -> None:
-    """WriteTool does not leak full paths in error messages."""
-    tool = WriteTool()
+    """write tool does not leak full paths in error messages."""
+    spec = _write_spec()
     sensitive_path = str(tmp_path / ".ssh" / "id_rsa")
-    result = await tool.execute(path=sensitive_path, content="secret")
+    result = await spec.execute(path=sensitive_path, content="secret")
     assert result.success is False
     assert sensitive_path not in result.error
 
   @pytest.mark.asyncio
   async def test_write_resolves_path(self, tmp_path: Path) -> None:
-    """WriteTool resolves relative paths before writing."""
+    """write tool resolves relative paths before writing."""
     file_path = tmp_path / "real.txt"
-    tool = WriteTool()
-    result = await tool.execute(
+    spec = _write_spec()
+    result = await spec.execute(
       path=str(tmp_path / ".." / tmp_path.name / "real.txt"),
       content="resolved",
     )
@@ -212,7 +209,7 @@ class TestWriteTool:
 
   @pytest.mark.asyncio
   async def test_write_oserror_during_write(self, tmp_path: Path, monkeypatch) -> None:
-    """WriteTool handles OSError during write_text gracefully."""
+    """write tool handles OSError during write_text gracefully."""
     file_path = tmp_path / "device.txt"
     file_path.write_text("data")
 
@@ -221,60 +218,58 @@ class TestWriteTool:
 
     monkeypatch.setattr(Path, "write_text", mock_write_text)
     config = Config(tools=ToolsConfig(write=WriteToolConfig(allow_overwrite=True)))
-    tool = WriteTool(config=config)
-    result = await tool.execute(path=str(file_path), content="new data")
+    spec = _write_spec(config)
+    result = await spec.execute(path=str(file_path), content="new data")
     assert result.success is False
     assert "error writing file" in result.error.lower()
     assert str(file_path) not in result.error
 
   @pytest.mark.asyncio
   async def test_write_empty_path(self) -> None:
-    """WriteTool handles empty path string."""
-    tool = WriteTool()
-    result = await tool.execute(path="", content="data")
+    """write tool handles empty path string."""
+    spec = _write_spec()
+    result = await spec.execute(path="", content="data")
     assert result.success is False
     assert "invalid path" in result.error.lower()
 
   @pytest.mark.asyncio
   async def test_write_result_is_toolresult(self) -> None:
-    """WriteTool execute returns ToolResult."""
-    tool = WriteTool()
-    result = await tool.execute(path="/dev/null", content="test")
+    """write tool execute returns ToolResult."""
+    spec = _write_spec()
+    result = await spec.execute(path="/dev/null", content="test")
     assert isinstance(result, ToolResult)
 
   @pytest.mark.asyncio
   async def test_write_guardrail_passes_create_parents(self, tmp_path: Path) -> None:
-    """Guardrail receives create_parents parameter."""
-    guardrail = FakeGuardrail(allow=True)
-    tool = WriteTool(guardrail=guardrail)
-    result = await tool.execute(
+    """Path guardrail validates write parameters including create_parents."""
+    config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
+    guardrail = PathGuardrail(config)
+    spec = _write_spec()
+    validation = guardrail.validate(
+      spec.name,
+      {
+        "path": str(tmp_path / "test.txt"),
+        "content": "data",
+        "create_parents": True,
+      },
+    )
+    assert validation.valid
+    result = await spec.execute(
       path=str(tmp_path / "test.txt"),
       content="data",
       create_parents=True,
     )
     assert result.success is True
-    # Guardrail should have received create_parents in params
-    assert guardrail.calls == [
-      (
-        "write",
-        {
-          "path": str(tmp_path / "test.txt"),
-          "content": "data",
-          "create_parents": True,
-        },
-      )
-    ]
 
   @pytest.mark.asyncio
   async def test_write_symlink_inside_allowed_with_guardrail(self, tmp_path: Path) -> None:
-    """WriteTool rejects symlinks even when guardrail allows."""
+    """write tool rejects symlinks regardless of guardrail."""
     target = tmp_path / "target.txt"
     target.write_text("allowed target")
     link = tmp_path / "link.txt"
     link.symlink_to(target)
-    guardrail = FakeGuardrail(allow=True)
-    tool = WriteTool(guardrail=guardrail)
-    result = await tool.execute(path=str(link), content="new data")
+    spec = _write_spec()
+    result = await spec.execute(path=str(link), content="new data")
     # Tool layer rejects symlinks before writing
     assert result.success is False
     assert "symlink" in result.error.lower()
@@ -284,11 +279,11 @@ class TestWriteTool:
   )
   @pytest.mark.asyncio
   async def test_write_over_existing_directory(self, tmp_path: Path) -> None:
-    """WriteTool returns error when path is an existing directory."""
+    """write tool returns error when path is an existing directory."""
     subdir = tmp_path / "existing_dir"
     subdir.mkdir()
     config = Config(tools=ToolsConfig(write=WriteToolConfig(allow_overwrite=True)))
-    tool = WriteTool(config=config)
-    result = await tool.execute(path=str(subdir), content="data")
+    spec = _write_spec(config)
+    result = await spec.execute(path=str(subdir), content="data")
     assert result.success is False
     assert "error writing file" in result.error.lower()

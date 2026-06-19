@@ -16,10 +16,16 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from threading import local
-from typing import Any, Literal
+from typing import Any
 
 import structlog
+from structlog import get_logger
 from structlog.typing import EventDict, Processor
+
+from yoker.config import LoggingConfig
+
+# Module-level flag to track whether logging has been explicitly configured.
+_logging_configured = False
 
 
 class LoggingContext:
@@ -101,27 +107,8 @@ def _add_context(logger: logging.Logger, method_name: str, event_dict: EventDict
   return event_dict
 
 
-def _rename_log_level(logger: logging.Logger, method_name: str, event_dict: EventDict) -> EventDict:
-  """Processor to rename 'level' to 'severity' for compatibility.
-
-  Args:
-    logger: The wrapped logger.
-    method_name: The log method name.
-    event_dict: The event dictionary.
-
-  Returns:
-    Event dict with 'severity' instead of 'level'.
-  """
-  if "level" in event_dict:
-    event_dict["severity"] = event_dict.pop("level")
-  return event_dict
-
-
 def configure_logging(
-  level: str = "INFO",
-  log_file: Path | None = None,
-  format: Literal["json", "text"] = "text",
-  console: bool = True,
+  config: LoggingConfig, console: bool = True, skip_if_already_configured: bool = True
 ) -> None:
   """Configure structlog for the application.
 
@@ -141,8 +128,13 @@ def configure_logging(
       format="json",
     )
   """
+  global _logging_configured
+
+  if skip_if_already_configured and _logging_configured:
+    return
+
   # Convert level string to int
-  log_level = getattr(logging, level.upper(), logging.INFO)
+  log_level = getattr(logging, config.level.upper(), logging.INFO)
 
   # Configure standard library logging
   handlers: list[logging.Handler] = []
@@ -154,9 +146,9 @@ def configure_logging(
     handlers.append(console_handler)
 
   # File handler (if specified)
-  if log_file is not None:
-    log_file.parent.mkdir(parents=True, exist_ok=True)
-    file_handler = logging.FileHandler(log_file)
+  if config.file is not None:
+    Path(config.file).parent.mkdir(parents=True, exist_ok=True)
+    file_handler = logging.FileHandler(config.file)
     file_handler.setLevel(log_level)
     handlers.append(file_handler)
 
@@ -173,7 +165,7 @@ def configure_logging(
     structlog.processors.add_log_level,
     structlog.processors.StackInfoRenderer(),
     structlog.dev.set_exc_info,
-    structlog.processors.TimeStamper(fmt="iso"),
+    structlog.processors.TimeStamper(fmt=config.timestamp_format_string),
     _add_context,
   ]
 
@@ -184,7 +176,6 @@ def configure_logging(
     final_processors: list[Processor] = [structlog.processors.JSONRenderer()]
   else:
     # Human-readable format for development
-    shared_processors.append(_rename_log_level)
     final_processors = [structlog.dev.ConsoleRenderer(colors=True)]
 
   # Configure structlog
@@ -207,23 +198,7 @@ def configure_logging(
       logger_factory=structlog.PrintLoggerFactory(),
       cache_logger_on_first_use=True,
     )
-
-
-def get_logger(name: str | None = None) -> structlog.stdlib.BoundLogger:
-  """Get a configured logger for a module.
-
-  Args:
-    name: Module name (typically __name__).
-
-  Returns:
-    Configured structlog logger.
-
-  Example:
-    log = get_logger(__name__)
-    log.info("session_started", model="llama3.2")
-  """
-  logger: structlog.stdlib.BoundLogger = structlog.get_logger(name)
-  return logger
+  _logging_configured = True
 
 
 @contextmanager

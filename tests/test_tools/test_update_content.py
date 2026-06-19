@@ -1,4 +1,4 @@
-"""Tests for UpdateTool content metadata and diff generation.
+"""Tests for update tool content metadata and diff generation.
 
 Task: 1.5.5 - Show Write/Update Tool Content in CLI
 """
@@ -8,33 +8,40 @@ from pathlib import Path
 import pytest
 
 from yoker.config import Config, ContentDisplayConfig, ToolsConfig
-from yoker.tools.update import UpdateTool, _truncate_diff
+from yoker.tools import ToolRegistry, make_update_tool
+from yoker.tools.update import _truncate_diff
+
+
+def _update_spec(config: Config | None = None):
+  """Create and register the update tool."""
+  registry = ToolRegistry()
+  return registry.register(make_update_tool(config))
 
 
 class TestUpdateToolReplaceOperation:
-  """Test UpdateTool replace operation content metadata."""
+  """Test update tool replace operation content metadata."""
 
   @pytest.mark.asyncio
   async def test_replace_diff_generation(self, tmp_path: Path) -> None:
     """
-    Given: UpdateTool replace operation
+    Given: update tool replace operation
     When: execute() is called
     Then: ToolResult includes content_metadata with old_content and new_content
     """
-    # Create UpdateTool with content verbosity and show_diff_for_updates
+    # Create update tool with content verbosity and show_diff_for_updates
     config = Config(
       tools=ToolsConfig(
         content_display=ContentDisplayConfig(verbosity="content", show_diff_for_updates=True)
       )
     )
-    tool = UpdateTool(config=config)
+    spec = _update_spec(config)
 
     # Create file with content
     test_file = tmp_path / "replace.txt"
     test_file.write_text("Line 1\nOld text\nLine 3\n")
 
     # Replace text
-    result = await tool.execute(
+    result = await spec.execute(
       path=str(test_file), operation="replace", old_string="Old text", new_string="New text"
     )
 
@@ -51,22 +58,22 @@ class TestUpdateToolReplaceOperation:
   @pytest.mark.asyncio
   async def test_replace_content_type_is_diff(self, tmp_path: Path) -> None:
     """
-    Given: UpdateTool replace operation with show_diff_for_updates=True
+    Given: update tool replace operation with show_diff_for_updates=True
     When: execute() is called
     Then: content_metadata.content_type="diff"
     """
-    # Create UpdateTool with show_diff_for_updates
+    # Create update tool with show_diff_for_updates
     config = Config(
       tools=ToolsConfig(content_display=ContentDisplayConfig(show_diff_for_updates=True))
     )
-    tool = UpdateTool(config=config)
+    spec = _update_spec(config)
 
     # Create file
     test_file = tmp_path / "replace_diff.txt"
     test_file.write_text("Old content\n")
 
     # Replace
-    result = await tool.execute(
+    result = await spec.execute(
       path=str(test_file), operation="replace", old_string="Old content", new_string="New content"
     )
 
@@ -78,19 +85,19 @@ class TestUpdateToolReplaceOperation:
   @pytest.mark.asyncio
   async def test_replace_metadata(self, tmp_path: Path) -> None:
     """
-    Given: UpdateTool replace operation
+    Given: update tool replace operation
     When: execute() is called
     Then: metadata includes lines_modified count
     """
-    # Create UpdateTool
-    tool = UpdateTool()
+    # Create update tool
+    spec = _update_spec()
 
     # Create file
     test_file = tmp_path / "replace_meta.txt"
     test_file.write_text("Line 1\nOld\nLine 3\n")
 
     # Replace
-    result = await tool.execute(
+    result = await spec.execute(
       path=str(test_file), operation="replace", old_string="Old", new_string="New"
     )
 
@@ -102,11 +109,11 @@ class TestUpdateToolReplaceOperation:
   @pytest.mark.asyncio
   async def test_replace_large_diff_truncation(self, tmp_path: Path) -> None:
     """
-    Given: UpdateTool replace operation with large diff
+    Given: update tool replace operation with large diff
     When: execute() is called
     Then: diff is truncated to max_diff_lines
     """
-    # Create UpdateTool with small max_diff_lines
+    # Create update tool with small max_diff_lines
     config = Config(
       tools=ToolsConfig(
         content_display=ContentDisplayConfig(
@@ -114,14 +121,14 @@ class TestUpdateToolReplaceOperation:
         )
       )
     )
-    tool = UpdateTool(config=config)
+    spec = _update_spec(config)
 
     # Create file with many lines
     test_file = tmp_path / "large_diff.txt"
     test_file.write_text("\n".join(f"Line {i}" for i in range(50)))
 
     # Replace large portion
-    result = await tool.execute(
+    result = await spec.execute(
       path=str(test_file), operation="replace", old_string="Line 10", new_string="Modified line"
     )
 
@@ -134,25 +141,25 @@ class TestUpdateToolReplaceOperation:
 
 
 class TestUpdateToolInsertOperation:
-  """Test UpdateTool insert operation content metadata."""
+  """Test update tool insert operation content metadata."""
 
   @pytest.mark.asyncio
   async def test_insert_before_content_metadata(self, tmp_path: Path) -> None:
     """
-    Given: UpdateTool insert_before operation
+    Given: update tool insert_before operation
     When: execute() is called
     Then: content_metadata includes inserted content and line_number
     """
-    # Create UpdateTool with content verbosity
+    # Create update tool with content verbosity
     config = Config(tools=ToolsConfig(content_display=ContentDisplayConfig(verbosity="content")))
-    tool = UpdateTool(config=config)
+    spec = _update_spec(config)
 
     # Create file
     test_file = tmp_path / "insert_before.txt"
     test_file.write_text("Line 1\nLine 2\n")
 
     # Insert before line 2
-    result = await tool.execute(
+    result = await spec.execute(
       path=str(test_file), operation="insert_before", line_number=2, new_string="Inserted line"
     )
 
@@ -165,20 +172,20 @@ class TestUpdateToolInsertOperation:
   @pytest.mark.asyncio
   async def test_insert_after_content_metadata(self, tmp_path: Path) -> None:
     """
-    Given: UpdateTool insert_after operation
+    Given: update tool insert_after operation
     When: execute() is called
     Then: content_metadata includes inserted content and line_number
     """
-    # Create UpdateTool with content verbosity
+    # Create update tool with content verbosity
     config = Config(tools=ToolsConfig(content_display=ContentDisplayConfig(verbosity="content")))
-    tool = UpdateTool(config=config)
+    spec = _update_spec(config)
 
     # Create file
     test_file = tmp_path / "insert_after.txt"
     test_file.write_text("Line 1\nLine 2\n")
 
     # Insert after line 1
-    result = await tool.execute(
+    result = await spec.execute(
       path=str(test_file), operation="insert_after", line_number=1, new_string="Inserted line"
     )
 
@@ -191,20 +198,20 @@ class TestUpdateToolInsertOperation:
   @pytest.mark.asyncio
   async def test_insert_content_type(self, tmp_path: Path) -> None:
     """
-    Given: UpdateTool insert operation
+    Given: update tool insert operation
     When: execute() is called
     Then: content_metadata.content_type="full" (showing inserted content)
     """
-    # Create UpdateTool with content verbosity
+    # Create update tool with content verbosity
     config = Config(tools=ToolsConfig(content_display=ContentDisplayConfig(verbosity="content")))
-    tool = UpdateTool(config=config)
+    spec = _update_spec(config)
 
     # Create file
     test_file = tmp_path / "insert_type.txt"
     test_file.write_text("Line 1\n")
 
     # Insert
-    result = await tool.execute(
+    result = await spec.execute(
       path=str(test_file), operation="insert_after", line_number=1, new_string="New line"
     )
 
@@ -217,20 +224,20 @@ class TestUpdateToolInsertOperation:
   @pytest.mark.asyncio
   async def test_insert_metadata_includes_context(self, tmp_path: Path) -> None:
     """
-    Given: UpdateTool insert operation
+    Given: update tool insert operation
     When: execute() is called
     Then: metadata includes lines_before and lines_after context
     """
-    # Create UpdateTool with content verbosity
+    # Create update tool with content verbosity
     config = Config(tools=ToolsConfig(content_display=ContentDisplayConfig(verbosity="content")))
-    tool = UpdateTool(config=config)
+    spec = _update_spec(config)
 
     # Create file
     test_file = tmp_path / "insert_context.txt"
     test_file.write_text("Line 1\nLine 2\nLine 3\n")
 
     # Insert
-    result = await tool.execute(
+    result = await spec.execute(
       path=str(test_file), operation="insert_after", line_number=2, new_string="Inserted"
     )
 
@@ -242,25 +249,25 @@ class TestUpdateToolInsertOperation:
 
 
 class TestUpdateToolDeleteOperation:
-  """Test UpdateTool delete operation content metadata."""
+  """Test update tool delete operation content metadata."""
 
   @pytest.mark.asyncio
   async def test_delete_content_metadata(self, tmp_path: Path) -> None:
     """
-    Given: UpdateTool delete operation
+    Given: update tool delete operation
     When: execute() is called
     Then: content_metadata includes deleted content
     """
-    # Create UpdateTool with content verbosity
+    # Create update tool with content verbosity
     config = Config(tools=ToolsConfig(content_display=ContentDisplayConfig(verbosity="content")))
-    tool = UpdateTool(config=config)
+    spec = _update_spec(config)
 
     # Create file
     test_file = tmp_path / "delete.txt"
     test_file.write_text("Line 1\nDelete me\nLine 3\n")
 
     # Delete
-    result = await tool.execute(path=str(test_file), operation="delete", old_string="Delete me\n")
+    result = await spec.execute(path=str(test_file), operation="delete", old_string="Delete me\n")
 
     # Verify result
     assert result.success
@@ -271,24 +278,24 @@ class TestUpdateToolDeleteOperation:
   @pytest.mark.asyncio
   async def test_delete_content_type_is_diff(self, tmp_path: Path) -> None:
     """
-    Given: UpdateTool delete operation with show_diff_for_updates=True
+    Given: update tool delete operation with show_diff_for_updates=True
     When: execute() is called
     Then: content_metadata.content_type="diff"
     """
-    # Create UpdateTool with show_diff_for_updates
+    # Create update tool with show_diff_for_updates
     config = Config(
       tools=ToolsConfig(
         content_display=ContentDisplayConfig(verbosity="content", show_diff_for_updates=True)
       )
     )
-    tool = UpdateTool(config=config)
+    spec = _update_spec(config)
 
     # Create file
     test_file = tmp_path / "delete_diff.txt"
     test_file.write_text("Line 1\nTo delete\nLine 3\n")
 
     # Delete
-    result = await tool.execute(path=str(test_file), operation="delete", old_string="To delete\n")
+    result = await spec.execute(path=str(test_file), operation="delete", old_string="To delete\n")
 
     # Verify result
     assert result.success
@@ -298,19 +305,19 @@ class TestUpdateToolDeleteOperation:
   @pytest.mark.asyncio
   async def test_delete_metadata_includes_line_number(self, tmp_path: Path) -> None:
     """
-    Given: UpdateTool delete operation by line number
+    Given: update tool delete operation by line number
     When: execute() is called
     Then: metadata includes line_number where deletion occurred
     """
-    # Create UpdateTool
-    tool = UpdateTool()
+    # Create update tool
+    spec = _update_spec()
 
     # Create file
     test_file = tmp_path / "delete_line.txt"
     test_file.write_text("Line 1\nLine 2\nLine 3\n")
 
     # Delete by line number
-    result = await tool.execute(path=str(test_file), operation="delete", line_number=2)
+    result = await spec.execute(path=str(test_file), operation="delete", line_number=2)
 
     # Verify result
     assert result.success
@@ -319,16 +326,16 @@ class TestUpdateToolDeleteOperation:
 
 
 class TestUpdateToolDiffTruncation:
-  """Test UpdateTool diff truncation for large changes."""
+  """Test update tool diff truncation for large changes."""
 
   @pytest.mark.asyncio
   async def test_diff_truncation_for_large_changes(self, tmp_path: Path) -> None:
     """
-    Given: UpdateTool with diff exceeding max_diff_lines
+    Given: update tool with diff exceeding max_diff_lines
     When: execute() is called
     Then: diff is truncated with indicator
     """
-    # Create UpdateTool with small max_diff_lines
+    # Create update tool with small max_diff_lines
     config = Config(
       tools=ToolsConfig(
         content_display=ContentDisplayConfig(
@@ -336,14 +343,14 @@ class TestUpdateToolDiffTruncation:
         )
       )
     )
-    tool = UpdateTool(config=config)
+    spec = _update_spec(config)
 
     # Create file with many lines
     test_file = tmp_path / "large_change.txt"
     test_file.write_text("\n".join(f"Line {i}" for i in range(50)))
 
     # Replace
-    result = await tool.execute(
+    result = await spec.execute(
       path=str(test_file), operation="replace", old_string="Line 10", new_string="Modified"
     )
 
@@ -354,11 +361,11 @@ class TestUpdateToolDiffTruncation:
   @pytest.mark.asyncio
   async def test_diff_truncation_metadata(self, tmp_path: Path) -> None:
     """
-    Given: UpdateTool with truncated diff
+    Given: update tool with truncated diff
     When: execute() is called
     Then: metadata includes truncated=True and original_lines count
     """
-    # Create UpdateTool with small max_diff_lines
+    # Create update tool with small max_diff_lines
     config = Config(
       tools=ToolsConfig(
         content_display=ContentDisplayConfig(
@@ -366,14 +373,14 @@ class TestUpdateToolDiffTruncation:
         )
       )
     )
-    tool = UpdateTool(config=config)
+    spec = _update_spec(config)
 
     # Create file
     test_file = tmp_path / "truncated_meta.txt"
     test_file.write_text("\n".join(f"Line {i}" for i in range(100)))
 
     # Replace
-    result = await tool.execute(
+    result = await spec.execute(
       path=str(test_file), operation="replace", old_string="Line 50", new_string="Changed"
     )
 
@@ -385,11 +392,11 @@ class TestUpdateToolDiffTruncation:
   @pytest.mark.asyncio
   async def test_no_truncation_for_small_changes(self, tmp_path: Path) -> None:
     """
-    Given: UpdateTool with small diff within max_diff_lines
+    Given: update tool with small diff within max_diff_lines
     When: execute() is called
     Then: full diff is shown without truncation
     """
-    # Create UpdateTool with content verbosity
+    # Create update tool with content verbosity
     config = Config(
       tools=ToolsConfig(
         content_display=ContentDisplayConfig(
@@ -397,14 +404,14 @@ class TestUpdateToolDiffTruncation:
         )
       )
     )
-    tool = UpdateTool(config=config)
+    spec = _update_spec(config)
 
     # Create file
     test_file = tmp_path / "small_change.txt"
     test_file.write_text("Line 1\nLine 2\nLine 3\n")
 
     # Replace
-    result = await tool.execute(
+    result = await spec.execute(
       path=str(test_file), operation="replace", old_string="Line 2", new_string="Modified"
     )
 
@@ -415,27 +422,27 @@ class TestUpdateToolDiffTruncation:
 
 
 class TestUpdateToolShowDiffFlag:
-  """Test UpdateTool behavior with show_diff_for_updates flag."""
+  """Test update tool behavior with show_diff_for_updates flag."""
 
   @pytest.mark.asyncio
   async def test_show_diff_enabled(self, tmp_path: Path) -> None:
     """
     Given: ContentDisplayConfig with show_diff_for_updates=True
-    When: UpdateTool executes replace operation
+    When: update tool executes replace operation
     Then: content_metadata includes old_content and new_content (as diff)
     """
-    # Create UpdateTool with show_diff_for_updates
+    # Create update tool with show_diff_for_updates
     config = Config(
       tools=ToolsConfig(content_display=ContentDisplayConfig(show_diff_for_updates=True))
     )
-    tool = UpdateTool(config=config)
+    spec = _update_spec(config)
 
     # Create file
     test_file = tmp_path / "show_diff.txt"
     test_file.write_text("Old\n")
 
     # Replace
-    result = await tool.execute(
+    result = await spec.execute(
       path=str(test_file), operation="replace", old_string="Old", new_string="New"
     )
 
@@ -448,23 +455,23 @@ class TestUpdateToolShowDiffFlag:
   async def test_show_diff_disabled(self, tmp_path: Path) -> None:
     """
     Given: ContentDisplayConfig with show_diff_for_updates=False
-    When: UpdateTool executes replace operation
+    When: update tool executes replace operation
     Then: content_metadata shows summary only, no diff
     """
-    # Create UpdateTool with show_diff_for_updates=False
+    # Create update tool with show_diff_for_updates=False
     config = Config(
       tools=ToolsConfig(
         content_display=ContentDisplayConfig(verbosity="content", show_diff_for_updates=False)
       )
     )
-    tool = UpdateTool(config=config)
+    spec = _update_spec(config)
 
     # Create file
     test_file = tmp_path / "no_diff.txt"
     test_file.write_text("Old\n")
 
     # Replace
-    result = await tool.execute(
+    result = await spec.execute(
       path=str(test_file), operation="replace", old_string="Old", new_string="New"
     )
 
@@ -477,23 +484,23 @@ class TestUpdateToolShowDiffFlag:
   async def test_show_diff_disabled_insert_operations(self, tmp_path: Path) -> None:
     """
     Given: ContentDisplayConfig with show_diff_for_updates=False
-    When: UpdateTool executes insert operation
+    When: update tool executes insert operation
     Then: content_metadata still shows inserted content (inserts are not diffs)
     """
-    # Create UpdateTool with show_diff_for_updates=False
+    # Create update tool with show_diff_for_updates=False
     config = Config(
       tools=ToolsConfig(
         content_display=ContentDisplayConfig(verbosity="content", show_diff_for_updates=False)
       )
     )
-    tool = UpdateTool(config=config)
+    spec = _update_spec(config)
 
     # Create file
     test_file = tmp_path / "insert_no_diff.txt"
     test_file.write_text("Line 1\n")
 
     # Insert
-    result = await tool.execute(
+    result = await spec.execute(
       path=str(test_file), operation="insert_after", line_number=1, new_string="New line"
     )
 
@@ -506,25 +513,25 @@ class TestUpdateToolShowDiffFlag:
 
 
 class TestUpdateToolVerbosityLevels:
-  """Test UpdateTool behavior with different verbosity levels."""
+  """Test update tool behavior with different verbosity levels."""
 
   @pytest.mark.asyncio
   async def test_silent_verbosity(self, tmp_path: Path) -> None:
     """
     Given: ContentDisplayConfig with verbosity="silent"
-    When: UpdateTool executes
+    When: update tool executes
     Then: ToolResult.content_metadata is None
     """
-    # Create UpdateTool with silent verbosity
+    # Create update tool with silent verbosity
     config = Config(tools=ToolsConfig(content_display=ContentDisplayConfig(verbosity="silent")))
-    tool = UpdateTool(config=config)
+    spec = _update_spec(config)
 
     # Create file
     test_file = tmp_path / "silent.txt"
     test_file.write_text("Content\n")
 
     # Replace
-    result = await tool.execute(
+    result = await spec.execute(
       path=str(test_file), operation="replace", old_string="Content", new_string="New content"
     )
 
@@ -536,23 +543,23 @@ class TestUpdateToolVerbosityLevels:
   async def test_summary_verbosity(self, tmp_path: Path) -> None:
     """
     Given: ContentDisplayConfig with verbosity="summary" and show_diff_for_updates=False
-    When: UpdateTool executes replace
+    When: update tool executes replace
     Then: content_metadata.content_type="application/x-summary" with operation info
     """
-    # Create UpdateTool with summary verbosity and no diffs
+    # Create update tool with summary verbosity and no diffs
     config = Config(
       tools=ToolsConfig(
         content_display=ContentDisplayConfig(verbosity="summary", show_diff_for_updates=False)
       )
     )
-    tool = UpdateTool(config=config)
+    spec = _update_spec(config)
 
     # Create file
     test_file = tmp_path / "summary.txt"
     test_file.write_text("Old\n")
 
     # Replace
-    result = await tool.execute(
+    result = await spec.execute(
       path=str(test_file), operation="replace", old_string="Old", new_string="New"
     )
 
@@ -566,23 +573,23 @@ class TestUpdateToolVerbosityLevels:
   async def test_content_verbosity(self, tmp_path: Path) -> None:
     """
     Given: ContentDisplayConfig with verbosity="content"
-    When: UpdateTool executes replace
+    When: update tool executes replace
     Then: content_metadata.content_type="diff" with full diff
     """
-    # Create UpdateTool with content verbosity
+    # Create update tool with content verbosity
     config = Config(
       tools=ToolsConfig(
         content_display=ContentDisplayConfig(verbosity="content", show_diff_for_updates=True)
       )
     )
-    tool = UpdateTool(config=config)
+    spec = _update_spec(config)
 
     # Create file
     test_file = tmp_path / "content.txt"
     test_file.write_text("Old\n")
 
     # Replace
-    result = await tool.execute(
+    result = await spec.execute(
       path=str(test_file), operation="replace", old_string="Old", new_string="New"
     )
 
@@ -594,34 +601,16 @@ class TestUpdateToolVerbosityLevels:
 
 
 class TestUpdateToolConfigIntegration:
-  """Test UpdateTool integration with ContentDisplayConfig."""
-
-  def test_update_tool_accesses_content_display_config(self) -> None:
-    """
-    Given: A Config with ContentDisplayConfig
-    When: UpdateTool accesses configuration
-    Then: ContentDisplayConfig is available
-    """
-    # Create UpdateTool with custom config
-    config = Config(
-      tools=ToolsConfig(
-        content_display=ContentDisplayConfig(verbosity="content", max_diff_lines=20)
-      )
-    )
-    tool = UpdateTool(config=config)
-
-    # Verify config is accessible
-    assert tool._config.tools.content_display.verbosity == "content"
-    assert tool._config.tools.content_display.max_diff_lines == 20
+  """Test update tool integration with ContentDisplayConfig."""
 
   @pytest.mark.asyncio
   async def test_update_tool_respects_max_diff_lines(self, tmp_path: Path) -> None:
     """
     Given: ContentDisplayConfig with max_diff_lines=10
-    When: UpdateTool generates diff with 50 lines
+    When: update tool generates diff with 50 lines
     Then: diff is truncated to 10 lines
     """
-    # Create UpdateTool with small max_diff_lines
+    # Create update tool with small max_diff_lines
     config = Config(
       tools=ToolsConfig(
         content_display=ContentDisplayConfig(
@@ -629,14 +618,14 @@ class TestUpdateToolConfigIntegration:
         )
       )
     )
-    tool = UpdateTool(config=config)
+    spec = _update_spec(config)
 
     # Create file
     test_file = tmp_path / "max_diff.txt"
     test_file.write_text("\n".join(f"Line {i}" for i in range(50)))
 
     # Replace
-    result = await tool.execute(
+    result = await spec.execute(
       path=str(test_file), operation="replace", old_string="Line 25", new_string="Changed"
     )
 

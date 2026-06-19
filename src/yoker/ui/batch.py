@@ -4,10 +4,15 @@ Uses stdin/stdout/stderr channels with no formatting. Preserves ANSI codes
 from LLM output. Supports predefined input messages for scripted execution.
 """
 
+from __future__ import annotations
+
 import sys
-from typing import Any, TextIO
+from typing import TYPE_CHECKING, Any, TextIO
 
 from yoker.ui.base import BaseUIHandler
+
+if TYPE_CHECKING:
+  from yoker.agent import Agent
 
 
 class BatchUIHandler(BaseUIHandler):
@@ -68,17 +73,15 @@ class BatchUIHandler(BaseUIHandler):
 
   # === Lifecycle ===
 
-  async def start(self, model: str, version: str, config: dict[str, Any]) -> None:
+  async def start(self, agent: Agent) -> None:
     """Start batch UI session.
 
     Args:
-      model: Model name being used.
-      version: Yoker version.
-      config: Configuration summary.
+      agent: The Agent instance this UI session is serving.
     """
     # Minimal output for batch mode - only if showing thinking
     if self.show_thinking:
-      print(f"# Model: {model}", file=self._stderr)
+      print(f"# Model: {agent.model}", file=self._stderr)
 
   async def shutdown(self, reason: str) -> None:
     """End batch UI session.

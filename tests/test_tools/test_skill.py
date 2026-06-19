@@ -1,29 +1,35 @@
-"""Tests for SkillTool implementation."""
+"""Tests for skill tool implementation."""
 
 import pytest
 
 from yoker.skills import SkillRegistry
 from yoker.skills.schema import Skill
-from yoker.tools.skill import SkillTool
+from yoker.tools import ToolRegistry, make_skill_tool
+
+
+def _skill_spec(skill_registry: SkillRegistry):
+  """Create and register the skill tool."""
+  registry = ToolRegistry()
+  return registry.register(make_skill_tool(skill_registry))
 
 
 class TestSkillTool:
-  """Tests for SkillTool class."""
+  """Tests for skill tool."""
 
   def test_skill_tool_name_and_description(self) -> None:
-    """SkillTool has correct name and description."""
+    """Skill tool spec has correct name and description."""
     registry = SkillRegistry()
-    tool = SkillTool(skill_registry=registry)
+    spec = _skill_spec(registry)
 
-    assert tool.name == "skill"
-    assert "invoke a skill" in tool.description.lower()
+    assert spec.name == "skill"
+    assert "invoke a skill" in spec.description.lower()
 
   def test_skill_tool_schema(self) -> None:
-    """SkillTool returns valid Ollama-compatible schema."""
+    """Skill tool returns valid Ollama-compatible schema."""
     registry = SkillRegistry()
-    tool = SkillTool(skill_registry=registry)
+    spec = _skill_spec(registry)
 
-    schema = tool.get_schema()
+    schema = spec.schema
 
     assert schema["type"] == "function"
     assert schema["function"]["name"] == "skill"
@@ -33,7 +39,7 @@ class TestSkillTool:
 
   @pytest.mark.asyncio
   async def test_skill_tool_invokes_existing_skill(self) -> None:
-    """SkillTool returns skill content when skill exists."""
+    """Skill tool returns skill content when skill exists."""
     # Create skill
     skill = Skill(
       name="example",
@@ -46,11 +52,11 @@ class TestSkillTool:
     registry = SkillRegistry()
     registry.register(skill)
 
-    # Create tool
-    tool = SkillTool(skill_registry=registry)
+    # Create tool spec
+    spec = _skill_spec(registry)
 
     # Invoke skill
-    result = await tool.execute(skill_name="example")
+    result = await spec.execute(skill_name="example")
 
     assert result.success is True
     assert "<command-name>example</command-name>" in result.result
@@ -58,7 +64,7 @@ class TestSkillTool:
 
   @pytest.mark.asyncio
   async def test_skill_tool_invokes_skill_with_args(self) -> None:
-    """SkillTool passes args to skill invocation."""
+    """Skill tool passes args to skill invocation."""
     # Create skill
     skill = Skill(
       name="commit",
@@ -71,11 +77,11 @@ class TestSkillTool:
     registry = SkillRegistry()
     registry.register(skill)
 
-    # Create tool
-    tool = SkillTool(skill_registry=registry)
+    # Create tool spec
+    spec = _skill_spec(registry)
 
     # Invoke skill with args
-    result = await tool.execute(skill_name="commit", args="fix authentication bug")
+    result = await spec.execute(skill_name="commit", args="fix authentication bug")
 
     assert result.success is True
     assert "<command-args>fix authentication bug</command-args>" in result.result
@@ -83,42 +89,41 @@ class TestSkillTool:
 
   @pytest.mark.asyncio
   async def test_skill_tool_returns_error_for_unknown_skill(self) -> None:
-    """SkillTool returns error when skill doesn't exist."""
+    """Skill tool returns error when skill doesn't exist."""
     # Create empty registry
     registry = SkillRegistry()
 
-    # Create tool
-    tool = SkillTool(skill_registry=registry)
+    # Create tool spec
+    spec = _skill_spec(registry)
 
     # Try to invoke non-existent skill
-    result = await tool.execute(skill_name="nonexistent")
+    result = await spec.execute(skill_name="nonexistent")
 
     assert result.success is False
-    assert "Unknown skill: nonexistent" in result.result
     assert result.error is not None
     assert "Unknown skill: nonexistent" in result.error
 
   @pytest.mark.asyncio
   async def test_skill_tool_lists_available_skills_in_error(self) -> None:
-    """SkillTool error message lists available skills."""
+    """Skill tool error message lists available skills."""
     # Create registry with some skills
     registry = SkillRegistry()
     registry.register(Skill(name="commit", description="Guide commits", content="...", triggers=[]))
     registry.register(Skill(name="example", description="Example", content="...", triggers=[]))
 
-    # Create tool
-    tool = SkillTool(skill_registry=registry)
+    # Create tool spec
+    spec = _skill_spec(registry)
 
     # Try to invoke non-existent skill
-    result = await tool.execute(skill_name="nonexistent")
+    result = await spec.execute(skill_name="nonexistent")
 
     assert result.success is False
-    assert "commit" in result.result or "example" in result.result
-    assert "Available skills:" in result.result
+    assert "commit" in result.error or "example" in result.error
+    assert "Available skills:" in result.error
 
   @pytest.mark.asyncio
   async def test_skill_tool_works_with_namespaced_skill(self) -> None:
-    """SkillTool handles namespaced skills (pkg:skill)."""
+    """Skill tool handles namespaced skills (pkg:skill)."""
     # Create namespaced skill
     skill = Skill(
       name="create",
@@ -132,27 +137,18 @@ class TestSkillTool:
     registry = SkillRegistry()
     registry.register(skill)
 
-    # Create tool
-    tool = SkillTool(skill_registry=registry)
+    # Create tool spec
+    spec = _skill_spec(registry)
 
     # Invoke skill with full name
-    result = await tool.execute(skill_name="pkgq:create")
+    result = await spec.execute(skill_name="pkgq:create")
 
     assert result.success is True
     assert "<command-name>pkgq:create</command-name>" in result.result
 
   @pytest.mark.asyncio
-  async def test_skill_tool_without_guardrail(self) -> None:
-    """SkillTool works without guardrail (doesn't need one)."""
-    registry = SkillRegistry()
-    tool = SkillTool(skill_registry=registry)
-
-    # Guardrail should be None for SkillTool
-    assert tool._guardrail is None
-
-  @pytest.mark.asyncio
   async def test_skill_tool_empty_args(self) -> None:
-    """SkillTool handles empty args correctly."""
+    """Skill tool handles empty args correctly."""
     # Create skill
     skill = Skill(
       name="example",
@@ -164,10 +160,10 @@ class TestSkillTool:
     registry = SkillRegistry()
     registry.register(skill)
 
-    tool = SkillTool(skill_registry=registry)
+    spec = _skill_spec(registry)
 
     # Invoke without args
-    result = await tool.execute(skill_name="example", args="")
+    result = await spec.execute(skill_name="example", args="")
 
     assert result.success is True
     assert "<command-args></command-args>" in result.result

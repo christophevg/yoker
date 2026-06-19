@@ -5,13 +5,13 @@
 [harness]
 name = "my-yoke"
 version = "1.0"
-log_level = "INFO"
 
 [backend]
 provider = "ollama"
 
 [backend.ollama]
 base_url = "http://localhost:11434"
+api_key = ""
 model = "llama3.2:latest"
 timeout_seconds = 60
 
@@ -106,12 +106,14 @@ show_diff_for_updates = true
 max_diff_lines = 30
 
 [agents]
-# Path to a specific agent definition (Markdown with YAML frontmatter).
-# Supports filesystem paths and plugin:// URLs.
+# Agent reference: a filesystem path to a definition file, or a name resolved
+# against the AgentRegistry (populated from `directories` below and loaded
+# plugins). To use a plugin agent, load the plugin with --with <pkg> (or
+# [plugins].packages) and reference it by bare or namespaced name, e.g. "demo"
+# or "yoker_plugin_demo:demo".
 definition = ""
-# Directory scanned by the /agents command.
-directory = "./agents"
-default_type = "main"
+# Directories scanned by the /agents command.
+directories = ["./agents"]
 
 [skills]
 # Directories scanned for skill definitions.
@@ -136,6 +138,8 @@ include_permission_checks = true
 
 [ui]
 mode = "interactive"
-show_thinking = false
-show_tool_calls = false
-show_stats = false
+# These flags default to true in interactive mode and false in batch mode.
+# Uncomment to override the defaults.
+# show_thinking = true
+# show_tool_calls = true
+# show_stats = true

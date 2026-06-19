@@ -1,4 +1,11 @@
-"""Tests for agent definition loading from files and plugins."""
+"""Tests for agent definition loading from files and via the registry.
+
+Agent references are resolved by name through the spawning agent's
+:class:`~yoker.agents.AgentRegistry` (populated from configured directories
+and loaded plugins). The historical ``plugin://`` agent-reference scheme has
+been removed in favour of ``--with <pkg>`` (load plugin) + ``--agent <name>``
+(registry lookup).
+"""
 
 import tempfile
 from pathlib import Path
@@ -6,7 +13,6 @@ from pathlib import Path
 import pytest
 
 from yoker.agent import Agent
-from yoker.agent.agent import _load_agent_from_plugin_url
 
 
 class TestAgentDefinitionFileValidation:
@@ -14,7 +20,7 @@ class TestAgentDefinitionFileValidation:
 
   def test_invalid_file_path_raises_error(self):
     """Test that invalid file path raises ValueError."""
-    with pytest.raises(ValueError, match="Agent definition file not found"):
+    with pytest.raises(ValueError, match="Agent not found: /nonexistent/path/to/agent.md"):
       Agent(agent_path="/nonexistent/path/to/agent.md")
 
   def test_valid_file_path_loads_successfully(self):
@@ -23,8 +29,8 @@ class TestAgentDefinitionFileValidation:
     agent_path = Path("examples/agents/markdown.md")
     if agent_path.exists():
       agent = Agent(agent_path=agent_path)
-      assert agent.agent_definition is not None
-      assert agent.agent_definition.name == "markdown"
+      assert agent.definition is not None
+      assert agent.definition.name == "file:markdown"
     else:
       pytest.skip("Example agent file not found")
 
@@ -44,8 +50,8 @@ class TestAgentDefinitionFileValidation:
       # Valid file should work
       config = Config(agents=AgentsConfig(definition=temp_path))
       agent = Agent(config=config)
-      assert agent.agent_definition is not None
-      assert agent.agent_definition.name == "test"
+      assert agent.definition is not None
+      assert agent.definition.name == "file:test"
     finally:
       Path(temp_path).unlink()
 
@@ -55,48 +61,114 @@ class TestAgentDefinitionFileValidation:
 
     config = Config(agents=AgentsConfig(definition="/nonexistent/agent.md"))
 
-    with pytest.raises(ValueError, match="Agent definition file not found"):
+    with pytest.raises(ValueError, match=r"Agent not found: /nonexistent/agent\.md"):
       Agent(config=config)
 
 
-class TestPluginURLAgentLoading:
-  """Test loading agents from plugin:// URLs."""
+class TestRegistryAgentResolution:
+  """Test resolving agents by name through the AgentRegistry.
 
-  def test_invalid_plugin_url_format(self):
-    """Test that invalid plugin URL format raises ValueError."""
-    with pytest.raises(ValueError, match="Invalid plugin URL"):
-      _load_agent_from_plugin_url("invalid://test")
+  Replaces the former ``plugin://`` agent-reference tests. An agent reference
+  that is not an existing file path is resolved by name through the registry
+  (populated from ``config.agents.directories`` and loaded plugins): a bare
+  name matches a unique ``simple_name`` across namespaces; a namespaced name
+  matches exactly; an ambiguous bare name raises ``ValueError``.
 
-  def test_plugin_url_missing_package(self):
-    """Test that missing package raises ValueError."""
-    with pytest.raises(ValueError, match="Plugin package not found"):
-      _load_agent_from_plugin_url("plugin://nonexistent_package/agents/test")
+  These tests use a temp agents directory rather than the demo plugin, whose
+  ``backwards.md`` (no ``tools`` field) currently trips the strict loader — a
+  pre-existing loader-semantics issue tracked separately (G).
+  """
 
-  def test_plugin_url_format_validation(self):
-    """Test plugin URL format validation."""
-    # Missing agents component
-    with pytest.raises(ValueError, match="Invalid plugin URL format"):
-      _load_agent_from_plugin_url("plugin://package/wrong/test")
+  def _make_agents_dir(self, tmp_path: Path, agents: dict[str, str]) -> Path:
+    """Write agent definition files into a temp directory and return it."""
+    agents_dir = tmp_path / "agents"
+    agents_dir.mkdir()
+    for filename, body in agents.items():
+      (agents_dir / filename).write_text(body, encoding="utf-8")
+    return agents_dir
 
-    # Missing agent name
-    with pytest.raises(ValueError, match="Invalid plugin URL format"):
-      _load_agent_from_plugin_url("plugin://package/agents")
+  def test_bare_name_resolves_unique(self, tmp_path):
+    """A bare name resolves when exactly one agent has that simple_name."""
+    from yoker.config import AgentsConfig, Config
 
-    # Missing all components
-    with pytest.raises(ValueError, match="Invalid plugin URL format"):
-      _load_agent_from_plugin_url("plugin://package")
+    agents_dir = self._make_agents_dir(
+      tmp_path,
+      {
+        "writer.md": (
+          "---\nname: writer\ndescription: writes\n"
+          "tools:\n  - read\n---\nbody\n"
+        ),
+      },
+    )
+    config = Config(agents=AgentsConfig(directories=(str(agents_dir),)))
+    agent = Agent(config=config, agent_path="writer")
+    assert agent.definition is not None
+    assert agent.definition.simple_name == "writer"
 
-  def test_plugin_url_integration(self):
-    """Test loading agent from plugin URL in Agent constructor."""
-    # Test loading agent from plugin URL (yoker_plugin_demo)
-    # Note: yoker_plugin_demo must be installed for this test to pass
-    try:
-      agent = Agent(agent_path="plugin://yoker_plugin_demo/agents/demo")
-      assert agent.agent_definition is not None
-      assert agent.agent_definition.name == "yoker_plugin_demo:demo"
-      assert "yoker_plugin_demo:echo" in agent.agent_definition.tools
-    except ImportError:
-      pytest.skip("yoker_plugin_demo plugin not installed")
+  def test_namespaced_name_resolves_exactly(self, tmp_path):
+    """A namespaced name (namespace:simple) matches the exact key."""
+    from yoker.config import AgentsConfig, Config
+
+    agents_dir = self._make_agents_dir(
+      tmp_path,
+      {
+        "writer.md": (
+          "---\nname: writer\ndescription: writes\n"
+          "tools:\n  - read\n---\nbody\n"
+        ),
+      },
+    )
+    config = Config(agents=AgentsConfig(directories=(str(agents_dir),)))
+    # The directory name becomes the namespace.
+    ns = agents_dir.name
+    agent = Agent(config=config, agent_path=f"{ns}:writer")
+    assert agent.definition is not None
+    assert agent.definition.name == f"{ns}:writer"
+
+  def test_ambiguous_bare_name_raises(self, tmp_path):
+    """A bare name matching several agents raises ValueError listing them."""
+    from yoker.config import AgentsConfig, Config
+
+    # Two directories, each namespace defaults to the folder name, so two
+    # agents named "writer" land in different namespaces and both load.
+    agents_dir = self._make_agents_dir(
+      tmp_path,
+      {
+        "writer.md": (
+          "---\nname: writer\ndescription: a\n"
+          "tools:\n  - read\n---\nbody\n"
+        ),
+      },
+    )
+    other_dir = tmp_path / "other"
+    other_dir.mkdir()
+    (other_dir / "writer.md").write_text(
+      "---\nname: writer\ndescription: b\n"
+      "tools:\n  - read\n---\nbody\n",
+      encoding="utf-8",
+    )
+    config = Config(
+      agents=AgentsConfig(directories=(str(agents_dir), str(other_dir)))
+    )
+    with pytest.raises(ValueError, match="ambiguous"):
+      Agent(config=config, agent_path="writer")
+
+  def test_unknown_agent_name_raises_error(self, tmp_path):
+    """An unknown agent name raises ValueError."""
+    from yoker.config import AgentsConfig, Config
+
+    agents_dir = self._make_agents_dir(
+      tmp_path,
+      {
+        "writer.md": (
+          "---\nname: writer\ndescription: writes\n"
+          "tools:\n  - read\n---\nbody\n"
+        ),
+      },
+    )
+    config = Config(agents=AgentsConfig(directories=(str(agents_dir),)))
+    with pytest.raises(ValueError, match="Agent not found: nope"):
+      Agent(config=config, agent_path="nope")
 
 
 class TestAgentDefinitionLoading:
@@ -108,7 +180,7 @@ class TestAgentDefinitionLoading:
 
     # Create a valid agent definition
     agent_def = AgentDefinition(
-      name="test",
+      simple_name="test",
       description="Test agent",
       tools=("read",),
       system_prompt="Test prompt",
@@ -119,5 +191,5 @@ class TestAgentDefinitionLoading:
     agent = Agent(agent_definition=agent_def, agent_path="/nonexistent/path.md")
 
     # agent_definition should be used, not agent_path
-    assert agent.agent_definition is not None
-    assert agent.agent_definition.name == "test"
+    assert agent.definition is not None
+    assert agent.definition.name == "test"

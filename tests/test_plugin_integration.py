@@ -1,10 +1,13 @@
 """Integration tests for plugin system with skill commands."""
 
+from unittest.mock import AsyncMock, Mock, patch
+
 import pytest
 
 from yoker.agent import Agent
-from yoker.commands import CommandRegistry, create_skill_commands
 from yoker.config import Config, PluginsConfig
+from yoker.ui.commands import create_default_registry
+from yoker.ui.commands.tools import create_command as create_tools_command
 
 
 @pytest.fixture
@@ -25,7 +28,7 @@ def agent_with_demo_plugin(demo_plugin_config):
 
 
 class TestPluginSkillCommands:
-  """Test that plugin skills are registered as commands."""
+  """Test that plugin skills are invoked dynamically."""
 
   def test_plugin_skill_is_registered(self, agent_with_demo_plugin):
     """Plugin skill should be registered in skill registry."""
@@ -39,53 +42,49 @@ class TestPluginSkillCommands:
     assert skill.name == "greeting"
     assert skill.namespace == "yoker_plugin_demo"
 
-  def test_plugin_skill_command_creation(self, agent_with_demo_plugin):
-    """Plugin skill should create a command."""
-    skill_registry = agent_with_demo_plugin.skill_registry
-    assert skill_registry is not None
+  @pytest.mark.asyncio
+  async def test_plugin_skill_dynamic_dispatch(self, agent_with_demo_plugin):
+    """Plugin skill should be dispatchable dynamically."""
+    registry = create_default_registry()
+    agent = agent_with_demo_plugin
 
-    commands = create_skill_commands(
-      registry=skill_registry,
-      get_skill_registry=lambda: skill_registry,
-    )
+    with (
+      patch.object(agent, "inject_skill_context") as mock_inject,
+      patch.object(agent, "process", new_callable=AsyncMock) as mock_process,
+    ):
+      result = await registry.dispatch(
+        "/yoker_plugin_demo:greeting",
+        agent,
+        Mock(),
+      )
 
-    assert len(commands) == 1
-    assert commands[0].name == "yoker_plugin_demo:greeting"
-    assert "greeting" in commands[0].description.lower()
+    assert result is None
+    mock_inject.assert_called_once_with("yoker_plugin_demo:greeting", "")
+    mock_process.assert_awaited_once_with("Execute the skill as requested.")
 
-  def test_plugin_skill_command_dispatch(self, agent_with_demo_plugin, demo_plugin_config):
-    """Plugin skill command should be dispatchable."""
-    # Create command registry (simulating __main__.py flow)
-    registry = CommandRegistry()
+  @pytest.mark.asyncio
+  async def test_plugin_skill_dynamic_dispatch_with_args(self, agent_with_demo_plugin):
+    """Plugin skill dispatch forwards arguments."""
+    registry = create_default_registry()
+    agent = agent_with_demo_plugin
 
-    # Register skill commands
-    skill_registry = agent_with_demo_plugin.skill_registry
-    assert skill_registry is not None
+    with (
+      patch.object(agent, "inject_skill_context") as mock_inject,
+      patch.object(agent, "process", new_callable=AsyncMock) as mock_process,
+    ):
+      result = await registry.dispatch(
+        "/yoker_plugin_demo:greeting hello world",
+        agent,
+        Mock(),
+      )
 
-    skill_commands = create_skill_commands(
-      registry=skill_registry,
-      get_skill_registry=lambda: skill_registry,
-    )
-
-    for command in skill_commands:
-      registry.register(command)
-
-    # Dispatch the skill command
-    result = registry.dispatch("/yoker_plugin_demo:greeting")
-
-    # Should return skill injection marker
-    assert result is not None
-    assert result.startswith("__SKILL_INJECTION__")
-    assert "yoker_plugin_demo:greeting" in result
+    assert result is None
+    mock_inject.assert_called_once_with("yoker_plugin_demo:greeting", "hello world")
+    mock_process.assert_awaited_once_with("hello world")
 
   @pytest.mark.asyncio
   async def test_full_command_registry_flow(self, agent_with_demo_plugin, demo_plugin_config):
     """Test the complete UI-layer command registry flow."""
-    from unittest.mock import AsyncMock, patch
-
-    from yoker.ui import BatchUIHandler
-    from yoker.ui.commands import create_default_registry
-
     registry = create_default_registry()
 
     command_names = registry.names
@@ -99,6 +98,8 @@ class TestPluginSkillCommands:
     # Plugin skill is not registered as an explicit command; it is invoked
     # dynamically via the skill registry.
     assert "yoker_plugin_demo:greeting" not in command_names
+
+    from yoker.ui import BatchUIHandler
 
     ui = BatchUIHandler()
 
@@ -125,20 +126,38 @@ class TestPluginSkillCommands:
     mock_inject.assert_called_once_with("yoker_plugin_demo:greeting", "hello")
     mock_process.assert_awaited_once_with("hello")
 
-  def test_plugin_tool_namespace_in_tools_command(self, agent_with_demo_plugin):
+  @pytest.mark.asyncio
+  async def test_plugin_tool_namespace_in_tools_command(self, agent_with_demo_plugin):
     """Plugin tools should show namespaced names in /tools command."""
-    from yoker.commands import create_tools_command
-
-    # Create tools command
-    tools_cmd = create_tools_command(
-      registry=agent_with_demo_plugin.tool_registry,
-      agent_core=agent_with_demo_plugin._core,
-    )
+    agent = agent_with_demo_plugin
+    command = create_tools_command()
 
     # Dispatch command
-    result = tools_cmd.handler([])
+    result = await command.handler("", agent, Mock())
 
     # Plugin tool should show namespaced name
     assert "yoker_plugin_demo:echo" in result
     # Should NOT show un-namespaced version
     assert "✗ echo " not in result  # Un-namespaced would be "✗ echo "
+
+  @pytest.mark.asyncio
+  async def test_tools_command_case_insensitive_builtin_tools(self):
+    """/tools marks built-in tools available even with uppercase names."""
+    from yoker.agent import Agent
+    from yoker.agents import AgentDefinition
+    from yoker.config import Config
+
+    agent_def = AgentDefinition(
+      name="test",
+      description="Test",
+      tools=("Read", "List", "WRITE"),
+      system_prompt="Test",
+    )
+    agent = Agent(config=Config(), agent_definition=agent_def)
+    command = create_tools_command()
+
+    result = await command.handler("", agent, Mock())
+
+    assert "✓ read" in result
+    assert "✓ list" in result
+    assert "✓ write" in result

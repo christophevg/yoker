@@ -17,10 +17,12 @@ class TestMainErrorHandling:
 
     with patch.object(sys, "argv", test_args):
       with patch("sys.stderr", new_callable=StringIO) as mock_stderr:
-        with pytest.raises(SystemExit) as exc_info:
-          from yoker.__main__ import main
+        with patch("yoker.__main__.Agent") as mock_agent_cls:
+          mock_agent_cls.side_effect = ValueError("Agent definition file not found")
+          with pytest.raises(SystemExit) as exc_info:
+            from yoker.__main__ import main
 
-          main()
+            main()
 
         # Should exit with code 1
         assert exc_info.value.code == 1

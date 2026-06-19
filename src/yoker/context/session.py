@@ -8,8 +8,9 @@ import json
 from datetime import datetime
 from pathlib import Path
 
+from structlog import get_logger
+
 from yoker.context.interface import SessionMetadata
-from yoker.logging import get_logger
 
 log = get_logger(__name__)
 

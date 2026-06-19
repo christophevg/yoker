@@ -1,86 +1,593 @@
-"""Tests for yoker agent module."""
+"""Tests for yoker Agent class."""
+
+from pathlib import Path
 
 import pytest
 
-from yoker.agent import Agent
+from yoker.agent import Agent, AgentDefinition
 from yoker.config import BackendConfig, Config, OllamaConfig
+from yoker.thinking import ThinkingMode
 
 
-class TestAgent:
-  """Tests for the Agent class."""
+class TestAgentInitialization:
+  """Tests for Agent initialization."""
 
-  def test_agent_initialization(self) -> None:
-    """Test that Agent initializes with default config."""
+  def test_agent_initialization_defaults(self) -> None:
+    """Test Agent initializes with default config."""
     # Pass explicit config to prevent auto-discovery from picking up local config
-    agent = Agent(config=Config())
-    # Default model comes from Config
-    assert agent.model == Config().backend.ollama.model
-    assert agent.tool_registry is not None
-    assert agent.tool_registry.get("read") is not None
-    assert agent.config is not None
+    core = Agent(config=Config())
+    assert core.model == Config().backend.ollama.model
+    assert core.thinking_mode == ThinkingMode.ON
+    assert core.tools is not None
+    assert core.context is not None
+    assert core.agent_definition is None
+    assert core.recursion_depth == 0
+    assert core.max_recursion_depth == core.config.tools.agent.max_recursion_depth
 
-  def test_agent_custom_model(self) -> None:
-    """Test that Agent accepts model via config."""
+  def test_agent_model_from_config(self) -> None:
+    """Test model comes from config."""
     config = Config(backend=BackendConfig(ollama=OllamaConfig(model="custom-model")))
-    agent = Agent(config=config)
-    assert agent.model == "custom-model"
+    core = Agent(config=config)
+    assert core.model == "custom-model"
 
   def test_agent_with_config(self) -> None:
-    """Test that Agent accepts config."""
+    """Test Agent accepts config."""
     config = Config(backend=BackendConfig(ollama=OllamaConfig(model="test-model")))
-    agent = Agent(config=config)
-    assert agent.model == "test-model"
+    core = Agent(config=config)
+    assert core.model == "test-model"
 
-  def test_tools_available(self) -> None:
-    """Test that tools are available."""
-    from yoker.tools import AVAILABLE_TOOLS
+  def test_agent_thinking_mode(self) -> None:
+    """Test thinking_mode parameter is respected."""
+    core = Agent(config=Config(), thinking_mode=ThinkingMode.OFF)
+    assert core.thinking_mode == ThinkingMode.OFF
 
-    assert AVAILABLE_TOOLS.get("read") is not None
+    core_silent = Agent(config=Config(), thinking_mode=ThinkingMode.SILENT)
+    assert core_silent.thinking_mode == ThinkingMode.SILENT
 
-  def test_recursion_depth_default(self) -> None:
-    """Test that recursion depth starts at 0 by default."""
-    agent = Agent(config=Config())
-    assert agent._recursion_depth == 0
-    assert agent._max_recursion_depth == agent.config.tools.agent.max_recursion_depth
+  def test_agent_recursion_depth_default(self) -> None:
+    """Test recursion depth starts at 0 by default."""
+    core = Agent(config=Config())
+    assert core.recursion_depth == 0
+    assert core.max_recursion_depth == core.config.tools.agent.max_recursion_depth
 
-  def test_recursion_depth_custom(self) -> None:
-    """Test that recursion depth can be set via internal parameter."""
-    agent = Agent(config=Config(), _recursion_depth=2)
-    assert agent._recursion_depth == 2
+  def test_agent_recursion_depth_custom(self) -> None:
+    """Test recursion depth can be set via internal parameter."""
+    core = Agent(config=Config(), _recursion_depth=2)
+    assert core.recursion_depth == 2
 
-  def test_agent_tool_available(self) -> None:
-    """Test that agent tool is available in tool registry."""
-    agent = Agent(config=Config())
-    assert agent.tool_registry.get("agent") is not None
+  def test_agent_recursion_depth_validation_negative(self) -> None:
+    """Test that negative recursion depth raises ValueError."""
+    with pytest.raises(ValueError, match="must be non-negative"):
+      Agent(config=Config(), _recursion_depth=-1)
 
-  def test_inject_skill_context_adds_system_message(self) -> None:
-    """Test that inject_skill_context appends a system message."""
-    agent = Agent(config=Config())
-    agent._core.skill_registry = None
-    from yoker.skills import Skill, SkillRegistry
+  def test_agent_recursion_depth_validation_exceeds_max(self) -> None:
+    """Test that recursion depth exceeding max raises ValueError."""
+    config = Config()
+    max_depth = config.tools.agent.max_recursion_depth
+    with pytest.raises(ValueError, match="exceeds max_recursion_depth"):
+      Agent(config=Config(), _recursion_depth=max_depth + 1)
 
-    skill_registry = SkillRegistry()
-    skill_registry.register(
-      Skill(name="commit", description="Guide commits", content="Commit instructions")
+
+class TestAgentToolRegistry:
+  """Tests for Agent tool registry building."""
+
+  def test_tool_registry_has_default_tools(self) -> None:
+    """Test that default tools are available."""
+    core = Agent(config=Config())
+    assert core.tools.get("read") is not None
+    assert core.tools.get("list") is not None
+    assert core.tools.get("write") is not None
+    assert core.tools.get("update") is not None
+    assert core.tools.get("search") is not None
+
+  def test_tool_registry_schemas_have_path_parameter(self) -> None:
+    """Filesystem tools declare a path parameter."""
+    core = Agent(config=Config())
+    for tool_name in ("read", "list", "write", "update", "search", "existence", "mkdir"):
+      tool = core.tools.get(tool_name)
+      assert tool is not None, f"Tool {tool_name} not found"
+      params = tool.schema["function"]["parameters"]
+      assert "path" in params["properties"], f"Tool {tool_name} missing path parameter"
+      assert params["properties"]["path"]["type"] == "string"
+
+  def test_tool_registry_filtering_by_agent_definition(self) -> None:
+    """Test that tool registry respects agent definition."""
+    from yoker.agents import AgentDefinition
+
+    # Agent with only "read" tool
+    agent_def = AgentDefinition(
+      simple_name="test",
+      description="Test agent",
+      tools=("read",),
+      system_prompt="Test prompt",
     )
-    agent._core.skill_registry = skill_registry
+    core = Agent(config=Config(), agent_definition=agent_def)
+    assert core.tools.get("read") is not None
+    # Other tools should not be present
+    assert core.tools.get("list") is None
+    assert core.tools.get("write") is None
 
-    initial_count = len(agent.context.get_messages())
-    agent.inject_skill_context("commit", "fix bug")
+  def test_agent_definition_property(self) -> None:
+    """Test that agent_definition property returns loaded definition."""
+    from yoker.agents import AgentDefinition
 
-    messages = agent.context.get_messages()
-    assert len(messages) == initial_count + 1
-    last_message = messages[-1]
-    assert last_message["role"] == "system"
-    assert "commit" in last_message["content"]
-    assert "fix bug" in last_message["content"]
-    assert "Commit instructions" in last_message["content"]
+    agent_def = AgentDefinition(
+      simple_name="test",
+      description="Test agent",
+      tools=("read",),
+      system_prompt="Test prompt",
+    )
+    core = Agent(config=Config(), agent_definition=agent_def)
+    assert core.agent_definition is not None
+    assert core.agent_definition.name == "test"
 
-  def test_inject_skill_context_unknown_skill_raises(self) -> None:
-    """Test that inject_skill_context raises SkillError for unknown skills."""
-    from yoker.exceptions import SkillError
+  def test_tool_registry_case_insensitive_agent_tools(self) -> None:
+    """Built-in tools are matched case-insensitively from agent definitions."""
+    from yoker.agents import AgentDefinition
 
-    agent = Agent(config=Config())
+    agent_def = AgentDefinition(
+      simple_name="test",
+      description="Test agent",
+      tools=("Read", "LIST", "Yoker:write"),
+      system_prompt="Test prompt",
+    )
+    core = Agent(config=Config(), agent_definition=agent_def)
+    assert core.tools.get("read") is not None
+    assert core.tools.get("list") is not None
+    assert core.tools.get("write") is not None
+    assert core.tools.get("update") is None
 
-    with pytest.raises(SkillError):
-      agent.inject_skill_context("unknown")
+  def test_agent_warns_on_missing_tools(self) -> None:
+    """Agent logs a warning when the definition requests unavailable tools."""
+    from unittest.mock import patch
+
+    from yoker.agents import AgentDefinition
+
+    agent_def = AgentDefinition(
+      simple_name="test",
+      description="Test agent",
+      tools=("read", "missing_tool", "yoker:also_missing"),
+      system_prompt="Test prompt",
+    )
+    with patch("yoker.agent.agent.log.warning") as mock_warning:
+      Agent(config=Config(), agent_definition=agent_def)
+
+    matching = [
+      call
+      for call in mock_warning.call_args_list
+      if call.args and call.args[0] == "agent_tools_unavailable"
+    ]
+    assert len(matching) == 1
+    assert matching[0].kwargs["missing_tools"] == ["missing_tool", "yoker:also_missing"]
+
+
+class TestAgentEventHandlers:
+  """Tests for Agent event handler management."""
+
+  def test_add_event_handler(self) -> None:
+    """Test adding an event handler."""
+    core = Agent(config=Config())
+
+    handler_called = []
+
+    def handler(event: object) -> None:
+      handler_called.append(event)
+
+    core.add_event_handler(handler)
+    assert len(core.get_event_handlers()) == 1
+
+  def test_remove_event_handler(self) -> None:
+    """Test removing an event handler."""
+    core = Agent(config=Config())
+
+    def handler(event: object) -> None:
+      pass
+
+    core.add_event_handler(handler)
+    assert len(core.get_event_handlers()) == 1
+
+    core.remove_event_handler(handler)
+    assert len(core.get_event_handlers()) == 0
+
+  def test_get_event_handlers_returns_copy(self) -> None:
+    """Test that get_event_handlers returns a copy."""
+    core = Agent(config=Config())
+
+    def handler(event: object) -> None:
+      pass
+
+    core.add_event_handler(handler)
+    handlers = core.get_event_handlers()
+    assert len(handlers) == 1
+
+    # Modifying returned list should not affect internal state
+    handlers.clear()
+    assert len(core.get_event_handlers()) == 1
+
+  def test_remove_nonexistent_handler_raises(self) -> None:
+    """Test that removing a non-existent handler raises ValueError."""
+    core = Agent(config=Config())
+
+    def handler(event: object) -> None:
+      pass
+
+    with pytest.raises(ValueError):
+      core.remove_event_handler(handler)
+
+
+class TestAgentContext:
+  """Tests for Agent context initialization."""
+
+  def test_context_has_system_prompt(self) -> None:
+    """Test that context is initialized with system prompt and environment reminder."""
+    core = Agent(config=Config())
+    messages = core.context.get_messages()
+    system_messages = [m for m in messages if m.get("role") == "system"]
+    assert len(system_messages) == 2
+    assert (
+      system_messages[0]
+      .get("content", "")
+      .endswith(f"Current working directory: {Path.cwd()}. Model in use: {core.model}.")
+    )
+    assert system_messages[1].get("content", "") == AgentDefinition().system_prompt
+
+  def test_context_uses_custom_system_prompt(self) -> None:
+    """Test that agent definition system prompt is used."""
+    from yoker.agents import AgentDefinition
+
+    agent_def = AgentDefinition(
+      simple_name="test",
+      description="Test agent",
+      tools=("read",),
+      system_prompt="Custom system prompt for testing.",
+    )
+    core = Agent(config=Config(), agent_definition=agent_def)
+    messages = core.context.get_messages()
+    system_messages = [m for m in messages if m.get("role") == "system"]
+    assert len(system_messages) == 2
+    assert "Yoker agent harness" in system_messages[0].get("content", "")
+    assert system_messages[1].get("content", "") == "Custom system prompt for testing."
+
+
+class TestAgentSecurity:
+  """Tests for Agent security requirements."""
+
+  def test_config_validation_called(self) -> None:
+    """Test that configuration validation is called during initialization."""
+    # This test verifies SEC-3: Configuration validation MUST run before Agent initialization
+    # Using a valid config should not raise any errors
+    config = Config()
+    core = Agent(config=config)
+    assert core.config is not None
+
+  def test_agent_exposes_path_guardrail_mapping(self) -> None:
+    """Agent exposes schema-driven guardrail mapping including the path guardrail."""
+    from yoker.tools.path_guardrail import PathGuardrail
+
+    core = Agent(config=Config())
+    assert hasattr(core, "_guardrails")
+    assert "path" in core._guardrails
+    assert isinstance(core._guardrails["path"], PathGuardrail)
+
+  def test_each_core_is_independent(self) -> None:
+    """Test that each Agent instance is independent (SEC-2)."""
+    core1 = Agent(config=Config(backend=BackendConfig(ollama=OllamaConfig(model="model1"))))
+    core2 = Agent(config=Config(backend=BackendConfig(ollama=OllamaConfig(model="model2"))))
+
+    assert core1.model != core2.model
+    assert core1.context is not core2.context
+    assert core1.tools is not core2.tools
+
+  def test_config_is_read_only(self) -> None:
+    """Test that config cannot be mutated through Agent (SEC-4)."""
+    core = Agent(config=Config())
+    config = core.config
+    # Config is a frozen dataclass, so mutation should raise
+    with pytest.raises(AttributeError):
+      config.backend.ollama.model = "mutated"  # type: ignore
+
+
+class TestAgentProperties:
+  """Tests for Agent property access."""
+
+  def test_config_property(self) -> None:
+    """Test config property returns configuration."""
+    config = Config()
+    core = Agent(config=config)
+    assert core.config is config
+
+  def test_model_property(self) -> None:
+    """Test model property returns model name."""
+    config = Config(backend=BackendConfig(ollama=OllamaConfig(model="test-model")))
+    core = Agent(config=config)
+    assert core.model == "test-model"
+
+  def test_thinking_mode_property(self) -> None:
+    """Test thinking_mode property returns thinking mode."""
+    core = Agent(config=Config(), thinking_mode=ThinkingMode.SILENT)
+    assert core.thinking_mode == ThinkingMode.SILENT
+
+  def test_agent_definition_property_none(self) -> None:
+    """Test agent_definition property returns None when not provided."""
+    core = Agent(config=Config())
+    assert core.agent_definition is None
+
+  def test_tool_registry_property(self) -> None:
+    """Test tool_registry property returns tool registry."""
+    core = Agent(config=Config())
+    assert core.tools is not None
+    assert hasattr(core.tools, "get")
+    assert hasattr(core.tools, "register")
+
+  def test_context_property(self) -> None:
+    """Test context property returns context manager."""
+    core = Agent(config=Config())
+    assert core.context is not None
+    assert hasattr(core.context, "get_messages")
+
+
+class TestAgentGuardrailProperty:
+  """Tests for Agent guardrail property (H2)."""
+
+  def test_guardrail_property_exists(self) -> None:
+    """Test that guardrail property is accessible."""
+    core = Agent(config=Config())
+    assert hasattr(core, "guardrail")
+
+  def test_guardrail_property_returns_path_guardrail(self) -> None:
+    """Test that guardrail property returns PathGuardrail instance."""
+    from yoker.tools.path_guardrail import PathGuardrail
+
+    core = Agent(config=Config())
+    assert isinstance(core.guardrail, PathGuardrail)
+
+  def test_guardrail_property_is_read_only(self) -> None:
+    """Test that guardrail property cannot be set directly."""
+    core = Agent(config=Config())
+    # Attempting to set should raise AttributeError (property is read-only)
+    with pytest.raises(AttributeError):
+      core.guardrail = None  # type: ignore
+
+
+class TestAgentAgentPath:
+  """Tests for agent_path parameter."""
+
+  def test_agent_path_loads_definition(self, tmp_path: Path) -> None:
+    """Test loading agent definition from file path."""
+    agent_file = tmp_path / "test_agent.md"
+    agent_file.write_text(
+      """---
+name: test-agent
+description: Test agent from file
+tools:
+  - read
+  - list
+---
+
+You are a test agent loaded from a file.
+"""
+    )
+
+    core = Agent(agent_path=agent_file)
+    assert core.agent_definition is not None
+    assert core.agent_definition.name == "file:test-agent"
+    assert "file:read" in core.agent_definition.tools
+
+  def test_agent_path_with_valid_markdown(self, tmp_path: Path) -> None:
+    """Test agent_path with valid Markdown + YAML frontmatter."""
+    agent_file = tmp_path / "researcher.md"
+    agent_file.write_text(
+      """---
+name: researcher
+description: Research assistant
+tools:
+  - read
+  - search
+  - websearch
+---
+
+You are a research assistant specialized in finding information.
+"""
+    )
+
+    core = Agent(agent_path=agent_file)
+    assert core.agent_definition is not None
+    assert core.agent_definition.name == "file:researcher"
+    assert core.agent_definition.system_prompt is not None
+    assert "research assistant" in core.agent_definition.system_prompt
+
+
+class TestAgentContextManager:
+  """Tests for context_manager parameter."""
+
+  def test_context_manager_parameter(self) -> None:
+    """Test that custom context manager is used."""
+    from yoker.context import PersistenceContextManager
+
+    custom_context = PersistenceContextManager(
+      storage_path="custom_storage",
+      session_id="custom-session-123",
+    )
+    core = Agent(context_manager=custom_context)
+
+    assert core.context is custom_context
+    assert core.context.get_session_id() == "custom-session-123"
+
+  def test_context_manager_persists_system_prompt(self) -> None:
+    """Test that custom context manager receives system prompt."""
+    from yoker.agents import AgentDefinition
+    from yoker.context import PersistenceContextManager
+
+    agent_def = AgentDefinition(
+      simple_name="test",
+      description="Test agent",
+      tools=("read",),
+      system_prompt="Custom system prompt for context test.",
+    )
+    custom_context = PersistenceContextManager(
+      storage_path="test_storage",
+      session_id="test-session",
+    )
+    core = Agent(config=Config(), agent_definition=agent_def, context_manager=custom_context)
+
+    messages = core.context.get_messages()
+    system_messages = [m for m in messages if m.get("role") == "system"]
+    assert len(system_messages) == 2
+    assert "Yoker agent harness" in system_messages[0].get("content", "")
+    assert system_messages[1].get("content", "") == "Custom system prompt for context test."
+
+
+class TestAgentClientParameter:
+  """Tests for client parameter and conditional WebSearch/WebFetch tools."""
+
+  def test_client_parameter_accepts_client(self) -> None:
+    """Test that Agent accepts a client parameter."""
+    from ollama import Client
+
+    client = Client(host="http://localhost:11434")
+    core = Agent(config=Config(), client=client)
+
+    # Agent should accept the client without error
+    assert core is not None
+
+  def test_websearch_requires_api_key_and_client(self) -> None:
+    """Test that WebSearch tool is only added when API key and client are present."""
+    from ollama import Client
+
+    config = Config(backend=BackendConfig(ollama=OllamaConfig(api_key="test-key")))
+    client = Client(host="http://localhost:11434")
+    core = Agent(config=config, client=client)
+
+    # WebSearch and WebFetch tools should be present (API key + client provided)
+    assert core.tools.get("websearch") is not None
+    assert core.tools.get("webfetch") is not None
+
+  def test_websearch_missing_api_key(self) -> None:
+    """Test that WebSearch tool is not added when API key is missing."""
+    core = Agent(config=Config())
+
+    # WebSearch should not be in default tools (no API key)
+    assert core.tools.get("websearch") is None
+    assert core.tools.get("webfetch") is None
+
+
+class TestAgentToolMatching:
+  """Tests for tool matching and filtering."""
+
+  def test_case_insensitive_tool_matching(self) -> None:
+    """Test that tool matching is case-insensitive."""
+    from yoker.agents import AgentDefinition
+
+    # Agent definition with mixed-case tool names
+    agent_def = AgentDefinition(
+      simple_name="test",
+      description="Test agent",
+      tools=("Read", "LIST", "Write"),
+      system_prompt="Test prompt",
+    )
+    core = Agent(config=Config(), agent_definition=agent_def)
+
+    # All tools should be registered (case-insensitive matching)
+    assert core.tools.get("read") is not None
+    assert core.tools.get("list") is not None
+    assert core.tools.get("write") is not None
+
+  def test_empty_tools_list(self) -> None:
+    """Test agent definition with empty tools list."""
+    from yoker.agents import AgentDefinition
+
+    agent_def = AgentDefinition(
+      simple_name="test",
+      description="Test agent",
+      tools=(),  # Empty tools list
+      system_prompt="Test prompt",
+    )
+    core = Agent(config=Config(), agent_definition=agent_def)
+
+    # No tools should be registered
+    assert core.tools.get("read") is None
+    assert core.tools.get("list") is None
+    assert core.tools.get("write") is None
+
+
+class TestAgentBuildToolRegistry:
+  """Tests for _build_tool_registry method (H3)."""
+
+  def test_build_tool_registry_filters_by_agent_definition(self) -> None:
+    """Test that tool registry is filtered by agent definition."""
+    from yoker.agents import AgentDefinition
+
+    agent_def = AgentDefinition(
+      simple_name="test",
+      description="Test agent",
+      tools=("read", "search"),
+      system_prompt="Test prompt",
+    )
+    core = Agent(config=Config(), agent_definition=agent_def)
+
+    # Only read and search should be present
+    assert core.tools.get("read") is not None
+    assert core.tools.get("search") is not None
+    # Other tools should not be present
+    assert core.tools.get("list") is None
+    assert core.tools.get("write") is None
+
+  def test_build_tool_registry_all_tools_without_agent_definition(self) -> None:
+    """Test that all tools are registered when no agent definition is provided."""
+    core = Agent(config=Config())
+
+    # All default tools should be present
+    assert core.tools.get("read") is not None
+    assert core.tools.get("list") is not None
+    assert core.tools.get("write") is not None
+    assert core.tools.get("update") is not None
+    assert core.tools.get("search") is not None
+    assert core.tools.get("existence") is not None
+    assert core.tools.get("mkdir") is not None
+
+  def test_build_tool_registry_schemas_have_path_parameter(self) -> None:
+    """Filesystem tool schemas declare a path parameter."""
+    core = Agent(config=Config())
+
+    filesystem_tools = ["read", "list", "write", "update", "search", "existence", "mkdir"]
+    for tool_name in filesystem_tools:
+      tool = core.tools.get(tool_name)
+      assert tool is not None, f"Tool {tool_name} not found"
+      params = tool.schema["function"]["parameters"]
+      assert "path" in params["properties"], f"Tool {tool_name} missing path parameter"
+      assert params["properties"]["path"]["type"] == "string"
+
+  def test_build_tool_registry_git_tool_with_config(self) -> None:
+    """Test that the git tool is created with proper configuration."""
+    core = Agent(config=Config())
+
+    git_tool = core.tools.get("git")
+    assert git_tool is not None
+    params = git_tool.schema["function"]["parameters"]
+    assert "path" in params["properties"]
+    assert params["properties"]["path"]["type"] == "string"
+
+
+class TestAgentGuardrailPropertyTypeAnnotation:
+  """Tests for guardrail property type annotation."""
+
+  def test_guardrail_has_correct_type_annotation(self) -> None:
+    """Test that guardrail property has proper type annotation."""
+    # Check that the property exists and has correct type annotation
+    import inspect
+
+    from yoker.tools.path_guardrail import PathGuardrail
+
+    # Get the property descriptor
+    guardrail_prop = getattr(Agent, "guardrail", None)
+    assert guardrail_prop is not None
+    assert isinstance(guardrail_prop, property)
+
+    # Check the fget method's type annotation
+    fget = guardrail_prop.fget
+    assert fget is not None
+    sig = inspect.signature(fget)
+    # The annotation might be a forward reference string or the actual class
+    annotation = sig.return_annotation
+    # Accept both string 'PathGuardrail' and the actual class
+    assert annotation in ("PathGuardrail", PathGuardrail)

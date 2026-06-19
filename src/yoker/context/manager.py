@@ -27,18 +27,7 @@ class ContextManager(UserList[dict[str, Any]]):
     Args:
       initial: Optional initial list of context items.
     """
-    super().__init__(initial if initial is not None else [])
-
-  def append(self, item: dict[str, Any]) -> None:
-    """Append an item to the context.
-
-    Subclasses can override this method to add side effects such as
-    persistence. By default it just appends to the internal list.
-
-    Args:
-      item: Context item to append (typically a message dict).
-    """
-    super().append(item)
+    super().__init__(initial)
 
   def add_message(
     self,
@@ -55,6 +44,8 @@ class ContextManager(UserList[dict[str, Any]]):
       metadata: Optional metadata (e.g., images, files).
       thinking: Optional thinking/reasoning content (for assistant messages).
     """
+    if not content:
+      return
     message: dict[str, Any] = {
       "role": role,
       "content": content,
@@ -147,10 +138,6 @@ class ContextManager(UserList[dict[str, Any]]):
       True if context was loaded, False if no stored context exists.
     """
     return False
-
-  def clear(self) -> None:
-    """Clear in-memory context (does not delete from storage)."""
-    self.data.clear()
 
   def delete(self) -> None:
     """Delete stored context from disk.

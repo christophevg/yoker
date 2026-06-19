@@ -20,7 +20,7 @@ def format_discovery_block(skills: list[Skill]) -> str:
     Formatted system-reminder block for injection into LLM context.
 
   Example:
-    >>> skills = [Skill(name="commit", description="Guide git commits")]
+    >>> skills = [Skill(simple_name="commit", description="Guide git commits")]
     >>> block = format_discovery_block(skills)
     >>> print(block)
     <system-reminder>
@@ -34,10 +34,10 @@ def format_discovery_block(skills: list[Skill]) -> str:
 
   lines = ["<system-reminder>", "The following skills are available for use:"]
 
-  for skill in sorted(skills, key=lambda s: s.full_name):
+  for skill in sorted(skills, key=lambda s: s.name):
     # Format: "- name: description"
     # Include usage hint if there are triggers
-    line = f"- {skill.full_name}: {skill.description}"
+    line = f"- {skill.name}: {skill.description}"
     lines.append(line)
 
   lines.append("</system-reminder>")
@@ -58,7 +58,7 @@ def format_invocation_block(skill: Skill, args: str = "") -> str:
     Formatted invocation block with skill content.
 
   Example:
-    >>> skill = Skill(name="commit", description="Guide commits", content="...")
+    >>> skill = Skill(simple_name="commit", description="Guide commits", content="...")
     >>> block = format_invocation_block(skill, "fix authentication bug")
     >>> print(block)
     <command-message>
@@ -70,13 +70,13 @@ def format_invocation_block(skill: Skill, args: str = "") -> str:
     ...
   """
   # Command message shows the user's slash command
-  command_part = f"/{skill.full_name}"
+  command_part = f"/{skill.name}"
   if args:
     command_part += f" {args}"
 
   lines = [
     "<command-message>",
-    f"<command-name>{skill.full_name}</command-name>",
+    f"<command-name>{skill.name}</command-name>",
     f"<command-args>{args}</command-args>" if args else "<command-args></command-args>",
     "</command-message>",
     "",

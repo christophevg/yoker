@@ -35,7 +35,7 @@ class SkillRegistry:
     Raises:
       ValueError: If a skill with the same name is already registered.
     """
-    name = skill.full_name
+    name = skill.name
     if name in self._skills:
       raise ValueError(f"Skill '{name}' is already registered")
     self._skills[name] = skill
@@ -154,7 +154,6 @@ def create_default_skill_registry() -> SkillRegistry:
 
   Skills are loaded dynamically from:
   - Configuration file (yoker.toml)
-  - Environment variable (YOKER_SKILLS_PATH)
   - Package plugins (yoker --with <package>)
 
   Returns:

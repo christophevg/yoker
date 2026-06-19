@@ -32,7 +32,7 @@ def validate_url(value: str, path: str) -> None:
     raise ValidationError(path, value, f"must be a valid URL: {e}") from None
 
 
-def validate_non_empty_string(value: str, path: str) -> None:
+def validate_non_empty_string(value: str | None, path: str) -> None:
   """Validate that a value is a non-empty string.
 
   Args:
@@ -40,7 +40,7 @@ def validate_non_empty_string(value: str, path: str) -> None:
     path: Configuration path for error messages.
 
   Raises:
-    ValidationError: If the value is empty.
+    ValidationError: If the value is empty or None.
   """
   if not value or not value.strip():
     raise ValidationError(path, value, "must be a non-empty string")

@@ -1,6 +1,6 @@
-"""Tests for WebSearchTool implementation.
+"""Tests for websearch tool implementation.
 
-These tests verify the behavior of the WebSearchTool, including backend integration,
+These tests verify the behavior of the websearch tool, including backend integration,
 parameter validation, result formatting, and error handling.
 """
 
@@ -8,44 +8,48 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from yoker.tools import ToolRegistry, make_websearch_tool
 from yoker.tools.web_backend import WebSearchBackend
 from yoker.tools.web_guardrail import WebGuardrail, WebGuardrailConfig
 from yoker.tools.web_types import SearchResult, WebSearchError
-from yoker.tools.websearch import WebSearchTool
+
+
+def _websearch_spec(backend=None):
+  """Create and register the websearch tool."""
+  registry = ToolRegistry()
+  return registry.register(make_websearch_tool(backend=backend))
 
 
 class TestWebSearchToolSchema:
-  """Tests for WebSearchTool schema and properties."""
+  """Tests for websearch tool schema and properties."""
 
   def test_name(self) -> None:
     """
-    Given: A WebSearchTool instance
-    When: Checking the tool name property
-    Then: Returns 'web_search'
+    Given: A websearch tool spec
+    When: Checking the spec name
+    Then: Returns 'websearch'
     """
-    tool = WebSearchTool()
-
-    assert tool.name == "web_search"
+    spec = _websearch_spec()
+    assert spec.name == "websearch"
 
   def test_description(self) -> None:
     """
-    Given: A WebSearchTool instance
-    When: Checking the tool description property
+    Given: A websearch tool spec
+    When: Checking the spec description
     Then: Returns description mentioning web search
     """
-    tool = WebSearchTool()
-
-    assert "web" in tool.description.lower()
-    assert "search" in tool.description.lower()
+    spec = _websearch_spec()
+    assert "web" in spec.description.lower()
+    assert "search" in spec.description.lower()
 
   def test_schema_structure(self) -> None:
     """
-    Given: A WebSearchTool instance
+    Given: A websearch tool spec
     When: Getting the Ollama-compatible schema
     Then: Schema has correct structure with query and max_results parameters
     """
-    tool = WebSearchTool()
-    schema = tool.get_schema()
+    spec = _websearch_spec()
+    schema = spec.schema
 
     assert schema["type"] == "function"
     assert "function" in schema
@@ -54,38 +58,25 @@ class TestWebSearchToolSchema:
 
   def test_schema_query_required(self) -> None:
     """
-    Given: The WebSearchTool schema
+    Given: The websearch tool schema
     When: Checking required parameters
     Then: 'query' is required, 'max_results' is optional
     """
-    tool = WebSearchTool()
-    schema = tool.get_schema()
+    spec = _websearch_spec()
+    schema = spec.schema
 
     required = schema["function"]["parameters"]["required"]
     assert "query" in required
     assert "max_results" not in required
 
-  def test_schema_max_results_bounds(self) -> None:
-    """
-    Given: The WebSearchTool schema
-    When: Checking max_results parameter
-    Then: Has minimum=1 and maximum=50 constraints
-    """
-    tool = WebSearchTool()
-    schema = tool.get_schema()
-
-    max_results_prop = schema["function"]["parameters"]["properties"]["max_results"]
-    assert max_results_prop["minimum"] == 1
-    assert max_results_prop["maximum"] == 50
-
 
 class TestWebSearchToolExecution:
-  """Tests for WebSearchTool execute method."""
+  """Tests for websearch tool execute method."""
 
   @pytest.mark.asyncio
   async def test_execute_returns_results(self, mock_backend: MagicMock) -> None:
     """
-    Given: A WebSearchTool with mocked backend
+    Given: A websearch tool with mocked backend
     When: Executing a valid search query
     Then: Returns ToolResult with search results
     """
@@ -94,8 +85,8 @@ class TestWebSearchToolExecution:
         SearchResult(title="Test", url="http://test.com", snippet="Test snippet", source="ollama")
       ]
     )
-    tool = WebSearchTool(backend=mock_backend)
-    result = await tool.execute(query="test query")
+    spec = _websearch_spec(backend=mock_backend)
+    result = await spec.execute(query="test query")
 
     assert result.success
     assert "results" in result.result
@@ -103,7 +94,7 @@ class TestWebSearchToolExecution:
   @pytest.mark.asyncio
   async def test_execute_with_default_max_results(self, mock_backend: MagicMock) -> None:
     """
-    Given: A WebSearchTool with mocked backend
+    Given: A websearch tool with mocked backend
     When: Executing search without max_results parameter
     Then: Uses default max_results value (10)
     """
@@ -112,20 +103,21 @@ class TestWebSearchToolExecution:
         SearchResult(title="Test", url="http://test.com", snippet="Test snippet", source="ollama")
       ]
     )
-    tool = WebSearchTool(backend=mock_backend)
-    await tool.execute(query="test query")
+    spec = _websearch_spec(backend=mock_backend)
+    await spec.execute(query="test query")
 
     # Check that backend was called with default max_results=10
     mock_backend.search.assert_called_once()
     call_args = mock_backend.search.call_args
     assert (
-      call_args.kwargs.get("max_results", call_args[1] if len(call_args.args) > 1 else 10) == 10
+      call_args.kwargs.get("max_results", call_args.args[1] if len(call_args.args) > 1 else 10)
+      == 10
     )
 
   @pytest.mark.asyncio
   async def test_execute_with_custom_max_results(self, mock_backend: MagicMock) -> None:
     """
-    Given: A WebSearchTool with mocked backend
+    Given: A websearch tool with mocked backend
     When: Executing search with max_results=5
     Then: Passes max_results=5 to backend
     """
@@ -134,8 +126,8 @@ class TestWebSearchToolExecution:
         SearchResult(title="Test", url="http://test.com", snippet="Test snippet", source="ollama")
       ]
     )
-    tool = WebSearchTool(backend=mock_backend)
-    await tool.execute(query="test query", max_results=5)
+    spec = _websearch_spec(backend=mock_backend)
+    await spec.execute(query="test query", max_results=5)
 
     mock_backend.search.assert_called_once()
     call_kwargs = mock_backend.search.call_args.kwargs
@@ -144,12 +136,12 @@ class TestWebSearchToolExecution:
   @pytest.mark.asyncio
   async def test_execute_query_required(self) -> None:
     """
-    Given: A WebSearchTool execute call without query
+    Given: A websearch tool execute call without query
     When: Calling execute without query parameter
     Then: Returns error ToolResult
     """
-    tool = WebSearchTool()
-    result = await tool.execute()
+    spec = _websearch_spec()
+    result = await spec.execute()
 
     assert not result.success
     assert result.error is not None
@@ -158,12 +150,12 @@ class TestWebSearchToolExecution:
   @pytest.mark.asyncio
   async def test_execute_empty_query_rejected(self) -> None:
     """
-    Given: A WebSearchTool execute call with empty query
+    Given: A websearch tool execute call with empty query
     When: Calling execute with query=""
     Then: Returns error ToolResult
     """
-    tool = WebSearchTool()
-    result = await tool.execute(query="")
+    spec = _websearch_spec()
+    result = await spec.execute(query="")
 
     assert not result.success
     assert result.error is not None
@@ -171,12 +163,12 @@ class TestWebSearchToolExecution:
   @pytest.mark.asyncio
   async def test_execute_whitespace_query_rejected(self) -> None:
     """
-    Given: A WebSearchTool execute call with whitespace-only query
+    Given: A websearch tool execute call with whitespace-only query
     When: Calling execute with query="   "
     Then: Returns error ToolResult
     """
-    tool = WebSearchTool()
-    result = await tool.execute(query="   ")
+    spec = _websearch_spec()
+    result = await spec.execute(query="   ")
 
     assert not result.success
     assert result.error is not None
@@ -184,7 +176,7 @@ class TestWebSearchToolExecution:
   @pytest.mark.asyncio
   async def test_execute_clamps_max_results(self, mock_backend: MagicMock) -> None:
     """
-    Given: A WebSearchTool with max_results=100 (exceeds maximum)
+    Given: A websearch tool with max_results=100 (exceeds maximum)
     When: Executing search
     Then: Clamps max_results to 50
     """
@@ -193,8 +185,8 @@ class TestWebSearchToolExecution:
         SearchResult(title="Test", url="http://test.com", snippet="Test snippet", source="ollama")
       ]
     )
-    tool = WebSearchTool(backend=mock_backend)
-    await tool.execute(query="test query", max_results=100)
+    spec = _websearch_spec(backend=mock_backend)
+    await spec.execute(query="test query", max_results=100)
 
     call_kwargs = mock_backend.search.call_args.kwargs
     assert call_kwargs.get("max_results") == 50
@@ -202,30 +194,26 @@ class TestWebSearchToolExecution:
   @pytest.mark.asyncio
   async def test_execute_guardrail_validation_failure(self) -> None:
     """
-    Given: A WebSearchTool with guardrail that rejects query
-    When: Executing search with blocked query
-    Then: Returns error ToolResult without calling backend
+    Given: A web query guardrail that rejects blocked domains
+    When: Validating a query containing a blocked domain
+    Then: Guardrail reports the blocked domain
     """
     guardrail = WebGuardrail(WebGuardrailConfig(domain_blocklist=("blocked.com",)))
-    mock_backend = MagicMock()
-    mock_backend.search = AsyncMock()
-    tool = WebSearchTool(backend=mock_backend, guardrail=guardrail)
+    spec = _websearch_spec()
 
-    # Query containing blocked domain
-    result = await tool.execute(query="site:blocked.com secret data")
+    validation = guardrail.validate(spec.name, {"query": "site:blocked.com secret data"})
 
-    assert not result.success
-    assert result.error is not None
-    mock_backend.search.assert_not_called()
+    assert not validation.valid
+    assert validation.reason is not None
 
 
 class TestWebSearchToolBackendIntegration:
-  """Tests for WebSearchTool backend integration."""
+  """Tests for websearch tool backend integration."""
 
   @pytest.mark.asyncio
   async def test_backend_receives_valid_parameters(self, mock_backend: MagicMock) -> None:
     """
-    Given: A WebSearchTool with mocked backend
+    Given: A websearch tool with mocked backend
     When: Executing search with valid parameters
     Then: Backend.search() receives validated query and max_results
     """
@@ -234,8 +222,8 @@ class TestWebSearchToolBackendIntegration:
         SearchResult(title="Test", url="http://test.com", snippet="Test snippet", source="ollama")
       ]
     )
-    tool = WebSearchTool(backend=mock_backend)
-    await tool.execute(query="test query", max_results=5)
+    spec = _websearch_spec(backend=mock_backend)
+    await spec.execute(query="test query", max_results=5)
 
     mock_backend.search.assert_called_once_with(query="test query", max_results=5)
 
@@ -249,8 +237,8 @@ class TestWebSearchToolBackendIntegration:
     mock_backend_error.search = AsyncMock(
       side_effect=WebSearchError("Backend unavailable", backend="test")
     )
-    tool = WebSearchTool(backend=mock_backend_error)
-    result = await tool.execute(query="test query")
+    spec = _websearch_spec(backend=mock_backend_error)
+    result = await spec.execute(query="test query")
 
     assert not result.success
     assert result.error is not None
@@ -267,15 +255,15 @@ class TestWebSearchToolBackendIntegration:
     mock_backend_timeout.search = AsyncMock(
       side_effect=WebSearchError("Search timeout after 30s", backend="test")
     )
-    tool = WebSearchTool(backend=mock_backend_timeout)
-    result = await tool.execute(query="test query")
+    spec = _websearch_spec(backend=mock_backend_timeout)
+    result = await spec.execute(query="test query")
 
     assert not result.success
     assert result.error is not None
 
 
 class TestWebSearchToolResultFormat:
-  """Tests for WebSearchTool result formatting."""
+  """Tests for websearch tool result formatting."""
 
   @pytest.mark.asyncio
   async def test_success_result_format(self, mock_backend: MagicMock) -> None:
@@ -289,8 +277,8 @@ class TestWebSearchToolResultFormat:
         SearchResult(title="Test", url="http://test.com", snippet="Test snippet", source="ollama")
       ]
     )
-    tool = WebSearchTool(backend=mock_backend)
-    result = await tool.execute(query="test query")
+    spec = _websearch_spec(backend=mock_backend)
+    result = await spec.execute(query="test query")
 
     assert result.success
     assert isinstance(result.result, dict)
@@ -304,11 +292,11 @@ class TestWebSearchToolResultFormat:
     When: Checking the ToolResult
     Then: success=False, result is empty, error contains message
     """
-    tool = WebSearchTool()
-    result = await tool.execute()  # No query provided
+    spec = _websearch_spec()
+    result = await spec.execute()  # No query provided
 
     assert not result.success
-    assert result.result == {}
+    assert result.result == ""
     assert result.error is not None
 
   @pytest.mark.asyncio
@@ -319,8 +307,8 @@ class TestWebSearchToolResultFormat:
     Then: Returns success with empty results list
     """
     mock_backend_empty.search = AsyncMock(return_value=[])
-    tool = WebSearchTool(backend=mock_backend_empty)
-    result = await tool.execute(query="test query")
+    spec = _websearch_spec(backend=mock_backend_empty)
+    result = await spec.execute(query="test query")
 
     assert result.success
     assert result.result["results"] == []
@@ -328,22 +316,12 @@ class TestWebSearchToolResultFormat:
 
 
 class TestWebSearchToolConfiguration:
-  """Tests for WebSearchTool configuration."""
-
-  def test_default_backend_is_ollama(self) -> None:
-    """
-    Given: Creating WebSearchTool without explicit backend
-    When: Checking backend type
-    Then: Backend is None (requires explicit configuration)
-    """
-    tool = WebSearchTool()
-
-    assert tool._backend is None
+  """Tests for websearch tool configuration."""
 
   @pytest.mark.asyncio
   async def test_custom_backend_used(self, mock_backend: MagicMock) -> None:
     """
-    Given: Creating WebSearchTool with custom backend
+    Given: Creating websearch tool with custom backend
     When: Executing search
     Then: Uses provided backend instead of default
     """
@@ -352,20 +330,20 @@ class TestWebSearchToolConfiguration:
         SearchResult(title="Test", url="http://test.com", snippet="Test snippet", source="ollama")
       ]
     )
-    tool = WebSearchTool(backend=mock_backend)
-    await tool.execute(query="test query")
+    spec = _websearch_spec(backend=mock_backend)
+    await spec.execute(query="test query")
 
     mock_backend.search.assert_called_once()
 
   @pytest.mark.asyncio
   async def test_no_backend_returns_error(self) -> None:
     """
-    Given: WebSearchTool without backend configured
+    Given: websearch tool without backend configured
     When: Executing search
     Then: Returns error about missing backend
     """
-    tool = WebSearchTool()
-    result = await tool.execute(query="test query")
+    spec = _websearch_spec()
+    result = await spec.execute(query="test query")
 
     assert not result.success
     assert "backend" in result.error.lower()

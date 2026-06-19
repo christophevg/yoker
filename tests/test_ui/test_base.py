@@ -1,5 +1,7 @@
 """Tests for BaseUIHandler abstract class."""
 
+from unittest.mock import MagicMock
+
 import pytest
 
 from yoker.ui import BaseUIHandler
@@ -24,7 +26,7 @@ class ConcreteUIHandler(BaseUIHandler):
     self.content_streams = []
     self.thinking_streams = []
 
-  async def start(self, model: str, version: str, config: dict) -> None:
+  async def start(self, agent) -> None:
     self.started = True
 
   async def shutdown(self, reason: str) -> None:
@@ -135,7 +137,7 @@ class TestBaseUIHandler:
     handler = ConcreteUIHandler()
 
     assert handler.started is False
-    await handler.start("model", "1.0.0", {"thinking_enabled": True})
+    await handler.start(MagicMock())
     assert handler.started is True
 
     assert handler.shutdown_reason is None

@@ -1,33 +1,38 @@
-"""Tests for ExistenceTool implementation."""
+"""Tests for the existence tool implementation."""
 
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock
 
 import pytest
 
-from yoker.tools.base import ValidationResult
-from yoker.tools.existence import ExistenceTool
-from yoker.tools.guardrails import Guardrail
+from yoker.config import Config, PermissionsConfig
+from yoker.tools import ToolRegistry, make_existence_tool
+from yoker.tools.path_guardrail import PathGuardrail
+
+
+def _existence_spec():
+  """Create and register the existence tool."""
+  registry = ToolRegistry()
+  return registry.register(make_existence_tool())
 
 
 class TestExistenceToolSchema:
-  """Tests for ExistenceTool schema and properties."""
+  """Tests for existence tool schema and properties."""
 
   def test_name(self) -> None:
     """Test tool name."""
-    tool = ExistenceTool()
-    assert tool.name == "existence"
+    spec = _existence_spec()
+    assert spec.name == "existence"
 
   def test_description(self) -> None:
     """Test tool description."""
-    tool = ExistenceTool()
-    assert "file or folder exists" in tool.description.lower()
+    spec = _existence_spec()
+    assert "file or folder exists" in spec.description.lower()
 
   def test_schema_structure(self) -> None:
     """Test schema structure."""
-    tool = ExistenceTool()
-    schema = tool.get_schema()
+    spec = _existence_spec()
+    schema = spec.schema
 
     assert schema["type"] == "function"
     assert schema["function"]["name"] == "existence"
@@ -57,8 +62,8 @@ class TestExistenceToolFileCheck:
   @pytest.mark.asyncio
   async def test_existing_file(self, temp_files: Path) -> None:
     """Test existing file returns True."""
-    tool = ExistenceTool()
-    result = await tool.execute(path=str(temp_files / "file.txt"))
+    spec = _existence_spec()
+    result = await spec.execute(path=str(temp_files / "file.txt"))
 
     assert result.success
     assert result.result["exists"] is True
@@ -68,8 +73,8 @@ class TestExistenceToolFileCheck:
   @pytest.mark.asyncio
   async def test_existing_hidden_file(self, temp_files: Path) -> None:
     """Test hidden file existence check."""
-    tool = ExistenceTool()
-    result = await tool.execute(path=str(temp_files / ".hidden"))
+    spec = _existence_spec()
+    result = await spec.execute(path=str(temp_files / ".hidden"))
 
     assert result.success
     assert result.result["exists"] is True
@@ -78,8 +83,8 @@ class TestExistenceToolFileCheck:
   @pytest.mark.asyncio
   async def test_existing_nested_file(self, temp_files: Path) -> None:
     """Test nested file existence check."""
-    tool = ExistenceTool()
-    result = await tool.execute(path=str(temp_files / "subdir" / "nested.txt"))
+    spec = _existence_spec()
+    result = await spec.execute(path=str(temp_files / "subdir" / "nested.txt"))
 
     assert result.success
     assert result.result["exists"] is True
@@ -107,8 +112,8 @@ class TestExistenceToolDirectoryCheck:
   @pytest.mark.asyncio
   async def test_existing_directory(self, temp_dirs: Path) -> None:
     """Test existing directory returns True."""
-    tool = ExistenceTool()
-    result = await tool.execute(path=str(temp_dirs / "subdir"))
+    spec = _existence_spec()
+    result = await spec.execute(path=str(temp_dirs / "subdir"))
 
     assert result.success
     assert result.result["exists"] is True
@@ -117,8 +122,8 @@ class TestExistenceToolDirectoryCheck:
   @pytest.mark.asyncio
   async def test_existing_hidden_directory(self, temp_dirs: Path) -> None:
     """Test hidden directory existence check."""
-    tool = ExistenceTool()
-    result = await tool.execute(path=str(temp_dirs / ".hidden_dir"))
+    spec = _existence_spec()
+    result = await spec.execute(path=str(temp_dirs / ".hidden_dir"))
 
     assert result.success
     assert result.result["exists"] is True
@@ -127,8 +132,8 @@ class TestExistenceToolDirectoryCheck:
   @pytest.mark.asyncio
   async def test_existing_nested_directory(self, temp_dirs: Path) -> None:
     """Test nested directory existence check."""
-    tool = ExistenceTool()
-    result = await tool.execute(path=str(temp_dirs / "nested" / "deep"))
+    spec = _existence_spec()
+    result = await spec.execute(path=str(temp_dirs / "nested" / "deep"))
 
     assert result.success
     assert result.result["exists"] is True
@@ -141,8 +146,8 @@ class TestExistenceToolNonExistent:
   @pytest.mark.asyncio
   async def test_nonexistent_file(self, tmp_path: Path) -> None:
     """Test non-existent file returns False."""
-    tool = ExistenceTool()
-    result = await tool.execute(path=str(tmp_path / "nonexistent.txt"))
+    spec = _existence_spec()
+    result = await spec.execute(path=str(tmp_path / "nonexistent.txt"))
 
     assert result.success
     assert result.result["exists"] is False
@@ -152,8 +157,8 @@ class TestExistenceToolNonExistent:
   @pytest.mark.asyncio
   async def test_nonexistent_directory(self, tmp_path: Path) -> None:
     """Test non-existent directory returns False."""
-    tool = ExistenceTool()
-    result = await tool.execute(path=str(tmp_path / "nonexistent_dir"))
+    spec = _existence_spec()
+    result = await spec.execute(path=str(tmp_path / "nonexistent_dir"))
 
     assert result.success
     assert result.result["exists"] is False
@@ -162,8 +167,8 @@ class TestExistenceToolNonExistent:
   @pytest.mark.asyncio
   async def test_nonexistent_nested_path(self, tmp_path: Path) -> None:
     """Test non-existent nested path returns False."""
-    tool = ExistenceTool()
-    result = await tool.execute(path=str(tmp_path / "a" / "b" / "c" / "file.txt"))
+    spec = _existence_spec()
+    result = await spec.execute(path=str(tmp_path / "a" / "b" / "c" / "file.txt"))
 
     assert result.success
     assert result.result["exists"] is False
@@ -187,8 +192,8 @@ class TestExistenceToolSymlinkRejection:
     except OSError:
       pytest.skip("Symlinks not supported on this platform")
 
-    tool = ExistenceTool()
-    result = await tool.execute(path=str(symlink))
+    spec = _existence_spec()
+    result = await spec.execute(path=str(symlink))
 
     assert not result.success
     assert "not accessible" in result.error.lower()
@@ -207,8 +212,8 @@ class TestExistenceToolSymlinkRejection:
     except OSError:
       pytest.skip("Symlinks not supported on this platform")
 
-    tool = ExistenceTool()
-    result = await tool.execute(path=str(symlink))
+    spec = _existence_spec()
+    result = await spec.execute(path=str(symlink))
 
     assert not result.success
     assert "not accessible" in result.error.lower()
@@ -220,8 +225,8 @@ class TestExistenceToolValidation:
   @pytest.mark.asyncio
   async def test_empty_path(self) -> None:
     """Test empty path returns error."""
-    tool = ExistenceTool()
-    result = await tool.execute(path="")
+    spec = _existence_spec()
+    result = await spec.execute(path="")
 
     assert not result.success
     assert "empty" in result.error.lower()
@@ -229,8 +234,8 @@ class TestExistenceToolValidation:
   @pytest.mark.asyncio
   async def test_whitespace_only_path(self) -> None:
     """Test whitespace-only path returns error."""
-    tool = ExistenceTool()
-    result = await tool.execute(path="   ")
+    spec = _existence_spec()
+    result = await spec.execute(path="   ")
 
     assert not result.success
     assert "empty" in result.error.lower()
@@ -238,8 +243,8 @@ class TestExistenceToolValidation:
   @pytest.mark.asyncio
   async def test_invalid_path_type(self) -> None:
     """Test non-string path returns error."""
-    tool = ExistenceTool()
-    result = await tool.execute(path=123)
+    spec = _existence_spec()
+    result = await spec.execute(path=123)
 
     assert not result.success
     assert "invalid" in result.error.lower()
@@ -250,37 +255,38 @@ class TestExistenceToolWithGuardrail:
 
   @pytest.mark.asyncio
   async def test_guardrail_blocks_path(self, tmp_path: Path) -> None:
-    """Test that guardrail can block paths."""
+    """Test that the path guardrail can block paths."""
     # Create a file
     (tmp_path / "test.txt").write_text("content")
 
-    # Create a mock guardrail that blocks all paths
-    mock_guardrail = MagicMock(spec=Guardrail)
-    mock_guardrail.validate.return_value = ValidationResult(valid=False, reason="Path not allowed")
+    # Restrict allowed paths to a subdirectory so the target is blocked
+    allowed_path = tmp_path / "allowed"
+    allowed_path.mkdir()
+    config = Config(permissions=PermissionsConfig(filesystem_paths=(str(allowed_path),)))
+    guardrail = PathGuardrail(config)
 
-    tool = ExistenceTool(guardrail=mock_guardrail)
-    result = await tool.execute(path=str(tmp_path / "test.txt"))
+    spec = _existence_spec()
+    validation = guardrail.validate(spec.name, {"path": str(tmp_path / "test.txt")})
 
-    assert not result.success
-    assert "Path not allowed" in result.error
-    mock_guardrail.validate.assert_called_once()
+    assert not validation.valid
+    assert "outside allowed" in validation.reason.lower()
 
   @pytest.mark.asyncio
   async def test_guardrail_allows_path(self, tmp_path: Path) -> None:
-    """Test that guardrail can allow paths."""
+    """Test that the path guardrail can allow paths."""
     # Create a file
     (tmp_path / "test.txt").write_text("content")
 
-    # Create a mock guardrail that allows all paths
-    mock_guardrail = MagicMock(spec=Guardrail)
-    mock_guardrail.validate.return_value = ValidationResult(valid=True)
+    config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
+    guardrail = PathGuardrail(config)
 
-    tool = ExistenceTool(guardrail=mock_guardrail)
-    result = await tool.execute(path=str(tmp_path / "test.txt"))
+    spec = _existence_spec()
+    validation = guardrail.validate(spec.name, {"path": str(tmp_path / "test.txt")})
+    assert validation.valid
 
+    result = await spec.execute(path=str(tmp_path / "test.txt"))
     assert result.success
     assert result.result["exists"] is True
-    mock_guardrail.validate.assert_called_once()
 
   @pytest.mark.asyncio
   async def test_guardrail_not_provided(self, tmp_path: Path) -> None:
@@ -288,26 +294,23 @@ class TestExistenceToolWithGuardrail:
     # Create a file
     (tmp_path / "test.txt").write_text("content")
 
-    tool = ExistenceTool()  # No guardrail
-    result = await tool.execute(path=str(tmp_path / "test.txt"))
+    spec = _existence_spec()  # No guardrail
+    result = await spec.execute(path=str(tmp_path / "test.txt"))
 
     assert result.success
     assert result.result["exists"] is True
 
   @pytest.mark.asyncio
   async def test_guardrail_blocks_nonexistent_path(self, tmp_path: Path) -> None:
-    """Test that guardrail blocks access to paths outside allowed directories."""
-    # Create a mock guardrail that blocks the path
-    mock_guardrail = MagicMock(spec=Guardrail)
-    mock_guardrail.validate.return_value = ValidationResult(
-      valid=False, reason="Path outside allowed directories: /etc/passwd"
-    )
+    """Test that the path guardrail blocks access to paths outside allowed directories."""
+    config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
+    guardrail = PathGuardrail(config)
 
-    tool = ExistenceTool(guardrail=mock_guardrail)
-    result = await tool.execute(path="/etc/passwd")
+    spec = _existence_spec()
+    validation = guardrail.validate(spec.name, {"path": "/etc/passwd"})
 
-    assert not result.success
-    assert "Path outside allowed directories" in result.error
+    assert not validation.valid
+    assert "outside allowed" in validation.reason.lower()
 
 
 class TestExistenceToolPathResolution:
@@ -319,8 +322,8 @@ class TestExistenceToolPathResolution:
     # Create a file
     (tmp_path / "file.txt").write_text("content")
 
-    tool = ExistenceTool()
-    result = await tool.execute(path=str(tmp_path / "file.txt"))
+    spec = _existence_spec()
+    result = await spec.execute(path=str(tmp_path / "file.txt"))
 
     assert result.success
     # Path should be absolute
@@ -332,9 +335,9 @@ class TestExistenceToolPathResolution:
     # Create a file
     (tmp_path / "file.txt").write_text("content")
 
-    tool = ExistenceTool()
+    spec = _existence_spec()
     # Use path with ./ segments
-    result = await tool.execute(path=str(tmp_path / "." / "file.txt"))
+    result = await spec.execute(path=str(tmp_path / "." / "file.txt"))
 
     assert result.success
     assert result.result["exists"] is True
@@ -348,8 +351,8 @@ class TestExistenceToolSpecialCases:
   @pytest.mark.asyncio
   async def test_root_directory(self) -> None:
     """Test checking root directory exists."""
-    tool = ExistenceTool()
-    result = await tool.execute(path="/")
+    spec = _existence_spec()
+    result = await spec.execute(path="/")
 
     assert result.success
     assert result.result["exists"] is True
@@ -358,8 +361,8 @@ class TestExistenceToolSpecialCases:
   @pytest.mark.asyncio
   async def test_current_directory(self) -> None:
     """Test checking current directory exists."""
-    tool = ExistenceTool()
-    result = await tool.execute(path=".")
+    spec = _existence_spec()
+    result = await spec.execute(path=".")
 
     assert result.success
     assert result.result["exists"] is True
@@ -368,8 +371,8 @@ class TestExistenceToolSpecialCases:
   @pytest.mark.asyncio
   async def test_parent_directory(self) -> None:
     """Test checking parent directory exists."""
-    tool = ExistenceTool()
-    result = await tool.execute(path="..")
+    spec = _existence_spec()
+    result = await spec.execute(path="..")
 
     assert result.success
     assert result.result["exists"] is True
@@ -382,7 +385,7 @@ class TestExistenceToolErrorHandling:
   @pytest.mark.asyncio
   async def test_permission_error(self, tmp_path: Path, mocker: Any) -> None:
     """Test PermissionError during existence check."""
-    tool = ExistenceTool()
+    spec = _existence_spec()
 
     # Mock Path.exists to raise PermissionError
     mock_path = mocker.MagicMock(spec=Path)
@@ -393,7 +396,7 @@ class TestExistenceToolErrorHandling:
     # Patch Path to return our mock
     mocker.patch("yoker.tools.existence.Path", return_value=mock_path)
 
-    result = await tool.execute(path="/test/path")
+    result = await spec.execute(path="/test/path")
 
     assert not result.success
     assert "failed" in result.error.lower()
@@ -401,7 +404,7 @@ class TestExistenceToolErrorHandling:
   @pytest.mark.asyncio
   async def test_os_error(self, tmp_path: Path, mocker: Any) -> None:
     """Test OSError during existence check."""
-    tool = ExistenceTool()
+    spec = _existence_spec()
 
     # Mock Path.exists to raise OSError
     mock_path = mocker.MagicMock(spec=Path)
@@ -412,7 +415,7 @@ class TestExistenceToolErrorHandling:
     # Patch Path to return our mock
     mocker.patch("yoker.tools.existence.Path", return_value=mock_path)
 
-    result = await tool.execute(path="/test/path")
+    result = await spec.execute(path="/test/path")
 
     assert not result.success
     assert "failed" in result.error.lower()
@@ -420,12 +423,12 @@ class TestExistenceToolErrorHandling:
   @pytest.mark.asyncio
   async def test_realpath_os_error(self, mocker: Any) -> None:
     """Test OSError during path resolution."""
-    tool = ExistenceTool()
+    spec = _existence_spec()
 
     # Mock os.path.realpath to raise OSError
     mocker.patch("os.path.realpath", side_effect=OSError("Resolution failed"))
 
-    result = await tool.execute(path="/test/path")
+    result = await spec.execute(path="/test/path")
 
     assert not result.success
     assert "invalid" in result.error.lower()

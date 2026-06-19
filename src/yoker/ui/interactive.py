@@ -4,17 +4,24 @@ Uses prompt_toolkit for input and Rich for output. Supports streaming via
 Live display, command history, and multiline input.
 """
 
+from __future__ import annotations
+
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.key_binding import KeyBindings, KeyPressEvent
 from prompt_toolkit.shortcuts import PromptSession
 from rich.console import Console
+from rich.panel import Panel
 from rich.style import Style
 
+from yoker import __version__
 from yoker.ui.base import BaseUIHandler
 from yoker.ui.spinner import LiveDisplay
+
+if TYPE_CHECKING:
+  from yoker.agent import Agent
 
 # Styles for console output
 THINKING_STYLE = Style(color="bright_black", dim=True)
@@ -128,19 +135,40 @@ class InteractiveUIHandler(BaseUIHandler):
 
   # === Lifecycle ===
 
-  async def start(self, model: str, version: str, config: dict[str, Any]) -> None:
+  async def start(self, agent: Agent) -> None:
     """Start interactive UI session.
 
     Args:
-      model: Model name being used.
-      version: Yoker version.
-      config: Configuration summary.
+      agent: The Agent instance this UI session is serving.
     """
-    self.console.print(f"Yoker v{version} - Using model: {model}")
-    thinking_status = "enabled" if config.get("thinking_enabled", True) else "disabled"
-    self.console.print(f"Thinking mode: {thinking_status} (use /think on|off to toggle)")
-    self.console.print("Type /help for available commands.")
-    self.console.print("Press Ctrl+D (or Ctrl+Z on Windows) to quit.\n")
+    harness = agent.config.harness
+    harness_line = f"Harness: {harness.name}"
+    if harness.version:
+      harness_line += f" v{harness.version}"
+    if harness.author:
+      harness_line += f" by {harness.author}"
+
+    thinking_status = "enabled" if agent.thinking_mode.value == "on" else "disabled"
+
+    motd_lines = [
+      f"Yoker v{__version__} - Using model: {agent.model}",
+      harness_line,
+      f"Thinking mode: {thinking_status} (use /think on|off to toggle)",
+    ]
+
+    agent_def = agent.definition
+    if agent_def is not None:
+      motd_lines.append(f"Agent: {agent_def.name} - {agent_def.description}")
+      if agent_def.source_path:
+        motd_lines.append(f"  Source: {agent_def.source_path}")
+    else:
+      motd_lines.append("Agent: (default)")
+
+    motd_lines.append("Type /help for available commands.")
+    motd_lines.append("Press Ctrl+D (or Ctrl+Z on Windows) to quit.")
+
+    self.console.print(Panel("\n".join(motd_lines), title="Yoker", expand=False))
+    self.console.print()
 
   async def shutdown(self, reason: str) -> None:
     """End interactive UI session.
@@ -456,8 +484,8 @@ class InteractiveUIHandler(BaseUIHandler):
 
       return " ".join(parts) if parts else str(arguments)
 
-    # Special formatting for web_search: show query
-    if tool_name == "web_search":
+    # Special formatting for websearch: show query
+    if tool_name == "websearch":
       query = arguments.get("query", "")
       if query:
         return str(query)

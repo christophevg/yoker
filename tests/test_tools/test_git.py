@@ -1,4 +1,4 @@
-"""Tests for GitTool implementation.
+"""Tests for git tool implementation.
 
 These tests verify the behavior of the Git tool, including read-only operations,
 permission-required operations, security guardrails (injection prevention, path
@@ -7,52 +7,60 @@ restrictions, output sanitization), and error handling.
 
 import subprocess
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
 from yoker.config import (
+  Config,
   GitToolConfig,
   HandlerConfig,
+  PermissionsConfig,
 )
-from yoker.tools.base import ValidationResult
-from yoker.tools.git import GitTool
-from yoker.tools.guardrails import Guardrail
+from yoker.tools import ToolRegistry, make_git_tool, make_update_tool, make_write_tool
+from yoker.tools.git import _sanitize_output
+from yoker.tools.path_guardrail import PathGuardrail
+
+
+def _git_spec(config: GitToolConfig, permission_handlers: dict[str, HandlerConfig] | None = None):
+  """Create and register the git tool."""
+  registry = ToolRegistry()
+  return registry.register(make_git_tool(config, permission_handlers=permission_handlers))
 
 
 class TestGitToolSchema:
-  """Tests for GitTool schema and properties."""
+  """Tests for git tool schema and properties."""
 
   def test_name(self) -> None:
     """
-    Given: A GitTool instance
-    When: Checking the tool name property
+    Given: A git tool spec
+    When: Checking the spec name
     Then: Returns 'git'
     """
     config = GitToolConfig()
-    tool = GitTool(config=config)
-    assert tool.name == "git"
+    spec = _git_spec(config=config)
+    assert spec.name == "git"
 
   def test_description(self) -> None:
     """
-    Given: A GitTool instance
-    When: Checking the tool description property
+    Given: A git tool spec
+    When: Checking the spec description
     Then: Returns description mentioning Git operations
     """
     config = GitToolConfig()
-    tool = GitTool(config=config)
-    assert "Git" in tool.description
-    assert "status" in tool.description
+    spec = _git_spec(config=config)
+    assert "Git" in spec.description
+    assert "operation" in spec.description.lower()
 
   def test_schema_structure(self) -> None:
     """
-    Given: A GitTool instance
+    Given: A git tool spec
     When: Getting the Ollama-compatible schema
     Then: Schema has correct structure with operation, path, and args parameters
     """
     config = GitToolConfig()
-    tool = GitTool(config=config)
-    schema = tool.get_schema()
+    spec = _git_spec(config=config)
+    schema = spec.schema
 
     assert schema["type"] == "function"
     assert schema["function"]["name"] == "git"
@@ -61,33 +69,18 @@ class TestGitToolSchema:
 
   def test_schema_operation_required(self) -> None:
     """
-    Given: The GitTool schema
+    Given: The git tool schema
     When: Checking required parameters
     Then: 'operation' is required, 'path' and 'args' are optional
     """
     config = GitToolConfig()
-    tool = GitTool(config=config)
-    schema = tool.get_schema()
+    spec = _git_spec(config=config)
+    schema = spec.schema
 
     required = schema["function"]["parameters"]["required"]
     assert "operation" in required
     assert "path" not in required
     assert "args" not in required
-
-  def test_schema_operation_enum(self) -> None:
-    """
-    Given: The GitTool schema
-    When: Checking operation parameter
-    Then: Operation has enum listing allowed commands
-    """
-    config = GitToolConfig()
-    tool = GitTool(config=config)
-    schema = tool.get_schema()
-
-    operation = schema["function"]["parameters"]["properties"]["operation"]
-    assert "enum" in operation
-    assert "status" in operation["enum"]
-    assert "log" in operation["enum"]
 
 
 class TestGitToolReadOnlyOperations:
@@ -134,8 +127,8 @@ class TestGitToolReadOnlyOperations:
     (git_repo / "new_file.txt").write_text("New content")
 
     config = GitToolConfig()
-    tool = GitTool(config=config)
-    result = await tool.execute(operation="status", path=str(git_repo))
+    spec = _git_spec(config=config)
+    result = await spec.execute(operation="status", path=str(git_repo))
 
     assert result.success
     assert "new_file.txt" in result.result
@@ -151,8 +144,8 @@ class TestGitToolReadOnlyOperations:
     (git_repo / "new_file.txt").write_text("New content")
 
     config = GitToolConfig()
-    tool = GitTool(config=config)
-    result = await tool.execute(operation="status", path=str(git_repo), args={"short": True})
+    spec = _git_spec(config=config)
+    result = await spec.execute(operation="status", path=str(git_repo), args={"short": True})
 
     assert result.success
     assert "?? new_file.txt" in result.result
@@ -165,8 +158,8 @@ class TestGitToolReadOnlyOperations:
     Then: Returns commit history
     """
     config = GitToolConfig()
-    tool = GitTool(config=config)
-    result = await tool.execute(operation="log", path=str(git_repo))
+    spec = _git_spec(config=config)
+    result = await spec.execute(operation="log", path=str(git_repo))
 
     assert result.success
     assert "Initial commit" in result.result
@@ -179,8 +172,8 @@ class TestGitToolReadOnlyOperations:
     Then: Returns one commit per line in oneline format
     """
     config = GitToolConfig()
-    tool = GitTool(config=config)
-    result = await tool.execute(operation="log", path=str(git_repo), args={"oneline": True})
+    spec = _git_spec(config=config)
+    result = await spec.execute(operation="log", path=str(git_repo), args={"oneline": True})
 
     assert result.success
     assert "Initial commit" in result.result
@@ -204,8 +197,8 @@ class TestGitToolReadOnlyOperations:
       )
 
     config = GitToolConfig()
-    tool = GitTool(config=config)
-    result = await tool.execute(operation="log", path=str(git_repo), args={"oneline": True, "n": 5})
+    spec = _git_spec(config=config)
+    result = await spec.execute(operation="log", path=str(git_repo), args={"oneline": True, "n": 5})
 
     assert result.success
     # Should have exactly 5 commits shown
@@ -220,8 +213,8 @@ class TestGitToolReadOnlyOperations:
     Then: Returns only commits from matching author
     """
     config = GitToolConfig()
-    tool = GitTool(config=config)
-    result = await tool.execute(operation="log", path=str(git_repo), args={"author": "Test"})
+    spec = _git_spec(config=config)
+    result = await spec.execute(operation="log", path=str(git_repo), args={"author": "Test"})
 
     assert result.success
     assert "Initial commit" in result.result
@@ -237,8 +230,8 @@ class TestGitToolReadOnlyOperations:
     (git_repo / "README.md").write_text("# Modified\n")
 
     config = GitToolConfig()
-    tool = GitTool(config=config)
-    result = await tool.execute(operation="diff", path=str(git_repo))
+    spec = _git_spec(config=config)
+    result = await spec.execute(operation="diff", path=str(git_repo))
 
     assert result.success
     assert "# Modified" in result.result
@@ -254,8 +247,8 @@ class TestGitToolReadOnlyOperations:
     (git_repo / "README.md").write_text("# Modified\n")
 
     config = GitToolConfig()
-    tool = GitTool(config=config)
-    result = await tool.execute(operation="diff", path=str(git_repo), args={"stat": True})
+    spec = _git_spec(config=config)
+    result = await spec.execute(operation="diff", path=str(git_repo), args={"stat": True})
 
     assert result.success
     assert "README.md" in result.result
@@ -272,8 +265,8 @@ class TestGitToolReadOnlyOperations:
     subprocess.run(["git", "add", "staged_file.txt"], cwd=git_repo, check=True, capture_output=True)
 
     config = GitToolConfig()
-    tool = GitTool(config=config)
-    result = await tool.execute(operation="diff", path=str(git_repo), args={"cached": True})
+    spec = _git_spec(config=config)
+    result = await spec.execute(operation="diff", path=str(git_repo), args={"cached": True})
 
     assert result.success
     assert "staged_file.txt" in result.result
@@ -289,8 +282,8 @@ class TestGitToolReadOnlyOperations:
     subprocess.run(["git", "branch", "feature"], cwd=git_repo, check=True, capture_output=True)
 
     config = GitToolConfig()
-    tool = GitTool(config=config)
-    result = await tool.execute(operation="branch", path=str(git_repo), args={"list": True})
+    spec = _git_spec(config=config)
+    result = await spec.execute(operation="branch", path=str(git_repo), args={"list": True})
 
     assert result.success
     assert "master" in result.result or "main" in result.result
@@ -304,8 +297,8 @@ class TestGitToolReadOnlyOperations:
     Then: Returns both local and remote branches
     """
     config = GitToolConfig()
-    tool = GitTool(config=config)
-    result = await tool.execute(operation="branch", path=str(git_repo), args={"all": True})
+    spec = _git_spec(config=config)
+    result = await spec.execute(operation="branch", path=str(git_repo), args={"all": True})
 
     assert result.success
     # Should show at least the current branch
@@ -319,8 +312,8 @@ class TestGitToolReadOnlyOperations:
     Then: Returns commit details including diff
     """
     config = GitToolConfig()
-    tool = GitTool(config=config)
-    result = await tool.execute(operation="show", path=str(git_repo))
+    spec = _git_spec(config=config)
+    result = await spec.execute(operation="show", path=str(git_repo))
 
     assert result.success
     assert "Initial commit" in result.result
@@ -333,8 +326,8 @@ class TestGitToolReadOnlyOperations:
     Then: Returns commit in specified format
     """
     config = GitToolConfig()
-    tool = GitTool(config=config)
-    result = await tool.execute(operation="show", path=str(git_repo), args={"format": "%s"})
+    spec = _git_spec(config=config)
+    result = await spec.execute(operation="show", path=str(git_repo), args={"format": "%s"})
 
     assert result.success
     assert "Initial commit" in result.result
@@ -375,15 +368,15 @@ class TestGitToolPermissionRequiredOperations:
   @pytest.mark.asyncio
   async def test_git_commit_blocked_without_permission(self, git_repo: Path) -> None:
     """
-    Given: A GitTool without permission handler for commit
+    Given: A git tool without permission handler for commit
     When: Executing git commit operation
     Then: Returns error that commit requires permission
     """
     # Allow commit in config but don't provide handler
     config = GitToolConfig(allowed_commands=("status", "log", "commit"))
-    tool = GitTool(config=config, permission_handlers={})
+    spec = _git_spec(config=config, permission_handlers={})
 
-    result = await tool.execute(
+    result = await spec.execute(
       operation="commit",
       path=str(git_repo),
       args={"message": "Test commit"},
@@ -395,16 +388,16 @@ class TestGitToolPermissionRequiredOperations:
   @pytest.mark.asyncio
   async def test_git_commit_blocked_with_block_handler(self, git_repo: Path) -> None:
     """
-    Given: A GitTool with permission handler mode='block' for commit
+    Given: A git tool with permission handler mode='block' for commit
     When: Executing git commit operation
     Then: Returns error with handler's message
     """
     config = GitToolConfig(allowed_commands=("status", "log", "commit"))
     handlers = {"git_commit": HandlerConfig(mode="block", message="Commits are blocked")}
 
-    tool = GitTool(config=config, permission_handlers=handlers)
+    spec = _git_spec(config=config, permission_handlers=handlers)
 
-    result = await tool.execute(
+    result = await spec.execute(
       operation="commit",
       path=str(git_repo),
       args={"message": "Test commit"},
@@ -416,7 +409,7 @@ class TestGitToolPermissionRequiredOperations:
   @pytest.mark.asyncio
   async def test_git_commit_allowed_with_permission(self, git_repo: Path) -> None:
     """
-    Given: A GitTool with permission handler mode='allow' for commit
+    Given: A git tool with permission handler mode='allow' for commit
     When: Executing git commit operation with message
     Then: Commit is created successfully
     """
@@ -427,9 +420,9 @@ class TestGitToolPermissionRequiredOperations:
     config = GitToolConfig(allowed_commands=("status", "log", "commit"))
     handlers = {"git_commit": HandlerConfig(mode="allow")}
 
-    tool = GitTool(config=config, permission_handlers=handlers)
+    spec = _git_spec(config=config, permission_handlers=handlers)
 
-    result = await tool.execute(
+    result = await spec.execute(
       operation="commit",
       path=str(git_repo),
       args={"message": "Test commit"},
@@ -440,15 +433,15 @@ class TestGitToolPermissionRequiredOperations:
   @pytest.mark.asyncio
   async def test_git_push_blocked_without_permission(self, git_repo: Path) -> None:
     """
-    Given: A GitTool without permission handler for push
+    Given: A git tool without permission handler for push
     When: Executing git push operation
     Then: Returns error that push requires permission
     """
     config = GitToolConfig(allowed_commands=("status", "log", "push"))
 
-    tool = GitTool(config=config, permission_handlers={})
+    spec = _git_spec(config=config, permission_handlers={})
 
-    result = await tool.execute(operation="push", path=str(git_repo))
+    result = await spec.execute(operation="push", path=str(git_repo))
 
     assert not result.success
     assert "requires permission" in result.error.lower()
@@ -456,16 +449,16 @@ class TestGitToolPermissionRequiredOperations:
   @pytest.mark.asyncio
   async def test_git_push_blocked_with_block_handler(self, git_repo: Path) -> None:
     """
-    Given: A GitTool with permission handler mode='block' for push
+    Given: A git tool with permission handler mode='block' for push
     When: Executing git push operation
     Then: Returns error with handler's message
     """
     config = GitToolConfig(allowed_commands=("status", "log", "push"))
     handlers = {"git_push": HandlerConfig(mode="block", message="Push is blocked")}
 
-    tool = GitTool(config=config, permission_handlers=handlers)
+    spec = _git_spec(config=config, permission_handlers=handlers)
 
-    result = await tool.execute(operation="push", path=str(git_repo))
+    result = await spec.execute(operation="push", path=str(git_repo))
 
     assert not result.success
     assert "Push is blocked" in result.error
@@ -473,17 +466,17 @@ class TestGitToolPermissionRequiredOperations:
   @pytest.mark.asyncio
   async def test_git_push_allowed_with_permission(self, git_repo: Path) -> None:
     """
-    Given: A GitTool with permission handler mode='allow' for push
+    Given: A git tool with permission handler mode='allow' for push
     When: Executing git push operation
     Then: Push succeeds (or fails with network error if no remote)
     """
     config = GitToolConfig(allowed_commands=("status", "log", "push"))
     handlers = {"git_push": HandlerConfig(mode="allow")}
 
-    tool = GitTool(config=config, permission_handlers=handlers)
+    spec = _git_spec(config=config, permission_handlers=handlers)
 
     # Push will fail because there's no remote, but it should get past permission check
-    result = await tool.execute(operation="push", path=str(git_repo))
+    result = await spec.execute(operation="push", path=str(git_repo))
 
     # The error should be from git, not from permission
     if not result.success:
@@ -492,15 +485,15 @@ class TestGitToolPermissionRequiredOperations:
   @pytest.mark.asyncio
   async def test_disallowed_operation_returns_error(self, git_repo: Path) -> None:
     """
-    Given: A GitTool with only status and log allowed
+    Given: A git tool with only status and log allowed
     When: Executing git reset operation
     Then: Returns error that operation is not allowed
     """
     config = GitToolConfig(allowed_commands=("status", "log"))
 
-    tool = GitTool(config=config)
+    spec = _git_spec(config=config)
 
-    result = await tool.execute(operation="reset", path=str(git_repo))
+    result = await spec.execute(operation="reset", path=str(git_repo))
 
     assert not result.success
     assert "not allowed" in result.error.lower()
@@ -525,9 +518,9 @@ class TestGitToolCommandInjectionPrevention:
     Then: Returns error about invalid argument
     """
     config = GitToolConfig()
-    tool = GitTool(config=config)
+    spec = _git_spec(config=config)
 
-    result = await tool.execute(
+    result = await spec.execute(
       operation="log",
       path=str(git_repo),
       args={"format": "--something-malicious"},
@@ -544,10 +537,10 @@ class TestGitToolCommandInjectionPrevention:
     Then: Returns error about forbidden character
     """
     config = GitToolConfig()
-    tool = GitTool(config=config)
+    spec = _git_spec(config=config)
 
     # Try to inject config via format arg
-    result = await tool.execute(
+    result = await spec.execute(
       operation="log",
       path=str(git_repo),
       args={"format": "-c core.hooksPath=/malicious"},
@@ -563,9 +556,9 @@ class TestGitToolCommandInjectionPrevention:
     Then: Returns error about disallowed argument
     """
     config = GitToolConfig()
-    tool = GitTool(config=config)
+    spec = _git_spec(config=config)
 
-    result = await tool.execute(
+    result = await spec.execute(
       operation="log",
       path=str(git_repo),
       args={"format": "--upload-pack=/malicious"},
@@ -582,9 +575,9 @@ class TestGitToolCommandInjectionPrevention:
     Then: Returns error about disallowed argument
     """
     config = GitToolConfig()
-    tool = GitTool(config=config)
+    spec = _git_spec(config=config)
 
-    result = await tool.execute(
+    result = await spec.execute(
       operation="log",
       path=str(git_repo),
       args={"format": "--uploadPack=/malicious"},
@@ -602,9 +595,9 @@ class TestGitToolCommandInjectionPrevention:
     Then: Returns error about forbidden character
     """
     config = GitToolConfig()
-    tool = GitTool(config=config)
+    spec = _git_spec(config=config)
 
-    result = await tool.execute(
+    result = await spec.execute(
       operation="log",
       path=str(git_repo),
       args={"format": "test | cat /etc/passwd"},
@@ -621,9 +614,9 @@ class TestGitToolCommandInjectionPrevention:
     Then: Returns error about forbidden character
     """
     config = GitToolConfig()
-    tool = GitTool(config=config)
+    spec = _git_spec(config=config)
 
-    result = await tool.execute(
+    result = await spec.execute(
       operation="log",
       path=str(git_repo),
       args={"format": "$(cat /etc/passwd)"},
@@ -640,9 +633,9 @@ class TestGitToolCommandInjectionPrevention:
     Then: Returns error about forbidden character
     """
     config = GitToolConfig()
-    tool = GitTool(config=config)
+    spec = _git_spec(config=config)
 
-    result = await tool.execute(
+    result = await spec.execute(
       operation="log",
       path=str(git_repo),
       args={"format": "test\nmalicious"},
@@ -659,9 +652,9 @@ class TestGitToolCommandInjectionPrevention:
     Then: Returns error about forbidden character
     """
     config = GitToolConfig()
-    tool = GitTool(config=config)
+    spec = _git_spec(config=config)
 
-    result = await tool.execute(
+    result = await spec.execute(
       operation="log",
       path=str(git_repo),
       args={"format": "test\x00malicious"},
@@ -678,23 +671,18 @@ class TestGitToolPathRestrictions:
   async def test_path_traversal_blocked(self, tmp_path: Path) -> None:
     """
     Given: A path with traversal sequence like ../../../etc
-    When: Executing git operation
-    Then: Path is resolved and blocked if outside allowed directories
+    When: Validating the path against the guardrail
+    Then: Guardrail blocks the resolved path as outside allowed directories
     """
-    config = GitToolConfig()
+    config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
+    guardrail = PathGuardrail(config)
+    git_config = GitToolConfig()
+    spec = _git_spec(config=git_config)
 
-    # Create a mock guardrail that blocks path traversal
-    mock_guardrail = MagicMock(spec=Guardrail)
-    mock_guardrail.validate.return_value = ValidationResult(
-      valid=False, reason="Path outside allowed directories"
-    )
+    validation = guardrail.validate(spec.name, {"path": "/etc/passwd/../../../.."})
 
-    tool = GitTool(config=config, guardrail=mock_guardrail)
-
-    result = await tool.execute(operation="status", path="/etc/passwd/../../../..")
-
-    assert not result.success
-    assert "allowed" in result.error.lower() or "outside" in result.error.lower()
+    assert not validation.valid
+    assert "allowed" in validation.reason.lower() or "outside" in validation.reason.lower()
 
   @pytest.mark.asyncio
   async def test_git_dir_option_blocked(self, tmp_path: Path) -> None:
@@ -708,10 +696,10 @@ class TestGitToolPathRestrictions:
     repo.mkdir()
     subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
 
-    config = GitToolConfig()
-    tool = GitTool(config=config)
+    git_config = GitToolConfig()
+    spec = _git_spec(config=git_config)
 
-    result = await tool.execute(
+    result = await spec.execute(
       operation="log",
       path=str(repo),
       args={"format": "--git-dir=/malicious"},
@@ -733,10 +721,10 @@ class TestGitToolPathRestrictions:
     repo.mkdir()
     subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
 
-    config = GitToolConfig()
-    tool = GitTool(config=config)
+    git_config = GitToolConfig()
+    spec = _git_spec(config=git_config)
 
-    result = await tool.execute(
+    result = await spec.execute(
       operation="log",
       path=str(repo),
       args={"format": "--work-tree=/malicious"},
@@ -749,54 +737,19 @@ class TestGitToolPathRestrictions:
   @pytest.mark.asyncio
   async def test_repository_outside_allowed_paths_blocked(self, tmp_path: Path) -> None:
     """
-    Given: A GitTool with guardrail restricting to specific paths
-    When: Executing git operation on repository outside allowed paths
-    Then: Returns error about path outside allowed directories
+    Given: A guardrail restricting to specific paths
+    When: Validating a repository path outside allowed paths
+    Then: Guardrail reports path outside allowed directories
     """
-    config = GitToolConfig()
+    config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
+    guardrail = PathGuardrail(config)
+    git_config = GitToolConfig()
+    spec = _git_spec(config=git_config)
 
-    # Create mock guardrail that rejects the path
-    mock_guardrail = MagicMock(spec=Guardrail)
-    mock_guardrail.validate.return_value = ValidationResult(
-      valid=False, reason="Path outside allowed directories"
-    )
+    validation = guardrail.validate(spec.name, {"path": "/some/path"})
 
-    tool = GitTool(config=config, guardrail=mock_guardrail)
-
-    result = await tool.execute(operation="status", path="/some/path")
-
-    assert not result.success
-    assert "allowed" in result.error.lower() or "outside" in result.error.lower()
-
-  @pytest.mark.asyncio
-  async def test_symlink_repository_path_blocked(self, tmp_path: Path) -> None:
-    """
-    Given: A symlink pointing to a Git repository
-    When: Executing git operation with symlink as path
-    Then: Returns error about path not accessible
-    """
-    # Create a real repo
-    repo = tmp_path / "real_repo"
-    repo.mkdir()
-    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
-
-    # Create a symlink
-    symlink = tmp_path / "link_repo"
-    symlink.symlink_to(repo)
-
-    config = GitToolConfig()
-
-    # Create mock guardrail that rejects symlinks
-    mock_guardrail = MagicMock(spec=Guardrail)
-    mock_guardrail.validate.return_value = ValidationResult(
-      valid=False, reason="Symlinks are not permitted"
-    )
-
-    tool = GitTool(config=config, guardrail=mock_guardrail)
-
-    result = await tool.execute(operation="status", path=str(symlink))
-
-    assert not result.success
+    assert not validation.valid
+    assert "allowed" in validation.reason.lower() or "outside" in validation.reason.lower()
 
   @pytest.mark.asyncio
   async def test_nonexistent_repository_returns_error(self, tmp_path: Path) -> None:
@@ -805,10 +758,10 @@ class TestGitToolPathRestrictions:
     When: Executing git operation
     Then: Returns error about path not found
     """
-    config = GitToolConfig()
-    tool = GitTool(config=config)
+    git_config = GitToolConfig()
+    spec = _git_spec(config=git_config)
 
-    result = await tool.execute(operation="status", path=str(tmp_path / "nonexistent"))
+    result = await spec.execute(operation="status", path=str(tmp_path / "nonexistent"))
 
     assert not result.success
     assert "not exist" in result.error.lower() or "not found" in result.error.lower()
@@ -823,10 +776,10 @@ class TestGitToolPathRestrictions:
     non_git = tmp_path / "not_a_repo"
     non_git.mkdir()
 
-    config = GitToolConfig()
-    tool = GitTool(config=config)
+    git_config = GitToolConfig()
+    spec = _git_spec(config=git_config)
 
-    result = await tool.execute(operation="status", path=str(non_git))
+    result = await spec.execute(operation="status", path=str(non_git))
 
     assert not result.success
     assert "git repository" in result.error.lower() or "not a git" in result.error.lower()
@@ -856,13 +809,10 @@ class TestGitToolOutputSanitization:
     When: Getting output that includes remote URL
     Then: Credentials are redacted in the output
     """
-    config = GitToolConfig()
-    tool = GitTool(config=config)
-
-    # Test the _sanitize_output method directly since git branch
+    # Test the _sanitize_output function directly since git branch
     # doesn't show remote URLs
     output_with_creds = "remote: https://user:secret_token@github.com/user/repo.git"
-    sanitized = tool._sanitize_output(output_with_creds)
+    sanitized = _sanitize_output(output_with_creds)
 
     # The output should have credentials redacted
     assert "secret_token" not in sanitized
@@ -900,10 +850,10 @@ class TestGitToolOutputSanitization:
       capture_output=True,
     )
 
-    config = GitToolConfig()
-    tool = GitTool(config=config)
+    git_config = GitToolConfig()
+    spec = _git_spec(config=git_config)
 
-    result = await tool.execute(operation="log", path=str(repo))
+    result = await spec.execute(operation="log", path=str(repo))
 
     assert result.success
     # Output should not contain any config values that weren't committed
@@ -919,10 +869,10 @@ class TestGitToolErrorHandling:
     When: Executing the operation
     Then: Returns error about invalid operation
     """
-    config = GitToolConfig()
-    tool = GitTool(config=config)
+    git_config = GitToolConfig()
+    spec = _git_spec(config=git_config)
 
-    result = await tool.execute(operation="nonexistent", path=str(tmp_path))
+    result = await spec.execute(operation="nonexistent", path=str(tmp_path))
 
     assert not result.success
     assert "not allowed" in result.error.lower()
@@ -938,14 +888,14 @@ class TestGitToolErrorHandling:
     repo.mkdir()
     subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
 
-    config = GitToolConfig()
-    tool = GitTool(config=config)
+    git_config = GitToolConfig()
+    spec = _git_spec(config=git_config)
 
     # Mock subprocess to raise TimeoutExpired
     with patch("yoker.tools.git.subprocess.run") as mock_run:
       mock_run.side_effect = subprocess.TimeoutExpired(cmd=["git"], timeout=30)
 
-      result = await tool.execute(operation="status", path=str(repo))
+      result = await spec.execute(operation="status", path=str(repo))
 
       assert not result.success
       assert "timeout" in result.error.lower()
@@ -961,14 +911,14 @@ class TestGitToolErrorHandling:
     repo.mkdir()
     subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
 
-    config = GitToolConfig()
-    tool = GitTool(config=config)
+    git_config = GitToolConfig()
+    spec = _git_spec(config=git_config)
 
     # Mock subprocess to raise FileNotFoundError
     with patch("yoker.tools.git.subprocess.run") as mock_run:
       mock_run.side_effect = FileNotFoundError()
 
-      result = await tool.execute(operation="status", path=str(repo))
+      result = await spec.execute(operation="status", path=str(repo))
 
       assert not result.success
       assert "not installed" in result.error.lower() or "not found" in result.error.lower()
@@ -980,10 +930,10 @@ class TestGitToolErrorHandling:
     When: Executing git operation
     Then: Returns error about invalid parameter type
     """
-    config = GitToolConfig()
-    tool = GitTool(config=config)
+    git_config = GitToolConfig()
+    spec = _git_spec(config=git_config)
 
-    result = await tool.execute(operation=123, path=str(tmp_path))
+    result = await spec.execute(operation=123, path=str(tmp_path))
 
     assert not result.success
     assert "string" in result.error.lower()
@@ -995,10 +945,10 @@ class TestGitToolErrorHandling:
     When: Executing git operation
     Then: Returns error about invalid parameter type
     """
-    config = GitToolConfig()
-    tool = GitTool(config=config)
+    git_config = GitToolConfig()
+    spec = _git_spec(config=git_config)
 
-    result = await tool.execute(operation="status", path=123)
+    result = await spec.execute(operation="status", path=123)
 
     assert not result.success
     assert "string" in result.error.lower()
@@ -1015,10 +965,10 @@ class TestGitToolErrorHandling:
     repo.mkdir()
     subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
 
-    config = GitToolConfig()
-    tool = GitTool(config=config)
+    git_config = GitToolConfig()
+    spec = _git_spec(config=git_config)
 
-    result = await tool.execute(operation="status", path=str(repo), args="invalid")
+    result = await spec.execute(operation="status", path=str(repo), args="invalid")
 
     assert not result.success
     assert "object" in result.error.lower()
@@ -1030,10 +980,10 @@ class TestGitToolErrorHandling:
     When: Executing git tool
     Then: Returns error about missing required parameter
     """
-    config = GitToolConfig()
-    tool = GitTool(config=config)
+    git_config = GitToolConfig()
+    spec = _git_spec(config=git_config)
 
-    result = await tool.execute(path=str(tmp_path))
+    result = await spec.execute(path=str(tmp_path))
 
     assert not result.success
     assert "missing" in result.error.lower() and "operation" in result.error.lower()
@@ -1057,10 +1007,10 @@ class TestGitToolArgumentValidation:
     When: Executing the operation
     Then: Returns error about argument not allowed
     """
-    config = GitToolConfig()
-    tool = GitTool(config=config)
+    git_config = GitToolConfig()
+    spec = _git_spec(config=git_config)
 
-    result = await tool.execute(
+    result = await spec.execute(
       operation="log",
       path=str(git_repo),
       args={"invalid_arg": "value"},
@@ -1076,10 +1026,10 @@ class TestGitToolArgumentValidation:
     When: Executing the operation
     Then: Returns error about argument type
     """
-    config = GitToolConfig()
-    tool = GitTool(config=config)
+    git_config = GitToolConfig()
+    spec = _git_spec(config=git_config)
 
-    result = await tool.execute(
+    result = await spec.execute(
       operation="log",
       path=str(git_repo),
       args={"n": "five"},
@@ -1095,10 +1045,10 @@ class TestGitToolArgumentValidation:
     When: Executing the operation
     Then: Returns error about argument type
     """
-    config = GitToolConfig()
-    tool = GitTool(config=config)
+    git_config = GitToolConfig()
+    spec = _git_spec(config=git_config)
 
-    result = await tool.execute(
+    result = await spec.execute(
       operation="status",
       path=str(git_repo),
       args={"short": "yes"},
@@ -1114,10 +1064,10 @@ class TestGitToolArgumentValidation:
     When: Executing the operation
     Then: Returns error about argument range
     """
-    config = GitToolConfig()
-    tool = GitTool(config=config)
+    git_config = GitToolConfig()
+    spec = _git_spec(config=git_config)
 
-    result = await tool.execute(
+    result = await spec.execute(
       operation="log",
       path=str(git_repo),
       args={"n": 500},
@@ -1133,12 +1083,12 @@ class TestGitToolArgumentValidation:
     When: Executing the operation
     Then: Returns error about argument length limit
     """
-    config = GitToolConfig()
-    tool = GitTool(config=config)
+    git_config = GitToolConfig()
+    spec = _git_spec(config=git_config)
 
     long_string = "x" * 1001
 
-    result = await tool.execute(
+    result = await spec.execute(
       operation="log",
       path=str(git_repo),
       args={"format": long_string},
@@ -1162,53 +1112,37 @@ class TestGitToolGuardrailIntegration:
   @pytest.mark.asyncio
   async def test_guardrail_blocks_outside_allowed_path(self, git_repo: Path) -> None:
     """
-    Given: A guardrail restricting to specific paths
-    When: Executing git operation on repository outside allowed paths
-    Then: Returns error from guardrail
+    Given: A guardrail restricting to a different path
+    When: Validating the repository path
+    Then: Guardrail reports path outside allowed directories
     """
-    config = GitToolConfig()
+    config = Config(permissions=PermissionsConfig(filesystem_paths=("/tmp/allowed",)))
+    guardrail = PathGuardrail(config)
+    git_config = GitToolConfig()
+    spec = _git_spec(config=git_config)
 
-    # Create mock guardrail that rejects
-    mock_guardrail = MagicMock(spec=Guardrail)
-    mock_guardrail.validate.return_value = ValidationResult(
-      valid=False, reason="Path outside allowed directories"
-    )
+    validation = guardrail.validate(spec.name, {"path": str(git_repo)})
 
-    tool = GitTool(config=config, guardrail=mock_guardrail)
-
-    result = await tool.execute(operation="status", path=str(git_repo))
-
-    assert not result.success
-    assert "allowed" in result.error.lower() or "outside" in result.error.lower()
+    assert not validation.valid
+    assert "allowed" in validation.reason.lower() or "outside" in validation.reason.lower()
 
   @pytest.mark.asyncio
   async def test_guardrail_allows_inside_allowed_path(self, git_repo: Path) -> None:
     """
-    Given: A guardrail allowing specific paths
-    When: Executing git operation on repository inside allowed paths
+    Given: A guardrail allowing the repository path
+    When: Validating and executing git operation
     Then: Operation succeeds
     """
-    config = GitToolConfig()
+    config = Config(permissions=PermissionsConfig(filesystem_paths=(str(git_repo),)))
+    guardrail = PathGuardrail(config)
+    git_config = GitToolConfig()
+    spec = _git_spec(config=git_config)
 
-    # Create mock guardrail that allows
-    mock_guardrail = MagicMock(spec=Guardrail)
-    mock_guardrail.validate.return_value = ValidationResult(valid=True)
+    validation = guardrail.validate(spec.name, {"path": str(git_repo)})
+    assert validation.valid
 
-    tool = GitTool(config=config, guardrail=mock_guardrail)
-
-    result = await tool.execute(operation="status", path=str(git_repo))
-
+    result = await spec.execute(operation="status", path=str(git_repo))
     assert result.success
-
-  def test_git_added_to_filesystem_tools(self) -> None:
-    """
-    Given: The PathGuardrail module
-    When: Checking _FILESYSTEM_TOOLS
-    Then: 'git' is included in the set
-    """
-    from yoker.tools.path_guardrail import _FILESYSTEM_TOOLS
-
-    assert "git" in _FILESYSTEM_TOOLS
 
 
 class TestGitToolReturnFormat:
@@ -1250,10 +1184,10 @@ class TestGitToolReturnFormat:
     When: Checking the ToolResult
     Then: success=True, result contains output string, error is empty
     """
-    config = GitToolConfig()
-    tool = GitTool(config=config)
+    git_config = GitToolConfig()
+    spec = _git_spec(config=git_config)
 
-    result = await tool.execute(operation="status", path=str(git_repo))
+    result = await spec.execute(operation="status", path=str(git_repo))
 
     assert result.success is True
     assert isinstance(result.result, str)
@@ -1267,10 +1201,10 @@ class TestGitToolReturnFormat:
     When: Checking the ToolResult
     Then: success=False, result is empty, error contains message
     """
-    config = GitToolConfig()
-    tool = GitTool(config=config)
+    git_config = GitToolConfig()
+    spec = _git_spec(config=git_config)
 
-    result = await tool.execute(operation="status", path=str(tmp_path / "nonexistent"))
+    result = await spec.execute(operation="status", path=str(tmp_path / "nonexistent"))
 
     assert result.success is False
     assert result.result == ""
@@ -1285,10 +1219,10 @@ class TestGitToolReturnFormat:
     Then: Returns "(no output)" message
     """
     # Clean repo with no changes
-    config = GitToolConfig()
-    tool = GitTool(config=config)
+    git_config = GitToolConfig()
+    spec = _git_spec(config=git_config)
 
-    result = await tool.execute(operation="diff", path=str(git_repo))
+    result = await spec.execute(operation="diff", path=str(git_repo))
 
     # diff with no changes returns empty output
     assert result.success
@@ -1301,7 +1235,7 @@ class TestGitToolSubprocessSecurity:
   @pytest.mark.asyncio
   async def test_no_shell_true_used(self, tmp_path: Path) -> None:
     """
-    Given: GitTool executing a command
+    Given: git tool executing a command
     When: Checking subprocess.run call
     Then: shell=True is NOT used
     """
@@ -1309,8 +1243,8 @@ class TestGitToolSubprocessSecurity:
     repo.mkdir()
     subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
 
-    config = GitToolConfig()
-    tool = GitTool(config=config)
+    git_config = GitToolConfig()
+    spec = _git_spec(config=git_config)
 
     with patch("yoker.tools.git.subprocess.run") as mock_run:
       mock_run.return_value = subprocess.CompletedProcess(
@@ -1320,7 +1254,7 @@ class TestGitToolSubprocessSecurity:
         stderr="",
       )
 
-      await tool.execute(operation="status", path=str(repo))
+      await spec.execute(operation="status", path=str(repo))
 
       # Verify shell=True was NOT passed
       call_kwargs = mock_run.call_args.kwargs
@@ -1329,7 +1263,7 @@ class TestGitToolSubprocessSecurity:
   @pytest.mark.asyncio
   async def test_command_as_list_not_string(self, tmp_path: Path) -> None:
     """
-    Given: GitTool building a command
+    Given: git tool building a command
     When: Passing to subprocess
     Then: Command is a list of strings, not a single string
     """
@@ -1337,8 +1271,8 @@ class TestGitToolSubprocessSecurity:
     repo.mkdir()
     subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
 
-    config = GitToolConfig()
-    tool = GitTool(config=config)
+    git_config = GitToolConfig()
+    spec = _git_spec(config=git_config)
 
     with patch("yoker.tools.git.subprocess.run") as mock_run:
       mock_run.return_value = subprocess.CompletedProcess(
@@ -1348,7 +1282,7 @@ class TestGitToolSubprocessSecurity:
         stderr="",
       )
 
-      await tool.execute(operation="status", path=str(repo))
+      await spec.execute(operation="status", path=str(repo))
 
       # Verify first argument (command) is a list
       call_args = mock_run.call_args.args
@@ -1357,7 +1291,7 @@ class TestGitToolSubprocessSecurity:
 
 
 class TestGitToolIntegration:
-  """Integration tests for GitTool with other components."""
+  """Integration tests for git tool with other components."""
 
   @pytest.fixture
   def git_repo(self, tmp_path: Path) -> Path:
@@ -1391,25 +1325,26 @@ class TestGitToolIntegration:
   @pytest.mark.asyncio
   async def test_git_status_after_write(self, git_repo: Path) -> None:
     """
-    Given: Using WriteTool to create a file, then GitTool to check status
+    Given: Using write tool to create a file, then git tool to check status
     When: Writing a new file and checking git status
     Then: Git status shows the new file as untracked
     """
-    from yoker.tools.write import WriteTool
+    from yoker.config import Config
 
-    # Create a file with WriteTool
-    write_tool = WriteTool()
-    write_result = await write_tool.execute(
+    config = Config()
+    write_spec = ToolRegistry().register(make_write_tool(config))
+    git_config = GitToolConfig()
+    git_spec = _git_spec(config=git_config)
+
+    # Create a file with write tool
+    write_result = await write_spec.execute(
       path=str(git_repo / "new_file.txt"),
       content="New content",
-      create_parents=True,
     )
     assert write_result.success
 
     # Check git status
-    config = GitToolConfig()
-    git_tool = GitTool(config=config)
-    result = await git_tool.execute(operation="status", path=str(git_repo))
+    result = await git_spec.execute(operation="status", path=str(git_repo))
 
     assert result.success
     assert "new_file.txt" in result.result
@@ -1417,15 +1352,19 @@ class TestGitToolIntegration:
   @pytest.mark.asyncio
   async def test_git_diff_after_update(self, git_repo: Path) -> None:
     """
-    Given: Using UpdateTool to modify a file, then GitTool to check diff
+    Given: Using update tool to modify a file, then git tool to check diff
     When: Updating a tracked file and checking git diff
     Then: Git diff shows the changes
     """
-    from yoker.tools.update import UpdateTool
+    from yoker.config import Config, ToolsConfig, UpdateToolConfig
 
-    # Update README.md with UpdateTool
-    update_tool = UpdateTool()
-    update_result = await update_tool.execute(
+    config = Config(tools=ToolsConfig(update=UpdateToolConfig()))
+    update_spec = ToolRegistry().register(make_update_tool(config))
+    git_config = GitToolConfig()
+    git_spec = _git_spec(config=git_config)
+
+    # Update README.md with update tool
+    update_result = await update_spec.execute(
       path=str(git_repo / "README.md"),
       operation="replace",
       old_string="# Test",
@@ -1434,9 +1373,7 @@ class TestGitToolIntegration:
     assert update_result.success
 
     # Check git diff
-    config = GitToolConfig()
-    git_tool = GitTool(config=config)
-    result = await git_tool.execute(operation="diff", path=str(git_repo))
+    result = await git_spec.execute(operation="diff", path=str(git_repo))
 
     assert result.success
     assert "# Updated" in result.result

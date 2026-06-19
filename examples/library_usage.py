@@ -41,7 +41,7 @@ async def main() -> None:
   print(f"Yoker v{__version__}")
   print(f"Model: {agent.model}")
   print(f"Thinking mode: {agent.thinking_mode.value}")
-  print(f"Tools: {', '.join(sorted(agent.tool_registry.names))}")
+  print(f"Tools: {', '.join(sorted(agent.tools.names))}")
 
   # Register a custom event handler to observe the agent's activity.
   agent.add_event_handler(log_events)

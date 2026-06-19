@@ -421,7 +421,9 @@ Create a `yoker.toml` file in your project directory:
 ```toml
 [harness]
 name = "my-yoke"
-log_level = "INFO"
+
+[logging]
+level = "INFO"
 
 [backend]
 provider = "ollama"

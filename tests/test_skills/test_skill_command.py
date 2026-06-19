@@ -1,238 +1,135 @@
-"""Tests for skill slash command."""
+"""Tests for dynamic skill invocation slash commands."""
+
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from yoker.commands import CommandRegistry, create_skill_commands
 from yoker.skills import Skill, SkillRegistry
+from yoker.ui.commands import create_default_registry
+from yoker.ui.commands.skill_invoke import handle
 
 
-class TestSkillCommand:
-  """Test skill command creation and invocation."""
+class TestSkillInvocation:
+  """Test dynamic skill invocation via the UI command registry."""
 
-  def test_create_skill_commands_empty_registry(self):
-    """Test creating commands from empty registry."""
+  def _make_agent(self, skills=()):
     registry = SkillRegistry()
-    commands = create_skill_commands(registry, lambda: registry)
-    assert commands == []
+    for skill in skills:
+      registry.register(skill)
 
-  def test_create_skill_commands_single_skill(self):
-    """Test creating commands from registry with one skill."""
-    registry = SkillRegistry()
-    skill = Skill(
-      name="commit",
-      description="Guide git commits",
-      content="Instructions for committing...",
-    )
-    registry.register(skill)
+    agent = Mock()
+    agent.skill_registry = registry
+    agent.inject_skill_context = Mock()
+    agent.process = AsyncMock()
+    return agent, registry
 
-    commands = create_skill_commands(registry, lambda: registry)
-    assert len(commands) == 1
-    assert commands[0].name == "commit"
-    assert commands[0].description == "Guide git commits"
+  @pytest.mark.asyncio
+  async def test_dynamic_skill_invocation_empty_registry(self):
+    """Unknown skill command returns an error when registry is empty."""
+    agent, _ = self._make_agent()
+    registry = create_default_registry()
 
-  def test_create_skill_commands_multiple_skills(self):
-    """Test creating commands from registry with multiple skills."""
-    registry = SkillRegistry()
-
-    skill1 = Skill(
-      name="commit",
-      description="Guide git commits",
-      content="Commit instructions...",
-    )
-    skill2 = Skill(
-      name="review",
-      description="Review code changes",
-      content="Review instructions...",
-    )
-    skill3 = Skill(
-      name="test",
-      description="Run tests",
-      content="Test instructions...",
-    )
-
-    registry.register(skill1)
-    registry.register(skill2)
-    registry.register(skill3)
-
-    commands = create_skill_commands(registry, lambda: registry)
-    assert len(commands) == 3
-    names = {cmd.name for cmd in commands}
-    assert names == {"commit", "review", "test"}
-
-  def test_skill_command_handler_no_args(self):
-    """Test skill command handler with no arguments."""
-    registry = SkillRegistry()
-    skill = Skill(
-      name="commit",
-      description="Guide git commits",
-      content="# Commit Guide\n\nSteps for committing...",
-    )
-    registry.register(skill)
-
-    commands = create_skill_commands(registry, lambda: registry)
-    command = commands[0]
-
-    result = command.handler([])
-    assert "commit" in result
-    assert "Commit Guide" in result
-    assert "Steps for committing" in result
-
-  def test_skill_command_handler_with_args(self):
-    """Test skill command handler with arguments."""
-    registry = SkillRegistry()
-    skill = Skill(
-      name="commit",
-      description="Guide git commits",
-      content="# Commit Guide\n\nSteps for committing...",
-    )
-    registry.register(skill)
-
-    commands = create_skill_commands(registry, lambda: registry)
-    command = commands[0]
-
-    result = command.handler(["fix", "authentication", "bug"])
-    assert "<command-name>commit</command-name>" in result
-    assert "<command-args>fix authentication bug</command-args>" in result
-    assert "# Commit Guide" in result
-
-  def test_skill_command_namespaced_skill(self):
-    """Test skill command with namespaced skill."""
-    registry = SkillRegistry()
-    skill = Skill(
-      name="commit",
-      description="Guide git commits",
-      content="Commit instructions...",
-      namespace="c3",
-    )
-    registry.register(skill)
-
-    commands = create_skill_commands(registry, lambda: registry)
-    assert len(commands) == 1
-    assert commands[0].name == "c3:commit"
-
-  def test_skill_command_registered_in_command_registry(self):
-    """Test that skill commands can be registered in CommandRegistry."""
-    skill_registry = SkillRegistry()
-    skill = Skill(
-      name="commit",
-      description="Guide git commits",
-      content="Commit instructions...",
-    )
-    skill_registry.register(skill)
-
-    command_registry = CommandRegistry()
-    commands = create_skill_commands(skill_registry, lambda: skill_registry)
-
-    for command in commands:
-      command_registry.register(command)
-
-    # Test dispatch
-    result = command_registry.dispatch("/commit")
+    result = await registry.dispatch("/commit", agent, Mock())
     assert result is not None
-    assert "commit" in result.lower()
+    assert "Unknown command" in result
 
-  def test_skill_command_with_triggers(self):
-    """Test skill command with trigger phrases."""
-    registry = SkillRegistry()
-    skill = Skill(
-      name="commit",
-      description="Guide git commits",
-      content="Commit instructions...",
-      triggers=("commit changes", "create commit"),
+  @pytest.mark.asyncio
+  async def test_dynamic_skill_invocation_single_skill(self):
+    """A skill name is dispatched to inject_skill_context and process."""
+    agent, _ = self._make_agent(
+      [
+        Skill(
+          name="commit",
+          description="Guide git commits",
+          content="# Commit Guide\n\nSteps for committing...",
+        )
+      ]
     )
-    registry.register(skill)
+    registry = create_default_registry()
 
-    commands = create_skill_commands(registry, lambda: registry)
-    assert len(commands) == 1
-    # Triggers don't affect command creation, they're for natural language matching
-    assert commands[0].name == "commit"
+    result = await registry.dispatch("/commit", agent, Mock())
+    assert result is None
+    agent.inject_skill_context.assert_called_once_with("commit", "")
+    agent.process.assert_awaited_once_with("Execute the skill as requested.")
 
-  def test_skill_command_with_tools(self):
-    """Test skill command with tool requirements."""
-    registry = SkillRegistry()
-    skill = Skill(
-      name="review",
-      description="Review code",
-      content="Review instructions...",
-      tools=("read", "search"),
+  @pytest.mark.asyncio
+  async def test_dynamic_skill_invocation_with_args(self):
+    """Skill invocation passes arguments through."""
+    agent, _ = self._make_agent(
+      [
+        Skill(
+          name="commit",
+          description="Guide git commits",
+          content="# Commit Guide\n\nSteps for committing...",
+        )
+      ]
     )
-    registry.register(skill)
+    registry = create_default_registry()
 
-    commands = create_skill_commands(registry, lambda: registry)
-    assert len(commands) == 1
-    # Tools don't affect command creation, they're for skill metadata
-    assert commands[0].name == "review"
+    result = await registry.dispatch("/commit fix authentication bug", agent, Mock())
+    assert result is None
+    agent.inject_skill_context.assert_called_once_with("commit", "fix authentication bug")
+    agent.process.assert_awaited_once_with("fix authentication bug")
 
-  def test_skill_command_duplicate_handling(self):
-    """Test that duplicate skill names raise error."""
-    registry = SkillRegistry()
-    skill1 = Skill(
-      name="commit",
-      description="First commit skill",
-      content="Content 1",
+  @pytest.mark.asyncio
+  async def test_dynamic_skill_invocation_namespaced_skill(self):
+    """Namespaced skills are dispatched using their full name."""
+    agent, _ = self._make_agent(
+      [
+        Skill(
+          name="commit",
+          description="Guide git commits",
+          content="Commit instructions...",
+          namespace="c3",
+        )
+      ]
     )
-    skill2 = Skill(
-      name="commit",
-      description="Second commit skill",
-      content="Content 2",
+    registry = create_default_registry()
+
+    result = await registry.dispatch("/c3:commit", agent, Mock())
+    assert result is None
+    agent.inject_skill_context.assert_called_once_with("c3:commit", "")
+
+  @pytest.mark.asyncio
+  async def test_handle_unknown_skill_raises(self):
+    """handle() raises SkillError for an unknown skill."""
+    agent, _ = self._make_agent()
+
+    from yoker.exceptions import SkillError
+
+    with pytest.raises(SkillError):
+      await handle("commit", "", agent, Mock())
+
+  @pytest.mark.asyncio
+  async def test_handle_with_args(self):
+    """handle() forwards arguments as the follow-up prompt."""
+    agent, _ = self._make_agent(
+      [
+        Skill(
+          name="search",
+          description="Search for code",
+          content="Search instructions...",
+        )
+      ]
     )
 
-    registry.register(skill1)
-    with pytest.raises(ValueError, match="already registered"):
-      registry.register(skill2)
+    await handle("search", "find the bug", agent, Mock())
+    agent.inject_skill_context.assert_called_once_with("search", "find the bug")
+    agent.process.assert_awaited_once_with("find the bug")
 
-  def test_skill_command_format_invocation_block(self):
-    """Test that invocation block is properly formatted."""
-    registry = SkillRegistry()
-    skill = Skill(
-      name="commit",
-      description="Guide git commits",
-      content="# Commit Guide\n\n1. Stage changes\n2. Write message\n3. Push",
+  @pytest.mark.asyncio
+  async def test_handle_no_args_uses_default_prompt(self):
+    """handle() uses a default prompt when no arguments are provided."""
+    agent, _ = self._make_agent(
+      [
+        Skill(
+          name="help",
+          description="Show help",
+          content="Help content...",
+        )
+      ]
     )
-    registry.register(skill)
 
-    commands = create_skill_commands(registry, lambda: registry)
-    command = commands[0]
-
-    result = command.handler(["fix bug"])
-
-    # Check structure
-    assert "<command-message>" in result
-    assert "<command-name>commit</command-name>" in result
-    assert "<command-args>fix bug</command-args>" in result
-    assert "</command-message>" in result
-    assert "Base directory for this skill:" in result
-    assert "# Commit Guide" in result
-    assert "1. Stage changes" in result
-
-  def test_skill_command_empty_args(self):
-    """Test skill command with empty args string."""
-    registry = SkillRegistry()
-    skill = Skill(
-      name="help",
-      description="Show help",
-      content="Help content...",
-    )
-    registry.register(skill)
-
-    commands = create_skill_commands(registry, lambda: registry)
-    command = commands[0]
-
-    result = command.handler([])
-    assert "<command-args></command-args>" in result
-
-  def test_skill_command_whitespace_args(self):
-    """Test skill command with whitespace in args."""
-    registry = SkillRegistry()
-    skill = Skill(
-      name="search",
-      description="Search for code",
-      content="Search instructions...",
-    )
-    registry.register(skill)
-
-    commands = create_skill_commands(registry, lambda: registry)
-    command = commands[0]
-
-    result = command.handler(["find", "the", "bug"])
-    assert "<command-args>find the bug</command-args>" in result
+    await handle("help", "", agent, Mock())
+    agent.inject_skill_context.assert_called_once_with("help", "")
+    agent.process.assert_awaited_once_with("Execute the skill as requested.")

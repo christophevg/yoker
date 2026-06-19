@@ -7,13 +7,15 @@ from unittest.mock import patch
 import pytest
 
 from yoker.exceptions import PluginError
+from yoker.plugins import PluginManifest
+from yoker.plugins.agents import load_agent_definition_from_string
 from yoker.plugins.loader import (
   PluginComponents,
-  _extract_list,
-  load_agent_definition_from_string,
   load_plugin,
   load_plugins,
 )
+from yoker.tools import make_list_tool, make_read_tool
+from yoker.tools.schema import build_tool_spec
 
 
 class TestLoadPlugin:
@@ -21,23 +23,18 @@ class TestLoadPlugin:
 
   def test_load_plugin_with_tools(self):
     """Test loading plugin with tools."""
-    from yoker.tools import ReadTool
+    echo_tool = make_read_tool()
+    manifest = PluginManifest(tools=[echo_tool])
+    module = ModuleType("test_pkg")
+    module.__YOKER_MANIFEST__ = manifest
 
-    # Create mock module
-    module = ModuleType("test_pkg.yoker")
-    module.TOOLS = [ReadTool()]
-    module.SKILLS = []
-    module.AGENTS = []
-
-    # Create mock package module
-    pkg_module = ModuleType("test_pkg")
-
-    with patch.dict(sys.modules, {"test_pkg": pkg_module, "test_pkg.yoker": module}):
+    with patch.dict(sys.modules, {"test_pkg": module}):
       plugin = load_plugin("test_pkg")
 
       assert plugin is not None
       assert len(plugin.tools) == 1
-      assert isinstance(plugin.tools[0], ReadTool)
+      spec = build_tool_spec(plugin.tools[0])
+      assert spec.name == "read"
       assert plugin.source == "test_pkg"
 
   def test_load_plugin_with_skills(self):
@@ -50,56 +47,54 @@ class TestLoadPlugin:
       content="Test content",
     )
 
-    module = ModuleType("test_pkg.yoker")
-    module.TOOLS = []
-    module.SKILLS = [skill]
-    module.AGENTS = []
+    manifest = PluginManifest(skills=[skill])
+    module = ModuleType("test_pkg")
+    module.__YOKER_MANIFEST__ = manifest
 
-    # Create mock package module
-    pkg_module = ModuleType("test_pkg")
-
-    with patch.dict(sys.modules, {"test_pkg": pkg_module, "test_pkg.yoker": module}):
+    with patch.dict(sys.modules, {"test_pkg": module}):
       plugin = load_plugin("test_pkg")
 
       assert plugin is not None
       assert len(plugin.skills) == 1
       assert plugin.skills[0].name == "test-skill"
 
-  def test_load_plugin_without_yoker_module(self):
-    """Test loading package without yoker submodule."""
-    plugin = load_plugin("nonexistent_package_xyz")
+  def test_load_plugin_without_manifest(self):
+    """Test package without manifest returns None."""
+    module = ModuleType("test_pkg")
 
-    assert plugin is None
+    with patch.dict(sys.modules, {"test_pkg": module}):
+      plugin = load_plugin("test_pkg")
+
+      assert plugin is None
+
+  def test_load_plugin_without_yoker_module(self):
+    """Test loading missing package raises PluginError."""
+    with pytest.raises(PluginError) as exc_info:
+      load_plugin("nonexistent_package_xyz")
+
+    assert exc_info.value.package == "nonexistent_package_xyz"
+    assert "not found" in str(exc_info.value)
 
   def test_load_plugin_with_import_error(self):
-    """Test plugin that fails to import."""
+    """Test missing plugin package raises PluginError."""
 
-    # Create a module that will fail when imported
     def raise_import_error(name):
-      if name == "broken_plugin.yoker":
-        raise ImportError("Broken plugin")
       raise ImportError(f"No module named '{name}'")
 
     with patch("importlib.import_module", side_effect=raise_import_error):
-      # ImportError from missing package returns None
-      plugin = load_plugin("missing_module")
-      assert plugin is None
+      with pytest.raises(PluginError) as exc_info:
+        load_plugin("missing_module")
+
+      assert exc_info.value.package == "missing_module"
+      assert "not found" in str(exc_info.value)
 
   def test_load_plugin_with_critical_error(self):
-    """Test plugin that has a critical import error."""
-
-    # Create mock package module
-    pkg_module = ModuleType("broken_plugin")
+    """Test plugin import that raises a non-ImportError."""
 
     def raise_runtime_error(name):
-      if name == "broken_plugin.yoker":
-        raise RuntimeError("Critical plugin error")
-      if name == "broken_plugin":
-        return pkg_module
-      raise ImportError(f"No module named '{name}'")
+      raise RuntimeError("Critical plugin error")
 
     with patch("importlib.import_module", side_effect=raise_runtime_error):
-      # Non-ImportError raises PluginError
       with pytest.raises(PluginError) as exc_info:
         load_plugin("broken_plugin")
 
@@ -107,75 +102,20 @@ class TestLoadPlugin:
       assert "Critical plugin error" in str(exc_info.value)
 
 
-class TestExtractList:
-  """Tests for _extract_list helper function."""
-
-  def test_extract_list_with_list(self):
-    """Test extracting a list from module."""
-    module = ModuleType("test")
-    module.TOOLS = ["tool1", "tool2"]
-
-    result = _extract_list(module, "TOOLS")
-
-    assert result == ["tool1", "tool2"]
-
-  def test_extract_list_missing_attribute(self):
-    """Test extracting list when attribute doesn't exist."""
-    module = ModuleType("test")
-
-    result = _extract_list(module, "MISSING")
-
-    assert result == []
-
-  def test_extract_list_not_a_list(self):
-    """Test extracting list when attribute is not a list."""
-    module = ModuleType("test")
-    module.TOOLS = "not a list"
-
-    result = _extract_list(module, "TOOLS")
-
-    assert result == []
-
-  def test_extract_list_none_value(self):
-    """Test extracting list when attribute is None."""
-    module = ModuleType("test")
-    module.TOOLS = None
-
-    result = _extract_list(module, "TOOLS")
-
-    assert result == []
-
-
 class TestLoadPlugins:
   """Tests for load_plugins function."""
 
   def test_load_multiple_plugins(self):
     """Test loading multiple plugins."""
-    from yoker.tools import ListTool, ReadTool
+    manifest1 = PluginManifest(tools=[make_read_tool()])
+    module1 = ModuleType("pkg1")
+    module1.__YOKER_MANIFEST__ = manifest1
 
-    module1 = ModuleType("pkg1.yoker")
-    module1.TOOLS = [ReadTool()]
-    module1.SKILLS = []
-    module1.AGENTS = []
+    manifest2 = PluginManifest(tools=[make_list_tool()])
+    module2 = ModuleType("pkg2")
+    module2.__YOKER_MANIFEST__ = manifest2
 
-    module2 = ModuleType("pkg2.yoker")
-    module2.TOOLS = [ListTool()]
-    module2.SKILLS = []
-    module2.AGENTS = []
-
-    # Create mock package modules
-    pkg1_module = ModuleType("pkg1")
-    pkg2_module = ModuleType("pkg2")
-
-    with patch.dict(
-      sys.modules,
-      {
-        "pkg1": pkg1_module,
-        "pkg1.yoker": module1,
-        "pkg2": pkg2_module,
-        "pkg2.yoker": module2,
-      },
-    ):
+    with patch.dict(sys.modules, {"pkg1": module1, "pkg2": module2}):
       plugins = load_plugins(["pkg1", "pkg2"])
 
       assert len(plugins) == 2
@@ -183,36 +123,23 @@ class TestLoadPlugins:
       assert plugins[1].source == "pkg2"
 
   def test_load_plugins_with_missing(self):
-    """Test loading plugins when some don't exist."""
-    from yoker.tools import ReadTool
+    """Test loading plugins raises PluginError when package is missing."""
+    manifest = PluginManifest(tools=[make_read_tool()])
+    module = ModuleType("exists")
+    module.__YOKER_MANIFEST__ = manifest
 
-    module = ModuleType("exists.yoker")
-    module.TOOLS = [ReadTool()]
-    module.SKILLS = []
-    module.AGENTS = []
+    with patch.dict(sys.modules, {"exists": module}):
+      with pytest.raises(PluginError) as exc_info:
+        load_plugins(["exists", "nonexistent"])
 
-    # Create mock package module
-    pkg_module = ModuleType("exists")
-
-    with patch.dict(sys.modules, {"exists": pkg_module, "exists.yoker": module}):
-      plugins = load_plugins(["exists", "nonexistent"])
-
-      # Only existing plugins loaded
-      assert len(plugins) == 1
-      assert plugins[0].source == "exists"
+      assert exc_info.value.package == "nonexistent"
+      assert "not found" in str(exc_info.value)
 
   def test_load_plugins_with_error(self):
     """Test loading plugins with critical error."""
 
-    # Create mock package module
-    pkg_module = ModuleType("broken")
-
     def raise_error(name):
-      if name == "broken.yoker":
-        raise RuntimeError("Plugin error")
-      if name == "broken":
-        return pkg_module
-      raise ImportError(f"No module named '{name}'")
+      raise RuntimeError("Plugin error")
 
     with patch("importlib.import_module", side_effect=raise_error):
       with pytest.raises(PluginError):
@@ -296,9 +223,7 @@ class TestPluginComponents:
 
   def test_components_creation(self):
     """Test creating PluginComponents."""
-    from yoker.tools import ReadTool
-
-    tools = [ReadTool()]
+    tools = [make_read_tool()]
 
     components = PluginComponents(
       tools=tools,

@@ -44,11 +44,11 @@ class TestPluginSkillDiscovery:
     agent = Agent(config=plugin_config, plugins=[demo_plugin])
 
     # Should have skill registry
-    assert agent._core.skill_registry is not None
-    assert agent._core.skill_registry.count > 0
+    assert agent.skills is not None
+    assert agent.skills.count > 0
 
     # Should have greeting skill with namespace
-    skills = agent._core.skill_registry.list_skills()
+    skills = agent.skills.list_skills()
     skill_names = [s.name for s in skills]
     assert "greeting" in skill_names
 
@@ -61,47 +61,44 @@ class TestPluginSkillDiscovery:
     agent = Agent(config=plugin_config, plugins=[demo_plugin])
 
     # Should have skill tool registered
-    assert "skill" in agent.tool_registry.names
-    assert "yoker_plugin_demo:echo" in agent.tool_registry.names
+    assert "skill" in agent.tools.names
+    assert "yoker_plugin_demo:echo" in agent.tools.names
 
   def test_skill_discovery_block_added_to_context(self, demo_plugin, plugin_config):
     """Plugin skills should be visible in agent context."""
     agent = Agent(config=plugin_config, plugins=[demo_plugin])
 
-    # Context should have skill discovery message
+    # Context should have skill discovery message as a user message
     messages = agent.context.get_messages()
-    system_messages = [m for m in messages if m.get("role") == "system"]
+    user_messages = [m for m in messages if m.get("role") == "user"]
 
     # Should have skill discovery block
     has_discovery = any(
-      "The following skills are available" in str(m.get("content", "")) for m in system_messages
+      "The following skills are available" in str(m.get("content", "")) for m in user_messages
     )
     assert has_discovery, "Skill discovery block not found in context"
 
-  def test_no_env_skills_but_plugin_skills(self, demo_plugin, plugin_config, monkeypatch):
-    """Skills should work even without YOKER_SKILLS_PATH set."""
-    # Ensure YOKER_SKILLS_PATH is not set
-    monkeypatch.delenv("YOKER_SKILLS_PATH", raising=False)
-
+  def test_plugin_skills_without_local_skills(self, demo_plugin, plugin_config):
+    """Skills from plugins work even when no local skill directories are configured."""
     agent = Agent(config=plugin_config, plugins=[demo_plugin])
 
     # Should still have plugin skills
-    assert agent._core.skill_registry is not None
-    assert agent._core.skill_registry.count > 0
+    assert agent.skills is not None
+    assert agent.skills.count > 0
 
     # SkillTool should still be registered
-    assert "skill" in agent.tool_registry.names
+    assert "skill" in agent.tools.names
 
   def test_multiple_plugins_with_skills(self, plugin_config):
     """Multiple plugins can contribute skills simultaneously."""
     # Load demo plugin
     agent = Agent(config=plugin_config, plugins=["yoker_plugin_demo"])
 
-    skill_count = agent._core.skill_registry.count
+    skill_count = agent.skills.count
     assert skill_count > 0
 
     # Plugin skills should be namespaced
-    skills = agent._core.skill_registry.list_skills()
+    skills = agent.skills.list_skills()
     plugin_skills = [s for s in skills if s.namespace is not None]
     assert len(plugin_skills) > 0, "Should have at least one plugin skill"
 

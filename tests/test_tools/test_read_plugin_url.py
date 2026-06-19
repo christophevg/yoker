@@ -1,19 +1,25 @@
-"""Tests for ReadTool plugin:// URL support."""
+"""Tests for read tool plugin:// URL support."""
 
 import pytest
 
-from yoker.tools.read import ReadTool
+from yoker.tools import ToolRegistry, make_read_tool
+
+
+def _read_spec():
+  """Create and register the read tool."""
+  registry = ToolRegistry()
+  return registry.register(make_read_tool())
 
 
 class TestReadPluginUrl:
-  """Tests for plugin:// URL handling in ReadTool."""
+  """Tests for plugin:// URL handling in the read tool."""
 
   @pytest.mark.asyncio
   async def test_read_plugin_url_missing_package(self):
     """Test reading from non-existent package."""
-    tool = ReadTool()
+    spec = _read_spec()
 
-    result = await tool.execute(path="plugin://nonexistent_package/file.txt")
+    result = await spec.execute(path="plugin://nonexistent_package/file.txt")
 
     assert result.success is False
     assert "not found" in result.error.lower()
@@ -21,25 +27,25 @@ class TestReadPluginUrl:
   @pytest.mark.asyncio
   async def test_read_plugin_url_invalid_format(self):
     """Test invalid plugin:// URL formats."""
-    tool = ReadTool()
+    spec = _read_spec()
 
     # Missing path
-    result = await tool.execute(path="plugin://package/")
+    result = await spec.execute(path="plugin://package/")
     assert result.success is False
     assert "invalid" in result.error.lower()
 
     # Missing package
-    result = await tool.execute(path="plugin:///path/to/file.txt")
+    result = await spec.execute(path="plugin:///path/to/file.txt")
     assert result.success is False
     assert "invalid" in result.error.lower()
 
   @pytest.mark.asyncio
   async def test_read_plugin_url_wrong_scheme(self):
     """Test URL with wrong scheme."""
-    tool = ReadTool()
+    spec = _read_spec()
 
     # http:// should be rejected (not plugin://)
-    result = await tool.execute(path="http://example.com/file.txt")
+    result = await spec.execute(path="http://example.com/file.txt")
 
     # This should be treated as a regular file path, which will fail
     assert result.success is False
@@ -51,7 +57,7 @@ class TestReadPluginUrl:
     """Test that regular file reading still works after plugin:// support."""
     import tempfile
 
-    tool = ReadTool()
+    spec = _read_spec()
 
     # Create a temp file
     with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
@@ -59,7 +65,7 @@ class TestReadPluginUrl:
       temp_path = f.name
 
     try:
-      result = await tool.execute(path=temp_path)
+      result = await spec.execute(path=temp_path)
       assert result.success is True
       assert result.result == "test content\n"
     finally:

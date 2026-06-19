@@ -2,7 +2,9 @@
 
 Usage: python -m yoker [OPTIONS]
 
-Clevis automatically generates CLI arguments from the Config dataclass:
+Configuration is loaded from TOML config files (~/.yoker.toml and ./yoker.toml).
+CLI arguments are automatically generated from the Config data classes.
+Examples:
   --backend-ollama-model MODEL         Model to use
   --context-session-id SESSION_ID      Session ID for context persistence
   --tools-read-enabled BOOL            Enable/disable read tool
@@ -10,25 +12,22 @@ Clevis automatically generates CLI arguments from the Config dataclass:
   --ui-show-thinking BOOL              Show thinking output
   --ui-show-tool-calls BOOL            Show tool call information
   --ui-show-stats BOOL                 Show turn statistics
-
-Environment variables (YOKER_*) and config files (~/.yoker.toml, ./yoker.toml)
-are also supported via Clevis.
 """
 
 import asyncio
+import os
 import sys
-from pathlib import Path
+import traceback
+
+from structlog import get_logger
 
 from yoker.agent import Agent
-from yoker.config import Config, get_yoker_config
+from yoker.config import Config
 from yoker.exceptions import NetworkError, YokerError
-from yoker.logging import configure_logging, get_logger
 from yoker.ui import BatchUIHandler, InteractiveUIHandler, UIBridge, UIHandler
 from yoker.ui.commands import CommandRegistry, create_default_registry
 
-log = get_logger(__name__)
-
-VERSION = "0.4.0"
+logger = get_logger(__name__)
 
 
 def _parse_plugin_args(argv: list[str]) -> tuple[list[str], list[str]]:
@@ -66,28 +65,6 @@ def _parse_plugin_args(argv: list[str]) -> tuple[list[str], list[str]]:
   return plugin_packages, cleaned
 
 
-def _setup_logging(config: Config) -> None:
-  """Configure logging based on configuration.
-
-  Disables console output so the UI layer owns all terminal output.
-
-  Args:
-    config: Configuration object.
-  """
-  log_file: Path | None = None
-  if config.logging.file:
-    log_file = Path(config.logging.file)
-
-  configure_logging(
-    level=config.logging.level,
-    log_file=log_file,
-    format=config.logging.format,
-    console=False,
-  )
-
-  log.info("logging_configured", level=config.logging.level)
-
-
 def _create_ui(config: Config) -> UIHandler:
   """Create the appropriate UI handler based on configuration.
 
@@ -97,20 +74,13 @@ def _create_ui(config: Config) -> UIHandler:
   Returns:
     UIHandler implementation for interactive or batch mode.
   """
-  ui_config = config.ui
-
-  if ui_config.mode == "batch":
-    return BatchUIHandler(
-      show_thinking=ui_config.show_thinking,
-      show_tool_calls=ui_config.show_tool_calls,
-      show_stats=ui_config.show_stats,
+  if config.ui.mode != "batch" and sys.stdin.isatty():
+    return InteractiveUIHandler(
+      show_thinking=config.ui.show_thinking,
+      show_tool_calls=config.ui.show_tool_calls,
+      show_stats=config.ui.show_stats,
     )
-
-  return InteractiveUIHandler(
-    show_thinking=ui_config.show_thinking,
-    show_tool_calls=ui_config.show_tool_calls,
-    show_stats=ui_config.show_stats,
-  )
+  return BatchUIHandler()
 
 
 async def run_session(agent: Agent, ui: UIHandler, commands: CommandRegistry) -> None:
@@ -126,14 +96,7 @@ async def run_session(agent: Agent, ui: UIHandler, commands: CommandRegistry) ->
   """
   from ollama import ResponseError
 
-  await ui.start(
-    agent.model,
-    VERSION,
-    {
-      "thinking_enabled": agent.thinking_mode.value == "on",
-      "show_tool_calls": getattr(ui, "show_tool_calls", False),
-    },
-  )
+  await ui.start(agent)
 
   try:
     while True:
@@ -166,6 +129,7 @@ async def run_session(agent: Agent, ui: UIHandler, commands: CommandRegistry) ->
         break
       except Exception as e:
         ui.output_error(e)
+        print(traceback.format_exc())
         break
   finally:
     await ui.shutdown("quit")
@@ -174,31 +138,31 @@ async def run_session(agent: Agent, ui: UIHandler, commands: CommandRegistry) ->
 def main() -> None:
   """Run Yoker.
 
-  Loads configuration via Clevis, creates the Agent and UI handler, wires
-  events through UIBridge, and starts the session loop.
+  Creates the Agent (which loads its own config and env files), wires the
+  UI handler to it via the event bridge, and starts the session loop.
   """
   plugin_packages, argv = _parse_plugin_args(sys.argv)
   sys.argv = argv
 
-  config = get_yoker_config(cli=True)
-
-  _setup_logging(config)
-
-  log.info("config_loaded_via_clevis", source="clevis")
-
-  if plugin_packages:
-    log.info("cli_plugins_specified", packages=plugin_packages)
-
   try:
+    # Agent is autonomous: it loads .env/.env.local, discovers config, and
+    # builds its own tool registry. Console logging is disabled by default so the UI
+    # layer owns all terminal output, but can be controlled using the YOKER_CONSOLE_LOGGING environment variable.
     agent = Agent(
-      config=config,
       plugins=plugin_packages if plugin_packages else None,
+      console_logging=os.environ.get("YOKER_CONSOLE_LOGGING", "NO") != "NO",
+      parse_cli_args=True,
     )
   except ValueError as e:
     sys.stderr.write(f"Error: {e}\n")
     sys.exit(1)
 
-  ui = _create_ui(config)
+  logger.info("config loaded via agent", source="agent")
+
+  if plugin_packages:
+    logger.info("cli_plugins_specified", packages=plugin_packages)
+
+  ui = _create_ui(agent.config)
   bridge = UIBridge(ui)
   agent.add_event_handler(bridge)
 

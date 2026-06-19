@@ -1,4 +1,4 @@
-"""Tests for WriteTool content metadata emission.
+"""Tests for write tool content metadata emission.
 
 Task: 1.5.5 - Show Write/Update Tool Content in CLI
 """
@@ -13,25 +13,31 @@ from yoker.config import (
   ToolsConfig,
   WriteToolConfig,
 )
-from yoker.tools.write import WriteTool, _is_binary, _truncate_content
+from yoker.tools import ToolRegistry, make_write_tool
+from yoker.tools.write import _is_binary, _truncate_content
+
+
+def _write_spec(config: Config | None = None):
+  """Create and register the write tool."""
+  registry = ToolRegistry()
+  return registry.register(make_write_tool(config))
 
 
 class TestWriteToolContentMetadataEmission:
-  """Test WriteTool content metadata emission."""
+  """Test write tool content metadata emission."""
 
   @pytest.mark.asyncio
   async def test_content_metadata_for_new_file(self, tmp_path: Path) -> None:
     """
-    Given: WriteTool creating a new file with content
+    Given: write tool creating a new file with content
     When: execute() is called
     Then: ToolResult includes content_metadata with operation, path, content_type, and metadata
     """
-    # Create WriteTool with default config
-    tool = WriteTool()
+    spec = _write_spec()
 
     # Write a new file
     test_file = tmp_path / "new_file.txt"
-    result = await tool.execute(path=str(test_file), content="Hello\nWorld\n")
+    result = await spec.execute(path=str(test_file), content="Hello\nWorld\n")
 
     # Verify result
     assert result.success
@@ -45,20 +51,20 @@ class TestWriteToolContentMetadataEmission:
   @pytest.mark.asyncio
   async def test_content_metadata_for_overwrite(self, tmp_path: Path) -> None:
     """
-    Given: WriteTool overwriting an existing file
+    Given: write tool overwriting an existing file
     When: execute() is called
     Then: ToolResult includes content_metadata with is_overwrite=True
     """
-    # Create WriteTool with overwrite allowed
+    # Create write tool with overwrite allowed
     config = Config(tools=ToolsConfig(write=WriteToolConfig(allow_overwrite=True)))
-    tool = WriteTool(config=config)
+    spec = _write_spec(config)
 
     # Create existing file
     test_file = tmp_path / "existing.txt"
     test_file.write_text("Original content\n")
 
     # Overwrite the file
-    result = await tool.execute(path=str(test_file), content="New content\n")
+    result = await spec.execute(path=str(test_file), content="New content\n")
 
     # Verify result
     assert result.success
@@ -69,17 +75,17 @@ class TestWriteToolContentMetadataEmission:
   @pytest.mark.asyncio
   async def test_content_metadata_includes_content(self, tmp_path: Path) -> None:
     """
-    Given: WriteTool with content display enabled
+    Given: write tool with content display enabled
     When: execute() is called
     Then: content_metadata.content contains the written content
     """
-    # Create WriteTool with verbosity="content"
+    # Create write tool with verbosity="content"
     config = Config(tools=ToolsConfig(content_display=ContentDisplayConfig(verbosity="content")))
-    tool = WriteTool(config=config)
+    spec = _write_spec(config)
 
     # Write file
     test_file = tmp_path / "content.txt"
-    result = await tool.execute(path=str(test_file), content="Line 1\nLine 2\n")
+    result = await spec.execute(path=str(test_file), content="Line 1\nLine 2\n")
 
     # Verify result
     assert result.success
@@ -94,13 +100,13 @@ class TestWriteToolContentMetadataEmission:
     When: execute() is called
     Then: ToolResult.content_metadata is None
     """
-    # Create WriteTool with silent verbosity
+    # Create write tool with silent verbosity
     config = Config(tools=ToolsConfig(content_display=ContentDisplayConfig(verbosity="silent")))
-    tool = WriteTool(config=config)
+    spec = _write_spec(config)
 
     # Write file
     test_file = tmp_path / "silent.txt"
-    result = await tool.execute(path=str(test_file), content="Content\n")
+    result = await spec.execute(path=str(test_file), content="Content\n")
 
     # Verify result
     assert result.success
@@ -108,27 +114,27 @@ class TestWriteToolContentMetadataEmission:
 
 
 class TestWriteToolContentTruncation:
-  """Test WriteTool content truncation for large files."""
+  """Test write tool content truncation for large files."""
 
   @pytest.mark.asyncio
   async def test_truncation_for_large_files(self, tmp_path: Path) -> None:
     """
-    Given: WriteTool writing content exceeding max_content_lines
+    Given: write tool writing content exceeding max_content_lines
     When: execute() is called
     Then: content_metadata.content is truncated
     """
-    # Create WriteTool with small max_content_lines
+    # Create write tool with small max_content_lines
     config = Config(
       tools=ToolsConfig(
         content_display=ContentDisplayConfig(verbosity="content", max_content_lines=5)
       )
     )
-    tool = WriteTool(config=config)
+    spec = _write_spec(config)
 
     # Write file with 10 lines
     test_file = tmp_path / "large.txt"
     content = "\n".join(f"Line {i}" for i in range(10))
-    result = await tool.execute(path=str(test_file), content=content)
+    result = await spec.execute(path=str(test_file), content=content)
 
     # Verify result
     assert result.success
@@ -142,22 +148,22 @@ class TestWriteToolContentTruncation:
   @pytest.mark.asyncio
   async def test_truncation_metadata(self, tmp_path: Path) -> None:
     """
-    Given: WriteTool writing large content that is truncated
+    Given: write tool writing large content that is truncated
     When: execute() is called
     Then: content_metadata.metadata includes truncated=True and original_line_count
     """
-    # Create WriteTool with small max_content_lines
+    # Create write tool with small max_content_lines
     config = Config(
       tools=ToolsConfig(
         content_display=ContentDisplayConfig(verbosity="content", max_content_lines=5)
       )
     )
-    tool = WriteTool(config=config)
+    spec = _write_spec(config)
 
     # Write file with 10 lines
     test_file = tmp_path / "truncated.txt"
     content = "\n".join(f"Line {i}" for i in range(10))
-    result = await tool.execute(path=str(test_file), content=content)
+    result = await spec.execute(path=str(test_file), content=content)
 
     # Verify result
     assert result.success
@@ -168,18 +174,18 @@ class TestWriteToolContentTruncation:
   @pytest.mark.asyncio
   async def test_no_truncation_for_small_files(self, tmp_path: Path) -> None:
     """
-    Given: WriteTool writing content within max_content_lines
+    Given: write tool writing content within max_content_lines
     When: execute() is called
     Then: content_metadata.content contains full content
     """
-    # Create WriteTool with content verbosity
+    # Create write tool with content verbosity
     config = Config(tools=ToolsConfig(content_display=ContentDisplayConfig(verbosity="content")))
-    tool = WriteTool(config=config)
+    spec = _write_spec(config)
 
     # Write small file
     test_file = tmp_path / "small.txt"
     content = "Line 1\nLine 2\n"
-    result = await tool.execute(path=str(test_file), content=content)
+    result = await spec.execute(path=str(test_file), content=content)
 
     # Verify result
     assert result.success
@@ -190,11 +196,11 @@ class TestWriteToolContentTruncation:
   @pytest.mark.asyncio
   async def test_truncation_respects_max_content_bytes(self, tmp_path: Path) -> None:
     """
-    Given: WriteTool writing content exceeding max_content_bytes
+    Given: write tool writing content exceeding max_content_bytes
     When: execute() is called
     Then: content_metadata.content is truncated to max_content_bytes
     """
-    # Create WriteTool with small max_content_bytes
+    # Create write tool with small max_content_bytes
     config = Config(
       tools=ToolsConfig(
         content_display=ContentDisplayConfig(
@@ -202,12 +208,12 @@ class TestWriteToolContentTruncation:
         )
       )
     )
-    tool = WriteTool(config=config)
+    spec = _write_spec(config)
 
     # Write file with content > 100 bytes
     test_file = tmp_path / "large_bytes.txt"
     content = "x" * 200
-    result = await tool.execute(path=str(test_file), content=content)
+    result = await spec.execute(path=str(test_file), content=content)
 
     # Verify result
     assert result.success
@@ -218,21 +224,21 @@ class TestWriteToolContentTruncation:
 
 
 class TestWriteToolEmptyFile:
-  """Test WriteTool handling of empty files."""
+  """Test write tool handling of empty files."""
 
   @pytest.mark.asyncio
   async def test_empty_file_content_metadata(self, tmp_path: Path) -> None:
     """
-    Given: WriteTool writing empty content
+    Given: write tool writing empty content
     When: execute() is called
     Then: content_metadata.metadata includes lines=0 and is_empty=True
     """
-    # Create WriteTool
-    tool = WriteTool()
+    # Create write tool
+    spec = _write_spec()
 
     # Write empty file
     test_file = tmp_path / "empty.txt"
-    result = await tool.execute(path=str(test_file), content="")
+    result = await spec.execute(path=str(test_file), content="")
 
     # Verify result
     assert result.success
@@ -243,16 +249,16 @@ class TestWriteToolEmptyFile:
   @pytest.mark.asyncio
   async def test_empty_file_summary_display(self, tmp_path: Path) -> None:
     """
-    Given: WriteTool writing empty file with verbosity="summary"
+    Given: write tool writing empty file with verbosity="summary"
     When: execute() is called
     Then: content_metadata shows summary (line count)
     """
-    # Create WriteTool with summary verbosity
-    tool = WriteTool()
+    # Create write tool with summary verbosity
+    spec = _write_spec()
 
     # Write empty file
     test_file = tmp_path / "empty_summary.txt"
-    result = await tool.execute(path=str(test_file), content="")
+    result = await spec.execute(path=str(test_file), content="")
 
     # Verify result
     assert result.success
@@ -262,23 +268,23 @@ class TestWriteToolEmptyFile:
 
 
 class TestWriteToolBinaryDetection:
-  """Test WriteTool binary file detection."""
+  """Test write tool binary file detection."""
 
   @pytest.mark.asyncio
   async def test_binary_file_detection(self, tmp_path: Path) -> None:
     """
-    Given: WriteTool writing binary content
+    Given: write tool writing binary content
     When: execute() is called
     Then: content_metadata.content_type == "application/x-summary" (not "full")
     """
-    # Create WriteTool with content verbosity
+    # Create write tool with content verbosity
     config = Config(tools=ToolsConfig(content_display=ContentDisplayConfig(verbosity="content")))
-    tool = WriteTool(config=config)
+    spec = _write_spec(config)
 
     # Write binary content (contains null byte)
     test_file = tmp_path / "binary.bin"
     content = "Binary\x00content"
-    result = await tool.execute(path=str(test_file), content=content)
+    result = await spec.execute(path=str(test_file), content=content)
 
     # Verify result
     assert result.success
@@ -289,17 +295,17 @@ class TestWriteToolBinaryDetection:
   @pytest.mark.asyncio
   async def test_binary_file_metadata(self, tmp_path: Path) -> None:
     """
-    Given: WriteTool writing binary content
+    Given: write tool writing binary content
     When: execute() is called
     Then: content_metadata.metadata includes is_binary=True and byte_size
     """
-    # Create WriteTool
-    tool = WriteTool()
+    # Create write tool
+    spec = _write_spec()
 
     # Write binary content
     test_file = tmp_path / "binary_meta.bin"
     content = "Binary\x00data"
-    result = await tool.execute(path=str(test_file), content=content)
+    result = await spec.execute(path=str(test_file), content=content)
 
     # Verify result
     assert result.success
@@ -310,18 +316,18 @@ class TestWriteToolBinaryDetection:
   @pytest.mark.asyncio
   async def test_binary_file_summary_only(self, tmp_path: Path) -> None:
     """
-    Given: WriteTool writing binary content with verbosity="content"
+    Given: write tool writing binary content with verbosity="content"
     When: execute() is called
     Then: Only size summary is shown, not full content
     """
-    # Create WriteTool with content verbosity
+    # Create write tool with content verbosity
     config = Config(tools=ToolsConfig(content_display=ContentDisplayConfig(verbosity="content")))
-    tool = WriteTool(config=config)
+    spec = _write_spec(config)
 
     # Write binary content
     test_file = tmp_path / "binary_summary.bin"
     content = "Binary\x00content"
-    result = await tool.execute(path=str(test_file), content=content)
+    result = await spec.execute(path=str(test_file), content=content)
 
     # Verify result
     assert result.success
@@ -331,22 +337,22 @@ class TestWriteToolBinaryDetection:
 
 
 class TestWriteToolVerbosityLevels:
-  """Test WriteTool behavior with different verbosity levels."""
+  """Test write tool behavior with different verbosity levels."""
 
   @pytest.mark.asyncio
   async def test_silent_verbosity(self, tmp_path: Path) -> None:
     """
     Given: ContentDisplayConfig with verbosity="silent"
-    When: WriteTool executes
+    When: write tool executes
     Then: ToolResult.content_metadata is None
     """
-    # Create WriteTool with silent verbosity
+    # Create write tool with silent verbosity
     config = Config(tools=ToolsConfig(content_display=ContentDisplayConfig(verbosity="silent")))
-    tool = WriteTool(config=config)
+    spec = _write_spec(config)
 
     # Write file
     test_file = tmp_path / "silent.txt"
-    result = await tool.execute(path=str(test_file), content="Content\n")
+    result = await spec.execute(path=str(test_file), content="Content\n")
 
     # Verify result
     assert result.success
@@ -356,15 +362,15 @@ class TestWriteToolVerbosityLevels:
   async def test_summary_verbosity(self, tmp_path: Path) -> None:
     """
     Given: ContentDisplayConfig with verbosity="summary"
-    When: WriteTool executes
+    When: write tool executes
     Then: content_metadata.content_type == "application/x-summary" with line count
     """
-    # Create WriteTool with summary verbosity (default)
-    tool = WriteTool()
+    # Create write tool with summary verbosity (default)
+    spec = _write_spec()
 
     # Write file
     test_file = tmp_path / "summary.txt"
-    result = await tool.execute(path=str(test_file), content="Line 1\nLine 2\nLine 3\n")
+    result = await spec.execute(path=str(test_file), content="Line 1\nLine 2\nLine 3\n")
 
     # Verify result
     assert result.success
@@ -377,71 +383,23 @@ class TestWriteToolVerbosityLevels:
   async def test_content_verbosity(self, tmp_path: Path) -> None:
     """
     Given: ContentDisplayConfig with verbosity="content"
-    When: WriteTool executes
+    When: write tool executes
     Then: content_metadata.content_type="full" with full content
     """
-    # Create WriteTool with content verbosity
+    # Create write tool with content verbosity
     config = Config(tools=ToolsConfig(content_display=ContentDisplayConfig(verbosity="content")))
-    tool = WriteTool(config=config)
+    spec = _write_spec(config)
 
     # Write file
     test_file = tmp_path / "content.txt"
     content = "Line 1\nLine 2\n"
-    result = await tool.execute(path=str(test_file), content=content)
+    result = await spec.execute(path=str(test_file), content=content)
 
     # Verify result
     assert result.success
     assert result.content_metadata is not None
     assert result.content_metadata["content_type"] == "text/plain"
     assert result.content_metadata["content"] == content
-
-
-class TestWriteToolConfigIntegration:
-  """Test WriteTool integration with ContentDisplayConfig."""
-
-  def test_write_tool_accesses_content_display_config(self) -> None:
-    """
-    Given: A Config with ContentDisplayConfig
-    When: WriteTool accesses configuration
-    Then: ContentDisplayConfig is available
-    """
-    # Create WriteTool with custom config
-    config = Config(
-      tools=ToolsConfig(
-        content_display=ContentDisplayConfig(
-          verbosity="content", max_content_lines=100, show_diff_for_updates=True
-        )
-      )
-    )
-    tool = WriteTool(config=config)
-
-    # Verify config is accessible
-    assert tool._config.tools.content_display.verbosity == "content"
-    assert tool._config.tools.content_display.max_content_lines == 100
-
-  @pytest.mark.asyncio
-  async def test_write_tool_ignores_show_diff_for_updates(self, tmp_path: Path) -> None:
-    """
-    Given: WriteTool with show_diff_for_updates setting (irrelevant for write)
-    When: Checking configuration
-    Then: WriteTool ignores show_diff_for_updates (not applicable)
-    """
-    # Create WriteTool with show_diff_for_updates=False
-    config = Config(
-      tools=ToolsConfig(
-        content_display=ContentDisplayConfig(verbosity="content", show_diff_for_updates=False)
-      )
-    )
-    tool = WriteTool(config=config)
-
-    # Write file - should still work (setting is ignored)
-    test_file = tmp_path / "test.txt"
-    result = await tool.execute(path=str(test_file), content="Content\n")
-
-    # Verify result - should show full content despite show_diff_for_updates=False
-    assert result.success
-    assert result.content_metadata is not None
-    assert result.content_metadata["content_type"] == "text/plain"
 
 
 class TestHelperFunctions:

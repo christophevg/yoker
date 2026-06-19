@@ -5,12 +5,14 @@ UIHandler. They may query agent state, update agent state, or drive agent
 processing. Output is always produced through the UIHandler.
 """
 
+from structlog import get_logger
+
 from yoker.agent import Agent
-from yoker.logging import get_logger
 from yoker.ui import UIHandler
 from yoker.ui.commands import skill_invoke
 from yoker.ui.commands.agents import create_command as create_agents_command
 from yoker.ui.commands.base import Command, CommandHandler
+from yoker.ui.commands.config import create_config_command
 from yoker.ui.commands.context import create_command as create_context_command
 from yoker.ui.commands.help import create_command as create_help_command
 from yoker.ui.commands.skills import create_command as create_skills_command
@@ -111,11 +113,11 @@ class CommandRegistry:
 
     cmd = self.get(name)
     if cmd is not None:
-      log.info("command_executing", command_name=name, args=args)
+      log.debug("command_executing", command_name=name, args=args)
       return await cmd.handler(args, agent, ui)
 
     # Unknown command: try skill invocation.
-    registry = agent.skill_registry
+    registry = agent.skills
     if registry is not None and name in registry:
       log.info("skill_command_dispatch", skill_name=name, args=args)
       await skill_invoke.handle(name, args, agent, ui)
@@ -147,5 +149,6 @@ def create_default_registry() -> CommandRegistry:
   registry.register(create_context_command())
   registry.register(create_tools_command())
   registry.register(create_agents_command())
+  registry.register(create_config_command())
 
   return registry

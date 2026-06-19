@@ -130,6 +130,62 @@
 
 ---
 
+## Launch Preparation: Public Announcement (2026-06-17)
+
+**Source:** Email from Christophe, 2026-06-17
+**Goal:** Prepare marketing materials and dedicated website for Yoker's public announcement.
+**USP:** "Add LLM capabilities to your Python apps and modules without worrying about the agentic foundations. Agentic Functions."
+
+### Social Media Launch Plan
+
+- [ ] **L.1 Storyboard of Publications**
+  - Define ideal sequence to announce and introduce Yoker on social media
+  - Predominantly LinkedIn and Instagram
+  - Refer to the website in all publications
+  - **Priority:** P1
+
+- [ ] **L.2 Publication Timeline**
+  - Prepare timeline for releasing articles, posts
+  - Investigate: how many posts?
+  - Investigate: how long between posts?
+  - Investigate: repeating schedule?
+  - **Depends on:** L.1
+  - **Priority:** P1
+
+### Website Research
+
+- [ ] **L.3 Website Structure Research**
+  - Research dedicated website structure for Yoker
+  - **Priority:** P1
+
+- [ ] **L.4 Website Examples and Framework Comparisons**
+  - Research examples from other frameworks
+  - Create comparison with other agent frameworks
+  - **Priority:** P1
+
+- [ ] **L.5 Strong Front Page**
+  - Research and design a strong front page example
+  - **Priority:** P1
+
+- [ ] **L.6 Clear Getting Started Guide**
+  - Research and design clear getting started guide
+  - **Priority:** P1
+
+- [ ] **L.7 Best Practices Research**
+  - Learn from good examples, find best practices for developer tool websites
+  - **Priority:** P2
+
+- [ ] **L.8 Look and Feel Research**
+  - Research look and feel for the website
+  - **Priority:** P2
+
+- [ ] **L.9 Low Entry / Bootstrapping Showcase**
+  - Show low entry barrier and good support for bootstrapping
+  - Highlight free Ollama account support
+  - **Priority:** P2
+
+---
+
 ## Future Work (Post-Release)
 
 ### Additional Tools (Phase 2 continued)

@@ -99,10 +99,9 @@ class TestConfirmPlugin:
   def test_confirm_plugin_interactive_yes(self) -> None:
     """Test confirm_plugin with user saying yes."""
     from yoker.skills import Skill
-    from yoker.tools import Tool
 
     # Create mock plugin with tools/skills/agents
-    mock_tool = MagicMock(spec=Tool)
+    mock_tool = MagicMock(spec=["name", "description"])
     mock_tool.name = "test_tool"
     mock_skill = MagicMock(spec=Skill)
     mock_skill.name = "test_skill"
