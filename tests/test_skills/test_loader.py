@@ -1,6 +1,5 @@
 """Tests for skill loader."""
 
-import os
 from pathlib import Path
 
 import pytest
@@ -10,7 +9,6 @@ from yoker.skills.loader import (
   MAX_SKILL_SIZE_KB,
   load_skill,
   load_skills,
-  load_skills_from_env,
   parse_skill_frontmatter,
 )
 
@@ -126,7 +124,7 @@ This is a test skill content.
 
     skill = load_skill(skill_file)
 
-    assert skill.name == "test-skill"
+    assert skill.name == "file:test-skill"
     assert skill.description == "A test skill for unit tests"
     assert "Test Skill" in skill.content
     assert skill.triggers == ()
@@ -151,7 +149,7 @@ Commit guide.
 
     skill = load_skill(skill_file)
 
-    assert skill.name == "commit"
+    assert skill.name == "file:commit"
     assert skill.triggers == ("commit these changes", "create a commit")
 
   def test_load_skill_with_single_trigger(self, tmp_path: Path) -> None:
@@ -218,12 +216,12 @@ Content
 
     skill = load_skill(skill_file, namespace="pkg")
 
-    assert skill.name == "test"
+    assert skill.simple_name == "test"
     assert skill.namespace == "pkg"
-    assert skill.full_name == "pkg:test"
+    assert skill.name == "pkg:test"
 
   def test_load_skill_full_name_no_namespace(self, tmp_path: Path) -> None:
-    """Skill without namespace has simple full_name."""
+    """A directly-referenced skill file gets the 'file' namespace."""
     skill_file = tmp_path / "test.md"
     skill_file.write_text("""---
 name: test
@@ -235,7 +233,7 @@ Content
 
     skill = load_skill(skill_file)
 
-    assert skill.full_name == "test"
+    assert skill.name == "file:test"
 
   def test_load_skill_file_not_found(self) -> None:
     """Load skill from non-existent file raises error."""
@@ -305,7 +303,7 @@ Content
 
     # Loading with allowed_paths should work
     skill = load_skill(skill_file, allowed_paths=[str(tmp_path)])
-    assert skill.name == "test"
+    assert skill.name == "file:test"
 
     # Loading with disallowed path should fail
     with pytest.raises(ConfigurationError) as exc_info:
@@ -331,7 +329,7 @@ Content
 
     # Should resolve symlink and validate
     skill = load_skill(symlink, allowed_paths=[str(tmp_path)])
-    assert skill.name == "test"
+    assert skill.name == "file:test"
 
 
 class TestLoadSkills:
@@ -358,8 +356,8 @@ Content 2
     skills = load_skills(tmp_path)
 
     assert len(skills) == 2
-    assert "skill-one" in skills
-    assert "skill-two" in skills
+    assert f"{tmp_path.name}:skill-one" in skills
+    assert f"{tmp_path.name}:skill-two" in skills
 
   def test_load_skills_namespace(self, tmp_path: Path) -> None:
     """Load skills with namespace prefix."""
@@ -375,7 +373,7 @@ Content
 
     assert len(skills) == 1
     assert "pkg:test" in skills
-    assert skills["pkg:test"].full_name == "pkg:test"
+    assert skills["pkg:test"].name == "pkg:test"
 
   def test_load_skills_duplicate_name(self, tmp_path: Path) -> None:
     """Load skills with duplicate names raises error."""
@@ -436,113 +434,4 @@ Content
     skills = load_skills(tmp_path)
 
     assert len(skills) == 1
-    assert "test" in skills
-
-
-class TestLoadSkillsFromEnv:
-  """Tests for load_skills_from_env function."""
-
-  def test_load_skills_from_env_unset(self, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Load skills from unset env var returns empty dict."""
-    monkeypatch.delenv("YOKER_SKILLS_PATH", raising=False)
-
-    skills = load_skills_from_env()
-
-    assert skills == {}
-
-  def test_load_skills_from_env_empty(self, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Load skills from empty env var returns empty dict."""
-    monkeypatch.setenv("YOKER_SKILLS_PATH", "")
-
-    skills = load_skills_from_env()
-
-    assert skills == {}
-
-  def test_load_skills_from_env_single_path(
-    self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-  ) -> None:
-    """Load skills from single directory in env var."""
-    (tmp_path / "test.md").write_text("""---
-name: test
-description: Test
----
-
-Content
-""")
-
-    monkeypatch.setenv("YOKER_SKILLS_PATH", str(tmp_path))
-
-    skills = load_skills_from_env()
-
-    assert "test" in skills
-
-  def test_load_skills_from_env_multiple_paths(
-    self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-  ) -> None:
-    """Load skills from multiple directories in env var."""
-    dir1 = tmp_path / "dir1"
-    dir2 = tmp_path / "dir2"
-    dir1.mkdir()
-    dir2.mkdir()
-
-    (dir1 / "a.md").write_text("""---
-name: skill-a
-description: Skill A
----
-
-Content A
-""")
-    (dir2 / "b.md").write_text("""---
-name: skill-b
-description: Skill B
----
-
-Content B
-""")
-
-    monkeypatch.setenv("YOKER_SKILLS_PATH", f"{dir1}{os.pathsep}{dir2}")
-
-    skills = load_skills_from_env()
-
-    assert "skill-a" in skills
-    assert "skill-b" in skills
-
-  def test_load_skills_from_env_custom_var(
-    self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-  ) -> None:
-    """Load skills from custom env var name."""
-    (tmp_path / "test.md").write_text("""---
-name: test
-description: Test
----
-
-Content
-""")
-
-    monkeypatch.setenv("CUSTOM_SKILLS", str(tmp_path))
-
-    skills = load_skills_from_env(env_var="CUSTOM_SKILLS")
-
-    assert "test" in skills
-
-  def test_load_skills_from_env_ignores_invalid_paths(
-    self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-  ) -> None:
-    """Load skills ignores invalid paths in env var."""
-    (tmp_path / "test.md").write_text("""---
-name: test
-description: Test
----
-
-Content
-""")
-
-    # Mix of valid and invalid paths
-    monkeypatch.setenv(
-      "YOKER_SKILLS_PATH", f"/nonexistent{os.pathsep}{tmp_path}{os.pathsep}/also/nonexistent"
-    )
-
-    skills = load_skills_from_env()
-
-    # Should still load from valid path
-    assert "test" in skills
+    assert f"{tmp_path.name}:test" in skills

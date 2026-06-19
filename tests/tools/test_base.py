@@ -1,8 +1,13 @@
 """Tests for tool base types."""
 
+from typing import Annotated
+
 import pytest
 
-from yoker.tools.base import Tool, ToolResult, ValidationResult
+from yoker.annotations import Text
+from yoker.tools.base import ToolResult, ValidationResult
+from yoker.tools.registry import ToolRegistry
+from yoker.tools.schema import build_tool_spec
 
 
 class TestToolResult:
@@ -51,38 +56,31 @@ class TestValidationResult:
       result.valid = False
 
 
-class TestToolABC:
-  """Tests for Tool abstract base class."""
+class TestToolSpec:
+  """Tests for building ToolSpec from plain functions."""
 
-  def test_cannot_instantiate(self) -> None:
-    """Tool ABC cannot be instantiated directly."""
-    with pytest.raises(TypeError):
-      Tool()
+  def test_build_tool_spec_from_function(self) -> None:
+    """A plain async function becomes a ToolSpec."""
 
-  @pytest.mark.asyncio
-  async def test_concrete_tool(self) -> None:
-    """Concrete Tool subclass can be instantiated."""
+    async def my_tool(value: Annotated[str, Text("A value")]) -> str:
+      """A test tool."""
+      return value
 
-    class MyTool(Tool):
-      @property
-      def name(self) -> str:
-        return "my_tool"
+    spec = build_tool_spec(my_tool)
+    assert spec.name == "my_tool"
+    assert "A test tool" in spec.description
+    assert spec.schema["type"] == "function"
+    assert spec.schema["function"]["name"] == "my_tool"
+    assert "value" in spec.schema["function"]["parameters"]["properties"]
 
-      @property
-      def description(self) -> str:
-        return "A test tool"
+  def test_tool_registry_accepts_function(self) -> None:
+    """ToolRegistry can register a plain function and retrieve its spec."""
 
-      def get_schema(self) -> dict:
-        return {"type": "function", "function": {"name": "my_tool"}}
+    async def hello() -> str:
+      """Say hello."""
+      return "hello"
 
-      async def execute(self, value: str = "") -> ToolResult:
-        return ToolResult(success=True, result=value)
-
-    tool = MyTool()
-    assert tool.name == "my_tool"
-    assert tool.description == "A test tool"
-    assert tool.get_schema()["function"]["name"] == "my_tool"
-
-    result = await tool.execute(value="hello")
-    assert result.success is True
-    assert result.result == "hello"
+    registry = ToolRegistry()
+    spec = registry.register(hello)
+    assert registry.get("hello") is spec
+    assert registry.names == ["hello"]

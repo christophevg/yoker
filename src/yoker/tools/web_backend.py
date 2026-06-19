@@ -52,7 +52,7 @@ class OllamaWebSearchBackend:
     - Built-in result formatting
 
   Limitations:
-    - Requires OLLAMA_API_KEY for cloud-based search
+    - Requires backend.ollama.api_key for cloud-based search
     - Limited to 10 results
     - No domain filtering on client side
   """
@@ -183,7 +183,7 @@ class OllamaWebFetchBackend:
     - Configurable output format
 
   Limitations:
-    - Requires OLLAMA_API_KEY for cloud-based fetch
+    - Requires backend.ollama.api_key for cloud-based fetch
     - Limited control over fetch process
     - Cannot enforce all client-side guardrails
   """

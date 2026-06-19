@@ -1,46 +1,38 @@
-"""Tests for UpdateTool."""
+"""Tests for update tool."""
 
 from pathlib import Path
 
 import pytest
 
-from yoker.config import Config, ToolsConfig, UpdateToolConfig
-from yoker.tools import UpdateTool
-from yoker.tools.base import ToolResult, ValidationResult
+from yoker.config import Config, PermissionsConfig, ToolsConfig, UpdateToolConfig
+from yoker.tools import ToolRegistry, make_update_tool
+from yoker.tools.base import ToolResult
+from yoker.tools.path_guardrail import PathGuardrail
 
 
-class FakeGuardrail:
-  """Fake guardrail for testing UpdateTool integration."""
-
-  def __init__(self, allow: bool = True, reason: str = "blocked") -> None:
-    self.allow = allow
-    self.reason = reason
-    self.calls: list[tuple[str, dict]] = []
-
-  def validate(self, tool_name: str, params: dict) -> ValidationResult:
-    self.calls.append((tool_name, params))
-    if self.allow:
-      return ValidationResult(valid=True)
-    return ValidationResult(valid=False, reason=self.reason)
+def _update_spec(config: Config | None = None):
+  """Create and register the update tool."""
+  registry = ToolRegistry()
+  return registry.register(make_update_tool(config))
 
 
 class TestUpdateTool:
-  """Tests for UpdateTool."""
+  """Tests for the update tool."""
 
   def test_name(self) -> None:
-    """UpdateTool has correct name."""
-    tool = UpdateTool()
-    assert tool.name == "update"
+    """update tool has correct name."""
+    spec = _update_spec()
+    assert spec.name == "update"
 
   def test_description(self) -> None:
-    """UpdateTool has description."""
-    tool = UpdateTool()
-    assert "Update" in tool.description
+    """update tool has description."""
+    spec = _update_spec()
+    assert "Update" in spec.description
 
   def test_schema(self) -> None:
-    """UpdateTool schema has required fields."""
-    tool = UpdateTool()
-    schema = tool.get_schema()
+    """update tool schema has required fields."""
+    spec = _update_spec()
+    schema = spec.schema
     assert schema["type"] == "function"
     func = schema["function"]
     assert func["name"] == "update"
@@ -58,11 +50,11 @@ class TestUpdateTool:
 
   @pytest.mark.asyncio
   async def test_replace_success(self, tmp_path: Path) -> None:
-    """UpdateTool replaces old_string with new_string."""
+    """update tool replaces old_string with new_string."""
     file_path = tmp_path / "test.txt"
     file_path.write_text("hello world")
-    tool = UpdateTool()
-    result = await tool.execute(
+    spec = _update_spec()
+    result = await spec.execute(
       path=str(file_path),
       operation="replace",
       old_string="hello",
@@ -75,12 +67,12 @@ class TestUpdateTool:
 
   @pytest.mark.asyncio
   async def test_replace_exact_match_multiple_rejected(self, tmp_path: Path) -> None:
-    """UpdateTool rejects ambiguous match when require_exact_match=True."""
+    """update tool rejects ambiguous match when require_exact_match=True."""
     file_path = tmp_path / "test.txt"
     file_path.write_text("hello hello world")
     config = Config(tools=ToolsConfig(update=UpdateToolConfig(require_exact_match=True)))
-    tool = UpdateTool(config=config)
-    result = await tool.execute(
+    spec = _update_spec(config)
+    result = await spec.execute(
       path=str(file_path),
       operation="replace",
       old_string="hello",
@@ -92,12 +84,12 @@ class TestUpdateTool:
 
   @pytest.mark.asyncio
   async def test_replace_exact_match_single_allowed(self, tmp_path: Path) -> None:
-    """UpdateTool allows replacement when match is unique."""
+    """update tool allows replacement when match is unique."""
     file_path = tmp_path / "test.txt"
     file_path.write_text("hello world")
     config = Config(tools=ToolsConfig(update=UpdateToolConfig(require_exact_match=True)))
-    tool = UpdateTool(config=config)
-    result = await tool.execute(
+    spec = _update_spec(config)
+    result = await spec.execute(
       path=str(file_path),
       operation="replace",
       old_string="hello",
@@ -108,11 +100,11 @@ class TestUpdateTool:
 
   @pytest.mark.asyncio
   async def test_replace_no_match(self, tmp_path: Path) -> None:
-    """UpdateTool returns error when old_string not found."""
+    """update tool returns error when old_string not found."""
     file_path = tmp_path / "test.txt"
     file_path.write_text("hello world")
-    tool = UpdateTool()
-    result = await tool.execute(
+    spec = _update_spec()
+    result = await spec.execute(
       path=str(file_path),
       operation="replace",
       old_string="missing",
@@ -127,8 +119,8 @@ class TestUpdateTool:
     file_path = tmp_path / "test.txt"
     file_path.write_text("hello hello world")
     config = Config(tools=ToolsConfig(update=UpdateToolConfig(require_exact_match=False)))
-    tool = UpdateTool(config=config)
-    result = await tool.execute(
+    spec = _update_spec(config)
+    result = await spec.execute(
       path=str(file_path),
       operation="replace",
       old_string="hello",
@@ -141,11 +133,11 @@ class TestUpdateTool:
 
   @pytest.mark.asyncio
   async def test_insert_before(self, tmp_path: Path) -> None:
-    """UpdateTool inserts before specified line."""
+    """update tool inserts before specified line."""
     file_path = tmp_path / "test.txt"
     file_path.write_text("line1\nline2\nline3")
-    tool = UpdateTool()
-    result = await tool.execute(
+    spec = _update_spec()
+    result = await spec.execute(
       path=str(file_path),
       operation="insert_before",
       line_number=2,
@@ -160,11 +152,11 @@ class TestUpdateTool:
 
   @pytest.mark.asyncio
   async def test_insert_after(self, tmp_path: Path) -> None:
-    """UpdateTool inserts after specified line."""
+    """update tool inserts after specified line."""
     file_path = tmp_path / "test.txt"
     file_path.write_text("line1\nline2\nline3")
-    tool = UpdateTool()
-    result = await tool.execute(
+    spec = _update_spec()
+    result = await spec.execute(
       path=str(file_path),
       operation="insert_after",
       line_number=2,
@@ -178,11 +170,11 @@ class TestUpdateTool:
 
   @pytest.mark.asyncio
   async def test_insert_line_number_out_of_range(self, tmp_path: Path) -> None:
-    """UpdateTool returns error for invalid line number."""
+    """update tool returns error for invalid line number."""
     file_path = tmp_path / "test.txt"
     file_path.write_text("line1\nline2")
-    tool = UpdateTool()
-    result = await tool.execute(
+    spec = _update_spec()
+    result = await spec.execute(
       path=str(file_path),
       operation="insert_before",
       line_number=5,
@@ -193,11 +185,11 @@ class TestUpdateTool:
 
   @pytest.mark.asyncio
   async def test_insert_line_number_zero(self, tmp_path: Path) -> None:
-    """UpdateTool returns error for line_number=0."""
+    """update tool returns error for line_number=0."""
     file_path = tmp_path / "test.txt"
     file_path.write_text("line1\nline2")
-    tool = UpdateTool()
-    result = await tool.execute(
+    spec = _update_spec()
+    result = await spec.execute(
       path=str(file_path),
       operation="insert_before",
       line_number=0,
@@ -208,11 +200,11 @@ class TestUpdateTool:
 
   @pytest.mark.asyncio
   async def test_insert_missing_line_number(self, tmp_path: Path) -> None:
-    """UpdateTool requires line_number for insert operations."""
+    """update tool requires line_number for insert operations."""
     file_path = tmp_path / "test.txt"
     file_path.write_text("line1\nline2")
-    tool = UpdateTool()
-    result = await tool.execute(
+    spec = _update_spec()
+    result = await spec.execute(
       path=str(file_path),
       operation="insert_before",
       new_string="inserted",
@@ -222,11 +214,11 @@ class TestUpdateTool:
 
   @pytest.mark.asyncio
   async def test_insert_into_empty_file(self, tmp_path: Path) -> None:
-    """UpdateTool handles insertion into empty file."""
+    """update tool handles insertion into empty file."""
     file_path = tmp_path / "test.txt"
     file_path.write_text("")
-    tool = UpdateTool()
-    result = await tool.execute(
+    spec = _update_spec()
+    result = await spec.execute(
       path=str(file_path),
       operation="insert_before",
       line_number=1,
@@ -239,11 +231,11 @@ class TestUpdateTool:
 
   @pytest.mark.asyncio
   async def test_delete_by_old_string(self, tmp_path: Path) -> None:
-    """UpdateTool deletes content by old_string match."""
+    """update tool deletes content by old_string match."""
     file_path = tmp_path / "test.txt"
     file_path.write_text("hello world")
-    tool = UpdateTool()
-    result = await tool.execute(
+    spec = _update_spec()
+    result = await spec.execute(
       path=str(file_path),
       operation="delete",
       old_string="hello ",
@@ -253,11 +245,11 @@ class TestUpdateTool:
 
   @pytest.mark.asyncio
   async def test_delete_by_line_number(self, tmp_path: Path) -> None:
-    """UpdateTool deletes line by line_number."""
+    """update tool deletes line by line_number."""
     file_path = tmp_path / "test.txt"
     file_path.write_text("line1\nline2\nline3")
-    tool = UpdateTool()
-    result = await tool.execute(
+    spec = _update_spec()
+    result = await spec.execute(
       path=str(file_path),
       operation="delete",
       line_number=2,
@@ -271,11 +263,11 @@ class TestUpdateTool:
 
   @pytest.mark.asyncio
   async def test_delete_no_match(self, tmp_path: Path) -> None:
-    """UpdateTool returns error when delete old_string not found."""
+    """update tool returns error when delete old_string not found."""
     file_path = tmp_path / "test.txt"
     file_path.write_text("hello world")
-    tool = UpdateTool()
-    result = await tool.execute(
+    spec = _update_spec()
+    result = await spec.execute(
       path=str(file_path),
       operation="delete",
       old_string="missing",
@@ -285,12 +277,12 @@ class TestUpdateTool:
 
   @pytest.mark.asyncio
   async def test_delete_multiple_rejected(self, tmp_path: Path) -> None:
-    """UpdateTool rejects ambiguous delete when require_exact_match=True."""
+    """update tool rejects ambiguous delete when require_exact_match=True."""
     file_path = tmp_path / "test.txt"
     file_path.write_text("hello hello world")
     config = Config(tools=ToolsConfig(update=UpdateToolConfig(require_exact_match=True)))
-    tool = UpdateTool(config=config)
-    result = await tool.execute(
+    spec = _update_spec(config)
+    result = await spec.execute(
       path=str(file_path),
       operation="delete",
       old_string="hello",
@@ -300,11 +292,11 @@ class TestUpdateTool:
 
   @pytest.mark.asyncio
   async def test_delete_line_number_out_of_range(self, tmp_path: Path) -> None:
-    """UpdateTool returns error for invalid delete line number."""
+    """update tool returns error for invalid delete line number."""
     file_path = tmp_path / "test.txt"
     file_path.write_text("line1\nline2")
-    tool = UpdateTool()
-    result = await tool.execute(
+    spec = _update_spec()
+    result = await spec.execute(
       path=str(file_path),
       operation="delete",
       line_number=5,
@@ -315,38 +307,42 @@ class TestUpdateTool:
   # --- Guardrail tests ---
 
   @pytest.mark.asyncio
-  async def test_update_with_guardrail_blocks(self) -> None:
-    """UpdateTool with guardrail blocks unauthorized paths."""
-    guardrail = FakeGuardrail(allow=False, reason="outside allowed")
-    tool = UpdateTool(guardrail=guardrail)
-    result = await tool.execute(
-      path="/etc/passwd",
-      operation="replace",
-      old_string="x",
-      new_string="y",
+  async def test_update_with_guardrail_blocks(self, tmp_path: Path) -> None:
+    """Path guardrail blocks paths outside allowed directories for update."""
+    config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
+    guardrail = PathGuardrail(config)
+    spec = _update_spec()
+    validation = guardrail.validate(
+      spec.name,
+      {
+        "path": "/etc/passwd",
+        "operation": "replace",
+        "old_string": "x",
+        "new_string": "y",
+      },
     )
-    assert result.success is False
-    assert result.error == "outside allowed"
-    assert guardrail.calls == [
-      (
-        "update",
-        {
-          "path": "/etc/passwd",
-          "operation": "replace",
-          "old_string": "x",
-          "new_string": "y",
-        },
-      )
-    ]
+    assert not validation.valid
+    assert "outside allowed" in (validation.reason or "").lower()
 
   @pytest.mark.asyncio
   async def test_update_with_guardrail_allows(self, tmp_path: Path) -> None:
-    """UpdateTool with guardrail allows authorized paths."""
+    """Path guardrail allows paths inside allowed directories for update."""
     file_path = tmp_path / "test.txt"
     file_path.write_text("hello")
-    guardrail = FakeGuardrail(allow=True)
-    tool = UpdateTool(guardrail=guardrail)
-    result = await tool.execute(
+    config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
+    guardrail = PathGuardrail(config)
+    spec = _update_spec()
+    validation = guardrail.validate(
+      spec.name,
+      {
+        "path": str(file_path),
+        "operation": "replace",
+        "old_string": "hello",
+        "new_string": "goodbye",
+      },
+    )
+    assert validation.valid
+    result = await spec.execute(
       path=str(file_path),
       operation="replace",
       old_string="hello",
@@ -354,29 +350,18 @@ class TestUpdateTool:
     )
     assert result.success is True
     assert file_path.read_text(encoding="utf-8") == "goodbye"
-    assert guardrail.calls == [
-      (
-        "update",
-        {
-          "path": str(file_path),
-          "operation": "replace",
-          "old_string": "hello",
-          "new_string": "goodbye",
-        },
-      )
-    ]
 
   # --- Security tests ---
 
   @pytest.mark.asyncio
   async def test_update_rejects_symlink(self, tmp_path: Path) -> None:
-    """UpdateTool rejects updating via symlinks."""
+    """update tool rejects updating via symlinks."""
     target = tmp_path / "target.txt"
     target.write_text("secret")
     link = tmp_path / "link.txt"
     link.symlink_to(target)
-    tool = UpdateTool()
-    result = await tool.execute(
+    spec = _update_spec()
+    result = await spec.execute(
       path=str(link),
       operation="replace",
       old_string="secret",
@@ -387,10 +372,10 @@ class TestUpdateTool:
 
   @pytest.mark.asyncio
   async def test_update_nonexistent_file(self, tmp_path: Path) -> None:
-    """UpdateTool returns error when file does not exist."""
+    """update tool returns error when file does not exist."""
     file_path = tmp_path / "missing.txt"
-    tool = UpdateTool()
-    result = await tool.execute(
+    spec = _update_spec()
+    result = await spec.execute(
       path=str(file_path),
       operation="replace",
       old_string="x",
@@ -401,11 +386,11 @@ class TestUpdateTool:
 
   @pytest.mark.asyncio
   async def test_update_directory(self, tmp_path: Path) -> None:
-    """UpdateTool returns error when path is a directory."""
+    """update tool returns error when path is a directory."""
     subdir = tmp_path / "subdir"
     subdir.mkdir()
-    tool = UpdateTool()
-    result = await tool.execute(
+    spec = _update_spec()
+    result = await spec.execute(
       path=str(subdir),
       operation="replace",
       old_string="x",
@@ -416,10 +401,10 @@ class TestUpdateTool:
 
   @pytest.mark.asyncio
   async def test_update_sanitizes_error_messages(self, tmp_path: Path) -> None:
-    """UpdateTool does not leak full paths in error messages."""
-    tool = UpdateTool()
+    """update tool does not leak full paths in error messages."""
+    spec = _update_spec()
     sensitive_path = str(tmp_path / ".ssh" / "id_rsa")
-    result = await tool.execute(
+    result = await spec.execute(
       path=sensitive_path,
       operation="replace",
       old_string="x",
@@ -430,11 +415,11 @@ class TestUpdateTool:
 
   @pytest.mark.asyncio
   async def test_update_resolves_path(self, tmp_path: Path) -> None:
-    """UpdateTool resolves relative paths before updating."""
+    """update tool resolves relative paths before updating."""
     file_path = tmp_path / "real.txt"
     file_path.write_text("original")
-    tool = UpdateTool()
-    result = await tool.execute(
+    spec = _update_spec()
+    result = await spec.execute(
       path=str(tmp_path / ".." / tmp_path.name / "real.txt"),
       operation="replace",
       old_string="original",
@@ -447,14 +432,14 @@ class TestUpdateTool:
 
   @pytest.mark.asyncio
   async def test_diff_size_exceeded(self, tmp_path: Path) -> None:
-    """UpdateTool rejects when diff size exceeds limit."""
+    """update tool rejects when diff size exceeds limit."""
     file_path = tmp_path / "test.txt"
     file_path.write_text("x")
     config = Config(tools=ToolsConfig(update=UpdateToolConfig(max_diff_size_kb=1)))
-    tool = UpdateTool(config=config)
+    spec = _update_spec(config)
     # 2048 bytes = 2KB, exceeds 1KB limit
     large_string = "a" * 2048
-    result = await tool.execute(
+    result = await spec.execute(
       path=str(file_path),
       operation="replace",
       old_string="x",
@@ -465,12 +450,12 @@ class TestUpdateTool:
 
   @pytest.mark.asyncio
   async def test_diff_size_within_limit(self, tmp_path: Path) -> None:
-    """UpdateTool allows when diff size within limit."""
+    """update tool allows when diff size within limit."""
     file_path = tmp_path / "test.txt"
     file_path.write_text("x")
     config = Config(tools=ToolsConfig(update=UpdateToolConfig(max_diff_size_kb=100)))
-    tool = UpdateTool(config=config)
-    result = await tool.execute(
+    spec = _update_spec(config)
+    result = await spec.execute(
       path=str(file_path),
       operation="replace",
       old_string="x",
@@ -482,7 +467,7 @@ class TestUpdateTool:
 
   @pytest.mark.asyncio
   async def test_permission_denied(self, tmp_path: Path, monkeypatch) -> None:
-    """UpdateTool returns sanitized error on permission denied during read."""
+    """update tool returns sanitized error on permission denied during read."""
     file_path = tmp_path / "readonly.txt"
     file_path.write_text("existing")
 
@@ -490,8 +475,8 @@ class TestUpdateTool:
       raise PermissionError("Access denied")
 
     monkeypatch.setattr(Path, "read_text", mock_read_text)
-    tool = UpdateTool()
-    result = await tool.execute(
+    spec = _update_spec()
+    result = await spec.execute(
       path=str(file_path),
       operation="replace",
       old_string="existing",
@@ -503,12 +488,12 @@ class TestUpdateTool:
 
   @pytest.mark.asyncio
   async def test_empty_old_string_replace(self, tmp_path: Path) -> None:
-    """UpdateTool handles empty old_string as search for empty string."""
+    """update tool handles empty old_string as search for empty string."""
     file_path = tmp_path / "test.txt"
     file_path.write_text("hello")
     config = Config(tools=ToolsConfig(update=UpdateToolConfig(require_exact_match=False)))
-    tool = UpdateTool(config=config)
-    result = await tool.execute(
+    spec = _update_spec(config)
+    result = await spec.execute(
       path=str(file_path),
       operation="replace",
       old_string="",
@@ -519,9 +504,9 @@ class TestUpdateTool:
 
   @pytest.mark.asyncio
   async def test_invalid_operation(self) -> None:
-    """UpdateTool handles invalid operation parameter."""
-    tool = UpdateTool()
-    result = await tool.execute(
+    """update tool handles invalid operation parameter."""
+    spec = _update_spec()
+    result = await spec.execute(
       path="/tmp/test.txt",
       operation="invalid_op",
       old_string="x",
@@ -532,9 +517,9 @@ class TestUpdateTool:
 
   @pytest.mark.asyncio
   async def test_non_string_path(self) -> None:
-    """UpdateTool handles non-string path parameter."""
-    tool = UpdateTool()
-    result = await tool.execute(
+    """update tool handles non-string path parameter."""
+    spec = _update_spec()
+    result = await spec.execute(
       path=123,
       operation="replace",
       old_string="x",
@@ -545,9 +530,9 @@ class TestUpdateTool:
 
   @pytest.mark.asyncio
   async def test_non_string_old_string(self) -> None:
-    """UpdateTool handles non-string old_string parameter."""
-    tool = UpdateTool()
-    result = await tool.execute(
+    """update tool handles non-string old_string parameter."""
+    spec = _update_spec()
+    result = await spec.execute(
       path="/tmp/test.txt",
       operation="replace",
       old_string=123,
@@ -558,9 +543,9 @@ class TestUpdateTool:
 
   @pytest.mark.asyncio
   async def test_result_is_toolresult(self) -> None:
-    """UpdateTool execute returns ToolResult."""
-    tool = UpdateTool()
-    result = await tool.execute(
+    """update tool execute returns ToolResult."""
+    spec = _update_spec()
+    result = await spec.execute(
       path="/dev/null",
       operation="replace",
       old_string="x",
@@ -570,14 +555,13 @@ class TestUpdateTool:
 
   @pytest.mark.asyncio
   async def test_update_symlink_inside_allowed_with_guardrail(self, tmp_path: Path) -> None:
-    """UpdateTool rejects symlinks even when guardrail allows."""
+    """update tool rejects symlinks regardless of guardrail."""
     target = tmp_path / "target.txt"
     target.write_text("allowed target")
     link = tmp_path / "link.txt"
     link.symlink_to(target)
-    guardrail = FakeGuardrail(allow=True)
-    tool = UpdateTool(guardrail=guardrail)
-    result = await tool.execute(
+    spec = _update_spec()
+    result = await spec.execute(
       path=str(link),
       operation="replace",
       old_string="allowed",
@@ -588,11 +572,11 @@ class TestUpdateTool:
 
   @pytest.mark.asyncio
   async def test_delete_requires_old_string_or_line_number(self, tmp_path: Path) -> None:
-    """UpdateTool delete requires either old_string or line_number."""
+    """update tool delete requires either old_string or line_number."""
     file_path = tmp_path / "test.txt"
     file_path.write_text("hello world")
-    tool = UpdateTool()
-    result = await tool.execute(
+    spec = _update_spec()
+    result = await spec.execute(
       path=str(file_path),
       operation="delete",
     )

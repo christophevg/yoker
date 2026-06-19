@@ -66,14 +66,13 @@ make docs
 - `rich>=14.0.0` - Rich terminal output
 - `structlog>=23.0.0` - Structured logging
 - `pyyaml>=6.0` - YAML parsing (for agent definitions)
-- `tomli>=2.0` - TOML parsing (Python < 3.11)
 
 ### Development Dependencies
 
-- `pytest>=7.0.0` - Testing framework
-- `pytest-cov>=4.0.0` - Coverage reporting
-- `mypy>=1.0.0` - Type checking
-- `ruff>=0.1.0` - Linting and formatting
+- `pytest>=8.0.0` - Testing framework
+- `pytest-cov>=5.0.0` - Coverage reporting
+- `mypy>=1.13.0` - Type checking
+- `ruff>=0.8.0` - Linting and formatting
 - `sphinx>=7.0.0` - Documentation
 
 ## Next Steps

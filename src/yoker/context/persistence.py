@@ -17,11 +17,12 @@ if sys.platform != "win32":
 else:
   fcntl = None  # type: ignore[assignment]
 
+from structlog import get_logger
+
 from yoker.context.interface import ContextStatistics
 from yoker.context.manager import ContextManager
 from yoker.context.validator import is_safe_path, validate_session_id, validate_storage_path
 from yoker.exceptions import ContextCorruptionError, SessionNotFoundError
-from yoker.logging import get_logger
 
 log = get_logger(__name__)
 

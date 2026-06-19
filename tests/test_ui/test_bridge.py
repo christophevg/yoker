@@ -26,8 +26,8 @@ class MockUIHandler(BaseUIHandler):
     super().__init__()
     self.calls = []
 
-  async def start(self, model: str, version: str, config: dict) -> None:
-    self.calls.append(("start", model, version, config))
+  async def start(self, agent) -> None:
+    self.calls.append(("start", agent))
 
   async def shutdown(self, reason: str) -> None:
     self.calls.append(("shutdown", reason))

@@ -8,7 +8,8 @@ blocks sensitive patterns, enforces file size limits, and filters by extension.
 import os
 import re
 from pathlib import Path
-from typing import Any
+
+from structlog import get_logger
 
 from yoker.config import (
   Config,
@@ -19,7 +20,6 @@ from yoker.config import (
   UpdateToolConfig,
   WriteToolConfig,
 )
-from yoker.logging import get_logger
 from yoker.tools.base import ValidationResult
 from yoker.tools.guardrails import Guardrail
 
@@ -73,7 +73,7 @@ class PathGuardrail(Guardrail):
       Path(root).resolve() for root in self._permissions.filesystem_paths
     )
 
-  def validate(self, tool_name: str, params: dict[str, Any]) -> ValidationResult:
+  def validate(self, tool_name: str, value: str) -> ValidationResult:
     """Validate tool parameters against permission boundaries.
 
     Steps:
@@ -91,15 +91,10 @@ class PathGuardrail(Guardrail):
     Returns:
       ValidationResult indicating whether parameters are valid.
     """
-    # Only validate filesystem tools
-    if tool_name not in _FILESYSTEM_TOOLS:
-      return ValidationResult(valid=True)
-
-    # Extract path parameter
-    path_param = params.get("path")
+    path_param = value.strip()  # rename for internal clarity
 
     # Git tool allows missing path (defaults to ".")
-    if path_param is None:
+    if not path_param:
       if tool_name == "git":
         # Git tool will default to "."
         return ValidationResult(valid=True)
@@ -109,8 +104,6 @@ class PathGuardrail(Guardrail):
       return ValidationResult(
         valid=False, reason=f"Parameter 'path' must be a string, got {type(path_param).__name__}"
       )
-    if not path_param.strip():
-      return ValidationResult(valid=False, reason="Parameter 'path' cannot be empty")
 
     # Resolve the path
     resolved = self._resolve_path(path_param)
@@ -153,7 +146,7 @@ class PathGuardrail(Guardrail):
       if ext_reason:
         return ValidationResult(valid=False, reason=ext_reason)
 
-      size_reason = self._check_write_content_size(params)
+      size_reason = self._check_write_content_size(value)
       if size_reason:
         return ValidationResult(valid=False, reason=size_reason)
 
@@ -176,7 +169,7 @@ class PathGuardrail(Guardrail):
         return ValidationResult(valid=False, reason=ext_reason)
 
       # Check diff size
-      size_reason = self._check_update_diff_size(params)
+      size_reason = self._check_update_diff_size(value)
       if size_reason:
         return ValidationResult(valid=False, reason=size_reason)
 
@@ -303,7 +296,7 @@ class PathGuardrail(Guardrail):
       return f"Extension blocked for writing: {ext}"
     return None
 
-  def _check_write_content_size(self, params: dict[str, Any]) -> str | None:
+  def _check_write_content_size(self, content: str) -> str | None:
     """Check if write content exceeds the maximum allowed size.
 
     Args:
@@ -320,7 +313,6 @@ class PathGuardrail(Guardrail):
     if max_size_kb <= 0:
       return None
 
-    content = params.get("content", "")
     if not isinstance(content, str):
       return None
 
@@ -329,7 +321,7 @@ class PathGuardrail(Guardrail):
       return f"Content exceeds size limit: {size_kb:.1f}KB > {max_size_kb}KB"
     return None
 
-  def _check_update_diff_size(self, params: dict[str, Any]) -> str | None:
+  def _check_update_diff_size(self, new_string: str) -> str | None:
     """Check if update diff size exceeds the maximum allowed.
 
     Args:
@@ -346,7 +338,6 @@ class PathGuardrail(Guardrail):
     if max_size_kb <= 0:
       return None
 
-    new_string = params.get("new_string", "")
     if not isinstance(new_string, str):
       return None
 

@@ -2,25 +2,34 @@
 
 from unittest.mock import Mock
 
-from yoker.commands import CommandRegistry, create_skills_command
+import pytest
+
 from yoker.skills import Skill, SkillRegistry
+from yoker.ui.commands import CommandRegistry
+from yoker.ui.commands.skills import create_command as create_skills_command
 
 
 class TestSkillsCommand:
   """Test /skills command creation and invocation."""
 
-  def test_create_skills_command_empty_registry(self):
-    """Test /skills command with empty registry."""
-    registry = SkillRegistry()
-    config = Mock()
-    config.skills.directories = []
-    command = create_skills_command(registry, config)
+  def _make_agent(self, skill_registry=None, directories=()):
+    agent = Mock()
+    agent.skill_registry = skill_registry
+    agent.config.skills.directories = directories
+    return agent
 
-    result = command.handler([])
+  @pytest.mark.asyncio
+  async def test_create_skills_command_empty_registry(self):
+    """Test /skills command with empty registry."""
+    agent = self._make_agent(skill_registry=SkillRegistry())
+    command = create_skills_command()
+
+    result = await command.handler("", agent, Mock())
     assert "Loaded skills:" in result
     assert "No skills loaded" in result
 
-  def test_create_skills_command_single_skill(self):
+  @pytest.mark.asyncio
+  async def test_create_skills_command_single_skill(self):
     """Test /skills command with one skill."""
     registry = SkillRegistry()
     skill = Skill(
@@ -29,17 +38,17 @@ class TestSkillsCommand:
       content="Instructions for committing...",
     )
     registry.register(skill)
-    config = Mock()
-    config.skills.directories = []
 
-    command = create_skills_command(registry, config)
-    result = command.handler([])
+    agent = self._make_agent(skill_registry=registry)
+    command = create_skills_command()
+    result = await command.handler("", agent, Mock())
 
     assert "Loaded skills:" in result
     assert "commit" in result
     assert "Guide git commits" in result
 
-  def test_create_skills_command_multiple_skills(self):
+  @pytest.mark.asyncio
+  async def test_create_skills_command_multiple_skills(self):
     """Test /skills command with multiple skills."""
     registry = SkillRegistry()
 
@@ -62,11 +71,10 @@ class TestSkillsCommand:
     registry.register(skill1)
     registry.register(skill2)
     registry.register(skill3)
-    config = Mock()
-    config.skills.directories = []
 
-    command = create_skills_command(registry, config)
-    result = command.handler([])
+    agent = self._make_agent(skill_registry=registry)
+    command = create_skills_command()
+    result = await command.handler("", agent, Mock())
 
     assert "Loaded skills:" in result
     assert "commit" in result
@@ -76,7 +84,8 @@ class TestSkillsCommand:
     assert "test" in result
     assert "Run tests" in result
 
-  def test_skills_command_namespaced_skill(self):
+  @pytest.mark.asyncio
+  async def test_skills_command_namespaced_skill(self):
     """Test /skills command with namespaced skill."""
     registry = SkillRegistry()
     skill = Skill(
@@ -86,17 +95,17 @@ class TestSkillsCommand:
       namespace="c3",
     )
     registry.register(skill)
-    config = Mock()
-    config.skills.directories = []
 
-    command = create_skills_command(registry, config)
-    result = command.handler([])
+    agent = self._make_agent(skill_registry=registry)
+    command = create_skills_command()
+    result = await command.handler("", agent, Mock())
 
     assert "Loaded skills:" in result
     assert "c3:commit" in result
     assert "Guide git commits" in result
 
-  def test_skills_command_registered_in_command_registry(self):
+  @pytest.mark.asyncio
+  async def test_skills_command_registered_in_command_registry(self):
     """Test that /skills command can be registered in CommandRegistry."""
     skill_registry = SkillRegistry()
     skill = Skill(
@@ -105,20 +114,20 @@ class TestSkillsCommand:
       content="Commit instructions...",
     )
     skill_registry.register(skill)
-    config = Mock()
-    config.skills.directories = []
 
     command_registry = CommandRegistry()
-    skills_command = create_skills_command(skill_registry, config)
-    command_registry.register(skills_command)
+    command_registry.register(create_skills_command())
+
+    agent = self._make_agent(skill_registry=skill_registry)
 
     # Test dispatch
-    result = command_registry.dispatch("/skills")
+    result = await command_registry.dispatch("/skills", agent, Mock())
     assert result is not None
     assert "Loaded skills:" in result
     assert "commit" in result
 
-  def test_skills_command_ignores_args(self):
+  @pytest.mark.asyncio
+  async def test_skills_command_ignores_args(self):
     """Test that /skills command ignores arguments."""
     registry = SkillRegistry()
     skill = Skill(
@@ -127,20 +136,20 @@ class TestSkillsCommand:
       content="Commit instructions...",
     )
     registry.register(skill)
-    config = Mock()
-    config.skills.directories = []
 
-    command = create_skills_command(registry, config)
+    agent = self._make_agent(skill_registry=registry)
+    command = create_skills_command()
 
     # Arguments should be ignored
-    result1 = command.handler([])
-    result2 = command.handler(["ignored", "args"])
+    result1 = await command.handler("", agent, Mock())
+    result2 = await command.handler("ignored args", agent, Mock())
 
     assert result1 == result2
     assert "Loaded skills:" in result1
     assert "commit" in result1
 
-  def test_skills_command_sorted_output(self):
+  @pytest.mark.asyncio
+  async def test_skills_command_sorted_output(self):
     """Test that skills are listed in sorted order."""
     registry = SkillRegistry()
 
@@ -164,13 +173,12 @@ class TestSkillsCommand:
     registry.register(skill3)
     registry.register(skill1)
     registry.register(skill2)
-    config = Mock()
-    config.skills.directories = []
 
-    command = create_skills_command(registry, config)
-    result = command.handler([])
+    agent = self._make_agent(skill_registry=registry)
+    command = create_skills_command()
+    result = await command.handler("", agent, Mock())
 
-    # Verify sorted order (alpha, middle, zebra)
+    # Verify sorted order within the config section
     lines = result.split("\n")
     skill_lines = [line for line in lines if "✓" in line]
 
@@ -179,7 +187,8 @@ class TestSkillsCommand:
     assert "middle" in skill_lines[1]
     assert "zebra" in skill_lines[2]
 
-  def test_skills_command_mixed_namespaced_and_regular(self):
+  @pytest.mark.asyncio
+  async def test_skills_command_mixed_namespaced_and_regular(self):
     """Test /skills command with mix of namespaced and regular skills."""
     registry = SkillRegistry()
 
@@ -203,14 +212,12 @@ class TestSkillsCommand:
     registry.register(skill1)
     registry.register(skill2)
     registry.register(skill3)
-    config = Mock()
-    config.skills.directories = []
 
-    command = create_skills_command(registry, config)
-    result = command.handler([])
+    agent = self._make_agent(skill_registry=registry)
+    command = create_skills_command()
+    result = await command.handler("", agent, Mock())
 
     assert "Loaded skills:" in result
-    # c3:commit should come before commit (alphabetically)
     assert "c3:commit" in result
     assert "commit" in result
     assert "review" in result

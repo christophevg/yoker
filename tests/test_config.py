@@ -26,7 +26,6 @@ class TestConfigSchema:
     config = HarnessConfig()
     assert config.name == "yoker"
     assert config.version == "1.0"
-    assert config.log_level == "INFO"
 
   def test_ollama_parameters_defaults(self) -> None:
     """Test OllamaParameters default values."""
@@ -53,21 +52,21 @@ class TestConfigSchema:
     assert config.permissions.network_access == "none"
     assert config.permissions.filesystem_paths == (".",)
     assert config.tools.list.enabled is True
-    assert config.agents.directory == ""
+    assert config.agents.directories == ()
     assert config.logging.format == "text"
-    assert config.logging.level == "INFO"
+    assert config.logging.level == "WARNING"
     assert config.ui.mode == "interactive"
-    assert config.ui.show_thinking is False
-    assert config.ui.show_tool_calls is False
-    assert config.ui.show_stats is False
+    assert config.ui.show_thinking is True
+    assert config.ui.show_tool_calls is True
+    assert config.ui.show_stats is True
 
   def test_ui_config_defaults(self) -> None:
     """Test UIConfig default values."""
     ui = UIConfig()
     assert ui.mode == "interactive"
-    assert ui.show_thinking is False
-    assert ui.show_tool_calls is False
-    assert ui.show_stats is False
+    assert ui.show_thinking is True
+    assert ui.show_tool_calls is True
+    assert ui.show_stats is True
 
   def test_ui_config_batch_mode(self) -> None:
     """Test UIConfig can be configured for batch mode."""
@@ -107,9 +106,11 @@ class TestConfigValidation:
 
   def test_validate_invalid_log_level(self) -> None:
     """Test validation catches invalid log level during construction."""
+    from yoker.config import LoggingConfig
+
     with pytest.raises(ValidationError) as exc_info:
-      Config(harness=HarnessConfig(log_level="INVALID"))
-    assert "harness.log_level" in str(exc_info.value)
+      Config(logging=LoggingConfig(level="INVALID"))
+    assert "logging.level" in str(exc_info.value)
 
   def test_validate_invalid_context_manager(self) -> None:
     """Test validation catches invalid context manager during construction."""

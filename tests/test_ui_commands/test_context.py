@@ -47,8 +47,8 @@ class TestContextCommand:
     assert "Tool calls: 1" in result
 
   @pytest.mark.asyncio
-  async def test_context_shows_recent_messages(self):
-    """/context should show the last few messages."""
+  async def test_context_shows_all_messages(self):
+    """/context should show all messages."""
     agent = MagicMock(spec=Agent)
     agent.context.get_session_id.return_value = "session-123"
     agent.context.get_statistics.return_value = ContextStatistics()
@@ -61,14 +61,14 @@ class TestContextCommand:
 
     result = await handle("", agent, ui)
 
-    assert "Recent messages:" in result
-    assert "[system]" in result
-    assert "[user]" in result
-    assert "[assistant]" in result
+    assert "Messages:" in result
+    assert "#1 (system)" in result
+    assert "#2 (user)" in result
+    assert "#3 (assistant)" in result
 
   @pytest.mark.asyncio
-  async def test_context_truncates_long_content(self):
-    """/context should truncate message content over 50 characters."""
+  async def test_context_shows_full_content(self):
+    """/context should show full message content."""
     agent = MagicMock(spec=Agent)
     agent.context.get_session_id.return_value = "session-123"
     agent.context.get_statistics.return_value = ContextStatistics()
@@ -79,8 +79,7 @@ class TestContextCommand:
 
     result = await handle("", agent, ui)
 
-    assert "..." in result
-    assert "a" * 50 not in result
+    assert "a" * 100 in result
 
   @pytest.mark.asyncio
   async def test_context_registered_in_default_registry(self):

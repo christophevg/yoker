@@ -21,7 +21,7 @@ class TestIssue1AgentModelOverride:
 
   def test_agent_model_overrides_config(self) -> None:
     """Agent definition's model should override config's model."""
-    from yoker.agent.core import AgentCore
+    from yoker.agent import Agent
     from yoker.agents import AgentDefinition
     from yoker.config import Config
     from yoker.thinking import ThinkingMode
@@ -38,7 +38,7 @@ class TestIssue1AgentModelOverride:
       tools=("read",),
     )
 
-    core = AgentCore(config=config, thinking_mode=ThinkingMode.ON, agent_definition=agent_def)
+    core = Agent(config=config, thinking_mode=ThinkingMode.ON, agent_definition=agent_def)
 
     # Agent's model should override config
     assert core.model == "custom-model:latest"
@@ -46,7 +46,7 @@ class TestIssue1AgentModelOverride:
 
   def test_agent_without_model_uses_config(self) -> None:
     """Agent without model should use config's model."""
-    from yoker.agent.core import AgentCore
+    from yoker.agent import Agent
     from yoker.agents import AgentDefinition
     from yoker.config import Config
     from yoker.thinking import ThinkingMode
@@ -61,7 +61,7 @@ class TestIssue1AgentModelOverride:
       tools=("read",),
     )
 
-    core = AgentCore(config=config, thinking_mode=ThinkingMode.ON, agent_definition=agent_def)
+    core = Agent(config=config, thinking_mode=ThinkingMode.ON, agent_definition=agent_def)
 
     # Should use config's model
     assert core.model == config.backend.ollama.model
@@ -72,7 +72,7 @@ class TestIssue2BuiltinToolNamespacing:
 
   def test_yoker_namespace_preserved(self) -> None:
     """yoker: namespace should be preserved, not re-namespaced."""
-    from yoker.plugins.loader import load_agent_definition_from_string
+    from yoker.plugins.agents import load_agent_definition_from_string
 
     content = """---
 name: demo
@@ -96,7 +96,7 @@ Test."""
 
   def test_short_namespace_expansion(self) -> None:
     """Short namespace (e.g., 'demo') should expand to full namespace."""
-    from yoker.plugins.loader import load_agent_definition_from_string
+    from yoker.plugins.agents import load_agent_definition_from_string
 
     content = """---
 name: test
@@ -114,7 +114,7 @@ Test."""
 
   def test_yoker_namespace_not_renamespaced(self) -> None:
     """yoker: tools should not get plugin namespace prefix."""
-    from yoker.plugins.loader import load_agent_definition_from_string
+    from yoker.plugins.agents import load_agent_definition_from_string
 
     content = """---
 name: test
@@ -140,7 +140,7 @@ class TestIssue3ToolAvailability:
 
   def test_yoker_namespace_resolves_to_builtin(self) -> None:
     """yoker:read should resolve to read in tool registry."""
-    from yoker.agent.core import AgentCore
+    from yoker.agent import Agent
     from yoker.agents import AgentDefinition
     from yoker.config import Config
     from yoker.thinking import ThinkingMode
@@ -153,16 +153,16 @@ class TestIssue3ToolAvailability:
       tools=("yoker:read",),  # Only read allowed
     )
 
-    core = AgentCore(config=Config(), thinking_mode=ThinkingMode.ON, agent_definition=agent_def)
+    core = Agent(config=Config(), thinking_mode=ThinkingMode.ON, agent_definition=agent_def)
 
     # yoker:read should make 'read' available
-    assert core.tool_registry.get("read") is not None
+    assert core.tools.get("read") is not None
     # Other tools should not be available
-    assert core.tool_registry.get("write") is None
+    assert core.tools.get("write") is None
 
   def test_mixed_namespaces_filter_correctly(self) -> None:
     """Agent with mixed tool namespaces should filter correctly."""
-    from yoker.agent.core import AgentCore
+    from yoker.agent import Agent
     from yoker.agents import AgentDefinition
     from yoker.config import Config
     from yoker.thinking import ThinkingMode
@@ -175,13 +175,13 @@ class TestIssue3ToolAvailability:
       tools=("yoker:read", "yoker:list"),  # Only yoker tools
     )
 
-    core = AgentCore(config=Config(), thinking_mode=ThinkingMode.ON, agent_definition=agent_def)
+    core = Agent(config=Config(), thinking_mode=ThinkingMode.ON, agent_definition=agent_def)
 
     # Both should be available
-    assert core.tool_registry.get("read") is not None
-    assert core.tool_registry.get("list") is not None
+    assert core.tools.get("read") is not None
+    assert core.tools.get("list") is not None
     # Others should not
-    assert core.tool_registry.get("write") is None
+    assert core.tools.get("write") is None
 
 
 class TestIssue4YokerNamespaceResolution:
@@ -189,7 +189,7 @@ class TestIssue4YokerNamespaceResolution:
 
   def test_yoker_is_builtin_namespace(self) -> None:
     """yoker: should be treated as built-in namespace."""
-    from yoker.plugins.loader import load_agent_definition_from_string
+    from yoker.plugins.agents import load_agent_definition_from_string
 
     # Agent with yoker: tools
     content = """---
@@ -212,7 +212,7 @@ Test."""
 
   def test_other_namespaces_get_plugin_prefix(self) -> None:
     """Non-yoker namespaces should get the full plugin namespace."""
-    from yoker.plugins.loader import load_agent_definition_from_string
+    from yoker.plugins.agents import load_agent_definition_from_string
 
     content = """---
 name: test
@@ -258,11 +258,14 @@ class TestEndToEndDemoPlugin:
 
   def test_tool_availability_command_output(self) -> None:
     """Tool availability should show correct markers."""
-    from yoker.agent.core import AgentCore
+    import asyncio
+    from unittest.mock import Mock
+
+    from yoker.agent import Agent
     from yoker.agents import AgentDefinition
-    from yoker.commands.tools import create_tools_command
     from yoker.config import Config
     from yoker.thinking import ThinkingMode
+    from yoker.ui.commands.tools import create_command as create_tools_command
 
     agent_def = AgentDefinition(
       name="test",
@@ -272,11 +275,11 @@ class TestEndToEndDemoPlugin:
       tools=("yoker:read",),
     )
 
-    core = AgentCore(config=Config(), thinking_mode=ThinkingMode.ON, agent_definition=agent_def)
+    core = Agent(config=Config(), thinking_mode=ThinkingMode.ON, agent_definition=agent_def)
 
     # Create tools command
-    cmd = create_tools_command(core.tool_registry, core)
-    output = cmd.handler([])
+    cmd = create_tools_command()
+    output = asyncio.run(cmd.handler("", core, Mock()))
 
     # Check output format
     lines = output.split("\n")

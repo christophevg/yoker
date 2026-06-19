@@ -23,17 +23,7 @@ from pathlib import Path
 from rich.console import Console
 
 from yoker.agent import Agent
-from yoker.commands import (
-  CommandRegistry,
-  create_help_command,
-  create_skills_command,
-  create_think_command,
-)
-from yoker.commands.skill import (
-  create_skill_commands,
-  extract_skill_content,
-  is_skill_injection,
-)
+from yoker.ui.commands import create_default_registry
 from yoker.context import PersistenceContextManager
 from yoker.demo import DemoScript, load_demo_script, load_demo_scripts
 from yoker.events import (
@@ -328,33 +318,8 @@ async def run_demo_session(
   # Feed predefined messages to the UI handler so it does not read from terminal
   ui.set_input_messages(get_input.messages)
 
-  # Create command registry
-  command_registry = CommandRegistry()
-  command_registry.register(create_help_command(command_registry))
-  command_registry.register(
-    create_think_command(
-      get_thinking_mode=lambda: agent.thinking_mode,
-      set_thinking_mode=lambda mode: setattr(agent, "thinking_mode", mode),
-    )
-  )
-
-  # Register skill commands if skills are loaded
-  if agent.skill_registry:
-    skill_commands = create_skill_commands(
-      registry=agent.skill_registry,
-      get_skill_registry=lambda: agent.skill_registry,
-    )
-    for cmd in skill_commands:
-      command_registry.register(cmd)
-
-    # Register /skills command to list available skills
-    command_registry.register(create_skills_command(agent.skill_registry))
-  else:
-    # Even without skills loaded, register /skills command with empty registry
-    from yoker.skills import SkillRegistry
-
-    empty_registry = SkillRegistry()
-    command_registry.register(create_skills_command(empty_registry))
+  # Create command registry using the UI-layer command hierarchy
+  command_registry = create_default_registry()
 
   # Print mode-specific info
   if is_replay_mode:
@@ -376,47 +341,19 @@ async def run_demo_session(
         # Replay mode: emit CommandEvent from event log
         await agent.replay_command(message)  # type: ignore
       else:
-        # Real LLM mode: execute command and log it
-        result = command_registry.dispatch(message)
+        # Real LLM mode: dispatch via the UI-layer command registry.
+        # Skill commands are invoked dynamically through the skill registry.
+        result = await command_registry.dispatch(message, agent, ui)
         if result:
-          # Check if this is a skill injection
-          if is_skill_injection(result):
-            # Inject skill content as system message (invisible to user)
-            skill_content = extract_skill_content(result)
-            agent.context.add_message("system", skill_content)
-
-            # Extract skill name and args for logging
-            parts = message[1:].split(maxsplit=1)
-            skill_name = parts[0]
-            skill_args = parts[1] if len(parts) > 1 else ""
-
-            # Log skill injection event if logging is enabled
-            if event_recorder is not None:
-              # Log as command event with skill injection marker
-              command_event = CommandEvent(
-                type=EventType.COMMAND,
-                command=message,
-                result=f"Skill injected: {skill_name}",
-              )
-              event_recorder(command_event)
-
-            # Process with agent - the skill content is now in context
-            # Send appropriate prompt based on whether args were provided
-            if skill_args:
-              await agent.process(skill_args)
-            else:
-              await agent.process("Execute the skill as requested.")
-          else:
-            # Regular command - render via UI handler
-            ui.output_command_result(result)
-            # Log command event if logging is enabled
-            if event_recorder is not None:
-              command_event = CommandEvent(
-                type=EventType.COMMAND,
-                command=message,
-                result=result,
-              )
-              event_recorder(command_event)
+          ui.output_command_result(result)
+          # Log command event if logging is enabled
+          if event_recorder is not None:
+            command_event = CommandEvent(
+              type=EventType.COMMAND,
+              command=message,
+              result=result,
+            )
+            event_recorder(command_event)
       continue
 
     await agent.process(message)

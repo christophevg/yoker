@@ -38,14 +38,20 @@ async def handle(args: str, agent: "Agent", ui: "UIHandler") -> str:
 
   if messages:
     lines.append("")
-    lines.append("  Recent messages:")
-    recent = messages[-5:]
-    for msg in recent:
+    lines.append("  Messages:")
+    for index, msg in enumerate(messages, start=1):
       role = msg.get("role", "unknown")
       content = msg.get("content", "")
-      if len(content) > 50:
-        content = content[:47] + "..."
-      lines.append(f"    \\[{role}] {content}")
+      thinking = msg.get("thinking")
+      lines.append(f"    #{index} ({role})")
+      if thinking:
+        lines.append("      --- thinking ---")
+        for line in str(thinking).splitlines():
+          lines.append(f"      {line}")
+        lines.append("      --- content ---")
+      for line in content.splitlines():
+        lines.append(f"      {line}")
+      lines.append("")
 
   return "\n".join(lines)
 

@@ -1,95 +1,80 @@
 """Tools package for Yoker.
 
-Provides the tool framework including base classes, registry, guardrails,
-and concrete tool implementations.
+Provides the tool framework including result types, guardrails, registry,
+annotation markers, and built-in tool factories.
 """
 
-from typing import TYPE_CHECKING
-
-from .base import Tool, ToolResult, ValidationResult
-from .existence import ExistenceTool
-from .git import GitTool
-from .guardrails import Guardrail
-from .list import ListTool
-from .mkdir import MkdirTool
-from .path_guardrail import PathGuardrail
-from .read import ReadTool
-from .registry import ToolRegistry
-from .search import SearchTool
-from .skill import SkillTool
-from .update import UpdateTool
-from .web_backend import (
+from yoker.annotations import (
+  GuardType,
+  Path,
+  Query,
+  Text,
+  Url,
+)
+from yoker.tools.agent import make_agent_tool
+from yoker.tools.base import ToolResult, ValidationResult
+from yoker.tools.existence import make_existence_tool
+from yoker.tools.git import OPERATION_ARGS, make_git_tool
+from yoker.tools.guardrails import Guardrail
+from yoker.tools.list import make_list_tool
+from yoker.tools.mkdir import make_mkdir_tool
+from yoker.tools.path_guardrail import PathGuardrail
+from yoker.tools.read import make_read_tool
+from yoker.tools.registry import ToolRegistry
+from yoker.tools.search import make_search_tool
+from yoker.tools.skill import make_skill_tool
+from yoker.tools.update import make_update_tool
+from yoker.tools.web_backend import (
   OllamaWebFetchBackend,
   OllamaWebSearchBackend,
   WebFetchBackend,
   WebSearchBackend,
 )
-from .web_guardrail import WebGuardrail, WebGuardrailConfig
-from .web_types import FetchedContent, SearchResult, WebFetchError, WebSearchError
-from .webfetch import WebFetchTool
-from .websearch import WebSearchTool
-from .write import WriteTool
-
-if TYPE_CHECKING:
-  from yoker.agent.agent import Agent
-
-
-def create_default_registry(parent_agent: "Agent | None" = None) -> ToolRegistry:
-  """Create a registry with all built-in tools registered.
-
-  Args:
-    parent_agent: Optional parent agent for AgentTool (required for subagent spawning).
-
-  Returns:
-    ToolRegistry with default tools (read, list, write, update, search, existence, mkdir, git, agent).
-  """
-  from .agent import AgentTool
-
-  registry = ToolRegistry()
-  registry.register(ReadTool())
-  registry.register(ListTool())
-  registry.register(WriteTool())
-  registry.register(UpdateTool())
-  registry.register(SearchTool())
-  registry.register(ExistenceTool())
-  registry.register(MkdirTool())
-  registry.register(AgentTool(parent_agent=parent_agent))
-  # GitTool requires config - added separately when config is available
-  return registry
-
-
-# Default registry instance for backwards compatibility
-AVAILABLE_TOOLS = create_default_registry()
+from yoker.tools.web_guardrail import (
+  QueryWebGuardrail,
+  UrlWebGuardrail,
+  WebGuardrail,
+  WebGuardrailConfig,
+)
+from yoker.tools.web_types import FetchedContent, SearchResult, WebFetchError, WebSearchError
+from yoker.tools.webfetch import make_webfetch_tool
+from yoker.tools.websearch import make_websearch_tool
+from yoker.tools.write import make_write_tool
 
 __all__ = [
-  "Tool",
   "ToolResult",
   "ValidationResult",
   "Guardrail",
   "PathGuardrail",
   "ToolRegistry",
-  "ReadTool",
-  "ListTool",
-  "WriteTool",
-  "UpdateTool",
-  "SearchTool",
-  "ExistenceTool",
-  "MkdirTool",
-  "GitTool",
-  "AgentTool",
-  "SkillTool",
-  "WebSearchTool",
+  "GuardType",
+  "Text",
+  "Path",
+  "Url",
+  "Query",
+  "make_read_tool",
+  "make_list_tool",
+  "make_write_tool",
+  "make_update_tool",
+  "make_search_tool",
+  "make_existence_tool",
+  "make_mkdir_tool",
+  "make_git_tool",
+  "make_agent_tool",
+  "make_skill_tool",
+  "make_websearch_tool",
+  "make_webfetch_tool",
   "WebSearchBackend",
   "OllamaWebSearchBackend",
-  "WebFetchTool",
   "WebFetchBackend",
   "OllamaWebFetchBackend",
   "WebGuardrail",
   "WebGuardrailConfig",
+  "QueryWebGuardrail",
   "SearchResult",
   "WebSearchError",
   "FetchedContent",
+  "UrlWebGuardrail",
   "WebFetchError",
-  "AVAILABLE_TOOLS",
-  "create_default_registry",
+  "OPERATION_ARGS",
 ]

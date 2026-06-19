@@ -14,8 +14,7 @@ from typing import TYPE_CHECKING
 from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
-
-from yoker.logging import get_logger
+from structlog import get_logger
 
 if TYPE_CHECKING:
   from yoker.config import Config

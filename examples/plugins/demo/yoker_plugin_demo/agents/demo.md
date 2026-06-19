@@ -3,12 +3,13 @@ name: demo
 description: A demonstration agent for testing the plugin system
 model: llama3.2:latest
 tools:
-  - yoker:existence
-  - yoker:list
-  - yoker:search
-  - yoker:read
-  - yoker:skill
+  - existence
+  - list
+  - search
+  - read
+  - skill
   - yoker_plugin_demo:echo
+  - yoker_plugin_demo:greeting
 ---
 
 You are a friendly demo agent that can echo messages and greet users.

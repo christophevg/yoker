@@ -10,13 +10,9 @@ session replay for demos, testing, and debugging.
 import inspect
 import json
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from yoker.events.recorder import deserialize_event
-from yoker.events.types import CommandEvent, Event, TurnEndEvent, TurnStartEvent
-
-if TYPE_CHECKING:
-  from yoker.agent.core import EventCallback
+from yoker.events.types import CommandEvent, Event, EventCallback, TurnEndEvent, TurnStartEvent
 
 
 class EventReplayAgent:

@@ -7,6 +7,17 @@ This file contains the Intake Backlog with Minimal Business Increments (MBIs).
 Quick captures for MBI ideas. These are raw requests that haven't been analyzed yet.
 
 - [ ] **Bootstrap & Python API** — After the current MBI, focus on: (1) Bootstrap procedure for first-time users without Ollama configuration — interactive guided setup, and (2) Python API for one-shot skill execution like `yoker.execute_skill("skill-name", "prompt")`.
+- [ ] yoker commands: yoker command...
+  - [ ] chat      - start in interactive environment
+  - [ ] run       - run an agentic workflow from
+    - [ ] Python module
+    - [ ] GitHub repo
+    - [ ] local folder
+    - [ ] zip file
+  - [ ] loop      - perform run at interval
+  - [ ] init      - generate default config (optional with bootstrap questions)
+  - [ ] config    - show config
+  - [ ] container - generate container setup (podman/docker/container)
 
 ---
 
@@ -86,4 +97,3 @@ Future MBIs, ordered by priority (highest first).
 Completed MBIs.
 
 [None yet — MBI-001 is the first MBI tracked in PLAN.md]
-

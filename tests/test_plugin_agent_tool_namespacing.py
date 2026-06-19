@@ -21,7 +21,7 @@ class TestAgentModelOverride:
 
   def test_agent_model_overrides_config(self, tmp_path: Path) -> None:
     """Agent definition's model should override config's model."""
-    from yoker.agent.core import AgentCore
+    from yoker.agent import Agent
     from yoker.agents import AgentDefinition
     from yoker.config import Config
     from yoker.thinking import ThinkingMode
@@ -32,15 +32,15 @@ class TestAgentModelOverride:
 
     # Create agent definition with different model
     agent_def = AgentDefinition(
-      name="test-agent",
+      simple_name="test-agent",
       description="Test agent",
       model="custom-model:latest",
       system_prompt="You are a test agent.",
       tools=("read", "write"),
     )
 
-    # Create AgentCore with agent definition
-    core = AgentCore(
+    # Create Agent with agent definition
+    core = Agent(
       config=config,
       thinking_mode=ThinkingMode.ON,
       agent_definition=agent_def,
@@ -52,7 +52,7 @@ class TestAgentModelOverride:
 
   def test_agent_without_model_uses_config(self, tmp_path: Path) -> None:
     """Agent without model should use config's model."""
-    from yoker.agent.core import AgentCore
+    from yoker.agent import Agent
     from yoker.agents import AgentDefinition
     from yoker.config import Config
     from yoker.thinking import ThinkingMode
@@ -62,14 +62,14 @@ class TestAgentModelOverride:
 
     # Agent definition without model
     agent_def = AgentDefinition(
-      name="test-agent",
+      simple_name="test-agent",
       description="Test agent",
       model=None,  # No model specified
       system_prompt="You are a test agent.",
       tools=("read", "write"),
     )
 
-    core = AgentCore(
+    core = Agent(
       config=config,
       thinking_mode=ThinkingMode.ON,
       agent_definition=agent_def,
@@ -84,7 +84,7 @@ class TestToolNamespacing:
 
   def test_yoker_namespace_preserved(self) -> None:
     """yoker: namespace should be preserved, not re-namespaced."""
-    from yoker.plugins.loader import load_agent_definition_from_string
+    from yoker.plugins.agents import load_agent_definition_from_string
 
     content = """---
 name: demo
@@ -110,7 +110,7 @@ System prompt here."""
 
   def test_builtin_yoker_tools_not_renamespaced(self) -> None:
     """Built-in yoker: tools should not be re-namespaced with plugin prefix."""
-    from yoker.plugins.loader import load_agent_definition_from_string
+    from yoker.plugins.agents import load_agent_definition_from_string
 
     content = """---
 name: demo
@@ -134,7 +134,7 @@ System prompt here."""
 
   def test_mixed_namespace_tools(self) -> None:
     """Agent with tools from multiple namespaces should handle each correctly."""
-    from yoker.plugins.loader import load_agent_definition_from_string
+    from yoker.plugins.agents import load_agent_definition_from_string
 
     content = """---
 name: demo
@@ -162,27 +162,27 @@ class TestToolAvailability:
 
   def test_tool_availability_with_agent_definition(self) -> None:
     """Tools should only show as available if in agent's allowed tools."""
-    from yoker.agent.core import AgentCore
+    from yoker.agent import Agent
     from yoker.agents import AgentDefinition
     from yoker.config import Config
     from yoker.thinking import ThinkingMode
 
     agent_def = AgentDefinition(
-      name="test-agent",
+      simple_name="test-agent",
       description="Test agent",
       model=None,
       system_prompt="You are a test agent.",
       tools=("yoker:read",),  # Only read tool allowed
     )
 
-    core = AgentCore(
+    core = Agent(
       config=Config(),
       thinking_mode=ThinkingMode.ON,
       agent_definition=agent_def,
     )
 
     # Check which tools are registered
-    registry = core.tool_registry
+    registry = core.tools
 
     # Only 'read' should be available (yoker:read resolves to read)
     # The registry filters based on allowed tools
@@ -193,18 +193,18 @@ class TestToolAvailability:
 
   def test_tool_availability_without_agent(self) -> None:
     """All tools should be available when no agent definition is loaded."""
-    from yoker.agent.core import AgentCore
+    from yoker.agent import Agent
     from yoker.config import Config
     from yoker.thinking import ThinkingMode
 
-    core = AgentCore(
+    core = Agent(
       config=Config(),
       thinking_mode=ThinkingMode.ON,
       agent_definition=None,  # No agent
     )
 
     # All tools should be available
-    registry = core.tool_registry
+    registry = core.tools
     assert registry.get("read") is not None
     assert registry.get("write") is not None
     assert registry.get("list") is not None

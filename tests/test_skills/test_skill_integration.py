@@ -1,17 +1,18 @@
-"""Integration test for skill command loading."""
+"""Integration test for dynamic skill invocation."""
 
-import os
 import tempfile
 from pathlib import Path
+from unittest.mock import AsyncMock, Mock
 
-from yoker.commands import CommandRegistry, create_skill_commands
-from yoker.config import Config
+import pytest
+
+from yoker.config import Config, SkillsConfig
 from yoker.skills import Skill, SkillRegistry
+from yoker.ui.commands import create_default_registry
 
 
-def test_skill_command_registration():
-  """Test that skill commands are registered correctly."""
-  # Create a skill registry with test skills
+def test_dynamic_skill_invocation_registration():
+  """Test that skill names are dispatchable via the default registry."""
   registry = SkillRegistry()
   skill1 = Skill(
     name="commit",
@@ -26,31 +27,47 @@ def test_skill_command_registration():
   registry.register(skill1)
   registry.register(skill2)
 
-  # Create command registry and register skill commands
-  command_registry = CommandRegistry()
-  skill_commands = create_skill_commands(
-    registry=registry,
-    get_skill_registry=lambda: registry,
+  command_registry = create_default_registry()
+  agent = Mock()
+  agent.skill_registry = registry
+  agent.inject_skill_context = Mock()
+  agent.process = AsyncMock()
+
+  # Skill names are not explicit commands but handled dynamically.
+  assert command_registry.get("commit") is None
+  assert command_registry.get("review") is None
+
+
+@pytest.mark.asyncio
+async def test_dynamic_skill_invocation_dispatch():
+  """Test dynamic dispatch of skill commands."""
+  registry = SkillRegistry()
+  skill1 = Skill(
+    name="commit",
+    description="Guide git commits",
+    content="# Commit Guide\n\nSteps for committing...",
   )
+  skill2 = Skill(
+    name="review",
+    description="Review code",
+    content="# Review Guide\n\nSteps for reviewing...",
+  )
+  registry.register(skill1)
+  registry.register(skill2)
 
-  for command in skill_commands:
-    command_registry.register(command)
+  command_registry = create_default_registry()
+  agent = Mock()
+  agent.skill_registry = registry
+  agent.inject_skill_context = Mock()
+  agent.process = AsyncMock()
 
-  # Verify commands are registered
-  assert command_registry.get("commit") is not None
-  assert command_registry.get("review") is not None
+  result = await command_registry.dispatch("/commit fix bug", agent, Mock())
+  assert result is None
+  agent.inject_skill_context.assert_called_once_with("commit", "fix bug")
+  agent.process.assert_awaited_once_with("fix bug")
 
-  # Test command dispatch
-  result = command_registry.dispatch("/commit fix bug")
-  assert result is not None
-  assert "<command-name>commit</command-name>" in result
-  assert "<command-args>fix bug</command-args>" in result
-  assert "# Commit Guide" in result
-
-  result = command_registry.dispatch("/review")
-  assert result is not None
-  assert "<command-name>review</command-name>" in result
-  assert "# Review Guide" in result
+  result = await command_registry.dispatch("/review", agent, Mock())
+  assert result is None
 
 
 def test_skill_loading_from_config():
@@ -72,55 +89,16 @@ This is a test skill.
     )
 
     # Create config with skills directory
-    from yoker.config import SkillsConfig
-
     config = Config(skills=SkillsConfig(directories=(str(skill_dir),)))
 
-    # Create agent (skills will be loaded in __main__.py)
     # This test verifies the config structure is correct
     assert config.skills.directories == (str(skill_dir),)
     assert config.skills.discovery is True
 
 
-def test_skill_loading_from_env():
-  """Test loading skills from YOKER_SKILLS_PATH environment variable."""
-  with tempfile.TemporaryDirectory() as tmpdir:
-    # Create skill files
-    skill_dir = Path(tmpdir) / "env-skills"
-    skill_dir.mkdir()
-
-    skill_file = skill_dir / "env-skill.md"
-    skill_file.write_text(
-      """---
-name: env-skill
-description: Skill from env
----
-# Env Skill
-Loaded from environment variable.
-"""
-    )
-
-    # Set environment variable
-    old_env = os.environ.get("YOKER_SKILLS_PATH")
-    try:
-      os.environ["YOKER_SKILLS_PATH"] = str(skill_dir)
-
-      # Load skills from env
-      from yoker.skills import load_skills_from_env
-
-      skills = load_skills_from_env()
-      assert "env-skill" in skills
-      assert skills["env-skill"].description == "Skill from env"
-    finally:
-      # Restore environment
-      if old_env is not None:
-        os.environ["YOKER_SKILLS_PATH"] = old_env
-      else:
-        os.environ.pop("YOKER_SKILLS_PATH", None)
-
-
-def test_namespaced_skill_commands():
-  """Test that namespaced skills create correct commands."""
+@pytest.mark.asyncio
+async def test_namespaced_skill_invocation():
+  """Test that namespaced skills are dispatched using their full name."""
   registry = SkillRegistry()
   skill = Skill(
     name="commit",
@@ -130,15 +108,12 @@ def test_namespaced_skill_commands():
   )
   registry.register(skill)
 
-  commands = create_skill_commands(registry, lambda: registry)
-  assert len(commands) == 1
-  assert commands[0].name == "c3:commit"
+  command_registry = create_default_registry()
+  agent = Mock()
+  agent.skill_registry = registry
+  agent.inject_skill_context = Mock()
+  agent.process = AsyncMock()
 
-  # Test dispatch
-  command_registry = CommandRegistry()
-  for command in commands:
-    command_registry.register(command)
-
-  result = command_registry.dispatch("/c3:commit")
-  assert result is not None
-  assert "<command-name>c3:commit</command-name>" in result
+  result = await command_registry.dispatch("/c3:commit", agent, Mock())
+  assert result is None
+  agent.inject_skill_context.assert_called_once_with("c3:commit", "")

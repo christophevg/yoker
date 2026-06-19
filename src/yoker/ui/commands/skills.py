@@ -25,7 +25,7 @@ async def handle(args: str, agent: "Agent", ui: "UIHandler") -> str:
   Returns:
     Formatted text listing all skills with sources.
   """
-  registry = agent.skill_registry
+  registry = agent.skills
 
   lines = ["Loaded skills:", ""]
 

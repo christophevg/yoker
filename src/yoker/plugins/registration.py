@@ -3,29 +3,30 @@
 Provides functions to register tools, skills, and agents with namespace prefixes.
 """
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
-from yoker.logging import get_logger
+from structlog import get_logger
 
 if TYPE_CHECKING:
-  from yoker.agents import AgentDefinition
+  from yoker.agents import AgentDefinition, AgentRegistry
   from yoker.skills import Skill, SkillRegistry
-  from yoker.tools import Tool, ToolRegistry
+  from yoker.tools import ToolRegistry
 
 log = get_logger(__name__)
 
 
 def register_tools(
-  tools: list["Tool"],
+  tools: list[Callable[..., Any]],
   registry: "ToolRegistry",
   namespace: str,
 ) -> list[str]:
   """Register tools with namespace prefix.
 
-  Creates a namespaced name for each tool: {namespace}:{tool.name}
+  Creates a namespaced name for each tool: {namespace}:{tool_name}
 
   Args:
-    tools: List of Tool instances.
+    tools: List of functions or callable class instances.
     registry: ToolRegistry to register with.
     namespace: Package namespace prefix (e.g., "pkgq", "yoker").
 
@@ -38,97 +39,17 @@ def register_tools(
   registered = []
 
   for tool in tools:
-    # Create namespaced name
-    namespaced_name = f"{namespace}:{tool.name}"
-
-    # Check for collision
-    if registry.get(namespaced_name):
-      existing = registry.get(namespaced_name)
-      log.warning(
-        "tool_name_collision",
-        name=namespaced_name,
-        namespace=namespace,
-        existing=existing.__class__.__name__ if existing else None,
-        new=tool.__class__.__name__,
-      )
-      raise ValueError(
-        f"Tool '{namespaced_name}' is already registered "
-        f"(from {existing.__class__.__name__ if existing else 'unknown'})"
-      )
-
-    # Clone tool with namespaced name
-    namespaced_tool = _clone_tool_with_name(tool, namespaced_name)
-
-    registry.register(namespaced_tool)
-    registered.append(namespaced_name)
+    spec = registry.register(tool, namespace=namespace)
+    registered.append(spec.name)
 
     log.info(
       "tool_registered",
-      original_name=tool.name,
-      namespaced_name=namespaced_name,
+      original_name=spec.name.split(":", 1)[-1],
+      namespaced_name=spec.name,
       namespace=namespace,
     )
 
   return registered
-
-
-def _clone_tool_with_name(tool: "Tool", new_name: str) -> "Tool":
-  """Create a copy of tool with namespaced name.
-
-  Tools use @property for name, so we create a wrapper class
-  that overrides the name property.
-
-  Args:
-    tool: Original tool instance.
-    new_name: New name for the tool.
-
-  Returns:
-    New tool instance with namespaced name.
-
-  Note:
-    Since Tool.name is a property, we can't directly set it.
-    Instead, we create a wrapper that provides the new name.
-    This preserves all other tool functionality.
-  """
-  # Import here to avoid circular dependency
-  from yoker.tools import Tool
-
-  # Create a new tool class that wraps the original
-  class NamespacedTool(Tool):
-    """Wrapper tool that provides a namespaced name."""
-
-    _wrapped: Tool
-    _name: str
-
-    def __init__(self, wrapped: Tool, name: str):
-      self._wrapped = wrapped
-      self._name = name
-      # Copy guardrail reference
-      self._guardrail = wrapped._guardrail
-
-    @property
-    def name(self) -> str:
-      return self._name
-
-    @property
-    def description(self) -> str:
-      return self._wrapped.description
-
-    def get_schema(self) -> dict[str, Any]:
-      schema = self._wrapped.get_schema()
-      # Update name in schema
-      if "function" in schema:
-        schema["function"]["name"] = self._name
-      return schema
-
-    async def execute(self, **kwargs: Any) -> Any:
-      return await self._wrapped.execute(**kwargs)
-
-    # Copy other methods
-    def exists(self, path: str) -> bool:
-      return self._wrapped.exists(path)
-
-  return NamespacedTool(tool, new_name)
 
 
 def register_skills(
@@ -139,7 +60,7 @@ def register_skills(
   """Register skills with namespace prefix.
 
   Skills already support namespace via Skill.namespace attribute.
-  The full_name property returns 'namespace:name' format.
+  The name property returns 'namespace:name' format.
 
   Args:
     skills: List of Skill instances.
@@ -147,7 +68,7 @@ def register_skills(
     namespace: Package namespace prefix.
 
   Returns:
-    List of registered skill names (full_name with namespace).
+    List of registered skill names (name with namespace).
 
   Raises:
     ValueError: If skill name already registered.
@@ -175,19 +96,19 @@ def register_skills(
 
     try:
       registry.register(namespaced_skill)
-      registered.append(namespaced_skill.full_name)
+      registered.append(namespaced_skill.name)
 
       log.info(
         "skill_registered",
         original_name=skill.name,
-        namespaced_name=namespaced_skill.full_name,
+        namespaced_name=namespaced_skill.name,
         namespace=namespace,
       )
     except ValueError as e:
       # Skill already registered
       log.warning(
         "skill_name_collision",
-        name=namespaced_skill.full_name,
+        name=namespaced_skill.name,
         namespace=namespace,
         error=str(e),
       )
@@ -198,64 +119,79 @@ def register_skills(
 
 def register_agents(
   agents: list["AgentDefinition"],
+  registry: "AgentRegistry",
   namespace: str,
 ) -> list[str]:
-  """Register agents with namespace prefix.
+  """Register agents with namespace prefix into the AgentRegistry.
 
-  Note: AgentRegistry doesn't exist yet, this is for future use.
+  Agents are frozen dataclasses, so a namespaced copy is registered. Agents
+  loaded from a package's ``agents/`` directory already carry the package
+  namespace, so re-setting it is a no-op for them; manifest-declared agents
+  (constructed in code without a namespace) get the plugin namespace applied.
 
   Args:
     agents: List of AgentDefinition instances.
-    namespace: Package namespace prefix.
+    registry: AgentRegistry to register with.
+    namespace: Package namespace prefix (e.g., "pkgq", "yoker").
 
   Returns:
-    List of registered agent names (namespaced).
+    List of registered agent names (with namespace).
 
-  Note:
-    This function prepares agents with namespace prefixes but does not
-    register them with a registry. The registry parameter will be added
-    when AgentRegistry is implemented.
-
-    Agents loaded from plugins are already namespaced (e.g., "yoker_plugin_demo:demo"),
-    so we check if the agent is already namespaced and use it as-is.
+  Raises:
+    ValueError: If an agent name is already registered.
   """
-  # Future implementation - prepare namespaced names
+  from dataclasses import fields as dataclass_fields
+
+  from yoker.agents import AgentDefinition
+
   registered = []
 
+  log.info(
+    "register_agents_started",
+    namespace=namespace,
+    agents_count=len(agents),
+    agent_names=[a.name for a in agents],
+  )
+
   for agent_def in agents:
-    # Check if agent is already namespaced
-    # Agents loaded from plugins via load_agent_definition_from_string are already namespaced
-    if ":" in agent_def.name:
-      # Already namespaced - use as-is
-      namespaced_name = agent_def.name
+    field_values = {f.name: getattr(agent_def, f.name) for f in dataclass_fields(agent_def)}
+    field_values["namespace"] = namespace
+    namespaced_agent = AgentDefinition(**field_values)
+
+    try:
+      registry.register(namespaced_agent)
+      registered.append(namespaced_agent.name)
       log.info(
-        "agent_already_namespaced",
-        name=agent_def.name,
-        namespace=namespace,
-      )
-    else:
-      # Add namespace prefix
-      namespaced_name = f"{namespace}:{agent_def.name}"
-      log.info(
-        "agent_prepared",
+        "agent_registered",
         original_name=agent_def.name,
-        namespaced_name=namespaced_name,
+        namespaced_name=namespaced_agent.name,
         namespace=namespace,
       )
-    registered.append(namespaced_name)
+    except ValueError as e:
+      log.warning(
+        "agent_name_collision",
+        name=namespaced_agent.name,
+        namespace=namespace,
+        error=str(e),
+      )
+      raise
 
   return registered
 
 
 def _clone_agent_with_name(
   agent_def: "AgentDefinition",
-  new_name: str,
+  new_simple_name: str,
 ) -> "AgentDefinition":
-  """Create a copy of agent definition with namespaced name."""
+  """Create a copy of agent definition with a different simple name.
+
+  ``name`` is a derived property (``namespace:simple_name``); the underlying
+  field is ``simple_name``, so that is what gets replaced.
+  """
   from dataclasses import fields as dataclass_fields
 
   field_values = {f.name: getattr(agent_def, f.name) for f in dataclass_fields(agent_def)}
-  field_values["name"] = new_name
+  field_values["simple_name"] = new_simple_name
 
   return type(agent_def)(**field_values)
 

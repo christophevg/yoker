@@ -1,6 +1,7 @@
 """Tests for BatchUIHandler."""
 
 from io import StringIO
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -89,7 +90,9 @@ class TestBatchUIHandlerLifecycle:
     """start should not print in batch mode by default."""
     stderr = StringIO()
     handler = BatchUIHandler(stderr=stderr)
-    await handler.start("llama3.1", "0.4.0", {})
+    agent = MagicMock()
+    agent.model = "llama3.1"
+    await handler.start(agent)
     assert stderr.getvalue() == ""
 
   @pytest.mark.asyncio
@@ -97,7 +100,9 @@ class TestBatchUIHandlerLifecycle:
     """start should print model info when show_thinking is enabled."""
     stderr = StringIO()
     handler = BatchUIHandler(show_thinking=True, stderr=stderr)
-    await handler.start("llama3.1", "0.4.0", {})
+    agent = MagicMock()
+    agent.model = "llama3.1"
+    await handler.start(agent)
     assert "# Model: llama3.1" in stderr.getvalue()
 
   @pytest.mark.asyncio

@@ -27,7 +27,7 @@ class TestWebGuardrailSSRFProtection:
     Then: Returns ValidationResult(valid=False) with SSRF block reason
     """
     guardrail = WebGuardrail()
-    result = guardrail.validate("web_search", {"query": "site:169.254.169.254 data"})
+    result = guardrail.validate("websearch", {"query": "site:169.254.169.254 data"})
 
     assert not result.valid
     assert "SSRF" in result.reason or "private" in result.reason.lower()
@@ -39,7 +39,7 @@ class TestWebGuardrailSSRFProtection:
     Then: Returns validation failure
     """
     guardrail = WebGuardrail()
-    result = guardrail.validate("web_search", {"query": "169.254.169.254/latest/meta-data/"})
+    result = guardrail.validate("websearch", {"query": "169.254.169.254/latest/meta-data/"})
 
     assert not result.valid
 
@@ -50,7 +50,7 @@ class TestWebGuardrailSSRFProtection:
     Then: Returns validation failure with private IP block reason
     """
     guardrail = WebGuardrail()
-    result = guardrail.validate("web_search", {"query": "10.0.0.1 admin panel"})
+    result = guardrail.validate("websearch", {"query": "10.0.0.1 admin panel"})
 
     assert not result.valid
     assert "SSRF" in result.reason or "private" in result.reason.lower()
@@ -62,7 +62,7 @@ class TestWebGuardrailSSRFProtection:
     Then: Returns validation failure
     """
     guardrail = WebGuardrail()
-    result = guardrail.validate("web_search", {"query": "172.16.0.1 internal"})
+    result = guardrail.validate("websearch", {"query": "172.16.0.1 internal"})
 
     assert not result.valid
 
@@ -73,7 +73,7 @@ class TestWebGuardrailSSRFProtection:
     Then: Returns validation failure
     """
     guardrail = WebGuardrail()
-    result = guardrail.validate("web_search", {"query": "192.168.1.1 router"})
+    result = guardrail.validate("websearch", {"query": "192.168.1.1 router"})
 
     assert not result.valid
 
@@ -84,7 +84,7 @@ class TestWebGuardrailSSRFProtection:
     Then: Returns validation failure
     """
     guardrail = WebGuardrail()
-    result = guardrail.validate("web_search", {"query": "localhost:8080 api"})
+    result = guardrail.validate("websearch", {"query": "localhost:8080 api"})
 
     assert not result.valid
 
@@ -95,7 +95,7 @@ class TestWebGuardrailSSRFProtection:
     Then: Returns validation failure
     """
     guardrail = WebGuardrail()
-    result = guardrail.validate("web_search", {"query": "::ffff:169.254.169.254"})
+    result = guardrail.validate("websearch", {"query": "::ffff:169.254.169.254"})
 
     assert not result.valid
 
@@ -106,7 +106,7 @@ class TestWebGuardrailSSRFProtection:
     Then: Returns validation failure
     """
     guardrail = WebGuardrail()
-    result = guardrail.validate("web_search", {"query": "fe80::1 service"})
+    result = guardrail.validate("websearch", {"query": "fe80::1 service"})
 
     assert not result.valid
 
@@ -118,7 +118,7 @@ class TestWebGuardrailSSRFProtection:
     """
     guardrail = WebGuardrail()
     # URL-encoded "192.168.1.1"
-    result = guardrail.validate("web_search", {"query": "%3192%2e168%2e1%2e1"})
+    result = guardrail.validate("websearch", {"query": "%3192%2e168%2e1%2e1"})
 
     # Should detect and block (URL encoded form)
     # The guardrail should decode and check
@@ -132,7 +132,7 @@ class TestWebGuardrailSSRFProtection:
     """
     guardrail = WebGuardrail()
     # 0xa9fea9fe = 169.254.169.254
-    result = guardrail.validate("web_search", {"query": "0xa9fea9fe metadata"})
+    result = guardrail.validate("websearch", {"query": "0xa9fea9fe metadata"})
 
     assert not result.valid
 
@@ -144,7 +144,7 @@ class TestWebGuardrailSSRFProtection:
     """
     guardrail = WebGuardrail()
     # 2852039166 = 169.254.169.254
-    result = guardrail.validate("web_search", {"query": "2852039166"})
+    result = guardrail.validate("websearch", {"query": "2852039166"})
 
     assert not result.valid
 
@@ -160,7 +160,7 @@ class TestWebGuardrailDomainWhitelist:
     """
     config = WebGuardrailConfig(domain_allowlist=("docs.python.org",))
     guardrail = WebGuardrail(config)
-    result = guardrail.validate("web_search", {"query": "site:docs.python.org asyncio"})
+    result = guardrail.validate("websearch", {"query": "site:docs.python.org asyncio"})
 
     # Note: The guardrail checks domains extracted from query
     # If no domains extracted, it passes (allowlist only blocks non-matching domains)
@@ -175,7 +175,7 @@ class TestWebGuardrailDomainWhitelist:
     """
     config = WebGuardrailConfig(domain_allowlist=("*.github.com",))
     guardrail = WebGuardrail(config)
-    result = guardrail.validate("web_search", {"query": "site:api.github.com repos"})
+    result = guardrail.validate("websearch", {"query": "site:api.github.com repos"})
 
     assert result.valid
 
@@ -187,7 +187,7 @@ class TestWebGuardrailDomainWhitelist:
     """
     config = WebGuardrailConfig(domain_allowlist=("*.github.com",))
     guardrail = WebGuardrail(config)
-    result = guardrail.validate("web_search", {"query": "site:v1.api.github.com files"})
+    result = guardrail.validate("websearch", {"query": "site:v1.api.github.com files"})
 
     # The nested subdomain (v1.api.github.com) should match the wildcard (*.github.com)
     assert result.valid
@@ -200,7 +200,7 @@ class TestWebGuardrailDomainWhitelist:
     """
     config = WebGuardrailConfig(domain_allowlist=("docs.python.org",))
     guardrail = WebGuardrail(config)
-    result = guardrail.validate("web_search", {"query": "site:example.com secrets"})
+    result = guardrail.validate("websearch", {"query": "site:example.com secrets"})
 
     assert not result.valid
     assert "whitelist" in result.reason.lower() or "domain" in result.reason.lower()
@@ -213,7 +213,7 @@ class TestWebGuardrailDomainWhitelist:
     """
     config = WebGuardrailConfig(domain_allowlist=())
     guardrail = WebGuardrail(config)
-    result = guardrail.validate("web_search", {"query": "site:example.com content"})
+    result = guardrail.validate("websearch", {"query": "site:example.com content"})
 
     assert result.valid
 
@@ -225,7 +225,7 @@ class TestWebGuardrailDomainWhitelist:
     """
     config = WebGuardrailConfig(domain_allowlist=("Docs.Python.Org",))
     guardrail = WebGuardrail(config)
-    result = guardrail.validate("web_search", {"query": "site:docs.python.org asyncio"})
+    result = guardrail.validate("websearch", {"query": "site:docs.python.org asyncio"})
 
     assert result.valid
 
@@ -241,7 +241,7 @@ class TestWebGuardrailDomainBlacklist:
     """
     config = WebGuardrailConfig(domain_blocklist=("internal.company.com",))
     guardrail = WebGuardrail(config)
-    result = guardrail.validate("web_search", {"query": "site:internal.company.com secrets"})
+    result = guardrail.validate("websearch", {"query": "site:internal.company.com secrets"})
 
     assert not result.valid
     assert "blocked" in result.reason.lower()
@@ -254,7 +254,7 @@ class TestWebGuardrailDomainBlacklist:
     """
     config = WebGuardrailConfig(domain_blocklist=("*.internal",))
     guardrail = WebGuardrail(config)
-    result = guardrail.validate("web_search", {"query": "site:secret.internal data"})
+    result = guardrail.validate("websearch", {"query": "site:secret.internal data"})
 
     assert not result.valid
 
@@ -266,7 +266,7 @@ class TestWebGuardrailDomainBlacklist:
     """
     config = WebGuardrailConfig(domain_blocklist=("*.local",))
     guardrail = WebGuardrail(config)
-    result = guardrail.validate("web_search", {"query": "site:api.service.local api"})
+    result = guardrail.validate("websearch", {"query": "site:api.service.local api"})
 
     assert not result.valid
 
@@ -278,7 +278,7 @@ class TestWebGuardrailDomainBlacklist:
     """
     config = WebGuardrailConfig(domain_blocklist=("*.internal",))
     guardrail = WebGuardrail(config)
-    result = guardrail.validate("web_search", {"query": "site:example.com public"})
+    result = guardrail.validate("websearch", {"query": "site:example.com public"})
 
     assert result.valid
 
@@ -294,7 +294,7 @@ class TestWebGuardrailDomainBlacklist:
       domain_blocklist=("api.github.com",),
     )
     guardrail = WebGuardrail(config)
-    result = guardrail.validate("web_search", {"query": "site:api.github.com data"})
+    result = guardrail.validate("websearch", {"query": "site:api.github.com data"})
 
     assert not result.valid
 
@@ -306,7 +306,7 @@ class TestWebGuardrailDomainBlacklist:
     """
     config = WebGuardrailConfig(domain_blocklist=("*.INTERNAL",))
     guardrail = WebGuardrail(config)
-    result = guardrail.validate("web_search", {"query": "site:secret.internal data"})
+    result = guardrail.validate("websearch", {"query": "site:secret.internal data"})
 
     assert not result.valid
 
@@ -320,7 +320,7 @@ class TestWebGuardrailDomainBlacklist:
     guardrail = WebGuardrail(config)
 
     for domain in ["secret.internal", "service.local", "test.localhost"]:
-      result = guardrail.validate("web_search", {"query": f"site:{domain} data"})
+      result = guardrail.validate("websearch", {"query": f"site:{domain} data"})
       assert not result.valid
 
 
@@ -334,7 +334,7 @@ class TestWebGuardrailQuerySanitization:
     Then: Returns validation success (web search for .env tutorials is legitimate)
     """
     guardrail = WebGuardrail()
-    result = guardrail.validate("web_search", {"query": "how to read .env file in Python"})
+    result = guardrail.validate("websearch", {"query": "how to read .env file in Python"})
 
     # Web search for .env tutorials is legitimate - not exposing actual secrets
     assert result.valid
@@ -346,7 +346,7 @@ class TestWebGuardrailQuerySanitization:
     Then: Returns validation failure (attempting to search for actual secrets)
     """
     guardrail = WebGuardrail()
-    result = guardrail.validate("web_search", {"query": "password='secret123'"})
+    result = guardrail.validate("websearch", {"query": "password='secret123'"})
 
     assert not result.valid
     assert "sensitive" in result.reason.lower()
@@ -358,7 +358,7 @@ class TestWebGuardrailQuerySanitization:
     Then: Returns validation success (web search for password tutorials is legitimate)
     """
     guardrail = WebGuardrail()
-    result = guardrail.validate("web_search", {"query": "how to hash passwords in Python"})
+    result = guardrail.validate("websearch", {"query": "how to hash passwords in Python"})
 
     # Web search for password tutorials is legitimate
     assert result.valid
@@ -370,7 +370,7 @@ class TestWebGuardrailQuerySanitization:
     Then: Returns validation failure (attempting to search for actual secrets)
     """
     guardrail = WebGuardrail()
-    result = guardrail.validate("web_search", {"query": "api_key='abcd1234'"})
+    result = guardrail.validate("websearch", {"query": "api_key='abcd1234'"})
 
     assert not result.valid
     assert "sensitive" in result.reason.lower()
@@ -382,7 +382,7 @@ class TestWebGuardrailQuerySanitization:
     Then: Returns validation failure (attempting to search for actual secrets)
     """
     guardrail = WebGuardrail()
-    result = guardrail.validate("web_search", {"query": "secret='mysecret'"})
+    result = guardrail.validate("websearch", {"query": "secret='mysecret'"})
 
     assert not result.valid
     assert "sensitive" in result.reason.lower()
@@ -394,7 +394,7 @@ class TestWebGuardrailQuerySanitization:
     Then: Returns validation success (web search for credential tutorials is legitimate)
     """
     guardrail = WebGuardrail()
-    result = guardrail.validate("web_search", {"query": "how to manage credentials in Python"})
+    result = guardrail.validate("websearch", {"query": "how to manage credentials in Python"})
 
     # Web search for credential tutorials is legitimate
     assert result.valid
@@ -408,7 +408,7 @@ class TestWebGuardrailQuerySanitization:
     config = WebGuardrailConfig(max_query_length=100)
     guardrail = WebGuardrail(config)
     long_query = "a" * 150
-    result = guardrail.validate("web_search", {"query": long_query})
+    result = guardrail.validate("websearch", {"query": long_query})
 
     assert not result.valid
     assert "length" in result.reason.lower()
@@ -421,7 +421,7 @@ class TestWebGuardrailQuerySanitization:
     """
     config = WebGuardrailConfig(max_query_length=500)
     guardrail = WebGuardrail(config)
-    result = guardrail.validate("web_search", {"query": "python async best practices"})
+    result = guardrail.validate("websearch", {"query": "python async best practices"})
 
     assert result.valid
 
@@ -434,7 +434,7 @@ class TestWebGuardrailQuerySanitization:
     guardrail = WebGuardrail()
     # Query with zero-width space
     query_with_zwsp = "python​async"  # zero-width space between words
-    result = guardrail.validate("web_search", {"query": query_with_zwsp})
+    result = guardrail.validate("websearch", {"query": query_with_zwsp})
 
     # Should still be valid after stripping
     assert result.valid
@@ -446,7 +446,7 @@ class TestWebGuardrailQuerySanitization:
     Then: Returns validation success
     """
     guardrail = WebGuardrail()
-    result = guardrail.validate("web_search", {"query": "python async best practices"})
+    result = guardrail.validate("websearch", {"query": "python async best practices"})
 
     assert result.valid
 
@@ -462,7 +462,7 @@ class TestWebGuardrailRateLimiting:
     """
     config = WebGuardrailConfig(requests_per_minute=10)
     guardrail = WebGuardrail(config)
-    result = guardrail.validate("web_search", {"query": "test"})
+    result = guardrail.validate("websearch", {"query": "test"})
 
     assert result.valid
 
@@ -477,11 +477,11 @@ class TestWebGuardrailRateLimiting:
 
     # Make 5 requests (should all succeed)
     for i in range(5):
-      result = guardrail.validate("web_search", {"query": f"test {i}"})
+      result = guardrail.validate("websearch", {"query": f"test {i}"})
       assert result.valid
 
     # 6th request should fail
-    result = guardrail.validate("web_search", {"query": "test 6"})
+    result = guardrail.validate("websearch", {"query": "test 6"})
     assert not result.valid
     assert "rate" in result.reason.lower()
 
@@ -496,11 +496,11 @@ class TestWebGuardrailRateLimiting:
 
     # Make 5 requests (should all succeed)
     for i in range(5):
-      result = guardrail.validate("web_search", {"query": f"test {i}"})
+      result = guardrail.validate("websearch", {"query": f"test {i}"})
       assert result.valid
 
     # 6th request should fail
-    result = guardrail.validate("web_search", {"query": "test 6"})
+    result = guardrail.validate("websearch", {"query": "test 6"})
     assert not result.valid
 
   def test_rate_limit_resets_after_minute(self) -> None:
@@ -513,11 +513,11 @@ class TestWebGuardrailRateLimiting:
     guardrail = WebGuardrail(config)
 
     # Make 2 requests
-    guardrail.validate("web_search", {"query": "test 1"})
-    guardrail.validate("web_search", {"query": "test 2"})
+    guardrail.validate("websearch", {"query": "test 1"})
+    guardrail.validate("websearch", {"query": "test 2"})
 
     # 3rd should fail
-    result = guardrail.validate("web_search", {"query": "test 3"})
+    result = guardrail.validate("websearch", {"query": "test 3"})
     assert not result.valid
 
     # Manually expire the rate limit by manipulating timestamps
@@ -526,7 +526,7 @@ class TestWebGuardrailRateLimiting:
     state.requests_per_minute = []  # Clear old timestamps
 
     # Should work again
-    result = guardrail.validate("web_search", {"query": "test 4"})
+    result = guardrail.validate("websearch", {"query": "test 4"})
     assert result.valid
 
   def test_rate_limit_tracks_per_user(self) -> None:
@@ -539,15 +539,15 @@ class TestWebGuardrailRateLimiting:
     guardrail = WebGuardrail(config)
 
     # User 1 makes 2 requests
-    guardrail.validate("web_search", {"query": "test", "_user_id": "user1"})
-    guardrail.validate("web_search", {"query": "test", "_user_id": "user1"})
+    guardrail.validate("websearch", {"query": "test", "_user_id": "user1"})
+    guardrail.validate("websearch", {"query": "test", "_user_id": "user1"})
 
     # User 1's 3rd request should fail
-    result = guardrail.validate("web_search", {"query": "test", "_user_id": "user1"})
+    result = guardrail.validate("websearch", {"query": "test", "_user_id": "user1"})
     assert not result.valid
 
     # User 2 should still be able to make requests
-    result = guardrail.validate("web_search", {"query": "test", "_user_id": "user2"})
+    result = guardrail.validate("websearch", {"query": "test", "_user_id": "user2"})
     assert result.valid
 
   def test_concurrent_request_limit(self) -> None:
@@ -560,18 +560,18 @@ class TestWebGuardrailRateLimiting:
     guardrail = WebGuardrail(config)
 
     # Make 2 requests without releasing
-    guardrail.validate("web_search", {"query": "test 1"})
-    guardrail.validate("web_search", {"query": "test 2"})
+    guardrail.validate("websearch", {"query": "test 1"})
+    guardrail.validate("websearch", {"query": "test 2"})
 
     # 3rd should fail due to concurrent limit
-    result = guardrail.validate("web_search", {"query": "test 3"})
+    result = guardrail.validate("websearch", {"query": "test 3"})
     assert not result.valid
 
     # Release one
     guardrail.release_concurrent()
 
     # Should work again
-    result = guardrail.validate("web_search", {"query": "test 4"})
+    result = guardrail.validate("websearch", {"query": "test 4"})
     assert result.valid
 
 
@@ -585,7 +585,7 @@ class TestWebGuardrailConfiguration:
     Then: Returns validation success (no domain restrictions)
     """
     guardrail = WebGuardrail()
-    result = guardrail.validate("web_search", {"query": "site:example.com test"})
+    result = guardrail.validate("websearch", {"query": "site:example.com test"})
 
     assert result.valid
 
@@ -610,7 +610,7 @@ class TestWebGuardrailConfiguration:
     """
     config = WebGuardrailConfig(max_query_length=100)
     guardrail = WebGuardrail(config)
-    result = guardrail.validate("web_search", {"query": "a" * 150})
+    result = guardrail.validate("websearch", {"query": "a" * 150})
 
     assert not result.valid
 
@@ -629,7 +629,7 @@ class TestWebGuardrailConfiguration:
 
     # Make many requests - all should succeed
     for i in range(100):
-      result = guardrail.validate("web_search", {"query": f"test {i}"})
+      result = guardrail.validate("websearch", {"query": f"test {i}"})
       assert result.valid
 
 
@@ -643,7 +643,7 @@ class TestWebGuardrailEdgeCases:
     Then: Returns validation failure
     """
     guardrail = WebGuardrail()
-    result = guardrail.validate("web_search", {"query": ""})
+    result = guardrail.validate("websearch", {"query": ""})
 
     assert not result.valid
 
@@ -654,7 +654,7 @@ class TestWebGuardrailEdgeCases:
     Then: Returns validation failure
     """
     guardrail = WebGuardrail()
-    result = guardrail.validate("web_search", {"query": "   "})
+    result = guardrail.validate("websearch", {"query": "   "})
 
     assert not result.valid
 
@@ -665,7 +665,7 @@ class TestWebGuardrailEdgeCases:
     Then: Returns validation success
     """
     guardrail = WebGuardrail()
-    result = guardrail.validate("web_search", {"query": "python documentation"})
+    result = guardrail.validate("websearch", {"query": "python documentation"})
 
     assert result.valid
 
@@ -677,7 +677,7 @@ class TestWebGuardrailEdgeCases:
     """
     guardrail = WebGuardrail()
     query = "Python Documentation"
-    result = guardrail.validate("web_search", {"query": query})
+    result = guardrail.validate("websearch", {"query": query})
 
     assert result.valid
     # The query itself is not modified by the guardrail
@@ -689,7 +689,7 @@ class TestWebGuardrailEdgeCases:
     Then: Returns validation success (Unicode is allowed)
     """
     guardrail = WebGuardrail()
-    result = guardrail.validate("web_search", {"query": "Python 中文 文档"})
+    result = guardrail.validate("websearch", {"query": "Python 中文 文档"})
 
     assert result.valid
 

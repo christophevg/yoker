@@ -54,7 +54,7 @@ class LiveDisplay:
     self.refresh_per_second = refresh_per_second
 
     # Text objects for content
-    self._thinking_text = Text("", style="dim")
+    self._thinking_text = Text("", style="bright_black dim")
     self._response_text = Text("")
 
     # Spinner status
@@ -242,7 +242,7 @@ class LiveDisplay:
 
   def clear(self) -> None:
     """Clear all content and reset for next turn."""
-    self._thinking_text = Text("", style="dim")
+    self._thinking_text = Text("", style="bright_black dim")
     self._response_text = Text("")
     self._spinner_active = False
     self._spinner = None

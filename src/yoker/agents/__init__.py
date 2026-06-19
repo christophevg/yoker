@@ -8,6 +8,7 @@ from yoker.agents.loader import (
   load_agent_definitions,
   parse_frontmatter,
 )
+from yoker.agents.registry import AgentRegistry
 from yoker.agents.schema import AgentDefinition
 from yoker.agents.validator import (
   validate_agent_definition,
@@ -16,6 +17,8 @@ from yoker.agents.validator import (
 )
 
 __all__ = [
+  # Registry
+  "AgentRegistry",
   # Schema
   "AgentDefinition",
   # Loader

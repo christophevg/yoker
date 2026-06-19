@@ -183,8 +183,8 @@ See [docs/rationale.md](docs/rationale.md) for the full rationale and comparison
 - [x] `existence` tool - Check if files or folders exist with security hardening
 - [x] `mkdir` tool - Create directories with recursive parent creation and depth limits
 - [x] `git` tool - Git operations (status, log, diff, branch, show) with permission-controlled commit/push
-- [x] `web_search` tool - Web search with SSRF protection, domain filtering, and rate limiting
-- [x] `web_fetch` tool - Fetch web content with SSRF protection, URL validation, and size limits
+- [x] `websearch` tool - Web search with SSRF protection, domain filtering, and rate limiting
+- [x] `webfetch` tool - Fetch web content with SSRF protection, URL validation, and size limits
 - [x] `agent` tool - Spawn subagents with isolated context and recursion limits
 - [x] `skill` tool - Invoke skills dynamically by name with full content loading
 - [x] Slash commands - Built-in commands: `/help`, `/think on|off`, `/skills`, `/context`, `/tools`, `/agents`
@@ -199,7 +199,7 @@ See [docs/rationale.md](docs/rationale.md) for the full rationale and comparison
 - [x] Context persistence - Session resumption with JSONL storage
 - [x] Event logging - Full session replay capability
 - [x] Demo scripts - Generate documentation screenshots from Markdown scripts
-- [x] Guardrails - Tool parameter validation and path/network guardrails
+- [x] Schema-driven guardrails - Tool parameters are annotated with `yoker.annotations` markers (`Path`, `Url`, `Query`, `Text`); the harness strips the metadata before sending schemas to Ollama and dispatches the matching guardrail at execution time
 - [x] Permissions - Static TOML-based access control
 
 **Planned Features:**
@@ -286,13 +286,16 @@ Or create a `yoker.toml` file for explicit configuration:
 ```toml
 [harness]
 name = "my-yoke"
-log_level = "INFO"
+
+[logging]
+level = "INFO"
 
 [backend]
 provider = "ollama"
 
 [backend.ollama]
 base_url = "http://localhost:11434"
+api_key = ""  # Optional API key for authenticated Ollama endpoints
 model = "llama3.2:latest"
 
 [agents]

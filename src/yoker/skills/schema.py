@@ -6,9 +6,10 @@ Skills are prompts that can be invoked via slash commands or natural language.
 
 from dataclasses import dataclass
 
+from yoker.schema import NameSpaced
 
 @dataclass(frozen=True)
-class Skill:
+class Skill(NameSpaced):
   """Skill definition loaded from a Markdown file.
 
   Skills are reusable prompts that guide agent behavior for specific tasks.
@@ -24,24 +25,16 @@ class Skill:
     namespace: Optional namespace prefix (e.g., 'pkg' for 'pkg:skill').
   """
 
-  name: str
-  description: str
-  content: str
+  description: str = ""
+  content: str = ""
   triggers: tuple[str, ...] = ()
   tools: tuple[str, ...] = ()
   source_path: str = ""
-  namespace: str | None = None
 
-  @property
-  def full_name(self) -> str:
-    """Get the full skill name with namespace if present.
-
-    Returns:
-      'namespace:name' if namespace is set, otherwise 'name'.
-    """
-    if self.namespace:
-      return f"{self.namespace}:{self.name}"
-    return self.name
-
+  def __post_init__(self):
+    if not self.description:
+      raise ValueError("A skill needs a description.")
+    if not self.content:
+      raise ValueError("A skill needs content")
 
 __all__ = ["Skill"]

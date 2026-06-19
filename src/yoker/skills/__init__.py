@@ -29,7 +29,6 @@ from yoker.skills.loader import (
   MAX_SKILL_SIZE_KB,
   load_skill,
   load_skills,
-  load_skills_from_env,
   parse_skill_frontmatter,
 )
 from yoker.skills.registry import (
@@ -47,7 +46,6 @@ __all__ = [
   # Loader
   "load_skill",
   "load_skills",
-  "load_skills_from_env",
   "parse_skill_frontmatter",
   "MAX_SKILL_SIZE_KB",
   # Injection

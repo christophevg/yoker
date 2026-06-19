@@ -6,7 +6,6 @@ execution to enforce permission boundaries.
 """
 
 from abc import ABC, abstractmethod
-from typing import Any
 
 from .base import ValidationResult
 
@@ -28,12 +27,12 @@ class Guardrail(ABC):
   """
 
   @abstractmethod
-  def validate(self, tool_name: str, params: dict[str, Any]) -> ValidationResult:
+  def validate(self, tool_name: str, value: str) -> ValidationResult:
     """Validate tool parameters.
 
     Args:
       tool_name: Name of the tool being validated.
-      params: Dictionary of tool parameters from the LLM.
+      value: the value to validate
 
     Returns:
       ValidationResult indicating whether parameters are valid.

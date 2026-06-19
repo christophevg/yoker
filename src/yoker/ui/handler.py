@@ -5,7 +5,12 @@ The protocol ensures consistent interface across different UI implementations
 (interactive, batch, API, etc.).
 """
 
-from typing import Protocol
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Protocol
+
+if TYPE_CHECKING:
+  from yoker.agent import Agent
 
 
 class UIHandler(Protocol):
@@ -24,13 +29,11 @@ class UIHandler(Protocol):
 
   # === Lifecycle ===
 
-  async def start(self, model: str, version: str, config: dict[str, object]) -> None:
+  async def start(self, agent: Agent) -> None:
     """Start UI session. Called once at beginning.
 
     Args:
-      model: Model name being used.
-      version: Yoker version.
-      config: Configuration summary (thinking_enabled, etc.).
+      agent: The Agent instance this UI session is serving.
     """
     ...
 

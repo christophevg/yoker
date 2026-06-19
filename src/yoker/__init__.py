@@ -5,9 +5,10 @@ One who yokes - the agent noun from "yoke" (PIE *yeug-* meaning "to join").
 Pairs with "clitic" (both are joining tools).
 """
 
-from yoker.agent import Agent, AgentCore, EventCallback
+from structlog import get_logger
+
+from yoker.agent import Agent
 from yoker.agents import AgentDefinition, load_agent_definition
-from yoker.commands import Command, CommandRegistry, create_help_command, create_think_command
 from yoker.config import Config
 from yoker.context import (
   BasicContextManager,
@@ -41,7 +42,8 @@ from yoker.exceptions import (
   ValidationError,
   YokerError,
 )
-from yoker.logging import LoggingContext, configure_logging, get_logger, log_timing
+from yoker.logging import LoggingContext, configure_logging, log_timing
+from yoker.plugins.builtin import __YOKER_MANIFEST__
 from yoker.thinking import ThinkingMode
 
 __version__ = "0.4.0"
@@ -53,18 +55,13 @@ __all__ = [
   "__author__",
   # Core classes
   "Agent",
-  "AgentCore",
-  "EventCallback",
+  # Built-in plugin
+  "__YOKER_MANIFEST__",
   # Agents
   "AgentDefinition",
   "load_agent_definition",
   # Thinking
   "ThinkingMode",
-  # Commands
-  "Command",
-  "CommandRegistry",
-  "create_help_command",
-  "create_think_command",
   # Configuration
   "Config",
   # Events

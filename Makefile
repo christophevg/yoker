@@ -1,5 +1,7 @@
 -include ~/.claude/Makefile
 
+# MODEL=glm-5.2:cloud
+
 .PHONY: env-dev env-run install-pythons test test-cov test-all test-file test-one format lint typecheck check run docs docs-view build publish publish-test pre-publish clean clean-all help demo demos
 
 ## Environment
@@ -37,7 +39,12 @@ lint: env-dev ## Check code for linting issues
 typecheck: env-dev ## Run type checking
 	uv run mypy --strict src
 
-check: format lint typecheck test ## Run all quality checks
+format-check: format lint typecheck
+
+check: format-check test ## Run all quality checks
+
+size:
+	@find src/ | grep "\.py$$" | xargs wc -l | sort -rn | head -10
 
 ## Running
 
@@ -94,11 +101,3 @@ clean: ## Remove build artifacts
 
 clean-all: clean ## Remove virtualenv and lock file
 	rm -rf .venv uv.lock
-
-## Help
-
-help: ## Show this help message
-	@echo "Usage: make [target]"
-	@echo ""
-	@echo "Targets:"
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' Makefile | grep -v "install-pythons\|sync" | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'

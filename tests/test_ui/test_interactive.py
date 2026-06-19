@@ -3,12 +3,13 @@
 import sys
 from io import StringIO
 from pathlib import Path
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from rich.console import Console
 
 from yoker.exceptions import NetworkError, ToolError
+from yoker.thinking import ThinkingMode
 from yoker.ui import InteractiveUIHandler
 from yoker.ui.spinner import LiveDisplay
 
@@ -78,11 +79,19 @@ class TestInteractiveUIHandlerLifecycle:
     handler = InteractiveUIHandler()
     handler.console = make_console(output)
 
-    await handler.start("llama3.1", "0.4.0", {"thinking_enabled": True})
+    agent = MagicMock()
+    agent.model = "llama3.1"
+    agent.thinking_mode = ThinkingMode.ON
+    agent.config.harness.name = "test-harness"
+    agent.config.harness.version = "1.2.3"
+    agent.config.harness.author = "Test Author"
+
+    await handler.start(agent)
 
     text = output.getvalue()
     assert "Yoker v0.4.0" in text
     assert "Using model: llama3.1" in text
+    assert "Harness: test-harness v1.2.3 by Test Author" in text
     assert "Thinking mode: enabled" in text
     assert "Type /help" in text
     assert "Ctrl+D" in text
@@ -94,9 +103,17 @@ class TestInteractiveUIHandlerLifecycle:
     handler = InteractiveUIHandler()
     handler.console = make_console(output)
 
-    await handler.start("model", "0.4.0", {"thinking_enabled": False})
+    agent = MagicMock()
+    agent.model = "model"
+    agent.thinking_mode = ThinkingMode.OFF
+    agent.config.harness.name = "yoker"
+    agent.config.harness.version = None
+    agent.config.harness.author = None
+
+    await handler.start(agent)
 
     text = output.getvalue()
+    assert "Harness: yoker" in text
     assert "Thinking mode: disabled" in text
 
   @pytest.mark.asyncio

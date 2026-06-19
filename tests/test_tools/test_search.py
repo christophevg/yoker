@@ -1,30 +1,41 @@
-"""Tests for SearchTool implementation."""
+"""Tests for search tool implementation."""
 
 from pathlib import Path
 
 import pytest
 
-from yoker.tools.search import SearchTool
+from yoker.config import Config, PermissionsConfig
+from yoker.tools import ToolRegistry, make_search_tool
+from yoker.tools.path_guardrail import PathGuardrail
+from yoker.tools.search import (
+  DEFAULT_MAX_RESULTS,
+)
+
+
+def _search_spec():
+  """Create and register the search tool."""
+  registry = ToolRegistry()
+  return registry.register(make_search_tool())
 
 
 class TestSearchToolSchema:
-  """Tests for SearchTool schema and properties."""
+  """Tests for search tool schema and properties."""
 
   def test_name(self) -> None:
     """Test tool name."""
-    tool = SearchTool()
-    assert tool.name == "search"
+    spec = _search_spec()
+    assert spec.name == "search"
 
   def test_description(self) -> None:
     """Test tool description."""
-    tool = SearchTool()
-    assert "content" in tool.description
-    assert "filename" in tool.description
+    spec = _search_spec()
+    assert "pattern" in spec.description.lower()
+    assert "files" in spec.description.lower()
 
   def test_schema_structure(self) -> None:
     """Test schema structure."""
-    tool = SearchTool()
-    schema = tool.get_schema()
+    spec = _search_spec()
+    schema = spec.schema
 
     assert schema["type"] == "function"
     assert schema["function"]["name"] == "search"
@@ -60,8 +71,8 @@ class TestSearchToolContentSearch:
   @pytest.mark.asyncio
   async def test_basic_content_search(self, temp_search_dir: Path) -> None:
     """Test basic content search finds TODO comments."""
-    tool = SearchTool()
-    result = await tool.execute(path=str(temp_search_dir), pattern="TODO", type="content")
+    spec = _search_spec()
+    result = await spec.execute(path=str(temp_search_dir), pattern="TODO", type="content")
 
     assert result.success
     data = result.result
@@ -70,7 +81,7 @@ class TestSearchToolContentSearch:
     assert "total_matches" in data
     assert "files_searched" in data
     assert data["total_matches"] >= 3
-    assert len(data["matches"]) <= tool.DEFAULT_MAX_RESULTS
+    assert len(data["matches"]) <= DEFAULT_MAX_RESULTS
 
     # Check match structure
     for match in data["matches"]:
@@ -81,8 +92,8 @@ class TestSearchToolContentSearch:
   @pytest.mark.asyncio
   async def test_regex_pattern_search(self, temp_search_dir: Path) -> None:
     """Test regex pattern matching."""
-    tool = SearchTool()
-    result = await tool.execute(
+    spec = _search_spec()
+    result = await spec.execute(
       path=str(temp_search_dir),
       pattern=r"def\s+\w+",
       type="content",
@@ -101,8 +112,8 @@ class TestSearchToolContentSearch:
   @pytest.mark.asyncio
   async def test_case_insensitive_search(self, temp_search_dir: Path) -> None:
     """Test case-insensitive regex search."""
-    tool = SearchTool()
-    result = await tool.execute(
+    spec = _search_spec()
+    result = await spec.execute(
       path=str(temp_search_dir),
       pattern="(?i)todo",
       type="content",
@@ -114,8 +125,8 @@ class TestSearchToolContentSearch:
   @pytest.mark.asyncio
   async def test_max_results_limiting(self, temp_search_dir: Path) -> None:
     """Test max_results parameter limits output."""
-    tool = SearchTool()
-    result = await tool.execute(
+    spec = _search_spec()
+    result = await spec.execute(
       path=str(temp_search_dir),
       pattern="TODO",
       type="content",
@@ -131,8 +142,8 @@ class TestSearchToolContentSearch:
   @pytest.mark.asyncio
   async def test_default_pattern_content(self, temp_search_dir: Path) -> None:
     """Test default pattern for content search matches all lines."""
-    tool = SearchTool()
-    result = await tool.execute(
+    spec = _search_spec()
+    result = await spec.execute(
       path=str(temp_search_dir),
       type="content",
     )
@@ -147,8 +158,8 @@ class TestSearchToolContentSearch:
     empty_dir = tmp_path / "empty"
     empty_dir.mkdir()
 
-    tool = SearchTool()
-    result = await tool.execute(path=str(empty_dir), pattern="TODO", type="content")
+    spec = _search_spec()
+    result = await spec.execute(path=str(empty_dir), pattern="TODO", type="content")
 
     assert result.success
     data = result.result
@@ -159,8 +170,8 @@ class TestSearchToolContentSearch:
   @pytest.mark.asyncio
   async def test_hidden_files_skipped(self, temp_search_dir: Path) -> None:
     """Test that hidden files are not searched."""
-    tool = SearchTool()
-    result = await tool.execute(
+    spec = _search_spec()
+    result = await spec.execute(
       path=str(temp_search_dir),
       pattern="this should be ignored",
       type="content",
@@ -179,8 +190,8 @@ class TestSearchToolContentSearch:
     # Create a small file
     (tmp_path / "small.txt").write_text("TODO: small file\n")
 
-    tool = SearchTool()
-    result = await tool.execute(path=str(tmp_path), pattern="TODO", type="content")
+    spec = _search_spec()
+    result = await spec.execute(path=str(tmp_path), pattern="TODO", type="content")
 
     assert result.success
     # Should only match the small file
@@ -212,8 +223,8 @@ class TestSearchToolFilenameSearch:
   @pytest.mark.asyncio
   async def test_glob_pattern_py(self, temp_search_dir: Path) -> None:
     """Test glob pattern for Python files."""
-    tool = SearchTool()
-    result = await tool.execute(
+    spec = _search_spec()
+    result = await spec.execute(
       path=str(temp_search_dir),
       pattern="*.py",
       type="filename",
@@ -234,8 +245,8 @@ class TestSearchToolFilenameSearch:
     # Add file with 4-char name to match ???? pattern
     (temp_search_dir / "core.py").write_text("def core(): pass\n")
 
-    tool = SearchTool()
-    result = await tool.execute(
+    spec = _search_spec()
+    result = await spec.execute(
       path=str(temp_search_dir),
       pattern="????.py",  # Matches main.py, core.py (4 chars)
       type="filename",
@@ -252,8 +263,8 @@ class TestSearchToolFilenameSearch:
     (tmp_path / "test_b.py").write_text("b\n")
     (tmp_path / "test_c.py").write_text("c\n")
 
-    tool = SearchTool()
-    result = await tool.execute(
+    spec = _search_spec()
+    result = await spec.execute(
       path=str(tmp_path),
       pattern="test_[ab].py",
       type="filename",
@@ -265,8 +276,8 @@ class TestSearchToolFilenameSearch:
   @pytest.mark.asyncio
   async def test_no_matches(self, temp_search_dir: Path) -> None:
     """Test search with no matches returns empty results."""
-    tool = SearchTool()
-    result = await tool.execute(
+    spec = _search_spec()
+    result = await spec.execute(
       path=str(temp_search_dir),
       pattern="*.nonexistent",
       type="filename",
@@ -279,8 +290,8 @@ class TestSearchToolFilenameSearch:
   @pytest.mark.asyncio
   async def test_default_pattern_filename(self, temp_search_dir: Path) -> None:
     """Test default pattern for filename search matches all files."""
-    tool = SearchTool()
-    result = await tool.execute(
+    spec = _search_spec()
+    result = await spec.execute(
       path=str(temp_search_dir),
       type="filename",
     )
@@ -296,8 +307,8 @@ class TestSearchToolValidation:
   @pytest.mark.asyncio
   async def test_invalid_regex_pattern(self, tmp_path: Path) -> None:
     """Test invalid regex pattern returns error."""
-    tool = SearchTool()
-    result = await tool.execute(
+    spec = _search_spec()
+    result = await spec.execute(
       path=str(tmp_path),
       pattern="[invalid",  # Missing closing bracket
       type="content",
@@ -309,8 +320,8 @@ class TestSearchToolValidation:
   @pytest.mark.asyncio
   async def test_redos_pattern_nested_quantifier(self, tmp_path: Path) -> None:
     """Test ReDoS pattern with nested quantifier is rejected."""
-    tool = SearchTool()
-    result = await tool.execute(
+    spec = _search_spec()
+    result = await spec.execute(
       path=str(tmp_path),
       pattern=r"(\w+)+",
       type="content",
@@ -322,8 +333,8 @@ class TestSearchToolValidation:
   @pytest.mark.asyncio
   async def test_redos_pattern_alternation_quantifier(self, tmp_path: Path) -> None:
     """Test ReDoS pattern with alternation and quantifier is rejected."""
-    tool = SearchTool()
-    result = await tool.execute(
+    spec = _search_spec()
+    result = await spec.execute(
       path=str(tmp_path),
       pattern=r"(a|b)+",
       type="content",
@@ -335,10 +346,10 @@ class TestSearchToolValidation:
   @pytest.mark.asyncio
   async def test_pattern_too_long(self, tmp_path: Path) -> None:
     """Test pattern length limit."""
-    tool = SearchTool()
+    spec = _search_spec()
     long_pattern = "a" * 600  # Exceeds MAX_PATTERN_LENGTH (500)
 
-    result = await tool.execute(
+    result = await spec.execute(
       path=str(tmp_path),
       pattern=long_pattern,
       type="content",
@@ -350,8 +361,8 @@ class TestSearchToolValidation:
   @pytest.mark.asyncio
   async def test_path_not_found(self) -> None:
     """Test error when path does not exist."""
-    tool = SearchTool()
-    result = await tool.execute(path="/nonexistent/path", pattern="test", type="content")
+    spec = _search_spec()
+    result = await spec.execute(path="/nonexistent/path", pattern="test", type="content")
 
     assert not result.success
     assert "Path not found" in result.error
@@ -362,8 +373,8 @@ class TestSearchToolValidation:
     file_path = tmp_path / "test.txt"
     file_path.write_text("content")
 
-    tool = SearchTool()
-    result = await tool.execute(path=str(file_path), pattern="test", type="content")
+    spec = _search_spec()
+    result = await spec.execute(path=str(file_path), pattern="test", type="content")
 
     assert not result.success
     assert "not a directory" in result.error.lower()
@@ -371,8 +382,8 @@ class TestSearchToolValidation:
   @pytest.mark.asyncio
   async def test_invalid_search_type(self, tmp_path: Path) -> None:
     """Test error for invalid search type."""
-    tool = SearchTool()
-    result = await tool.execute(
+    spec = _search_spec()
+    result = await spec.execute(
       path=str(tmp_path),
       pattern="test",
       type="invalid",
@@ -384,8 +395,8 @@ class TestSearchToolValidation:
   @pytest.mark.asyncio
   async def test_invalid_max_results(self, tmp_path: Path) -> None:
     """Test error for invalid max_results parameter."""
-    tool = SearchTool()
-    result = await tool.execute(
+    spec = _search_spec()
+    result = await spec.execute(
       path=str(tmp_path),
       pattern="test",
       max_results="not_a_number",
@@ -397,11 +408,11 @@ class TestSearchToolValidation:
   @pytest.mark.asyncio
   async def test_missing_path_parameter(self) -> None:
     """Test error when path parameter is missing."""
-    tool = SearchTool()
-    result = await tool.execute(pattern="test", type="content")
+    spec = _search_spec()
+    result = await spec.execute(pattern="test", type="content")
 
     assert not result.success
-    assert "Missing required" in result.error
+    assert "missing a required argument" in result.error
 
 
 class TestSearchToolLimiting:
@@ -412,8 +423,8 @@ class TestSearchToolLimiting:
     """Test max_results below minimum is clamped."""
     (tmp_path / "test.txt").write_text("content\n")
 
-    tool = SearchTool()
-    result = await tool.execute(
+    spec = _search_spec()
+    result = await spec.execute(
       path=str(tmp_path),
       pattern=".*",
       type="content",
@@ -428,8 +439,8 @@ class TestSearchToolLimiting:
     """Test max_results above maximum is clamped."""
     (tmp_path / "test.txt").write_text("content\n")
 
-    tool = SearchTool()
-    result = await tool.execute(
+    spec = _search_spec()
+    result = await spec.execute(
       path=str(tmp_path),
       pattern=".*",
       type="content",
@@ -446,8 +457,8 @@ class TestSearchToolLimiting:
     for i in range(10):
       (tmp_path / f"file{i}.txt").write_text(f"TODO: item {i}\n")
 
-    tool = SearchTool()
-    result = await tool.execute(
+    spec = _search_spec()
+    result = await spec.execute(
       path=str(tmp_path),
       pattern="TODO",
       type="content",
@@ -474,8 +485,8 @@ class TestSearchToolDirectorySkipping:
     # Create regular file
     (tmp_path / "main.py").write_text("TODO: regular\n")
 
-    tool = SearchTool()
-    result = await tool.execute(path=str(tmp_path), pattern="TODO", type="content")
+    spec = _search_spec()
+    result = await spec.execute(path=str(tmp_path), pattern="TODO", type="content")
 
     assert result.success
     # Should only find the regular file
@@ -490,8 +501,8 @@ class TestSearchToolDirectorySkipping:
 
     (tmp_path / "module.py").write_text("# source\n")
 
-    tool = SearchTool()
-    result = await tool.execute(
+    spec = _search_spec()
+    result = await spec.execute(
       path=str(tmp_path),
       pattern="*",
       type="filename",
@@ -508,42 +519,32 @@ class TestSearchToolWithGuardrail:
 
   @pytest.mark.asyncio
   async def test_guardrail_blocks_path(self, tmp_path: Path) -> None:
-    """Test that guardrail can block paths."""
-    from unittest.mock import MagicMock
+    """Test that the path guardrail can block paths."""
+    allowed_path = tmp_path / "allowed"
+    allowed_path.mkdir()
+    config = Config(permissions=PermissionsConfig(filesystem_paths=(str(allowed_path),)))
+    guardrail = PathGuardrail(config)
 
-    from yoker.tools.base import ValidationResult
-    from yoker.tools.guardrails import Guardrail
+    spec = _search_spec()
+    validation = guardrail.validate(spec.name, {"path": str(tmp_path)})
 
-    # Create a mock guardrail that blocks all paths
-    mock_guardrail = MagicMock(spec=Guardrail)
-    mock_guardrail.validate.return_value = ValidationResult(valid=False, reason="Path not allowed")
-
-    tool = SearchTool(guardrail=mock_guardrail)
-    result = await tool.execute(path=str(tmp_path), pattern="test", type="content")
-
-    assert not result.success
-    assert "Path not allowed" in result.error
-    mock_guardrail.validate.assert_called_once()
+    assert not validation.valid
+    assert "outside allowed" in validation.reason.lower()
 
   @pytest.mark.asyncio
   async def test_guardrail_allows_path(self, tmp_path: Path) -> None:
-    """Test that guardrail can allow paths."""
-    from unittest.mock import MagicMock
-
-    from yoker.tools.base import ValidationResult
-    from yoker.tools.guardrails import Guardrail
-
+    """Test that the path guardrail can allow paths."""
     (tmp_path / "test.txt").write_text("TODO: test\n")
 
-    # Create a mock guardrail that allows all paths
-    mock_guardrail = MagicMock(spec=Guardrail)
-    mock_guardrail.validate.return_value = ValidationResult(valid=True)
+    config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
+    guardrail = PathGuardrail(config)
 
-    tool = SearchTool(guardrail=mock_guardrail)
-    result = await tool.execute(path=str(tmp_path), pattern="TODO", type="content")
+    spec = _search_spec()
+    validation = guardrail.validate(spec.name, {"path": str(tmp_path)})
+    assert validation.valid
 
+    result = await spec.execute(path=str(tmp_path), pattern="TODO", type="content")
     assert result.success
-    mock_guardrail.validate.assert_called_once()
 
 
 class TestSearchToolSymlinkSkipping:
@@ -564,8 +565,8 @@ class TestSearchToolSymlinkSkipping:
       # Symlinks may not be supported on all platforms
       pytest.skip("Symlinks not supported")
 
-    tool = SearchTool()
-    result = await tool.execute(
+    spec = _search_spec()
+    result = await spec.execute(
       path=str(tmp_path),
       pattern="TODO",
       type="content",
@@ -581,22 +582,20 @@ class TestSearchToolTimeout:
 
   def test_timeout_parameter_in_schema(self) -> None:
     """Test that timeout_ms parameter is in schema."""
-    tool = SearchTool()
-    schema = tool.get_schema()
+    spec = _search_spec()
+    schema = spec.schema
 
     assert "timeout_ms" in schema["function"]["parameters"]["properties"]
     timeout_prop = schema["function"]["parameters"]["properties"]["timeout_ms"]
     assert timeout_prop["type"] == "integer"
-    assert timeout_prop["minimum"] == 100
-    assert timeout_prop["maximum"] == tool.ABSOLUTE_TIMEOUT_MS
 
   @pytest.mark.asyncio
   async def test_timeout_ms_clamped_to_minimum(self, tmp_path: Path) -> None:
     """Test timeout_ms below minimum is clamped."""
     (tmp_path / "test.txt").write_text("content\n")
 
-    tool = SearchTool()
-    result = await tool.execute(
+    spec = _search_spec()
+    result = await spec.execute(
       path=str(tmp_path),
       pattern=".*",
       type="content",
@@ -611,8 +610,8 @@ class TestSearchToolTimeout:
     """Test timeout_ms above maximum is clamped."""
     (tmp_path / "test.txt").write_text("content\n")
 
-    tool = SearchTool()
-    result = await tool.execute(
+    spec = _search_spec()
+    result = await spec.execute(
       path=str(tmp_path),
       pattern=".*",
       type="content",
@@ -625,8 +624,8 @@ class TestSearchToolTimeout:
   @pytest.mark.asyncio
   async def test_invalid_timeout_ms(self, tmp_path: Path) -> None:
     """Test error for invalid timeout_ms parameter."""
-    tool = SearchTool()
-    result = await tool.execute(
+    spec = _search_spec()
+    result = await spec.execute(
       path=str(tmp_path),
       pattern="test",
       timeout_ms="not_a_number",
@@ -644,9 +643,9 @@ class TestSearchToolTimeout:
     for i in range(100):
       (tmp_path / f"file{i}.txt").write_text(f"TODO: item {i}\n")
 
-    tool = SearchTool()
+    spec = _search_spec()
     start = time.monotonic()
-    result = await tool.execute(
+    result = await spec.execute(
       path=str(tmp_path),
       pattern="TODO",
       type="content",
@@ -667,8 +666,8 @@ class TestSearchToolTimeout:
     for i in range(200):
       (tmp_path / f"file{i}.txt").write_text(f"TODO: item {i}\n")
 
-    tool = SearchTool()
-    result = await tool.execute(
+    spec = _search_spec()
+    result = await spec.execute(
       path=str(tmp_path),
       pattern="TODO",
       type="content",
@@ -687,8 +686,8 @@ class TestSearchToolTimeout:
     """Test that default timeout is applied when not specified."""
     (tmp_path / "test.txt").write_text("content\n")
 
-    tool = SearchTool()
-    result = await tool.execute(
+    spec = _search_spec()
+    result = await spec.execute(
       path=str(tmp_path),
       pattern=".*",
       type="content",
@@ -710,7 +709,7 @@ class TestSearchToolErrorHandling:
     (tmp_path / "file1.txt").write_text("TODO: file1\n")
     (tmp_path / "file2.txt").write_text("TODO: file2\n")
 
-    tool = SearchTool()
+    spec = _search_spec()
 
     # Mock Path.stat to raise PermissionError for file2.txt only
     original_stat = Path.stat
@@ -722,7 +721,7 @@ class TestSearchToolErrorHandling:
       return original_stat(self, follow_symlinks=follow_symlinks)
 
     with patch.object(Path, "stat", mock_stat):
-      result = await tool.execute(path=str(tmp_path), pattern="TODO", type="content")
+      result = await spec.execute(path=str(tmp_path), pattern="TODO", type="content")
 
     # Should succeed, skipping file2
     assert result.success
@@ -740,7 +739,7 @@ class TestSearchToolErrorHandling:
     (tmp_path / "readable.txt").write_text("TODO: readable\n")
     (tmp_path / "unreadable.txt").write_text("TODO: unreadable\n")
 
-    tool = SearchTool()
+    spec = _search_spec()
 
     # Mock read_text to raise PermissionError for unreadable file
     original_read_text = Path.read_text
@@ -751,7 +750,7 @@ class TestSearchToolErrorHandling:
       return original_read_text(self, encoding=encoding, errors=errors)
 
     with patch.object(Path, "read_text", mock_read_text):
-      result = await tool.execute(path=str(tmp_path), pattern="TODO", type="content")
+      result = await spec.execute(path=str(tmp_path), pattern="TODO", type="content")
 
     # Should succeed and only find the readable file
     assert result.success
@@ -768,7 +767,7 @@ class TestSearchToolErrorHandling:
     (tmp_path / "file1.txt").write_text("TODO: file1\n")
     (tmp_path / "file2.txt").write_text("TODO: file2\n")
 
-    tool = SearchTool()
+    spec = _search_spec()
 
     # Mock Path.stat to raise OSError for file2.txt only
     original_stat = Path.stat
@@ -780,7 +779,7 @@ class TestSearchToolErrorHandling:
       return original_stat(self, follow_symlinks=follow_symlinks)
 
     with patch.object(Path, "stat", mock_stat):
-      result = await tool.execute(path=str(tmp_path), pattern="TODO", type="content")
+      result = await spec.execute(path=str(tmp_path), pattern="TODO", type="content")
 
     # Should succeed, skipping file2
     assert result.success
@@ -800,8 +799,8 @@ class TestSearchToolErrorHandling:
     # Create a regular text file with TODO
     (tmp_path / "text.txt").write_text("TODO: text file\n")
 
-    tool = SearchTool()
-    result = await tool.execute(path=str(tmp_path), pattern="TODO", type="content")
+    spec = _search_spec()
+    result = await spec.execute(path=str(tmp_path), pattern="TODO", type="content")
 
     assert result.success
     # Should only find the text file, binary file is skipped
@@ -822,8 +821,8 @@ class TestSearchToolErrorHandling:
     # Create a valid file
     (tmp_path / "valid.txt").write_text("TODO: valid\n")
 
-    tool = SearchTool()
-    result = await tool.execute(path=str(tmp_path), pattern="TODO", type="content")
+    spec = _search_spec()
+    result = await spec.execute(path=str(tmp_path), pattern="TODO", type="content")
 
     # Should succeed because errors="replace" is used
     assert result.success
@@ -850,8 +849,8 @@ class TestSearchToolErrorHandling:
     # Create hidden file (should be skipped)
     (tmp_path / ".hidden").write_text("TODO: hidden\n")
 
-    tool = SearchTool()
-    result = await tool.execute(path=str(tmp_path), pattern="TODO", type="content")
+    spec = _search_spec()
+    result = await spec.execute(path=str(tmp_path), pattern="TODO", type="content")
 
     assert result.success
     # Should search 5 files (not hidden file)
@@ -873,7 +872,7 @@ class TestSearchToolErrorHandling:
     (tmp_path / "file2.txt").write_text("TODO: file2\n")
     (tmp_path / "file3.txt").write_text("TODO: file3\n")
 
-    tool = SearchTool()
+    spec = _search_spec()
 
     # Mock read_text to fail on file2
     original_read_text = Path.read_text
@@ -886,7 +885,7 @@ class TestSearchToolErrorHandling:
       return original_read_text(self, encoding=encoding, errors=errors)
 
     with patch.object(Path, "read_text", mock_read_text):
-      result = await tool.execute(path=str(tmp_path), pattern="TODO", type="content")
+      result = await spec.execute(path=str(tmp_path), pattern="TODO", type="content")
 
     assert result.success
     # Should have attempted to read all 3 files
@@ -907,8 +906,8 @@ class TestSearchToolErrorHandling:
     # Create another small file
     (tmp_path / "small2.txt").write_text("TODO: small2\n")
 
-    tool = SearchTool()
-    result = await tool.execute(path=str(tmp_path), pattern="TODO", type="content")
+    spec = _search_spec()
+    result = await spec.execute(path=str(tmp_path), pattern="TODO", type="content")
 
     assert result.success
     # All 3 files should be counted in files_searched
@@ -924,9 +923,9 @@ class TestSearchToolErrorHandling:
     # Write valid UTF-8 followed by invalid bytes
     mixed_file.write_bytes(b"Valid line\n\xff\xfe\nAnother valid line\n")
 
-    tool = SearchTool()
+    spec = _search_spec()
     # Search for "Valid" - should still find it despite invalid bytes
-    result = await tool.execute(path=str(tmp_path), pattern="Valid", type="content")
+    result = await spec.execute(path=str(tmp_path), pattern="Valid", type="content")
 
     assert result.success
     # Should find the match because errors="replace" allows reading

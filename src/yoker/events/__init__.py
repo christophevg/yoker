@@ -8,6 +8,7 @@ from yoker.events.types import (
   ContentEndEvent,
   ContentStartEvent,
   Event,
+  EventCallback,
   EventType,
   ThinkingChunkEvent,
   ThinkingEndEvent,
@@ -23,6 +24,7 @@ __all__ = [
   # Base
   "Event",
   "EventType",
+  "EventCallback",
   # Turn
   "TurnStartEvent",
   "TurnEndEvent",

@@ -1,20 +1,27 @@
 """Tests for ToolRegistry."""
 
+from typing import Annotated
+
 import pytest
 
-from yoker.tools import ReadTool, ToolRegistry
-from yoker.tools.base import Tool, ToolResult
+from yoker.annotations import Text
+from yoker.tools import ToolRegistry
+from yoker.tools.base import ToolResult
+
+
+async def read_file(path: Annotated[str, Text("Path to read")]) -> str:
+  """Read a file."""
+  return f"contents of {path}"
 
 
 class TestToolRegistry:
   """Tests for ToolRegistry."""
 
   def test_register_and_get(self) -> None:
-    """Register a tool and retrieve it."""
+    """Register a callable and retrieve its spec."""
     registry = ToolRegistry()
-    tool = ReadTool()
-    registry.register(tool)
-    assert registry.get("read") is tool
+    spec = registry.register(read_file)
+    assert registry.get("read_file") is spec
 
   def test_get_missing(self) -> None:
     """Get returns None for missing tools."""
@@ -22,69 +29,61 @@ class TestToolRegistry:
     assert registry.get("nonexistent") is None
 
   def test_list_tools(self) -> None:
-    """list_tools returns registered tools sorted by name."""
+    """list_tools returns registered specs sorted by name."""
     registry = ToolRegistry()
-    registry.register(ReadTool())
+    registry.register(read_file)
     tools = registry.list_tools()
     assert len(tools) == 1
-    assert tools[0].name == "read"
+    assert tools[0].name == "read_file"
 
   def test_duplicate_registration(self) -> None:
-    """Registering duplicate tool raises ValueError."""
+    """Registering duplicate callable raises ValueError."""
     registry = ToolRegistry()
-    registry.register(ReadTool())
+    registry.register(read_file)
     with pytest.raises(ValueError, match="already registered"):
-      registry.register(ReadTool())
+      registry.register(read_file)
 
   def test_names(self) -> None:
     """names property returns sorted tool names."""
     registry = ToolRegistry()
-    registry.register(ReadTool())
-    assert registry.names == ["read"]
+    registry.register(read_file)
+    assert registry.names == ["read_file"]
 
   def test_get_schemas(self) -> None:
     """get_schemas returns schemas for all tools."""
     registry = ToolRegistry()
-    registry.register(ReadTool())
+    registry.register(read_file)
     schemas = registry.get_schemas()
     assert len(schemas) == 1
-    assert schemas[0]["function"]["name"] == "read"
+    assert schemas[0]["function"]["name"] == "read_file"
+
+  def test_namespace_registration(self) -> None:
+    """Registering with a namespace prefixes the tool name."""
+    registry = ToolRegistry()
+    spec = registry.register(read_file, namespace="pkgq")
+    assert spec.name == "pkgq:read_file"
+    assert registry.get("pkgq:read_file") is spec
 
   def test_multiple_tools_sorted(self) -> None:
     """Multiple tools are returned sorted by name."""
 
-    class AlphaTool(Tool):
-      @property
-      def name(self) -> str:
-        return "alpha"
+    async def alpha() -> ToolResult:
+      """Alpha tool."""
+      return ToolResult(success=True, result="")
 
-      @property
-      def description(self) -> str:
-        return "Alpha tool"
-
-      def get_schema(self) -> dict:
-        return {"type": "function", "function": {"name": "alpha"}}
-
-      async def execute(self) -> ToolResult:
-        return ToolResult(success=True, result="")
-
-    class ZetaTool(Tool):
-      @property
-      def name(self) -> str:
-        return "zeta"
-
-      @property
-      def description(self) -> str:
-        return "Zeta tool"
-
-      def get_schema(self) -> dict:
-        return {"type": "function", "function": {"name": "zeta"}}
-
-      async def execute(self) -> ToolResult:
-        return ToolResult(success=True, result="")
+    async def zeta() -> ToolResult:
+      """Zeta tool."""
+      return ToolResult(success=True, result="")
 
     registry = ToolRegistry()
-    registry.register(ZetaTool())
-    registry.register(AlphaTool())
+    registry.register(zeta)
+    registry.register(alpha)
     names = registry.names
     assert names == ["alpha", "zeta"]
+
+  def test_explicit_name_override(self) -> None:
+    """An explicit name override can be provided."""
+    registry = ToolRegistry()
+    spec = registry.register(read_file, name="custom_read")
+    assert spec.name == "custom_read"
+    assert registry.get("custom_read") is spec

@@ -1,10 +1,13 @@
 """Tests for the demo plugin.
 
 Validates that the demo plugin can be discovered, loaded, and its components
-registered correctly.
+registered correctly with the function-as-tool API.
 """
 
 import pytest
+
+from yoker.tools import ToolRegistry
+from yoker.tools.schema import build_tool_spec
 
 
 class TestDemoPluginDiscovery:
@@ -21,19 +24,20 @@ class TestDemoPluginDiscovery:
     import yoker_plugin_demo
 
     assert hasattr(yoker_plugin_demo, "__YOKER_MANIFEST__")
-    assert hasattr(yoker_plugin_demo, "EchoTool")
+    assert hasattr(yoker_plugin_demo, "echo")
 
 
 class TestDemoPluginManifest:
   """Test plugin manifest declaration."""
 
   def test_manifest_has_echo_tool(self) -> None:
-    """Manifest should declare EchoTool."""
+    """Manifest should declare the echo tool callable."""
     from yoker_plugin_demo import __YOKER_MANIFEST__
 
     assert len(__YOKER_MANIFEST__.tools) == 1
     tool = __YOKER_MANIFEST__.tools[0]
-    assert tool.name == "echo"
+    spec = build_tool_spec(tool)
+    assert spec.name == "echo"
 
   def test_manifest_declares_skills_dir(self) -> None:
     """Manifest should declare skills directory."""
@@ -49,62 +53,50 @@ class TestDemoPluginManifest:
 
 
 class TestEchoTool:
-  """Test EchoTool implementation."""
+  """Test echo tool implementation."""
+
+  @pytest.fixture
+  def echo_spec(self):
+    """Build a ToolSpec for the echo function."""
+    from yoker_plugin_demo import echo
+
+    return build_tool_spec(echo)
 
   @pytest.mark.asyncio
-  async def test_echo_tool_returns_input_with_prefix(self) -> None:
-    """EchoTool should return input message with 'Echo: ' prefix."""
-    from yoker_plugin_demo import EchoTool
-
-    tool = EchoTool()
-    result = await tool.execute(message="Hello, World!")
+  async def test_echo_tool_returns_input_with_prefix(self, echo_spec) -> None:
+    """Echo tool should return input message with 'Echo: ' prefix."""
+    result = await echo_spec.execute(message="Hello, World!")
 
     assert result.success
     assert result.result == "Echo: Hello, World!"
 
   @pytest.mark.asyncio
-  async def test_echo_tool_handles_empty_string(self) -> None:
-    """EchoTool should handle empty string input."""
-    from yoker_plugin_demo import EchoTool
-
-    tool = EchoTool()
-    result = await tool.execute(message="")
+  async def test_echo_tool_handles_empty_string(self, echo_spec) -> None:
+    """Echo tool should handle empty string input."""
+    result = await echo_spec.execute(message="")
 
     assert result.success
     assert result.result == "Echo: "
 
   @pytest.mark.asyncio
-  async def test_echo_tool_rejects_non_string(self) -> None:
-    """EchoTool should reject non-string input."""
-    from yoker_plugin_demo import EchoTool
+  async def test_echo_tool_coerces_non_string(self, echo_spec) -> None:
+    """Echo tool stringifies non-string input."""
+    result = await echo_spec.execute(message=123)
 
-    tool = EchoTool()
-    result = await tool.execute(message=123)
+    assert result.success
+    assert result.result == "Echo: 123"
 
-    assert not result.success
-    assert result.error is not None
-    assert "must be a string" in result.error
+  def test_echo_tool_has_correct_name(self, echo_spec) -> None:
+    """Echo tool should have 'echo' as its name."""
+    assert echo_spec.name == "echo"
 
-  def test_echo_tool_has_correct_name(self) -> None:
-    """EchoTool should have 'echo' as its name."""
-    from yoker_plugin_demo import EchoTool
+  def test_echo_tool_has_description(self, echo_spec) -> None:
+    """Echo tool should have a description."""
+    assert echo_spec.description != ""
 
-    tool = EchoTool()
-    assert tool.name == "echo"
-
-  def test_echo_tool_has_description(self) -> None:
-    """EchoTool should have a description."""
-    from yoker_plugin_demo import EchoTool
-
-    tool = EchoTool()
-    assert tool.description != ""
-
-  def test_echo_tool_has_valid_schema(self) -> None:
-    """EchoTool should have a valid OpenAI function schema."""
-    from yoker_plugin_demo import EchoTool
-
-    tool = EchoTool()
-    schema = tool.get_schema()
+  def test_echo_tool_has_valid_schema(self, echo_spec) -> None:
+    """Echo tool should have a valid OpenAI function schema."""
+    schema = echo_spec.schema
 
     assert schema["type"] == "function"
     assert schema["function"]["name"] == "echo"
@@ -124,7 +116,9 @@ class TestDemoPluginLoading:
     assert plugin is not None
     assert plugin.source == "yoker_plugin_demo"
     assert len(plugin.tools) == 1
-    assert plugin.tools[0].name == "echo"
+    registry = ToolRegistry()
+    spec = registry.register(plugin.tools[0])
+    assert spec.name == "echo"
 
   def test_load_demo_plugin_skills(self) -> None:
     """Demo plugin should provide skills from skills directory."""
@@ -134,10 +128,10 @@ class TestDemoPluginLoading:
 
     # Should load at least the greeting skill
     assert len(skills) >= 1
-    greeting_skill = next((s for s in skills if s.name == "greeting"), None)
+    greeting_skill = next((s for s in skills if s.simple_name == "greeting"), None)
     assert greeting_skill is not None
     assert greeting_skill.namespace == "yoker_plugin_demo"
-    assert greeting_skill.full_name == "yoker_plugin_demo:greeting"
+    assert greeting_skill.name == "yoker_plugin_demo:greeting"
 
   def test_load_demo_plugin_agents(self) -> None:
     """Demo plugin should provide agents from agents directory."""

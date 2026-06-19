@@ -93,17 +93,16 @@ class HarnessConfig:
   Attributes:
     name: Human-readable name for the harness.
     version: Version string for the configuration.
-    log_level: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL).
   """
 
-  name: str = "yoker"
-  version: str = "1.0"
-  log_level: str = "INFO"
+  name: str | None = "yoker"
+  version: str | None = "1.0"
+  author: str | None = None
 
   def __post_init__(self) -> None:
     """Validate harness configuration."""
     validate_non_empty_string(self.name, "harness.name")
-    validate_log_level(self.log_level, "harness.log_level")
+    validate_non_empty_string(self.version, "harness.version")
 
 
 @dataclass(frozen=True)
@@ -146,12 +145,14 @@ class OllamaConfig:
 
   Attributes:
     base_url: URL of the Ollama API server.
+    api_key: Optional API key for Ollama authorization.
     model: Default model to use.
     timeout_seconds: Request timeout in seconds.
     parameters: Model generation parameters.
   """
 
   base_url: str = "http://localhost:11434"
+  api_key: str | None = None
   model: str = "llama3.2:latest"
   timeout_seconds: int = 60
   parameters: OllamaParameters = field(default_factory=OllamaParameters)
@@ -561,25 +562,26 @@ class ToolsConfig:
   content_display: ContentDisplayConfig = field(default_factory=ContentDisplayConfig)
   skill: SkillToolConfig = field(default_factory=SkillToolConfig)
 
+  def __getitem__(self, name: str) -> ToolConfig:
+    return getattr(self, name)
+
 
 @dataclass(frozen=True)
 class AgentsConfig:
   """Agent definition settings.
 
   Attributes:
-    directory: Directory containing agent definition files (empty = no directory).
-    definition: Path to a specific agent definition file (overrides default_type).
-    default_type: Default agent type.
+    directories: Directories containing agent definition files.
+    definition: Path to a specific agent definition file.
   """
 
-  directory: str = ""
+  directories: tuple[str, ...] = ()
   definition: str = ""
-  default_type: str = "main"
 
   def __post_init__(self) -> None:
     """Validate agents configuration."""
-    if self.directory:
-      validate_directory_exists(self.directory, "agents.directory")
+    for directory in self.directories:
+      validate_directory_exists(directory, "agents.directories")
 
 
 @dataclass(frozen=True)
@@ -622,14 +624,16 @@ class LoggingConfig:
     include_permission_checks: Whether to include permission checks in logs.
   """
 
-  level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
+  level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "WARNING"
   format: Literal["json", "text"] = "text"
   file: str | None = None
   include_tool_calls: bool = True
   include_permission_checks: bool = True
+  timestamp_format_string: str = "iso"
 
   def __post_init__(self) -> None:
     """Validate logging configuration."""
+    validate_log_level(self.level, "logging.level")
     validate_choice(self.format, "logging.format", ("json", "text"))
 
 
@@ -645,9 +649,9 @@ class UIConfig:
   """
 
   mode: str = "interactive"
-  show_thinking: bool = False
-  show_tool_calls: bool = False
-  show_stats: bool = False
+  show_thinking: bool = True
+  show_tool_calls: bool = True
+  show_stats: bool = True
 
   def __post_init__(self) -> None:
     """Validate UI configuration."""
@@ -659,6 +663,7 @@ class Config:
   """Root configuration container.
 
   Attributes:
+    agent : the agent to use.
     harness: Harness metadata.
     backend: Backend provider configuration.
     context: Context management configuration.
@@ -670,6 +675,8 @@ class Config:
     logging: Logging configuration.
     ui: UI layer configuration.
   """
+
+  agent: str | None = None
 
   harness: HarnessConfig = field(default_factory=HarnessConfig)
   backend: BackendConfig = field(default_factory=BackendConfig)

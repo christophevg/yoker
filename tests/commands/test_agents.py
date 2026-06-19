@@ -2,46 +2,42 @@
 
 from unittest.mock import Mock
 
+import pytest
+
 from yoker.agents import AgentDefinition
-from yoker.commands import create_agents_command
+from yoker.ui.commands.agents import create_command as create_agents_command
 
 
 class TestAgentsCommand:
   """Tests for create_agents_command."""
 
-  def test_create_agents_command(self) -> None:
+  def _make_agent(self, agent_def=None, directories=(), plugin_agents=()):
+    agent = Mock()
+    agent.agent_definition = agent_def
+    agent.config.agents.directories = directories
+    agent.plugin_agents = plugin_agents
+    return agent
+
+  @pytest.mark.asyncio
+  async def test_create_agents_command(self) -> None:
     """Test creating the agents command."""
-
-    def get_agent() -> AgentDefinition | None:
-      return None
-
-    # Create mock config with no agents directory
-    config = Mock()
-    config.agents.directory = ""
-
-    command = create_agents_command(get_agent, config)
-
+    command = create_agents_command()
     assert command.name == "agents"
     assert "agent" in command.description.lower()
 
-  def test_agents_command_no_agent_loaded(self) -> None:
+  @pytest.mark.asyncio
+  async def test_agents_command_no_agent_loaded(self) -> None:
     """Test agents command when no agent is loaded."""
-
-    def get_agent() -> AgentDefinition | None:
-      return None
-
-    # Create mock config with no agents directory
-    config = Mock()
-    config.agents.directory = ""
-
-    command = create_agents_command(get_agent, config)
-    result = command.handler([])
+    agent = self._make_agent()
+    command = create_agents_command()
+    result = await command.handler("", agent, Mock())
 
     assert "Current agent:" in result
     assert "(default)" in result
     assert "No agent definition loaded" in result
 
-  def test_agents_command_with_agent(self) -> None:
+  @pytest.mark.asyncio
+  async def test_agents_command_with_agent(self) -> None:
     """Test agents command when an agent is loaded."""
     agent_def = AgentDefinition(
       name="test-agent",
@@ -50,15 +46,9 @@ class TestAgentsCommand:
       tools=["read", "write"],
     )
 
-    def get_agent() -> AgentDefinition | None:
-      return agent_def
-
-    # Create mock config
-    config = Mock()
-    config.agents.directory = ""
-
-    command = create_agents_command(get_agent, config)
-    result = command.handler([])
+    agent = self._make_agent(agent_def=agent_def)
+    command = create_agents_command()
+    result = await command.handler("", agent, Mock())
 
     assert "Current agent:" in result
     assert "test-agent" in result
@@ -66,7 +56,8 @@ class TestAgentsCommand:
     assert "llama3.2:latest" in result
     assert "read, write" in result
 
-  def test_agents_command_without_model(self) -> None:
+  @pytest.mark.asyncio
+  async def test_agents_command_without_model(self) -> None:
     """Test agents command when agent has no model specified."""
     agent_def = AgentDefinition(
       name="simple-agent",
@@ -74,23 +65,18 @@ class TestAgentsCommand:
       tools=(),
     )
 
-    def get_agent() -> AgentDefinition | None:
-      return agent_def
-
-    # Create mock config
-    config = Mock()
-    config.agents.directory = ""
-
-    command = create_agents_command(get_agent, config)
-    result = command.handler([])
+    agent = self._make_agent(agent_def=agent_def)
+    command = create_agents_command()
+    result = await command.handler("", agent, Mock())
 
     assert "Current agent:" in result
     assert "simple-agent" in result
     assert "A simple agent" in result
     # Model line should not appear when model is None
-    assert "Model:" not in result
+    assert "      Model:" not in result
 
-  def test_agents_command_without_tools(self) -> None:
+  @pytest.mark.asyncio
+  async def test_agents_command_without_tools(self) -> None:
     """Test agents command when agent has no tools specified."""
     agent_def = AgentDefinition(
       name="no-tools-agent",
@@ -99,22 +85,17 @@ class TestAgentsCommand:
       model="llama3.2:latest",
     )
 
-    def get_agent() -> AgentDefinition | None:
-      return agent_def
-
-    # Create mock config
-    config = Mock()
-    config.agents.directory = ""
-
-    command = create_agents_command(get_agent, config)
-    result = command.handler([])
+    agent = self._make_agent(agent_def=agent_def)
+    command = create_agents_command()
+    result = await command.handler("", agent, Mock())
 
     assert "Current agent:" in result
     assert "no-tools-agent" in result
-    # Tools line should not appear when tools is None or empty
-    assert "Tools:" not in result
+    # Tools line should not appear when tools is empty
+    assert "      Tools:" not in result
 
-  def test_agents_command_ignores_args(self) -> None:
+  @pytest.mark.asyncio
+  async def test_agents_command_ignores_args(self) -> None:
     """Test that agents command ignores any arguments passed."""
     agent_def = AgentDefinition(
       name="test-agent",
@@ -122,17 +103,11 @@ class TestAgentsCommand:
       tools=(),
     )
 
-    def get_agent() -> AgentDefinition | None:
-      return agent_def
+    agent = self._make_agent(agent_def=agent_def)
+    command = create_agents_command()
 
-    # Create mock config
-    config = Mock()
-    config.agents.directory = ""
-
-    command = create_agents_command(get_agent, config)
-
-    result1 = command.handler([])
-    result2 = command.handler(["some", "args"])
+    result1 = await command.handler("", agent, Mock())
+    result2 = await command.handler("some args", agent, Mock())
 
     # Both should return the same output
     assert result1 == result2

@@ -51,3 +51,4 @@ logs/
 # folder for local transient files
 local/
 
+/.claude

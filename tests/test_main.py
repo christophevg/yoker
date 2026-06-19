@@ -22,26 +22,69 @@ class TestCreateUI:
     )
     ui = _create_ui(config)
     assert isinstance(ui, BatchUIHandler)
-    assert ui.show_thinking is True
-    assert ui.show_tool_calls is True
-    assert ui.show_stats is True
+    # Batch mode uses its own False defaults to keep pipeline output clean.
+    assert ui.show_thinking is False
+    assert ui.show_tool_calls is False
+    assert ui.show_stats is False
 
-  @pytest.mark.skipif(
-    sys.platform == "win32",
-    reason="Interactive UI tests require a Windows console",
-  )
-  def test_create_ui_returns_interactive_by_default(self):
-    """_create_ui should return InteractiveUIHandler for interactive mode."""
+  def test_create_ui_returns_interactive_on_tty(self):
+    """_create_ui should return InteractiveUIHandler when stdin is a TTY."""
     from yoker.__main__ import _create_ui
 
     config = Config(
       ui=UIConfig(mode="interactive", show_thinking=True, show_tool_calls=True, show_stats=True)
     )
-    ui = _create_ui(config)
+    with patch.object(sys.stdin, "isatty", return_value=True):
+      ui = _create_ui(config)
     assert isinstance(ui, InteractiveUIHandler)
     assert ui.show_thinking is True
     assert ui.show_tool_calls is True
     assert ui.show_stats is True
+
+  def test_create_ui_defaults_to_interactive_on_tty(self):
+    """_create_ui should default to interactive when stdin is a TTY."""
+    from yoker.__main__ import _create_ui
+
+    config = Config(ui=UIConfig())
+    with patch.object(sys.stdin, "isatty", return_value=True):
+      ui = _create_ui(config)
+    assert isinstance(ui, InteractiveUIHandler)
+    assert ui.show_thinking is True
+    assert ui.show_tool_calls is True
+    assert ui.show_stats is True
+
+  def test_create_ui_defaults_to_batch_when_not_tty(self):
+    """_create_ui should default to batch when stdin is not a TTY."""
+    from yoker.__main__ import _create_ui
+
+    config = Config(ui=UIConfig())
+    with patch.object(sys.stdin, "isatty", return_value=False):
+      ui = _create_ui(config)
+    assert isinstance(ui, BatchUIHandler)
+    assert ui.show_thinking is False
+    assert ui.show_tool_calls is False
+    assert ui.show_stats is False
+
+  def test_explicit_batch_overrides_tty(self):
+    """Explicit batch mode wins over TTY detection."""
+    from yoker.__main__ import _create_ui
+
+    config = Config(ui=UIConfig(mode="batch"))
+    with patch.object(sys.stdin, "isatty", return_value=True):
+      ui = _create_ui(config)
+    assert isinstance(ui, BatchUIHandler)
+    assert ui.show_thinking is False
+    assert ui.show_tool_calls is False
+    assert ui.show_stats is False
+
+  def test_explicit_interactive_ignored_when_not_tty(self):
+    """Default interactive value yields to TTY detection; non-TTY uses batch."""
+    from yoker.__main__ import _create_ui
+
+    config = Config(ui=UIConfig(mode="interactive"))
+    with patch.object(sys.stdin, "isatty", return_value=False):
+      ui = _create_ui(config)
+    assert isinstance(ui, BatchUIHandler)
 
 
 class TestRunSession:
@@ -226,18 +269,21 @@ class TestMainIntegration:
     test_args = ["yoker", "--ui-mode", "batch"]
 
     with patch.object(sys, "argv", test_args):
-      with patch("yoker.__main__.get_yoker_config") as mock_get_config:
-        mock_get_config.return_value = Config(
+      with patch("yoker.__main__.Agent") as mock_agent_cls:
+        mock_agent_instance = mock_agent_cls.return_value
+        mock_agent_instance.config = Config(
           ui=UIConfig(mode="batch", show_thinking=False, show_tool_calls=False, show_stats=False),
         )
-        with patch("yoker.__main__.Agent") as mock_agent_cls:
-          with patch("yoker.__main__.run_session", new_callable=AsyncMock) as mock_run:
-            with patch("yoker.__main__.configure_logging"):
-              from yoker.__main__ import main
+        with patch("yoker.__main__.run_session", new_callable=AsyncMock) as mock_run:
+          from yoker.__main__ import main
 
-              main()
+          main()
 
-              mock_agent_cls.assert_called_once()
-              mock_run.assert_awaited_once()
-              args, _ = mock_run.call_args
-              assert isinstance(args[1], BatchUIHandler)
+          mock_agent_cls.assert_called_once_with(
+            plugins=None,
+            console_logging=False,
+            parse_cli_args=True,
+          )
+          mock_run.assert_awaited_once()
+          args, _ = mock_run.call_args
+          assert isinstance(args[1], BatchUIHandler)

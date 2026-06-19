@@ -187,7 +187,7 @@ class TestPersistenceContextManager:
 
     cm.add_tool_result("read", "tool-123", "file content", success=True)
 
-    context = cm.get_context()
+    context = list(cm)
     assert len(context) == 1
     assert context[0]["role"] == "tool"
     assert context[0]["name"] == "read"

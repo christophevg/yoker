@@ -31,7 +31,7 @@ async def handle(skill_name: str, args: str, agent: "Agent", ui: "UIHandler") ->
   """
   from yoker.exceptions import SkillError
 
-  registry = agent.skill_registry
+  registry = agent.skills
   if registry is None or skill_name not in registry:
     available = ", ".join(registry.names) if registry else ""
     if available:

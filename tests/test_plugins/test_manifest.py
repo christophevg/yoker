@@ -1,6 +1,8 @@
 """Tests for plugin manifest."""
 
 from yoker.plugins.manifest import PluginManifest
+from yoker.tools import make_read_tool
+from yoker.tools.schema import build_tool_spec
 
 
 class TestPluginManifest:
@@ -19,13 +21,13 @@ class TestPluginManifest:
 
   def test_manifest_creation_with_tools(self):
     """Test creating a manifest with tools."""
-    from yoker.tools import ReadTool
-
-    tools = [ReadTool()]
+    read_tool = make_read_tool()
+    tools = [read_tool]
     manifest = PluginManifest(tools=tools)
 
     assert len(manifest.tools) == 1
-    assert isinstance(manifest.tools[0], ReadTool)
+    spec = build_tool_spec(manifest.tools[0])
+    assert spec.name == "read"
 
   def test_manifest_creation_with_skills(self):
     """Test creating a manifest with skills."""
@@ -68,9 +70,7 @@ class TestPluginManifest:
 
   def test_manifest_frozen(self):
     """Test that manifest is not frozen (can modify lists)."""
-    from yoker.tools import ReadTool
-
     manifest = PluginManifest()
-    manifest.tools.append(ReadTool())
+    manifest.tools.append(make_read_tool())
 
     assert len(manifest.tools) == 1

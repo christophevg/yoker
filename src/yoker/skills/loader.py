@@ -3,17 +3,25 @@
 Parses Markdown files with YAML frontmatter into Skill objects.
 """
 
-import os
 from pathlib import Path
+from typing import Any
 
 import yaml
 
 from yoker.exceptions import ConfigurationError, FileNotFoundError
+from yoker.resources import is_dir, iter_files, iter_nested
 from yoker.skills.schema import Skill
 
 # Security constants
 MAX_SKILL_SIZE_KB = 100  # Maximum skill file size in KB
 ALLOWED_SKILL_PATHS: list[str] = []  # Empty means all paths allowed (will be configured)
+
+# Namespace applied to a directly-referenced single skill file. Mirrors the
+# agents loader: a one-off file reference gets the 'file' namespace so it never
+# collides with a collection's (folder/module) namespace. Every loaded resource
+# is namespaced; unnamespaced references are only produced by direct
+# construction in code.
+FILE_NAMESPACE = "file"
 
 
 def _validate_skill_path(path: Path, allowed_paths: list[str] | None = None) -> None:
@@ -127,6 +135,75 @@ def parse_skill_frontmatter(content: str) -> tuple[dict[str, object], str]:
     ) from None
 
 
+def _skill_from_content(
+  content: str,
+  source_path: str,
+  namespace: str | None = None,
+) -> Skill:
+  """Build a Skill from raw Markdown content (frontmatter + body).
+
+  Args:
+    content: Raw file content (may contain frontmatter).
+    source_path: Source path to record on the Skill.
+    namespace: Optional namespace prefix (e.g. 'pkg' for 'pkg:skill').
+
+  Returns:
+    Skill object with parsed frontmatter and body.
+
+  Raises:
+    ConfigurationError: If frontmatter is invalid or missing required fields.
+  """
+  frontmatter, body = parse_skill_frontmatter(content)
+
+  # Extract required fields
+  name = frontmatter.get("name")
+  if not name:
+    raise ConfigurationError(
+      setting="name",
+      message="Required field 'name' is missing or empty",
+    )
+
+  description = frontmatter.get("description")
+  if not description:
+    raise ConfigurationError(
+      setting="description",
+      message="Required field 'description' is missing or empty",
+    )
+
+  # Extract optional triggers
+  triggers: tuple[str, ...] = ()
+  triggers_raw = frontmatter.get("triggers")
+  if triggers_raw is None:
+    # Single trigger field fallback
+    trigger = frontmatter.get("trigger")
+    if trigger:
+      triggers = (str(trigger),)
+  elif isinstance(triggers_raw, str):
+    triggers = (triggers_raw,)
+  elif isinstance(triggers_raw, list):
+    triggers = tuple(str(t).strip() for t in triggers_raw if t)
+
+  # Extract optional tools
+  tools: tuple[str, ...] = ()
+  tools_raw = frontmatter.get("tools")
+  if tools_raw is None:
+    pass  # tools already empty tuple
+  elif isinstance(tools_raw, str):
+    tools = tuple(t.strip() for t in tools_raw.split(",") if t.strip())
+  elif isinstance(tools_raw, list):
+    tools = tuple(str(t).strip() for t in tools_raw if t)
+
+  return Skill(
+    simple_name=str(name),
+    description=str(description),
+    content=body.strip(),
+    triggers=triggers,
+    tools=tools,
+    source_path=source_path,
+    namespace=namespace,
+  )
+
+
 def load_skill(
   path: Path | str,
   allowed_paths: list[str] | None = None,
@@ -138,6 +215,7 @@ def load_skill(
     path: Path to the Markdown file.
     allowed_paths: List of allowed directory paths for security.
     namespace: Optional namespace prefix (e.g., 'pkg' for package skills).
+      Defaults to 'file' for a directly-referenced single skill file.
 
   Returns:
     Skill object with parsed frontmatter and body.
@@ -180,159 +258,104 @@ def load_skill(
   # Validate size (SEC-3)
   _validate_skill_size(content, file_path)
 
-  frontmatter, body = parse_skill_frontmatter(content)
+  # A directly-referenced file gets the 'file' namespace unless the caller
+  # passes an explicit namespace. Every loaded skill is namespaced.
+  if namespace is None:
+    namespace = FILE_NAMESPACE
 
-  # Extract required fields
-  name = frontmatter.get("name")
-  if not name:
-    raise ConfigurationError(
-      setting="name",
-      message="Required field 'name' is missing or empty",
-    )
-
-  description = frontmatter.get("description")
-  if not description:
-    raise ConfigurationError(
-      setting="description",
-      message="Required field 'description' is missing or empty",
-    )
-
-  # Extract optional triggers
-  triggers: tuple[str, ...] = ()
-  triggers_raw = frontmatter.get("triggers")
-  if triggers_raw is None:
-    # Single trigger field fallback
-    trigger = frontmatter.get("trigger")
-    if trigger:
-      triggers = (str(trigger),)
-  elif isinstance(triggers_raw, str):
-    triggers = (triggers_raw,)
-  elif isinstance(triggers_raw, list):
-    triggers = tuple(str(t).strip() for t in triggers_raw if t)
-
-  # Extract optional tools
-  tools: tuple[str, ...] = ()
-  tools_raw = frontmatter.get("tools")
-  if tools_raw is None:
-    pass  # tools already empty tuple
-  elif isinstance(tools_raw, str):
-    tools = tuple(t.strip() for t in tools_raw.split(",") if t.strip())
-  elif isinstance(tools_raw, list):
-    tools = tuple(str(t).strip() for t in tools_raw if t)
-
-  return Skill(
-    name=str(name),
-    description=str(description),
-    content=body.strip(),
-    triggers=triggers,
-    tools=tools,
-    source_path=str(file_path),
-    namespace=namespace,
-  )
+  return _skill_from_content(content, str(file_path), namespace)
 
 
 def load_skills(
-  directory: Path | str,
+  directory: Any,
   allowed_paths: list[str] | None = None,
   namespace: str | None = None,
 ) -> dict[str, Skill]:
   """Load all skill definitions from a directory.
 
+  Works for both filesystem paths (``pathlib.Path``) and package resource
+  directories (``importlib.resources`` ``Traversable``). Filesystem security
+  checks (allowed paths, symlink resolution, size limits) apply only to
+  ``Path`` inputs; package resources are trusted as-is.
+
+  Handles flat layouts (``*.md`` files, excluding ``SKILL.md`` markers) and
+  nested layouts (``<subdir>/SKILL.md``).
+
   Args:
-    directory: Path to the skills directory.
-    allowed_paths: List of allowed directory paths for security.
+    directory: A ``Path``/string filesystem directory, or a ``Traversable``.
+    allowed_paths: List of allowed directory paths for security (Path only).
     namespace: Optional namespace prefix for all skills in this directory.
 
   Returns:
     Dictionary mapping skill names (or 'namespace:name') to Skill objects.
 
   Raises:
-    FileNotFoundError: If the directory doesn't exist.
+    FileNotFoundError: If a filesystem directory doesn't exist.
     ConfigurationError: If any skill definition is invalid.
-
-  Security:
-    - Validates directory path against allowed_paths
-    - Resolves symlinks before validation
-    - Enforces size limits on all skill files
   """
-  dir_path = Path(directory)
+  if isinstance(directory, str):
+    directory = Path(directory)
+  if isinstance(directory, Path):
+    dir_path = directory
+    # Expand user home directory
+    if "~" in str(dir_path):
+      dir_path = dir_path.expanduser()
+    # Resolve symlinks (SEC-4)
+    if dir_path.is_symlink():
+      dir_path = dir_path.resolve()
+    if not dir_path.exists():
+      raise FileNotFoundError(str(dir_path), "skills directory")
+    if not dir_path.is_dir():
+      raise ConfigurationError(
+        setting=str(dir_path),
+        message="Skills path is not a directory",
+      )
+    # Validate directory path (SEC-2)
+    _validate_skill_path(dir_path, allowed_paths)
+  else:
+    dir_path = directory
+    if not is_dir(dir_path):
+      raise ConfigurationError(
+        setting=str(dir_path),
+        message="Skills path is not a directory",
+      )
 
-  # Expand user home directory
-  if "~" in str(dir_path):
-    dir_path = dir_path.expanduser()
-
-  # Resolve symlinks (SEC-4)
-  if dir_path.is_symlink():
-    dir_path = dir_path.resolve()
-
-  if not dir_path.exists():
-    raise FileNotFoundError(str(dir_path), "skills directory")
-
-  if not dir_path.is_dir():
-    raise ConfigurationError(
-      setting=str(dir_path),
-      message="Skills path is not a directory",
-    )
-
-  # Validate directory path (SEC-2)
-  _validate_skill_path(dir_path, allowed_paths)
+  # Default the namespace to the folder/resource name so skills loaded from
+  # different locations stay disjoint (matching how module loads use the module
+  # name as namespace). Callers pass an explicit namespace to override.
+  if namespace is None:
+    namespace = dir_path.name
 
   skills: dict[str, Skill] = {}
 
-  for md_file in sorted(dir_path.glob("*.md")):
+  def _add(entry: Any) -> None:
+    """Read, validate, parse and register a single skill entry."""
     try:
-      skill = load_skill(md_file, allowed_paths, namespace)
-      skill_key = skill.full_name
-      if skill_key in skills:
-        raise ConfigurationError(
-          setting=f"skill.{skill_key}",
-          message=f"Duplicate skill name '{skill_key}' in {md_file}",
-        )
-      skills[skill_key] = skill
+      content = entry.read_text(encoding="utf-8")
+      if isinstance(entry, Path):
+        # Enforce size limit on filesystem files (SEC-3)
+        _validate_skill_size(content, entry)
+      skill = _skill_from_content(content, str(entry), namespace)
     except ConfigurationError:
       raise
     except Exception as e:
       raise ConfigurationError(
-        setting=str(md_file),
+        setting=str(entry),
         message=f"Failed to load skill definition: {e}",
       ) from None
 
-  return skills
+    skill_key = skill.name
+    if skill_key in skills:
+      raise ConfigurationError(
+        setting=f"skill.{skill_key}",
+        message=f"Duplicate skill name '{skill_key}' in {entry}",
+      )
+    skills[skill_key] = skill
 
-
-def load_skills_from_env(env_var: str = "YOKER_SKILLS_PATH") -> dict[str, Skill]:
-  """Load skills from directories specified in environment variable.
-
-  Environment variable should contain os.pathsep-separated list of
-  directories (':' on Unix, ';' on Windows). Each directory is searched
-  for skill definition files.
-
-  Args:
-    env_var: Environment variable name (default: YOKER_SKILLS_PATH).
-
-  Returns:
-    Dictionary mapping skill names to Skill objects.
-
-  Security:
-    - Validates all paths against allowed directories
-    - Resolves symlinks before validation
-  """
-  skills: dict[str, Skill] = {}
-
-  path_str = os.environ.get(env_var, "")
-  if not path_str:
-    return skills
-
-  for directory in path_str.split(os.pathsep):
-    if not directory:
-      continue
-
-    try:
-      dir_skills = load_skills(directory)
-      skills.update(dir_skills)
-    except (FileNotFoundError, ConfigurationError):
-      # Log warning but continue loading other directories
-      continue
+  for entry in iter_files(dir_path, exclude=("SKILL.md",)):
+    _add(entry)
+  for entry in iter_nested(dir_path, child_file="SKILL.md"):
+    _add(entry)
 
   return skills
 
@@ -341,6 +364,5 @@ __all__ = [
   "parse_skill_frontmatter",
   "load_skill",
   "load_skills",
-  "load_skills_from_env",
   "MAX_SKILL_SIZE_KB",
 ]
