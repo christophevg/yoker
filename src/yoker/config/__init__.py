@@ -44,8 +44,7 @@ from typing import Literal
 
 from clevis import SecurityAction, SecurityConfig, get_config
 
-from yoker.exceptions import ValidationError
-from yoker.validators import (
+from yoker.config.validators import (
   validate_choice,
   validate_directory_exists,
   validate_log_level,
@@ -55,6 +54,7 @@ from yoker.validators import (
   validate_regex_patterns,
   validate_url,
 )
+from yoker.exceptions import ValidationError
 
 
 def get_yoker_config(cli: bool = False) -> "Config":

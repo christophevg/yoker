@@ -1,4 +1,4 @@
-"""Tools package for Yoker.
+"""Tools framework for Yoker.
 
 Provides the tool framework including result types, guardrails, registry,
 annotation markers, and context. Built-in tools are in yoker.builtin.
@@ -30,22 +30,6 @@ from yoker.tools.web_guardrail import (
 )
 from yoker.tools.web_types import FetchedContent, SearchResult, WebFetchError, WebSearchError
 
-# Re-export tools from builtin for backward compatibility
-from yoker.builtin import (
-  existence,
-  git,
-  list,
-  mkdir,
-  read,
-  search,
-  update,
-  webfetch,
-  websearch,
-  write,
-  make_agent_tool,
-  make_skill_tool,
-)
-
 __all__ = [
   # Framework
   "ToolResult",
@@ -72,17 +56,4 @@ __all__ = [
   "FetchedContent",
   "UrlWebGuardrail",
   "WebFetchError",
-  # Tools (re-exported from builtin)
-  "existence",
-  "git",
-  "list",
-  "mkdir",
-  "read",
-  "search",
-  "update",
-  "webfetch",
-  "websearch",
-  "write",
-  "make_agent_tool",
-  "make_skill_tool",
 ]

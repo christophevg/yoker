@@ -47,39 +47,24 @@ def load_configured_plugins(
     if not check_plugin_allowed(plugin.source, config, plugin):
       logger.warning("plugin_not_allowed", package=plugin.source)
       continue
-    _register_components(agent, plugin)
+    """Register tools, skills, and agents from a loaded plugin into the agent's registries."""
+    source = plugin.source
+    if plugin.tools:
+      registered_tools = register_tools(plugin.tools, agent.tools, namespace=source)
+      logger.info("plugin_tools_registered", package=source, tools=registered_tools)
 
-# def _load_packages(plugin_packages: tuple[str, ...]) -> list["PluginComponents"] | None:
-#   """Load configured plugins, logging errors without aborting."""
-#   try:
-#     return load_plugins(list(plugin_packages))
-#   except ImportError as e:
-#     logger.error("plugin_import_error", error=str(e))
-#     return None
-#   except Exception as e:
-#     logger.error("plugin_load_error", error=str(e))
-#     return None
+    if plugin.skills:
+      registered_skills = register_skills(plugin.skills, agent.skills, namespace=source)
+      logger.info("plugin_skills_registered", package=source, skills=registered_skills)
 
+    if plugin.agents:
+      registered_agents = register_agents(plugin.agents, agent.agents, namespace=source)
+      logger.info("plugin_agents_registered", package=source, agents=registered_agents)
 
-def _register_components(agent: "Agent", plugin: "PluginComponents") -> None:
-  """Register tools, skills, and agents from a loaded plugin into the agent's registries."""
-  source = plugin.source
-  if plugin.tools:
-    registered_tools = register_tools(plugin.tools, agent.tools, namespace=source)
-    logger.info("plugin_tools_registered", package=source, tools=registered_tools)
-
-  if plugin.skills:
-    registered_skills = register_skills(plugin.skills, agent.skills, namespace=source)
-    logger.info("plugin_skills_registered", package=source, skills=registered_skills)
-
-  if plugin.agents:
-    registered_agents = register_agents(plugin.agents, agent.agents, namespace=source)
-    logger.info("plugin_agents_registered", package=source, agents=registered_agents)
-
-  logger.info(
-    "plugin_loaded",
-    package=source,
-    tools=len(plugin.tools),
-    skills=len(plugin.skills),
-    agents=len(plugin.agents),
-  )
+    logger.info(
+      "plugin_loaded",
+      package=source,
+      tools=len(plugin.tools),
+      skills=len(plugin.skills),
+      agents=len(plugin.agents),
+    )

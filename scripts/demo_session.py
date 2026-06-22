@@ -25,7 +25,7 @@ from rich.console import Console
 from yoker.agent import Agent
 from yoker.ui.commands import create_default_registry
 from yoker.context import PersistenceContextManager
-from yoker.demo import DemoScript, load_demo_script, load_demo_scripts
+from yoker_demo import DemoScript, load_demo_script, load_demo_scripts
 from yoker.events import (
   CommandEvent,
   EventRecorder,

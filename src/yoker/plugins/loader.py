@@ -65,12 +65,7 @@ def load_plugin(package_name: str) -> PluginComponents:
     ) from e
 
   logger.info("plugin_manifest_found_in_package", package=package_name)
-  return _load_from_module(package, package_name)
-
-
-def _load_from_module(module: Any, package_name: str) -> PluginComponents:
-  """Load plugin components from a module manifest."""
-  manifest = module.__YOKER_MANIFEST__
+  manifest = package.__YOKER_MANIFEST__
   tools = list(getattr(manifest, "tools", []))
   skills = _load_manifest_skills(manifest, package_name)
   agents = _load_manifest_agents(manifest, package_name)
