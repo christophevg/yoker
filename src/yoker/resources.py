@@ -20,8 +20,11 @@ the objects directly.
 import importlib.resources as resources
 from collections.abc import Iterator
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
+
+import yaml
+
+from yoker.exceptions import ConfigurationError
 
 
 def find_package_subdirectory(package: str, subdir: str) -> Any:
@@ -102,42 +105,6 @@ def parse_plugin_url(url: str) -> PluginURL:
   return PluginURL(package=package, subpath="/".join(parts[1:]))
 
 
-def resolve_resource(reference: str) -> Any:
-  """Resolve a reference to a file or directory (Path or Traversable).
-
-  Supports:
-    - ``plugin://package/path`` — a package resource (file or directory).
-    - a filesystem path.
-
-  Args:
-    reference: Resource reference string.
-
-  Returns:
-    A ``Path`` (filesystem) or ``Traversable`` (package) handle, or None if
-    the reference cannot be resolved.
-  """
-  if reference.startswith("plugin://"):
-    url = parse_plugin_url(reference)
-    return find_package_path(url.package, url.subpath)
-  path = Path(reference).expanduser()
-  return path if path.exists() else None
-
-
-def resolve_directory(reference: str) -> Any:
-  """Resolve a reference to a directory only (Path or Traversable).
-
-  Same as :func:`resolve_resource` but returns None unless the resolved
-  handle is a directory.
-
-  Args:
-    reference: Resource reference string.
-
-  Returns:
-    A directory handle (Path or Traversable), or None.
-  """
-  resolved = resolve_resource(reference)
-  return resolved if is_dir(resolved) else None
-
 
 def iter_files(
   directory: Any,
@@ -209,3 +176,55 @@ def is_file(path: Any) -> bool:
   """Return True if ``path`` is a file (Path or Traversable)."""
   checker = getattr(path, "is_file", None)
   return bool(checker()) if callable(checker) else False
+
+
+def parse_yaml_frontmatter(content: str) -> tuple[dict[str, object], str]:
+  """Parse YAML frontmatter from Markdown content.
+
+  Args:
+    content: Raw file content (may contain frontmatter).
+
+  Returns:
+    Tuple of (frontmatter dict, body content).
+    If no frontmatter, returns ({}, content).
+
+  Raises:
+    ConfigurationError: If frontmatter exists but is invalid YAML.
+  """
+  lines = content.strip().split("\n")
+
+  # Check for frontmatter delimiter
+  if not lines or lines[0] != "---":
+    return {}, content
+
+  # Find closing delimiter
+  try:
+    end_index = lines.index("---", 1)
+  except ValueError:
+    # No closing delimiter - not valid frontmatter
+    return {}, content
+
+  # Extract frontmatter and body
+  frontmatter_lines = lines[1:end_index]
+  body_lines = lines[end_index + 1 :]
+
+  if not frontmatter_lines:
+    # Empty frontmatter
+    return {}, "\n".join(body_lines)
+
+  # Parse YAML
+  try:
+    frontmatter = yaml.safe_load("\n".join(frontmatter_lines))
+    if frontmatter is None:
+      frontmatter = {}
+    if not isinstance(frontmatter, dict):
+      raise ConfigurationError(
+        setting="frontmatter",
+        message=f"Frontmatter must be a YAML dictionary, got {type(frontmatter).__name__}",
+      )
+    return frontmatter, "\n".join(body_lines)
+  except yaml.YAMLError as e:
+    raise ConfigurationError(
+      setting="frontmatter",
+      message=f"Invalid YAML in frontmatter: {e}",
+    ) from None

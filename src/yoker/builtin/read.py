@@ -1,39 +1,45 @@
 """Read tool implementation for Yoker.
 
-Provides the ``make_read_tool`` factory that returns a callable for reading
-file contents. Guardrail validation is enforced centrally by the harness
-based on the schema's ``path`` annotation.
+Provides the ``read`` async function for reading file contents.
+Guardrail validation is enforced centrally by the harness based on the
+schema's ``path`` annotation.
 """
+
 import os
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated
 
 from structlog import get_logger
 
 from yoker.annotations import Path as PathArg
 from yoker.resources import find_package_path, parse_plugin_url
 from yoker.tools.base import ToolResult
+from yoker.tools.context import ToolContext
 
 log = get_logger(__name__)
 
 
-def make_read_tool() -> Any:
-  """Create the read tool callable."""
+async def read(
+  path: Annotated[str, PathArg("Path to the file to read (or plugin:// URL)")],
+  ctx: ToolContext,
+) -> ToolResult:
+  """Read the contents of a file.
 
-  async def read(
-    path: Annotated[str, PathArg("Path to the file to read (or plugin:// URL)")],
-  ) -> ToolResult:
-    """Read the contents of a file."""
-    if not isinstance(path, str):
-      log.warning("read_invalid_path_type", path_type=type(path).__name__)
-      return ToolResult(success=False, error="Invalid path parameter")
+  Args:
+    path: Path to the file to read.
+    ctx: Tool execution context with configuration.
 
-    if path.startswith("plugin://"):
-      return await _read_plugin_resource(path)
+  Returns:
+    ToolResult with file contents.
+  """
+  if not isinstance(path, str):
+    log.warning("read_invalid_path_type", path_type=type(path).__name__)
+    return ToolResult(success=False, error="Invalid path parameter")
 
-    return await _read_file(path)
+  if path.startswith("plugin://"):
+    return await _read_plugin_resource(path)
 
-  return read
+  return await _read_file(path)
 
 
 async def _read_plugin_resource(url: str) -> ToolResult:
@@ -67,9 +73,7 @@ async def _read_plugin_resource(url: str) -> ToolResult:
   try:
     content = resource.read_text(encoding="utf-8")
   except Exception as e:
-    log.error(
-      "plugin_resource_error", package=parsed.package, path=parsed.subpath, error=str(e)
-    )
+    log.error("plugin_resource_error", package=parsed.package, path=parsed.subpath, error=str(e))
     return ToolResult(success=False, error=f"Error reading plugin resource: {e}")
 
   log.info(
@@ -114,4 +118,4 @@ async def _read_file(path_str: str) -> ToolResult:
     return ToolResult(success=False, error="Error reading file")
 
 
-__all__ = ["make_read_tool"]
+__all__ = ["read"]

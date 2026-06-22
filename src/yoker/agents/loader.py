@@ -12,7 +12,6 @@ and loaded plugins), not by this loader.
 from pathlib import Path
 from typing import Any
 
-import yaml
 from structlog import get_logger
 
 from yoker.agents.schema import AgentDefinition
@@ -20,6 +19,7 @@ from yoker.exceptions import ConfigurationError, FileNotFoundError
 from yoker.resources import (
   is_dir,
   iter_files,
+  parse_yaml_frontmatter,
 )
 
 logger = get_logger(__name__)
@@ -29,57 +29,8 @@ logger = get_logger(__name__)
 # file reference never collides with a collection's namespace.
 FILE_NAMESPACE = "file"
 
-
-def parse_frontmatter(content: str) -> tuple[dict[str, object], str]:
-  """Parse YAML frontmatter from Markdown content.
-
-  Args:
-    content: Raw file content (may contain frontmatter).
-
-  Returns:
-    Tuple of (frontmatter dict, body content).
-    If no frontmatter, returns ({}, content).
-
-  Raises:
-    ConfigurationError: If frontmatter exists but is invalid YAML.
-  """
-  lines = content.strip().split("\n")
-
-  # Check for frontmatter delimiter
-  if not lines or lines[0] != "---":
-    return {}, content
-
-  # Find closing delimiter
-  try:
-    end_index = lines.index("---", 1)
-  except ValueError:
-    # No closing delimiter - not valid frontmatter
-    return {}, content
-
-  # Extract frontmatter and body
-  frontmatter_lines = lines[1:end_index]
-  body_lines = lines[end_index + 1 :]
-
-  if not frontmatter_lines:
-    # Empty frontmatter
-    return {}, "\n".join(body_lines)
-
-  # Parse YAML
-  try:
-    frontmatter = yaml.safe_load("\n".join(frontmatter_lines))
-    if frontmatter is None:
-      frontmatter = {}
-    if not isinstance(frontmatter, dict):
-      raise ConfigurationError(
-        setting="frontmatter",
-        message=f"Frontmatter must be a YAML dictionary, got {type(frontmatter).__name__}",
-      )
-    return frontmatter, "\n".join(body_lines)
-  except yaml.YAMLError as e:
-    raise ConfigurationError(
-      setting="frontmatter",
-      message=f"Invalid YAML in frontmatter: {e}",
-    ) from None
+# Backward-compatible alias
+parse_frontmatter = parse_yaml_frontmatter
 
 
 def _apply_namespace(name: str, namespace: str | None) -> str:
@@ -236,7 +187,7 @@ def load_agent_definition(path: Path | str, namespace: str | None = None) -> Age
       message=f"Failed to read file: {e}",
     ) from None
 
-  frontmatter, body = parse_frontmatter(content)
+  frontmatter, body = parse_yaml_frontmatter(content)
   agent_def = parse_agent_definition(
     frontmatter,
     body,
@@ -303,7 +254,7 @@ def load_agent_definitions(directory: Any, namespace: str | None = None) -> dict
   for md_file in iter_files(dir_path, suffix=".md"):
     try:
       content = md_file.read_text(encoding="utf-8")
-      frontmatter, body = parse_frontmatter(content)
+      frontmatter, body = parse_yaml_frontmatter(content)
       definition = parse_agent_definition(
         frontmatter,
         body,

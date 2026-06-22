@@ -61,13 +61,28 @@ class ToolRegistry(UserDict[str, ToolSpec]):
     """Return all registered tool specs sorted by name."""
     return sorted(self.data.values(), key=lambda spec: spec.name)
 
+  def list_tools(self) -> list[ToolSpec]:
+    """Return all registered tool specs sorted by name.
+
+    Alias for the `tools` property for API compatibility.
+    """
+    return self.tools
+
+  def get_schemas(self) -> list[dict[str, Any]]:
+    """Return schemas for all registered tools.
+
+    Returns:
+      List of tool schemas in Ollama function format.
+    """
+    return [spec.schema for spec in self.tools]
+
   def find_tools(self, namespace: str) -> list[ToolSpec]:
     return [tool for tool in self.tools if tool.namespace == namespace]
 
   @property
   def namespaces(self) -> list[str]:
     """Return all registered tool namespaces sorted alphabetically."""
-    return sorted({tool.namespace for tool in self.data.values()})
+    return sorted([ tool.namespace for tool in self.data.values() ])
 
   @property
   def names(self) -> list[str]:

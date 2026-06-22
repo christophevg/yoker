@@ -1,21 +1,24 @@
 """Update tool implementation for Yoker.
 
-Provides the ``make_update_tool`` factory that returns a callable for
-editing existing file contents. Guardrails are enforced centrally by the
-harness based on the schema's ``path`` annotation.
+Provides the ``update`` async function for editing existing file contents.
+Guardrails are enforced centrally by the harness based on the schema's
+``path`` annotation.
 """
 
 import difflib
 import os
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, TYPE_CHECKING, Any
 
 from structlog import get_logger
 
 from yoker.annotations import Path as PathArg
 from yoker.annotations import Text
-from yoker.config import Config
 from yoker.tools.base import ToolResult
+from yoker.tools.context import ToolContext
+
+if TYPE_CHECKING:
+  from yoker.config import UpdateToolConfig
 
 log = get_logger(__name__)
 
@@ -31,127 +34,125 @@ def _truncate_diff(diff_lines: list[str], max_lines: int) -> tuple[str, bool, in
   return "".join(normalized_lines[:max_lines]), True, original_count
 
 
-def make_update_tool(config: Config | None = None) -> Any:
-  """Create the update tool callable."""
-  resolved_config = config or Config()
+async def update(
+  path: Annotated[str, PathArg("Path to the file to update")],
+  ctx: ToolContext,
+  operation: str,
+  old_string: Annotated[
+    str,
+    Text(
+      "Text to find (required for replace and delete). Must match exactly when require_exact_match is true."
+    ),
+  ] = "",
+  new_string: Annotated[
+    str, Text("Replacement or insertion text (required for replace and insert)")
+  ] = "",
+  line_number: int | None = None,
+) -> ToolResult:
+  """Update an existing file by replacing, inserting, or deleting content."""
+  # Config values come from ctx.config (UpdateToolConfig with defaults)
+  update_config = ctx.config
+  require_exact_match = update_config.require_exact_match
+  max_diff_size_kb = update_config.max_diff_size_kb
 
-  async def update(
-    path: Annotated[str, PathArg("Path to the file to update")],
-    operation: str,
-    old_string: Annotated[
-      str,
-      Text(
-        "Text to find (required for replace and delete). Must match exactly when require_exact_match is true."
-      ),
-    ] = "",
-    new_string: Annotated[
-      str, Text("Replacement or insertion text (required for replace and insert)")
-    ] = "",
-    line_number: int | None = None,
-  ) -> ToolResult:
-    """Update an existing file by replacing, inserting, or deleting content."""
-    if not isinstance(path, str) or not path.strip():
-      log.warning("update_invalid_path_type", path_type=type(path).__name__)
-      return ToolResult(success=False, error="Invalid path parameter")
+  if not isinstance(path, str) or not path.strip():
+    log.warning("update_invalid_path_type", path_type=type(path).__name__)
+    return ToolResult(success=False, error="Invalid path parameter")
 
-    valid_operations = {"replace", "insert_before", "insert_after", "delete"}
-    if operation not in valid_operations:
-      log.warning("update_invalid_operation", operation=operation)
+  valid_operations = {"replace", "insert_before", "insert_after", "delete"}
+  if operation not in valid_operations:
+    log.warning("update_invalid_operation", operation=operation)
+    return ToolResult(success=False, error="Invalid operation")
+
+  if not isinstance(old_string, str):
+    log.warning("update_invalid_old_string_type", old_string_type=type(old_string).__name__)
+    return ToolResult(success=False, error="Invalid old_string parameter")
+  if not isinstance(new_string, str):
+    log.warning("update_invalid_new_string_type", new_string_type=type(new_string).__name__)
+    return ToolResult(success=False, error="Invalid new_string parameter")
+
+  try:
+    original_path = Path(path)
+    if original_path.is_symlink():
+      log.warning("update_symlink_rejected", path=path)
+      return ToolResult(success=False, error="Updating symlinks is not permitted")
+  except (OSError, PermissionError):
+    log.warning("update_path_access_error", path=path)
+    return ToolResult(success=False, error="Invalid path")
+
+  try:
+    resolved = Path(os.path.realpath(path))
+  except (OSError, ValueError):
+    log.warning("update_invalid_path", path=path)
+    return ToolResult(success=False, error="Invalid path")
+
+  if not resolved.exists():
+    log.info("update_file_not_found", path=str(resolved))
+    return ToolResult(success=False, error="File not found")
+  if not resolved.is_file():
+    log.info("update_not_a_file", path=str(resolved))
+    return ToolResult(success=False, error="Path is not a file")
+
+  try:
+    old_content = resolved.read_text(encoding="utf-8")
+  except PermissionError:
+    log.warning("update_permission_denied", path=str(resolved))
+    return ToolResult(success=False, error="Permission denied")
+  except OSError:
+    log.error("update_read_error", path=str(resolved))
+    return ToolResult(success=False, error="Error reading file")
+
+  if max_diff_size_kb > 0:
+    diff_size = len(new_string.encode("utf-8"))
+    if diff_size > max_diff_size_kb * 1024:
+      log.info(
+        "update_diff_size_exceeded",
+        diff_size=diff_size,
+        max_diff_size_kb=max_diff_size_kb,
+      )
+      return ToolResult(success=False, error="Diff size exceeds limit")
+
+  try:
+    if operation == "replace":
+      result_content = _do_replace(old_content, old_string, new_string, require_exact_match)
+    elif operation in ("insert_before", "insert_after"):
+      result_content = _do_insert(old_content, operation, line_number, new_string)
+    elif operation == "delete":
+      result_content = _do_delete(old_content, old_string, line_number, require_exact_match)
+    else:
       return ToolResult(success=False, error="Invalid operation")
+  except ValueError as e:
+    log.info("update_validation_error", error=str(e))
+    return ToolResult(success=False, error=str(e))
 
-    if not isinstance(old_string, str):
-      log.warning("update_invalid_old_string_type", old_string_type=type(old_string).__name__)
-      return ToolResult(success=False, error="Invalid old_string parameter")
-    if not isinstance(new_string, str):
-      log.warning("update_invalid_new_string_type", new_string_type=type(new_string).__name__)
-      return ToolResult(success=False, error="Invalid new_string parameter")
+  try:
+    temp_path = resolved.with_suffix(resolved.suffix + ".tmp")
+    temp_path.write_text(result_content, encoding="utf-8")
+    os.replace(str(temp_path), str(resolved))
+    log.info("update_success", path=str(resolved), operation=operation)
 
-    try:
-      original_path = Path(path)
-      if original_path.is_symlink():
-        log.warning("update_symlink_rejected", path=path)
-        return ToolResult(success=False, error="Updating symlinks is not permitted")
-    except (OSError, PermissionError):
-      log.warning("update_path_access_error", path=path)
-      return ToolResult(success=False, error="Invalid path")
+    content_metadata = _build_content_metadata(
+      operation=operation,
+      resolved_path=resolved,
+      old_content=old_content,
+      new_content=result_content,
+      old_string=old_string,
+      new_string=new_string,
+      line_number=line_number,
+      ctx=ctx,
+    )
 
-    try:
-      resolved = Path(os.path.realpath(path))
-    except (OSError, ValueError):
-      log.warning("update_invalid_path", path=path)
-      return ToolResult(success=False, error="Invalid path")
-
-    if not resolved.exists():
-      log.info("update_file_not_found", path=str(resolved))
-      return ToolResult(success=False, error="File not found")
-    if not resolved.is_file():
-      log.info("update_not_a_file", path=str(resolved))
-      return ToolResult(success=False, error="Path is not a file")
-
-    try:
-      old_content = resolved.read_text(encoding="utf-8")
-    except PermissionError:
-      log.warning("update_permission_denied", path=str(resolved))
-      return ToolResult(success=False, error="Permission denied")
-    except OSError:
-      log.error("update_read_error", path=str(resolved))
-      return ToolResult(success=False, error="Error reading file")
-
-    update_config = resolved_config.tools.update
-    max_diff_size_kb = update_config.max_diff_size_kb
-    if max_diff_size_kb > 0:
-      diff_size = len(new_string.encode("utf-8"))
-      if diff_size > max_diff_size_kb * 1024:
-        log.info(
-          "update_diff_size_exceeded",
-          diff_size=diff_size,
-          max_diff_size_kb=max_diff_size_kb,
-        )
-        return ToolResult(success=False, error="Diff size exceeds limit")
-
-    try:
-      if operation == "replace":
-        result_content = _do_replace(old_content, old_string, new_string, resolved_config)
-      elif operation in ("insert_before", "insert_after"):
-        result_content = _do_insert(old_content, operation, line_number, new_string)
-      elif operation == "delete":
-        result_content = _do_delete(old_content, old_string, line_number, resolved_config)
-      else:
-        return ToolResult(success=False, error="Invalid operation")
-    except ValueError as e:
-      log.info("update_validation_error", error=str(e))
-      return ToolResult(success=False, error=str(e))
-
-    try:
-      temp_path = resolved.with_suffix(resolved.suffix + ".tmp")
-      temp_path.write_text(result_content, encoding="utf-8")
-      os.replace(str(temp_path), str(resolved))
-      log.info("update_success", path=str(resolved), operation=operation)
-
-      content_metadata = _build_content_metadata(
-        operation=operation,
-        resolved_path=resolved,
-        old_content=old_content,
-        new_content=result_content,
-        old_string=old_string,
-        new_string=new_string,
-        line_number=line_number,
-        config=resolved_config,
-      )
-
-      return ToolResult(
-        success=True,
-        result="File updated successfully",
-        content_metadata=content_metadata,
-      )
-    except PermissionError:
-      log.warning("update_permission_denied_write", path=str(resolved))
-      return ToolResult(success=False, error="Permission denied")
-    except OSError as e:
-      log.error("update_write_error", path=str(resolved), error=str(e))
-      return ToolResult(success=False, error="Error updating file")
-
-  return update
+    return ToolResult(
+      success=True,
+      result="File updated successfully",
+      content_metadata=content_metadata,
+    )
+  except PermissionError:
+    log.warning("update_permission_denied_write", path=str(resolved))
+    return ToolResult(success=False, error="Permission denied")
+  except OSError as e:
+    log.error("update_write_error", path=str(resolved), error=str(e))
+    return ToolResult(success=False, error="Error updating file")
 
 
 def _build_content_metadata(
@@ -162,10 +163,16 @@ def _build_content_metadata(
   old_string: str,
   new_string: str,
   line_number: Any,
-  config: Config,
+  ctx: ToolContext | None,
 ) -> dict[str, Any] | None:
   """Build content_metadata for ToolResult."""
-  content_display = config.tools.content_display
+  # Get content display config from context or use defaults
+  if ctx is not None:
+    content_display = ctx.shared.content_display
+  else:
+    # Fallback defaults
+    from yoker.config import ContentDisplayConfig
+    content_display = ContentDisplayConfig()
 
   if content_display.verbosity == "silent":
     return None
@@ -274,9 +281,8 @@ def _build_content_or_diff_metadata(
 ) -> dict[str, Any]:
   """Build content or diff metadata for content verbosity mode."""
   if content_display is None:
-    from yoker.config import Config
-
-    content_display = Config().tools.content_display
+    from yoker.config import ContentDisplayConfig
+    content_display = ContentDisplayConfig()
 
   if operation == "replace":
     if use_diff and content_display.show_diff_for_updates:
@@ -397,16 +403,15 @@ def _do_replace(
   old_content: str,
   old_string: str,
   new_string: str,
-  config: Config,
+  require_exact_match: bool,
 ) -> str:
   """Replace old_string with new_string in content."""
-  require_exact = config.tools.update.require_exact_match
   occurrences = old_content.count(old_string)
 
   if occurrences == 0:
     raise ValueError("Search text not found")
 
-  if require_exact and occurrences > 1:
+  if require_exact_match and occurrences > 1:
     raise ValueError("Search text appears multiple times; ambiguous match")
 
   return old_content.replace(old_string, new_string, 1)
@@ -453,7 +458,7 @@ def _do_delete(
   old_content: str,
   old_string: str,
   line_number: Any,
-  config: Config,
+  require_exact_match: bool,
 ) -> str:
   """Delete content by old_string or by line number."""
   if line_number is not None:
@@ -475,13 +480,12 @@ def _do_delete(
     return "".join(lines)
 
   if old_string:
-    require_exact = config.tools.update.require_exact_match
     occurrences = old_content.count(old_string)
 
     if occurrences == 0:
       raise ValueError("Search text not found")
 
-    if require_exact and occurrences > 1:
+    if require_exact_match and occurrences > 1:
       raise ValueError("Search text appears multiple times; ambiguous match")
 
     return old_content.replace(old_string, "", 1)
@@ -489,4 +493,4 @@ def _do_delete(
   raise ValueError("Either old_string or line_number is required for delete")
 
 
-__all__ = ["make_update_tool"]
+__all__ = ["update"]

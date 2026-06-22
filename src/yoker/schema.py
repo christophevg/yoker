@@ -18,6 +18,8 @@ class NameSpaced:
       'namespace:simple_name' if namespace is set, otherwise 'simple_name'.
     """
     simple_name = self.simple_name or self.default_simple_name
+    if not simple_name:
+      raise ValueError("A (simple_)name is required.")
     if self.namespace:
       return f"{self.namespace}:{simple_name}"
     return simple_name

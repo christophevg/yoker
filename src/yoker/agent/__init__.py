@@ -6,7 +6,7 @@ Asynchronous Agent implementation for Yoker.
 
 import inspect
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from dotenv import load_dotenv
 from ollama import AsyncClient
@@ -30,6 +30,7 @@ from yoker.context import ContextManager
 from yoker.context.basic import SimpleContextManager
 from yoker.events import EventCallback
 from yoker.logging import configure_logging
+from yoker.plugins import load_configured_plugins
 from yoker.skills import SkillRegistry, load_skills
 from yoker.thinking import ThinkingMode
 from yoker.tools import ToolRegistry, make_agent_tool, make_skill_tool
@@ -101,7 +102,7 @@ class Agent:
     self._load_agents()
 
     # load more skills, agents and tools from plugins
-    self._load_plugins()
+    load_configured_plugins(self, self.config, self._cli_plugins)
 
     # load own definition
     self.definition: AgentDefinition = self._resolve_agent_definition(agent_definition, agent_path)
@@ -111,13 +112,11 @@ class Agent:
     # all tools, skills and agents are registered. add skill/agent tool IF skills
     # /agents are available AND if allowed to use them
     if self.config.tools.skill.enabled and len(self.tools):
-      self.tools.register(make_skill_tool(self.skills))
-      logger.info("skill tool registered")
+      self.tools.register(make_skill_tool(self.skills), namespace="yoker")
 
     if self.config.tools.agent.enabled and len(self.agents):
       if "agent" in self.definition.tools:
         self.tools.register(make_agent_tool(parent_agent=self))
-        logger.info("agent tool registered")
 
     # check that all "requested/required" tools for the agent are available (fail-fast)
     self._warn_missing_tools()
@@ -136,6 +135,9 @@ class Agent:
       "query": query_guardrail,
       "url": url_guardrail,
     }
+
+    # tool backends for context injection (populated when tools are registered)
+    self._tool_backends: dict[str, Any] = {}
 
     # set up the context manager
     self.context: ContextManager = context_manager or SimpleContextManager(self)
@@ -297,9 +299,3 @@ class Agent:
         logger.info("agents loaded", count=len(new_agents), source=directory)
       except Exception as e:
         logger.warning("loading agents failed", directory=directory, error=str(e))
-
-  def _load_plugins(self):
-    """Load tools, skills and agents from configured and CLI-specified plugins."""
-    from yoker.agent._plugins import load_plugins as _load_configured_plugins
-
-    _load_configured_plugins(self, self.config, self._cli_plugins)
