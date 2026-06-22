@@ -6,7 +6,7 @@ state directly and outputs the result via the UIHandler.
 
 from typing import TYPE_CHECKING
 
-from yoker.thinking import ThinkingMode
+from yoker.agent.thinking import ThinkingMode
 
 if TYPE_CHECKING:
   from yoker.agent import Agent

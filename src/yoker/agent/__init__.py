@@ -6,7 +6,7 @@ Asynchronous Agent implementation for Yoker.
 
 import inspect
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from dotenv import load_dotenv
 from ollama import AsyncClient
@@ -32,14 +32,11 @@ from yoker.events import EventCallback
 from yoker.logging import configure_logging
 from yoker.plugins import load_configured_plugins
 from yoker.skills import SkillRegistry, load_skills
-from yoker.thinking import ThinkingMode
-from yoker.tools import ToolRegistry, make_agent_tool, make_skill_tool
+from yoker.agent.thinking import ThinkingMode
+from yoker.builtin import make_agent_tool, make_skill_tool
+from yoker.tools import ToolRegistry
 from yoker.tools.guardrails import Guardrail
 from yoker.tools.path_guardrail import PathGuardrail
-
-if TYPE_CHECKING:
-  from yoker.context import ContextManager
-  from yoker.tools.path_guardrail import PathGuardrail
 
 logger = get_logger(__name__)
 

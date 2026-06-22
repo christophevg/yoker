@@ -44,7 +44,7 @@ from yoker.exceptions import (
 )
 from yoker.logging import LoggingContext, configure_logging, log_timing
 from yoker.builtin import __YOKER_MANIFEST__
-from yoker.thinking import ThinkingMode
+from yoker.agent.thinking import ThinkingMode
 
 __version__ = "0.4.0"
 __author__ = "Christophe VG"
