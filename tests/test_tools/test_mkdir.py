@@ -11,6 +11,7 @@ from typing import Any
 
 import pytest
 
+from yoker.builtin import existence, list, mkdir
 from yoker.config import (
   Config,
   MkdirToolConfig,
@@ -18,14 +19,14 @@ from yoker.config import (
   ReadToolConfig,
   ToolsConfig,
 )
-from yoker.tools import ToolRegistry, make_existence_tool, make_list_tool, make_mkdir_tool
+from yoker.tools import ToolRegistry
 from yoker.tools.path_guardrail import PathGuardrail
 
 
 def _mkdir_spec():
   """Create and register the mkdir tool."""
   registry = ToolRegistry()
-  return registry.register(make_mkdir_tool())
+  return registry.register(mkdir)
 
 
 class TestMkdirToolSchema:
@@ -1042,7 +1043,7 @@ class TestMkdirToolIntegration:
     Then: Existence tool reports directory exists
     """
     mkdir_spec = _mkdir_spec()
-    existence_spec = ToolRegistry().register(make_existence_tool())
+    existence_spec = ToolRegistry().register(existence)
 
     new_dir = tmp_path / "newdir"
     mkdir_result = await mkdir_spec.execute(path=str(new_dir))
@@ -1061,7 +1062,7 @@ class TestMkdirToolIntegration:
     Then: New directory appears in listing
     """
     mkdir_spec = _mkdir_spec()
-    list_spec = ToolRegistry().register(make_list_tool())
+    list_spec = ToolRegistry().register(list)
 
     new_dir = tmp_path / "newdir"
     mkdir_result = await mkdir_spec.execute(path=str(new_dir))

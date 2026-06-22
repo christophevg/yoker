@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from yoker.builtin import read
 from yoker.config import (
   AgentToolConfig,
   Config,
@@ -23,14 +24,14 @@ from yoker.config import (
   UpdateToolConfig,
   WriteToolConfig,
 )
-from yoker.tools import ToolRegistry, make_read_tool
+from yoker.tools import ToolRegistry
 from yoker.tools.path_guardrail import PathGuardrail
 
 
 def _read_spec():
   """Create and register the read tool."""
   registry = ToolRegistry()
-  return registry.register(make_read_tool())
+  return registry.register(read)
 
 
 class TestReadToolGuardrailIntegration:

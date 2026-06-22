@@ -6,7 +6,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from yoker.tools import ToolRegistry, make_read_tool
+from yoker.tools import ToolRegistry
 from yoker.ui.commands.tools import create_command as create_tools_command
 
 
@@ -84,8 +84,10 @@ class TestToolsCommand:
   @pytest.mark.asyncio
   async def test_tools_command_with_agent_filtering(self) -> None:
     """Test tools command with agent filtering."""
+    from yoker.builtin import read
+
     registry = ToolRegistry()
-    registry.register(make_read_tool())
+    registry.register(read)
 
     read_meta = _tool_meta("read", "Read file contents")
 

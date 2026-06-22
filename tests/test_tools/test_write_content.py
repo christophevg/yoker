@@ -10,17 +10,30 @@ import pytest
 from yoker.config import (
   Config,
   ContentDisplayConfig,
+  ToolsSharedConfig,
   ToolsConfig,
   WriteToolConfig,
 )
-from yoker.tools import ToolRegistry, make_write_tool
+from yoker.tools import ToolRegistry, write
+from yoker.tools.context import ToolContext
 from yoker.tools.write import _is_binary, _truncate_content
 
 
-def _write_spec(config: Config | None = None):
+def _write_spec():
   """Create and register the write tool."""
   registry = ToolRegistry()
-  return registry.register(make_write_tool(config))
+  return registry.register(write, name="write")
+
+
+def _get_ctx(config: Config | None = None) -> ToolContext | None:
+  """Get ToolContext for tests that need config."""
+  if config:
+    return ToolContext(
+      config=config.tools.write,
+      shared=config.tools_shared,
+      backends={},
+    )
+  return None
 
 
 class TestWriteToolContentMetadataEmission:
@@ -57,14 +70,15 @@ class TestWriteToolContentMetadataEmission:
     """
     # Create write tool with overwrite allowed
     config = Config(tools=ToolsConfig(write=WriteToolConfig(allow_overwrite=True)))
-    spec = _write_spec(config)
+    spec = _write_spec()
+    ctx = _get_ctx(config)
 
     # Create existing file
     test_file = tmp_path / "existing.txt"
     test_file.write_text("Original content\n")
 
     # Overwrite the file
-    result = await spec.execute(path=str(test_file), content="New content\n")
+    result = await spec.execute(path=str(test_file, ctx=ctx), content="New content\n", ctx=ctx)
 
     # Verify result
     assert result.success
@@ -80,12 +94,13 @@ class TestWriteToolContentMetadataEmission:
     Then: content_metadata.content contains the written content
     """
     # Create write tool with verbosity="content"
-    config = Config(tools=ToolsConfig(content_display=ContentDisplayConfig(verbosity="content")))
-    spec = _write_spec(config)
+    config = Config(tools=ToolsConfig(), tools_shared=ToolsSharedConfig(content_display=ContentDisplayConfig(verbosity="content")))
+    spec = _write_spec()
+    ctx = _get_ctx(config)
 
     # Write file
     test_file = tmp_path / "content.txt"
-    result = await spec.execute(path=str(test_file), content="Line 1\nLine 2\n")
+    result = await spec.execute(path=str(test_file, ctx=ctx), content="Line 1\nLine 2\n", ctx=ctx)
 
     # Verify result
     assert result.success
@@ -101,12 +116,13 @@ class TestWriteToolContentMetadataEmission:
     Then: ToolResult.content_metadata is None
     """
     # Create write tool with silent verbosity
-    config = Config(tools=ToolsConfig(content_display=ContentDisplayConfig(verbosity="silent")))
-    spec = _write_spec(config)
+    config = Config(tools=ToolsConfig(), tools_shared=ToolsSharedConfig(content_display=ContentDisplayConfig(verbosity="silent")))
+    spec = _write_spec()
+    ctx = _get_ctx(config)
 
     # Write file
     test_file = tmp_path / "silent.txt"
-    result = await spec.execute(path=str(test_file), content="Content\n")
+    result = await spec.execute(path=str(test_file, ctx=ctx), content="Content\n", ctx=ctx)
 
     # Verify result
     assert result.success
@@ -129,12 +145,13 @@ class TestWriteToolContentTruncation:
         content_display=ContentDisplayConfig(verbosity="content", max_content_lines=5)
       )
     )
-    spec = _write_spec(config)
+    spec = _write_spec()
+    ctx = _get_ctx(config)
 
     # Write file with 10 lines
     test_file = tmp_path / "large.txt"
     content = "\n".join(f"Line {i}" for i in range(10))
-    result = await spec.execute(path=str(test_file), content=content)
+    result = await spec.execute(path=str(test_file, ctx=ctx), content=content, ctx=ctx)
 
     # Verify result
     assert result.success
@@ -158,12 +175,13 @@ class TestWriteToolContentTruncation:
         content_display=ContentDisplayConfig(verbosity="content", max_content_lines=5)
       )
     )
-    spec = _write_spec(config)
+    spec = _write_spec()
+    ctx = _get_ctx(config)
 
     # Write file with 10 lines
     test_file = tmp_path / "truncated.txt"
     content = "\n".join(f"Line {i}" for i in range(10))
-    result = await spec.execute(path=str(test_file), content=content)
+    result = await spec.execute(path=str(test_file, ctx=ctx), content=content, ctx=ctx)
 
     # Verify result
     assert result.success
@@ -179,13 +197,14 @@ class TestWriteToolContentTruncation:
     Then: content_metadata.content contains full content
     """
     # Create write tool with content verbosity
-    config = Config(tools=ToolsConfig(content_display=ContentDisplayConfig(verbosity="content")))
-    spec = _write_spec(config)
+    config = Config(tools=ToolsConfig(), tools_shared=ToolsSharedConfig(content_display=ContentDisplayConfig(verbosity="content")))
+    spec = _write_spec()
+    ctx = _get_ctx(config)
 
     # Write small file
     test_file = tmp_path / "small.txt"
     content = "Line 1\nLine 2\n"
-    result = await spec.execute(path=str(test_file), content=content)
+    result = await spec.execute(path=str(test_file, ctx=ctx), content=content, ctx=ctx)
 
     # Verify result
     assert result.success
@@ -208,12 +227,13 @@ class TestWriteToolContentTruncation:
         )
       )
     )
-    spec = _write_spec(config)
+    spec = _write_spec()
+    ctx = _get_ctx(config)
 
     # Write file with content > 100 bytes
     test_file = tmp_path / "large_bytes.txt"
     content = "x" * 200
-    result = await spec.execute(path=str(test_file), content=content)
+    result = await spec.execute(path=str(test_file, ctx=ctx), content=content, ctx=ctx)
 
     # Verify result
     assert result.success
@@ -278,13 +298,14 @@ class TestWriteToolBinaryDetection:
     Then: content_metadata.content_type == "application/x-summary" (not "full")
     """
     # Create write tool with content verbosity
-    config = Config(tools=ToolsConfig(content_display=ContentDisplayConfig(verbosity="content")))
-    spec = _write_spec(config)
+    config = Config(tools=ToolsConfig(), tools_shared=ToolsSharedConfig(content_display=ContentDisplayConfig(verbosity="content")))
+    spec = _write_spec()
+    ctx = _get_ctx(config)
 
     # Write binary content (contains null byte)
     test_file = tmp_path / "binary.bin"
     content = "Binary\x00content"
-    result = await spec.execute(path=str(test_file), content=content)
+    result = await spec.execute(path=str(test_file, ctx=ctx), content=content, ctx=ctx)
 
     # Verify result
     assert result.success
@@ -321,13 +342,14 @@ class TestWriteToolBinaryDetection:
     Then: Only size summary is shown, not full content
     """
     # Create write tool with content verbosity
-    config = Config(tools=ToolsConfig(content_display=ContentDisplayConfig(verbosity="content")))
-    spec = _write_spec(config)
+    config = Config(tools=ToolsConfig(), tools_shared=ToolsSharedConfig(content_display=ContentDisplayConfig(verbosity="content")))
+    spec = _write_spec()
+    ctx = _get_ctx(config)
 
     # Write binary content
     test_file = tmp_path / "binary_summary.bin"
     content = "Binary\x00content"
-    result = await spec.execute(path=str(test_file), content=content)
+    result = await spec.execute(path=str(test_file, ctx=ctx), content=content, ctx=ctx)
 
     # Verify result
     assert result.success
@@ -347,12 +369,13 @@ class TestWriteToolVerbosityLevels:
     Then: ToolResult.content_metadata is None
     """
     # Create write tool with silent verbosity
-    config = Config(tools=ToolsConfig(content_display=ContentDisplayConfig(verbosity="silent")))
-    spec = _write_spec(config)
+    config = Config(tools=ToolsConfig(), tools_shared=ToolsSharedConfig(content_display=ContentDisplayConfig(verbosity="silent")))
+    spec = _write_spec()
+    ctx = _get_ctx(config)
 
     # Write file
     test_file = tmp_path / "silent.txt"
-    result = await spec.execute(path=str(test_file), content="Content\n")
+    result = await spec.execute(path=str(test_file, ctx=ctx), content="Content\n", ctx=ctx)
 
     # Verify result
     assert result.success
@@ -387,13 +410,14 @@ class TestWriteToolVerbosityLevels:
     Then: content_metadata.content_type="full" with full content
     """
     # Create write tool with content verbosity
-    config = Config(tools=ToolsConfig(content_display=ContentDisplayConfig(verbosity="content")))
-    spec = _write_spec(config)
+    config = Config(tools=ToolsConfig(), tools_shared=ToolsSharedConfig(content_display=ContentDisplayConfig(verbosity="content")))
+    spec = _write_spec()
+    ctx = _get_ctx(config)
 
     # Write file
     test_file = tmp_path / "content.txt"
     content = "Line 1\nLine 2\n"
-    result = await spec.execute(path=str(test_file), content=content)
+    result = await spec.execute(path=str(test_file, ctx=ctx), content=content, ctx=ctx)
 
     # Verify result
     assert result.success

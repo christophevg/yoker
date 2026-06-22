@@ -9,16 +9,29 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from yoker.config import WebFetchToolConfig
-from yoker.tools import ToolRegistry, make_webfetch_tool
+from yoker.tools import ToolRegistry, webfetch
+from yoker.tools.context import ToolContext
 from yoker.tools.web_backend import WebFetchBackend
 from yoker.tools.web_guardrail import WebGuardrail, WebGuardrailConfig
 from yoker.tools.web_types import FetchedContent, WebFetchError
 
 
-def _webfetch_spec(backend=None):
+def _webfetch_spec():
   """Create and register the webfetch tool."""
   registry = ToolRegistry()
-  return registry.register(make_webfetch_tool(backend=backend))
+  return registry.register(webfetch, name="webfetch")
+
+
+def _get_ctx(backend=None) -> ToolContext | None:
+  """Get ToolContext for tests that need backend."""
+  from yoker.config import ToolSharedConfig
+  if backend:
+    return ToolContext(
+      config=None,
+      shared=ToolSharedConfig(),
+      backends={"webfetch": backend},
+    )
+  return None
 
 
 class TestWebFetchToolSchema:
@@ -79,7 +92,7 @@ class TestWebFetchToolExecution:
     When: Executing a valid URL fetch
     Then: Returns ToolResult with fetched content
     """
-    spec = _webfetch_spec(backend=mock_backend)
+    spec = _webfetch_spec()
     result = await spec.execute(url="https://example.com")
     assert result.success
     assert "content" in result.result
@@ -91,7 +104,7 @@ class TestWebFetchToolExecution:
     When: Executing fetch without content_type parameter
     Then: Uses default content_type='markdown'
     """
-    spec = _webfetch_spec(backend=mock_backend)
+    spec = _webfetch_spec()
     await spec.execute(url="https://example.com")
     call_args = mock_backend.fetch.call_args
     assert call_args.kwargs["content_type"] == "markdown"
@@ -103,7 +116,7 @@ class TestWebFetchToolExecution:
     When: Executing fetch with content_type='text'
     Then: Passes content_type='text' to backend
     """
-    spec = _webfetch_spec(backend=mock_backend)
+    spec = _webfetch_spec()
     await spec.execute(url="https://example.com", content_type="text")
     call_args = mock_backend.fetch.call_args
     assert call_args.kwargs["content_type"] == "text"
@@ -115,7 +128,7 @@ class TestWebFetchToolExecution:
     When: Executing fetch with max_size_kb=5120
     Then: Passes max_size_kb=5120 to backend
     """
-    spec = _webfetch_spec(backend=mock_backend)
+    spec = _webfetch_spec()
     await spec.execute(url="https://example.com", max_size_kb=5120)
     call_args = mock_backend.fetch.call_args
     assert call_args.kwargs["max_size_kb"] == 5120
@@ -163,7 +176,7 @@ class TestWebFetchToolExecution:
     When: Executing fetch
     Then: Clamps max_size_kb to 10240
     """
-    spec = _webfetch_spec(backend=mock_backend)
+    spec = _webfetch_spec()
     await spec.execute(url="https://example.com", max_size_kb=20000)
     call_args = mock_backend.fetch.call_args
     assert call_args.kwargs["max_size_kb"] == 10240
@@ -175,7 +188,7 @@ class TestWebFetchToolExecution:
     When: Executing fetch
     Then: Defaults to content_type='markdown'
     """
-    spec = _webfetch_spec(backend=mock_backend)
+    spec = _webfetch_spec()
     await spec.execute(url="https://example.com", content_type="pdf")
     call_args = mock_backend.fetch.call_args
     assert call_args.kwargs["content_type"] == "markdown"
@@ -187,7 +200,7 @@ class TestWebFetchToolExecution:
     When: Executing fetch
     Then: Strips whitespace before validation
     """
-    spec = _webfetch_spec(backend=mock_backend)
+    spec = _webfetch_spec()
     await spec.execute(url="  https://example.com  ")
     call_args = mock_backend.fetch.call_args
     assert call_args.kwargs["url"] == "https://example.com"
@@ -203,7 +216,7 @@ class TestWebFetchToolBackendIntegration:
     When: Executing fetch with valid parameters
     Then: Backend.fetch() receives validated url, content_type, and max_size_kb
     """
-    spec = _webfetch_spec(backend=mock_backend)
+    spec = _webfetch_spec()
     await spec.execute(url="https://example.com", content_type="text", max_size_kb=1024)
     call_args = mock_backend.fetch.call_args
     assert call_args.kwargs["url"] == "https://example.com"
@@ -273,7 +286,7 @@ class TestWebFetchToolResultFormat:
     When: Checking the ToolResult
     Then: success=True, result contains url, title, content, content_type, source, metadata
     """
-    spec = _webfetch_spec(backend=mock_backend)
+    spec = _webfetch_spec()
     result = await spec.execute(url="https://example.com")
     assert result.success
     assert "url" in result.result
@@ -303,7 +316,7 @@ class TestWebFetchToolResultFormat:
     When: Checking the ToolResult
     Then: result contains metadata dict with size_kb
     """
-    spec = _webfetch_spec(backend=mock_backend)
+    spec = _webfetch_spec()
     result = await spec.execute(url="https://example.com")
     assert "metadata" in result.result
     assert "size_kb" in result.result["metadata"]
@@ -315,7 +328,7 @@ class TestWebFetchToolResultFormat:
     When: Checking the ToolResult
     Then: result['content_type'] matches requested format
     """
-    spec = _webfetch_spec(backend=mock_backend)
+    spec = _webfetch_spec()
     await spec.execute(url="https://example.com", content_type="text")
     # Verify the backend was called with the correct content_type
     call_args = mock_backend.fetch.call_args
@@ -332,7 +345,7 @@ class TestWebFetchToolConfiguration:
     When: Executing fetch
     Then: Uses provided backend instead of default
     """
-    spec = _webfetch_spec(backend=mock_backend)
+    spec = _webfetch_spec()
     await spec.execute(url="https://example.com")
     mock_backend.fetch.assert_called_once()
 

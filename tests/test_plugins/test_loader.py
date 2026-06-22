@@ -6,15 +6,14 @@ from unittest.mock import patch
 
 import pytest
 
+from yoker.builtin import read
 from yoker.exceptions import PluginError
 from yoker.plugins import PluginManifest
-from yoker.plugins.agents import load_agent_definition_from_string
 from yoker.plugins.loader import (
   PluginComponents,
   load_plugin,
   load_plugins,
 )
-from yoker.tools import make_list_tool, make_read_tool
 from yoker.tools.schema import build_tool_spec
 
 
@@ -23,8 +22,7 @@ class TestLoadPlugin:
 
   def test_load_plugin_with_tools(self):
     """Test loading plugin with tools."""
-    echo_tool = make_read_tool()
-    manifest = PluginManifest(tools=[echo_tool])
+    manifest = PluginManifest(tools=[read])
     module = ModuleType("test_pkg")
     module.__YOKER_MANIFEST__ = manifest
 
@@ -107,11 +105,11 @@ class TestLoadPlugins:
 
   def test_load_multiple_plugins(self):
     """Test loading multiple plugins."""
-    manifest1 = PluginManifest(tools=[make_read_tool()])
+    manifest1 = PluginManifest(tools=[read])
     module1 = ModuleType("pkg1")
     module1.__YOKER_MANIFEST__ = manifest1
 
-    manifest2 = PluginManifest(tools=[make_list_tool()])
+    manifest2 = PluginManifest(tools=[list])
     module2 = ModuleType("pkg2")
     module2.__YOKER_MANIFEST__ = manifest2
 
@@ -124,7 +122,7 @@ class TestLoadPlugins:
 
   def test_load_plugins_with_missing(self):
     """Test loading plugins raises PluginError when package is missing."""
-    manifest = PluginManifest(tools=[make_read_tool()])
+    manifest = PluginManifest(tools=[read])
     module = ModuleType("exists")
     module.__YOKER_MANIFEST__ = manifest
 
@@ -146,84 +144,12 @@ class TestLoadPlugins:
         load_plugins(["broken"])
 
 
-class TestLoadAgentDefinitionFromString:
-  """Tests for load_agent_definition_from_string function."""
-
-  def test_load_agent_definition_valid(self):
-    """Test loading valid agent definition."""
-    content = """---
-name: test-agent
-description: Test agent
-model: llama3.2
-tools:
-  - read
-  - write
----
-
-You are a test agent.
-"""
-
-    agent_def = load_agent_definition_from_string(content, namespace="pkg")
-
-    assert agent_def is not None
-    assert agent_def.name == "pkg:test-agent"
-    assert agent_def.description == "Test agent"
-    assert agent_def.model == "llama3.2"
-    # Tools should be namespaced
-    assert "pkg:read" in agent_def.tools
-    assert "pkg:write" in agent_def.tools
-
-  def test_load_agent_definition_without_namespace(self):
-    """Test loading agent definition without namespace."""
-    content = """---
-name: test-agent
-description: Test agent
----
-
-You are a test agent.
-"""
-
-    agent_def = load_agent_definition_from_string(content)
-
-    assert agent_def is not None
-    assert agent_def.name == "test-agent"
-
-  def test_load_agent_definition_missing_name(self):
-    """Test loading agent definition without name."""
-    content = """---
-description: Test agent
----
-
-You are a test agent.
-"""
-
-    agent_def = load_agent_definition_from_string(content)
-
-    assert agent_def is None
-
-  def test_load_agent_definition_invalid_yaml(self):
-    """Test loading agent definition with invalid YAML."""
-    content = """---
-name: test-agent
-description: Test agent
-invalid yaml here
----
-
-Content
-"""
-
-    agent_def = load_agent_definition_from_string(content)
-
-    # Should handle gracefully
-    assert agent_def is None
-
-
 class TestPluginComponents:
   """Tests for PluginComponents dataclass."""
 
   def test_components_creation(self):
     """Test creating PluginComponents."""
-    tools = [make_read_tool()]
+    tools = [read]
 
     components = PluginComponents(
       tools=tools,
