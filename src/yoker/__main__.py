@@ -130,7 +130,7 @@ async def run_session(agent: Agent, ui: UIHandler, commands: CommandRegistry) ->
       except Exception as e:
         ui.output_error(e)
         print(traceback.format_exc())
-        break
+        continue
   finally:
     await ui.shutdown("quit")
 

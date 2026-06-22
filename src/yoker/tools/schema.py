@@ -1,4 +1,4 @@
-"""Tool introspection and execution wrapper.
+"""Tool introspection for Yoker.
 
 Provides ``ToolSpec`` and ``build_tool_spec`` for converting any Python
 function or callable class into a Yoker tool. Schemas and guardrail
@@ -14,12 +14,11 @@ from structlog import get_logger
 
 from yoker.annotations import GuardType, Text
 from yoker.schema import NameSpaced
-from yoker.tools.base import ToolResult
 
 if TYPE_CHECKING:
   from yoker.tools.context import ToolContext
 
-log = get_logger(__name__)
+logger = get_logger(__name__)
 
 
 @dataclass(frozen=True)
@@ -32,7 +31,7 @@ class ToolSpec(NameSpaced):
     description: Tool description shown to the LLM.
     schema: Ollama-compatible function schema with harness metadata stripped.
     guards: Mapping of parameter name to guardrail functional type.
-    execute: Wrapped async callable that returns a ToolResult.
+    execute: The original tool function (sync or async).
   """
 
   description: str = ""
@@ -64,7 +63,8 @@ def build_tool_spec(
   """Build a ``ToolSpec`` from a function or callable class.
 
   The resulting spec contains the tool name, description, schema, and
-  a wrapped executor that always returns a ``ToolResult``.
+  the original callable. Execution wrapping (argument binding, sync/async
+  handling, result normalization) is done at call time in _processing.py.
 
   Args:
     tool: Plain function or callable instance to register as a tool.
@@ -114,15 +114,13 @@ def build_tool_spec(
     },
   }
 
-  execute = _wrap_execute(tool, signature)
-
   return ToolSpec(
     simple_name=resolved_name,
     namespace=namespace,
     description=description,
     schema=schema,
     guards=guards,
-    execute=execute,
+    execute=tool,
   )
 
 
@@ -209,7 +207,7 @@ def _build_parameter_schema(
 
   # Warn when a string parameter lacks an annotation marker.
   if json_type == "string" and guard_type is None:
-    log.warning(
+    logger.warning(
       "tool_parameter_missing_yoker_type",
       parameter=param_name,
     )
@@ -276,34 +274,3 @@ def _is_context_parameter(param: inspect.Parameter) -> bool:
   if isinstance(param.annotation, ForwardRef):
     return param.annotation.__forward_arg__ == "ToolContext"
   return False
-
-
-def _wrap_execute(
-  tool: Callable[..., Any],
-  signature: inspect.Signature,
-) -> Callable[..., Any]:
-  """Wrap the callable so execution returns a ``ToolResult``.
-
-  The wrapper binds keyword arguments to the signature, calls the
-  underlying sync or async callable, and normalizes the result.
-  """
-
-  async def execute(**kwargs: Any) -> ToolResult:
-    try:
-      bound = signature.bind(**kwargs)
-      bound.apply_defaults()
-    except TypeError as e:
-      return ToolResult(success=False, error=f"Invalid tool arguments: {e}")
-
-    try:
-      result = tool(*bound.args, **bound.kwargs)
-      if inspect.isawaitable(result):
-        result = await result
-      if isinstance(result, ToolResult):
-        return result
-      return ToolResult(success=True, result=result)
-    except Exception as e:
-      log.error("tool_execution_error", error=str(e))
-      return ToolResult(success=False, error=str(e))
-
-  return execute

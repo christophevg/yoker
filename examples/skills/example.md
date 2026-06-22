@@ -1,6 +1,7 @@
 ---
 name: example
 description: A simple example skill for demonstration
+namespace: examples
 ---
 
 # Example Skill

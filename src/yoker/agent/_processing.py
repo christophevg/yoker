@@ -26,12 +26,12 @@ from yoker.events import (
 )
 from yoker.exceptions import NetworkError
 from yoker.logging import log_timing
-from yoker.tools.base import ValidationResult
+from yoker.tools.base import ToolResult, ValidationResult
 from yoker.tools.context import ToolContext
 from yoker.tools.guardrails import Guardrail
 from yoker.tools.schema import ToolSpec
 
-log = get_logger(__name__)
+logger = get_logger(__name__)
 
 
 def _is_async_handler(handler: EventCallback) -> bool:
@@ -50,7 +50,7 @@ async def emit(event: Event, handlers: list[EventCallback]) -> None:
       else:
         handler(event)
     except Exception as e:
-      log.error(
+      logger.error(
         "event_handler_error",
         handler=getattr(handler, "__name__", str(handler)),
         event_type=event.type,
@@ -60,7 +60,7 @@ async def emit(event: Event, handlers: list[EventCallback]) -> None:
 
 async def process_message(agent: Any, message: str) -> str:
   """Process a single message and return the response."""
-  log.info("async_turn_started", message_preview=message[:50])
+  logger.info("turn_started", message_preview=message[:50])
   await emit(TurnStartEvent(type=EventType.TURN_START, message=message), agent._event_handlers)
   agent.context.start_turn(message)
 
@@ -71,7 +71,7 @@ async def process_message(agent: Any, message: str) -> str:
     if not tool_calls:
       agent.context.end_turn(content, thinking=thinking or None)
       await emit(_turn_end_event(content, tool_calls, stats), agent._event_handlers)
-      log.info("async_turn_completed", response_length=len(content), tool_calls_count=0)
+      logger.info("turn_completed", response_length=len(content), tool_calls_count=0)
       return content
 
     await _execute_tool_calls(agent, tool_calls, thinking)
@@ -83,7 +83,7 @@ async def _chat_stream(agent: Any) -> Any:
     return await agent._client.chat(
       model=agent.model,
       messages=agent.context.get_context(),
-      tools=agent.tool_registry.get_schemas(),
+      tools=agent.tools.get_schemas(),
       think=agent.thinking_mode.is_enabled,
       stream=True,
     )
@@ -95,7 +95,7 @@ async def _chat_stream(agent: Any) -> Any:
     httpx.ConnectTimeout,
     httpx.ReadTimeout,
   ) as e:
-    log.error("network_error", error_type=type(e).__name__, message=str(e))
+    logger.error("network_error", error_type=type(e).__name__, message=str(e))
     raise NetworkError(f"Network error: {e}", original_error=e, recoverable=True) from e
 
 
@@ -233,7 +233,7 @@ def _deduplicate_tool_calls(tool_calls: list[Any]) -> list[Any]:
       seen.add(key)
       unique.append(call)
     else:
-      log.info("tool_call_duplicate_detected", tool=call.function.name, call_key=key)
+      logger.debug("tool_call_duplicate", tool=call.function.name, call_key=key)
   return unique
 
 
@@ -246,11 +246,11 @@ async def _execute_single_tool_call(agent: Any, call: Any) -> None:
     ToolCallEvent(type=EventType.TOOL_CALL, tool_name=tool_name, arguments=tool_args),
     agent._event_handlers,
   )
-  log.debug("async_tool_call", tool=tool_name, args=tool_args)
+  logger.debug("tool_call", tool=tool_name, args=tool_args)
 
   result, success, tool_result = await _run_tool(agent, tool_name, tool_args)
 
-  log.debug("async_tool_result", tool=tool_name, success=success)
+  logger.debug("tool_result", tool=tool_name, success=success)
   await emit(
     ToolResultEvent(
       type=EventType.TOOL_RESULT,
@@ -285,42 +285,69 @@ async def _execute_single_tool_call(agent: Any, call: Any) -> None:
 
 async def _run_tool(agent: Any, tool_name: str, tool_args: dict[str, Any]) -> tuple[str, bool, Any]:
   """Run a tool and return (result, success, raw_tool_result)."""
-  spec = agent.tool_registry.get(tool_name)
+  spec = agent.tools.get(tool_name)
   if spec is None:
-    log.warning("tool_not_found", tool=tool_name)
+    logger.warning("tool_not_found", tool=tool_name)
     return f"Error: Unknown tool '{tool_name}'", False, None
 
   validation = _validate_tool_args(agent, spec, tool_args)
   if not validation.valid:
-    log.info("guardrail_blocked", tool=tool_name, reason=validation.reason)
+    logger.warning("guardrail_blocked", tool=tool_name, reason=validation.reason)
     return f"Error: {validation.reason}", False, None
 
   if agent.config.logging.include_permission_checks:
-    log.info("guardrail_allowed", tool=tool_name, path=tool_args.get("path"))
+    logger.info("guardrail_allowed", tool=tool_name, path=tool_args.get("path"))
 
   try:
     with log_timing("tool_execution", tool=tool_name):
-      # Check if tool expects ToolContext parameter
-      kwargs = tool_args.copy()
-      if _tool_needs_context(spec):
-        ctx = _build_tool_context(agent, tool_name)
-        kwargs["ctx"] = ctx
-      tool_result = await spec.execute(**kwargs)
+      tool_result = await _execute_tool(spec, agent, tool_args)
     success = tool_result.success
     result = str(tool_result.result) if success else f"Error: {tool_result.error}"
     return result, success, tool_result
   except Exception as e:
-    log.error("tool_error", tool=tool_name, error=str(e))
+    logger.error("tool_error", tool=tool_name, error=str(e))
     return f"Error executing tool: {e}", False, None
 
 
-def _validate_tool_args(agent: Any, spec: ToolSpec, tool_args: dict[str, Any]) -> Any:
-  """Validate tool arguments using schema-driven guardrails.
+async def _execute_tool(spec: ToolSpec, agent: Any, tool_args: dict[str, Any]) -> ToolResult:
+  """Execute a tool with proper argument binding and context injection.
 
-  Reads each parameter's guard type from the tool spec and dispatches
-  the corresponding argument to the appropriate agent guardrail. Returns
-  the first validation failure, or a valid result when no guardrail applies.
+  Handles:
+  - Binding kwargs to the tool's signature
+  - Injecting ToolContext if the tool expects it
+  - Calling sync or async tools
+  - Normalizing the result to ToolResult
   """
+  # Get the original tool signature
+  sig = inspect.signature(spec.execute)
+
+  # Build kwargs, injecting context if needed
+  kwargs = tool_args.copy()
+  if _tool_needs_context(spec):
+    kwargs["ctx"] = _build_tool_context(agent, spec.name)
+
+  # Bind arguments
+  try:
+    bound = sig.bind(**kwargs)
+    bound.apply_defaults()
+  except TypeError as e:
+    return ToolResult(success=False, error=f"Invalid tool arguments: {e}")
+
+  # Call the tool
+  result = spec.execute(*bound.args, **bound.kwargs)
+
+  # Handle async
+  if inspect.isawaitable(result):
+    result = await result
+
+  # Normalize to ToolResult
+  if isinstance(result, ToolResult):
+    return result
+  return ToolResult(success=True, result=result)
+
+
+def _validate_tool_args(agent: Any, spec: ToolSpec, tool_args: dict[str, Any]) -> ValidationResult:
+  """Validate tool arguments using schema-driven guardrails."""
   for param_name, guard_type in spec.guards.items():
     value = tool_args.get(param_name)
     if value is None:
@@ -338,13 +365,24 @@ def _validate_tool_args(agent: Any, spec: ToolSpec, tool_args: dict[str, Any]) -
 
 
 def _tool_needs_context(spec: ToolSpec) -> bool:
-  """Check if a tool expects a ToolContext parameter."""
-  # The spec.execute is the wrapped async callable
-  if not callable(spec.execute):
-    return False
+  """Check if a tool expects a ToolContext parameter.
+
+  Inspects the original tool function signature (not a wrapper).
+  """
   try:
     sig = inspect.signature(spec.execute)
-    return "ctx" in sig.parameters
+    for param in sig.parameters.values():
+      if param.annotation is ToolContext:
+        return True
+      # Handle string annotation or ForwardRef
+      if isinstance(param.annotation, str) and param.annotation == "ToolContext":
+        return True
+      if isinstance(param.annotation, inspect.Parameter.empty):
+        continue
+      # Check for ForwardRef
+      if hasattr(param.annotation, "__forward_arg__"):
+        return param.annotation.__forward_arg__ == "ToolContext"
+    return False
   except (ValueError, TypeError):
     return False
 
