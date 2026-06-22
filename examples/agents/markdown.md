@@ -2,6 +2,7 @@
 name: markdown
 description: Assistant that formats all responses as structured Markdown
 tools: Read, List, Write, Update
+namespace: examples
 ---
 
 # Markdown Agent

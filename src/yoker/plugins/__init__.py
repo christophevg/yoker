@@ -7,9 +7,7 @@ Key Components:
   - PluginManifest: Dataclass for declaring plugin components
   - PluginComponents: Container for loaded plugin components
   - load_plugin(): Load plugin from Python package
-  - load_plugins(): Load multiple plugins
-  - load_agents_from_package(): Load agents from package's agents/ directory
-  - load_skills_from_package(): Load skills from package's skills/ directory
+  - load_configured_plugins(): Load plugins configured in config + CLI --with
   - register_tools(): Register tools with namespace prefix
   - register_skills(): Register skills with namespace prefix
   - register_agents(): Register agents with namespace prefix
@@ -26,10 +24,9 @@ Example:
 
 from yoker.plugins.loader import (
   PluginComponents,
+  load_configured_plugins,
   load_plugin,
-  load_plugins,
 )
-from yoker.plugins.loading import load_configured_plugins
 from yoker.plugins.manifest import PluginManifest
 from yoker.plugins.registration import (
   register_agents,
@@ -50,7 +47,6 @@ __all__ = [
   # Loader
   "PluginComponents",
   "load_plugin",
-  "load_plugins",
   "load_configured_plugins",
   # Registration
   "register_tools",

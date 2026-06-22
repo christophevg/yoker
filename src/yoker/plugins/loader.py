@@ -12,11 +12,15 @@ from structlog import get_logger
 
 from yoker.agents.loader import load_agent_definitions
 from yoker.exceptions import PluginError
+from yoker.plugins.registration import register_agents, register_skills, register_tools
+from yoker.plugins.security import check_plugin_allowed, check_plugins_enabled
 from yoker.resources import find_package_subdirectory
 from yoker.skills import load_skills
 
 if TYPE_CHECKING:
+  from yoker.agent import Agent
   from yoker.agents import AgentDefinition
+  from yoker.config import Config
 
 logger = get_logger(__name__)
 
@@ -61,17 +65,17 @@ def load_plugin(package_name: str) -> PluginComponents:
   if not hasattr(package, "__YOKER_MANIFEST__"):
     raise PluginError(
       package=package_name,
-      message=f"Pluging package '{package_name}' doesn't provide a manifest."
-    ) from e
+      message=f"Plugin package '{package_name}' doesn't provide a manifest."
+    )
 
-  logger.info("plugin_manifest_found_in_package", package=package_name)
+  logger.info("plugin_manifest_found", package=package_name)
   manifest = package.__YOKER_MANIFEST__
   tools = list(getattr(manifest, "tools", []))
   skills = _load_manifest_skills(manifest, package_name)
   agents = _load_manifest_agents(manifest, package_name)
 
   logger.info(
-    "plugin_components_extracted",
+    "plugin_loaded",
     package=package_name,
     tools=len(tools),
     skills=len(skills),
@@ -83,6 +87,55 @@ def load_plugin(package_name: str) -> PluginComponents:
     agents=agents,
     source=package_name,
   )
+
+
+def load_configured_plugins(
+  agent: "Agent",
+  config: "Config",
+  extra_plugins: tuple[str, ...] = (),
+) -> None:
+  """Load configured and CLI-specified plugins into the agent's registries.
+
+  Plugin tools, skills and agents are registered into ``agent.tools``,
+  ``agent.skills`` and ``agent.agents`` respectively, namespaced by the
+  plugin's package name. ``yoker`` itself is always included as a plugin.
+
+  Args:
+    agent: The Agent instance whose registries to populate.
+    config: Resolved configuration (supplies ``config.plugins.packages``).
+    extra_plugins: Additional plugin packages from the CLI beyond those
+      declared in config.
+  """
+  if not check_plugins_enabled(config):
+    logger.warning("plugins_disabled")
+    return
+
+  packages = config.plugins.packages + tuple(extra_plugins) + ("yoker",)
+  logger.info("loading_plugins", packages=packages, count=len(packages))
+
+  for package_name in packages:
+    try:
+      plugin = load_plugin(package_name)
+    except PluginError as e:
+      logger.error("plugin_load_failed", package=e.package, error=str(e))
+      raise
+
+    if not check_plugin_allowed(plugin.source, config, plugin):
+      logger.warning("plugin_not_allowed", package=plugin.source)
+      continue
+
+    source = plugin.source
+    if plugin.tools:
+      register_tools(plugin.tools, agent.tools, namespace=source)
+      logger.info("tools_registered", package=source, count=len(plugin.tools))
+
+    if plugin.skills:
+      register_skills(plugin.skills, agent.skills, namespace=source)
+      logger.info("skills_registered", package=source, count=len(plugin.skills))
+
+    if plugin.agents:
+      register_agents(plugin.agents, agent.agents, namespace=source)
+      logger.info("agents_registered", package=source, count=len(plugin.agents))
 
 
 def _load_manifest_skills(manifest: Any, package_name: str) -> list[Any]:
@@ -98,6 +151,7 @@ def _load_manifest_skills(manifest: Any, package_name: str) -> list[Any]:
       return skills + discovered
   return skills
 
+
 def _load_manifest_agents(manifest: Any, package_name: str) -> list[Any]:
   """Load agents declared in the manifest."""
   agents = list(getattr(manifest, "agents", []))
@@ -111,27 +165,9 @@ def _load_manifest_agents(manifest: Any, package_name: str) -> list[Any]:
       return agents + discovered
   return agents
 
-def load_plugins(package_names: list[str]) -> list[PluginComponents]:
-  """Load multiple plugins.
-
-  Args:
-    package_names: List of package names to load.
-
-  Returns:
-    List of successfully loaded PluginComponents.
-
-  Raises:
-    PluginError: If any plugin fails critically.
-  """
-  try:
-    return [ load_plugin(package_name) for package_name in package_names ]
-  except PluginError as e:
-    logger.error("plugin_load_failed", package=e.package, error=str(e))
-    raise
-
 
 __all__ = [
   "PluginComponents",
   "load_plugin",
-  "load_plugins",
+  "load_configured_plugins",
 ]
