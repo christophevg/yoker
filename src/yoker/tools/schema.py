@@ -8,13 +8,16 @@ metadata are derived through ``inspect`` and ``typing`` introspection.
 import inspect
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, ForwardRef, get_origin
+from typing import TYPE_CHECKING, Any, ForwardRef, get_origin
 
 from structlog import get_logger
 
 from yoker.annotations import GuardType, Text
 from yoker.schema import NameSpaced
 from yoker.tools.base import ToolResult
+
+if TYPE_CHECKING:
+  from yoker.tools.context import ToolContext
 
 log = get_logger(__name__)
 
@@ -79,13 +82,17 @@ def build_tool_spec(
   """
   resolved_name = _resolve_name(tool, explicit_name=name)
   description = _resolve_description(tool)
-  signature = _inspect_signature(tool)
+  signature = inspect.signature(tool)
 
   properties: dict[str, Any] = {}
   required: list[str] = []
   guards: dict[str, GuardType] = {}
 
   for param_name, param in signature.parameters.items():
+    # Skip ctx: ToolContext - it's injected by the executor, not provided by the model
+    if _is_context_parameter(param):
+      continue
+
     param_schema, guard_type = _build_parameter_schema(param, param_name)
     properties[param_name] = param_schema
     if guard_type is not None:
@@ -154,19 +161,6 @@ def _resolve_description(tool: Callable[..., Any]) -> str:
     return doc.strip().splitlines()[0]
 
   raise ValueError("A tool needs a description!")
-
-
-def _inspect_signature(tool: Callable[..., Any]) -> inspect.Signature:
-  """Return the signature used for parameter introspection.
-
-  Works for plain functions, methods, and callable class instances.
-  For callable class instances, ``inspect.signature`` reads ``__call__``
-  and already excludes the bound ``self`` parameter.
-  """
-  if not callable(tool):
-    raise ValueError(f"Tool {type(tool).__name__!r} is not callable")
-
-  return inspect.signature(tool)
 
 
 def _build_parameter_schema(
@@ -261,12 +255,27 @@ def _python_type_to_json_schema(annotation: Any) -> str | None:
 
 
 def _is_optional(annotation: Any) -> bool:
-  """Return True if the annotation is ``Optional[T]``."""
+  """Return True if the annotation is ``Optional[T]`."""
   origin = get_origin(annotation)
   if origin is None:
     return False
   args = getattr(annotation, "__args__", ())
   return type(None) in args
+
+
+def _is_context_parameter(param: inspect.Parameter) -> bool:
+  """Return True if this parameter is a ToolContext injection point."""
+  from yoker.tools.context import ToolContext
+
+  if param.annotation is ToolContext:
+    return True
+  # Also handle string annotation "ToolContext" or forward reference
+  if isinstance(param.annotation, str):
+    return param.annotation == "ToolContext"
+  # Handle ForwardRef
+  if isinstance(param.annotation, ForwardRef):
+    return param.annotation.__forward_arg__ == "ToolContext"
+  return False
 
 
 def _wrap_execute(

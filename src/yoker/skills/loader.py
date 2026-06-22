@@ -6,11 +6,12 @@ Parses Markdown files with YAML frontmatter into Skill objects.
 from pathlib import Path
 from typing import Any
 
-import yaml
-
 from yoker.exceptions import ConfigurationError, FileNotFoundError
-from yoker.resources import is_dir, iter_files, iter_nested
+from yoker.resources import is_dir, iter_files, iter_nested, parse_yaml_frontmatter
 from yoker.skills.schema import Skill
+
+# Backward-compatible alias
+parse_skill_frontmatter = parse_yaml_frontmatter
 
 # Security constants
 MAX_SKILL_SIZE_KB = 100  # Maximum skill file size in KB
@@ -81,60 +82,6 @@ def _validate_skill_size(content: str, path: Path) -> None:
     )
 
 
-def parse_skill_frontmatter(content: str) -> tuple[dict[str, object], str]:
-  """Parse YAML frontmatter from skill Markdown content.
-
-  Uses the same pattern as agent frontmatter parsing.
-
-  Args:
-    content: Raw file content (may contain frontmatter).
-
-  Returns:
-    Tuple of (frontmatter dict, body content).
-    If no frontmatter, returns ({}, content).
-
-  Raises:
-    ConfigurationError: If frontmatter exists but is invalid YAML.
-  """
-  lines = content.strip().split("\n")
-
-  # Check for frontmatter delimiter
-  if not lines or lines[0] != "---":
-    return {}, content
-
-  # Find closing delimiter
-  try:
-    end_index = lines.index("---", 1)
-  except ValueError:
-    # No closing delimiter - not valid frontmatter
-    return {}, content
-
-  # Extract frontmatter and body
-  frontmatter_lines = lines[1:end_index]
-  body_lines = lines[end_index + 1 :]
-
-  if not frontmatter_lines:
-    # Empty frontmatter
-    return {}, "\n".join(body_lines)
-
-  # Parse YAML (SEC-1: use safe_load)
-  try:
-    frontmatter = yaml.safe_load("\n".join(frontmatter_lines))
-    if frontmatter is None:
-      frontmatter = {}
-    if not isinstance(frontmatter, dict):
-      raise ConfigurationError(
-        setting="frontmatter",
-        message=f"Frontmatter must be a YAML dictionary, got {type(frontmatter).__name__}",
-      )
-    return frontmatter, "\n".join(body_lines)
-  except yaml.YAMLError as e:
-    raise ConfigurationError(
-      setting="frontmatter",
-      message=f"Invalid YAML in frontmatter: {e}",
-    ) from None
-
-
 def _skill_from_content(
   content: str,
   source_path: str,
@@ -153,7 +100,7 @@ def _skill_from_content(
   Raises:
     ConfigurationError: If frontmatter is invalid or missing required fields.
   """
-  frontmatter, body = parse_skill_frontmatter(content)
+  frontmatter, body = parse_yaml_frontmatter(content)
 
   # Extract required fields
   name = frontmatter.get("name")
@@ -361,8 +308,8 @@ def load_skills(
 
 
 __all__ = [
-  "parse_skill_frontmatter",
   "load_skill",
   "load_skills",
   "MAX_SKILL_SIZE_KB",
+  "parse_skill_frontmatter",
 ]

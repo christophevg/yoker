@@ -27,6 +27,7 @@ from yoker.events import (
 from yoker.exceptions import NetworkError
 from yoker.logging import log_timing
 from yoker.tools.base import ValidationResult
+from yoker.tools.context import ToolContext
 from yoker.tools.guardrails import Guardrail
 from yoker.tools.schema import ToolSpec
 
@@ -299,7 +300,12 @@ async def _run_tool(agent: Any, tool_name: str, tool_args: dict[str, Any]) -> tu
 
   try:
     with log_timing("tool_execution", tool=tool_name):
-      tool_result = await spec.execute(**tool_args)
+      # Check if tool expects ToolContext parameter
+      kwargs = tool_args.copy()
+      if _tool_needs_context(spec):
+        ctx = _build_tool_context(agent, tool_name)
+        kwargs["ctx"] = ctx
+      tool_result = await spec.execute(**kwargs)
     success = tool_result.success
     result = str(tool_result.result) if success else f"Error: {tool_result.error}"
     return result, success, tool_result
@@ -329,3 +335,40 @@ def _validate_tool_args(agent: Any, spec: ToolSpec, tool_args: dict[str, Any]) -
       return validation
 
   return ValidationResult(valid=True)
+
+
+def _tool_needs_context(spec: ToolSpec) -> bool:
+  """Check if a tool expects a ToolContext parameter."""
+  # The spec.execute is the wrapped async callable
+  if not callable(spec.execute):
+    return False
+  try:
+    sig = inspect.signature(spec.execute)
+    return "ctx" in sig.parameters
+  except (ValueError, TypeError):
+    return False
+
+
+def _build_tool_context(agent: Any, tool_name: str) -> ToolContext:
+  """Build a ToolContext for the given tool.
+
+  Args:
+    agent: The agent instance.
+    tool_name: The tool name (may include namespace prefix like "yoker:write").
+
+  Returns:
+    ToolContext with tool-specific config, shared config, and backends.
+  """
+  # Extract base tool name (remove namespace prefix)
+  base_name = tool_name.split(":")[-1] if ":" in tool_name else tool_name
+
+  # Get tool-specific config from config.tools
+  tool_config = agent.config.tools[base_name]
+
+  # Get shared config
+  shared_config = agent.config.tools_shared
+
+  # Get backends dict (may be empty dict if backends not yet set up)
+  backends = getattr(agent, "_tool_backends", {})
+
+  return ToolContext(config=tool_config, shared=shared_config, backends=backends)

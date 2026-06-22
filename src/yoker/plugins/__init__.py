@@ -24,12 +24,12 @@ Example:
       register_skills(plugin.skills, skill_registry, namespace=plugin.source)
 """
 
-from yoker.plugins.agents import load_agents_from_package
 from yoker.plugins.loader import (
   PluginComponents,
   load_plugin,
   load_plugins,
 )
+from yoker.plugins.loading import load_configured_plugins
 from yoker.plugins.manifest import PluginManifest
 from yoker.plugins.registration import (
   register_agents,
@@ -43,7 +43,6 @@ from yoker.plugins.security import (
   is_trusted,
   reset_session_trusted,
 )
-from yoker.plugins.skills import load_skills_from_package
 
 __all__ = [
   # Manifest
@@ -52,8 +51,7 @@ __all__ = [
   "PluginComponents",
   "load_plugin",
   "load_plugins",
-  "load_agents_from_package",
-  "load_skills_from_package",
+  "load_configured_plugins",
   # Registration
   "register_tools",
   "register_skills",

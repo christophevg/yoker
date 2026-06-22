@@ -1,20 +1,23 @@
 """Write tool implementation for Yoker.
 
-Provides the ``make_write_tool`` factory that returns a callable for
-writing file contents. Guardrails are enforced centrally by the harness
-based on the schema's ``path`` annotation.
+Provides the ``write`` async function for writing file contents.
+Guardrails are enforced centrally by the harness based on the schema's
+``path`` annotation.
 """
 
 import os
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, TYPE_CHECKING, Any
 
 from structlog import get_logger
 
 from yoker.annotations import Path as PathArg
 from yoker.annotations import Text
-from yoker.config import Config
 from yoker.tools.base import ToolResult
+from yoker.tools.context import ToolContext
+
+if TYPE_CHECKING:
+  from yoker.config import WriteToolConfig
 
 log = get_logger(__name__)
 
@@ -51,89 +54,93 @@ def _truncate_content(
   return truncated_content, was_truncated, original_lines_count, original_bytes
 
 
-def make_write_tool(config: Config | None = None) -> Any:
-  """Create the write tool callable."""
-  resolved_config = config or Config()
+async def write(
+  path: Annotated[str, PathArg("Path to the file to write")],
+  content: Annotated[str, Text("Content to write to the file")],
+  ctx: ToolContext,
+  create_parents: bool = False,
+) -> ToolResult:
+  """Write content to a file."""
+  # Config values come from ctx.config (WriteToolConfig with defaults)
+  write_config = ctx.config
+  allow_overwrite = write_config.allow_overwrite
 
-  async def write(
-    path: Annotated[str, PathArg("Path to the file to write")],
-    content: Annotated[str, Text("Content to write to the file")],
-    create_parents: bool = False,
-  ) -> ToolResult:
-    """Write content to a file."""
-    if not isinstance(path, str) or not path.strip():
-      log.warning("write_invalid_path_type", path_type=type(path).__name__)
-      return ToolResult(success=False, error="Invalid path parameter")
+  if not isinstance(path, str) or not path.strip():
+    log.warning("write_invalid_path_type", path_type=type(path).__name__)
+    return ToolResult(success=False, error="Invalid path parameter")
 
-    if not isinstance(content, str):
-      log.warning("write_invalid_content_type", content_type=type(content).__name__)
-      return ToolResult(success=False, error="Invalid content parameter")
+  if not isinstance(content, str):
+    log.warning("write_invalid_content_type", content_type=type(content).__name__)
+    return ToolResult(success=False, error="Invalid content parameter")
 
-    original_path = Path(path)
-    if original_path.is_symlink():
-      log.warning("write_symlink_rejected", path=path)
-      return ToolResult(success=False, error="Writing to symlinks is not permitted")
+  original_path = Path(path)
+  if original_path.is_symlink():
+    log.warning("write_symlink_rejected", path=path)
+    return ToolResult(success=False, error="Writing to symlinks is not permitted")
 
-    try:
-      resolved = Path(os.path.realpath(path))
-    except (OSError, ValueError):
-      log.warning("write_invalid_path", path=path)
-      return ToolResult(success=False, error="Invalid path")
+  try:
+    resolved = Path(os.path.realpath(path))
+  except (OSError, ValueError):
+    log.warning("write_invalid_path", path=path)
+    return ToolResult(success=False, error="Invalid path")
 
-    is_overwrite = resolved.exists()
-    if is_overwrite:
-      allow_overwrite = resolved_config.tools.write.allow_overwrite
-      if not allow_overwrite:
-        log.info("write_overwrite_blocked", path=str(resolved))
-        return ToolResult(success=False, error="File already exists and overwrite is not permitted")
+  is_overwrite = resolved.exists()
+  if is_overwrite:
+    if not allow_overwrite:
+      log.info("write_overwrite_blocked", path=str(resolved))
+      return ToolResult(success=False, error="File already exists and overwrite is not permitted")
 
-    parent = resolved.parent
-    if not parent.exists():
-      if create_parents:
-        try:
-          parent.mkdir(parents=True, exist_ok=True)
-          log.info("write_created_parents", path=str(parent))
-        except OSError as e:
-          log.error("write_create_parents_failed", path=str(parent), error=str(e))
-          return ToolResult(success=False, error="Failed to create parent directories")
-      else:
-        log.info("write_parent_missing", path=str(resolved))
-        return ToolResult(success=False, error="Parent directory does not exist")
+  parent = resolved.parent
+  if not parent.exists():
+    if create_parents:
+      try:
+        parent.mkdir(parents=True, exist_ok=True)
+        log.info("write_created_parents", path=str(parent))
+      except OSError as e:
+        log.error("write_create_parents_failed", path=str(parent), error=str(e))
+        return ToolResult(success=False, error="Failed to create parent directories")
+    else:
+      log.info("write_parent_missing", path=str(resolved))
+      return ToolResult(success=False, error="Parent directory does not exist")
 
-    try:
-      resolved.write_text(content, encoding="utf-8")
-      log.info("write_success", path=str(resolved), bytes=len(content.encode("utf-8")))
+  try:
+    resolved.write_text(content, encoding="utf-8")
+    log.info("write_success", path=str(resolved), bytes=len(content.encode("utf-8")))
 
-      content_metadata = _build_content_metadata(
-        content=content,
-        resolved_path=resolved,
-        is_overwrite=is_overwrite,
-        config=resolved_config,
-      )
+    content_metadata = _build_content_metadata(
+      content=content,
+      resolved_path=resolved,
+      is_overwrite=is_overwrite,
+      ctx=ctx,
+    )
 
-      return ToolResult(
-        success=True,
-        result="File written successfully",
-        content_metadata=content_metadata,
-      )
-    except PermissionError:
-      log.warning("write_permission_denied", path=str(resolved))
-      return ToolResult(success=False, error="Permission denied")
-    except OSError as e:
-      log.error("write_os_error", path=str(resolved), error=str(e))
-      return ToolResult(success=False, error="Error writing file")
-
-  return write
+    return ToolResult(
+      success=True,
+      result="File written successfully",
+      content_metadata=content_metadata,
+    )
+  except PermissionError:
+    log.warning("write_permission_denied", path=str(resolved))
+    return ToolResult(success=False, error="Permission denied")
+  except OSError as e:
+    log.error("write_os_error", path=str(resolved), error=str(e))
+    return ToolResult(success=False, error="Error writing file")
 
 
 def _build_content_metadata(
   content: str,
   resolved_path: Path,
   is_overwrite: bool,
-  config: Config,
+  ctx: ToolContext | None,
 ) -> dict[str, Any] | None:
   """Build content_metadata for ToolResult."""
-  content_display = config.tools.content_display
+  # Get content display config from context or use defaults
+  if ctx is not None:
+    content_display = ctx.shared.content_display
+  else:
+    # Fallback defaults
+    from yoker.config import ContentDisplayConfig
+    content_display = ContentDisplayConfig()
 
   if content_display.verbosity == "silent":
     return None
@@ -202,4 +209,4 @@ def _build_content_metadata(
   }
 
 
-__all__ = ["make_write_tool"]
+__all__ = ["write"]

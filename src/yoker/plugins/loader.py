@@ -6,15 +6,19 @@ Discovers and loads plugins from Python packages that expose a
 
 import importlib
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from structlog import get_logger
 
+from yoker.agents.loader import load_agent_definitions
 from yoker.exceptions import PluginError
-from yoker.plugins.agents import load_agents_from_package
-from yoker.plugins.skills import load_skills_from_package
+from yoker.resources import find_package_subdirectory
+from yoker.skills import load_skills
 
-log = get_logger(__name__)
+if TYPE_CHECKING:
+  from yoker.agents import AgentDefinition
+
+logger = get_logger(__name__)
 
 
 @dataclass
@@ -27,7 +31,7 @@ class PluginComponents:
   source: str
 
 
-def load_plugin(package_name: str) -> PluginComponents | None:
+def load_plugin(package_name: str) -> PluginComponents:
   """Load plugin components from a package.
 
   Packages must expose a top-level `__YOKER_MANIFEST__` object.
@@ -37,10 +41,9 @@ def load_plugin(package_name: str) -> PluginComponents | None:
 
   Returns:
     PluginComponents if plugin exists and exposes a manifest.
-    Returns None if the package is not installed or is not a Yoker plugin.
 
   Raises:
-    PluginError: If a plugin module exists but fails to load.
+    PluginError: If a plugin module exists but fails to load, doesn't exist or doesn't have a manifest.
   """
   try:
     package = importlib.import_module(package_name)
@@ -56,10 +59,12 @@ def load_plugin(package_name: str) -> PluginComponents | None:
     ) from e
 
   if not hasattr(package, "__YOKER_MANIFEST__"):
-    log.debug("plugin_manifest_not_found", package=package_name)
-    return None
+    raise PluginError(
+      package=package_name,
+      message=f"Pluging package '{package_name}' doesn't provide a manifest."
+    ) from e
 
-  log.info("plugin_manifest_found_in_package", package=package_name)
+  logger.info("plugin_manifest_found_in_package", package=package_name)
   return _load_from_module(package, package_name)
 
 
@@ -70,7 +75,7 @@ def _load_from_module(module: Any, package_name: str) -> PluginComponents:
   skills = _load_manifest_skills(manifest, package_name)
   agents = _load_manifest_agents(manifest, package_name)
 
-  log.info(
+  logger.info(
     "plugin_components_extracted",
     package=package_name,
     tools=len(tools),
@@ -91,11 +96,12 @@ def _load_manifest_skills(manifest: Any, package_name: str) -> list[Any]:
   skills_dir = getattr(manifest, "skills_dir", None)
   if not skills_dir:
     return skills
-  discovered = load_skills_from_package(package_name, skills_dir)
-  if discovered:
-    return skills + discovered
+  path = find_package_subdirectory(package_name, skills_dir)
+  if path:
+    discovered = list(load_skills(path, namespace=package_name).values())
+    if discovered:
+      return skills + discovered
   return skills
-
 
 def _load_manifest_agents(manifest: Any, package_name: str) -> list[Any]:
   """Load agents declared in the manifest."""
@@ -103,11 +109,12 @@ def _load_manifest_agents(manifest: Any, package_name: str) -> list[Any]:
   agents_dir = getattr(manifest, "agents_dir", None)
   if not agents_dir:
     return agents
-  discovered = load_agents_from_package(package_name, agents_dir)
-  if discovered:
-    return agents + discovered
+  path = find_package_subdirectory(package_name, agents_dir)
+  if path:
+    discovered = list(load_agent_definitions(path, namespace=package_name).values())
+    if discovered:
+      return agents + discovered
   return agents
-
 
 def load_plugins(package_names: list[str]) -> list[PluginComponents]:
   """Load multiple plugins.
@@ -121,16 +128,11 @@ def load_plugins(package_names: list[str]) -> list[PluginComponents]:
   Raises:
     PluginError: If any plugin fails critically.
   """
-  plugins: list[PluginComponents] = []
-  for package_name in package_names:
-    try:
-      plugin = load_plugin(package_name)
-      if plugin:
-        plugins.append(plugin)
-    except PluginError as e:
-      log.error("plugin_load_failed", package=e.package, error=str(e))
-      raise
-  return plugins
+  try:
+    return [ load_plugin(package_name) for package_name in package_names ]
+  except PluginError as e:
+    logger.error("plugin_load_failed", package=e.package, error=str(e))
+    raise
 
 
 __all__ = [

@@ -8,6 +8,7 @@ blocks sensitive patterns, enforces file size limits, and filters by extension.
 import os
 import re
 from pathlib import Path
+from typing import Any
 
 from structlog import get_logger
 
@@ -73,7 +74,7 @@ class PathGuardrail(Guardrail):
       Path(root).resolve() for root in self._permissions.filesystem_paths
     )
 
-  def validate(self, tool_name: str, value: str) -> ValidationResult:
+  def validate(self, tool_name: str, value: str | dict[str, Any]) -> ValidationResult:
     """Validate tool parameters against permission boundaries.
 
     Steps:
@@ -86,12 +87,22 @@ class PathGuardrail(Guardrail):
 
     Args:
       tool_name: Name of the tool being validated.
-      params: Dictionary of tool parameters from the LLM.
+      value: Either a path string or a dict of tool parameters.
+        When called from _validate_tool_args, this is the extracted path string.
+        When called directly in tests, this may be the full params dict.
 
     Returns:
       ValidationResult indicating whether parameters are valid.
     """
-    path_param = value.strip()  # rename for internal clarity
+    # Skip non-filesystem tools immediately
+    if tool_name not in _FILESYSTEM_TOOLS:
+      return ValidationResult(valid=True)
+
+    # Extract path from value (handle both dict and string)
+    if isinstance(value, dict):
+      path_param = value.get("path", "")
+    else:
+      path_param = value
 
     # Git tool allows missing path (defaults to ".")
     if not path_param:
