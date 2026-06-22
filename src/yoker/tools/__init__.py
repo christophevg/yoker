@@ -1,7 +1,7 @@
 """Tools package for Yoker.
 
 Provides the tool framework including result types, guardrails, registry,
-annotation markers, and built-in tools.
+annotation markers, and context. Built-in tools are in yoker.builtin.
 """
 
 from yoker.annotations import (
@@ -11,15 +11,11 @@ from yoker.annotations import (
   Text,
   Url,
 )
-from yoker.tools.agent import make_agent_tool
 from yoker.tools.base import ToolResult, ValidationResult
 from yoker.tools.context import ToolContext
-from yoker.tools.git import OPERATION_ARGS, git
 from yoker.tools.guardrails import Guardrail
 from yoker.tools.path_guardrail import PathGuardrail
 from yoker.tools.registry import ToolRegistry
-from yoker.tools.skill import make_skill_tool
-from yoker.tools.update import update
 from yoker.tools.web_backend import (
   OllamaWebFetchBackend,
   OllamaWebSearchBackend,
@@ -33,11 +29,25 @@ from yoker.tools.web_guardrail import (
   WebGuardrailConfig,
 )
 from yoker.tools.web_types import FetchedContent, SearchResult, WebFetchError, WebSearchError
-from yoker.tools.webfetch import webfetch
-from yoker.tools.websearch import websearch
-from yoker.tools.write import write
+
+# Re-export tools from builtin for backward compatibility
+from yoker.builtin import (
+  existence,
+  git,
+  list,
+  mkdir,
+  read,
+  search,
+  update,
+  webfetch,
+  websearch,
+  write,
+  make_agent_tool,
+  make_skill_tool,
+)
 
 __all__ = [
+  # Framework
   "ToolResult",
   "ValidationResult",
   "Guardrail",
@@ -49,13 +59,7 @@ __all__ = [
   "Path",
   "Url",
   "Query",
-  "write",
-  "update",
-  "git",
-  "make_agent_tool",
-  "make_skill_tool",
-  "websearch",
-  "webfetch",
+  # Web framework
   "WebSearchBackend",
   "OllamaWebSearchBackend",
   "WebFetchBackend",
@@ -68,5 +72,17 @@ __all__ = [
   "FetchedContent",
   "UrlWebGuardrail",
   "WebFetchError",
-  "OPERATION_ARGS",
+  # Tools (re-exported from builtin)
+  "existence",
+  "git",
+  "list",
+  "mkdir",
+  "read",
+  "search",
+  "update",
+  "webfetch",
+  "websearch",
+  "write",
+  "make_agent_tool",
+  "make_skill_tool",
 ]
