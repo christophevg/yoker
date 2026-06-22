@@ -94,10 +94,7 @@ class TestRegistryAgentResolution:
     agents_dir = self._make_agents_dir(
       tmp_path,
       {
-        "writer.md": (
-          "---\nname: writer\ndescription: writes\n"
-          "tools:\n  - read\n---\nbody\n"
-        ),
+        "writer.md": ("---\nname: writer\ndescription: writes\ntools:\n  - read\n---\nbody\n"),
       },
     )
     config = Config(agents=AgentsConfig(directories=(str(agents_dir),)))
@@ -112,10 +109,7 @@ class TestRegistryAgentResolution:
     agents_dir = self._make_agents_dir(
       tmp_path,
       {
-        "writer.md": (
-          "---\nname: writer\ndescription: writes\n"
-          "tools:\n  - read\n---\nbody\n"
-        ),
+        "writer.md": ("---\nname: writer\ndescription: writes\ntools:\n  - read\n---\nbody\n"),
       },
     )
     config = Config(agents=AgentsConfig(directories=(str(agents_dir),)))
@@ -134,22 +128,16 @@ class TestRegistryAgentResolution:
     agents_dir = self._make_agents_dir(
       tmp_path,
       {
-        "writer.md": (
-          "---\nname: writer\ndescription: a\n"
-          "tools:\n  - read\n---\nbody\n"
-        ),
+        "writer.md": ("---\nname: writer\ndescription: a\ntools:\n  - read\n---\nbody\n"),
       },
     )
     other_dir = tmp_path / "other"
     other_dir.mkdir()
     (other_dir / "writer.md").write_text(
-      "---\nname: writer\ndescription: b\n"
-      "tools:\n  - read\n---\nbody\n",
+      "---\nname: writer\ndescription: b\ntools:\n  - read\n---\nbody\n",
       encoding="utf-8",
     )
-    config = Config(
-      agents=AgentsConfig(directories=(str(agents_dir), str(other_dir)))
-    )
+    config = Config(agents=AgentsConfig(directories=(str(agents_dir), str(other_dir))))
     with pytest.raises(ValueError, match="ambiguous"):
       Agent(config=config, agent_path="writer")
 
@@ -160,10 +148,7 @@ class TestRegistryAgentResolution:
     agents_dir = self._make_agents_dir(
       tmp_path,
       {
-        "writer.md": (
-          "---\nname: writer\ndescription: writes\n"
-          "tools:\n  - read\n---\nbody\n"
-        ),
+        "writer.md": ("---\nname: writer\ndescription: writes\ntools:\n  - read\n---\nbody\n"),
       },
     )
     config = Config(agents=AgentsConfig(directories=(str(agents_dir),)))

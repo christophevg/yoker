@@ -21,14 +21,12 @@ logger = logging.getLogger(__name__)
 
 async def websearch(
   query: Annotated[str, Query("Search query")],
+  ctx: ToolContext,
   max_results: int = 10,
-  ctx: ToolContext | None = None,
 ) -> ToolResult:
   """Search the web for information."""
   # Get backend from context
-  backend: WebSearchBackend | None = None
-  if ctx is not None:
-    backend = ctx.backends.get("websearch")
+  backend = ctx.backends.get("websearch")
 
   if not query:
     return ToolResult(success=False, error="Query is required")

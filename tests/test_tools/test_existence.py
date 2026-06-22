@@ -5,15 +5,16 @@ from typing import Any
 
 import pytest
 
+from yoker.builtin import existence
 from yoker.config import Config, PermissionsConfig
-from yoker.tools import ToolRegistry, make_existence_tool
+from yoker.tools import ToolRegistry
 from yoker.tools.path_guardrail import PathGuardrail
 
 
 def _existence_spec():
   """Create and register the existence tool."""
   registry = ToolRegistry()
-  return registry.register(make_existence_tool())
+  return registry.register(existence)
 
 
 class TestExistenceToolSchema:
@@ -394,7 +395,7 @@ class TestExistenceToolErrorHandling:
     mock_path.__str__ = lambda self: "/test/path"
 
     # Patch Path to return our mock
-    mocker.patch("yoker.tools.existence.Path", return_value=mock_path)
+    mocker.patch("yoker.builtin.existence.Path", return_value=mock_path)
 
     result = await spec.execute(path="/test/path")
 
@@ -413,7 +414,7 @@ class TestExistenceToolErrorHandling:
     mock_path.__str__ = lambda self: "/test/path"
 
     # Patch Path to return our mock
-    mocker.patch("yoker.tools.existence.Path", return_value=mock_path)
+    mocker.patch("yoker.builtin.existence.Path", return_value=mock_path)
 
     result = await spec.execute(path="/test/path")
 

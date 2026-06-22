@@ -8,16 +8,29 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from yoker.tools import ToolRegistry, make_websearch_tool
+from yoker.tools import ToolRegistry, websearch
+from yoker.tools.context import ToolContext
 from yoker.tools.web_backend import WebSearchBackend
 from yoker.tools.web_guardrail import WebGuardrail, WebGuardrailConfig
 from yoker.tools.web_types import SearchResult, WebSearchError
 
 
-def _websearch_spec(backend=None):
+def _websearch_spec():
   """Create and register the websearch tool."""
   registry = ToolRegistry()
-  return registry.register(make_websearch_tool(backend=backend))
+  return registry.register(websearch, name="websearch")
+
+
+def _get_ctx(backend=None) -> ToolContext | None:
+  """Get ToolContext for tests that need backend."""
+  from yoker.config import ToolSharedConfig
+  if backend:
+    return ToolContext(
+      config=None,
+      shared=ToolSharedConfig(),
+      backends={"websearch": backend},
+    )
+  return None
 
 
 class TestWebSearchToolSchema:
@@ -85,8 +98,9 @@ class TestWebSearchToolExecution:
         SearchResult(title="Test", url="http://test.com", snippet="Test snippet", source="ollama")
       ]
     )
-    spec = _websearch_spec(backend=mock_backend)
-    result = await spec.execute(query="test query")
+    spec = _websearch_spec()
+    ctx = _get_ctx(backend=mock_backend)
+    result = await spec.execute(query="test query", ctx=ctx)
 
     assert result.success
     assert "results" in result.result
@@ -103,8 +117,9 @@ class TestWebSearchToolExecution:
         SearchResult(title="Test", url="http://test.com", snippet="Test snippet", source="ollama")
       ]
     )
-    spec = _websearch_spec(backend=mock_backend)
-    await spec.execute(query="test query")
+    spec = _websearch_spec()
+    ctx = _get_ctx(backend=mock_backend)
+    await spec.execute(query="test query", ctx=ctx)
 
     # Check that backend was called with default max_results=10
     mock_backend.search.assert_called_once()
@@ -126,8 +141,9 @@ class TestWebSearchToolExecution:
         SearchResult(title="Test", url="http://test.com", snippet="Test snippet", source="ollama")
       ]
     )
-    spec = _websearch_spec(backend=mock_backend)
-    await spec.execute(query="test query", max_results=5)
+    spec = _websearch_spec()
+    ctx = _get_ctx(backend=mock_backend)
+    await spec.execute(query="test query", max_results=5, ctx=ctx)
 
     mock_backend.search.assert_called_once()
     call_kwargs = mock_backend.search.call_args.kwargs
@@ -185,8 +201,9 @@ class TestWebSearchToolExecution:
         SearchResult(title="Test", url="http://test.com", snippet="Test snippet", source="ollama")
       ]
     )
-    spec = _websearch_spec(backend=mock_backend)
-    await spec.execute(query="test query", max_results=100)
+    spec = _websearch_spec()
+    ctx = _get_ctx(backend=mock_backend)
+    await spec.execute(query="test query", max_results=100, ctx=ctx)
 
     call_kwargs = mock_backend.search.call_args.kwargs
     assert call_kwargs.get("max_results") == 50
@@ -222,8 +239,9 @@ class TestWebSearchToolBackendIntegration:
         SearchResult(title="Test", url="http://test.com", snippet="Test snippet", source="ollama")
       ]
     )
-    spec = _websearch_spec(backend=mock_backend)
-    await spec.execute(query="test query", max_results=5)
+    spec = _websearch_spec()
+    ctx = _get_ctx(backend=mock_backend)
+    await spec.execute(query="test query", max_results=5, ctx=ctx)
 
     mock_backend.search.assert_called_once_with(query="test query", max_results=5)
 
@@ -237,8 +255,9 @@ class TestWebSearchToolBackendIntegration:
     mock_backend_error.search = AsyncMock(
       side_effect=WebSearchError("Backend unavailable", backend="test")
     )
-    spec = _websearch_spec(backend=mock_backend_error)
-    result = await spec.execute(query="test query")
+    spec = _websearch_spec()
+    ctx = _get_ctx(backend=mock_backend_error)
+    result = await spec.execute(query="test query", ctx=ctx)
 
     assert not result.success
     assert result.error is not None
@@ -255,8 +274,9 @@ class TestWebSearchToolBackendIntegration:
     mock_backend_timeout.search = AsyncMock(
       side_effect=WebSearchError("Search timeout after 30s", backend="test")
     )
-    spec = _websearch_spec(backend=mock_backend_timeout)
-    result = await spec.execute(query="test query")
+    spec = _websearch_spec()
+    ctx = _get_ctx(backend=mock_backend_timeout)
+    result = await spec.execute(query="test query", ctx=ctx)
 
     assert not result.success
     assert result.error is not None
@@ -277,8 +297,9 @@ class TestWebSearchToolResultFormat:
         SearchResult(title="Test", url="http://test.com", snippet="Test snippet", source="ollama")
       ]
     )
-    spec = _websearch_spec(backend=mock_backend)
-    result = await spec.execute(query="test query")
+    spec = _websearch_spec()
+    ctx = _get_ctx(backend=mock_backend)
+    result = await spec.execute(query="test query", ctx=ctx)
 
     assert result.success
     assert isinstance(result.result, dict)
@@ -307,8 +328,9 @@ class TestWebSearchToolResultFormat:
     Then: Returns success with empty results list
     """
     mock_backend_empty.search = AsyncMock(return_value=[])
-    spec = _websearch_spec(backend=mock_backend_empty)
-    result = await spec.execute(query="test query")
+    spec = _websearch_spec()
+    ctx = _get_ctx(backend=mock_backend_empty)
+    result = await spec.execute(query="test query", ctx=ctx)
 
     assert result.success
     assert result.result["results"] == []
@@ -330,8 +352,9 @@ class TestWebSearchToolConfiguration:
         SearchResult(title="Test", url="http://test.com", snippet="Test snippet", source="ollama")
       ]
     )
-    spec = _websearch_spec(backend=mock_backend)
-    await spec.execute(query="test query")
+    spec = _websearch_spec()
+    ctx = _get_ctx(backend=mock_backend)
+    await spec.execute(query="test query", ctx=ctx)
 
     mock_backend.search.assert_called_once()
 

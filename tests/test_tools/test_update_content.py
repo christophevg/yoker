@@ -7,15 +7,27 @@ from pathlib import Path
 
 import pytest
 
-from yoker.config import Config, ContentDisplayConfig, ToolsConfig
-from yoker.tools import ToolRegistry, make_update_tool
+from yoker.config import Config, ContentDisplayConfig, ToolsSharedConfig, ToolsConfig, UpdateToolConfig
+from yoker.tools import ToolRegistry, update
+from yoker.tools.context import ToolContext
 from yoker.tools.update import _truncate_diff
 
 
-def _update_spec(config: Config | None = None):
+def _update_spec():
   """Create and register the update tool."""
   registry = ToolRegistry()
-  return registry.register(make_update_tool(config))
+  return registry.register(update, name="update")
+
+
+def _get_ctx(config: Config | None = None) -> ToolContext | None:
+  """Get ToolContext for tests that need config."""
+  if config:
+    return ToolContext(
+      config=config.tools.update,
+      shared=config.tools_shared,
+      backends={},
+    )
+  return None
 
 
 class TestUpdateToolReplaceOperation:
@@ -34,7 +46,8 @@ class TestUpdateToolReplaceOperation:
         content_display=ContentDisplayConfig(verbosity="content", show_diff_for_updates=True)
       )
     )
-    spec = _update_spec(config)
+    spec = _update_spec()
+    ctx = _get_ctx(config)
 
     # Create file with content
     test_file = tmp_path / "replace.txt"
@@ -66,7 +79,8 @@ class TestUpdateToolReplaceOperation:
     config = Config(
       tools=ToolsConfig(content_display=ContentDisplayConfig(show_diff_for_updates=True))
     )
-    spec = _update_spec(config)
+    spec = _update_spec()
+    ctx = _get_ctx(config)
 
     # Create file
     test_file = tmp_path / "replace_diff.txt"
@@ -91,6 +105,8 @@ class TestUpdateToolReplaceOperation:
     """
     # Create update tool
     spec = _update_spec()
+    ctx = _get_ctx(config)
+    ctx = _get_ctx(config)
 
     # Create file
     test_file = tmp_path / "replace_meta.txt"
@@ -121,7 +137,8 @@ class TestUpdateToolReplaceOperation:
         )
       )
     )
-    spec = _update_spec(config)
+    spec = _update_spec()
+    ctx = _get_ctx(config)
 
     # Create file with many lines
     test_file = tmp_path / "large_diff.txt"
@@ -151,8 +168,9 @@ class TestUpdateToolInsertOperation:
     Then: content_metadata includes inserted content and line_number
     """
     # Create update tool with content verbosity
-    config = Config(tools=ToolsConfig(content_display=ContentDisplayConfig(verbosity="content")))
-    spec = _update_spec(config)
+    config = Config(tools=ToolsConfig(), tools_shared=ToolsSharedConfig(content_display=ContentDisplayConfig(verbosity="content")))
+    spec = _update_spec()
+    ctx = _get_ctx(config)
 
     # Create file
     test_file = tmp_path / "insert_before.txt"
@@ -177,8 +195,9 @@ class TestUpdateToolInsertOperation:
     Then: content_metadata includes inserted content and line_number
     """
     # Create update tool with content verbosity
-    config = Config(tools=ToolsConfig(content_display=ContentDisplayConfig(verbosity="content")))
-    spec = _update_spec(config)
+    config = Config(tools=ToolsConfig(), tools_shared=ToolsSharedConfig(content_display=ContentDisplayConfig(verbosity="content")))
+    spec = _update_spec()
+    ctx = _get_ctx(config)
 
     # Create file
     test_file = tmp_path / "insert_after.txt"
@@ -203,8 +222,9 @@ class TestUpdateToolInsertOperation:
     Then: content_metadata.content_type="full" (showing inserted content)
     """
     # Create update tool with content verbosity
-    config = Config(tools=ToolsConfig(content_display=ContentDisplayConfig(verbosity="content")))
-    spec = _update_spec(config)
+    config = Config(tools=ToolsConfig(), tools_shared=ToolsSharedConfig(content_display=ContentDisplayConfig(verbosity="content")))
+    spec = _update_spec()
+    ctx = _get_ctx(config)
 
     # Create file
     test_file = tmp_path / "insert_type.txt"
@@ -229,8 +249,9 @@ class TestUpdateToolInsertOperation:
     Then: metadata includes lines_before and lines_after context
     """
     # Create update tool with content verbosity
-    config = Config(tools=ToolsConfig(content_display=ContentDisplayConfig(verbosity="content")))
-    spec = _update_spec(config)
+    config = Config(tools=ToolsConfig(), tools_shared=ToolsSharedConfig(content_display=ContentDisplayConfig(verbosity="content")))
+    spec = _update_spec()
+    ctx = _get_ctx(config)
 
     # Create file
     test_file = tmp_path / "insert_context.txt"
@@ -259,8 +280,9 @@ class TestUpdateToolDeleteOperation:
     Then: content_metadata includes deleted content
     """
     # Create update tool with content verbosity
-    config = Config(tools=ToolsConfig(content_display=ContentDisplayConfig(verbosity="content")))
-    spec = _update_spec(config)
+    config = Config(tools=ToolsConfig(), tools_shared=ToolsSharedConfig(content_display=ContentDisplayConfig(verbosity="content")))
+    spec = _update_spec()
+    ctx = _get_ctx(config)
 
     # Create file
     test_file = tmp_path / "delete.txt"
@@ -288,7 +310,8 @@ class TestUpdateToolDeleteOperation:
         content_display=ContentDisplayConfig(verbosity="content", show_diff_for_updates=True)
       )
     )
-    spec = _update_spec(config)
+    spec = _update_spec()
+    ctx = _get_ctx(config)
 
     # Create file
     test_file = tmp_path / "delete_diff.txt"
@@ -311,13 +334,20 @@ class TestUpdateToolDeleteOperation:
     """
     # Create update tool
     spec = _update_spec()
+    ctx = _get_ctx(config)
+    ctx = _get_ctx(config)
+    ctx = _get_ctx(config)
+    ctx = _get_ctx(config)
+    ctx = _get_ctx(config)
+    ctx = _get_ctx(config)
+    ctx = _get_ctx(config)
 
     # Create file
     test_file = tmp_path / "delete_line.txt"
     test_file.write_text("Line 1\nLine 2\nLine 3\n")
 
     # Delete by line number
-    result = await spec.execute(path=str(test_file), operation="delete", line_number=2)
+    result = await spec.execute(path=str(test_file, ctx=ctx), operation="delete", line_number=2, ctx=ctx)
 
     # Verify result
     assert result.success
@@ -343,7 +373,8 @@ class TestUpdateToolDiffTruncation:
         )
       )
     )
-    spec = _update_spec(config)
+    spec = _update_spec()
+    ctx = _get_ctx(config)
 
     # Create file with many lines
     test_file = tmp_path / "large_change.txt"
@@ -373,7 +404,8 @@ class TestUpdateToolDiffTruncation:
         )
       )
     )
-    spec = _update_spec(config)
+    spec = _update_spec()
+    ctx = _get_ctx(config)
 
     # Create file
     test_file = tmp_path / "truncated_meta.txt"
@@ -404,7 +436,8 @@ class TestUpdateToolDiffTruncation:
         )
       )
     )
-    spec = _update_spec(config)
+    spec = _update_spec()
+    ctx = _get_ctx(config)
 
     # Create file
     test_file = tmp_path / "small_change.txt"
@@ -435,7 +468,8 @@ class TestUpdateToolShowDiffFlag:
     config = Config(
       tools=ToolsConfig(content_display=ContentDisplayConfig(show_diff_for_updates=True))
     )
-    spec = _update_spec(config)
+    spec = _update_spec()
+    ctx = _get_ctx(config)
 
     # Create file
     test_file = tmp_path / "show_diff.txt"
@@ -464,7 +498,8 @@ class TestUpdateToolShowDiffFlag:
         content_display=ContentDisplayConfig(verbosity="content", show_diff_for_updates=False)
       )
     )
-    spec = _update_spec(config)
+    spec = _update_spec()
+    ctx = _get_ctx(config)
 
     # Create file
     test_file = tmp_path / "no_diff.txt"
@@ -493,7 +528,8 @@ class TestUpdateToolShowDiffFlag:
         content_display=ContentDisplayConfig(verbosity="content", show_diff_for_updates=False)
       )
     )
-    spec = _update_spec(config)
+    spec = _update_spec()
+    ctx = _get_ctx(config)
 
     # Create file
     test_file = tmp_path / "insert_no_diff.txt"
@@ -523,8 +559,9 @@ class TestUpdateToolVerbosityLevels:
     Then: ToolResult.content_metadata is None
     """
     # Create update tool with silent verbosity
-    config = Config(tools=ToolsConfig(content_display=ContentDisplayConfig(verbosity="silent")))
-    spec = _update_spec(config)
+    config = Config(tools=ToolsConfig(), tools_shared=ToolsSharedConfig(content_display=ContentDisplayConfig(verbosity="silent")))
+    spec = _update_spec()
+    ctx = _get_ctx(config)
 
     # Create file
     test_file = tmp_path / "silent.txt"
@@ -552,7 +589,8 @@ class TestUpdateToolVerbosityLevels:
         content_display=ContentDisplayConfig(verbosity="summary", show_diff_for_updates=False)
       )
     )
-    spec = _update_spec(config)
+    spec = _update_spec()
+    ctx = _get_ctx(config)
 
     # Create file
     test_file = tmp_path / "summary.txt"
@@ -582,7 +620,8 @@ class TestUpdateToolVerbosityLevels:
         content_display=ContentDisplayConfig(verbosity="content", show_diff_for_updates=True)
       )
     )
-    spec = _update_spec(config)
+    spec = _update_spec()
+    ctx = _get_ctx(config)
 
     # Create file
     test_file = tmp_path / "content.txt"
@@ -618,7 +657,8 @@ class TestUpdateToolConfigIntegration:
         )
       )
     )
-    spec = _update_spec(config)
+    spec = _update_spec()
+    ctx = _get_ctx(config)
 
     # Create file
     test_file = tmp_path / "max_diff.txt"

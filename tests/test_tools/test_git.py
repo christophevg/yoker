@@ -16,16 +16,36 @@ from yoker.config import (
   GitToolConfig,
   HandlerConfig,
   PermissionsConfig,
+  ToolsSharedConfig,
 )
-from yoker.tools import ToolRegistry, make_git_tool, make_update_tool, make_write_tool
+from yoker.tools import ToolRegistry, git, update, write
+from yoker.tools.context import ToolContext
 from yoker.tools.git import _sanitize_output
 from yoker.tools.path_guardrail import PathGuardrail
 
 
-def _git_spec(config: GitToolConfig, permission_handlers: dict[str, HandlerConfig] | None = None):
+def _git_spec(config: GitToolConfig | None = None, permission_handlers: dict[str, HandlerConfig] | None = None):
   """Create and register the git tool."""
   registry = ToolRegistry()
-  return registry.register(make_git_tool(config, permission_handlers=permission_handlers))
+  # Create backends dict with permission_handlers if provided
+  backends = {}
+  if permission_handlers:
+    backends["permission_handlers"] = permission_handlers
+  return registry.register(git, name="git")
+
+
+def _get_ctx(config: GitToolConfig | None = None, permission_handlers: dict[str, HandlerConfig] | None = None) -> ToolContext | None:
+  """Get ToolContext for tests that need config."""
+  backends = {}
+  if permission_handlers:
+    backends["permission_handlers"] = permission_handlers
+  if config:
+    return ToolContext(
+      config=config,
+      shared=ToolsSharedConfig(),
+      backends=backends,
+    )
+  return None
 
 
 class TestGitToolSchema:
@@ -37,8 +57,7 @@ class TestGitToolSchema:
     When: Checking the spec name
     Then: Returns 'git'
     """
-    config = GitToolConfig()
-    spec = _git_spec(config=config)
+    spec = _git_spec()
     assert spec.name == "git"
 
   def test_description(self) -> None:
@@ -47,8 +66,7 @@ class TestGitToolSchema:
     When: Checking the spec description
     Then: Returns description mentioning Git operations
     """
-    config = GitToolConfig()
-    spec = _git_spec(config=config)
+    spec = _git_spec()
     assert "Git" in spec.description
     assert "operation" in spec.description.lower()
 
@@ -58,8 +76,7 @@ class TestGitToolSchema:
     When: Getting the Ollama-compatible schema
     Then: Schema has correct structure with operation, path, and args parameters
     """
-    config = GitToolConfig()
-    spec = _git_spec(config=config)
+    spec = _git_spec()
     schema = spec.schema
 
     assert schema["type"] == "function"
@@ -73,8 +90,7 @@ class TestGitToolSchema:
     When: Checking required parameters
     Then: 'operation' is required, 'path' and 'args' are optional
     """
-    config = GitToolConfig()
-    spec = _git_spec(config=config)
+    spec = _git_spec()
     schema = spec.schema
 
     required = schema["function"]["parameters"]["required"]
@@ -127,7 +143,7 @@ class TestGitToolReadOnlyOperations:
     (git_repo / "new_file.txt").write_text("New content")
 
     config = GitToolConfig()
-    spec = _git_spec(config=config)
+    spec = _git_spec()
     result = await spec.execute(operation="status", path=str(git_repo))
 
     assert result.success
@@ -144,7 +160,7 @@ class TestGitToolReadOnlyOperations:
     (git_repo / "new_file.txt").write_text("New content")
 
     config = GitToolConfig()
-    spec = _git_spec(config=config)
+    spec = _git_spec()
     result = await spec.execute(operation="status", path=str(git_repo), args={"short": True})
 
     assert result.success
@@ -158,7 +174,7 @@ class TestGitToolReadOnlyOperations:
     Then: Returns commit history
     """
     config = GitToolConfig()
-    spec = _git_spec(config=config)
+    spec = _git_spec()
     result = await spec.execute(operation="log", path=str(git_repo))
 
     assert result.success
@@ -172,7 +188,7 @@ class TestGitToolReadOnlyOperations:
     Then: Returns one commit per line in oneline format
     """
     config = GitToolConfig()
-    spec = _git_spec(config=config)
+    spec = _git_spec()
     result = await spec.execute(operation="log", path=str(git_repo), args={"oneline": True})
 
     assert result.success
@@ -197,7 +213,7 @@ class TestGitToolReadOnlyOperations:
       )
 
     config = GitToolConfig()
-    spec = _git_spec(config=config)
+    spec = _git_spec()
     result = await spec.execute(operation="log", path=str(git_repo), args={"oneline": True, "n": 5})
 
     assert result.success
@@ -213,7 +229,7 @@ class TestGitToolReadOnlyOperations:
     Then: Returns only commits from matching author
     """
     config = GitToolConfig()
-    spec = _git_spec(config=config)
+    spec = _git_spec()
     result = await spec.execute(operation="log", path=str(git_repo), args={"author": "Test"})
 
     assert result.success
@@ -230,7 +246,7 @@ class TestGitToolReadOnlyOperations:
     (git_repo / "README.md").write_text("# Modified\n")
 
     config = GitToolConfig()
-    spec = _git_spec(config=config)
+    spec = _git_spec()
     result = await spec.execute(operation="diff", path=str(git_repo))
 
     assert result.success
@@ -247,7 +263,7 @@ class TestGitToolReadOnlyOperations:
     (git_repo / "README.md").write_text("# Modified\n")
 
     config = GitToolConfig()
-    spec = _git_spec(config=config)
+    spec = _git_spec()
     result = await spec.execute(operation="diff", path=str(git_repo), args={"stat": True})
 
     assert result.success
@@ -265,7 +281,7 @@ class TestGitToolReadOnlyOperations:
     subprocess.run(["git", "add", "staged_file.txt"], cwd=git_repo, check=True, capture_output=True)
 
     config = GitToolConfig()
-    spec = _git_spec(config=config)
+    spec = _git_spec()
     result = await spec.execute(operation="diff", path=str(git_repo), args={"cached": True})
 
     assert result.success
@@ -282,7 +298,7 @@ class TestGitToolReadOnlyOperations:
     subprocess.run(["git", "branch", "feature"], cwd=git_repo, check=True, capture_output=True)
 
     config = GitToolConfig()
-    spec = _git_spec(config=config)
+    spec = _git_spec()
     result = await spec.execute(operation="branch", path=str(git_repo), args={"list": True})
 
     assert result.success
@@ -297,7 +313,7 @@ class TestGitToolReadOnlyOperations:
     Then: Returns both local and remote branches
     """
     config = GitToolConfig()
-    spec = _git_spec(config=config)
+    spec = _git_spec()
     result = await spec.execute(operation="branch", path=str(git_repo), args={"all": True})
 
     assert result.success
@@ -312,7 +328,7 @@ class TestGitToolReadOnlyOperations:
     Then: Returns commit details including diff
     """
     config = GitToolConfig()
-    spec = _git_spec(config=config)
+    spec = _git_spec()
     result = await spec.execute(operation="show", path=str(git_repo))
 
     assert result.success
@@ -326,7 +342,7 @@ class TestGitToolReadOnlyOperations:
     Then: Returns commit in specified format
     """
     config = GitToolConfig()
-    spec = _git_spec(config=config)
+    spec = _git_spec()
     result = await spec.execute(operation="show", path=str(git_repo), args={"format": "%s"})
 
     assert result.success
@@ -374,12 +390,14 @@ class TestGitToolPermissionRequiredOperations:
     """
     # Allow commit in config but don't provide handler
     config = GitToolConfig(allowed_commands=("status", "log", "commit"))
-    spec = _git_spec(config=config, permission_handlers={})
+    spec = _git_spec()
+    ctx = _get_ctx(config=config, permission_handlers={})
 
     result = await spec.execute(
       operation="commit",
       path=str(git_repo),
       args={"message": "Test commit"},
+      ctx=ctx,
     )
 
     assert not result.success
@@ -395,12 +413,14 @@ class TestGitToolPermissionRequiredOperations:
     config = GitToolConfig(allowed_commands=("status", "log", "commit"))
     handlers = {"git_commit": HandlerConfig(mode="block", message="Commits are blocked")}
 
-    spec = _git_spec(config=config, permission_handlers=handlers)
+    spec = _git_spec()
+    ctx = _get_ctx(config=config, permission_handlers=handlers)
 
     result = await spec.execute(
       operation="commit",
       path=str(git_repo),
       args={"message": "Test commit"},
+      ctx=ctx,
     )
 
     assert not result.success
@@ -420,12 +440,14 @@ class TestGitToolPermissionRequiredOperations:
     config = GitToolConfig(allowed_commands=("status", "log", "commit"))
     handlers = {"git_commit": HandlerConfig(mode="allow")}
 
-    spec = _git_spec(config=config, permission_handlers=handlers)
+    spec = _git_spec()
+    ctx = _get_ctx(config=config, permission_handlers=handlers)
 
     result = await spec.execute(
       operation="commit",
       path=str(git_repo),
       args={"message": "Test commit"},
+      ctx=ctx,
     )
 
     assert result.success
@@ -439,9 +461,10 @@ class TestGitToolPermissionRequiredOperations:
     """
     config = GitToolConfig(allowed_commands=("status", "log", "push"))
 
-    spec = _git_spec(config=config, permission_handlers={})
+    spec = _git_spec()
+    ctx = _get_ctx(config=config, permission_handlers={})
 
-    result = await spec.execute(operation="push", path=str(git_repo))
+    result = await spec.execute(operation="push", path=str(git_repo), ctx=ctx)
 
     assert not result.success
     assert "requires permission" in result.error.lower()
@@ -456,9 +479,10 @@ class TestGitToolPermissionRequiredOperations:
     config = GitToolConfig(allowed_commands=("status", "log", "push"))
     handlers = {"git_push": HandlerConfig(mode="block", message="Push is blocked")}
 
-    spec = _git_spec(config=config, permission_handlers=handlers)
+    spec = _git_spec()
+    ctx = _get_ctx(config=config, permission_handlers=handlers)
 
-    result = await spec.execute(operation="push", path=str(git_repo))
+    result = await spec.execute(operation="push", path=str(git_repo), ctx=ctx)
 
     assert not result.success
     assert "Push is blocked" in result.error
@@ -473,10 +497,11 @@ class TestGitToolPermissionRequiredOperations:
     config = GitToolConfig(allowed_commands=("status", "log", "push"))
     handlers = {"git_push": HandlerConfig(mode="allow")}
 
-    spec = _git_spec(config=config, permission_handlers=handlers)
+    spec = _git_spec()
+    ctx = _get_ctx(config=config, permission_handlers=handlers)
 
     # Push will fail because there's no remote, but it should get past permission check
-    result = await spec.execute(operation="push", path=str(git_repo))
+    result = await spec.execute(operation="push", path=str(git_repo), ctx=ctx)
 
     # The error should be from git, not from permission
     if not result.success:
@@ -491,9 +516,10 @@ class TestGitToolPermissionRequiredOperations:
     """
     config = GitToolConfig(allowed_commands=("status", "log"))
 
-    spec = _git_spec(config=config)
+    spec = _git_spec()
+    ctx = _get_ctx(config=config)
 
-    result = await spec.execute(operation="reset", path=str(git_repo))
+    result = await spec.execute(operation="reset", path=str(git_repo), ctx=ctx)
 
     assert not result.success
     assert "not allowed" in result.error.lower()
@@ -518,7 +544,7 @@ class TestGitToolCommandInjectionPrevention:
     Then: Returns error about invalid argument
     """
     config = GitToolConfig()
-    spec = _git_spec(config=config)
+    spec = _git_spec()
 
     result = await spec.execute(
       operation="log",
@@ -537,7 +563,7 @@ class TestGitToolCommandInjectionPrevention:
     Then: Returns error about forbidden character
     """
     config = GitToolConfig()
-    spec = _git_spec(config=config)
+    spec = _git_spec()
 
     # Try to inject config via format arg
     result = await spec.execute(
@@ -556,7 +582,7 @@ class TestGitToolCommandInjectionPrevention:
     Then: Returns error about disallowed argument
     """
     config = GitToolConfig()
-    spec = _git_spec(config=config)
+    spec = _git_spec()
 
     result = await spec.execute(
       operation="log",
@@ -575,7 +601,7 @@ class TestGitToolCommandInjectionPrevention:
     Then: Returns error about disallowed argument
     """
     config = GitToolConfig()
-    spec = _git_spec(config=config)
+    spec = _git_spec()
 
     result = await spec.execute(
       operation="log",
@@ -595,7 +621,7 @@ class TestGitToolCommandInjectionPrevention:
     Then: Returns error about forbidden character
     """
     config = GitToolConfig()
-    spec = _git_spec(config=config)
+    spec = _git_spec()
 
     result = await spec.execute(
       operation="log",
@@ -614,7 +640,7 @@ class TestGitToolCommandInjectionPrevention:
     Then: Returns error about forbidden character
     """
     config = GitToolConfig()
-    spec = _git_spec(config=config)
+    spec = _git_spec()
 
     result = await spec.execute(
       operation="log",
@@ -633,7 +659,7 @@ class TestGitToolCommandInjectionPrevention:
     Then: Returns error about forbidden character
     """
     config = GitToolConfig()
-    spec = _git_spec(config=config)
+    spec = _git_spec()
 
     result = await spec.execute(
       operation="log",
@@ -652,7 +678,7 @@ class TestGitToolCommandInjectionPrevention:
     Then: Returns error about forbidden character
     """
     config = GitToolConfig()
-    spec = _git_spec(config=config)
+    spec = _git_spec()
 
     result = await spec.execute(
       operation="log",
@@ -1329,12 +1355,8 @@ class TestGitToolIntegration:
     When: Writing a new file and checking git status
     Then: Git status shows the new file as untracked
     """
-    from yoker.config import Config
-
-    config = Config()
-    write_spec = ToolRegistry().register(make_write_tool(config))
-    git_config = GitToolConfig()
-    git_spec = _git_spec(config=git_config)
+    write_spec = ToolRegistry().register(write, name="write")
+    git_spec = _git_spec()
 
     # Create a file with write tool
     write_result = await write_spec.execute(
@@ -1356,12 +1378,8 @@ class TestGitToolIntegration:
     When: Updating a tracked file and checking git diff
     Then: Git diff shows the changes
     """
-    from yoker.config import Config, ToolsConfig, UpdateToolConfig
-
-    config = Config(tools=ToolsConfig(update=UpdateToolConfig()))
-    update_spec = ToolRegistry().register(make_update_tool(config))
-    git_config = GitToolConfig()
-    git_spec = _git_spec(config=git_config)
+    update_spec = ToolRegistry().register(update, name="update")
+    git_spec = _git_spec()
 
     # Update README.md with update tool
     update_result = await update_spec.execute(

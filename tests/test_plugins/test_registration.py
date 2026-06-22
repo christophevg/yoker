@@ -2,12 +2,13 @@
 
 import pytest
 
+from yoker.builtin import list, read
 from yoker.plugins.registration import (
   register_skills,
   register_tools,
 )
 from yoker.skills import Skill, SkillRegistry
-from yoker.tools import ToolRegistry, make_list_tool, make_read_tool
+from yoker.tools import ToolRegistry
 
 
 class TestRegisterTools:
@@ -16,7 +17,7 @@ class TestRegisterTools:
   def test_register_tools_with_namespace(self):
     """Test tool registration with namespace."""
     registry = ToolRegistry()
-    tools = [make_read_tool()]
+    tools = [read]
 
     registered = register_tools(tools, registry, namespace="pkgq")
 
@@ -27,7 +28,7 @@ class TestRegisterTools:
   def test_register_tools_multiple(self):
     """Test registering multiple tools."""
     registry = ToolRegistry()
-    tools = [make_read_tool(), make_list_tool()]
+    tools = [read, list]
 
     registered = register_tools(tools, registry, namespace="pkgq")
 
@@ -38,7 +39,7 @@ class TestRegisterTools:
   def test_register_tools_collision(self):
     """Test tool name collision detection."""
     registry = ToolRegistry()
-    tools = [make_read_tool()]
+    tools = [read]
 
     # Register first tool
     register_tools(tools, registry, namespace="pkgq")
@@ -50,7 +51,7 @@ class TestRegisterTools:
   def test_register_tools_different_namespaces(self):
     """Test registering same tool under different namespaces."""
     registry = ToolRegistry()
-    tools = [make_read_tool()]
+    tools = [read]
 
     # Register under different namespaces
     registered1 = register_tools(tools, registry, namespace="pkg1")

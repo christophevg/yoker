@@ -4,18 +4,19 @@ from pathlib import Path
 
 import pytest
 
-from yoker.config import Config, PermissionsConfig
-from yoker.tools import ToolRegistry, make_search_tool
-from yoker.tools.path_guardrail import PathGuardrail
-from yoker.tools.search import (
-  DEFAULT_MAX_RESULTS,
+from yoker.builtin import search
+from yoker.builtin.search import (
+  ABSOLUTE_MAX_RESULTS,
 )
+from yoker.config import Config, PermissionsConfig
+from yoker.tools import ToolRegistry
+from yoker.tools.path_guardrail import PathGuardrail
 
 
 def _search_spec():
   """Create and register the search tool."""
   registry = ToolRegistry()
-  return registry.register(make_search_tool())
+  return registry.register(search)
 
 
 class TestSearchToolSchema:
@@ -81,7 +82,7 @@ class TestSearchToolContentSearch:
     assert "total_matches" in data
     assert "files_searched" in data
     assert data["total_matches"] >= 3
-    assert len(data["matches"]) <= DEFAULT_MAX_RESULTS
+    assert len(data["matches"]) <= ABSOLUTE_MAX_RESULTS
 
     # Check match structure
     for match in data["matches"]:

@@ -2,13 +2,14 @@
 
 import pytest
 
-from yoker.tools import ToolRegistry, make_read_tool
+from yoker.builtin import read
+from yoker.tools import ToolRegistry
 
 
 def _read_spec():
   """Create and register the read tool."""
   registry = ToolRegistry()
-  return registry.register(make_read_tool())
+  return registry.register(read)
 
 
 class TestReadPluginUrl:

@@ -21,15 +21,13 @@ logger = logging.getLogger(__name__)
 
 async def webfetch(
   url: Annotated[str, Url("URL to fetch")],
+  ctx: ToolContext,
   content_type: str = "markdown",
   max_size_kb: int = 2048,
-  ctx: ToolContext | None = None,
 ) -> ToolResult:
   """Fetch content from a web URL."""
   # Get backend from context
-  backend: WebFetchBackend | None = None
-  if ctx is not None:
-    backend = ctx.backends.get("webfetch")
+  backend = ctx.backends.get("webfetch")
 
   if not url:
     return ToolResult(success=False, error="URL is required")

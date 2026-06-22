@@ -97,24 +97,17 @@ async def git(
   path: Annotated[
     str, PathArg("Path to the Git repository, or file for diff/show operations")
   ] = ".",
+  ctx: ToolContext = None,  # type: ignore[assignment]
   args: dict[str, Any] | None = None,
-  ctx: ToolContext | None = None,
 ) -> ToolResult:
   """Execute a Git operation on a repository."""
   # Get config values
-  if ctx is not None and ctx.config is not None:
-    git_config: "GitToolConfig" = ctx.config
-    allowed_commands = git_config.allowed_commands
-    requires_permission = git_config.requires_permission
-  else:
-    # Fallback defaults
-    from yoker.config import GitToolConfig
-    default_config = GitToolConfig()
-    allowed_commands = default_config.allowed_commands
-    requires_permission = default_config.requires_permission
+  git_config: "GitToolConfig" = ctx.config
+  allowed_commands = git_config.allowed_commands
+  requires_permission = git_config.requires_permission
 
   # Permission handlers from context backends (if available)
-  permission_handlers = ctx.backends.get("permission_handlers") if ctx else None
+  permission_handlers = ctx.backends.get("permission_handlers")
 
   if not operation:
     return ToolResult(success=False, error="Missing required parameter: operation")
