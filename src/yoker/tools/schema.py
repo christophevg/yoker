@@ -3,6 +3,9 @@
 Provides ``ToolSpec`` and ``build_tool_spec`` for converting any Python
 function or callable class into a Yoker tool. Schemas and guardrail
 metadata are derived through ``inspect`` and ``typing`` introspection.
+
+Also provides ``ToolResult`` and ``ValidationResult``, the return types used
+by tool execution and guardrail validation.
 """
 
 import inspect
@@ -22,6 +25,38 @@ logger = get_logger(__name__)
 
 
 @dataclass(frozen=True)
+class ToolResult:
+  """Result of a tool execution.
+
+  Attributes:
+    success: Whether the tool executed successfully.
+    result: The result data (string content or dict for structured results).
+    error: Error message if success is False.
+    content_metadata: Optional metadata for content display events.
+      When provided, the agent emits a ToolContentEvent after ToolResultEvent.
+      Contains operation, path, content_type, content, and metadata dict.
+  """
+
+  success: bool
+  result: str | dict[str, Any] = ""
+  error: str | None = None
+  content_metadata: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True)
+class ValidationResult:
+  """Result of a guardrail validation check.
+
+  Attributes:
+    valid: Whether the parameters passed validation.
+    reason: Explanation if validation failed.
+  """
+
+  valid: bool
+  reason: str | None = None
+
+
+@dataclass
 class ToolSpec(NameSpaced):
   """Internal contract for a registered tool.
 
@@ -274,3 +309,11 @@ def _is_context_parameter(param: inspect.Parameter) -> bool:
   if isinstance(param.annotation, ForwardRef):
     return param.annotation.__forward_arg__ == "ToolContext"
   return False
+
+
+__all__ = [
+  "ToolResult",
+  "ValidationResult",
+  "ToolSpec",
+  "build_tool_spec",
+]

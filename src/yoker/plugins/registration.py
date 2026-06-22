@@ -13,7 +13,7 @@ if TYPE_CHECKING:
   from yoker.skills import Skill, SkillRegistry
   from yoker.tools import ToolRegistry
 
-log = get_logger(__name__)
+logger = get_logger(__name__)
 
 
 def register_tools(
@@ -59,16 +59,16 @@ def register_skills(
 ) -> list[str]:
   """Register skills with namespace prefix.
 
-  Skills already support namespace via Skill.namespace attribute.
-  The name property returns 'namespace:name' format.
+  Skills are loaded with their namespace already set by load_skills().
+  This function registers them in the registry.
 
   Args:
-    skills: List of Skill instances.
+    skills: List of Skill instances (namespace already set).
     registry: SkillRegistry to register with.
-    namespace: Package namespace prefix.
+    namespace: Package namespace prefix (for logging).
 
   Returns:
-    List of registered skill names (name with namespace).
+    List of registered skill names.
 
   Raises:
     ValueError: If skill name already registered.
@@ -83,32 +83,18 @@ def register_skills(
   )
 
   for skill in skills:
-    # Create namespaced skill
-    # Skill is a frozen dataclass, so we create a new instance
-    from dataclasses import fields as dataclass_fields
-
-    field_values = {f.name: getattr(skill, f.name) for f in dataclass_fields(skill)}
-    field_values["namespace"] = namespace
-
-    from yoker.skills import Skill
-
-    namespaced_skill = Skill(**field_values)
-
     try:
-      registry.register(namespaced_skill)
-      registered.append(namespaced_skill.name)
-
+      registry.register(skill)
+      registered.append(skill.name)
       log.info(
         "skill_registered",
-        original_name=skill.name,
-        namespaced_name=namespaced_skill.name,
+        skill_name=skill.name,
         namespace=namespace,
       )
     except ValueError as e:
-      # Skill already registered
       log.warning(
         "skill_name_collision",
-        name=namespaced_skill.name,
+        name=skill.name,
         namespace=namespace,
         error=str(e),
       )

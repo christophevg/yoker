@@ -13,7 +13,7 @@ from structlog import get_logger
 
 from yoker.annotations import Path as PathArg
 from yoker.resources import find_package_path, parse_plugin_url
-from yoker.tools.base import ToolResult
+from yoker.tools.schema import ToolResult
 from yoker.tools.context import ToolContext
 
 log = get_logger(__name__)

@@ -14,7 +14,7 @@ from structlog import get_logger
 
 from yoker.annotations import Path as PathArg
 from yoker.annotations import Text
-from yoker.tools.base import ToolResult
+from yoker.tools.schema import ToolResult
 from yoker.tools.context import ToolContext
 
 if TYPE_CHECKING:

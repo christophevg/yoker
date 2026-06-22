@@ -26,7 +26,7 @@ from yoker.events import (
 )
 from yoker.exceptions import NetworkError
 from yoker.logging import log_timing
-from yoker.tools.base import ToolResult, ValidationResult
+from yoker.tools.schema import ToolResult, ValidationResult
 from yoker.tools.context import ToolContext
 from yoker.tools.guardrails import Guardrail
 from yoker.tools.schema import ToolSpec

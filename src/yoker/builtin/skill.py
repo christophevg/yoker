@@ -10,7 +10,7 @@ from structlog import get_logger
 
 from yoker.annotations import Text
 from yoker.skills import format_invocation_block
-from yoker.tools.base import ToolResult
+from yoker.tools.schema import ToolResult
 
 if TYPE_CHECKING:
   from yoker.skills import SkillRegistry

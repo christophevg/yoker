@@ -6,6 +6,7 @@ Live display, command history, and multiline input.
 
 from __future__ import annotations
 
+import traceback
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -167,7 +168,7 @@ class InteractiveUIHandler(BaseUIHandler):
     motd_lines.append("Type /help for available commands.")
     motd_lines.append("Press Ctrl+D (or Ctrl+Z on Windows) to quit.")
 
-    self.console.print(Panel("\n".join(motd_lines), title="Yoker", expand=False))
+    self.console.print(Panel("\n".join(motd_lines), title="👋 Welcome..."))
     self.console.print()
 
   async def shutdown(self, reason: str) -> None:
@@ -389,7 +390,7 @@ class InteractiveUIHandler(BaseUIHandler):
 
   # === Error Output ===
 
-  def output_error(self, error: Exception) -> None:
+  def output_error(self, error: Exception, include_traceback : bool = False) -> None:
     """Output error message with Rich formatting.
 
     Args:
@@ -411,7 +412,11 @@ class InteractiveUIHandler(BaseUIHandler):
     else:
       msg = f"Error: {error}"
 
-    self.console.print(msg, style=ERROR_STYLE)
+    if include_traceback:
+      msg += "\n" + traceback.format_exc()
+
+    self.console.print(Panel(msg, title="ERROR"), style=ERROR_STYLE)
+    self.console.print()
 
   # === Tool Formatting Helpers ===
 

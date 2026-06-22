@@ -21,10 +21,10 @@ from yoker.config import (
   UpdateToolConfig,
   WriteToolConfig,
 )
-from yoker.tools.base import ValidationResult
 from yoker.tools.guardrails import Guardrail
+from yoker.tools.schema import ValidationResult
 
-log = get_logger(__name__)
+logger = get_logger(__name__)
 
 # Tools that operate on filesystem paths
 _FILESYSTEM_TOOLS = frozenset(
@@ -67,7 +67,7 @@ class PathGuardrail(Guardrail):
         try:
           self._blocked_patterns.append(re.compile(pattern))
         except re.error:
-          log.warning("invalid_blocked_pattern", pattern=pattern)
+          logger.warning("invalid_blocked_pattern", pattern=pattern)
 
     # Pre-resolve allowed paths to absolute paths
     self._allowed_roots: tuple[Path, ...] = tuple(
@@ -186,7 +186,7 @@ class PathGuardrail(Guardrail):
 
     # Log allowed decision
     if self._config.logging.include_permission_checks:
-      log.info("guardrail_allowed", tool=tool_name, path=str(resolved))
+      logger.info("guardrail_allowed", tool=tool_name, path=str(resolved))
 
     return ValidationResult(valid=True)
 

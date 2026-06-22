@@ -8,10 +8,10 @@ import logging
 from typing import Annotated, TYPE_CHECKING, Any
 
 from yoker.annotations import Query
-from yoker.tools.base import ToolResult
+from yoker.tools.schema import ToolResult
 from yoker.tools.context import ToolContext
-from yoker.tools.web_backend import WebSearchBackend
-from yoker.tools.web_types import WebSearchError
+from yoker.tools.web import WebSearchBackend
+from yoker.tools.web import WebSearchError
 
 if TYPE_CHECKING:
   from yoker.config import WebSearchToolConfig

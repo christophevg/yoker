@@ -6,7 +6,7 @@ Provides pluggable backend architecture for web search and web fetch.
 import logging
 from typing import TYPE_CHECKING, Protocol
 
-from .web_types import FetchedContent, SearchResult, WebFetchError, WebSearchError
+from .types import FetchedContent, SearchResult, WebFetchError, WebSearchError
 
 if TYPE_CHECKING:
   from ollama import AsyncClient

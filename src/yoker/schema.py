@@ -5,10 +5,10 @@ Skills, Agents and Tools are namespaced. This schema exposes a reusable base cla
 from dataclasses import dataclass
 
 
-@dataclass(frozen=True)
+@dataclass
 class NameSpaced:
-  simple_name : str | None = None
-  namespace : str | None = None
+  simple_name: str | None = None
+  namespace: str | None = None
 
   @property
   def name(self) -> str:
