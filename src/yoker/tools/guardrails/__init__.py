@@ -8,7 +8,7 @@ execution to enforce permission boundaries.
 from abc import ABC, abstractmethod
 from typing import Any
 
-from .base import ValidationResult
+from yoker.tools.schema import ValidationResult
 
 
 class Guardrail(ABC):
@@ -38,3 +38,12 @@ class Guardrail(ABC):
     Returns:
       ValidationResult indicating whether parameters are valid.
     """
+
+
+from yoker.tools.guardrails.path import PathGuardrail
+
+__all__ = [
+  "Guardrail",
+  "PathGuardrail",
+  "ValidationResult",
+]

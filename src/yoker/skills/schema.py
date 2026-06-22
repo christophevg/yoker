@@ -1,6 +1,6 @@
 """Skill definition schema for Yoker.
 
-Provides frozen dataclass for skill definitions loaded from Markdown files.
+Provides dataclass for skill definitions loaded from Markdown files.
 Skills are prompts that can be invoked via slash commands or natural language.
 """
 
@@ -8,7 +8,8 @@ from dataclasses import dataclass
 
 from yoker.schema import NameSpaced
 
-@dataclass(frozen=True)
+
+@dataclass
 class Skill(NameSpaced):
   """Skill definition loaded from a Markdown file.
 
@@ -36,5 +37,6 @@ class Skill(NameSpaced):
       raise ValueError("A skill needs a description.")
     if not self.content:
       raise ValueError("A skill needs content")
+
 
 __all__ = ["Skill"]

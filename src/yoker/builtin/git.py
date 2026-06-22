@@ -12,7 +12,7 @@ from typing import Annotated, TYPE_CHECKING, Any
 from structlog import get_logger
 
 from yoker.annotations import Path as PathArg
-from yoker.tools.base import ToolResult, ValidationResult
+from yoker.tools.schema import ToolResult, ValidationResult
 from yoker.tools.context import ToolContext
 
 if TYPE_CHECKING:

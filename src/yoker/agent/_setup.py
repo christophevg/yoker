@@ -6,7 +6,7 @@ from ollama import AsyncClient
 from structlog import get_logger
 
 from yoker.config import Config
-from yoker.tools.web_guardrail import QueryWebGuardrail, UrlWebGuardrail, WebGuardrailConfig
+from yoker.tools.web import QueryWebGuardrail, UrlWebGuardrail, WebGuardrailConfig
 
 if TYPE_CHECKING:
   from yoker.context import ContextManager

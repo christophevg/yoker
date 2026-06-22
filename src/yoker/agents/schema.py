@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from yoker.schema import NameSpaced
 
 
-@dataclass(frozen=True)
+@dataclass
 class AgentDefinition(NameSpaced):
   """Agent definition loaded from a Markdown file.
 

@@ -18,8 +18,8 @@ from threading import Lock
 from typing import TYPE_CHECKING
 from urllib.parse import unquote, urlparse
 
-from .base import ValidationResult
-from .guardrails import Guardrail
+from yoker.tools.guardrails import Guardrail
+from yoker.tools.schema import ValidationResult
 
 if TYPE_CHECKING:
   pass

@@ -35,8 +35,7 @@ from yoker.skills import SkillRegistry, load_skills
 from yoker.agent.thinking import ThinkingMode
 from yoker.builtin import make_agent_tool, make_skill_tool
 from yoker.tools import ToolRegistry
-from yoker.tools.guardrails import Guardrail
-from yoker.tools.path_guardrail import PathGuardrail
+from yoker.tools.guardrails import Guardrail, PathGuardrail
 
 logger = get_logger(__name__)
 

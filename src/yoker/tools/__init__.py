@@ -11,24 +11,24 @@ from yoker.annotations import (
   Text,
   Url,
 )
-from yoker.tools.base import ToolResult, ValidationResult
 from yoker.tools.context import ToolContext
-from yoker.tools.guardrails import Guardrail
-from yoker.tools.path_guardrail import PathGuardrail
+from yoker.tools.guardrails import Guardrail, PathGuardrail
 from yoker.tools.registry import ToolRegistry
-from yoker.tools.web_backend import (
+from yoker.tools.schema import ToolResult, ValidationResult
+from yoker.tools.web import (
+  FetchedContent,
   OllamaWebFetchBackend,
   OllamaWebSearchBackend,
-  WebFetchBackend,
-  WebSearchBackend,
-)
-from yoker.tools.web_guardrail import (
   QueryWebGuardrail,
+  SearchResult,
   UrlWebGuardrail,
+  WebFetchBackend,
+  WebFetchError,
   WebGuardrail,
   WebGuardrailConfig,
+  WebSearchBackend,
+  WebSearchError,
 )
-from yoker.tools.web_types import FetchedContent, SearchResult, WebFetchError, WebSearchError
 
 __all__ = [
   # Framework
@@ -38,6 +38,7 @@ __all__ = [
   "PathGuardrail",
   "ToolRegistry",
   "ToolContext",
+  # Annotations
   "GuardType",
   "Text",
   "Path",
