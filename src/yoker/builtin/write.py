@@ -7,19 +7,19 @@ Guardrails are enforced centrally by the harness based on the schema's
 
 import os
 from pathlib import Path
-from typing import Annotated, TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Annotated, Any
 
 from structlog import get_logger
 
-from yoker.annotations import Path as PathArg
-from yoker.annotations import Text
-from yoker.tools.schema import ToolResult
+from yoker.tools.annotations import Path as PathArg
+from yoker.tools.annotations import Text
 from yoker.tools.context import ToolContext
+from yoker.tools.schema import ToolResult
 
 if TYPE_CHECKING:
-  from yoker.config import WriteToolConfig
+  pass
 
-log = get_logger(__name__)
+logger = get_logger(__name__)
 
 
 def _is_binary(content: str) -> bool:
@@ -66,28 +66,28 @@ async def write(
   allow_overwrite = write_config.allow_overwrite
 
   if not isinstance(path, str) or not path.strip():
-    log.warning("write_invalid_path_type", path_type=type(path).__name__)
+    logger.warning("write_invalid_path_type", path_type=type(path).__name__)
     return ToolResult(success=False, error="Invalid path parameter")
 
   if not isinstance(content, str):
-    log.warning("write_invalid_content_type", content_type=type(content).__name__)
+    logger.warning("write_invalid_content_type", content_type=type(content).__name__)
     return ToolResult(success=False, error="Invalid content parameter")
 
   original_path = Path(path)
   if original_path.is_symlink():
-    log.warning("write_symlink_rejected", path=path)
+    logger.warning("write_symlink_rejected", path=path)
     return ToolResult(success=False, error="Writing to symlinks is not permitted")
 
   try:
     resolved = Path(os.path.realpath(path))
   except (OSError, ValueError):
-    log.warning("write_invalid_path", path=path)
+    logger.warning("write_invalid_path", path=path)
     return ToolResult(success=False, error="Invalid path")
 
   is_overwrite = resolved.exists()
   if is_overwrite:
     if not allow_overwrite:
-      log.info("write_overwrite_blocked", path=str(resolved))
+      logger.info("write_overwrite_blocked", path=str(resolved))
       return ToolResult(success=False, error="File already exists and overwrite is not permitted")
 
   parent = resolved.parent
@@ -95,17 +95,17 @@ async def write(
     if create_parents:
       try:
         parent.mkdir(parents=True, exist_ok=True)
-        log.info("write_created_parents", path=str(parent))
+        logger.info("write_created_parents", path=str(parent))
       except OSError as e:
-        log.error("write_create_parents_failed", path=str(parent), error=str(e))
+        logger.error("write_create_parents_failed", path=str(parent), error=str(e))
         return ToolResult(success=False, error="Failed to create parent directories")
     else:
-      log.info("write_parent_missing", path=str(resolved))
+      logger.info("write_parent_missing", path=str(resolved))
       return ToolResult(success=False, error="Parent directory does not exist")
 
   try:
     resolved.write_text(content, encoding="utf-8")
-    log.info("write_success", path=str(resolved), bytes=len(content.encode("utf-8")))
+    logger.info("write_success", path=str(resolved), bytes=len(content.encode("utf-8")))
 
     content_metadata = _build_content_metadata(
       content=content,
@@ -120,10 +120,10 @@ async def write(
       content_metadata=content_metadata,
     )
   except PermissionError:
-    log.warning("write_permission_denied", path=str(resolved))
+    logger.warning("write_permission_denied", path=str(resolved))
     return ToolResult(success=False, error="Permission denied")
   except OSError as e:
-    log.error("write_os_error", path=str(resolved), error=str(e))
+    logger.error("write_os_error", path=str(resolved), error=str(e))
     return ToolResult(success=False, error="Error writing file")
 
 
@@ -140,6 +140,7 @@ def _build_content_metadata(
   else:
     # Fallback defaults
     from yoker.config import ContentDisplayConfig
+
     content_display = ContentDisplayConfig()
 
   if content_display.verbosity == "silent":

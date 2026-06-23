@@ -8,19 +8,19 @@ Guardrails are enforced centrally by the harness based on the schema's
 import difflib
 import os
 from pathlib import Path
-from typing import Annotated, TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Annotated, Any
 
 from structlog import get_logger
 
-from yoker.annotations import Path as PathArg
-from yoker.annotations import Text
-from yoker.tools.schema import ToolResult
+from yoker.tools.annotations import Path as PathArg
+from yoker.tools.annotations import Text
 from yoker.tools.context import ToolContext
+from yoker.tools.schema import ToolResult
 
 if TYPE_CHECKING:
-  from yoker.config import UpdateToolConfig
+  pass
 
-log = get_logger(__name__)
+logger = get_logger(__name__)
 
 
 def _truncate_diff(diff_lines: list[str], max_lines: int) -> tuple[str, bool, int]:
@@ -56,56 +56,56 @@ async def update(
   max_diff_size_kb = update_config.max_diff_size_kb
 
   if not isinstance(path, str) or not path.strip():
-    log.warning("update_invalid_path_type", path_type=type(path).__name__)
+    logger.warning("update_invalid_path_type", path_type=type(path).__name__)
     return ToolResult(success=False, error="Invalid path parameter")
 
   valid_operations = {"replace", "insert_before", "insert_after", "delete"}
   if operation not in valid_operations:
-    log.warning("update_invalid_operation", operation=operation)
+    logger.warning("update_invalid_operation", operation=operation)
     return ToolResult(success=False, error="Invalid operation")
 
   if not isinstance(old_string, str):
-    log.warning("update_invalid_old_string_type", old_string_type=type(old_string).__name__)
+    logger.warning("update_invalid_old_string_type", old_string_type=type(old_string).__name__)
     return ToolResult(success=False, error="Invalid old_string parameter")
   if not isinstance(new_string, str):
-    log.warning("update_invalid_new_string_type", new_string_type=type(new_string).__name__)
+    logger.warning("update_invalid_new_string_type", new_string_type=type(new_string).__name__)
     return ToolResult(success=False, error="Invalid new_string parameter")
 
   try:
     original_path = Path(path)
     if original_path.is_symlink():
-      log.warning("update_symlink_rejected", path=path)
+      logger.warning("update_symlink_rejected", path=path)
       return ToolResult(success=False, error="Updating symlinks is not permitted")
   except (OSError, PermissionError):
-    log.warning("update_path_access_error", path=path)
+    logger.warning("update_path_access_error", path=path)
     return ToolResult(success=False, error="Invalid path")
 
   try:
     resolved = Path(os.path.realpath(path))
   except (OSError, ValueError):
-    log.warning("update_invalid_path", path=path)
+    logger.warning("update_invalid_path", path=path)
     return ToolResult(success=False, error="Invalid path")
 
   if not resolved.exists():
-    log.info("update_file_not_found", path=str(resolved))
+    logger.info("update_file_not_found", path=str(resolved))
     return ToolResult(success=False, error="File not found")
   if not resolved.is_file():
-    log.info("update_not_a_file", path=str(resolved))
+    logger.info("update_not_a_file", path=str(resolved))
     return ToolResult(success=False, error="Path is not a file")
 
   try:
     old_content = resolved.read_text(encoding="utf-8")
   except PermissionError:
-    log.warning("update_permission_denied", path=str(resolved))
+    logger.warning("update_permission_denied", path=str(resolved))
     return ToolResult(success=False, error="Permission denied")
   except OSError:
-    log.error("update_read_error", path=str(resolved))
+    logger.error("update_read_error", path=str(resolved))
     return ToolResult(success=False, error="Error reading file")
 
   if max_diff_size_kb > 0:
     diff_size = len(new_string.encode("utf-8"))
     if diff_size > max_diff_size_kb * 1024:
-      log.info(
+      logger.info(
         "update_diff_size_exceeded",
         diff_size=diff_size,
         max_diff_size_kb=max_diff_size_kb,
@@ -122,14 +122,14 @@ async def update(
     else:
       return ToolResult(success=False, error="Invalid operation")
   except ValueError as e:
-    log.info("update_validation_error", error=str(e))
+    logger.info("update_validation_error", error=str(e))
     return ToolResult(success=False, error=str(e))
 
   try:
     temp_path = resolved.with_suffix(resolved.suffix + ".tmp")
     temp_path.write_text(result_content, encoding="utf-8")
     os.replace(str(temp_path), str(resolved))
-    log.info("update_success", path=str(resolved), operation=operation)
+    logger.info("update_success", path=str(resolved), operation=operation)
 
     content_metadata = _build_content_metadata(
       operation=operation,
@@ -148,10 +148,10 @@ async def update(
       content_metadata=content_metadata,
     )
   except PermissionError:
-    log.warning("update_permission_denied_write", path=str(resolved))
+    logger.warning("update_permission_denied_write", path=str(resolved))
     return ToolResult(success=False, error="Permission denied")
   except OSError as e:
-    log.error("update_write_error", path=str(resolved), error=str(e))
+    logger.error("update_write_error", path=str(resolved), error=str(e))
     return ToolResult(success=False, error="Error updating file")
 
 
@@ -172,6 +172,7 @@ def _build_content_metadata(
   else:
     # Fallback defaults
     from yoker.config import ContentDisplayConfig
+
     content_display = ContentDisplayConfig()
 
   if content_display.verbosity == "silent":
@@ -282,6 +283,7 @@ def _build_content_or_diff_metadata(
   """Build content or diff metadata for content verbosity mode."""
   if content_display is None:
     from yoker.config import ContentDisplayConfig
+
     content_display = ContentDisplayConfig()
 
   if operation == "replace":
