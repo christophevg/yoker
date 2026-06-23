@@ -175,7 +175,7 @@ class TestAgentEventEmission:
 
     mock_client.chat = AsyncMock(return_value=AsyncIter([mock_chunk]))
 
-    mocker.patch("yoker.agent.agent.AsyncClient", return_value=mock_client)
+    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
 
     from yoker.agent import Agent
 

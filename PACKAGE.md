@@ -298,7 +298,7 @@ Yoker tools are plain Python functions or callable classes. There is no base cla
 
 ```python
 from typing import Annotated
-from yoker.annotations import Path, Text
+from yoker.tools.annotations import Path, Text
 from yoker.tools import ToolRegistry
 
 def read_file(
@@ -313,13 +313,13 @@ registry = ToolRegistry()
 registry.register(read_file)
 ```
 
-A callable class works the same way: `registry.register(MyTool())` reads the instance's `__call__` signature. Use the optional `@tool(name=..., description=...)` decorator from `yoker.annotations` to override the name or description inferred from the callable.
+A callable class works the same way: `registry.register(MyTool())` reads the instance's `__call__` signature. Use the optional `@tool(name=..., description=...)` decorator from `yoker.tools.annotations` to override the name or description inferred from the callable.
 
 Built-in tools are registered under the `yoker:` namespace. See the [Tools List](#tools-list) for all available tools.
 
 ### Guardrails
 
-Yoker uses a schema-driven guardrail system. String parameters are annotated with a marker from `yoker.annotations`:
+Yoker uses a schema-driven guardrail system. String parameters are annotated with a marker from `yoker.tools.annotations`:
 
 | Marker | Guardrail applies to |
 |--------|----------------------|
@@ -383,7 +383,7 @@ Plugins are Python packages that expose tools, skills, and agents through a top-
 
 ```python
 from typing import Annotated
-from yoker.annotations import Text
+from yoker.tools.annotations import Text
 from yoker.plugins import PluginManifest
 
 def echo(message: Annotated[str, Text("Message to echo")]) -> str:

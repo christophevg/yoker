@@ -21,7 +21,7 @@ class TestFormatDiscoveryBlock:
   def test_format_single_skill(self) -> None:
     """Format discovery block with single skill."""
     skill = Skill(
-      name="commit",
+      simple_name="commit",
       description="Guide git commits",
       content="Full content...",
     )
@@ -35,8 +35,8 @@ class TestFormatDiscoveryBlock:
   def test_format_multiple_skills(self) -> None:
     """Format discovery block with multiple skills."""
     skills = [
-      Skill(name="commit", description="Guide commits", content="..."),
-      Skill(name="test", description="Run tests", content="..."),
+      Skill(simple_name="commit", description="Guide commits", content="..."),
+      Skill(simple_name="test", description="Run tests", content="..."),
     ]
 
     result = format_discovery_block(skills)
@@ -47,7 +47,7 @@ class TestFormatDiscoveryBlock:
   def test_format_namespaced_skill(self) -> None:
     """Format discovery block with namespaced skill."""
     skill = Skill(
-      name="find",
+      simple_name="find",
       description="Find packages",
       content="...",
       namespace="pkgq",
@@ -60,9 +60,9 @@ class TestFormatDiscoveryBlock:
   def test_format_sorted_by_name(self) -> None:
     """Discovery block lists skills sorted by name."""
     skills = [
-      Skill(name="zebra", description="Z skill", content="..."),
-      Skill(name="alpha", description="A skill", content="..."),
-      Skill(name="middle", description="M skill", content="..."),
+      Skill(simple_name="zebra", description="Z skill", content="..."),
+      Skill(simple_name="alpha", description="A skill", content="..."),
+      Skill(simple_name="middle", description="M skill", content="..."),
     ]
 
     result = format_discovery_block(skills)
@@ -81,7 +81,7 @@ class TestFormatInvocationBlock:
   def test_format_basic_invocation(self) -> None:
     """Format basic skill invocation."""
     skill = Skill(
-      name="commit",
+      simple_name="commit",
       description="Guide commits",
       content="# commit\n\nGuide git commits...",
     )
@@ -98,7 +98,7 @@ class TestFormatInvocationBlock:
   def test_format_invocation_with_args(self) -> None:
     """Format skill invocation with arguments."""
     skill = Skill(
-      name="commit",
+      simple_name="commit",
       description="Guide commits",
       content="Content...",
     )
@@ -110,7 +110,7 @@ class TestFormatInvocationBlock:
   def test_format_invocation_namespaced_skill(self) -> None:
     """Format invocation of namespaced skill."""
     skill = Skill(
-      name="find",
+      simple_name="find",
       description="Find packages",
       content="Content...",
       namespace="pkgq",
@@ -123,7 +123,7 @@ class TestFormatInvocationBlock:
   def test_format_invocation_includes_base_directory(self) -> None:
     """Invocation block includes base directory context."""
     skill = Skill(
-      name="test",
+      simple_name="test",
       description="Test skill",
       content="Content...",
     )
@@ -135,7 +135,7 @@ class TestFormatInvocationBlock:
   def test_format_invocation_preserves_content(self) -> None:
     """Invocation block preserves full skill content."""
     skill = Skill(
-      name="test",
+      simple_name="test",
       description="Test skill",
       content="""# Test Skill
 
@@ -165,7 +165,7 @@ class TestBuildSkillContextMessage:
   def test_build_discovery_context(self) -> None:
     """Build discovery context message."""
     skills = [
-      Skill(name="commit", description="Guide commits", content="..."),
+      Skill(simple_name="commit", description="Guide commits", content="..."),
     ]
 
     result = build_skill_context_message(skills, is_discovery=True)
@@ -176,7 +176,7 @@ class TestBuildSkillContextMessage:
   def test_build_invocation_context(self) -> None:
     """Build invocation context message."""
     skill = Skill(
-      name="commit",
+      simple_name="commit",
       description="Guide commits",
       content="Full content...",
     )
@@ -200,13 +200,13 @@ class TestMatchSkillByTrigger:
     """Match skill by trigger phrase."""
     skills = [
       Skill(
-        name="commit",
+        simple_name="commit",
         description="Guide commits",
         content="...",
         triggers=("commit these changes", "create a commit"),
       ),
       Skill(
-        name="test",
+        simple_name="test",
         description="Run tests",
         content="...",
         triggers=("run tests", "test this"),
@@ -223,13 +223,13 @@ class TestMatchSkillByTrigger:
     """Match uses first matching trigger."""
     skills = [
       Skill(
-        name="commit",
+        simple_name="commit",
         description="Guide commits",
         content="...",
         triggers=("commit",),
       ),
       Skill(
-        name="test",
+        simple_name="test",
         description="Run tests",
         content="...",
         triggers=("commit",),  # Same trigger
@@ -245,7 +245,7 @@ class TestMatchSkillByTrigger:
     """No match returns None and original message."""
     skills = [
       Skill(
-        name="commit",
+        simple_name="commit",
         description="Guide commits",
         content="...",
         triggers=("commit these changes",),
@@ -261,7 +261,7 @@ class TestMatchSkillByTrigger:
     """Match is case insensitive."""
     skills = [
       Skill(
-        name="commit",
+        simple_name="commit",
         description="Guide commits",
         content="...",
         triggers=("Commit These Changes",),
@@ -277,7 +277,7 @@ class TestMatchSkillByTrigger:
     """Skills without triggers don't match."""
     skills = [
       Skill(
-        name="commit",
+        simple_name="commit",
         description="Guide commits",
         content="...",
         triggers=(),
@@ -292,7 +292,7 @@ class TestMatchSkillByTrigger:
     """Match removes trigger from remaining message."""
     skills = [
       Skill(
-        name="commit",
+        simple_name="commit",
         description="Guide commits",
         content="...",
         triggers=("commit",),

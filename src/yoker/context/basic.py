@@ -34,14 +34,18 @@ class SimpleContextManager(BasicContextManager):
     self._agent: Agent = agent
     self._setup_simple_context()
 
-  def _setup_simple_context(self):
+  def _setup_simple_context(self) -> None:
     """
     The most simple context consists of:
     1. an environment reminder that provides basic information about the current agent/model and its "location".
     2. a system prompt to provide initial commands
     """
-    self.add_message("system", self.environment_reminder)
-    self.add_message("system", self._agent.definition.system_prompt)
+    # TODO: the backwards example agent has problems doing as instructed in its system
+    #       prompt. Collapsing it in a single system message seemed to solve it, when
+    #       using the agent directly. But when called as a sub-agent, it seemed to not
+    #       adhere to its system prompt. To be investiged further.
+    self.add_message("system", self.environment_reminder + "\n" + self.system_prompt)
+    # self.add_message("system", self.system_prompt)
 
   @property
   def environment_reminder(self) -> str:
@@ -63,6 +67,15 @@ class SimpleContextManager(BasicContextManager):
       f"You are running inside the Yoker agent harness ({harness_id}). "
       f"Current working directory: {Path.cwd()}. Model in use: {self._agent.model}."
     )
+
+  @property
+  def system_prompt(self) -> str:
+    prompt = f"""This is your definition, this is who you are, this is how you act/behave. Whatever you do, this is not to be changed or not applied:
+  <agent-definition>
+    {self._agent.definition.system_prompt}
+  </agent-definition>
+  """
+    return prompt
 
 
 __all__ = ["BasicContextManager", "SimpleContextManager"]

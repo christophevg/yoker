@@ -3,13 +3,23 @@
 import pytest
 
 from yoker.builtin import read
-from yoker.tools import ToolRegistry
+from yoker.config import ToolConfig, ToolsSharedConfig
+from yoker.tools import ToolContext, ToolRegistry
 
 
 def _read_spec():
   """Create and register the read tool."""
   registry = ToolRegistry()
   return registry.register(read)
+
+
+def _mock_ctx() -> ToolContext:
+  """Create a mock ToolContext for testing."""
+  return ToolContext(
+    config=ToolConfig(),
+    shared=ToolsSharedConfig(),
+    backends={},
+  )
 
 
 class TestReadPluginUrl:
@@ -20,7 +30,7 @@ class TestReadPluginUrl:
     """Test reading from non-existent package."""
     spec = _read_spec()
 
-    result = await spec.execute(path="plugin://nonexistent_package/file.txt")
+    result = await spec.execute(path="plugin://nonexistent_package/file.txt", ctx=_mock_ctx())
 
     assert result.success is False
     assert "not found" in result.error.lower()
@@ -31,12 +41,12 @@ class TestReadPluginUrl:
     spec = _read_spec()
 
     # Missing path
-    result = await spec.execute(path="plugin://package/")
+    result = await spec.execute(path="plugin://package/", ctx=_mock_ctx())
     assert result.success is False
     assert "invalid" in result.error.lower()
 
     # Missing package
-    result = await spec.execute(path="plugin:///path/to/file.txt")
+    result = await spec.execute(path="plugin:///path/to/file.txt", ctx=_mock_ctx())
     assert result.success is False
     assert "invalid" in result.error.lower()
 
@@ -46,7 +56,7 @@ class TestReadPluginUrl:
     spec = _read_spec()
 
     # http:// should be rejected (not plugin://)
-    result = await spec.execute(path="http://example.com/file.txt")
+    result = await spec.execute(path="http://example.com/file.txt", ctx=_mock_ctx())
 
     # This should be treated as a regular file path, which will fail
     assert result.success is False
@@ -66,7 +76,7 @@ class TestReadPluginUrl:
       temp_path = f.name
 
     try:
-      result = await spec.execute(path=temp_path)
+      result = await spec.execute(path=temp_path, ctx=_mock_ctx())
       assert result.success is True
       assert result.result == "test content\n"
     finally:

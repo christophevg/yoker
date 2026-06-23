@@ -32,14 +32,13 @@ class TestPluginSkillCommands:
 
   def test_plugin_skill_is_registered(self, agent_with_demo_plugin):
     """Plugin skill should be registered in skill registry."""
-    assert agent_with_demo_plugin.skill_registry is not None
-    assert agent_with_demo_plugin.skill_registry.count == 1
+    assert agent_with_demo_plugin.skills is not None
+    assert len(agent_with_demo_plugin.skills) == 1
 
-    skills = list(agent_with_demo_plugin.skill_registry)
+    skills = agent_with_demo_plugin.skills.skills
     assert len(skills) == 1
-    skill_name, skill = skills[0]
-    assert skill_name == "yoker_plugin_demo:greeting"
-    assert skill.name == "greeting"
+    skill = skills[0]
+    assert skill.name == "yoker_plugin_demo:greeting"
     assert skill.namespace == "yoker_plugin_demo"
 
   @pytest.mark.asyncio
@@ -148,7 +147,7 @@ class TestPluginSkillCommands:
     from yoker.config import Config
 
     agent_def = AgentDefinition(
-      name="test",
+      simple_name="test",
       description="Test",
       tools=("Read", "List", "WRITE"),
       system_prompt="Test",
@@ -158,6 +157,7 @@ class TestPluginSkillCommands:
 
     result = await command.handler("", agent, Mock())
 
-    assert "✓ read" in result
-    assert "✓ list" in result
-    assert "✓ write" in result
+    # Tools are displayed with yoker: namespace prefix
+    assert "✓ yoker:read" in result
+    assert "✓ yoker:list" in result
+    assert "✓ yoker:write" in result

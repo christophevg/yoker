@@ -95,7 +95,7 @@ class TestValidateAgentDefinition:
   def test_validate_valid_definition(self, tools_config: ToolsConfig) -> None:
     """Test valid agent definition passes."""
     definition = AgentDefinition(
-      name="test",
+      simple_name="test",
       description="Test agent",
       tools=("Read", "Search"),
       system_prompt="You are a test agent.",
@@ -104,20 +104,20 @@ class TestValidateAgentDefinition:
     assert warnings == []
 
   def test_validate_empty_name(self, tools_config: ToolsConfig) -> None:
-    """Test empty name raises ValidationError."""
+    """Test empty name is allowed (has default)."""
     definition = AgentDefinition(
-      name="",
+      simple_name="",
       description="Test",
       tools=("Read",),
     )
-    with pytest.raises(ValidationError) as exc_info:
-      validate_agent_definition(definition, tools_config)
-    assert "agent.name" in str(exc_info.value)
+    # Empty simple_name is allowed, will use default
+    warnings = validate_agent_definition(definition, tools_config)
+    assert warnings == []
 
   def test_validate_empty_description(self, tools_config: ToolsConfig) -> None:
     """Test empty description raises ValidationError."""
     definition = AgentDefinition(
-      name="test",
+      simple_name="test",
       description="",
       tools=("Read",),
     )
@@ -128,7 +128,7 @@ class TestValidateAgentDefinition:
   def test_validate_empty_tools(self, tools_config: ToolsConfig) -> None:
     """Test empty tools raises ValidationError."""
     definition = AgentDefinition(
-      name="test",
+      simple_name="test",
       description="Test",
       tools=(),
     )
@@ -139,7 +139,7 @@ class TestValidateAgentDefinition:
   def test_validate_unknown_tool(self, tools_config: ToolsConfig) -> None:
     """Test unknown tool raises ValidationError."""
     definition = AgentDefinition(
-      name="test",
+      simple_name="test",
       description="Test",
       tools=("UnknownTool",),
     )
@@ -150,7 +150,7 @@ class TestValidateAgentDefinition:
   def test_validate_duplicate_name(self, tools_config: ToolsConfig) -> None:
     """Test duplicate name raises ValidationError."""
     definition = AgentDefinition(
-      name="existing",
+      simple_name="existing",
       description="Test",
       tools=("Read",),
     )
@@ -162,7 +162,7 @@ class TestValidateAgentDefinition:
   def test_validate_unique_name(self, tools_config: ToolsConfig) -> None:
     """Test unique name passes."""
     definition = AgentDefinition(
-      name="unique",
+      simple_name="unique",
       description="Test",
       tools=("Read",),
       system_prompt="You are a unique agent.",
@@ -174,7 +174,7 @@ class TestValidateAgentDefinition:
   def test_validate_empty_system_prompt_warning(self, tools_config: ToolsConfig) -> None:
     """Test empty system prompt generates warning."""
     definition = AgentDefinition(
-      name="test",
+      simple_name="test",
       description="Test",
       tools=("Read",),
       system_prompt="",
@@ -191,7 +191,7 @@ class TestValidateAgentDefinition:
       search=SearchToolConfig(enabled=False),
     )
     definition = AgentDefinition(
-      name="test",
+      simple_name="test",
       description="Test",
       tools=("Read", "Search"),
       system_prompt="Prompt",
@@ -208,7 +208,7 @@ class TestValidateAgentDefinition:
       agent=AgentToolConfig(enabled=False),
     )
     definition = AgentDefinition(
-      name="test",
+      simple_name="test",
       description="Test",
       tools=("Search", "Agent"),  # Both disabled
       system_prompt="",  # Empty prompt

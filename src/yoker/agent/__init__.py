@@ -19,12 +19,14 @@ from yoker.agent._setup import (
   create_web_guardrails,
   validate_recursion_depth,
 )
+from yoker.agent.thinking import ThinkingMode
 from yoker.agents import (
   AgentDefinition,
   AgentRegistry,
   load_agent_definition,
   load_agent_definitions,
 )
+from yoker.builtin import make_agent_tool, make_skill_tool
 from yoker.config import Config, get_yoker_config
 from yoker.context import ContextManager
 from yoker.context.basic import SimpleContextManager
@@ -32,10 +34,9 @@ from yoker.events import EventCallback
 from yoker.logging import configure_logging
 from yoker.plugins import load_configured_plugins
 from yoker.skills import SkillRegistry, load_skills
-from yoker.agent.thinking import ThinkingMode
-from yoker.builtin import make_agent_tool, make_skill_tool
 from yoker.tools import ToolRegistry
-from yoker.tools.guardrails import Guardrail, PathGuardrail
+from yoker.tools.guardrails import Guardrail
+from yoker.tools.guardrails.path import PathGuardrail
 
 logger = get_logger(__name__)
 
@@ -105,17 +106,20 @@ class Agent:
     self.recursion_depth = validate_recursion_depth(self.config, _recursion_depth)
     self.max_recursion_depth = self.config.tools.agent.max_recursion_depth
 
+    # check that all requested tools for the agent are available (warn before filtering)
+    self._warn_missing_tools()
+
+    # filter tools based on agent definition (only keep specified tools)
+    self._filter_tools_by_definition()
+
     # all tools, skills and agents are registered. add skill/agent tool IF skills
     # /agents are available AND if allowed to use them
-    if self.config.tools.skill.enabled and len(self.tools):
+    if self.config.tools.skill.enabled and len(self.skills):
       self.tools.register(make_skill_tool(self.skills), namespace="yoker")
 
     if self.config.tools.agent.enabled and len(self.agents):
-      if "agent" in self.definition.tools:
-        self.tools.register(make_agent_tool(parent_agent=self))
-
-    # check that all "requested/required" tools for the agent are available (fail-fast)
-    self._warn_missing_tools()
+      if "agent" in self.definition.tools or len(self.definition.tools) == 0:
+        self.tools.register(make_agent_tool(parent_agent=self), namespace="yoker")
 
     # setup the model
     self.model: str = self._resolve_model()
@@ -136,11 +140,41 @@ class Agent:
     self._tool_backends: dict[str, Any] = {}
 
     # set up the context manager
-    self.context: ContextManager = context_manager or SimpleContextManager(self)
-    # TODO -> responsibility of context manager
+    # Note: Use explicit None check because empty UserList is falsy
+    if context_manager is not None:
+      # Use provided context manager - add system messages like SimpleContextManager does
+      self.context: ContextManager = context_manager
+      self._setup_context()
+    else:
+      # Create default SimpleContextManager which sets up context in __init__
+      self.context = SimpleContextManager(self)
+
     add_skill_discovery_block(self.config, self.skills, self.context)
 
     self._event_handlers: list[EventCallback] = []
+
+    logger.info("agent", agent=self)
+    logger.debug("agent", skills=list(self.skills.keys()))
+    logger.debug("agent", tools=list(self.tools.keys()))
+
+  def __repr__(self) -> str:
+    return f"Agent({self.definition.name},tools={len(self.tools)},skills={len(self.skills)})"
+
+  def _setup_context(self) -> None:
+    """Set up context with system messages (environment reminder and system prompt)."""
+    from pathlib import Path
+
+    harness = self.config.harness
+    harness_name = harness.name
+    harness_version = f" v{harness.version}" if harness.version else ""
+    harness_author = f" by {harness.author}" if harness.author else ""
+    harness_id = f"{harness_name}{harness_version}{harness_author}"
+    environment_reminder = (
+      f"You are running inside the Yoker agent harness ({harness_id}). "
+      f"Current working directory: {Path.cwd()}. Model in use: {self.model}."
+    )
+    self.context.add_message("system", environment_reminder)
+    self.context.add_message("system", self.definition.system_prompt)
 
   def add_event_handler(self, handler: EventCallback) -> None:
     """Register an event handler."""
@@ -162,6 +196,19 @@ class Agent:
     """Return a copy of the registered event handlers."""
     return self._event_handlers.copy()
 
+  @property
+  def guardrail(self) -> PathGuardrail:
+    """Return the path guardrail for file system operations.
+
+    Returns:
+        PathGuardrail: The guardrail instance for path validation.
+    """
+    guardrail = self._guardrails.get("path")
+    if guardrail is None:
+      raise RuntimeError("Path guardrail not initialized")
+    # Type narrow: we know path is always PathGuardrail
+    return guardrail  # type: ignore
+
   async def process(self, message: str) -> str:
     """Process a single message and return the response."""
     return await process_message(self, message)
@@ -171,13 +218,9 @@ class Agent:
     from yoker.exceptions import SkillError
     from yoker.skills import format_invocation_block
 
-    registry = self.skills
-    if registry is None:
-      raise SkillError(skill_name, "No skill registry available")
-
-    skill = registry.get(skill_name)
+    skill = self.skills.get(skill_name)
     if skill is None:
-      available = ", ".join(registry.names)
+      available = ", ".join(self.skills.names)
       raise SkillError(
         skill_name,
         f"Unknown skill. Available skills: {available}" if available else "Unknown skill",
@@ -198,9 +241,6 @@ class Agent:
     case-insensitively. Plugin tools must be referenced with their full
     namespaced name.
     """
-    if self.definition is None:
-      return
-
     available = {name.lower() for name in self.tools.names}
     missing: list[str] = []
 
@@ -219,6 +259,57 @@ class Agent:
         agent=self.definition.name,
         missing_tools=missing,
         available_tools=list(self.tools.names),
+      )
+
+  def _filter_tools_by_definition(self) -> None:
+    """Filter tools in registry to only those specified in agent definition.
+
+    If the agent definition specifies an empty tools tuple, all tools are kept
+    (default agent behavior). If tools are specified, only those tools are kept.
+    """
+    # Default agent (no explicit definition) keeps all tools
+    if self.definition.simple_name is None and self.definition.namespace is None:
+      return
+
+    # Empty tools tuple means no tools (agent explicitly requests no tools)
+    if len(self.definition.tools) == 0:
+      logger.debug(
+        "agent_tools_empty",
+        agent=self.definition.name,
+        cleared_tools=list(self.tools.names),
+      )
+      self.tools.clear()
+      return
+
+    # Build set of requested tool names (case-insensitive, with yoker: prefix handling)
+    requested = set()
+    for tool_name in self.definition.tools:
+      normalized = tool_name.lower()
+      if ":" in normalized:
+        requested.add(normalized)
+      else:
+        # Add both with and without yoker: prefix for built-in tools
+        requested.add(normalized)
+        requested.add(f"yoker:{normalized}")
+
+    # Filter tools to only those requested
+    available = list(self.tools.names)
+    to_remove = []
+
+    for tool_name in available:
+      # Check if tool matches any requested tool (case-insensitive)
+      normalized = tool_name.lower()
+      if normalized not in requested:
+        to_remove.append(tool_name)
+
+    if to_remove:
+      for tool_name in to_remove:
+        del self.tools.data[tool_name]
+      logger.debug(
+        "agent_tools_filtered",
+        agent=self.definition.name,
+        kept_tools=list(self.tools.names),
+        removed_tools=to_remove,
       )
 
   def _resolve_agent_definition(
@@ -274,7 +365,7 @@ class Agent:
     logger.info("model from config", model=self.config.backend.ollama.model)
     return self.config.backend.ollama.model
 
-  def _load_skills(self):
+  def _load_skills(self) -> None:
     """Load skills from configured directories into the registry."""
     for directory in self.config.skills.directories:
       try:
@@ -285,7 +376,7 @@ class Agent:
       except Exception as e:
         logger.warning("loading skills failed", directory=directory, error=str(e))
 
-  def _load_agents(self):
+  def _load_agents(self) -> None:
     """Load agents from configured directories into the registry."""
     for directory in self.config.agents.directories:
       try:

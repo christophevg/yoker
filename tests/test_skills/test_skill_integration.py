@@ -15,12 +15,12 @@ def test_dynamic_skill_invocation_registration():
   """Test that skill names are dispatchable via the default registry."""
   registry = SkillRegistry()
   skill1 = Skill(
-    name="commit",
+    simple_name="commit",
     description="Guide git commits",
     content="# Commit Guide\n\nSteps for committing...",
   )
   skill2 = Skill(
-    name="review",
+    simple_name="review",
     description="Review code",
     content="# Review Guide\n\nSteps for reviewing...",
   )
@@ -29,7 +29,7 @@ def test_dynamic_skill_invocation_registration():
 
   command_registry = create_default_registry()
   agent = Mock()
-  agent.skill_registry = registry
+  agent.skills = registry
   agent.inject_skill_context = Mock()
   agent.process = AsyncMock()
 
@@ -43,12 +43,12 @@ async def test_dynamic_skill_invocation_dispatch():
   """Test dynamic dispatch of skill commands."""
   registry = SkillRegistry()
   skill1 = Skill(
-    name="commit",
+    simple_name="commit",
     description="Guide git commits",
     content="# Commit Guide\n\nSteps for committing...",
   )
   skill2 = Skill(
-    name="review",
+    simple_name="review",
     description="Review code",
     content="# Review Guide\n\nSteps for reviewing...",
   )
@@ -57,7 +57,7 @@ async def test_dynamic_skill_invocation_dispatch():
 
   command_registry = create_default_registry()
   agent = Mock()
-  agent.skill_registry = registry
+  agent.skills = registry
   agent.inject_skill_context = Mock()
   agent.process = AsyncMock()
 
@@ -101,7 +101,7 @@ async def test_namespaced_skill_invocation():
   """Test that namespaced skills are dispatched using their full name."""
   registry = SkillRegistry()
   skill = Skill(
-    name="commit",
+    simple_name="commit",
     description="Guide commits",
     content="Content...",
     namespace="c3",
@@ -110,7 +110,7 @@ async def test_namespaced_skill_invocation():
 
   command_registry = create_default_registry()
   agent = Mock()
-  agent.skill_registry = registry
+  agent.skills = registry
   agent.inject_skill_context = Mock()
   agent.process = AsyncMock()
 

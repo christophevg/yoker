@@ -4,14 +4,15 @@ These functions validate configuration values and raise ValidationError
 for invalid inputs.
 """
 
-import logging
 import re
 from pathlib import Path
 from urllib.parse import urlparse
 
+from structlog import get_logger
+
 from yoker.exceptions import ValidationError
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def validate_url(value: str, path: str) -> None:

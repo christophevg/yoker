@@ -4,13 +4,11 @@ This module provides the UI layer abstraction, separating agent logic from
 user interface concerns. It includes:
 
 - UIHandler: Protocol defining the UI interface
-- BaseUIHandler: Abstract base class with state management
 - UIBridge: Event dispatcher bridging events to UI methods
 - InteractiveUIHandler: Interactive terminal UI using prompt_toolkit and Rich
 - BatchUIHandler: Non-interactive UI using stdin/stdout/stderr
 """
 
-from yoker.ui.base import BaseUIHandler
 from yoker.ui.batch import BatchUIHandler
 from yoker.ui.bridge import UIBridge
 from yoker.ui.handler import UIHandler
@@ -19,7 +17,6 @@ from yoker.ui.spinner import LiveDisplay, live_display
 
 __all__ = [
   "UIHandler",
-  "BaseUIHandler",
   "UIBridge",
   "InteractiveUIHandler",
   "BatchUIHandler",

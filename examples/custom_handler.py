@@ -11,6 +11,8 @@ Run with:
 import asyncio
 from typing import Any
 
+from yoker import __version__
+from yoker.agent import Agent
 from yoker.events import (
   ContentChunkEvent,
   ContentEndEvent,
@@ -23,25 +25,24 @@ from yoker.events import (
   TurnStartEvent,
 )
 from yoker.ui import UIBridge
-from yoker.ui.base import BaseUIHandler
 
 
-class PrintUIHandler(BaseUIHandler):
+class PrintUIHandler:
   """Minimal UIHandler that prints every event to stdout.
 
   This is useful for logging, testing, or building non-terminal interfaces
   (web dashboards, log collectors, etc.).
+
+  Implements the UIHandler protocol without inheritance.
   """
 
-  async def start(self, model: str, version: str, config: dict[str, Any]) -> None:
+  async def start(self, agent: Agent) -> None:
     """Print session start information.
 
     Args:
-      model: Model name being used.
-      version: Yoker version.
-      config: Configuration summary.
+      agent: the agent in action
     """
-    print(f"[start] model={model} version={version} config={config}")
+    print(f"[start] model={agent.model} version={__version__} config={agent.config}")
 
   async def shutdown(self, reason: str) -> None:
     """Print session end information.
@@ -120,13 +121,35 @@ class PrintUIHandler(BaseUIHandler):
     """
     print(f"[stats] {duration_ms}ms, prompt_tokens={prompt_tokens}, eval_tokens={eval_tokens}")
 
-  def output_error(self, error: Exception) -> None:
+  def output_error(self, error: Exception, include_traceback: bool = False) -> None:
     """Print an error.
 
     Args:
       error: Exception that occurred.
+      include_traceback: Whether to include traceback.
     """
     print(f"[error] {type(error).__name__}: {error}")
+
+  def output_content(self, content: str, content_type: str = "text/plain") -> None:
+    """Output content text directly (non-streaming).
+
+    Args:
+      content: Content text.
+      content_type: MIME type of content.
+    """
+    self.start_content_stream()
+    self.stream_content(content, content_type)
+    self.end_content_stream(len(content))
+
+  def output_thinking(self, text: str) -> None:
+    """Output thinking text directly (non-streaming).
+
+    Args:
+      text: Thinking text.
+    """
+    self.start_thinking_stream()
+    self.stream_thinking(text)
+    self.end_thinking_stream(len(text))
 
   def start_content_stream(self) -> None:
     """Start streaming content."""
@@ -172,8 +195,14 @@ class PrintUIHandler(BaseUIHandler):
 
 async def main() -> None:
   """Entry point for the custom handler example."""
+  from unittest.mock import MagicMock
+
   ui = PrintUIHandler()
   bridge = UIBridge(ui)
+
+  # Create a mock Agent for the example
+  agent = MagicMock()
+  agent.model = "llama3.2:latest"
 
   # Manually emit a realistic sequence of events. In a real application,
   # these would come from Agent.process().
@@ -202,7 +231,7 @@ async def main() -> None:
     ),
   ]
 
-  await ui.start("llama3.2:latest", "0.4.0", {})
+  await ui.start(agent)
   for event in events:
     await bridge(event)
   await ui.shutdown("complete")

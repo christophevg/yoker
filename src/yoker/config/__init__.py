@@ -40,7 +40,7 @@ CLI Arguments:
 
 import os
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Literal, cast
 
 from clevis import SecurityAction, SecurityConfig, get_config
 
@@ -561,7 +561,8 @@ class ToolsConfig:
   skill: SkillToolConfig = field(default_factory=SkillToolConfig)
 
   def __getitem__(self, name: str) -> ToolConfig:
-    return getattr(self, name)
+    return cast(ToolConfig, getattr(self, name))
+
 
 @dataclass(frozen=True)
 class ToolsSharedConfig:
@@ -572,6 +573,7 @@ class ToolsSharedConfig:
   """
 
   content_display: ContentDisplayConfig = field(default_factory=ContentDisplayConfig)
+
 
 @dataclass(frozen=True)
 class AgentsConfig:
@@ -690,7 +692,7 @@ class Config:
   context: ContextConfig = field(default_factory=ContextConfig)
   permissions: PermissionsConfig = field(default_factory=PermissionsConfig)
   tools: ToolsConfig = field(default_factory=ToolsConfig)
-  tools_shared : ToolsSharedConfig = field(default_factory=ToolsSharedConfig)
+  tools_shared: ToolsSharedConfig = field(default_factory=ToolsSharedConfig)
   agents: AgentsConfig = field(default_factory=AgentsConfig)
   skills: SkillsConfig = field(default_factory=SkillsConfig)
   plugins: PluginsConfig = field(default_factory=PluginsConfig)

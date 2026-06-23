@@ -8,7 +8,6 @@ Provides comprehensive security validation for web tools including:
 """
 
 import ipaddress
-import logging
 import re
 import socket
 import time
@@ -18,13 +17,15 @@ from threading import Lock
 from typing import TYPE_CHECKING
 from urllib.parse import unquote, urlparse
 
+from structlog import get_logger
+
 from yoker.tools.guardrails import Guardrail
 from yoker.tools.schema import ValidationResult
 
 if TYPE_CHECKING:
   pass
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # IP ranges for SSRF protection
 PRIVATE_CIDRS = [
@@ -137,7 +138,7 @@ class WebGuardrail(Guardrail):
     self._rate_limit_lock = Lock()
     self._rate_limits: dict[str, RateLimitState] = defaultdict(RateLimitState)
 
-  def validate(self, tool_name: str, value: str) -> ValidationResult:
+  def validate(self, tool_name: str, value: str | dict[str, str]) -> ValidationResult:
     """Validate web search parameters.
 
     Steps:
@@ -151,16 +152,18 @@ class WebGuardrail(Guardrail):
 
     Args:
       tool_name: Name of tool being validated.
-      params: Tool parameters from LLM.
+      value: Either a query string or a dict with 'query' key.
 
     Returns:
       ValidationResult with success/failure and reason.
     """
-    # Step 1: Validate query parameter
-    # if not query:
-    #   return ValidationResult(valid=False, reason="Query is required")
-
-    query = value  # rename for internal clarity
+    # Extract query from value (handle both dict and string)
+    if isinstance(value, dict):
+      query = value.get("query", "")
+      user_id = value.get("_user_id", "default")
+    else:
+      query = value
+      user_id = "default"
 
     # Strip whitespace and check
     stripped_query = query.strip()
@@ -198,11 +201,10 @@ class WebGuardrail(Guardrail):
     if sensitive_error:
       return ValidationResult(valid=False, reason=sensitive_error)
 
-    # TODO: remove/clean up: This isn't used anywhere: Step 7: Check rate limits
-    # user_id = params.get("_user_id", "default")
-    # rate_error = self._check_rate_limit(user_id)
-    # if rate_error:
-    #   return ValidationResult(valid=False, reason=rate_error)
+    # Step 7: Check rate limits
+    rate_error = self._check_rate_limit(user_id)
+    if rate_error:
+      return ValidationResult(valid=False, reason=rate_error)
 
     return ValidationResult(valid=True)
 
@@ -586,7 +588,7 @@ class QueryWebGuardrail(WebGuardrail):
 
 
 class UrlWebGuardrail(WebGuardrail):
-  def validate(self, tool_name: str, value: str) -> ValidationResult:
+  def validate(self, tool_name: str, value: str | dict[str, str]) -> ValidationResult:
     """Validate a URL for web fetch.
 
     Steps:
@@ -602,7 +604,11 @@ class UrlWebGuardrail(WebGuardrail):
     Returns:
       ValidationResult with success/failure and reason.
     """
-    url = value  # rename for internal clarity
+    # Extract URL from value (handle both dict and string)
+    if isinstance(value, dict):
+      url = value.get("url", "")
+    else:
+      url = value
 
     # Parse URL
     try:

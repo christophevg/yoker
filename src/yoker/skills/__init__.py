@@ -31,10 +31,7 @@ from yoker.skills.loader import (
   load_skills,
   parse_skill_frontmatter,
 )
-from yoker.skills.registry import (
-  SkillRegistry,
-  create_default_skill_registry,
-)
+from yoker.skills.registry import SkillRegistry
 from yoker.skills.schema import Skill
 
 __all__ = [
@@ -42,7 +39,6 @@ __all__ = [
   "Skill",
   # Registry
   "SkillRegistry",
-  "create_default_skill_registry",
   # Loader
   "load_skill",
   "load_skills",

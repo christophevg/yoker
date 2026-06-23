@@ -65,26 +65,23 @@ class TestEchoTool:
   @pytest.mark.asyncio
   async def test_echo_tool_returns_input_with_prefix(self, echo_spec) -> None:
     """Echo tool should return input message with 'Echo: ' prefix."""
-    result = await echo_spec.execute(message="Hello, World!")
+    result = echo_spec.execute(message="Hello, World!")
 
-    assert result.success
-    assert result.result == "Echo: Hello, World!"
+    assert result == "Echo: Hello, World!"
 
   @pytest.mark.asyncio
   async def test_echo_tool_handles_empty_string(self, echo_spec) -> None:
     """Echo tool should handle empty string input."""
-    result = await echo_spec.execute(message="")
+    result = echo_spec.execute(message="")
 
-    assert result.success
-    assert result.result == "Echo: "
+    assert result == "Echo: "
 
   @pytest.mark.asyncio
   async def test_echo_tool_coerces_non_string(self, echo_spec) -> None:
     """Echo tool stringifies non-string input."""
-    result = await echo_spec.execute(message=123)
+    result = echo_spec.execute(message=123)
 
-    assert result.success
-    assert result.result == "Echo: 123"
+    assert result == "Echo: 123"
 
   def test_echo_tool_has_correct_name(self, echo_spec) -> None:
     """Echo tool should have 'echo' as its name."""
@@ -198,11 +195,12 @@ class TestDemoPluginIntegration:
       f"load_plugin should check __YOKER_MANIFEST__ and call load_skills_from_package"
     )
 
-    greeting_skill = next((s for s in plugin.skills if s.name == "greeting"), None)
+    greeting_skill = next((s for s in plugin.skills if s.simple_name == "greeting"), None)
     assert greeting_skill is not None, (
       "greeting skill should be loaded from skills/greeting/SKILL.md"
     )
     assert greeting_skill.namespace == "yoker_plugin_demo"
+    assert greeting_skill.name == "yoker_plugin_demo:greeting"
 
   def test_load_plugin_discovers_agents_from_directory(self) -> None:
     """load_plugin should discover agents from agents_dir declared in manifest."""

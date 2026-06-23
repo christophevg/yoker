@@ -3,7 +3,7 @@
 Task: 1.5.5 - Show Write/Update Tool Content in CLI
 """
 
-from yoker.config import ContentDisplayConfig, ToolsConfig
+from yoker.config import ContentDisplayConfig, ToolsSharedConfig
 
 
 class TestContentDisplayConfigDefaults:
@@ -152,25 +152,25 @@ class TestContentDisplayConfigShowDiff:
 
 
 class TestContentDisplayConfigIntegration:
-  """Test ContentDisplayConfig integration with ToolsConfig."""
+  """Test ContentDisplayConfig integration with ToolsSharedConfig."""
 
-  def test_content_display_in_tools_config(self) -> None:
+  def test_content_display_in_tools_shared_config(self) -> None:
     """
-    Given: A ToolsConfig instance
+    Given: A ToolsSharedConfig instance
     When: Accessing content_display field
     Then: ContentDisplayConfig is available
     """
-    config = ToolsConfig()
+    config = ToolsSharedConfig()
     assert hasattr(config, "content_display")
     assert isinstance(config.content_display, ContentDisplayConfig)
 
-  def test_tools_config_default_content_display(self) -> None:
+  def test_tools_shared_config_default_content_display(self) -> None:
     """
-    Given: A ToolsConfig with no custom values
+    Given: A ToolsSharedConfig with no custom values
     When: Accessing content_display
     Then: ContentDisplayConfig has all default values
     """
-    config = ToolsConfig()
+    config = ToolsSharedConfig()
     assert config.content_display.verbosity == "summary"
     assert config.content_display.max_content_lines == 50
     assert config.content_display.max_content_bytes == 4096

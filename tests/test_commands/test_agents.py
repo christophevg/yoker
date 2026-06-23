@@ -11,11 +11,13 @@ from yoker.ui.commands.agents import create_command as create_agents_command
 class TestAgentsCommand:
   """Tests for create_agents_command."""
 
-  def _make_agent(self, agent_def=None, directories=(), plugin_agents=()):
+  def _make_agent(self, agent_def, directories=(), plugin_agents=()):
     agent = Mock()
+    agent.definition = agent_def
     agent.agent_definition = agent_def
     agent.config.agents.directories = directories
-    agent.plugin_agents = plugin_agents
+    agent.agents = Mock()
+    agent.agents.agents = list(plugin_agents) if plugin_agents else []
     return agent
 
   @pytest.mark.asyncio
@@ -26,21 +28,10 @@ class TestAgentsCommand:
     assert "agent" in command.description.lower()
 
   @pytest.mark.asyncio
-  async def test_agents_command_no_agent_loaded(self) -> None:
-    """Test agents command when no agent is loaded."""
-    agent = self._make_agent()
-    command = create_agents_command()
-    result = await command.handler("", agent, Mock())
-
-    assert "Current agent:" in result
-    assert "(default)" in result
-    assert "No agent definition loaded" in result
-
-  @pytest.mark.asyncio
   async def test_agents_command_with_agent(self) -> None:
     """Test agents command when an agent is loaded."""
     agent_def = AgentDefinition(
-      name="test-agent",
+      simple_name="test-agent",
       description="A test agent",
       model="llama3.2:latest",
       tools=["read", "write"],
@@ -60,7 +51,7 @@ class TestAgentsCommand:
   async def test_agents_command_without_model(self) -> None:
     """Test agents command when agent has no model specified."""
     agent_def = AgentDefinition(
-      name="simple-agent",
+      simple_name="simple-agent",
       description="A simple agent",
       tools=(),
     )
@@ -79,7 +70,7 @@ class TestAgentsCommand:
   async def test_agents_command_without_tools(self) -> None:
     """Test agents command when agent has no tools specified."""
     agent_def = AgentDefinition(
-      name="no-tools-agent",
+      simple_name="no-tools-agent",
       description="An agent without tools",
       tools=(),
       model="llama3.2:latest",
@@ -98,7 +89,7 @@ class TestAgentsCommand:
   async def test_agents_command_ignores_args(self) -> None:
     """Test that agents command ignores any arguments passed."""
     agent_def = AgentDefinition(
-      name="test-agent",
+      simple_name="test-agent",
       description="A test agent",
       tools=(),
     )

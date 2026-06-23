@@ -4,16 +4,29 @@ from pathlib import Path
 
 import pytest
 
-from yoker.config import Config, PermissionsConfig
-from yoker.tools import ToolRegistry, make_read_tool
-from yoker.tools.base import ToolResult
-from yoker.tools.path_guardrail import PathGuardrail
+from yoker.builtin import read as read_tool
+from yoker.config import Config, PermissionsConfig, ReadToolConfig, ToolsConfig
+from yoker.tools import ToolRegistry
+from yoker.tools.context import ToolContext
+from yoker.tools.guardrails.path import PathGuardrail
+from yoker.tools.schema import ToolResult
 
 
 def _read_spec():
   """Create and register the read tool."""
   registry = ToolRegistry()
-  return registry.register(make_read_tool())
+  return registry.register(read_tool)
+
+
+def _read_context(config: Config | None = None) -> ToolContext:
+  """Create a ToolContext for read tool tests."""
+  if config is None:
+    config = Config()
+  return ToolContext(
+    config=config.tools.read,
+    shared=config.tools_shared,
+    backends={},
+  )
 
 
 class TestReadTool:
@@ -46,7 +59,8 @@ class TestReadTool:
     file_path = tmp_path / "test.txt"
     file_path.write_text("hello world")
     spec = _read_spec()
-    result = await spec.execute(path=str(file_path))
+    ctx = _read_context()
+    result = await spec.execute(path=str(file_path), ctx=ctx)
     assert result.success is True
     assert result.result == "hello world"
     assert result.error is None
@@ -55,7 +69,8 @@ class TestReadTool:
   async def test_read_missing_file(self) -> None:
     """read tool returns error for missing file."""
     spec = _read_spec()
-    result = await spec.execute(path="/nonexistent/path/file.txt")
+    ctx = _read_context()
+    result = await spec.execute(path="/nonexistent/path/file.txt", ctx=ctx)
     assert result.success is False
     assert result.result == ""
     assert "not found" in result.error.lower()
@@ -64,7 +79,8 @@ class TestReadTool:
   async def test_read_result_is_toolresult(self) -> None:
     """read tool execute returns ToolResult."""
     spec = _read_spec()
-    result = await spec.execute(path="/dev/null")
+    ctx = _read_context()
+    result = await spec.execute(path="/dev/null", ctx=ctx)
     assert isinstance(result, ToolResult)
 
   @pytest.mark.asyncio
@@ -85,9 +101,10 @@ class TestReadTool:
     config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
     guardrail = PathGuardrail(config)
     spec = _read_spec()
+    ctx = _read_context()
     validation = guardrail.validate(spec.name, {"path": str(file_path)})
     assert validation.valid
-    result = await spec.execute(path=str(file_path))
+    result = await spec.execute(path=str(file_path), ctx=ctx)
     assert result.success is True
     assert result.result == "allowed content"
 
@@ -99,7 +116,8 @@ class TestReadTool:
     link = tmp_path / "link.txt"
     link.symlink_to(target)
     spec = _read_spec()
-    result = await spec.execute(path=str(link))
+    ctx = _read_context()
+    result = await spec.execute(path=str(link), ctx=ctx)
     assert result.success is False
 
   @pytest.mark.asyncio
@@ -108,7 +126,8 @@ class TestReadTool:
     file_path = tmp_path / "test.txt"
     file_path.write_text("hello world")
     spec = _read_spec()
-    result = await spec.execute(path=str(file_path))
+    ctx = _read_context()
+    result = await spec.execute(path=str(file_path), ctx=ctx)
     assert result.success is True
     assert result.result == "hello world"
 
@@ -119,7 +138,8 @@ class TestReadTool:
     file_path = tmp_path / "test.txt"
     file_path.write_text(content)
     spec = _read_spec()
-    result = await spec.execute(path=str(file_path))
+    ctx = _read_context()
+    result = await spec.execute(path=str(file_path), ctx=ctx)
     assert result.success is True
     assert result.result == content
 
@@ -132,15 +152,14 @@ class TestReadTool:
     real_file.write_text("allowed")
     sensitive_path = str(tmp_path / ".." / tmp_path.name / "real" / "real.txt")
     spec = _read_spec()
-    result = await spec.execute(path=sensitive_path)
+    ctx = _read_context()
+    result = await spec.execute(path=sensitive_path, ctx=ctx)
     # Path should be resolved by realpath, so it should succeed
     assert result.success is True
 
   @pytest.mark.asyncio
   async def test_read_guardrail_logs_blocked(self, tmp_path: Path) -> None:
     """Path guardrail blocks read access to files matching blocked patterns."""
-    from yoker.config import ReadToolConfig, ToolsConfig
-
     file_path = tmp_path / "test.txt"
     file_path.write_text("secret")
     config = Config(
@@ -157,7 +176,8 @@ class TestReadTool:
   async def test_read_nonexistent_file(self) -> None:
     """read tool returns error for non-existent file."""
     spec = _read_spec()
-    result = await spec.execute(path="/nonexistent/file.txt")
+    ctx = _read_context()
+    result = await spec.execute(path="/nonexistent/file.txt", ctx=ctx)
     assert result.success is False
     assert "not found" in result.error.lower()
 
@@ -165,7 +185,8 @@ class TestReadTool:
   async def test_read_directory(self, tmp_path: Path) -> None:
     """read tool returns error for directory path."""
     spec = _read_spec()
-    result = await spec.execute(path=str(tmp_path))
+    ctx = _read_context()
+    result = await spec.execute(path=str(tmp_path), ctx=ctx)
     assert result.success is False
     assert "not a file" in result.error.lower()
 
@@ -173,7 +194,8 @@ class TestReadTool:
   async def test_read_empty_path(self) -> None:
     """read tool returns error for empty path."""
     spec = _read_spec()
-    result = await spec.execute(path="")
+    ctx = _read_context()
+    result = await spec.execute(path="", ctx=ctx)
     assert result.success is False
     assert result.error
 
@@ -181,7 +203,8 @@ class TestReadTool:
   async def test_read_invalid_path_type(self) -> None:
     """read tool returns error for invalid path type."""
     spec = _read_spec()
-    result = await spec.execute(path=123)  # type: ignore
+    ctx = _read_context()
+    result = await spec.execute(path=123, ctx=ctx)  # type: ignore
     assert result.success is False
     assert result.error
 
@@ -190,6 +213,7 @@ class TestReadTool:
     """read tool handles permission denied."""
     # Skip on systems where /dev/null might not have permission issues
     spec = _read_spec()
+    ctx = _read_context()
     # Reading a directory should fail with "not a file" not permission error
-    result = await spec.execute(path="/dev")
+    result = await spec.execute(path="/dev", ctx=ctx)
     assert result.success is False

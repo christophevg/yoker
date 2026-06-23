@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import traceback
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.key_binding import KeyBindings, KeyPressEvent
@@ -18,11 +18,9 @@ from rich.panel import Panel
 from rich.style import Style
 
 from yoker import __version__
-from yoker.ui.base import BaseUIHandler
+from yoker.agent import Agent
+from yoker.ui.handler import UIHandler
 from yoker.ui.spinner import LiveDisplay
-
-if TYPE_CHECKING:
-  from yoker.agent import Agent
 
 # Styles for console output
 THINKING_STYLE = Style(color="bright_black", dim=True)
@@ -30,7 +28,7 @@ TOOL_STYLE = Style(color="cyan")
 ERROR_STYLE = Style(color="red", bold=True)
 
 
-class InteractiveUIHandler(BaseUIHandler):
+class InteractiveUIHandler(UIHandler):
   """Interactive UI with prompt_toolkit input and Rich output.
 
   Features:
@@ -59,7 +57,6 @@ class InteractiveUIHandler(BaseUIHandler):
       wrap_width: Optional width for wrapping streamed output.
       console: Optional Rich console (default: new Console).
     """
-    super().__init__()
     self.console = console if console is not None else Console()
     self.history_file = history_file or Path.home() / ".yoker_history"
     self.show_thinking = show_thinking
@@ -73,6 +70,10 @@ class InteractiveUIHandler(BaseUIHandler):
     # Track display state for separators
     self._thinking_shown = False
     self._content_shown = False
+
+    # Streaming state
+    self._streaming_content = False
+    self._streaming_thinking = False
 
     # Optional predefined input source for scripted/demo usage
     self._input_source: list[str] | None = None
@@ -134,6 +135,11 @@ class InteractiveUIHandler(BaseUIHandler):
       self._live.__exit__(None, None, None)
       self._live = None
 
+  def _end_turn(self) -> None:
+    """End current turn and reset streaming state."""
+    self._streaming_content = False
+    self._streaming_thinking = False
+
   # === Lifecycle ===
 
   async def start(self, agent: Agent) -> None:
@@ -154,16 +160,13 @@ class InteractiveUIHandler(BaseUIHandler):
     motd_lines = [
       f"Yoker v{__version__} - Using model: {agent.model}",
       harness_line,
-      f"Thinking mode: {thinking_status} (use /think on|off to toggle)",
+      f"Thinking mode: {thinking_status} (use /think on|off|silent to toggle)",
     ]
 
     agent_def = agent.definition
-    if agent_def is not None:
-      motd_lines.append(f"Agent: {agent_def.name} - {agent_def.description}")
-      if agent_def.source_path:
-        motd_lines.append(f"  Source: {agent_def.source_path}")
-    else:
-      motd_lines.append("Agent: (default)")
+    motd_lines.append(f"Agent: {agent_def.name} - {agent_def.description}")
+    if agent_def.source_path:
+      motd_lines.append(f"  Source: {agent_def.source_path}")
 
     motd_lines.append("Type /help for available commands.")
     motd_lines.append("Press Ctrl+D (or Ctrl+Z on Windows) to quit.")
@@ -237,6 +240,17 @@ class InteractiveUIHandler(BaseUIHandler):
     if self._live:
       self._live.stop_spinner()
 
+  def output_content(self, content: str, content_type: str = "text/plain") -> None:
+    """Output content text directly (non-streaming).
+
+    Args:
+      content: Content text (may contain ANSI from LLM).
+      content_type: MIME type of content.
+    """
+    self.start_content_stream()
+    self.stream_content(content, content_type)
+    self.end_content_stream(len(content))
+
   # === Thinking Output ===
 
   def start_thinking_stream(self) -> None:
@@ -270,6 +284,16 @@ class InteractiveUIHandler(BaseUIHandler):
     if self.show_thinking and self._live:
       self._live.stop_spinner()
 
+  def output_thinking(self, text: str) -> None:
+    """Output thinking text directly (non-streaming).
+
+    Args:
+      text: Thinking text.
+    """
+    self.start_thinking_stream()
+    self.stream_thinking(text)
+    self.end_thinking_stream(len(text))
+
   # === Command Output ===
 
   def output_command_result(self, result: str) -> None:
@@ -297,7 +321,7 @@ class InteractiveUIHandler(BaseUIHandler):
     self._exit_live()
 
     details = self._format_tool_details(tool_name, args)
-    self.console.print(f"\n⏺ {self._capitalize(tool_name)} tool: {details}")
+    self.console.print(f"\n⏺ {self._capitalize(tool_name)} tool: {details}", end="")
 
   def output_tool_result(self, tool_name: str, success: bool, result: str) -> None:
     """Output tool result status.
@@ -311,10 +335,10 @@ class InteractiveUIHandler(BaseUIHandler):
       return
 
     if success:
-      self.console.print("  ✓ Success")
+      self.console.print("  [green]✓ Success[green]")
     else:
       error_msg = result[:50] if result else "Failed"
-      self.console.print(f"  ✗ {error_msg}")
+      self._print_error(error_msg)
 
     # Create LiveDisplay with spinner for subsequent processing
     self._ensure_live()
@@ -390,7 +414,7 @@ class InteractiveUIHandler(BaseUIHandler):
 
   # === Error Output ===
 
-  def output_error(self, error: Exception, include_traceback : bool = False) -> None:
+  def output_error(self, error: Exception, include_traceback: bool = True) -> None:
     """Output error message with Rich formatting.
 
     Args:
@@ -411,14 +435,17 @@ class InteractiveUIHandler(BaseUIHandler):
       msg = f"Tool Error ({error.tool_name}): {error}"
     else:
       msg = f"Error: {error}"
-
-    if include_traceback:
-      msg += "\n" + traceback.format_exc()
-
-    self.console.print(Panel(msg, title="ERROR"), style=ERROR_STYLE)
-    self.console.print()
+    self._print_error(msg, error if include_traceback else None)
 
   # === Tool Formatting Helpers ===
+
+  def _print_error(self, msg: str, exc: Exception | None = None) -> None:
+    if exc:
+      tb = "".join(traceback.TracebackException.from_exception(exc).format())
+      msg += "\n\n[black]" + tb
+
+    self.console.print(Panel(msg, title="ERROR", style=ERROR_STYLE))
+    self.console.print()
 
   @staticmethod
   def _capitalize(name: str) -> str:

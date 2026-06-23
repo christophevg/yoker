@@ -29,15 +29,6 @@ async def handle(skill_name: str, args: str, agent: "Agent", ui: "UIHandler") ->
   Raises:
     SkillError: If the skill is not found in the agent's skill registry.
   """
-  from yoker.exceptions import SkillError
-
-  registry = agent.skills
-  if registry is None or skill_name not in registry:
-    available = ", ".join(registry.names) if registry else ""
-    if available:
-      raise SkillError(skill_name, f"Unknown skill. Available skills: {available}")
-    raise SkillError(skill_name, "Unknown skill")
-
   agent.inject_skill_context(skill_name, args)
 
   prompt = args if args.strip() else "Execute the skill as requested."

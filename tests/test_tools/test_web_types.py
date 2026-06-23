@@ -8,7 +8,7 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from yoker.tools.web_types import SearchResult, WebSearchError
+from yoker.tools.web.types import SearchResult, WebSearchError
 
 
 class TestSearchResult:

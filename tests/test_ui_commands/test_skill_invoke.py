@@ -26,14 +26,19 @@ class MockUI(BatchUIHandler):
 class TestSkillInvokeCommand:
   """Tests for skill invocation via slash commands in the UI layer."""
 
+  def _make_agent(self, skills=None):
+    """Create a mock agent with skills registry."""
+    agent = MagicMock(spec=Agent)
+    agent.skills = skills if skills is not None else SkillRegistry()
+    return agent
+
   @pytest.mark.asyncio
   async def test_invoke_with_args_processes_args(self):
     """Invoking a skill with args should inject context and process args."""
     registry = SkillRegistry()
-    registry.register(Skill(name="commit", description="Commit", content="..."))
+    registry.register(Skill(simple_name="commit", description="Commit", content="..."))
 
-    agent = MagicMock(spec=Agent)
-    agent.skill_registry = registry
+    agent = self._make_agent(skills=registry)
     agent.process = AsyncMock(return_value="done")
     ui = MockUI()
 
@@ -46,10 +51,9 @@ class TestSkillInvokeCommand:
   async def test_invoke_without_args_processes_default_prompt(self):
     """Invoking a skill without args should use a default prompt."""
     registry = SkillRegistry()
-    registry.register(Skill(name="commit", description="Commit", content="..."))
+    registry.register(Skill(simple_name="commit", description="Commit", content="..."))
 
-    agent = MagicMock(spec=Agent)
-    agent.skill_registry = registry
+    agent = self._make_agent(skills=registry)
     agent.process = AsyncMock(return_value="done")
     ui = MockUI()
 
@@ -61,9 +65,11 @@ class TestSkillInvokeCommand:
   @pytest.mark.asyncio
   async def test_invoke_unknown_skill_raises(self):
     """Invoking an unknown skill should raise SkillError."""
-    agent = MagicMock(spec=Agent)
-    agent.skill_registry = SkillRegistry()
+    agent = self._make_agent()
     ui = MockUI()
+
+    # Configure the mock to raise SkillError when inject_skill_context is called
+    agent.inject_skill_context.side_effect = SkillError("missing", "Unknown skill")
 
     with pytest.raises(SkillError):
       await handle("missing", "", agent, ui)
@@ -71,9 +77,11 @@ class TestSkillInvokeCommand:
   @pytest.mark.asyncio
   async def test_invoke_no_registry_raises(self):
     """Invoking a skill with no registry should raise SkillError."""
-    agent = MagicMock(spec=Agent)
-    agent.skill_registry = None
+    agent = self._make_agent(skills=None)
     ui = MockUI()
+
+    # Configure the mock to raise SkillError when inject_skill_context is called
+    agent.inject_skill_context.side_effect = SkillError("missing", "Unknown skill")
 
     with pytest.raises(SkillError):
       await handle("missing", "", agent, ui)
@@ -84,11 +92,10 @@ class TestSkillInvokeCommand:
     registry = create_default_registry()
     skill_registry = SkillRegistry()
     skill_registry.register(
-      Skill(name="commit", description="Commit", content="commit instructions")
+      Skill(simple_name="commit", description="Commit", content="commit instructions")
     )
 
-    agent = MagicMock(spec=Agent)
-    agent.skill_registry = skill_registry
+    agent = self._make_agent(skills=skill_registry)
     agent.process = AsyncMock(return_value="done")
     ui = MockUI()
 

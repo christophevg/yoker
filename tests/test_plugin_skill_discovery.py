@@ -45,23 +45,24 @@ class TestPluginSkillDiscovery:
 
     # Should have skill registry
     assert agent.skills is not None
-    assert agent.skills.count > 0
+    assert len(agent.skills) > 0
 
     # Should have greeting skill with namespace
-    skills = agent.skills.list_skills()
+    skills = agent.skills.skills
     skill_names = [s.name for s in skills]
-    assert "greeting" in skill_names
+    assert "yoker_plugin_demo:greeting" in skill_names
 
     # Namespace should be preserved
-    greeting_skill = [s for s in skills if s.name == "greeting"][0]
+    greeting_skill = [s for s in skills if s.name == "yoker_plugin_demo:greeting"][0]
     assert greeting_skill.namespace == "yoker_plugin_demo"
+    assert greeting_skill.simple_name == "greeting"
 
   def test_skill_tool_registered_for_plugin_skills(self, demo_plugin, plugin_config):
     """SkillTool should be registered when plugin provides skills."""
     agent = Agent(config=plugin_config, plugins=[demo_plugin])
 
-    # Should have skill tool registered
-    assert "skill" in agent.tools.names
+    # Should have skill tool registered (namespaced as yoker:skill)
+    assert "yoker:skill" in agent.tools.names
     assert "yoker_plugin_demo:echo" in agent.tools.names
 
   def test_skill_discovery_block_added_to_context(self, demo_plugin, plugin_config):
@@ -84,21 +85,21 @@ class TestPluginSkillDiscovery:
 
     # Should still have plugin skills
     assert agent.skills is not None
-    assert agent.skills.count > 0
+    assert len(agent.skills) > 0
 
-    # SkillTool should still be registered
-    assert "skill" in agent.tools.names
+    # SkillTool should still be registered (namespaced as yoker:skill)
+    assert "yoker:skill" in agent.tools.names
 
   def test_multiple_plugins_with_skills(self, plugin_config):
     """Multiple plugins can contribute skills simultaneously."""
     # Load demo plugin
     agent = Agent(config=plugin_config, plugins=["yoker_plugin_demo"])
 
-    skill_count = agent.skills.count
+    skill_count = len(agent.skills)
     assert skill_count > 0
 
     # Plugin skills should be namespaced
-    skills = agent.skills.list_skills()
+    skills = agent.skills.skills
     plugin_skills = [s for s in skills if s.namespace is not None]
     assert len(plugin_skills) > 0, "Should have at least one plugin skill"
 

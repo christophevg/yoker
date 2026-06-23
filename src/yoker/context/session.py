@@ -12,7 +12,7 @@ from structlog import get_logger
 
 from yoker.context.interface import SessionMetadata
 
-log = get_logger(__name__)
+logger = get_logger(__name__)
 
 # Maximum characters for last message preview
 LAST_MESSAGE_PREVIEW_LENGTH = 100
@@ -47,7 +47,7 @@ def list_sessions(storage_path: Path | str | None = None) -> list[SessionMetadat
     storage_path = Path(storage_path).expanduser()
 
   if not storage_path.exists():
-    log.debug("sessions_directory_not_found", path=str(storage_path))
+    logger.debug("sessions_directory_not_found", path=str(storage_path))
     return []
 
   sessions: list[SessionMetadata] = []
@@ -58,7 +58,7 @@ def list_sessions(storage_path: Path | str | None = None) -> list[SessionMetadat
       if metadata:
         sessions.append(metadata)
     except Exception as e:
-      log.warning(
+      logger.warning(
         "session_metadata_read_error",
         path=str(file_path),
         error=str(e),
@@ -68,7 +68,7 @@ def list_sessions(storage_path: Path | str | None = None) -> list[SessionMetadat
   # Sort by start_time, newest first
   sessions.sort(key=lambda s: s.start_time, reverse=True)
 
-  log.debug("sessions_listed", count=len(sessions), path=str(storage_path))
+  logger.debug("sessions_listed", count=len(sessions), path=str(storage_path))
   return sessions
 
 
@@ -90,7 +90,7 @@ def load_session_metadata(file_path: Path | str) -> SessionMetadata | None:
   file_path = Path(file_path).expanduser()
 
   if not file_path.exists():
-    log.debug("session_file_not_found", path=str(file_path))
+    logger.debug("session_file_not_found", path=str(file_path))
     return None
 
   return _read_session_metadata(file_path)
@@ -149,10 +149,10 @@ def _read_session_metadata(file_path: Path) -> SessionMetadata | None:
             last_message = content
 
   except json.JSONDecodeError:
-    log.warning("session_file_corrupted", path=str(file_path))
+    logger.warning("session_file_corrupted", path=str(file_path))
     return None
   except Exception as e:
-    log.warning("session_read_error", path=str(file_path), error=str(e))
+    logger.warning("session_read_error", path=str(file_path), error=str(e))
     return None
 
   # Must have start_time to be valid

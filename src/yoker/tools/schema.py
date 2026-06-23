@@ -11,15 +11,12 @@ by tool execution and guardrail validation.
 import inspect
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, ForwardRef, get_origin
+from typing import Any, ForwardRef, get_origin, get_type_hints
 
 from structlog import get_logger
 
-from yoker.annotations import GuardType, Text
 from yoker.schema import NameSpaced
-
-if TYPE_CHECKING:
-  from yoker.tools.context import ToolContext
+from yoker.tools.annotations import GuardType, Text
 
 logger = get_logger(__name__)
 
@@ -74,11 +71,12 @@ class ToolSpec(NameSpaced):
   guards: dict[str, GuardType] = field(default_factory=dict)
   execute: Callable[..., Any] | None = None
 
-  def __post_init__(self):
+  def __post_init__(self) -> None:
     if not self.description:
       raise ValueError("A tool needs a description.")
     if not self.execute:
       raise ValueError("A tool needs a callable to execute.")
+
 
 # JSON-schema type mapping for common Python types.
 _JSON_SCHEMA_TYPES: dict[type[Any], str] = {
@@ -119,6 +117,14 @@ def build_tool_spec(
   description = _resolve_description(tool)
   signature = inspect.signature(tool)
 
+  # Resolve type hints with include_extras=True to preserve Annotated markers
+  # This is necessary when using `from __future__ import annotations`
+  try:
+    type_hints = get_type_hints(tool, include_extras=True)
+  except Exception:
+    # Fallback to empty hints if resolution fails
+    type_hints = {}
+
   properties: dict[str, Any] = {}
   required: list[str] = []
   guards: dict[str, GuardType] = {}
@@ -128,7 +134,12 @@ def build_tool_spec(
     if _is_context_parameter(param):
       continue
 
-    param_schema, guard_type = _build_parameter_schema(param, param_name)
+    # Use resolved type hint if available, otherwise use param.annotation
+    resolved_annotation = type_hints.get(param_name, param.annotation)
+
+    param_schema, guard_type = _build_parameter_schema(
+      param_name, resolved_annotation, param.default
+    )
     properties[param_name] = param_schema
     if guard_type is not None:
       guards[param_name] = guard_type
@@ -136,10 +147,14 @@ def build_tool_spec(
     if param.default is inspect.Parameter.empty:
       required.append(param_name)
 
+  # Build the full tool name with namespace for the schema
+  # Use __ instead of : to avoid confusing the model with colons
+  tool_name = f"{namespace}__{resolved_name}" if namespace else resolved_name
+
   schema = {
     "type": "function",
     "function": {
-      "name": resolved_name,
+      "name": tool_name,
       "description": description,
       "parameters": {
         "type": "object",
@@ -197,16 +212,21 @@ def _resolve_description(tool: Callable[..., Any]) -> str:
 
 
 def _build_parameter_schema(
-  param: inspect.Parameter,
   param_name: str,
+  annotation: Any,
+  default: Any = inspect.Parameter.empty,
 ) -> tuple[dict[str, Any], GuardType | None]:
   """Build a JSON-schema property for a single parameter.
+
+  Args:
+    param_name: Parameter name (for logging).
+    annotation: Resolved type annotation (from get_type_hints).
+    default: Parameter default value.
 
   Returns:
     Tuple of (property_schema, guard_type). The guard type is ``None`` for
     non-string parameters or plain strings without an annotation marker.
   """
-  annotation = param.annotation
   description = ""
   guard_type: GuardType | None = None
 
@@ -235,7 +255,7 @@ def _build_parameter_schema(
     json_schema["type"] = json_type
 
   # Handle Optional[T] by checking if the default is None.
-  if param.default is None:
+  if default is None:
     # Mark optional if the annotation itself is a union containing None.
     if _is_optional(annotation):
       json_schema.setdefault("type", json_type or "string")

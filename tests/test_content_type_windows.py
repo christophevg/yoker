@@ -17,7 +17,7 @@ class TestDetectContentTypeFallback:
 
   def test_detect_with_library_handles_import_error(self) -> None:
     """Test that _detect_with_library handles ImportError (magic not installed)."""
-    from yoker.content_type import _detect_with_library
+    from yoker.tools.content_type import _detect_with_library
 
     # Mock the magic module to not exist
     with patch.dict("sys.modules", {"magic": None}):
@@ -27,7 +27,7 @@ class TestDetectContentTypeFallback:
 
   def test_detect_with_library_handles_os_error(self) -> None:
     """Test that _detect_with_library handles OSError (DLL missing on Windows)."""
-    from yoker.content_type import _detect_with_library
+    from yoker.tools.content_type import _detect_with_library
 
     # Mock magic module that raises OSError when used
     mock_magic = MagicMock()
@@ -40,7 +40,7 @@ class TestDetectContentTypeFallback:
 
   def test_detect_with_library_handles_runtime_error(self) -> None:
     """Test that _detect_with_library handles RuntimeError (libmagic invalid state)."""
-    from yoker.content_type import _detect_with_library
+    from yoker.tools.content_type import _detect_with_library
 
     mock_magic = MagicMock()
     mock_magic.from_buffer.side_effect = RuntimeError("libmagic initialization failed")
@@ -51,7 +51,7 @@ class TestDetectContentTypeFallback:
 
   def test_detect_with_library_handles_any_exception(self) -> None:
     """Test that _detect_with_library handles any exception from magic."""
-    from yoker.content_type import _detect_with_library
+    from yoker.tools.content_type import _detect_with_library
 
     mock_magic = MagicMock()
     mock_magic.from_buffer.side_effect = Exception("Unknown error")
@@ -66,7 +66,7 @@ class TestDetectContentTypeFallback:
     This is the critical test that was hanging on Windows. When _detect_with_library
     encounters any exception, the function should fall back to extension detection.
     """
-    from yoker.content_type import detect_content_type
+    from yoker.tools.content_type import detect_content_type
 
     # Mock magic module that raises OSError (Windows DLL issue)
     mock_magic = MagicMock()
@@ -82,7 +82,7 @@ class TestDetectContentTypeFallback:
 
   def test_detect_content_type_with_various_magic_failures(self) -> None:
     """Test extension fallback works with different magic failures."""
-    from yoker.content_type import detect_content_type
+    from yoker.tools.content_type import detect_content_type
 
     test_cases = [
       (Path("README.md"), b"# Test", "text/markdown"),

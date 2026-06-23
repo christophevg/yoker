@@ -6,14 +6,28 @@ from pathlib import Path
 
 import pytest
 
-from yoker.tools import ToolRegistry, make_list_tool
-from yoker.tools.base import ToolResult
+from yoker.builtin import list as list_tool
+from yoker.config import Config
+from yoker.tools import ToolRegistry
+from yoker.tools.context import ToolContext
+from yoker.tools.schema import ToolResult
 
 
 def _list_spec():
   """Create and register the list tool."""
   registry = ToolRegistry()
-  return registry.register(make_list_tool())
+  return registry.register(list_tool)
+
+
+def _list_context(config: Config | None = None) -> ToolContext:
+  """Create a ToolContext for list tool tests."""
+  if config is None:
+    config = Config()
+  return ToolContext(
+    config=config.tools.list,
+    shared=config.tools_shared,
+    backends={},
+  )
 
 
 class TestListTool:
@@ -51,7 +65,8 @@ class TestListTool:
     (tmp_path / "subdir").mkdir()
 
     spec = _list_spec()
-    result = await spec.execute(path=str(tmp_path))
+    ctx = _list_context()
+    result = await spec.execute(path=str(tmp_path), ctx=ctx)
     assert result.success is True
     assert "alpha.txt" in result.result
     assert "beta.py" in result.result
@@ -70,7 +85,8 @@ class TestListTool:
     (deep / "bottom.txt").write_text("bottom")
 
     spec = _list_spec()
-    result = await spec.execute(path=str(tmp_path), max_depth=2)
+    ctx = _list_context()
+    result = await spec.execute(path=str(tmp_path), ctx=ctx, max_depth=2)
     assert result.success is True
     assert "root.txt" in result.result
     assert "nested.txt" in result.result
@@ -84,7 +100,8 @@ class TestListTool:
     (tmp_path / "subdir").mkdir()
 
     spec = _list_spec()
-    result = await spec.execute(path=str(tmp_path), max_depth=0)
+    ctx = _list_context()
+    result = await spec.execute(path=str(tmp_path), ctx=ctx, max_depth=0)
     assert result.success is True
     assert str(tmp_path).rstrip("/") + "/" in result.result
     assert "file.txt" not in result.result
@@ -97,7 +114,8 @@ class TestListTool:
       (tmp_path / f"file{i}.txt").write_text("x")
 
     spec = _list_spec()
-    result = await spec.execute(path=str(tmp_path), max_entries=3)
+    ctx = _list_context()
+    result = await spec.execute(path=str(tmp_path), ctx=ctx, max_entries=3)
     assert result.success is True
     assert "truncated" in result.result
     assert "3 entries total" in result.result
@@ -111,7 +129,8 @@ class TestListTool:
     (tmp_path / "subdir").mkdir()
 
     spec = _list_spec()
-    result = await spec.execute(path=str(tmp_path), pattern="*.py")
+    ctx = _list_context()
+    result = await spec.execute(path=str(tmp_path), ctx=ctx, pattern="*.py")
     assert result.success is True
     assert "foo.py" in result.result
     assert "bar.py" in result.result
@@ -122,7 +141,8 @@ class TestListTool:
   async def test_list_nonexistent_path(self) -> None:
     """list tool returns error for nonexistent path."""
     spec = _list_spec()
-    result = await spec.execute(path="/nonexistent/path")
+    ctx = _list_context()
+    result = await spec.execute(path="/nonexistent/path", ctx=ctx)
     assert result.success is False
     assert "not found" in result.error.lower()
 
@@ -133,7 +153,8 @@ class TestListTool:
     file_path.write_text("hello")
 
     spec = _list_spec()
-    result = await spec.execute(path=str(file_path))
+    ctx = _list_context()
+    result = await spec.execute(path=str(file_path), ctx=ctx)
     assert result.success is True
     assert "single.txt" in result.result
     assert "1 entry total (1 file, 0 directories)" in result.result
@@ -150,7 +171,8 @@ class TestListTool:
     os.chmod(str(restricted), 0o000)
     try:
       spec = _list_spec()
-      result = await spec.execute(path=str(restricted))
+      ctx = _list_context()
+      result = await spec.execute(path=str(restricted), ctx=ctx)
       assert result.success is True
       assert "permission denied" in result.result.lower()
     finally:
@@ -160,7 +182,8 @@ class TestListTool:
   async def test_list_invalid_max_depth(self) -> None:
     """list tool handles invalid max_depth."""
     spec = _list_spec()
-    result = await spec.execute(path=".", max_depth="abc")  # type: ignore
+    ctx = _list_context()
+    result = await spec.execute(path=".", max_depth="abc", ctx=ctx)  # type: ignore
     assert result.success is False
     assert "invalid numeric" in result.error.lower()
 
@@ -170,7 +193,8 @@ class TestListTool:
     (tmp_path / "file.txt").write_text("hello")
 
     spec = _list_spec()
-    result = await spec.execute(path=str(tmp_path), max_depth=-5)
+    ctx = _list_context()
+    result = await spec.execute(path=str(tmp_path), ctx=ctx, max_depth=-5)
     assert result.success is True
     assert "file.txt" not in result.result
 
@@ -180,7 +204,8 @@ class TestListTool:
     (tmp_path / "file.txt").write_text("hello")
 
     spec = _list_spec()
-    result = await spec.execute(path=str(tmp_path), max_depth=999)
+    ctx = _list_context()
+    result = await spec.execute(path=str(tmp_path), ctx=ctx, max_depth=999)
     assert result.success is True
     assert "file.txt" in result.result
 
@@ -188,7 +213,8 @@ class TestListTool:
   async def test_list_empty_directory(self, tmp_path: Path) -> None:
     """list tool handles empty directory."""
     spec = _list_spec()
-    result = await spec.execute(path=str(tmp_path))
+    ctx = _list_context()
+    result = await spec.execute(path=str(tmp_path), ctx=ctx)
     assert result.success is True
     assert "0 entries total (0 files, 0 directories)" in result.result
 
@@ -202,7 +228,8 @@ class TestListTool:
     os.symlink(str(target), str(symlink))
 
     spec = _list_spec()
-    result = await spec.execute(path=str(tmp_path), max_depth=2)
+    ctx = _list_context()
+    result = await spec.execute(path=str(tmp_path), ctx=ctx, max_depth=2)
     assert result.success is True
     assert "link" in result.result
     assert "inside.txt" not in result.result
@@ -215,7 +242,8 @@ class TestListTool:
     (tmp_path / "beta.txt").write_text("b")
 
     spec = _list_spec()
-    result = await spec.execute(path=str(tmp_path))
+    ctx = _list_context()
+    result = await spec.execute(path=str(tmp_path), ctx=ctx)
     lines = result.result.split("\n")
     names = [line.strip() for line in lines if line.strip() and not line.startswith(".")]
     assert names[0] == str(tmp_path).rstrip("/") + "/"
@@ -227,5 +255,6 @@ class TestListTool:
   async def test_list_result_is_toolresult(self) -> None:
     """list tool execute returns ToolResult."""
     spec = _list_spec()
-    result = await spec.execute(path="/tmp")
+    ctx = _list_context()
+    result = await spec.execute(path="/tmp", ctx=ctx)
     assert isinstance(result, ToolResult)

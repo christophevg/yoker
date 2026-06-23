@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Annotated, Any
 
 from structlog import get_logger
 
+from yoker.config import UpdateToolConfig
 from yoker.tools.annotations import Path as PathArg
 from yoker.tools.annotations import Text
 from yoker.tools.context import ToolContext
@@ -52,6 +53,9 @@ async def update(
   """Update an existing file by replacing, inserting, or deleting content."""
   # Config values come from ctx.config (UpdateToolConfig with defaults)
   update_config = ctx.config
+  if not isinstance(update_config, UpdateToolConfig):
+    logger.warning("update_invalid_config_type", config_type=type(update_config).__name__)
+    return ToolResult(success=False, error="Invalid configuration for update tool")
   require_exact_match = update_config.require_exact_match
   max_diff_size_kb = update_config.max_diff_size_kb
 

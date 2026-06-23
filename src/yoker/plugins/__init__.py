@@ -24,8 +24,10 @@ Example:
 
 from yoker.plugins.loader import (
   PluginComponents,
+  load_agents_from_package,
   load_configured_plugins,
   load_plugin,
+  load_skills_from_package,
 )
 from yoker.plugins.manifest import PluginManifest
 from yoker.plugins.registration import (
@@ -48,6 +50,8 @@ __all__ = [
   "PluginComponents",
   "load_plugin",
   "load_configured_plugins",
+  "load_skills_from_package",
+  "load_agents_from_package",
   # Registration
   "register_tools",
   "register_skills",

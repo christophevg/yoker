@@ -6,16 +6,17 @@ from yoker.plugins import load_plugin
 class TestLoadBuiltinPlugin:
   """Tests for the built-in yoker plugin."""
 
-  def test_load_builtin_plugin_is_empty(self):
-    """Test that load_plugin("yoker") returns an empty manifest.
+  def test_load_builtin_plugin_has_tools(self):
+    """Test that load_plugin("yoker") returns builtin tools.
 
-    Built-in filesystem tools are registered directly by the Agent, so the
-    built-in plugin manifest no longer duplicates them.
+    Built-in tools (read, write, etc.) are registered via the builtin plugin
+    manifest and loaded by the plugin system.
     """
     plugin = load_plugin("yoker")
 
     assert plugin is not None
-    assert plugin.tools == []
+    # Builtin tools are included in the manifest
+    assert len(plugin.tools) > 0
     assert plugin.skills == []
     assert plugin.agents == []
 

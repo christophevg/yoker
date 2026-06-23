@@ -20,7 +20,7 @@ if TYPE_CHECKING:
   from yoker.config import Config
   from yoker.plugins import PluginComponents
 
-log = get_logger(__name__)
+logger = get_logger(__name__)
 
 # Rich console for styled output
 console = Console()
@@ -75,7 +75,7 @@ def confirm_plugin(plugin_name: str, plugin: "PluginComponents") -> bool:
     code_text.append(f"  {plugin_name} = true", style="cyan")
     console.print(code_text)
 
-    log.warning(
+    logger.warning(
       "plugin_not_trusted_non_interactive",
       plugin=plugin_name,
       interactive=False,
@@ -138,7 +138,7 @@ def confirm_plugin(plugin_name: str, plugin: "PluginComponents") -> bool:
     if response in ("y", "yes"):
       # Add to session-trusted set
       _session_trusted.add(plugin_name)
-      log.info("plugin_confirmed_by_user", plugin=plugin_name)
+      logger.info("plugin_confirmed_by_user", plugin=plugin_name)
 
       # Show config snippet for permanent trust
       console.print("\nTo trust this plugin permanently, add to your yoker.toml:\n")
@@ -150,11 +150,11 @@ def confirm_plugin(plugin_name: str, plugin: "PluginComponents") -> bool:
 
       return True
     else:
-      log.info("plugin_rejected_by_user", plugin=plugin_name)
+      logger.info("plugin_rejected_by_user", plugin=plugin_name)
       return False
   except (EOFError, KeyboardInterrupt):
     print()
-    log.info("plugin_confirmation_cancelled", plugin=plugin_name)
+    logger.info("plugin_confirmation_cancelled", plugin=plugin_name)
     return False
 
 
@@ -183,7 +183,7 @@ def check_plugins_enabled(config: "Config") -> bool:
     code_text.append("  enabled = true", style="cyan")
     console.print(code_text)
 
-    log.warning("plugins_disabled_globally")
+    logger.warning("plugins_disabled_globally")
     return False
 
   return True
@@ -209,7 +209,7 @@ def check_plugin_allowed(plugin_name: str, config: "Config", plugin: "PluginComp
   """
   # Check if plugin is trusted
   if is_trusted(plugin_name, config):
-    log.info("plugin_trusted", plugin=plugin_name)
+    logger.info("plugin_trusted", plugin=plugin_name)
     return True
 
   # Ask for confirmation

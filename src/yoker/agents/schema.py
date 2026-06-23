@@ -33,6 +33,7 @@ class AgentDefinition(NameSpaced):
   def default_simple_name(self) -> str | None:
     return "default"
 
+
 __all__ = [
   "AgentDefinition",
 ]

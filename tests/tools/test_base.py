@@ -4,10 +4,9 @@ from typing import Annotated
 
 import pytest
 
-from yoker.annotations import Text
-from yoker.tools.base import ToolResult, ValidationResult
+from yoker.tools.annotations import Text
 from yoker.tools.registry import ToolRegistry
-from yoker.tools.schema import build_tool_spec
+from yoker.tools.schema import ToolResult, ValidationResult, build_tool_spec
 
 
 class TestToolResult:

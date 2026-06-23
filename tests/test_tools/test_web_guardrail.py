@@ -10,7 +10,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from yoker.tools.web_guardrail import WebGuardrail, WebGuardrailConfig
+from yoker.tools.web.guardrail import WebGuardrail, WebGuardrailConfig
 
 
 class TestWebGuardrailSSRFProtection:

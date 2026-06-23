@@ -36,7 +36,7 @@ class LoggingContext:
 
   Example:
     with LoggingContext.bind(session_id="abc123"):
-      log.info("turn_started", message="Hello")
+      logger.info("turn_started", message="Hello")
       # Output includes session_id="abc123"
 
   Note:
@@ -66,7 +66,7 @@ class LoggingContext:
 
     Example:
       with LoggingContext.bind(session_id="abc123", turn=1):
-        log.info("processing")
+        logger.info("processing")
     """
     return _ContextBinder(kwargs)
 
@@ -105,6 +105,15 @@ def _add_context(logger: logging.Logger, method_name: str, event_dict: EventDict
   context = LoggingContext._get_context()
   event_dict.update(context)
   return event_dict
+
+
+def is_logging_configured() -> bool:
+  """Check if logging has been configured.
+
+  Returns:
+    True if configure_logging has been called, False otherwise.
+  """
+  return _logging_configured
 
 
 def configure_logging(
@@ -170,7 +179,7 @@ def configure_logging(
   ]
 
   # Configure structlog processors based on format
-  if format == "json":
+  if config.format == "json":
     # JSON format for production
     shared_processors.append(structlog.processors.format_exc_info)
     final_processors: list[Processor] = [structlog.processors.JSONRenderer()]
@@ -221,13 +230,13 @@ def log_timing(
       result = read_file("test.py")
     # Logs: "tool_execution" with duration_ms and context
   """
-  log = get_logger(__name__)
+  logger = get_logger(__name__)
   start = time.perf_counter()
   try:
     yield
   finally:
     duration_ms = (time.perf_counter() - start) * 1000
-    getattr(log, log_level)(
+    getattr(logger, log_level)(
       operation,
       duration_ms=round(duration_ms, 2),
       **context,
@@ -238,5 +247,6 @@ __all__ = [
   "LoggingContext",
   "configure_logging",
   "get_logger",
+  "is_logging_configured",
   "log_timing",
 ]

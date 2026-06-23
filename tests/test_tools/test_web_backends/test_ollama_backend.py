@@ -9,8 +9,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from yoker.tools.web_backend import OllamaWebSearchBackend
-from yoker.tools.web_types import WebSearchError
+from yoker.tools.web.backend import OllamaWebSearchBackend
+from yoker.tools.web.types import WebSearchError
 
 
 @dataclass

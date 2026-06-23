@@ -12,7 +12,7 @@ if TYPE_CHECKING:
   from yoker.context import ContextManager
   from yoker.skills import SkillRegistry
 
-log = get_logger(__name__)
+logger = get_logger(__name__)
 
 
 def create_client(config: Config, client_cls: "type[AsyncClient] | None" = None) -> AsyncClient:
@@ -21,9 +21,9 @@ def create_client(config: Config, client_cls: "type[AsyncClient] | None" = None)
   api_key = config.backend.ollama.api_key
   base_url = config.backend.ollama.base_url
   if api_key:
-    log.info("async_ollama_client_initialized", host=base_url, auth="api_key")
+    logger.info("async_ollama_client_initialized", host=base_url, auth="api_key")
     return cls(host=base_url, headers={"Authorization": f"Bearer {api_key}"})
-  log.info("async_ollama_client_initialized", host=base_url, auth="none")
+  logger.info("async_ollama_client_initialized", host=base_url, auth="none")
   return cls(host=base_url)
 
 
@@ -83,9 +83,9 @@ def add_skill_discovery_block(
   config: Config, skill_registry: "SkillRegistry", context: "ContextManager"
 ) -> None:
   """Add skill discovery user message if enabled and skills exist."""
-  if skill_registry.count > 0 and config.skills.discovery:
+  if len(skill_registry) > 0 and config.skills.discovery:
     from yoker.skills import format_discovery_block
 
-    skill_list = skill_registry.list_skills()
+    skill_list = skill_registry.skills
     context.add_message("user", format_discovery_block(skill_list))
-    log.info("skill_discovery_added", skill_count=len(skill_list))
+    logger.info("skill_discovery_added", skill_count=len(skill_list))

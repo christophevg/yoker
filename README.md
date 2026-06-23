@@ -199,7 +199,7 @@ See [docs/rationale.md](docs/rationale.md) for the full rationale and comparison
 - [x] Context persistence - Session resumption with JSONL storage
 - [x] Event logging - Full session replay capability
 - [x] Demo scripts - Generate documentation screenshots from Markdown scripts
-- [x] Schema-driven guardrails - Tool parameters are annotated with `yoker.annotations` markers (`Path`, `Url`, `Query`, `Text`); the harness strips the metadata before sending schemas to Ollama and dispatches the matching guardrail at execution time
+- [x] Schema-driven guardrails - Tool parameters are annotated with `yoker.tools.annotations` markers (`Path`, `Url`, `Query`, `Text`); the harness strips the metadata before sending schemas to Ollama and dispatches the matching guardrail at execution time
 - [x] Permissions - Static TOML-based access control
 
 **Planned Features:**

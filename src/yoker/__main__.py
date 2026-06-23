@@ -17,7 +17,6 @@ Examples:
 import asyncio
 import os
 import sys
-import traceback
 
 from structlog import get_logger
 

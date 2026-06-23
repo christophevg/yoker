@@ -1,5 +1,13 @@
 # TODO
 
+## unsorted input
+
+- let's rename yoker: plugin tools to builtin:
+  - + when listing them (e.g. /tools) don't include the "builtin:" prefix
+- when an agent has no explicit tools, ALL tools should be available
+- allow for namespace frontmatter configuration of skills and agents
+- there are duplicate tests (e.g. tests/test_tools/test_base.py and tests/tools/test_base.py), and more. Review all tests for such duplicated tests and clean up.
+
 ## Active: UI Separation Migration (Complete)
 
 **Status:** Completed 2026-06-15 via PR #27
@@ -183,6 +191,70 @@
   - Show low entry barrier and good support for bootstrapping
   - Highlight free Ollama account support
   - **Priority:** P2
+
+---
+
+## Architecture Refactoring: Plugin Config Registration
+
+**Goal:** Enable plugins to register configuration fields dynamically, allowing tool-specific settings without hardcoding in ToolsConfig.
+
+**Related Analysis:**
+- [Plugin Architecture](analysis/plugin-architecture.md)
+
+### Phase 7: Config System Refactoring
+
+**Status:** Design required
+
+**Priority:** P5 (Post-MVP architectural improvement)
+
+**Problem:** The current config system uses frozen dataclasses for `ToolsConfig`, which cannot be extended dynamically. Plugins added via `--with` need to register their own configuration fields (e.g., `[tools.pkgq]` settings). This requires architectural changes to the config system.
+
+- [ ] **7.1 Plugin Config Registration System Design**
+  - Analyze Clevis `register_field` mechanism
+  - Design plugin config registration API
+  - Determine how plugins register their config schema
+  - Design config discovery and validation flow
+  - Document interaction with existing `WebGuardrailConfig` duplication
+  - **Priority:** P5
+  - **Estimated time:** 4-6 hours (design only)
+  - **Note:** This is a design task. Implementation will be a separate task.
+
+- [ ] **7.2 ToolsConfig Dynamic Extension**
+  - Change `ToolsConfig` from frozen to mutable dataclass
+  - Implement `register_tool_config(name: str, config_class: type)` API
+  - Support config field injection at runtime
+  - Update existing hardcoded tool configs to use registration pattern
+  - **Depends on:** 7.1
+  - **Priority:** P5
+  - **Estimated time:** 8-12 hours
+  - **Note:** Requires Clevis support or local workaround
+
+- [ ] **7.3 Consolidate WebGuardrailConfig Classes**
+  - Remove `WebGuardrailConfig` duplication between `tools/web/guardrail.py` and `config/__init__.py`
+  - Create single unified `WebGuardrailConfig` class
+  - Update `WebSearchToolConfig` and `WebFetchToolConfig` to compose guardrail config
+  - Ensure config passes guardrail settings directly to guardrails
+  - Update `agent/_setup.py` to use consolidated config classes
+  - **Depends on:** 7.2
+  - **Priority:** P5
+  - **Estimated time:** 2-4 hours
+  - **Note:** This task should NOT be done separately. It depends on the plugin config registration system being in place first, because:
+    1. The duplication exists because `ToolsConfig` is frozen
+    2. When plugins can register config fields, the pattern will change
+    3. Hardcoded `WebSearchToolConfig`/`WebFetchToolConfig` will become anti-patterns
+    4. Consolidating now would create a pattern that contradicts the plugin system design
+
+**Rationale for Dependency Order:**
+- Item 7.1 must complete first to establish the design
+- Item 7.2 implements the mechanism that plugins will use
+- Item 7.3 consolidates existing configs using the new mechanism
+- Doing 7.3 before 7.2 would create throwaway code that contradicts the plugin architecture
+
+**Related Issue:** The duplication in `WebGuardrailConfig` classes is currently intentional:
+- `tools/web/guardrail.py::WebGuardrailConfig` is a runtime guardrail config (unfrozen)
+- `config/__init__.py::WebSearchToolConfig`/`WebFetchToolConfig` are frozen TOML configs
+- `agent/_setup.py` converts frozen configs to runtime configs
+- This is a workaround that will be eliminated by proper plugin config registration
 
 ---
 
@@ -1057,5 +1129,3 @@
 - [x] **Issue #9: Fix ~ in Storage Path** (2026-05-25)
   - Fixed tilde expansion bug
   - PR: #11
-
-

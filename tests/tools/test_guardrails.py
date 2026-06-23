@@ -2,8 +2,8 @@
 
 import pytest
 
-from yoker.tools.base import ValidationResult
 from yoker.tools.guardrails import Guardrail
+from yoker.tools.schema import ValidationResult
 
 
 class TestGuardrailABC:

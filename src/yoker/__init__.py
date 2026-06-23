@@ -8,7 +8,9 @@ Pairs with "clitic" (both are joining tools).
 from structlog import get_logger
 
 from yoker.agent import Agent
+from yoker.agent.thinking import ThinkingMode
 from yoker.agents import AgentDefinition, load_agent_definition
+from yoker.builtin import __YOKER_MANIFEST__
 from yoker.config import Config
 from yoker.context import (
   BasicContextManager,
@@ -43,8 +45,6 @@ from yoker.exceptions import (
   YokerError,
 )
 from yoker.logging import LoggingContext, configure_logging, log_timing
-from yoker.builtin import __YOKER_MANIFEST__
-from yoker.agent.thinking import ThinkingMode
 
 __version__ = "0.4.0"
 __author__ = "Christophe VG"

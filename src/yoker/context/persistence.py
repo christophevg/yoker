@@ -24,7 +24,7 @@ from yoker.context.manager import ContextManager
 from yoker.context.validator import is_safe_path, validate_session_id, validate_storage_path
 from yoker.exceptions import ContextCorruptionError, SessionNotFoundError
 
-log = get_logger(__name__)
+logger = get_logger(__name__)
 
 # File permissions
 DIR_MODE = 0o700  # Owner-only for directories
@@ -82,7 +82,7 @@ class PersistenceContextManager(ContextManager):
     self._last_turn_time: datetime | None = None
     self._tool_call_count = 0
 
-    log.debug(
+    logger.debug(
       "context_initialized",
       session_id=self._session_id,
       storage_path=str(self._storage_path),
@@ -224,9 +224,9 @@ class PersistenceContextManager(ContextManager):
 
     try:
       self._file_path.unlink()
-      log.debug("context_deleted", path=str(self._file_path))
+      logger.debug("context_deleted", path=str(self._file_path))
     except OSError as e:
-      log.error("context_delete_failed", path=str(self._file_path), error=str(e))
+      logger.error("context_delete_failed", path=str(self._file_path), error=str(e))
       raise
 
   def get_statistics(self) -> ContextStatistics:
@@ -257,7 +257,7 @@ class PersistenceContextManager(ContextManager):
     """Create storage directory with secure permissions if it doesn't exist."""
     if not self._storage_path.exists():
       self._storage_path.mkdir(parents=True, mode=DIR_MODE)
-      log.debug("storage_created", path=str(self._storage_path))
+      logger.debug("storage_created", path=str(self._storage_path))
     else:
       try:
         self._storage_path.chmod(DIR_MODE)
@@ -425,7 +425,7 @@ class PersistenceContextManager(ContextManager):
       pass
 
     else:
-      log.warning(
+      logger.warning(
         "unknown_record_type",
         record_type=record_type,
         line=line_num,

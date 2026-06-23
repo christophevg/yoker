@@ -24,14 +24,25 @@ from yoker.config import (
   UpdateToolConfig,
   WriteToolConfig,
 )
-from yoker.tools import ToolRegistry
-from yoker.tools.path_guardrail import PathGuardrail
+from yoker.tools import ToolContext, ToolRegistry
+from yoker.tools.guardrails.path import PathGuardrail
 
 
 def _read_spec():
   """Create and register the read tool."""
   registry = ToolRegistry()
   return registry.register(read)
+
+
+def _mock_ctx() -> ToolContext:
+  """Create a mock ToolContext for testing."""
+  from yoker.config import ToolConfig, ToolsSharedConfig
+
+  return ToolContext(
+    config=ToolConfig(),
+    shared=ToolsSharedConfig(),
+    backends={},
+  )
 
 
 class TestReadToolGuardrailIntegration:
@@ -79,7 +90,7 @@ class TestReadToolGuardrailIntegration:
     spec = _read_spec()
     validation = guardrail.validate(spec.name, {"path": str(file_path)})
     assert validation.valid
-    result = await spec.execute(path=str(file_path))
+    result = await spec.execute(path=str(file_path), ctx=_mock_ctx())
     assert result.success is True
     assert result.result == "hello world"
 
@@ -129,7 +140,7 @@ class TestReadToolGuardrailIntegration:
     spec = _read_spec()
     validation = guardrail.validate(spec.name, {"path": str(md_file)})
     assert validation.valid
-    result = await spec.execute(path=str(md_file))
+    result = await spec.execute(path=str(md_file), ctx=_mock_ctx())
     assert result.success is True
     assert result.result == "# Hello"
 
@@ -154,7 +165,7 @@ class TestReadToolGuardrailIntegration:
     link = tmp_path / "link.txt"
     link.symlink_to(outside)
     spec = _read_spec()
-    result = await spec.execute(path=str(link))
+    result = await spec.execute(path=str(link), ctx=_mock_ctx())
     # Tool-layer blocks symlinks before guardrail even runs
     assert result.success is False
     assert "symlink" in result.error.lower()
@@ -178,6 +189,6 @@ class TestReadToolGuardrailIntegration:
     file_path = tmp_path / "test.txt"
     file_path.write_text("hello")
     spec = _read_spec()  # No guardrail
-    result = await spec.execute(path=str(file_path))
+    result = await spec.execute(path=str(file_path), ctx=_mock_ctx())
     assert result.success is True
     assert result.result == "hello"

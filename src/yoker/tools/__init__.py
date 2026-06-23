@@ -4,7 +4,7 @@ Provides the tool framework including result types, guardrails, registry,
 annotation markers, and context. Built-in tools are in yoker.builtin.
 """
 
-from yoker.annotations import (
+from yoker.tools.annotations import (
   GuardType,
   Path,
   Query,
@@ -12,7 +12,8 @@ from yoker.annotations import (
   Url,
 )
 from yoker.tools.context import ToolContext
-from yoker.tools.guardrails import Guardrail, PathGuardrail
+from yoker.tools.guardrails import Guardrail
+from yoker.tools.guardrails.path import PathGuardrail
 from yoker.tools.registry import ToolRegistry
 from yoker.tools.schema import ToolResult, ValidationResult
 from yoker.tools.web import (

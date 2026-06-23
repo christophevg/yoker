@@ -79,7 +79,7 @@ class TestCommandRegistry:
     """dispatch returns an error for unknown commands."""
     registry = CommandRegistry()
     agent = MagicMock(spec=Agent)
-    agent.skill_registry = None
+    agent.skills = None
     ui = MockUI()
 
     result = await registry.dispatch("/unknown", agent, ui)
@@ -107,11 +107,11 @@ class TestCommandRegistry:
     registry = CommandRegistry()
     skill_registry = SkillRegistry()
     skill_registry.register(
-      Skill(name="commit", description="Guide commits", content="commit instructions")
+      Skill(simple_name="commit", description="Guide commits", content="commit instructions")
     )
 
     agent = MagicMock(spec=Agent)
-    agent.skill_registry = skill_registry
+    agent.skills = skill_registry
     ui = MockUI()
 
     with patch("yoker.ui.commands.skill_invoke.handle") as mock_handle:
