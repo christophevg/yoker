@@ -4,19 +4,19 @@ Provides the ``webfetch`` async function for fetching web content through
 pluggable backends.
 """
 
-import logging
-from typing import Annotated, TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Annotated
 
-from yoker.annotations import Url
-from yoker.tools.schema import ToolResult
+from structlog import get_logger
+
+from yoker.tools.annotations import Url
 from yoker.tools.context import ToolContext
-from yoker.tools.web import WebFetchBackend
+from yoker.tools.schema import ToolResult
 from yoker.tools.web import WebFetchError
 
 if TYPE_CHECKING:
-  from yoker.config import WebFetchToolConfig
+  pass
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 async def webfetch(

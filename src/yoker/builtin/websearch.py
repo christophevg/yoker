@@ -4,19 +4,19 @@ Provides the ``websearch`` async function for searching the web through
 pluggable backends.
 """
 
-import logging
-from typing import Annotated, TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Annotated
 
-from yoker.annotations import Query
-from yoker.tools.schema import ToolResult
+from structlog import get_logger
+
+from yoker.tools.annotations import Query
 from yoker.tools.context import ToolContext
-from yoker.tools.web import WebSearchBackend
+from yoker.tools.schema import ToolResult
 from yoker.tools.web import WebSearchError
 
 if TYPE_CHECKING:
-  from yoker.config import WebSearchToolConfig
+  pass
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 async def websearch(

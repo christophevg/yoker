@@ -11,12 +11,12 @@ from typing import Annotated
 
 from structlog import get_logger
 
-from yoker.annotations import Path as PathArg
 from yoker.resources import find_package_path, parse_plugin_url
-from yoker.tools.schema import ToolResult
+from yoker.tools.annotations import Path as PathArg
 from yoker.tools.context import ToolContext
+from yoker.tools.schema import ToolResult
 
-log = get_logger(__name__)
+logger = get_logger(__name__)
 
 
 async def read(
@@ -33,7 +33,7 @@ async def read(
     ToolResult with file contents.
   """
   if not isinstance(path, str):
-    log.warning("read_invalid_path_type", path_type=type(path).__name__)
+    logger.warning("read_invalid_path_type", path_type=type(path).__name__)
     return ToolResult(success=False, error="Invalid path parameter")
 
   if path.startswith("plugin://"):
@@ -53,7 +53,7 @@ async def _read_plugin_resource(url: str) -> ToolResult:
   try:
     parsed = parse_plugin_url(url)
   except ValueError as e:
-    log.warning("plugin_resource_invalid_url", url=url, error=str(e))
+    logger.warning("plugin_resource_invalid_url", url=url, error=str(e))
     return ToolResult(success=False, error=f"Invalid plugin URL: {e}")
 
   # Reject agent URLs and empty subpaths.
@@ -64,19 +64,19 @@ async def _read_plugin_resource(url: str) -> ToolResult:
       success=False, error="Invalid plugin URL format. Use: plugin://package/path/to/file"
     )
 
-  log.info("reading_plugin_resource", package=parsed.package, path=parsed.subpath)
+  logger.info("reading_plugin_resource", package=parsed.package, path=parsed.subpath)
   resource = find_package_path(parsed.package, parsed.subpath)
   if resource is None:
-    log.warning("plugin_resource_not_found", package=parsed.package, path=parsed.subpath)
+    logger.warning("plugin_resource_not_found", package=parsed.package, path=parsed.subpath)
     return ToolResult(success=False, error=f"Resource not found in package: {parsed.subpath}")
 
   try:
     content = resource.read_text(encoding="utf-8")
   except Exception as e:
-    log.error("plugin_resource_error", package=parsed.package, path=parsed.subpath, error=str(e))
+    logger.error("plugin_resource_error", package=parsed.package, path=parsed.subpath, error=str(e))
     return ToolResult(success=False, error=f"Error reading plugin resource: {e}")
 
-  log.info(
+  logger.info(
     "plugin_resource_read_success",
     package=parsed.package,
     path=parsed.subpath,
@@ -89,32 +89,32 @@ async def _read_file(path_str: str) -> ToolResult:
   """Read a regular file from the filesystem."""
   original_path = Path(path_str)
   if original_path.is_symlink():
-    log.warning("read_symlink_rejected", path=path_str)
+    logger.warning("read_symlink_rejected", path=path_str)
     return ToolResult(success=False, error="Reading symlinks is not permitted")
 
   try:
     resolved = Path(os.path.realpath(path_str))
   except (OSError, ValueError):
-    log.warning("read_invalid_path", path=path_str)
+    logger.warning("read_invalid_path", path=path_str)
     return ToolResult(success=False, error="Invalid path")
 
   if not resolved.exists():
-    log.info("read_file_not_found", path=str(resolved))
+    logger.info("read_file_not_found", path=str(resolved))
     return ToolResult(success=False, error="File not found")
 
   if not resolved.is_file():
-    log.info("read_not_a_file", path=str(resolved))
+    logger.info("read_not_a_file", path=str(resolved))
     return ToolResult(success=False, error="Path is not a file")
 
   try:
     content = resolved.read_text(encoding="utf-8", errors="replace")
-    log.info("read_success", path=str(resolved), bytes=len(content.encode("utf-8")))
+    logger.info("read_success", path=str(resolved), bytes=len(content.encode("utf-8")))
     return ToolResult(success=True, result=content)
   except PermissionError:
-    log.warning("read_permission_denied", path=str(resolved))
+    logger.warning("read_permission_denied", path=str(resolved))
     return ToolResult(success=False, error="Permission denied")
   except OSError as e:
-    log.error("read_os_error", path=str(resolved), error=str(e))
+    logger.error("read_os_error", path=str(resolved), error=str(e))
     return ToolResult(success=False, error="Error reading file")
 
 

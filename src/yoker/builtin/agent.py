@@ -18,14 +18,14 @@ from typing import TYPE_CHECKING, Annotated, Any
 
 from structlog import get_logger
 
-from yoker.annotations import Text
+from yoker.tools.annotations import Text
 from yoker.tools.schema import ToolResult
 
 if TYPE_CHECKING:
   from yoker.agent import Agent
   from yoker.agents import AgentDefinition
 
-log = get_logger(__name__)
+logger = get_logger(__name__)
 
 DEFAULT_TIMEOUT_SECONDS: int = 300
 ABSOLUTE_MAX_TIMEOUT_SECONDS: int = 3600
@@ -64,7 +64,7 @@ def make_agent_tool(parent_agent: "Agent | None" = None) -> Any:
       max_depth = parent_agent.max_recursion_depth
 
       if current_depth >= max_depth:
-        log.warning(
+        logger.warning(
           "recursion_depth_exceeded",
           current_depth=current_depth,
           max_depth=max_depth,
@@ -84,7 +84,7 @@ def make_agent_tool(parent_agent: "Agent | None" = None) -> Any:
         error=f"{e}. Available agents: {hint}",
       )
     except Exception as e:
-      log.error("agent_resolution_error", agent_name=agent_name, error=str(e))
+      logger.error("agent_resolution_error", agent_name=agent_name, error=str(e))
       return ToolResult(success=False, error=f"Agent resolution failed: {e}")
 
     try:
@@ -92,10 +92,10 @@ def make_agent_tool(parent_agent: "Agent | None" = None) -> Any:
       response = await _run_with_timeout(subagent, prompt, timeout_seconds)
       return ToolResult(success=True, result=response)
     except TimeoutError:
-      log.warning("subagent_timeout", agent_name=agent_name, timeout_seconds=timeout_seconds)
+      logger.warning("subagent_timeout", agent_name=agent_name, timeout_seconds=timeout_seconds)
       return ToolResult(success=False, error=f"Sub-agent timed out after {timeout_seconds} seconds")
     except Exception as e:
-      log.error(
+      logger.error(
         "subagent_error",
         agent_name=agent_name,
         error=str(e),
@@ -172,7 +172,7 @@ def _create_subagent(parent_agent: "Agent | None", agent_definition: "AgentDefin
     _recursion_depth=depth,
   )
 
-  log.info(
+  logger.info(
     "subagent_created",
     agent_name=agent_definition.name,
     depth=depth,

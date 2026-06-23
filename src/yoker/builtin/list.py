@@ -13,15 +13,15 @@ from typing import TYPE_CHECKING, Annotated
 
 from structlog import get_logger
 
-from yoker.annotations import Path as PathArg
-from yoker.annotations import Text
-from yoker.tools.schema import ToolResult
+from yoker.tools.annotations import Path as PathArg
+from yoker.tools.annotations import Text
 from yoker.tools.context import ToolContext
+from yoker.tools.schema import ToolResult
 
 if TYPE_CHECKING:
   from yoker.config import ListToolConfig
 
-log = get_logger(__name__)
+logger = get_logger(__name__)
 
 ABSOLUTE_MAX_DEPTH: int = 10
 ABSOLUTE_MAX_ENTRIES: int = 5000
@@ -54,7 +54,7 @@ async def list(
   if not path:
     return ToolResult(success=False, error="Missing required parameter: path")
 
-  config: "ListToolConfig" = ctx.config
+  config: ListToolConfig = ctx.config
   default_max_depth = config.max_depth
   default_max_entries = config.max_entries
 
