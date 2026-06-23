@@ -9,6 +9,12 @@ from yoker.config import Config, UIConfig
 from yoker.exceptions import NetworkError, YokerError
 from yoker.ui import BatchUIHandler, InteractiveUIHandler
 
+# Skip interactive UI tests on Windows CI where no console is available
+skip_on_windows_no_console = pytest.mark.skipif(
+  sys.platform == "win32",
+  reason="InteractiveUIHandler requires a Windows console which is not available in CI",
+)
+
 
 class TestCreateUI:
   """Test _create_ui mode selection."""
@@ -27,6 +33,7 @@ class TestCreateUI:
     assert ui.show_tool_calls is False
     assert ui.show_stats is False
 
+  @skip_on_windows_no_console
   def test_create_ui_returns_interactive_on_tty(self):
     """_create_ui should return InteractiveUIHandler when stdin is a TTY."""
     from yoker.__main__ import _create_ui
@@ -41,6 +48,7 @@ class TestCreateUI:
     assert ui.show_tool_calls is True
     assert ui.show_stats is True
 
+  @skip_on_windows_no_console
   def test_create_ui_defaults_to_interactive_on_tty(self):
     """_create_ui should default to interactive when stdin is a TTY."""
     from yoker.__main__ import _create_ui
