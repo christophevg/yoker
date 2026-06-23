@@ -175,14 +175,14 @@ class TestAgentContentEventEmission:
         tool_calls=[
           create_mock_tool_call(
             mocker,
-            name="write",
+            name="yoker:write",
             arguments={"path": str(tmp_path / "test.txt"), "content": "Hello\nWorld\n"},
           )
         ],
       )
     )
 
-    mocker.patch("yoker.agent.agent.AsyncClient", return_value=mock_client)
+    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
@@ -214,14 +214,14 @@ class TestAgentContentEventEmission:
         tool_calls=[
           create_mock_tool_call(
             mocker,
-            name="read",
+            name="yoker:read",
             arguments={"path": str(tmp_path / "test.txt")},
           )
         ],
       )
     )
 
-    mocker.patch("yoker.agent.agent.AsyncClient", return_value=mock_client)
+    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
@@ -249,14 +249,14 @@ class TestAgentContentEventEmission:
         tool_calls=[
           create_mock_tool_call(
             mocker,
-            name="write",
+            name="yoker:write",
             arguments={"path": str(tmp_path / "test.txt"), "content": "Test\n"},
           )
         ],
       )
     )
 
-    mocker.patch("yoker.agent.agent.AsyncClient", return_value=mock_client)
+    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
@@ -294,14 +294,14 @@ class TestAgentContentEventEmission:
         tool_calls=[
           create_mock_tool_call(
             mocker,
-            name="write",
+            name="yoker:write",
             arguments={"path": str(tmp_path / "myfile.txt"), "content": "Test\n"},
           )
         ],
       )
     )
 
-    mocker.patch("yoker.agent.agent.AsyncClient", return_value=mock_client)
+    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
@@ -314,7 +314,7 @@ class TestAgentContentEventEmission:
 
     event = content_events[0]
     assert isinstance(event, ToolContentEvent)
-    assert event.tool_name == "write"
+    assert event.tool_name == "yoker:write"
     assert event.operation == "write"
     assert "myfile.txt" in event.path
     assert event.content_type in ("application/x-summary", "text/plain")
@@ -333,22 +333,22 @@ class TestAgentContentEventEmission:
         tool_calls=[
           create_mock_tool_call(
             mocker,
-            name="write",
+            name="yoker:write",
             arguments={"path": str(tmp_path / "test.txt"), "content": "Test\n"},
           )
         ],
       )
     )
 
-    mocker.patch("yoker.agent.agent.AsyncClient", return_value=mock_client)
+    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
 
     # Configure for content verbosity
-    from yoker.config import BackendConfig, ContentDisplayConfig, OllamaConfig, ToolsConfig
+    from yoker.config import BackendConfig, ContentDisplayConfig, OllamaConfig, ToolsSharedConfig
 
     config = Config(
       backend=BackendConfig(ollama=OllamaConfig(model="test-model")),
       permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)),
-      tools=ToolsConfig(content_display=ContentDisplayConfig(verbosity="content")),
+      tools_shared=ToolsSharedConfig(content_display=ContentDisplayConfig(verbosity="content")),
     )
     agent = Agent(config=config)
     collector = TestEventCollector()
@@ -385,7 +385,7 @@ class TestAgentContentEventEmission:
         tool_calls=[
           create_mock_tool_call(
             mocker,
-            name="update",
+            name="yoker:update",
             arguments={
               "path": str(test_file),
               "operation": "replace",
@@ -397,7 +397,7 @@ class TestAgentContentEventEmission:
       )
     )
 
-    mocker.patch("yoker.agent.agent.AsyncClient", return_value=mock_client)
+    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
@@ -410,7 +410,7 @@ class TestAgentContentEventEmission:
 
     event = content_events[0]
     assert isinstance(event, ToolContentEvent)
-    assert event.tool_name == "update"
+    assert event.tool_name == "yoker:update"
     # Metadata should contain diff information
     assert hasattr(event, "metadata")
 
@@ -434,14 +434,14 @@ class TestAgentContentEventConstruction:
         tool_calls=[
           create_mock_tool_call(
             mocker,
-            name="write",
+            name="yoker:write",
             arguments={"path": str(tmp_path / "test.txt"), "content": "Test\n"},
           )
         ],
       )
     )
 
-    mocker.patch("yoker.agent.agent.AsyncClient", return_value=mock_client)
+    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
@@ -453,7 +453,7 @@ class TestAgentContentEventConstruction:
     assert len(content_events) == 1
 
     event = content_events[0]
-    assert event.tool_name == "write"
+    assert event.tool_name == "yoker:write"
     assert event.operation == "write"
     assert "test.txt" in event.path
     # content_type should be "application/x-summary" or "full"
@@ -481,7 +481,7 @@ class TestAgentContentEventConstruction:
         tool_calls=[
           create_mock_tool_call(
             mocker,
-            name="update",
+            name="yoker:update",
             arguments={
               "path": str(test_file),
               "operation": "replace",
@@ -493,7 +493,7 @@ class TestAgentContentEventConstruction:
       )
     )
 
-    mocker.patch("yoker.agent.agent.AsyncClient", return_value=mock_client)
+    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
@@ -505,7 +505,7 @@ class TestAgentContentEventConstruction:
     assert len(content_events) >= 1
 
     event = content_events[0]
-    assert event.tool_name == "update"
+    assert event.tool_name == "yoker:update"
     # operation should match update type
     assert event.operation in ("replace", "insert_before", "insert_after", "delete")
 
@@ -523,14 +523,14 @@ class TestAgentContentEventConstruction:
         tool_calls=[
           create_mock_tool_call(
             mocker,
-            name="write",
+            name="yoker:write",
             arguments={"path": str(tmp_path / "test.txt"), "content": "Test\n"},
           )
         ],
       )
     )
 
-    mocker.patch("yoker.agent.agent.AsyncClient", return_value=mock_client)
+    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
@@ -562,14 +562,14 @@ class TestAgentContentEventEmissionOrder:
         tool_calls=[
           create_mock_tool_call(
             mocker,
-            name="write",
+            name="yoker:write",
             arguments={"path": str(tmp_path / "test.txt"), "content": "Test\n"},
           )
         ],
       )
     )
 
-    mocker.patch("yoker.agent.agent.AsyncClient", return_value=mock_client)
+    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
@@ -608,7 +608,7 @@ class TestAgentContentEventEmissionOrder:
         tool_calls=[
           create_mock_tool_call(
             mocker,
-            name="update",
+            name="yoker:update",
             arguments={
               "path": str(test_file),
               "operation": "replace",
@@ -620,7 +620,7 @@ class TestAgentContentEventEmissionOrder:
       )
     )
 
-    mocker.patch("yoker.agent.agent.AsyncClient", return_value=mock_client)
+    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
@@ -659,14 +659,14 @@ class TestAgentContentEventEmissionOrder:
         tool_calls=[
           create_mock_tool_call(
             mocker,
-            name="read",
+            name="yoker:read",
             arguments={"path": str(test_file)},
           )
         ],
       )
     )
 
-    mocker.patch("yoker.agent.agent.AsyncClient", return_value=mock_client)
+    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
@@ -701,13 +701,13 @@ class TestAgentContentEventWithMultipleTools:
         tool_calls=[
           create_mock_tool_call(
             mocker,
-            name="write",
+            name="yoker:write",
             arguments={"path": str(tmp_path / "file1.txt"), "content": "Content 1\n"},
             call_id="call_write_1",
           ),
           create_mock_tool_call(
             mocker,
-            name="write",
+            name="yoker:write",
             arguments={"path": str(tmp_path / "file2.txt"), "content": "Content 2\n"},
             call_id="call_write_2",
           ),
@@ -715,7 +715,7 @@ class TestAgentContentEventWithMultipleTools:
       )
     )
 
-    mocker.patch("yoker.agent.agent.AsyncClient", return_value=mock_client)
+    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
@@ -758,19 +758,19 @@ class TestAgentContentEventWithMultipleTools:
         tool_calls=[
           create_mock_tool_call(
             mocker,
-            name="write",
+            name="yoker:write",
             arguments={"path": str(tmp_path / "new.txt"), "content": "New file\n"},
             call_id="call_write",
           ),
           create_mock_tool_call(
             mocker,
-            name="read",
+            name="yoker:read",
             arguments={"path": str(tmp_path / "existing.txt")},
             call_id="call_read",
           ),
           create_mock_tool_call(
             mocker,
-            name="update",
+            name="yoker:update",
             arguments={
               "path": str(tmp_path / "existing.txt"),
               "operation": "replace",
@@ -783,7 +783,7 @@ class TestAgentContentEventWithMultipleTools:
       )
     )
 
-    mocker.patch("yoker.agent.agent.AsyncClient", return_value=mock_client)
+    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
@@ -796,9 +796,9 @@ class TestAgentContentEventWithMultipleTools:
     tool_names = [e.tool_name for e in content_events if isinstance(e, ToolContentEvent)]
 
     assert len(content_events) == 2
-    assert "write" in tool_names
-    assert "update" in tool_names
-    assert "read" not in tool_names
+    assert "yoker:write" in tool_names
+    assert "yoker:update" in tool_names
+    assert "yoker:read" not in tool_names
 
 
 class TestAgentContentEventErrorHandling:
@@ -818,7 +818,7 @@ class TestAgentContentEventErrorHandling:
         tool_calls=[
           create_mock_tool_call(
             mocker,
-            name="write",
+            name="yoker:write",
             # Invalid path (will fail)
             arguments={"path": "/nonexistent/path/test.txt", "content": "Test\n"},
           )
@@ -826,7 +826,7 @@ class TestAgentContentEventErrorHandling:
       )
     )
 
-    mocker.patch("yoker.agent.agent.AsyncClient", return_value=mock_client)
+    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
@@ -859,14 +859,14 @@ class TestAgentContentEventErrorHandling:
         tool_calls=[
           create_mock_tool_call(
             mocker,
-            name="write",
+            name="yoker:write",
             arguments={"path": str(tmp_path / "test.txt"), "content": "Test\n"},
           )
         ],
       )
     )
 
-    mocker.patch("yoker.agent.agent.AsyncClient", return_value=mock_client)
+    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
@@ -899,14 +899,14 @@ class TestAgentContentEventErrorHandling:
         tool_calls=[
           create_mock_tool_call(
             mocker,
-            name="write",
+            name="yoker:write",
             arguments={"path": str(tmp_path / "test.txt"), "content": "Test\n"},
           )
         ],
       )
     )
 
-    mocker.patch("yoker.agent.agent.AsyncClient", return_value=mock_client)
+    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
 
     agent = Agent(config=Config())
 

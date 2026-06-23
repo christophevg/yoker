@@ -7,10 +7,15 @@ from pathlib import Path
 
 import pytest
 
-from yoker.config import Config, ContentDisplayConfig, ToolsSharedConfig, ToolsConfig, UpdateToolConfig
-from yoker.tools import ToolRegistry, update
+from yoker.builtin import update
+from yoker.builtin.update import _truncate_diff
+from yoker.config import (
+  Config,
+  ContentDisplayConfig,
+  ToolsSharedConfig,
+)
+from yoker.tools import ToolRegistry
 from yoker.tools.context import ToolContext
-from yoker.tools.update import _truncate_diff
 
 
 def _update_spec():
@@ -19,15 +24,26 @@ def _update_spec():
   return registry.register(update, name="update")
 
 
-def _get_ctx(config: Config | None = None) -> ToolContext | None:
+def _update_context(config: Config | None = None) -> ToolContext:
+  """Create a ToolContext for update tool tests."""
+  if config is None:
+    config = Config()
+  return ToolContext(
+    config=config.tools.update,
+    shared=config.tools_shared,
+    backends={},
+  )
+
+
+def _get_ctx(config: Config | None = None) -> ToolContext:
   """Get ToolContext for tests that need config."""
-  if config:
-    return ToolContext(
-      config=config.tools.update,
-      shared=config.tools_shared,
-      backends={},
-    )
-  return None
+  if config is None:
+    config = Config()
+  return ToolContext(
+    config=config.tools.update,
+    shared=config.tools_shared,
+    backends={},
+  )
 
 
 class TestUpdateToolReplaceOperation:
@@ -42,7 +58,7 @@ class TestUpdateToolReplaceOperation:
     """
     # Create update tool with content verbosity and show_diff_for_updates
     config = Config(
-      tools=ToolsConfig(
+      tools_shared=ToolsSharedConfig(
         content_display=ContentDisplayConfig(verbosity="content", show_diff_for_updates=True)
       )
     )
@@ -55,7 +71,11 @@ class TestUpdateToolReplaceOperation:
 
     # Replace text
     result = await spec.execute(
-      path=str(test_file), operation="replace", old_string="Old text", new_string="New text"
+      path=str(test_file),
+      operation="replace",
+      old_string="Old text",
+      new_string="New text",
+      ctx=ctx,
     )
 
     # Verify result
@@ -77,7 +97,9 @@ class TestUpdateToolReplaceOperation:
     """
     # Create update tool with show_diff_for_updates
     config = Config(
-      tools=ToolsConfig(content_display=ContentDisplayConfig(show_diff_for_updates=True))
+      tools_shared=ToolsSharedConfig(
+        content_display=ContentDisplayConfig(show_diff_for_updates=True)
+      )
     )
     spec = _update_spec()
     ctx = _get_ctx(config)
@@ -88,7 +110,11 @@ class TestUpdateToolReplaceOperation:
 
     # Replace
     result = await spec.execute(
-      path=str(test_file), operation="replace", old_string="Old content", new_string="New content"
+      path=str(test_file),
+      operation="replace",
+      old_string="Old content",
+      new_string="New content",
+      ctx=ctx,
     )
 
     # Verify result
@@ -104,8 +130,8 @@ class TestUpdateToolReplaceOperation:
     Then: metadata includes lines_modified count
     """
     # Create update tool
+    config = Config()
     spec = _update_spec()
-    ctx = _get_ctx(config)
     ctx = _get_ctx(config)
 
     # Create file
@@ -114,7 +140,7 @@ class TestUpdateToolReplaceOperation:
 
     # Replace
     result = await spec.execute(
-      path=str(test_file), operation="replace", old_string="Old", new_string="New"
+      path=str(test_file), operation="replace", old_string="Old", new_string="New", ctx=ctx
     )
 
     # Verify result
@@ -131,7 +157,7 @@ class TestUpdateToolReplaceOperation:
     """
     # Create update tool with small max_diff_lines
     config = Config(
-      tools=ToolsConfig(
+      tools_shared=ToolsSharedConfig(
         content_display=ContentDisplayConfig(
           verbosity="content", show_diff_for_updates=True, max_diff_lines=5
         )
@@ -146,7 +172,11 @@ class TestUpdateToolReplaceOperation:
 
     # Replace large portion
     result = await spec.execute(
-      path=str(test_file), operation="replace", old_string="Line 10", new_string="Modified line"
+      path=str(test_file),
+      operation="replace",
+      old_string="Line 10",
+      new_string="Modified line",
+      ctx=ctx,
     )
 
     # Verify result
@@ -168,7 +198,9 @@ class TestUpdateToolInsertOperation:
     Then: content_metadata includes inserted content and line_number
     """
     # Create update tool with content verbosity
-    config = Config(tools=ToolsConfig(), tools_shared=ToolsSharedConfig(content_display=ContentDisplayConfig(verbosity="content")))
+    config = Config(
+      tools_shared=ToolsSharedConfig(content_display=ContentDisplayConfig(verbosity="content")),
+    )
     spec = _update_spec()
     ctx = _get_ctx(config)
 
@@ -178,7 +210,11 @@ class TestUpdateToolInsertOperation:
 
     # Insert before line 2
     result = await spec.execute(
-      path=str(test_file), operation="insert_before", line_number=2, new_string="Inserted line"
+      path=str(test_file),
+      operation="insert_before",
+      line_number=2,
+      new_string="Inserted line",
+      ctx=ctx,
     )
 
     # Verify result
@@ -195,7 +231,9 @@ class TestUpdateToolInsertOperation:
     Then: content_metadata includes inserted content and line_number
     """
     # Create update tool with content verbosity
-    config = Config(tools=ToolsConfig(), tools_shared=ToolsSharedConfig(content_display=ContentDisplayConfig(verbosity="content")))
+    config = Config(
+      tools_shared=ToolsSharedConfig(content_display=ContentDisplayConfig(verbosity="content")),
+    )
     spec = _update_spec()
     ctx = _get_ctx(config)
 
@@ -205,7 +243,11 @@ class TestUpdateToolInsertOperation:
 
     # Insert after line 1
     result = await spec.execute(
-      path=str(test_file), operation="insert_after", line_number=1, new_string="Inserted line"
+      path=str(test_file),
+      operation="insert_after",
+      line_number=1,
+      new_string="Inserted line",
+      ctx=ctx,
     )
 
     # Verify result
@@ -222,7 +264,9 @@ class TestUpdateToolInsertOperation:
     Then: content_metadata.content_type="full" (showing inserted content)
     """
     # Create update tool with content verbosity
-    config = Config(tools=ToolsConfig(), tools_shared=ToolsSharedConfig(content_display=ContentDisplayConfig(verbosity="content")))
+    config = Config(
+      tools_shared=ToolsSharedConfig(content_display=ContentDisplayConfig(verbosity="content")),
+    )
     spec = _update_spec()
     ctx = _get_ctx(config)
 
@@ -232,7 +276,7 @@ class TestUpdateToolInsertOperation:
 
     # Insert
     result = await spec.execute(
-      path=str(test_file), operation="insert_after", line_number=1, new_string="New line"
+      path=str(test_file), operation="insert_after", line_number=1, new_string="New line", ctx=ctx
     )
 
     # Verify result
@@ -249,7 +293,9 @@ class TestUpdateToolInsertOperation:
     Then: metadata includes lines_before and lines_after context
     """
     # Create update tool with content verbosity
-    config = Config(tools=ToolsConfig(), tools_shared=ToolsSharedConfig(content_display=ContentDisplayConfig(verbosity="content")))
+    config = Config(
+      tools_shared=ToolsSharedConfig(content_display=ContentDisplayConfig(verbosity="content")),
+    )
     spec = _update_spec()
     ctx = _get_ctx(config)
 
@@ -259,7 +305,7 @@ class TestUpdateToolInsertOperation:
 
     # Insert
     result = await spec.execute(
-      path=str(test_file), operation="insert_after", line_number=2, new_string="Inserted"
+      path=str(test_file), operation="insert_after", line_number=2, new_string="Inserted", ctx=ctx
     )
 
     # Verify result
@@ -280,7 +326,9 @@ class TestUpdateToolDeleteOperation:
     Then: content_metadata includes deleted content
     """
     # Create update tool with content verbosity
-    config = Config(tools=ToolsConfig(), tools_shared=ToolsSharedConfig(content_display=ContentDisplayConfig(verbosity="content")))
+    config = Config(
+      tools_shared=ToolsSharedConfig(content_display=ContentDisplayConfig(verbosity="content")),
+    )
     spec = _update_spec()
     ctx = _get_ctx(config)
 
@@ -289,7 +337,9 @@ class TestUpdateToolDeleteOperation:
     test_file.write_text("Line 1\nDelete me\nLine 3\n")
 
     # Delete
-    result = await spec.execute(path=str(test_file), operation="delete", old_string="Delete me\n")
+    result = await spec.execute(
+      path=str(test_file), operation="delete", old_string="Delete me\n", ctx=ctx
+    )
 
     # Verify result
     assert result.success
@@ -306,7 +356,7 @@ class TestUpdateToolDeleteOperation:
     """
     # Create update tool with show_diff_for_updates
     config = Config(
-      tools=ToolsConfig(
+      tools_shared=ToolsSharedConfig(
         content_display=ContentDisplayConfig(verbosity="content", show_diff_for_updates=True)
       )
     )
@@ -318,7 +368,9 @@ class TestUpdateToolDeleteOperation:
     test_file.write_text("Line 1\nTo delete\nLine 3\n")
 
     # Delete
-    result = await spec.execute(path=str(test_file), operation="delete", old_string="To delete\n")
+    result = await spec.execute(
+      path=str(test_file), operation="delete", old_string="To delete\n", ctx=ctx
+    )
 
     # Verify result
     assert result.success
@@ -333,13 +385,8 @@ class TestUpdateToolDeleteOperation:
     Then: metadata includes line_number where deletion occurred
     """
     # Create update tool
+    config = Config()
     spec = _update_spec()
-    ctx = _get_ctx(config)
-    ctx = _get_ctx(config)
-    ctx = _get_ctx(config)
-    ctx = _get_ctx(config)
-    ctx = _get_ctx(config)
-    ctx = _get_ctx(config)
     ctx = _get_ctx(config)
 
     # Create file
@@ -347,7 +394,7 @@ class TestUpdateToolDeleteOperation:
     test_file.write_text("Line 1\nLine 2\nLine 3\n")
 
     # Delete by line number
-    result = await spec.execute(path=str(test_file, ctx=ctx), operation="delete", line_number=2, ctx=ctx)
+    result = await spec.execute(path=str(test_file), operation="delete", line_number=2, ctx=ctx)
 
     # Verify result
     assert result.success
@@ -367,7 +414,7 @@ class TestUpdateToolDiffTruncation:
     """
     # Create update tool with small max_diff_lines
     config = Config(
-      tools=ToolsConfig(
+      tools_shared=ToolsSharedConfig(
         content_display=ContentDisplayConfig(
           verbosity="content", show_diff_for_updates=True, max_diff_lines=5
         )
@@ -382,7 +429,7 @@ class TestUpdateToolDiffTruncation:
 
     # Replace
     result = await spec.execute(
-      path=str(test_file), operation="replace", old_string="Line 10", new_string="Modified"
+      path=str(test_file), operation="replace", old_string="Line 10", new_string="Modified", ctx=ctx
     )
 
     # Verify result
@@ -398,7 +445,7 @@ class TestUpdateToolDiffTruncation:
     """
     # Create update tool with small max_diff_lines
     config = Config(
-      tools=ToolsConfig(
+      tools_shared=ToolsSharedConfig(
         content_display=ContentDisplayConfig(
           verbosity="content", show_diff_for_updates=True, max_diff_lines=3
         )
@@ -413,7 +460,7 @@ class TestUpdateToolDiffTruncation:
 
     # Replace
     result = await spec.execute(
-      path=str(test_file), operation="replace", old_string="Line 50", new_string="Changed"
+      path=str(test_file), operation="replace", old_string="Line 50", new_string="Changed", ctx=ctx
     )
 
     # Verify result
@@ -430,7 +477,7 @@ class TestUpdateToolDiffTruncation:
     """
     # Create update tool with content verbosity
     config = Config(
-      tools=ToolsConfig(
+      tools_shared=ToolsSharedConfig(
         content_display=ContentDisplayConfig(
           verbosity="content", show_diff_for_updates=True, max_diff_lines=50
         )
@@ -445,7 +492,7 @@ class TestUpdateToolDiffTruncation:
 
     # Replace
     result = await spec.execute(
-      path=str(test_file), operation="replace", old_string="Line 2", new_string="Modified"
+      path=str(test_file), operation="replace", old_string="Line 2", new_string="Modified", ctx=ctx
     )
 
     # Verify result
@@ -466,7 +513,9 @@ class TestUpdateToolShowDiffFlag:
     """
     # Create update tool with show_diff_for_updates
     config = Config(
-      tools=ToolsConfig(content_display=ContentDisplayConfig(show_diff_for_updates=True))
+      tools_shared=ToolsSharedConfig(
+        content_display=ContentDisplayConfig(show_diff_for_updates=True)
+      )
     )
     spec = _update_spec()
     ctx = _get_ctx(config)
@@ -477,7 +526,7 @@ class TestUpdateToolShowDiffFlag:
 
     # Replace
     result = await spec.execute(
-      path=str(test_file), operation="replace", old_string="Old", new_string="New"
+      path=str(test_file), operation="replace", old_string="Old", new_string="New", ctx=ctx
     )
 
     # Verify result
@@ -494,7 +543,7 @@ class TestUpdateToolShowDiffFlag:
     """
     # Create update tool with show_diff_for_updates=False
     config = Config(
-      tools=ToolsConfig(
+      tools_shared=ToolsSharedConfig(
         content_display=ContentDisplayConfig(verbosity="content", show_diff_for_updates=False)
       )
     )
@@ -507,7 +556,7 @@ class TestUpdateToolShowDiffFlag:
 
     # Replace
     result = await spec.execute(
-      path=str(test_file), operation="replace", old_string="Old", new_string="New"
+      path=str(test_file), operation="replace", old_string="Old", new_string="New", ctx=ctx
     )
 
     # Verify result
@@ -524,7 +573,7 @@ class TestUpdateToolShowDiffFlag:
     """
     # Create update tool with show_diff_for_updates=False
     config = Config(
-      tools=ToolsConfig(
+      tools_shared=ToolsSharedConfig(
         content_display=ContentDisplayConfig(verbosity="content", show_diff_for_updates=False)
       )
     )
@@ -537,7 +586,7 @@ class TestUpdateToolShowDiffFlag:
 
     # Insert
     result = await spec.execute(
-      path=str(test_file), operation="insert_after", line_number=1, new_string="New line"
+      path=str(test_file), operation="insert_after", line_number=1, new_string="New line", ctx=ctx
     )
 
     # Verify result
@@ -559,7 +608,9 @@ class TestUpdateToolVerbosityLevels:
     Then: ToolResult.content_metadata is None
     """
     # Create update tool with silent verbosity
-    config = Config(tools=ToolsConfig(), tools_shared=ToolsSharedConfig(content_display=ContentDisplayConfig(verbosity="silent")))
+    config = Config(
+      tools_shared=ToolsSharedConfig(content_display=ContentDisplayConfig(verbosity="silent")),
+    )
     spec = _update_spec()
     ctx = _get_ctx(config)
 
@@ -569,7 +620,11 @@ class TestUpdateToolVerbosityLevels:
 
     # Replace
     result = await spec.execute(
-      path=str(test_file), operation="replace", old_string="Content", new_string="New content"
+      path=str(test_file),
+      operation="replace",
+      old_string="Content",
+      new_string="New content",
+      ctx=ctx,
     )
 
     # Verify result
@@ -585,7 +640,7 @@ class TestUpdateToolVerbosityLevels:
     """
     # Create update tool with summary verbosity and no diffs
     config = Config(
-      tools=ToolsConfig(
+      tools_shared=ToolsSharedConfig(
         content_display=ContentDisplayConfig(verbosity="summary", show_diff_for_updates=False)
       )
     )
@@ -598,7 +653,7 @@ class TestUpdateToolVerbosityLevels:
 
     # Replace
     result = await spec.execute(
-      path=str(test_file), operation="replace", old_string="Old", new_string="New"
+      path=str(test_file), operation="replace", old_string="Old", new_string="New", ctx=ctx
     )
 
     # Verify result
@@ -616,7 +671,7 @@ class TestUpdateToolVerbosityLevels:
     """
     # Create update tool with content verbosity
     config = Config(
-      tools=ToolsConfig(
+      tools_shared=ToolsSharedConfig(
         content_display=ContentDisplayConfig(verbosity="content", show_diff_for_updates=True)
       )
     )
@@ -629,7 +684,7 @@ class TestUpdateToolVerbosityLevels:
 
     # Replace
     result = await spec.execute(
-      path=str(test_file), operation="replace", old_string="Old", new_string="New"
+      path=str(test_file), operation="replace", old_string="Old", new_string="New", ctx=ctx
     )
 
     # Verify result
@@ -651,7 +706,7 @@ class TestUpdateToolConfigIntegration:
     """
     # Create update tool with small max_diff_lines
     config = Config(
-      tools=ToolsConfig(
+      tools_shared=ToolsSharedConfig(
         content_display=ContentDisplayConfig(
           verbosity="content", show_diff_for_updates=True, max_diff_lines=10
         )
@@ -666,7 +721,7 @@ class TestUpdateToolConfigIntegration:
 
     # Replace
     result = await spec.execute(
-      path=str(test_file), operation="replace", old_string="Line 25", new_string="Changed"
+      path=str(test_file), operation="replace", old_string="Line 25", new_string="Changed", ctx=ctx
     )
 
     # Verify result
