@@ -49,8 +49,8 @@ jobs:
       - uses: astral-sh/setup-uv@v6
       - run: uv sync --frozen --all-extras
       - run: uv pip install -e examples/plugins/demo
-      - run: uv run ruff check src tests
-      - run: uv run ruff format --check src tests
+      - run: uv run ruff check src tests examples
+      - run: uv run ruff format --check src tests examples
 
   typecheck:
     runs-on: ubuntu-latest
@@ -59,4 +59,4 @@ jobs:
       - uses: astral-sh/setup-uv@v6
       - run: uv sync --frozen --all-extras
       - run: uv pip install -e examples/plugins/demo
-      - run: uv run mypy src
+      - run: uv run mypy src examples
