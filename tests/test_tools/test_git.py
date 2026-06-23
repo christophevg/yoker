@@ -6,25 +6,34 @@ restrictions, output sanitization), and error handling.
 """
 
 import subprocess
+import sys
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
+from pytest_mock import MockerFixture
 
+from yoker.builtin import git, update, write
+from yoker.builtin.git import _sanitize_output
 from yoker.config import (
   Config,
   GitToolConfig,
   HandlerConfig,
   PermissionsConfig,
   ToolsSharedConfig,
+  UpdateToolConfig,
+  WriteToolConfig,
 )
-from yoker.tools import ToolRegistry, git, update, write
+from yoker.tools import ToolRegistry
 from yoker.tools.context import ToolContext
-from yoker.tools.git import _sanitize_output
-from yoker.tools.path_guardrail import PathGuardrail
+from yoker.tools.guardrails.path import PathGuardrail
+
+# Import the actual module (not the function exported in __init__.py)
+git_module = sys.modules["yoker.builtin.git"]
 
 
-def _git_spec(config: GitToolConfig | None = None, permission_handlers: dict[str, HandlerConfig] | None = None):
+def _git_spec(
+  config: GitToolConfig | None = None, permission_handlers: dict[str, HandlerConfig] | None = None
+):
   """Create and register the git tool."""
   registry = ToolRegistry()
   # Create backends dict with permission_handlers if provided
@@ -34,18 +43,20 @@ def _git_spec(config: GitToolConfig | None = None, permission_handlers: dict[str
   return registry.register(git, name="git")
 
 
-def _get_ctx(config: GitToolConfig | None = None, permission_handlers: dict[str, HandlerConfig] | None = None) -> ToolContext | None:
-  """Get ToolContext for tests that need config."""
-  backends = {}
+def _git_context(
+  config: GitToolConfig | None = None, permission_handlers: dict[str, HandlerConfig] | None = None
+) -> ToolContext:
+  """Get ToolContext for tests."""
+  backends: dict = {}
   if permission_handlers:
     backends["permission_handlers"] = permission_handlers
-  if config:
-    return ToolContext(
-      config=config,
-      shared=ToolsSharedConfig(),
-      backends=backends,
-    )
-  return None
+  if config is None:
+    config = GitToolConfig()
+  return ToolContext(
+    config=config,
+    shared=ToolsSharedConfig(),
+    backends=backends,
+  )
 
 
 class TestGitToolSchema:
@@ -144,7 +155,8 @@ class TestGitToolReadOnlyOperations:
 
     config = GitToolConfig()
     spec = _git_spec()
-    result = await spec.execute(operation="status", path=str(git_repo))
+    ctx = _git_context(config=config)
+    result = await spec.execute(operation="status", path=str(git_repo), ctx=ctx)
 
     assert result.success
     assert "new_file.txt" in result.result
@@ -161,7 +173,10 @@ class TestGitToolReadOnlyOperations:
 
     config = GitToolConfig()
     spec = _git_spec()
-    result = await spec.execute(operation="status", path=str(git_repo), args={"short": True})
+    ctx = _git_context(config=config)
+    result = await spec.execute(
+      operation="status", path=str(git_repo), ctx=ctx, args={"short": True}
+    )
 
     assert result.success
     assert "?? new_file.txt" in result.result
@@ -175,7 +190,8 @@ class TestGitToolReadOnlyOperations:
     """
     config = GitToolConfig()
     spec = _git_spec()
-    result = await spec.execute(operation="log", path=str(git_repo))
+    ctx = _git_context(config=config)
+    result = await spec.execute(operation="log", path=str(git_repo), ctx=ctx)
 
     assert result.success
     assert "Initial commit" in result.result
@@ -189,7 +205,10 @@ class TestGitToolReadOnlyOperations:
     """
     config = GitToolConfig()
     spec = _git_spec()
-    result = await spec.execute(operation="log", path=str(git_repo), args={"oneline": True})
+    ctx = _git_context(config=config)
+    result = await spec.execute(
+      operation="log", path=str(git_repo), ctx=ctx, args={"oneline": True}
+    )
 
     assert result.success
     assert "Initial commit" in result.result
@@ -214,7 +233,10 @@ class TestGitToolReadOnlyOperations:
 
     config = GitToolConfig()
     spec = _git_spec()
-    result = await spec.execute(operation="log", path=str(git_repo), args={"oneline": True, "n": 5})
+    ctx = _git_context(config=config)
+    result = await spec.execute(
+      operation="log", path=str(git_repo), ctx=ctx, args={"oneline": True, "n": 5}
+    )
 
     assert result.success
     # Should have exactly 5 commits shown
@@ -230,7 +252,10 @@ class TestGitToolReadOnlyOperations:
     """
     config = GitToolConfig()
     spec = _git_spec()
-    result = await spec.execute(operation="log", path=str(git_repo), args={"author": "Test"})
+    ctx = _git_context(config=config)
+    result = await spec.execute(
+      operation="log", path=str(git_repo), ctx=ctx, args={"author": "Test"}
+    )
 
     assert result.success
     assert "Initial commit" in result.result
@@ -247,7 +272,8 @@ class TestGitToolReadOnlyOperations:
 
     config = GitToolConfig()
     spec = _git_spec()
-    result = await spec.execute(operation="diff", path=str(git_repo))
+    ctx = _git_context(config=config)
+    result = await spec.execute(operation="diff", path=str(git_repo), ctx=ctx)
 
     assert result.success
     assert "# Modified" in result.result
@@ -264,7 +290,8 @@ class TestGitToolReadOnlyOperations:
 
     config = GitToolConfig()
     spec = _git_spec()
-    result = await spec.execute(operation="diff", path=str(git_repo), args={"stat": True})
+    ctx = _git_context(config=config)
+    result = await spec.execute(operation="diff", path=str(git_repo), ctx=ctx, args={"stat": True})
 
     assert result.success
     assert "README.md" in result.result
@@ -282,7 +309,10 @@ class TestGitToolReadOnlyOperations:
 
     config = GitToolConfig()
     spec = _git_spec()
-    result = await spec.execute(operation="diff", path=str(git_repo), args={"cached": True})
+    ctx = _git_context(config=config)
+    result = await spec.execute(
+      operation="diff", path=str(git_repo), ctx=ctx, args={"cached": True}
+    )
 
     assert result.success
     assert "staged_file.txt" in result.result
@@ -299,7 +329,10 @@ class TestGitToolReadOnlyOperations:
 
     config = GitToolConfig()
     spec = _git_spec()
-    result = await spec.execute(operation="branch", path=str(git_repo), args={"list": True})
+    ctx = _git_context(config=config)
+    result = await spec.execute(
+      operation="branch", path=str(git_repo), ctx=ctx, args={"list": True}
+    )
 
     assert result.success
     assert "master" in result.result or "main" in result.result
@@ -314,7 +347,8 @@ class TestGitToolReadOnlyOperations:
     """
     config = GitToolConfig()
     spec = _git_spec()
-    result = await spec.execute(operation="branch", path=str(git_repo), args={"all": True})
+    ctx = _git_context(config=config)
+    result = await spec.execute(operation="branch", path=str(git_repo), ctx=ctx, args={"all": True})
 
     assert result.success
     # Should show at least the current branch
@@ -329,7 +363,8 @@ class TestGitToolReadOnlyOperations:
     """
     config = GitToolConfig()
     spec = _git_spec()
-    result = await spec.execute(operation="show", path=str(git_repo))
+    ctx = _git_context(config=config)
+    result = await spec.execute(operation="show", path=str(git_repo), ctx=ctx)
 
     assert result.success
     assert "Initial commit" in result.result
@@ -343,7 +378,10 @@ class TestGitToolReadOnlyOperations:
     """
     config = GitToolConfig()
     spec = _git_spec()
-    result = await spec.execute(operation="show", path=str(git_repo), args={"format": "%s"})
+    ctx = _git_context(config=config)
+    result = await spec.execute(
+      operation="show", path=str(git_repo), ctx=ctx, args={"format": "%s"}
+    )
 
     assert result.success
     assert "Initial commit" in result.result
@@ -391,7 +429,7 @@ class TestGitToolPermissionRequiredOperations:
     # Allow commit in config but don't provide handler
     config = GitToolConfig(allowed_commands=("status", "log", "commit"))
     spec = _git_spec()
-    ctx = _get_ctx(config=config, permission_handlers={})
+    ctx = _git_context(config=config, permission_handlers={})
 
     result = await spec.execute(
       operation="commit",
@@ -414,7 +452,7 @@ class TestGitToolPermissionRequiredOperations:
     handlers = {"git_commit": HandlerConfig(mode="block", message="Commits are blocked")}
 
     spec = _git_spec()
-    ctx = _get_ctx(config=config, permission_handlers=handlers)
+    ctx = _git_context(config=config, permission_handlers=handlers)
 
     result = await spec.execute(
       operation="commit",
@@ -441,7 +479,7 @@ class TestGitToolPermissionRequiredOperations:
     handlers = {"git_commit": HandlerConfig(mode="allow")}
 
     spec = _git_spec()
-    ctx = _get_ctx(config=config, permission_handlers=handlers)
+    ctx = _git_context(config=config, permission_handlers=handlers)
 
     result = await spec.execute(
       operation="commit",
@@ -462,7 +500,7 @@ class TestGitToolPermissionRequiredOperations:
     config = GitToolConfig(allowed_commands=("status", "log", "push"))
 
     spec = _git_spec()
-    ctx = _get_ctx(config=config, permission_handlers={})
+    ctx = _git_context(config=config, permission_handlers={})
 
     result = await spec.execute(operation="push", path=str(git_repo), ctx=ctx)
 
@@ -480,7 +518,7 @@ class TestGitToolPermissionRequiredOperations:
     handlers = {"git_push": HandlerConfig(mode="block", message="Push is blocked")}
 
     spec = _git_spec()
-    ctx = _get_ctx(config=config, permission_handlers=handlers)
+    ctx = _git_context(config=config, permission_handlers=handlers)
 
     result = await spec.execute(operation="push", path=str(git_repo), ctx=ctx)
 
@@ -498,7 +536,7 @@ class TestGitToolPermissionRequiredOperations:
     handlers = {"git_push": HandlerConfig(mode="allow")}
 
     spec = _git_spec()
-    ctx = _get_ctx(config=config, permission_handlers=handlers)
+    ctx = _git_context(config=config, permission_handlers=handlers)
 
     # Push will fail because there's no remote, but it should get past permission check
     result = await spec.execute(operation="push", path=str(git_repo), ctx=ctx)
@@ -517,7 +555,7 @@ class TestGitToolPermissionRequiredOperations:
     config = GitToolConfig(allowed_commands=("status", "log"))
 
     spec = _git_spec()
-    ctx = _get_ctx(config=config)
+    ctx = _git_context(config=config)
 
     result = await spec.execute(operation="reset", path=str(git_repo), ctx=ctx)
 
@@ -545,10 +583,12 @@ class TestGitToolCommandInjectionPrevention:
     """
     config = GitToolConfig()
     spec = _git_spec()
+    ctx = _git_context(config=config)
 
     result = await spec.execute(
       operation="log",
       path=str(git_repo),
+      ctx=ctx,
       args={"format": "--something-malicious"},
     )
 
@@ -564,11 +604,13 @@ class TestGitToolCommandInjectionPrevention:
     """
     config = GitToolConfig()
     spec = _git_spec()
+    ctx = _git_context(config=config)
 
     # Try to inject config via format arg
     result = await spec.execute(
       operation="log",
       path=str(git_repo),
+      ctx=ctx,
       args={"format": "-c core.hooksPath=/malicious"},
     )
 
@@ -583,10 +625,12 @@ class TestGitToolCommandInjectionPrevention:
     """
     config = GitToolConfig()
     spec = _git_spec()
+    ctx = _git_context(config=config)
 
     result = await spec.execute(
       operation="log",
       path=str(git_repo),
+      ctx=ctx,
       args={"format": "--upload-pack=/malicious"},
     )
 
@@ -602,10 +646,12 @@ class TestGitToolCommandInjectionPrevention:
     """
     config = GitToolConfig()
     spec = _git_spec()
+    ctx = _git_context(config=config)
 
     result = await spec.execute(
       operation="log",
       path=str(git_repo),
+      ctx=ctx,
       args={"format": "--uploadPack=/malicious"},
     )
 
@@ -622,10 +668,12 @@ class TestGitToolCommandInjectionPrevention:
     """
     config = GitToolConfig()
     spec = _git_spec()
+    ctx = _git_context(config=config)
 
     result = await spec.execute(
       operation="log",
       path=str(git_repo),
+      ctx=ctx,
       args={"format": "test | cat /etc/passwd"},
     )
 
@@ -641,10 +689,12 @@ class TestGitToolCommandInjectionPrevention:
     """
     config = GitToolConfig()
     spec = _git_spec()
+    ctx = _git_context(config=config)
 
     result = await spec.execute(
       operation="log",
       path=str(git_repo),
+      ctx=ctx,
       args={"format": "$(cat /etc/passwd)"},
     )
 
@@ -660,10 +710,12 @@ class TestGitToolCommandInjectionPrevention:
     """
     config = GitToolConfig()
     spec = _git_spec()
+    ctx = _git_context(config=config)
 
     result = await spec.execute(
       operation="log",
       path=str(git_repo),
+      ctx=ctx,
       args={"format": "test\nmalicious"},
     )
 
@@ -679,10 +731,12 @@ class TestGitToolCommandInjectionPrevention:
     """
     config = GitToolConfig()
     spec = _git_spec()
+    ctx = _git_context(config=config)
 
     result = await spec.execute(
       operation="log",
       path=str(git_repo),
+      ctx=ctx,
       args={"format": "test\x00malicious"},
     )
 
@@ -724,10 +778,12 @@ class TestGitToolPathRestrictions:
 
     git_config = GitToolConfig()
     spec = _git_spec(config=git_config)
+    ctx = _git_context(config=git_config)
 
     result = await spec.execute(
       operation="log",
       path=str(repo),
+      ctx=ctx,
       args={"format": "--git-dir=/malicious"},
     )
 
@@ -749,10 +805,12 @@ class TestGitToolPathRestrictions:
 
     git_config = GitToolConfig()
     spec = _git_spec(config=git_config)
+    ctx = _git_context(config=git_config)
 
     result = await spec.execute(
       operation="log",
       path=str(repo),
+      ctx=ctx,
       args={"format": "--work-tree=/malicious"},
     )
 
@@ -786,8 +844,9 @@ class TestGitToolPathRestrictions:
     """
     git_config = GitToolConfig()
     spec = _git_spec(config=git_config)
+    ctx = _git_context(config=git_config)
 
-    result = await spec.execute(operation="status", path=str(tmp_path / "nonexistent"))
+    result = await spec.execute(operation="status", path=str(tmp_path / "nonexistent"), ctx=ctx)
 
     assert not result.success
     assert "not exist" in result.error.lower() or "not found" in result.error.lower()
@@ -804,8 +863,9 @@ class TestGitToolPathRestrictions:
 
     git_config = GitToolConfig()
     spec = _git_spec(config=git_config)
+    ctx = _git_context(config=git_config)
 
-    result = await spec.execute(operation="status", path=str(non_git))
+    result = await spec.execute(operation="status", path=str(non_git), ctx=ctx)
 
     assert not result.success
     assert "git repository" in result.error.lower() or "not a git" in result.error.lower()
@@ -878,8 +938,9 @@ class TestGitToolOutputSanitization:
 
     git_config = GitToolConfig()
     spec = _git_spec(config=git_config)
+    ctx = _git_context(config=git_config)
 
-    result = await spec.execute(operation="log", path=str(repo))
+    result = await spec.execute(operation="log", path=str(repo), ctx=ctx)
 
     assert result.success
     # Output should not contain any config values that weren't committed
@@ -897,14 +958,15 @@ class TestGitToolErrorHandling:
     """
     git_config = GitToolConfig()
     spec = _git_spec(config=git_config)
+    ctx = _git_context(config=git_config)
 
-    result = await spec.execute(operation="nonexistent", path=str(tmp_path))
+    result = await spec.execute(operation="nonexistent", path=str(tmp_path), ctx=ctx)
 
     assert not result.success
     assert "not allowed" in result.error.lower()
 
   @pytest.mark.asyncio
-  async def test_git_timeout_enforced(self, tmp_path: Path) -> None:
+  async def test_git_timeout_enforced(self, tmp_path: Path, mocker: MockerFixture) -> None:
     """
     Given: A git operation that takes too long
     When: Executing with timeout
@@ -916,18 +978,24 @@ class TestGitToolErrorHandling:
 
     git_config = GitToolConfig()
     spec = _git_spec(config=git_config)
+    ctx = _git_context(config=git_config)
 
-    # Mock subprocess to raise TimeoutExpired
-    with patch("yoker.tools.git.subprocess.run") as mock_run:
-      mock_run.side_effect = subprocess.TimeoutExpired(cmd=["git"], timeout=30)
+    # Mock subprocess.run to raise TimeoutExpired
+    mock_run = mocker.MagicMock()
+    mock_run.side_effect = subprocess.TimeoutExpired(cmd=["git"], timeout=30)
+    mocker.patch.object(git_module, "subprocess")
+    git_module.subprocess.run = mock_run
+    # Keep the real exception classes
+    git_module.subprocess.TimeoutExpired = subprocess.TimeoutExpired
+    git_module.subprocess.CompletedProcess = subprocess.CompletedProcess
 
-      result = await spec.execute(operation="status", path=str(repo))
+    result = await spec.execute(operation="status", path=str(repo), ctx=ctx)
 
-      assert not result.success
-      assert "timeout" in result.error.lower()
+    assert not result.success
+    assert "timeout" in result.error.lower()
 
   @pytest.mark.asyncio
-  async def test_git_not_installed_error(self, tmp_path: Path) -> None:
+  async def test_git_not_installed_error(self, tmp_path: Path, mocker: MockerFixture) -> None:
     """
     Given: A system where git is not installed
     When: Executing any git operation
@@ -939,15 +1007,21 @@ class TestGitToolErrorHandling:
 
     git_config = GitToolConfig()
     spec = _git_spec(config=git_config)
+    ctx = _git_context(config=git_config)
 
-    # Mock subprocess to raise FileNotFoundError
-    with patch("yoker.tools.git.subprocess.run") as mock_run:
-      mock_run.side_effect = FileNotFoundError()
+    # Mock subprocess.run to raise FileNotFoundError
+    mock_run = mocker.MagicMock()
+    mock_run.side_effect = FileNotFoundError()
+    mocker.patch.object(git_module, "subprocess")
+    git_module.subprocess.run = mock_run
+    # Keep the real exception classes
+    git_module.subprocess.TimeoutExpired = subprocess.TimeoutExpired
+    git_module.subprocess.CompletedProcess = subprocess.CompletedProcess
 
-      result = await spec.execute(operation="status", path=str(repo))
+    result = await spec.execute(operation="status", path=str(repo), ctx=ctx)
 
-      assert not result.success
-      assert "not installed" in result.error.lower() or "not found" in result.error.lower()
+    assert not result.success
+    assert "not installed" in result.error.lower() or "not found" in result.error.lower()
 
   @pytest.mark.asyncio
   async def test_invalid_operation_type_error(self, tmp_path: Path) -> None:
@@ -958,8 +1032,9 @@ class TestGitToolErrorHandling:
     """
     git_config = GitToolConfig()
     spec = _git_spec(config=git_config)
+    ctx = _git_context(config=git_config)
 
-    result = await spec.execute(operation=123, path=str(tmp_path))
+    result = await spec.execute(operation=123, path=str(tmp_path), ctx=ctx)
 
     assert not result.success
     assert "string" in result.error.lower()
@@ -973,8 +1048,9 @@ class TestGitToolErrorHandling:
     """
     git_config = GitToolConfig()
     spec = _git_spec(config=git_config)
+    ctx = _git_context(config=git_config)
 
-    result = await spec.execute(operation="status", path=123)
+    result = await spec.execute(operation="status", path=123, ctx=ctx)
 
     assert not result.success
     assert "string" in result.error.lower()
@@ -993,8 +1069,9 @@ class TestGitToolErrorHandling:
 
     git_config = GitToolConfig()
     spec = _git_spec(config=git_config)
+    ctx = _git_context(config=git_config)
 
-    result = await spec.execute(operation="status", path=str(repo), args="invalid")
+    result = await spec.execute(operation="status", path=str(repo), ctx=ctx, args="invalid")
 
     assert not result.success
     assert "object" in result.error.lower()
@@ -1008,11 +1085,12 @@ class TestGitToolErrorHandling:
     """
     git_config = GitToolConfig()
     spec = _git_spec(config=git_config)
+    ctx = _git_context(config=git_config)
 
-    result = await spec.execute(path=str(tmp_path))
-
-    assert not result.success
-    assert "missing" in result.error.lower() and "operation" in result.error.lower()
+    # Calling without operation parameter raises TypeError
+    # because operation is a required parameter
+    with pytest.raises(TypeError, match="missing.*operation"):
+      await spec.execute(path=str(tmp_path), ctx=ctx)
 
 
 class TestGitToolArgumentValidation:
@@ -1035,10 +1113,12 @@ class TestGitToolArgumentValidation:
     """
     git_config = GitToolConfig()
     spec = _git_spec(config=git_config)
+    ctx = _git_context(config=git_config)
 
     result = await spec.execute(
       operation="log",
       path=str(git_repo),
+      ctx=ctx,
       args={"invalid_arg": "value"},
     )
 
@@ -1054,10 +1134,12 @@ class TestGitToolArgumentValidation:
     """
     git_config = GitToolConfig()
     spec = _git_spec(config=git_config)
+    ctx = _git_context(config=git_config)
 
     result = await spec.execute(
       operation="log",
       path=str(git_repo),
+      ctx=ctx,
       args={"n": "five"},
     )
 
@@ -1073,10 +1155,12 @@ class TestGitToolArgumentValidation:
     """
     git_config = GitToolConfig()
     spec = _git_spec(config=git_config)
+    ctx = _git_context(config=git_config)
 
     result = await spec.execute(
       operation="status",
       path=str(git_repo),
+      ctx=ctx,
       args={"short": "yes"},
     )
 
@@ -1092,10 +1176,12 @@ class TestGitToolArgumentValidation:
     """
     git_config = GitToolConfig()
     spec = _git_spec(config=git_config)
+    ctx = _git_context(config=git_config)
 
     result = await spec.execute(
       operation="log",
       path=str(git_repo),
+      ctx=ctx,
       args={"n": 500},
     )
 
@@ -1111,12 +1197,14 @@ class TestGitToolArgumentValidation:
     """
     git_config = GitToolConfig()
     spec = _git_spec(config=git_config)
+    ctx = _git_context(config=git_config)
 
     long_string = "x" * 1001
 
     result = await spec.execute(
       operation="log",
       path=str(git_repo),
+      ctx=ctx,
       args={"format": long_string},
     )
 
@@ -1163,11 +1251,12 @@ class TestGitToolGuardrailIntegration:
     guardrail = PathGuardrail(config)
     git_config = GitToolConfig()
     spec = _git_spec(config=git_config)
+    ctx = _git_context(config=git_config)
 
     validation = guardrail.validate(spec.name, {"path": str(git_repo)})
     assert validation.valid
 
-    result = await spec.execute(operation="status", path=str(git_repo))
+    result = await spec.execute(operation="status", path=str(git_repo), ctx=ctx)
     assert result.success
 
 
@@ -1212,8 +1301,9 @@ class TestGitToolReturnFormat:
     """
     git_config = GitToolConfig()
     spec = _git_spec(config=git_config)
+    ctx = _git_context(config=git_config)
 
-    result = await spec.execute(operation="status", path=str(git_repo))
+    result = await spec.execute(operation="status", path=str(git_repo), ctx=ctx)
 
     assert result.success is True
     assert isinstance(result.result, str)
@@ -1229,8 +1319,9 @@ class TestGitToolReturnFormat:
     """
     git_config = GitToolConfig()
     spec = _git_spec(config=git_config)
+    ctx = _git_context(config=git_config)
 
-    result = await spec.execute(operation="status", path=str(tmp_path / "nonexistent"))
+    result = await spec.execute(operation="status", path=str(tmp_path / "nonexistent"), ctx=ctx)
 
     assert result.success is False
     assert result.result == ""
@@ -1247,8 +1338,9 @@ class TestGitToolReturnFormat:
     # Clean repo with no changes
     git_config = GitToolConfig()
     spec = _git_spec(config=git_config)
+    ctx = _git_context(config=git_config)
 
-    result = await spec.execute(operation="diff", path=str(git_repo))
+    result = await spec.execute(operation="diff", path=str(git_repo), ctx=ctx)
 
     # diff with no changes returns empty output
     assert result.success
@@ -1259,7 +1351,7 @@ class TestGitToolSubprocessSecurity:
   """Tests for subprocess execution security."""
 
   @pytest.mark.asyncio
-  async def test_no_shell_true_used(self, tmp_path: Path) -> None:
+  async def test_no_shell_true_used(self, tmp_path: Path, mocker: MockerFixture) -> None:
     """
     Given: git tool executing a command
     When: Checking subprocess.run call
@@ -1271,23 +1363,29 @@ class TestGitToolSubprocessSecurity:
 
     git_config = GitToolConfig()
     spec = _git_spec(config=git_config)
+    ctx = _git_context(config=git_config)
 
-    with patch("yoker.tools.git.subprocess.run") as mock_run:
-      mock_run.return_value = subprocess.CompletedProcess(
-        args=["git", "status"],
-        returncode=0,
-        stdout="On branch main",
-        stderr="",
-      )
+    mock_run = mocker.MagicMock()
+    mock_run.return_value = subprocess.CompletedProcess(
+      args=["git", "status"],
+      returncode=0,
+      stdout="On branch main",
+      stderr="",
+    )
+    mocker.patch.object(git_module, "subprocess")
+    git_module.subprocess.run = mock_run
+    # Keep the real exception classes
+    git_module.subprocess.TimeoutExpired = subprocess.TimeoutExpired
+    git_module.subprocess.CompletedProcess = subprocess.CompletedProcess
 
-      await spec.execute(operation="status", path=str(repo))
+    await spec.execute(operation="status", path=str(repo), ctx=ctx)
 
-      # Verify shell=True was NOT passed
-      call_kwargs = mock_run.call_args.kwargs
-      assert "shell" not in call_kwargs or call_kwargs.get("shell") is not True
+    # Verify shell=True was NOT passed
+    call_kwargs = mock_run.call_args.kwargs
+    assert "shell" not in call_kwargs or call_kwargs.get("shell") is not True
 
   @pytest.mark.asyncio
-  async def test_command_as_list_not_string(self, tmp_path: Path) -> None:
+  async def test_command_as_list_not_string(self, tmp_path: Path, mocker: MockerFixture) -> None:
     """
     Given: git tool building a command
     When: Passing to subprocess
@@ -1299,21 +1397,27 @@ class TestGitToolSubprocessSecurity:
 
     git_config = GitToolConfig()
     spec = _git_spec(config=git_config)
+    ctx = _git_context(config=git_config)
 
-    with patch("yoker.tools.git.subprocess.run") as mock_run:
-      mock_run.return_value = subprocess.CompletedProcess(
-        args=["git", "status"],
-        returncode=0,
-        stdout="On branch main",
-        stderr="",
-      )
+    mock_run = mocker.MagicMock()
+    mock_run.return_value = subprocess.CompletedProcess(
+      args=["git", "status"],
+      returncode=0,
+      stdout="On branch main",
+      stderr="",
+    )
+    mocker.patch.object(git_module, "subprocess")
+    git_module.subprocess.run = mock_run
+    # Keep the real exception classes
+    git_module.subprocess.TimeoutExpired = subprocess.TimeoutExpired
+    git_module.subprocess.CompletedProcess = subprocess.CompletedProcess
 
-      await spec.execute(operation="status", path=str(repo))
+    await spec.execute(operation="status", path=str(repo), ctx=ctx)
 
-      # Verify first argument (command) is a list
-      call_args = mock_run.call_args.args
-      assert isinstance(call_args[0], list)
-      assert all(isinstance(item, str) for item in call_args[0])
+    # Verify first argument (command) is a list
+    call_args = mock_run.call_args.args
+    assert isinstance(call_args[0], list)
+    assert all(isinstance(item, str) for item in call_args[0])
 
 
 class TestGitToolIntegration:
@@ -1358,15 +1462,30 @@ class TestGitToolIntegration:
     write_spec = ToolRegistry().register(write, name="write")
     git_spec = _git_spec()
 
+    # Create context for write tool
+    write_ctx = ToolContext(
+      config=WriteToolConfig(),
+      shared=ToolsSharedConfig(),
+      backends={},
+    )
+
     # Create a file with write tool
     write_result = await write_spec.execute(
       path=str(git_repo / "new_file.txt"),
       content="New content",
+      ctx=write_ctx,
     )
     assert write_result.success
 
+    # Create context for git tool
+    git_ctx = ToolContext(
+      config=GitToolConfig(),
+      shared=ToolsSharedConfig(),
+      backends={},
+    )
+
     # Check git status
-    result = await git_spec.execute(operation="status", path=str(git_repo))
+    result = await git_spec.execute(operation="status", path=str(git_repo), ctx=git_ctx)
 
     assert result.success
     assert "new_file.txt" in result.result
@@ -1381,17 +1500,32 @@ class TestGitToolIntegration:
     update_spec = ToolRegistry().register(update, name="update")
     git_spec = _git_spec()
 
+    # Create context for update tool
+    update_ctx = ToolContext(
+      config=UpdateToolConfig(),
+      shared=ToolsSharedConfig(),
+      backends={},
+    )
+
     # Update README.md with update tool
     update_result = await update_spec.execute(
       path=str(git_repo / "README.md"),
       operation="replace",
       old_string="# Test",
       new_string="# Updated",
+      ctx=update_ctx,
     )
     assert update_result.success
 
+    # Create context for git tool
+    git_ctx = ToolContext(
+      config=GitToolConfig(),
+      shared=ToolsSharedConfig(),
+      backends={},
+    )
+
     # Check git diff
-    result = await git_spec.execute(operation="diff", path=str(git_repo))
+    result = await git_spec.execute(operation="diff", path=str(git_repo), ctx=git_ctx)
 
     assert result.success
     assert "# Updated" in result.result

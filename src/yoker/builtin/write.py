@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Annotated, Any
 
 from structlog import get_logger
 
+from yoker.config import WriteToolConfig
 from yoker.tools.annotations import Path as PathArg
 from yoker.tools.annotations import Text
 from yoker.tools.context import ToolContext
@@ -63,6 +64,9 @@ async def write(
   """Write content to a file."""
   # Config values come from ctx.config (WriteToolConfig with defaults)
   write_config = ctx.config
+  if not isinstance(write_config, WriteToolConfig):
+    logger.warning("write_invalid_config_type", config_type=type(write_config).__name__)
+    return ToolResult(success=False, error="Invalid configuration for write tool")
   allow_overwrite = write_config.allow_overwrite
 
   if not isinstance(path, str) or not path.strip():

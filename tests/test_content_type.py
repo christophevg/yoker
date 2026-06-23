@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from yoker.content_type import _detect_from_extension, detect_content_type
+from yoker.tools.content_type import _detect_from_extension, detect_content_type
 
 
 class TestDetectContentType:

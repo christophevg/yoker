@@ -5,23 +5,22 @@ Guardrails are enforced centrally by the harness based on the schema's
 ``path`` annotation.
 """
 
+import builtins
 import fnmatch
 import os
 import re
 import time
 from collections.abc import Iterator
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Any
+from typing import Annotated, Any
 
 from structlog import get_logger
 
+from yoker.config import SearchToolConfig
 from yoker.tools.annotations import Path as PathArg
 from yoker.tools.annotations import Text
 from yoker.tools.context import ToolContext
 from yoker.tools.schema import ToolResult
-
-if TYPE_CHECKING:
-  from yoker.config import SearchToolConfig
 
 logger = get_logger(__name__)
 
@@ -84,7 +83,10 @@ async def search(
   if not path:
     return ToolResult(success=False, error="Missing required parameter: path")
 
-  config: SearchToolConfig = ctx.config
+  config = ctx.config
+  if not isinstance(config, SearchToolConfig):
+    logger.warning("search_invalid_config_type", config_type=builtins.type(config).__name__)
+    return ToolResult(success=False, error="Invalid configuration for search tool")
   default_max_results = config.max_results
   default_timeout_ms = config.timeout_ms
 

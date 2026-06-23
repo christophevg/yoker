@@ -14,7 +14,7 @@ available, a NetworkError is reported without crashing.
 import asyncio
 import sys
 
-from yoker import Agent, __version__
+from yoker.agent import Agent
 from yoker.config import get_yoker_config
 from yoker.exceptions import NetworkError
 from yoker.ui import BatchUIHandler, UIBridge
@@ -41,17 +41,10 @@ async def run_research(prompt: str) -> None:
   bridge = UIBridge(ui)
   agent.add_event_handler(bridge)
 
-  await ui.start(
-    agent.model,
-    __version__,
-    {
-      "thinking_enabled": agent.thinking_mode.value == "on",
-      "agent": agent.agent_definition.name if agent.agent_definition else "default",
-    },
-  )
+  await ui.start(agent)
 
   try:
-    await agent.process(prompt)
+    _ = await agent.process(prompt)
   except NetworkError as e:
     ui.output_error(e)
   finally:

@@ -28,7 +28,7 @@ __all__ = [
   "create_default_registry",
 ]
 
-log = get_logger(__name__)
+logger = get_logger(__name__)
 
 
 class CommandRegistry:
@@ -104,7 +104,7 @@ class CommandRegistry:
     if not name:
       return "Error: Empty command"
 
-    log.debug(
+    logger.debug(
       "command_dispatch",
       command_name=name,
       args=args,
@@ -113,17 +113,17 @@ class CommandRegistry:
 
     cmd = self.get(name)
     if cmd is not None:
-      log.debug("command_executing", command_name=name, args=args)
+      logger.debug("command_executing", command_name=name, args=args)
       return await cmd.handler(args, agent, ui)
 
     # Unknown command: try skill invocation.
     registry = agent.skills
     if registry is not None and name in registry:
-      log.info("skill_command_dispatch", skill_name=name, args=args)
+      logger.info("skill_command_dispatch", skill_name=name, args=args)
       await skill_invoke.handle(name, args, agent, ui)
       return None
 
-    log.warning(
+    logger.warning(
       "command_not_found",
       command_name=name,
       available_commands=self.names,

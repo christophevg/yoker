@@ -141,7 +141,7 @@ __YOKER_MANIFEST__ = PluginManifest(
 ### Tools
 
 Tools are plain functions or callable class instances:
-1. Annotate string parameters with `yoker.annotations` markers (`Path`, `Url`, `Query`, `Text`).
+1. Annotate string parameters with `yoker.tools.annotations` markers (`Path`, `Url`, `Query`, `Text`).
 2. Use the function/class docstring as the tool description, or set `__yoker_description__`.
 3. Return any JSON-serializable value; the harness wraps results and exceptions in `ToolResult`.
 

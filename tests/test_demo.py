@@ -9,6 +9,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 
 from yoker_demo import DemoScript, load_demo_script, load_demo_scripts
+
 from yoker.exceptions import ConfigurationError, FileNotFoundError
 
 

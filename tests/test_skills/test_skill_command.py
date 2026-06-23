@@ -18,7 +18,7 @@ class TestSkillInvocation:
       registry.register(skill)
 
     agent = Mock()
-    agent.skill_registry = registry
+    agent.skills = registry
     agent.inject_skill_context = Mock()
     agent.process = AsyncMock()
     return agent, registry
@@ -39,7 +39,7 @@ class TestSkillInvocation:
     agent, _ = self._make_agent(
       [
         Skill(
-          name="commit",
+          simple_name="commit",
           description="Guide git commits",
           content="# Commit Guide\n\nSteps for committing...",
         )
@@ -58,7 +58,7 @@ class TestSkillInvocation:
     agent, _ = self._make_agent(
       [
         Skill(
-          name="commit",
+          simple_name="commit",
           description="Guide git commits",
           content="# Commit Guide\n\nSteps for committing...",
         )
@@ -77,7 +77,7 @@ class TestSkillInvocation:
     agent, _ = self._make_agent(
       [
         Skill(
-          name="commit",
+          simple_name="commit",
           description="Guide git commits",
           content="Commit instructions...",
           namespace="c3",
@@ -97,6 +97,18 @@ class TestSkillInvocation:
 
     from yoker.exceptions import SkillError
 
+    # Configure the mock to raise SkillError when skill is not found
+    def inject_context(skill_name, args):
+      skill = agent.skills.get(skill_name)
+      if skill is None:
+        available = ", ".join(agent.skills.names)
+        raise SkillError(
+          skill_name,
+          f"Unknown skill. Available skills: {available}" if available else "Unknown skill",
+        )
+
+    agent.inject_skill_context = inject_context
+
     with pytest.raises(SkillError):
       await handle("commit", "", agent, Mock())
 
@@ -106,7 +118,7 @@ class TestSkillInvocation:
     agent, _ = self._make_agent(
       [
         Skill(
-          name="search",
+          simple_name="search",
           description="Search for code",
           content="Search instructions...",
         )
@@ -123,7 +135,7 @@ class TestSkillInvocation:
     agent, _ = self._make_agent(
       [
         Skill(
-          name="help",
+          simple_name="help",
           description="Show help",
           content="Help content...",
         )

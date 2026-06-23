@@ -3,15 +3,16 @@
 Provides pluggable backend architecture for web search and web fetch.
 """
 
-import logging
 from typing import TYPE_CHECKING, Protocol
+
+from structlog import get_logger
 
 from .types import FetchedContent, SearchResult, WebFetchError, WebSearchError
 
 if TYPE_CHECKING:
   from ollama import AsyncClient
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class WebSearchBackend(Protocol):

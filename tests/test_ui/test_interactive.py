@@ -8,8 +8,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from rich.console import Console
 
+from yoker.agent.thinking import ThinkingMode
 from yoker.exceptions import NetworkError, ToolError
-from yoker.thinking import ThinkingMode
 from yoker.ui import InteractiveUIHandler
 from yoker.ui.spinner import LiveDisplay
 
@@ -324,7 +324,8 @@ class TestInteractiveUIHandlerToolOutput:
 
     handler.output_tool_result("read", False, "Error message here")
     text = output.getvalue()
-    assert "✗" in text
+    # _print_error uses a Panel with title "ERROR"
+    assert "ERROR" in text
     assert "Error message here" in text
 
   def test_output_tool_content_full(self):

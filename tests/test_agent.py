@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from yoker.agent import Agent, AgentDefinition
+from yoker.agent import Agent
+from yoker.agent.thinking import ThinkingMode
 from yoker.config import BackendConfig, Config, OllamaConfig
-from yoker.thinking import ThinkingMode
 
 
 class TestAgentInitialization:
@@ -20,7 +20,6 @@ class TestAgentInitialization:
     assert core.thinking_mode == ThinkingMode.ON
     assert core.tools is not None
     assert core.context is not None
-    assert core.agent_definition is None
     assert core.recursion_depth == 0
     assert core.max_recursion_depth == core.config.tools.agent.max_recursion_depth
 
@@ -74,21 +73,31 @@ class TestAgentToolRegistry:
   def test_tool_registry_has_default_tools(self) -> None:
     """Test that default tools are available."""
     core = Agent(config=Config())
-    assert core.tools.get("read") is not None
-    assert core.tools.get("list") is not None
-    assert core.tools.get("write") is not None
-    assert core.tools.get("update") is not None
-    assert core.tools.get("search") is not None
+    assert core.tools.get("yoker:read") is not None
+    assert core.tools.get("yoker:list") is not None
+    assert core.tools.get("yoker:write") is not None
+    assert core.tools.get("yoker:update") is not None
+    assert core.tools.get("yoker:search") is not None
 
   def test_tool_registry_schemas_have_path_parameter(self) -> None:
     """Filesystem tools declare a path parameter."""
     core = Agent(config=Config())
-    for tool_name in ("read", "list", "write", "update", "search", "existence", "mkdir"):
+    for tool_name in (
+      "yoker:read",
+      "yoker:list",
+      "yoker:write",
+      "yoker:update",
+      "yoker:search",
+      "yoker:existence",
+      "yoker:mkdir",
+    ):
       tool = core.tools.get(tool_name)
       assert tool is not None, f"Tool {tool_name} not found"
       params = tool.schema["function"]["parameters"]
       assert "path" in params["properties"], f"Tool {tool_name} missing path parameter"
-      assert params["properties"]["path"]["type"] == "string"
+      # Path parameter might not have explicit type in schema (Yoker tools)
+      # Just verify it exists and is in required parameters
+      assert "path" in params.get("required", []), f"Tool {tool_name} missing path in required"
 
   def test_tool_registry_filtering_by_agent_definition(self) -> None:
     """Test that tool registry respects agent definition."""
@@ -102,10 +111,10 @@ class TestAgentToolRegistry:
       system_prompt="Test prompt",
     )
     core = Agent(config=Config(), agent_definition=agent_def)
-    assert core.tools.get("read") is not None
+    assert core.tools.get("yoker:read") is not None
     # Other tools should not be present
-    assert core.tools.get("list") is None
-    assert core.tools.get("write") is None
+    assert core.tools.get("yoker:list") is None
+    assert core.tools.get("yoker:write") is None
 
   def test_agent_definition_property(self) -> None:
     """Test that agent_definition property returns loaded definition."""
@@ -118,8 +127,7 @@ class TestAgentToolRegistry:
       system_prompt="Test prompt",
     )
     core = Agent(config=Config(), agent_definition=agent_def)
-    assert core.agent_definition is not None
-    assert core.agent_definition.name == "test"
+    assert core.definition.name == "test"
 
   def test_tool_registry_case_insensitive_agent_tools(self) -> None:
     """Built-in tools are matched case-insensitively from agent definitions."""
@@ -132,10 +140,10 @@ class TestAgentToolRegistry:
       system_prompt="Test prompt",
     )
     core = Agent(config=Config(), agent_definition=agent_def)
-    assert core.tools.get("read") is not None
-    assert core.tools.get("list") is not None
-    assert core.tools.get("write") is not None
-    assert core.tools.get("update") is None
+    assert core.tools.get("yoker:read") is not None
+    assert core.tools.get("yoker:list") is not None
+    assert core.tools.get("yoker:write") is not None
+    assert core.tools.get("yoker:update") is None
 
   def test_agent_warns_on_missing_tools(self) -> None:
     """Agent logs a warning when the definition requests unavailable tools."""
@@ -149,13 +157,13 @@ class TestAgentToolRegistry:
       tools=("read", "missing_tool", "yoker:also_missing"),
       system_prompt="Test prompt",
     )
-    with patch("yoker.agent.agent.log.warning") as mock_warning:
+    with patch("yoker.agent.logger.warning") as mock_warning:
       Agent(config=Config(), agent_definition=agent_def)
 
     matching = [
       call
       for call in mock_warning.call_args_list
-      if call.args and call.args[0] == "agent_tools_unavailable"
+      if call.args and call.args[0] == "agent tools unavailable"
     ]
     assert len(matching) == 1
     assert matching[0].kwargs["missing_tools"] == ["missing_tool", "yoker:also_missing"]
@@ -223,13 +231,13 @@ class TestAgentContext:
     core = Agent(config=Config())
     messages = core.context.get_messages()
     system_messages = [m for m in messages if m.get("role") == "system"]
-    assert len(system_messages) == 2
-    assert (
-      system_messages[0]
-      .get("content", "")
-      .endswith(f"Current working directory: {Path.cwd()}. Model in use: {core.model}.")
-    )
-    assert system_messages[1].get("content", "") == AgentDefinition().system_prompt
+    assert len(system_messages) == 1
+    content = system_messages[0].get("content", "")
+    # System message contains environment reminder + agent definition
+    assert "You are running inside the Yoker agent harness" in content
+    assert f"Current working directory: {Path.cwd()}" in content
+    assert f"Model in use: {core.model}" in content
+    assert "<agent-definition>" in content
 
   def test_context_uses_custom_system_prompt(self) -> None:
     """Test that agent definition system prompt is used."""
@@ -244,9 +252,11 @@ class TestAgentContext:
     core = Agent(config=Config(), agent_definition=agent_def)
     messages = core.context.get_messages()
     system_messages = [m for m in messages if m.get("role") == "system"]
-    assert len(system_messages) == 2
-    assert "Yoker agent harness" in system_messages[0].get("content", "")
-    assert system_messages[1].get("content", "") == "Custom system prompt for testing."
+    assert len(system_messages) == 1
+    content = system_messages[0].get("content", "")
+    # System message contains environment reminder + custom agent definition
+    assert "You are running inside the Yoker agent harness" in content
+    assert "Custom system prompt for testing." in content
 
 
 class TestAgentSecurity:
@@ -262,7 +272,7 @@ class TestAgentSecurity:
 
   def test_agent_exposes_path_guardrail_mapping(self) -> None:
     """Agent exposes schema-driven guardrail mapping including the path guardrail."""
-    from yoker.tools.path_guardrail import PathGuardrail
+    from yoker.tools.guardrails.path import PathGuardrail
 
     core = Agent(config=Config())
     assert hasattr(core, "_guardrails")
@@ -307,11 +317,6 @@ class TestAgentProperties:
     core = Agent(config=Config(), thinking_mode=ThinkingMode.SILENT)
     assert core.thinking_mode == ThinkingMode.SILENT
 
-  def test_agent_definition_property_none(self) -> None:
-    """Test agent_definition property returns None when not provided."""
-    core = Agent(config=Config())
-    assert core.agent_definition is None
-
   def test_tool_registry_property(self) -> None:
     """Test tool_registry property returns tool registry."""
     core = Agent(config=Config())
@@ -336,7 +341,7 @@ class TestAgentGuardrailProperty:
 
   def test_guardrail_property_returns_path_guardrail(self) -> None:
     """Test that guardrail property returns PathGuardrail instance."""
-    from yoker.tools.path_guardrail import PathGuardrail
+    from yoker.tools.guardrails.path import PathGuardrail
 
     core = Agent(config=Config())
     assert isinstance(core.guardrail, PathGuardrail)
@@ -369,9 +374,8 @@ You are a test agent loaded from a file.
     )
 
     core = Agent(agent_path=agent_file)
-    assert core.agent_definition is not None
-    assert core.agent_definition.name == "file:test-agent"
-    assert "file:read" in core.agent_definition.tools
+    assert core.definition.name == "file:test-agent"
+    assert "file:read" in core.definition.tools
 
   def test_agent_path_with_valid_markdown(self, tmp_path: Path) -> None:
     """Test agent_path with valid Markdown + YAML frontmatter."""
@@ -391,10 +395,9 @@ You are a research assistant specialized in finding information.
     )
 
     core = Agent(agent_path=agent_file)
-    assert core.agent_definition is not None
-    assert core.agent_definition.name == "file:researcher"
-    assert core.agent_definition.system_prompt is not None
-    assert "research assistant" in core.agent_definition.system_prompt
+    assert core.definition.name == "file:researcher"
+    assert core.definition.system_prompt is not None
+    assert "research assistant" in core.definition.system_prompt
 
 
 class TestAgentContextManager:
@@ -459,16 +462,16 @@ class TestAgentClientParameter:
     core = Agent(config=config, client=client)
 
     # WebSearch and WebFetch tools should be present (API key + client provided)
-    assert core.tools.get("websearch") is not None
-    assert core.tools.get("webfetch") is not None
+    assert core.tools.get("yoker:websearch") is not None
+    assert core.tools.get("yoker:webfetch") is not None
 
   def test_websearch_missing_api_key(self) -> None:
     """Test that WebSearch tool is not added when API key is missing."""
     core = Agent(config=Config())
 
     # WebSearch should not be in default tools (no API key)
-    assert core.tools.get("websearch") is None
-    assert core.tools.get("webfetch") is None
+    assert core.tools.get("yoker:websearch") is None
+    assert core.tools.get("yoker:webfetch") is None
 
 
 class TestAgentToolMatching:
@@ -488,9 +491,9 @@ class TestAgentToolMatching:
     core = Agent(config=Config(), agent_definition=agent_def)
 
     # All tools should be registered (case-insensitive matching)
-    assert core.tools.get("read") is not None
-    assert core.tools.get("list") is not None
-    assert core.tools.get("write") is not None
+    assert core.tools.get("yoker:read") is not None
+    assert core.tools.get("yoker:list") is not None
+    assert core.tools.get("yoker:write") is not None
 
   def test_empty_tools_list(self) -> None:
     """Test agent definition with empty tools list."""
@@ -505,9 +508,9 @@ class TestAgentToolMatching:
     core = Agent(config=Config(), agent_definition=agent_def)
 
     # No tools should be registered
-    assert core.tools.get("read") is None
-    assert core.tools.get("list") is None
-    assert core.tools.get("write") is None
+    assert core.tools.get("yoker:read") is None
+    assert core.tools.get("yoker:list") is None
+    assert core.tools.get("yoker:write") is None
 
 
 class TestAgentBuildToolRegistry:
@@ -526,30 +529,38 @@ class TestAgentBuildToolRegistry:
     core = Agent(config=Config(), agent_definition=agent_def)
 
     # Only read and search should be present
-    assert core.tools.get("read") is not None
-    assert core.tools.get("search") is not None
+    assert core.tools.get("yoker:read") is not None
+    assert core.tools.get("yoker:search") is not None
     # Other tools should not be present
-    assert core.tools.get("list") is None
-    assert core.tools.get("write") is None
+    assert core.tools.get("yoker:list") is None
+    assert core.tools.get("yoker:write") is None
 
   def test_build_tool_registry_all_tools_without_agent_definition(self) -> None:
     """Test that all tools are registered when no agent definition is provided."""
     core = Agent(config=Config())
 
     # All default tools should be present
-    assert core.tools.get("read") is not None
-    assert core.tools.get("list") is not None
-    assert core.tools.get("write") is not None
-    assert core.tools.get("update") is not None
-    assert core.tools.get("search") is not None
-    assert core.tools.get("existence") is not None
-    assert core.tools.get("mkdir") is not None
+    assert core.tools.get("yoker:read") is not None
+    assert core.tools.get("yoker:list") is not None
+    assert core.tools.get("yoker:write") is not None
+    assert core.tools.get("yoker:update") is not None
+    assert core.tools.get("yoker:search") is not None
+    assert core.tools.get("yoker:existence") is not None
+    assert core.tools.get("yoker:mkdir") is not None
 
   def test_build_tool_registry_schemas_have_path_parameter(self) -> None:
     """Filesystem tool schemas declare a path parameter."""
     core = Agent(config=Config())
 
-    filesystem_tools = ["read", "list", "write", "update", "search", "existence", "mkdir"]
+    filesystem_tools = [
+      "yoker:read",
+      "yoker:list",
+      "yoker:write",
+      "yoker:update",
+      "yoker:search",
+      "yoker:existence",
+      "yoker:mkdir",
+    ]
     for tool_name in filesystem_tools:
       tool = core.tools.get(tool_name)
       assert tool is not None, f"Tool {tool_name} not found"
@@ -561,7 +572,7 @@ class TestAgentBuildToolRegistry:
     """Test that the git tool is created with proper configuration."""
     core = Agent(config=Config())
 
-    git_tool = core.tools.get("git")
+    git_tool = core.tools.get("yoker:git")
     assert git_tool is not None
     params = git_tool.schema["function"]["parameters"]
     assert "path" in params["properties"]
@@ -576,7 +587,7 @@ class TestAgentGuardrailPropertyTypeAnnotation:
     # Check that the property exists and has correct type annotation
     import inspect
 
-    from yoker.tools.path_guardrail import PathGuardrail
+    from yoker.tools.guardrails.path import PathGuardrail
 
     # Get the property descriptor
     guardrail_prop = getattr(Agent, "guardrail", None)

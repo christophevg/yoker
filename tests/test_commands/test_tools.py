@@ -1,6 +1,5 @@
 """Tests for the /tools command."""
 
-from types import SimpleNamespace
 from typing import Any
 from unittest.mock import Mock
 
@@ -11,8 +10,15 @@ from yoker.ui.commands.tools import create_command as create_tools_command
 
 
 def _tool_meta(name: str, description: str) -> Any:
-  """Create a lightweight tool metadata object for the command handler."""
-  return SimpleNamespace(name=name, description=description)
+  """Create a lightweight callable tool for the command handler."""
+
+  def mock_tool():
+    """Mock tool function."""
+    pass
+
+  mock_tool.__name__ = name
+  mock_tool.__doc__ = description
+  return mock_tool
 
 
 class TestToolsCommand:
@@ -21,15 +27,21 @@ class TestToolsCommand:
   def _make_agent(
     self, known_tools=(), plugin_tools=(), agent_definition=None, registry_names=None
   ):
-    agent = Mock()
-    agent.agent_definition = agent_definition
-    agent.plugin_tools = list(plugin_tools)
-    agent.get_known_tools.return_value = list(known_tools)
+    from yoker.tools import ToolRegistry
 
-    registry = Mock()
-    registry.names = list(registry_names) if registry_names is not None else []
-    registry.get.return_value = None
-    agent.tool_registry = registry
+    agent = Mock()
+    agent.definition = agent_definition
+
+    # Create a real ToolRegistry and populate it
+    registry = ToolRegistry()
+    for tool in known_tools:
+      # Known tools are built-in (yoker namespace)
+      registry.register(tool, namespace="yoker")
+    for tool in plugin_tools:
+      # Plugin tools get 'demo' namespace for testing
+      registry.register(tool, namespace="demo")
+
+    agent.tools = registry
     return agent, registry
 
   @pytest.mark.asyncio
@@ -55,15 +67,14 @@ class TestToolsCommand:
   async def test_tools_command_with_known_tools(self) -> None:
     """Test tools command with known built-in tools."""
     read_meta = _tool_meta("read", "Read file contents")
-    agent, registry = self._make_agent(known_tools=[read_meta], registry_names=["read"])
-    registry.get.side_effect = lambda name: read_meta if name == "read" else None
+    agent, registry = self._make_agent(known_tools=[read_meta])
 
     command = create_tools_command()
     result = await command.handler("", agent, Mock())
 
     assert "Known tools:" in result
     assert "Built-in:" in result
-    assert "read" in result
+    assert "yoker:read" in result
     assert "Read file contents" in result
 
   @pytest.mark.asyncio
@@ -71,7 +82,7 @@ class TestToolsCommand:
     """Test tools command showing availability markers."""
     read_meta = _tool_meta("read", "Read file contents")
 
-    agent, _ = self._make_agent(known_tools=[read_meta], registry_names=[])
+    agent, _ = self._make_agent(known_tools=[read_meta])
 
     command = create_tools_command()
     result = await command.handler("", agent, Mock())
@@ -79,7 +90,7 @@ class TestToolsCommand:
     # Known but not available should be marked with ✗
     assert "Known tools:" in result
     assert "Built-in:" in result
-    assert "✗ read" in result
+    assert "✗ yoker:read" in result
 
   @pytest.mark.asyncio
   async def test_tools_command_with_agent_filtering(self) -> None:
@@ -98,7 +109,6 @@ class TestToolsCommand:
     agent, _ = self._make_agent(
       known_tools=[read_meta],
       agent_definition=mock_agent_def,
-      registry_names=["read"],
     )
 
     command = create_tools_command()
@@ -122,13 +132,11 @@ class TestToolsCommand:
   @pytest.mark.asyncio
   async def test_tools_command_with_plugin_tools_namespaced(self) -> None:
     """Test that plugin tools show namespaced names."""
-    plugin_meta = _tool_meta("demo:mock_tool", "A plugin tool for testing")
+    plugin_meta = _tool_meta("mock_tool", "A plugin tool for testing")
 
     agent, registry = self._make_agent(
       plugin_tools=[plugin_meta],
-      registry_names=["demo:mock_tool"],
     )
-    registry.get.side_effect = lambda name: plugin_meta if name == "demo:mock_tool" else None
 
     command = create_tools_command()
     result = await command.handler("", agent, Mock())
@@ -148,7 +156,7 @@ class TestToolsCommand:
       "because it exceeds the maximum length for display purposes"
     )
     long_meta = _tool_meta("long_desc_tool", long_desc)
-    agent, _ = self._make_agent(known_tools=[long_meta], registry_names=["long_desc_tool"])
+    agent, _ = self._make_agent(known_tools=[long_meta])
 
     command = create_tools_command()
     result = await command.handler("", agent, Mock())

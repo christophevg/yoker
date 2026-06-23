@@ -289,10 +289,9 @@ async def run_demo_session(
     agent.add_event_handler(bridge)
 
     # Show agent info if loaded
-    if agent.agent_definition:
-      ui.console.print(f"Loaded agent: {agent.agent_definition.name}")
-      ui.console.print(f"  Description: {agent.agent_definition.description}")
-      ui.console.print()
+    ui.console.print(f"Loaded agent: {agent.definition.name}")
+    ui.console.print(f"  Description: {agent.definition.description}")
+    ui.console.print()
 
     # Show session info
     if context_manager:

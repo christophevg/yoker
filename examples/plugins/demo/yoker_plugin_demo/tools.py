@@ -5,7 +5,7 @@ Provides a simple echo tool that returns its input with a prefix.
 
 from typing import Annotated
 
-from yoker.annotations import Text
+from yoker.tools.annotations import Text
 
 
 def echo(message: Annotated[str, Text("The message to echo back")]) -> str:

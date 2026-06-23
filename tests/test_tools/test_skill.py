@@ -2,9 +2,10 @@
 
 import pytest
 
+from yoker.builtin import make_skill_tool
 from yoker.skills import SkillRegistry
 from yoker.skills.schema import Skill
-from yoker.tools import ToolRegistry, make_skill_tool
+from yoker.tools import ToolRegistry
 
 
 def _skill_spec(skill_registry: SkillRegistry):
@@ -42,7 +43,7 @@ class TestSkillTool:
     """Skill tool returns skill content when skill exists."""
     # Create skill
     skill = Skill(
-      name="example",
+      simple_name="example",
       description="Example skill",
       content="# Example Skill\n\nThis is an example skill.",
       triggers=["use example skill"],
@@ -67,7 +68,7 @@ class TestSkillTool:
     """Skill tool passes args to skill invocation."""
     # Create skill
     skill = Skill(
-      name="commit",
+      simple_name="commit",
       description="Guide git commits",
       content="# Commit Skill\n\nCreate atomic commits.",
       triggers=["commit changes"],
@@ -108,8 +109,12 @@ class TestSkillTool:
     """Skill tool error message lists available skills."""
     # Create registry with some skills
     registry = SkillRegistry()
-    registry.register(Skill(name="commit", description="Guide commits", content="...", triggers=[]))
-    registry.register(Skill(name="example", description="Example", content="...", triggers=[]))
+    registry.register(
+      Skill(simple_name="commit", description="Guide commits", content="...", triggers=[])
+    )
+    registry.register(
+      Skill(simple_name="example", description="Example", content="...", triggers=[])
+    )
 
     # Create tool spec
     spec = _skill_spec(registry)
@@ -126,7 +131,7 @@ class TestSkillTool:
     """Skill tool handles namespaced skills (pkg:skill)."""
     # Create namespaced skill
     skill = Skill(
-      name="create",
+      simple_name="create",
       namespace="pkgq",
       description="Create package docs",
       content="# Create\n\nGenerate PACKAGE.md",
@@ -151,7 +156,7 @@ class TestSkillTool:
     """Skill tool handles empty args correctly."""
     # Create skill
     skill = Skill(
-      name="example",
+      simple_name="example",
       description="Example",
       content="# Example",
       triggers=[],

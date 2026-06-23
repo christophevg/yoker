@@ -7,19 +7,18 @@ Guardrails are enforced centrally by the harness based on the schema's
 
 from __future__ import annotations
 
+import builtins
 import fnmatch
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated
+from typing import Annotated
 
 from structlog import get_logger
 
+from yoker.config import ListToolConfig
 from yoker.tools.annotations import Path as PathArg
 from yoker.tools.annotations import Text
 from yoker.tools.context import ToolContext
 from yoker.tools.schema import ToolResult
-
-if TYPE_CHECKING:
-  from yoker.config import ListToolConfig
 
 logger = get_logger(__name__)
 
@@ -54,7 +53,10 @@ async def list(
   if not path:
     return ToolResult(success=False, error="Missing required parameter: path")
 
-  config: ListToolConfig = ctx.config
+  config = ctx.config
+  if not isinstance(config, ListToolConfig):
+    logger.warning("list_invalid_config_type", config_type=type(config).__name__)
+    return ToolResult(success=False, error="Invalid configuration for list tool")
   default_max_depth = config.max_depth
   default_max_entries = config.max_entries
 
@@ -109,13 +111,13 @@ def _build_tree(
   max_depth: int,
   max_entries: int,
   pattern: str,
-) -> tuple[list[str], int, int, int]:
+) -> tuple[builtins.list[str], int, int, int]:
   """Build tree listing.
 
   Returns:
     Tuple of (lines, file_count, dir_count, truncated_count).
   """
-  lines: list[str] = [str(root).rstrip("/") + "/"]
+  lines: builtins.list[str] = [str(root).rstrip("/") + "/"]
   file_count = 0
   dir_count = 0
   entry_count = 0

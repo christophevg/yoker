@@ -105,7 +105,6 @@ def parse_plugin_url(url: str) -> PluginURL:
   return PluginURL(package=package, subpath="/".join(parts[1:]))
 
 
-
 def iter_files(
   directory: Any,
   *,

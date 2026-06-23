@@ -11,7 +11,7 @@ from yoker.config import (
   UpdateToolConfig,
   WriteToolConfig,
 )
-from yoker.tools.path_guardrail import PathGuardrail
+from yoker.tools.guardrails.path import PathGuardrail
 
 
 class TestPathGuardrail:

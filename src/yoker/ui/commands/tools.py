@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
   from yoker.agent import Agent
+  from yoker.tools.schema import ToolSpec
   from yoker.ui import UIHandler
   from yoker.ui.commands.base import Command
 
@@ -22,9 +23,38 @@ def _truncate(desc: str, max_len: int = 60) -> str:
 async def handle(args: str, agent: "Agent", ui: "UIHandler") -> str:
   """List all known tools with availability markers."""
 
-  def _has(agent, tool):
-    if agent.definition:
-      return tool.name in agent.definition.tools
+  def _has(ag: "Agent", tl: "ToolSpec") -> bool:
+    """Check if a tool is in the agent's allowed tools list.
+
+    Built-in tools may omit the ``yoker:`` prefix and are matched
+    case-insensitively. Plugin tools must be referenced with their full
+    namespaced name.
+    """
+    if not ag.definition:
+      return False
+
+    # Normalize tool name for comparison
+    tool_name_lower = tl.name.lower()
+
+    for requested in ag.definition.tools:
+      requested_lower = requested.lower()
+
+      # Direct match (case-insensitive)
+      if requested_lower == tool_name_lower:
+        return True
+
+      # For built-in tools, also check without yoker: prefix
+      if ":" in tool_name_lower:
+        # Tool has namespace, check if requested matches without namespace
+        tool_namespace, tool_simple = tool_name_lower.split(":", 1)
+        if tool_namespace == "yoker":
+          # Built-in tool: check if requested is just the simple name
+          if requested_lower == tool_simple:
+            return True
+          # Or if requested also has yoker: prefix
+          if requested_lower == tool_name_lower:
+            return True
+
     return False
 
   lines = ["Known tools:", ""]

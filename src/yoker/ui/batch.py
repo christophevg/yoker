@@ -7,15 +7,13 @@ from LLM output. Supports predefined input messages for scripted execution.
 from __future__ import annotations
 
 import sys
-from typing import TYPE_CHECKING, Any, TextIO
+from typing import Any, TextIO
 
-from yoker.ui.base import BaseUIHandler
-
-if TYPE_CHECKING:
-  from yoker.agent import Agent
+from yoker.agent import Agent
+from yoker.ui.handler import UIHandler
 
 
-class BatchUIHandler(BaseUIHandler):
+class BatchUIHandler(UIHandler):
   """Batch UI for non-interactive execution.
 
   Output channels:
@@ -48,7 +46,6 @@ class BatchUIHandler(BaseUIHandler):
       stdout: Output stream for content (default: sys.stdout).
       stderr: Output stream for diagnostics (default: sys.stderr).
     """
-    super().__init__()
     self.show_thinking = show_thinking
     self.show_tool_calls = show_tool_calls
     self.show_stats = show_stats
@@ -143,6 +140,27 @@ class BatchUIHandler(BaseUIHandler):
       total_length: Total content length.
     """
     print(file=self._stdout)  # Final newline
+
+  def output_content(self, content: str, content_type: str = "text/plain") -> None:
+    """Output content text directly (non-streaming).
+
+    Args:
+      content: Content text (may contain ANSI from LLM).
+      content_type: MIME type of content.
+    """
+    self.start_content_stream()
+    self.stream_content(content, content_type)
+    self.end_content_stream(len(content))
+
+  def output_thinking(self, text: str) -> None:
+    """Output thinking text directly (non-streaming).
+
+    Args:
+      text: Thinking text.
+    """
+    self.start_thinking_stream()
+    self.stream_thinking(text)
+    self.end_thinking_stream(len(text))
 
   # === Command Output (stdout) ===
 
@@ -252,11 +270,12 @@ class BatchUIHandler(BaseUIHandler):
 
   # === Error Output (stderr) ===
 
-  def output_error(self, error: Exception) -> None:
+  def output_error(self, error: Exception, include_traceback: bool = False) -> None:
     """Output error message.
 
     Args:
       error: Exception that occurred.
+      include_traceback: Whether to include traceback (ignored in batch mode).
     """
     error_type = type(error).__name__
     print(f"Error [{error_type}]: {error}", file=self._stderr)

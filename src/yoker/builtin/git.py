@@ -7,16 +7,14 @@ security guardrails.
 import re
 import subprocess
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Any
+from typing import Annotated, Any
 
 from structlog import get_logger
 
+from yoker.config import GitToolConfig
 from yoker.tools.annotations import Path as PathArg
 from yoker.tools.context import ToolContext
 from yoker.tools.schema import ToolResult, ValidationResult
-
-if TYPE_CHECKING:
-  from yoker.config import GitToolConfig
 
 logger = get_logger(__name__)
 
@@ -102,7 +100,10 @@ async def git(
 ) -> ToolResult:
   """Execute a Git operation on a repository."""
   # Get config values
-  git_config: GitToolConfig = ctx.config
+  git_config = ctx.config
+  if not isinstance(git_config, GitToolConfig):
+    logger.warning("git_invalid_config_type", config_type=type(git_config).__name__)
+    return ToolResult(success=False, error="Invalid configuration for git tool")
   allowed_commands = git_config.allowed_commands
   requires_permission = git_config.requires_permission
 

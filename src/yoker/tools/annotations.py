@@ -6,7 +6,7 @@ tool schemas and dispatch guardrails at execution time.
 
 Example:
   from typing import Annotated
-  from yoker.annotations import Path, Text
+  from yoker.tools.annotations import Path, Text
 
   def read_file(
     path: Annotated[str, Path("Path to the file to read")],

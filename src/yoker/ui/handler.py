@@ -137,7 +137,7 @@ class UIHandler(Protocol):
     """
     ...
 
-  def output_error(self, error: Exception, include_traceback : bool = False) -> None:
+  def output_error(self, error: Exception, include_traceback: bool = False) -> None:
     """Output error message.
 
     Args:

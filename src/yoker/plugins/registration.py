@@ -42,7 +42,7 @@ def register_tools(
     spec = registry.register(tool, namespace=namespace)
     registered.append(spec.name)
 
-    log.info(
+    logger.info(
       "tool_registered",
       original_name=spec.name.split(":", 1)[-1],
       namespaced_name=spec.name,
@@ -75,7 +75,7 @@ def register_skills(
   """
   registered = []
 
-  log.info(
+  logger.info(
     "register_skills_started",
     namespace=namespace,
     skills_count=len(skills),
@@ -86,13 +86,13 @@ def register_skills(
     try:
       registry.register(skill)
       registered.append(skill.name)
-      log.info(
+      logger.info(
         "skill_registered",
         skill_name=skill.name,
         namespace=namespace,
       )
     except ValueError as e:
-      log.warning(
+      logger.warning(
         "skill_name_collision",
         name=skill.name,
         namespace=namespace,
@@ -132,7 +132,7 @@ def register_agents(
 
   registered = []
 
-  log.info(
+  logger.info(
     "register_agents_started",
     namespace=namespace,
     agents_count=len(agents),
@@ -147,14 +147,14 @@ def register_agents(
     try:
       registry.register(namespaced_agent)
       registered.append(namespaced_agent.name)
-      log.info(
+      logger.info(
         "agent_registered",
         original_name=agent_def.name,
         namespaced_name=namespaced_agent.name,
         namespace=namespace,
       )
     except ValueError as e:
-      log.warning(
+      logger.warning(
         "agent_name_collision",
         name=namespaced_agent.name,
         namespace=namespace,

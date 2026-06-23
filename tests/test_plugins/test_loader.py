@@ -12,7 +12,6 @@ from yoker.plugins import PluginManifest
 from yoker.plugins.loader import (
   PluginComponents,
   load_plugin,
-  load_plugins,
 )
 from yoker.tools.schema import build_tool_spec
 
@@ -40,7 +39,7 @@ class TestLoadPlugin:
     from yoker.skills import Skill
 
     skill = Skill(
-      name="test-skill",
+      simple_name="test-skill",
       description="Test skill",
       content="Test content",
     )
@@ -57,13 +56,15 @@ class TestLoadPlugin:
       assert plugin.skills[0].name == "test-skill"
 
   def test_load_plugin_without_manifest(self):
-    """Test package without manifest returns None."""
+    """Test package without manifest raises PluginError."""
     module = ModuleType("test_pkg")
 
     with patch.dict(sys.modules, {"test_pkg": module}):
-      plugin = load_plugin("test_pkg")
+      with pytest.raises(PluginError) as exc_info:
+        load_plugin("test_pkg")
 
-      assert plugin is None
+      assert exc_info.value.package == "test_pkg"
+      assert "doesn't provide a manifest" in str(exc_info.value)
 
   def test_load_plugin_without_yoker_module(self):
     """Test loading missing package raises PluginError."""
@@ -98,50 +99,6 @@ class TestLoadPlugin:
 
       assert exc_info.value.package == "broken_plugin"
       assert "Critical plugin error" in str(exc_info.value)
-
-
-class TestLoadPlugins:
-  """Tests for load_plugins function."""
-
-  def test_load_multiple_plugins(self):
-    """Test loading multiple plugins."""
-    manifest1 = PluginManifest(tools=[read])
-    module1 = ModuleType("pkg1")
-    module1.__YOKER_MANIFEST__ = manifest1
-
-    manifest2 = PluginManifest(tools=[list])
-    module2 = ModuleType("pkg2")
-    module2.__YOKER_MANIFEST__ = manifest2
-
-    with patch.dict(sys.modules, {"pkg1": module1, "pkg2": module2}):
-      plugins = load_plugins(["pkg1", "pkg2"])
-
-      assert len(plugins) == 2
-      assert plugins[0].source == "pkg1"
-      assert plugins[1].source == "pkg2"
-
-  def test_load_plugins_with_missing(self):
-    """Test loading plugins raises PluginError when package is missing."""
-    manifest = PluginManifest(tools=[read])
-    module = ModuleType("exists")
-    module.__YOKER_MANIFEST__ = manifest
-
-    with patch.dict(sys.modules, {"exists": module}):
-      with pytest.raises(PluginError) as exc_info:
-        load_plugins(["exists", "nonexistent"])
-
-      assert exc_info.value.package == "nonexistent"
-      assert "not found" in str(exc_info.value)
-
-  def test_load_plugins_with_error(self):
-    """Test loading plugins with critical error."""
-
-    def raise_error(name):
-      raise RuntimeError("Plugin error")
-
-    with patch("importlib.import_module", side_effect=raise_error):
-      with pytest.raises(PluginError):
-        load_plugins(["broken"])
 
 
 class TestPluginComponents:

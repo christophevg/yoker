@@ -40,7 +40,7 @@ def _apply_namespace(name: str, namespace: str | None) -> str:
   return f"{namespace}:{name}"
 
 
-def _namespace_tools(tools: list[object], namespace: str | None) -> list[str]:
+def _namespace_tools(tools: list[object] | tuple[str, ...], namespace: str | None) -> list[str]:
   """Namespace tool names for a plugin agent definition."""
   if not namespace:
     return [str(t) for t in tools]
@@ -108,13 +108,13 @@ def parse_agent_definition(
   # Extract tools
   tools_raw = frontmatter.get("tools")
   if strict:
-    if not tools_raw:
+    if tools_raw is None:
       raise ConfigurationError(
         setting="tools",
         message="Required field 'tools' is missing or empty",
       )
   else:
-    if not tools_raw:
+    if tools_raw is None:
       tools_raw = []
 
   if isinstance(tools_raw, str):
@@ -129,11 +129,8 @@ def parse_agent_definition(
       )
     tools = ()
 
-  if strict and not tools:
-    raise ConfigurationError(
-      setting="tools",
-      message="Field 'tools' must contain at least one tool name",
-    )
+  # Empty tools list is valid - agents don't need tools
+  # (removed check that required at least one tool)
 
   # Namespace tools for plugin agent definitions (e.g. 'write' -> 'pkg:write',
   # 'demo:echo' -> 'full.package:echo'); 'yoker:' tools are preserved.
@@ -199,7 +196,9 @@ def load_agent_definition(path: Path | str, namespace: str | None = None) -> Age
   return agent_def
 
 
-def load_agent_definitions(directory: Any, namespace: str | None = None) -> dict[str, AgentDefinition]:
+def load_agent_definitions(
+  directory: Any, namespace: str | None = None
+) -> dict[str, AgentDefinition]:
   """Load all agent definitions from a directory.
 
   Works for both filesystem paths (``pathlib.Path``) and package resource

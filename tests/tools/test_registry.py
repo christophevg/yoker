@@ -4,9 +4,9 @@ from typing import Annotated
 
 import pytest
 
-from yoker.annotations import Text
 from yoker.tools import ToolRegistry
-from yoker.tools.base import ToolResult
+from yoker.tools.annotations import Text
+from yoker.tools.schema import ToolResult
 
 
 async def read_file(path: Annotated[str, Text("Path to read")]) -> str:
@@ -32,7 +32,7 @@ class TestToolRegistry:
     """list_tools returns registered specs sorted by name."""
     registry = ToolRegistry()
     registry.register(read_file)
-    tools = registry.list_tools()
+    tools = registry.tools
     assert len(tools) == 1
     assert tools[0].name == "read_file"
 

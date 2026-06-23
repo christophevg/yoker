@@ -71,9 +71,10 @@ class TestRegisterSkills:
     registry = SkillRegistry()
     skills = [
       Skill(
-        name="test-skill",
+        simple_name="test-skill",
         description="Test skill",
         content="Test content",
+        namespace="pkgq",
       )
     ]
 
@@ -88,14 +89,16 @@ class TestRegisterSkills:
     registry = SkillRegistry()
     skills = [
       Skill(
-        name="skill1",
+        simple_name="skill1",
         description="Skill 1",
         content="Content 1",
+        namespace="pkgq",
       ),
       Skill(
-        name="skill2",
+        simple_name="skill2",
         description="Skill 2",
         content="Content 2",
+        namespace="pkgq",
       ),
     ]
 
@@ -110,9 +113,10 @@ class TestRegisterSkills:
     registry = SkillRegistry()
     skills = [
       Skill(
-        name="test-skill",
+        simple_name="test-skill",
         description="Test skill",
         content="Test content",
+        namespace="pkgq",
       )
     ]
 
@@ -126,17 +130,22 @@ class TestRegisterSkills:
   def test_register_skills_different_namespaces(self):
     """Test registering same skill under different namespaces."""
     registry = SkillRegistry()
-    skills = [
-      Skill(
-        name="test-skill",
-        description="Test skill",
-        content="Test content",
-      )
-    ]
+    skill1 = Skill(
+      simple_name="test-skill",
+      description="Test skill",
+      content="Test content",
+      namespace="pkg1",
+    )
+    skill2 = Skill(
+      simple_name="test-skill",
+      description="Test skill",
+      content="Test content",
+      namespace="pkg2",
+    )
 
     # Register under different namespaces
-    registered1 = register_skills(skills, registry, namespace="pkg1")
-    registered2 = register_skills(skills, registry, namespace="pkg2")
+    registered1 = register_skills([skill1], registry, namespace="pkg1")
+    registered2 = register_skills([skill2], registry, namespace="pkg2")
 
     assert len(registered1) == 1
     assert len(registered2) == 1
@@ -153,7 +162,7 @@ class TestCloneAgentWithName:
     from yoker.plugins.registration import _clone_agent_with_name
 
     original = AgentDefinition(
-      name="test-agent",
+      simple_name="test-agent",
       description="Test agent",
       model="llama3.2",
       system_prompt="You are a test agent.",

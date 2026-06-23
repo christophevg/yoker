@@ -4,7 +4,6 @@ Shows the currently loaded agent and known agents. The command queries the
 agent's state and config, then outputs via the UIHandler.
 """
 
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from yoker.ui.commands.base import Command
@@ -12,6 +11,7 @@ from yoker.ui.commands.base import Command
 if TYPE_CHECKING:
   from yoker.agent import Agent
   from yoker.ui import UIHandler
+
 
 async def handle(args: str, agent: "Agent", ui: "UIHandler") -> str:
   """Show currently loaded agent and known agents.
@@ -29,7 +29,7 @@ async def handle(args: str, agent: "Agent", ui: "UIHandler") -> str:
   lines.append("Current agent:")
   lines.append("")
 
-  if agent.definition is None:
+  if agent.definition.simple_name is None:
     lines.append("  (default) - No agent definition loaded")
     lines.append("  All enabled tools are available.")
   else:
@@ -46,7 +46,7 @@ async def handle(args: str, agent: "Agent", ui: "UIHandler") -> str:
   lines.append("Known agents:")
   lines.append("")
 
-  known_agents = agent.agents.agents # yuck that turned out not so nicely ;-)
+  known_agents = agent.agents.agents  # yuck that turned out not so nicely ;-)
 
   if not known_agents:
     lines.append("  No agents configured.")
@@ -72,8 +72,4 @@ def create_command() -> "Command":
   Returns:
     A Command object for /agents.
   """
-  return Command(
-    name="agents",
-    description="Show loaded agent and known agents",
-    handler=handle
-  )
+  return Command(name="agents", description="Show loaded agent and known agents", handler=handle)

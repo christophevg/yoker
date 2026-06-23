@@ -12,7 +12,7 @@ from structlog import get_logger
 
 from yoker.tools.schema import ToolSpec, build_tool_spec
 
-log = get_logger(__name__)
+logger = get_logger(__name__)
 
 
 class ToolRegistry(UserDict[str, ToolSpec]):
@@ -53,20 +53,13 @@ class ToolRegistry(UserDict[str, ToolSpec]):
     if spec.name in self.data:
       raise ValueError(f"Tool '{spec.name}' is already registered")
     self.data[spec.name] = spec
-    log.info("tool_registered", tool=spec.name)
+    logger.info("tool_registered", tool=spec.name)
     return spec
 
   @property
   def tools(self) -> list[ToolSpec]:
     """Return all registered tool specs sorted by name."""
     return sorted(self.data.values(), key=lambda spec: spec.name)
-
-  def list_tools(self) -> list[ToolSpec]:
-    """Return all registered tool specs sorted by name.
-
-    Alias for the `tools` property for API compatibility.
-    """
-    return self.tools
 
   def get_schemas(self) -> list[dict[str, Any]]:
     """Return schemas for all registered tools.
@@ -82,7 +75,7 @@ class ToolRegistry(UserDict[str, ToolSpec]):
   @property
   def namespaces(self) -> list[str]:
     """Return all registered tool namespaces sorted alphabetically."""
-    return sorted([ tool.namespace for tool in self.data.values() ])
+    return sorted([tool.namespace for tool in self.data.values() if tool.namespace])
 
   @property
   def names(self) -> list[str]:

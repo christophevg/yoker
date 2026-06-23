@@ -2,7 +2,7 @@
 
 import pytest
 
-from yoker.tools.base import ToolResult, ValidationResult
+from yoker.tools.schema import ToolResult, ValidationResult
 
 
 class TestToolResult:

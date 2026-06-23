@@ -14,7 +14,6 @@ Or pipe input from stdin:
 import asyncio
 import sys
 
-from yoker import __version__
 from yoker.agent import Agent
 from yoker.config import get_yoker_config
 from yoker.exceptions import NetworkError
@@ -42,11 +41,7 @@ async def run_batch(messages: list[str] | None = None) -> None:
   bridge = UIBridge(ui)
   agent.add_event_handler(bridge)
 
-  await ui.start(
-    agent.model,
-    __version__,
-    {"thinking_enabled": agent.thinking_mode.value == "on"},
-  )
+  await ui.start(agent)
 
   try:
     while True:

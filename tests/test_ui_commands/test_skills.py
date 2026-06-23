@@ -25,12 +25,19 @@ class MockUI(BatchUIHandler):
 class TestSkillsCommand:
   """Tests for /skills command in the UI layer."""
 
+  def _make_agent(self, skills=None, directories=None):
+    """Create a mock agent with skills registry."""
+    agent = MagicMock(spec=Agent)
+    agent.skills = skills if skills is not None else SkillRegistry()
+    agent.config = MagicMock()
+    agent.config.skills = MagicMock()
+    agent.config.skills.directories = directories if directories is not None else []
+    return agent
+
   @pytest.mark.asyncio
   async def test_skills_empty_registry(self):
     """/skills with no skills should report none loaded."""
-    agent = MagicMock(spec=Agent)
-    agent.skill_registry = SkillRegistry()
-    agent.config.skills.directories = []
+    agent = self._make_agent()
     ui = MockUI()
 
     result = await handle("", agent, ui)
@@ -41,9 +48,7 @@ class TestSkillsCommand:
   @pytest.mark.asyncio
   async def test_skills_lists_configured_directories(self):
     """/skills should show configured directories when no skills are loaded."""
-    agent = MagicMock(spec=Agent)
-    agent.skill_registry = SkillRegistry()
-    agent.config.skills.directories = ["/path/to/skills"]
+    agent = self._make_agent(directories=["/path/to/skills"])
     ui = MockUI()
 
     result = await handle("", agent, ui)
@@ -54,12 +59,10 @@ class TestSkillsCommand:
   async def test_skills_lists_regular_skills(self):
     """/skills should list regular (non-namespaced) skills."""
     registry = SkillRegistry()
-    registry.register(Skill(name="commit", description="Guide commits", content="..."))
-    registry.register(Skill(name="review", description="Review code", content="..."))
+    registry.register(Skill(simple_name="commit", description="Guide commits", content="..."))
+    registry.register(Skill(simple_name="review", description="Review code", content="..."))
 
-    agent = MagicMock(spec=Agent)
-    agent.skill_registry = registry
-    agent.config.skills.directories = []
+    agent = self._make_agent(skills=registry)
     ui = MockUI()
 
     result = await handle("", agent, ui)
@@ -73,14 +76,14 @@ class TestSkillsCommand:
   async def test_skills_lists_namespaced_skills(self):
     """/skills should separate namespaced plugin and built-in skills."""
     registry = SkillRegistry()
-    registry.register(Skill(name="demo", description="Demo skill", content="...", namespace="demo"))
     registry.register(
-      Skill(name="builtin", description="Built-in skill", content="...", namespace="yoker")
+      Skill(simple_name="demo", description="Demo skill", content="...", namespace="demo")
+    )
+    registry.register(
+      Skill(simple_name="builtin", description="Built-in skill", content="...", namespace="yoker")
     )
 
-    agent = MagicMock(spec=Agent)
-    agent.skill_registry = registry
-    agent.config.skills.directories = []
+    agent = self._make_agent(skills=registry)
     ui = MockUI()
 
     result = await handle("", agent, ui)
@@ -94,12 +97,10 @@ class TestSkillsCommand:
   async def test_skills_sorted(self):
     """/skills should list skills in sorted order."""
     registry = SkillRegistry()
-    registry.register(Skill(name="zebra", description="Z", content="..."))
-    registry.register(Skill(name="alpha", description="A", content="..."))
+    registry.register(Skill(simple_name="zebra", description="Z", content="..."))
+    registry.register(Skill(simple_name="alpha", description="A", content="..."))
 
-    agent = MagicMock(spec=Agent)
-    agent.skill_registry = registry
-    agent.config.skills.directories = []
+    agent = self._make_agent(skills=registry)
     ui = MockUI()
 
     result = await handle("", agent, ui)
@@ -112,9 +113,7 @@ class TestSkillsCommand:
   async def test_skills_registered_in_default_registry(self):
     """/skills should be dispatchable from the default registry."""
     registry = create_default_registry()
-    agent = MagicMock(spec=Agent)
-    agent.skill_registry = SkillRegistry()
-    agent.config.skills.directories = []
+    agent = self._make_agent()
     ui = MockUI()
 
     result = await registry.dispatch("/skills", agent, ui)

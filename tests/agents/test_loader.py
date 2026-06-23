@@ -158,9 +158,11 @@ color: blue
 You are a research assistant.
 """)
     definition = load_agent_definition(agent_file)
-    assert definition.name == "researcher"
+    assert definition.simple_name == "researcher"
+    assert definition.name == "file:researcher"
     assert definition.description == "Research assistant"
-    assert definition.tools == ("Read", "Search")
+    # Tools from file-based agents get namespace prefix
+    assert definition.tools == ("file:Read", "file:Search")
     assert definition.color == "blue"
     assert "Researcher Agent" in definition.system_prompt
     assert str(agent_file) == definition.source_path
@@ -180,7 +182,8 @@ tools:
 Body.
 """)
     definition = load_agent_definition(agent_file)
-    assert definition.tools == ("List", "Read", "Search")
+    # Tools from file-based agents get namespace prefix
+    assert definition.tools == ("file:List", "file:Read", "file:Search")
 
   def test_load_missing_file(self, tmp_path: Path) -> None:
     """Test loading non-existent file raises FileNotFoundError."""
@@ -231,7 +234,7 @@ Body.
     assert "tools" in str(exc_info.value)
 
   def test_load_empty_tools_string(self, tmp_path: Path) -> None:
-    """Test empty tools string raises ConfigurationError."""
+    """Test empty tools string results in empty tools tuple."""
     agent_file = tmp_path / "test.md"
     agent_file.write_text("""---
 name: test
@@ -241,9 +244,9 @@ tools: ""
 
 Body.
 """)
-    with pytest.raises(ConfigurationError) as exc_info:
-      load_agent_definition(agent_file)
-    assert "tools" in str(exc_info.value)
+    # Empty tools string is valid - agents don't need tools
+    definition = load_agent_definition(agent_file)
+    assert definition.tools == ()
 
   def test_load_invalid_tools_type(self, tmp_path: Path) -> None:
     """Test invalid tools type raises ConfigurationError."""
@@ -317,10 +320,12 @@ Research prompt.
 
     definitions = load_agent_definitions(agents_dir)
     assert len(definitions) == 2
-    assert "main" in definitions
-    assert "researcher" in definitions
-    assert definitions["main"].tools == ("Read",)
-    assert definitions["researcher"].tools == ("Read", "Search")
+    # Directory name is used as namespace
+    assert "agents:main" in definitions
+    assert "agents:researcher" in definitions
+    # Tools get namespace prefix from directory name
+    assert definitions["agents:main"].tools == ("agents:Read",)
+    assert definitions["agents:researcher"].tools == ("agents:Read", "agents:Search")
 
   def test_load_empty_directory(self, tmp_path: Path) -> None:
     """Test loading from empty directory."""
@@ -392,7 +397,8 @@ Prompt.
 
     definitions = load_agent_definitions(agents_dir)
     assert len(definitions) == 1
-    assert "main" in definitions
+    # Directory name is used as namespace
+    assert "agents:main" in definitions
 
   def test_load_sorted_order(self, tmp_path: Path) -> None:
     """Test that agents are loaded in sorted filename order."""
@@ -417,5 +423,6 @@ tools: Read
     definitions = load_agent_definitions(agents_dir)
     names = list(definitions.keys())
     # Both should be loaded, order doesn't matter for dict
-    assert "alpha" in names
-    assert "zebra" in names
+    # Directory name is used as namespace
+    assert "agents:alpha" in names
+    assert "agents:zebra" in names

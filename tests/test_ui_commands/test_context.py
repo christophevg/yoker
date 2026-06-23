@@ -25,10 +25,16 @@ class MockUI(BatchUIHandler):
 class TestContextCommand:
   """Tests for /context command in the UI layer."""
 
+  def _make_agent(self):
+    """Create a mock agent with context."""
+    agent = MagicMock(spec=Agent)
+    agent.context = MagicMock()
+    return agent
+
   @pytest.mark.asyncio
   async def test_context_shows_session_info(self):
     """/context should show session ID and statistics."""
-    agent = MagicMock(spec=Agent)
+    agent = self._make_agent()
     agent.context.get_session_id.return_value = "session-123"
     agent.context.get_statistics.return_value = ContextStatistics(
       message_count=5,
@@ -49,7 +55,7 @@ class TestContextCommand:
   @pytest.mark.asyncio
   async def test_context_shows_all_messages(self):
     """/context should show all messages."""
-    agent = MagicMock(spec=Agent)
+    agent = self._make_agent()
     agent.context.get_session_id.return_value = "session-123"
     agent.context.get_statistics.return_value = ContextStatistics()
     agent.context.get_messages.return_value = [
@@ -69,7 +75,7 @@ class TestContextCommand:
   @pytest.mark.asyncio
   async def test_context_shows_full_content(self):
     """/context should show full message content."""
-    agent = MagicMock(spec=Agent)
+    agent = self._make_agent()
     agent.context.get_session_id.return_value = "session-123"
     agent.context.get_statistics.return_value = ContextStatistics()
     agent.context.get_messages.return_value = [
@@ -85,7 +91,7 @@ class TestContextCommand:
   async def test_context_registered_in_default_registry(self):
     """/context should be dispatchable from the default registry."""
     registry = create_default_registry()
-    agent = MagicMock(spec=Agent)
+    agent = self._make_agent()
     agent.context.get_session_id.return_value = "session-123"
     agent.context.get_statistics.return_value = ContextStatistics()
     agent.context.get_messages.return_value = []

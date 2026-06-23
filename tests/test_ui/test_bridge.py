@@ -16,14 +16,16 @@ from yoker.events.types import (
   ToolResultEvent,
   TurnEndEvent,
 )
-from yoker.ui import BaseUIHandler, UIBridge
+from yoker.ui import UIBridge
 
 
-class MockUIHandler(BaseUIHandler):
-  """Mock UI handler for testing."""
+class MockUIHandler:
+  """Mock UI handler for testing.
+
+  Implements the UIHandler protocol without inheritance.
+  """
 
   def __init__(self) -> None:
-    super().__init__()
     self.calls = []
 
   async def start(self, agent) -> None:
@@ -61,7 +63,7 @@ class MockUIHandler(BaseUIHandler):
   def output_stats(self, duration_ms: int, prompt_tokens: int, eval_tokens: int) -> None:
     self.calls.append(("output_stats", duration_ms, prompt_tokens, eval_tokens))
 
-  def output_error(self, error: Exception) -> None:
+  def output_error(self, error: Exception, include_traceback: bool = False) -> None:
     self.calls.append(("output_error", error))
 
   def start_content_stream(self) -> None:

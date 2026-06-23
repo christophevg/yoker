@@ -1,20 +1,37 @@
 """Tests for the existence tool implementation."""
 
+import sys
 from pathlib import Path
 from typing import Any
 
 import pytest
+from pytest_mock import MockerFixture
 
 from yoker.builtin import existence
 from yoker.config import Config, PermissionsConfig
 from yoker.tools import ToolRegistry
-from yoker.tools.path_guardrail import PathGuardrail
+from yoker.tools.context import ToolContext
+from yoker.tools.guardrails.path import PathGuardrail
+
+# Import the actual module (not the function exported in __init__.py)
+existence_module = sys.modules["yoker.builtin.existence"]
 
 
 def _existence_spec():
   """Create and register the existence tool."""
   registry = ToolRegistry()
   return registry.register(existence)
+
+
+def _existence_context(config: Config | None = None) -> ToolContext:
+  """Create a ToolContext for existence tool tests."""
+  if config is None:
+    config = Config()
+  return ToolContext(
+    config=config.tools.existence,
+    shared=config.tools_shared,
+    backends={},
+  )
 
 
 class TestExistenceToolSchema:
@@ -64,7 +81,8 @@ class TestExistenceToolFileCheck:
   async def test_existing_file(self, temp_files: Path) -> None:
     """Test existing file returns True."""
     spec = _existence_spec()
-    result = await spec.execute(path=str(temp_files / "file.txt"))
+    ctx = _existence_context()
+    result = await spec.execute(path=str(temp_files / "file.txt"), ctx=ctx)
 
     assert result.success
     assert result.result["exists"] is True
@@ -75,7 +93,8 @@ class TestExistenceToolFileCheck:
   async def test_existing_hidden_file(self, temp_files: Path) -> None:
     """Test hidden file existence check."""
     spec = _existence_spec()
-    result = await spec.execute(path=str(temp_files / ".hidden"))
+    ctx = _existence_context()
+    result = await spec.execute(path=str(temp_files / ".hidden"), ctx=ctx)
 
     assert result.success
     assert result.result["exists"] is True
@@ -85,7 +104,8 @@ class TestExistenceToolFileCheck:
   async def test_existing_nested_file(self, temp_files: Path) -> None:
     """Test nested file existence check."""
     spec = _existence_spec()
-    result = await spec.execute(path=str(temp_files / "subdir" / "nested.txt"))
+    ctx = _existence_context()
+    result = await spec.execute(path=str(temp_files / "subdir" / "nested.txt"), ctx=ctx)
 
     assert result.success
     assert result.result["exists"] is True
@@ -114,7 +134,8 @@ class TestExistenceToolDirectoryCheck:
   async def test_existing_directory(self, temp_dirs: Path) -> None:
     """Test existing directory returns True."""
     spec = _existence_spec()
-    result = await spec.execute(path=str(temp_dirs / "subdir"))
+    ctx = _existence_context()
+    result = await spec.execute(path=str(temp_dirs / "subdir"), ctx=ctx)
 
     assert result.success
     assert result.result["exists"] is True
@@ -124,7 +145,8 @@ class TestExistenceToolDirectoryCheck:
   async def test_existing_hidden_directory(self, temp_dirs: Path) -> None:
     """Test hidden directory existence check."""
     spec = _existence_spec()
-    result = await spec.execute(path=str(temp_dirs / ".hidden_dir"))
+    ctx = _existence_context()
+    result = await spec.execute(path=str(temp_dirs / ".hidden_dir"), ctx=ctx)
 
     assert result.success
     assert result.result["exists"] is True
@@ -134,7 +156,8 @@ class TestExistenceToolDirectoryCheck:
   async def test_existing_nested_directory(self, temp_dirs: Path) -> None:
     """Test nested directory existence check."""
     spec = _existence_spec()
-    result = await spec.execute(path=str(temp_dirs / "nested" / "deep"))
+    ctx = _existence_context()
+    result = await spec.execute(path=str(temp_dirs / "nested" / "deep"), ctx=ctx)
 
     assert result.success
     assert result.result["exists"] is True
@@ -148,7 +171,8 @@ class TestExistenceToolNonExistent:
   async def test_nonexistent_file(self, tmp_path: Path) -> None:
     """Test non-existent file returns False."""
     spec = _existence_spec()
-    result = await spec.execute(path=str(tmp_path / "nonexistent.txt"))
+    ctx = _existence_context()
+    result = await spec.execute(path=str(tmp_path / "nonexistent.txt"), ctx=ctx)
 
     assert result.success
     assert result.result["exists"] is False
@@ -159,7 +183,8 @@ class TestExistenceToolNonExistent:
   async def test_nonexistent_directory(self, tmp_path: Path) -> None:
     """Test non-existent directory returns False."""
     spec = _existence_spec()
-    result = await spec.execute(path=str(tmp_path / "nonexistent_dir"))
+    ctx = _existence_context()
+    result = await spec.execute(path=str(tmp_path / "nonexistent_dir"), ctx=ctx)
 
     assert result.success
     assert result.result["exists"] is False
@@ -169,7 +194,8 @@ class TestExistenceToolNonExistent:
   async def test_nonexistent_nested_path(self, tmp_path: Path) -> None:
     """Test non-existent nested path returns False."""
     spec = _existence_spec()
-    result = await spec.execute(path=str(tmp_path / "a" / "b" / "c" / "file.txt"))
+    ctx = _existence_context()
+    result = await spec.execute(path=str(tmp_path / "a" / "b" / "c" / "file.txt"), ctx=ctx)
 
     assert result.success
     assert result.result["exists"] is False
@@ -194,7 +220,8 @@ class TestExistenceToolSymlinkRejection:
       pytest.skip("Symlinks not supported on this platform")
 
     spec = _existence_spec()
-    result = await spec.execute(path=str(symlink))
+    ctx = _existence_context()
+    result = await spec.execute(path=str(symlink), ctx=ctx)
 
     assert not result.success
     assert "not accessible" in result.error.lower()
@@ -214,7 +241,8 @@ class TestExistenceToolSymlinkRejection:
       pytest.skip("Symlinks not supported on this platform")
 
     spec = _existence_spec()
-    result = await spec.execute(path=str(symlink))
+    ctx = _existence_context()
+    result = await spec.execute(path=str(symlink), ctx=ctx)
 
     assert not result.success
     assert "not accessible" in result.error.lower()
@@ -227,7 +255,8 @@ class TestExistenceToolValidation:
   async def test_empty_path(self) -> None:
     """Test empty path returns error."""
     spec = _existence_spec()
-    result = await spec.execute(path="")
+    ctx = _existence_context()
+    result = await spec.execute(path="", ctx=ctx)
 
     assert not result.success
     assert "empty" in result.error.lower()
@@ -236,7 +265,8 @@ class TestExistenceToolValidation:
   async def test_whitespace_only_path(self) -> None:
     """Test whitespace-only path returns error."""
     spec = _existence_spec()
-    result = await spec.execute(path="   ")
+    ctx = _existence_context()
+    result = await spec.execute(path="   ", ctx=ctx)
 
     assert not result.success
     assert "empty" in result.error.lower()
@@ -245,7 +275,8 @@ class TestExistenceToolValidation:
   async def test_invalid_path_type(self) -> None:
     """Test non-string path returns error."""
     spec = _existence_spec()
-    result = await spec.execute(path=123)
+    ctx = _existence_context()
+    result = await spec.execute(path=123, ctx=ctx)
 
     assert not result.success
     assert "invalid" in result.error.lower()
@@ -267,6 +298,7 @@ class TestExistenceToolWithGuardrail:
     guardrail = PathGuardrail(config)
 
     spec = _existence_spec()
+    _existence_context()
     validation = guardrail.validate(spec.name, {"path": str(tmp_path / "test.txt")})
 
     assert not validation.valid
@@ -282,10 +314,11 @@ class TestExistenceToolWithGuardrail:
     guardrail = PathGuardrail(config)
 
     spec = _existence_spec()
+    ctx = _existence_context()
     validation = guardrail.validate(spec.name, {"path": str(tmp_path / "test.txt")})
     assert validation.valid
 
-    result = await spec.execute(path=str(tmp_path / "test.txt"))
+    result = await spec.execute(path=str(tmp_path / "test.txt"), ctx=ctx)
     assert result.success
     assert result.result["exists"] is True
 
@@ -296,7 +329,8 @@ class TestExistenceToolWithGuardrail:
     (tmp_path / "test.txt").write_text("content")
 
     spec = _existence_spec()  # No guardrail
-    result = await spec.execute(path=str(tmp_path / "test.txt"))
+    ctx = _existence_context()
+    result = await spec.execute(path=str(tmp_path / "test.txt"), ctx=ctx)
 
     assert result.success
     assert result.result["exists"] is True
@@ -308,6 +342,7 @@ class TestExistenceToolWithGuardrail:
     guardrail = PathGuardrail(config)
 
     spec = _existence_spec()
+    _existence_context()
     validation = guardrail.validate(spec.name, {"path": "/etc/passwd"})
 
     assert not validation.valid
@@ -324,7 +359,8 @@ class TestExistenceToolPathResolution:
     (tmp_path / "file.txt").write_text("content")
 
     spec = _existence_spec()
-    result = await spec.execute(path=str(tmp_path / "file.txt"))
+    ctx = _existence_context()
+    result = await spec.execute(path=str(tmp_path / "file.txt"), ctx=ctx)
 
     assert result.success
     # Path should be absolute
@@ -337,8 +373,9 @@ class TestExistenceToolPathResolution:
     (tmp_path / "file.txt").write_text("content")
 
     spec = _existence_spec()
+    ctx = _existence_context()
     # Use path with ./ segments
-    result = await spec.execute(path=str(tmp_path / "." / "file.txt"))
+    result = await spec.execute(path=str(tmp_path / "." / "file.txt"), ctx=ctx)
 
     assert result.success
     assert result.result["exists"] is True
@@ -353,7 +390,8 @@ class TestExistenceToolSpecialCases:
   async def test_root_directory(self) -> None:
     """Test checking root directory exists."""
     spec = _existence_spec()
-    result = await spec.execute(path="/")
+    ctx = _existence_context()
+    result = await spec.execute(path="/", ctx=ctx)
 
     assert result.success
     assert result.result["exists"] is True
@@ -363,7 +401,8 @@ class TestExistenceToolSpecialCases:
   async def test_current_directory(self) -> None:
     """Test checking current directory exists."""
     spec = _existence_spec()
-    result = await spec.execute(path=".")
+    ctx = _existence_context()
+    result = await spec.execute(path=".", ctx=ctx)
 
     assert result.success
     assert result.result["exists"] is True
@@ -373,7 +412,8 @@ class TestExistenceToolSpecialCases:
   async def test_parent_directory(self) -> None:
     """Test checking parent directory exists."""
     spec = _existence_spec()
-    result = await spec.execute(path="..")
+    ctx = _existence_context()
+    result = await spec.execute(path="..", ctx=ctx)
 
     assert result.success
     assert result.result["exists"] is True
@@ -384,9 +424,10 @@ class TestExistenceToolErrorHandling:
   """Tests for error handling scenarios."""
 
   @pytest.mark.asyncio
-  async def test_permission_error(self, tmp_path: Path, mocker: Any) -> None:
+  async def test_permission_error(self, tmp_path: Path, mocker: MockerFixture) -> None:
     """Test PermissionError during existence check."""
     spec = _existence_spec()
+    ctx = _existence_context()
 
     # Mock Path.exists to raise PermissionError
     mock_path = mocker.MagicMock(spec=Path)
@@ -394,18 +435,19 @@ class TestExistenceToolErrorHandling:
     mock_path.exists.side_effect = PermissionError("Access denied")
     mock_path.__str__ = lambda self: "/test/path"
 
-    # Patch Path to return our mock
-    mocker.patch("yoker.builtin.existence.Path", return_value=mock_path)
+    # Patch Path in the existence module
+    mocker.patch.object(existence_module, "Path", return_value=mock_path)
 
-    result = await spec.execute(path="/test/path")
+    result = await spec.execute(path="/test/path", ctx=ctx)
 
     assert not result.success
     assert "failed" in result.error.lower()
 
   @pytest.mark.asyncio
-  async def test_os_error(self, tmp_path: Path, mocker: Any) -> None:
+  async def test_os_error(self, tmp_path: Path, mocker: MockerFixture) -> None:
     """Test OSError during existence check."""
     spec = _existence_spec()
+    ctx = _existence_context()
 
     # Mock Path.exists to raise OSError
     mock_path = mocker.MagicMock(spec=Path)
@@ -413,10 +455,10 @@ class TestExistenceToolErrorHandling:
     mock_path.exists.side_effect = OSError("IO error")
     mock_path.__str__ = lambda self: "/test/path"
 
-    # Patch Path to return our mock
-    mocker.patch("yoker.builtin.existence.Path", return_value=mock_path)
+    # Patch Path in the existence module
+    mocker.patch.object(existence_module, "Path", return_value=mock_path)
 
-    result = await spec.execute(path="/test/path")
+    result = await spec.execute(path="/test/path", ctx=ctx)
 
     assert not result.success
     assert "failed" in result.error.lower()
@@ -425,11 +467,12 @@ class TestExistenceToolErrorHandling:
   async def test_realpath_os_error(self, mocker: Any) -> None:
     """Test OSError during path resolution."""
     spec = _existence_spec()
+    ctx = _existence_context()
 
     # Mock os.path.realpath to raise OSError
     mocker.patch("os.path.realpath", side_effect=OSError("Resolution failed"))
 
-    result = await spec.execute(path="/test/path")
+    result = await spec.execute(path="/test/path", ctx=ctx)
 
     assert not result.success
     assert "invalid" in result.error.lower()

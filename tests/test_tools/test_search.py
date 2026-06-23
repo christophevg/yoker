@@ -1,5 +1,6 @@
 """Tests for search tool implementation."""
 
+import inspect
 from pathlib import Path
 
 import pytest
@@ -10,13 +11,49 @@ from yoker.builtin.search import (
 )
 from yoker.config import Config, PermissionsConfig
 from yoker.tools import ToolRegistry
-from yoker.tools.path_guardrail import PathGuardrail
+from yoker.tools.context import ToolContext
+from yoker.tools.guardrails.path import PathGuardrail
+from yoker.tools.schema import ToolResult
 
 
 def _search_spec():
   """Create and register the search tool."""
   registry = ToolRegistry()
   return registry.register(search)
+
+
+def _search_context(config: Config | None = None) -> ToolContext:
+  """Create a ToolContext for search tool tests."""
+  if config is None:
+    config = Config()
+  return ToolContext(
+    config=config.tools.search,
+    shared=config.tools_shared,
+    backends={},
+  )
+
+
+async def _execute_tool(spec, **kwargs):
+  """Execute a tool with argument binding and error handling.
+
+  Mimics the behavior of _processing._execute_tool for unit tests.
+  """
+  sig = inspect.signature(spec.execute)
+
+  try:
+    bound = sig.bind(**kwargs)
+    bound.apply_defaults()
+  except TypeError as e:
+    return ToolResult(success=False, error=f"Invalid tool arguments: {e}")
+
+  result = spec.execute(*bound.args, **bound.kwargs)
+
+  if inspect.isawaitable(result):
+    result = await result
+
+  if isinstance(result, ToolResult):
+    return result
+  return ToolResult(success=True, result=result)
 
 
 class TestSearchToolSchema:
@@ -73,7 +110,8 @@ class TestSearchToolContentSearch:
   async def test_basic_content_search(self, temp_search_dir: Path) -> None:
     """Test basic content search finds TODO comments."""
     spec = _search_spec()
-    result = await spec.execute(path=str(temp_search_dir), pattern="TODO", type="content")
+    ctx = _search_context()
+    result = await spec.execute(path=str(temp_search_dir), ctx=ctx, pattern="TODO", type="content")
 
     assert result.success
     data = result.result
@@ -94,8 +132,10 @@ class TestSearchToolContentSearch:
   async def test_regex_pattern_search(self, temp_search_dir: Path) -> None:
     """Test regex pattern matching."""
     spec = _search_spec()
+    ctx = _search_context()
     result = await spec.execute(
       path=str(temp_search_dir),
+      ctx=ctx,
       pattern=r"def\s+\w+",
       type="content",
     )
@@ -114,8 +154,10 @@ class TestSearchToolContentSearch:
   async def test_case_insensitive_search(self, temp_search_dir: Path) -> None:
     """Test case-insensitive regex search."""
     spec = _search_spec()
+    ctx = _search_context()
     result = await spec.execute(
       path=str(temp_search_dir),
+      ctx=ctx,
       pattern="(?i)todo",
       type="content",
     )
@@ -127,8 +169,10 @@ class TestSearchToolContentSearch:
   async def test_max_results_limiting(self, temp_search_dir: Path) -> None:
     """Test max_results parameter limits output."""
     spec = _search_spec()
+    ctx = _search_context()
     result = await spec.execute(
       path=str(temp_search_dir),
+      ctx=ctx,
       pattern="TODO",
       type="content",
       max_results=2,
@@ -144,8 +188,10 @@ class TestSearchToolContentSearch:
   async def test_default_pattern_content(self, temp_search_dir: Path) -> None:
     """Test default pattern for content search matches all lines."""
     spec = _search_spec()
+    ctx = _search_context()
     result = await spec.execute(
       path=str(temp_search_dir),
+      ctx=ctx,
       type="content",
     )
 
@@ -160,7 +206,8 @@ class TestSearchToolContentSearch:
     empty_dir.mkdir()
 
     spec = _search_spec()
-    result = await spec.execute(path=str(empty_dir), pattern="TODO", type="content")
+    ctx = _search_context()
+    result = await spec.execute(path=str(empty_dir), ctx=ctx, pattern="TODO", type="content")
 
     assert result.success
     data = result.result
@@ -172,8 +219,10 @@ class TestSearchToolContentSearch:
   async def test_hidden_files_skipped(self, temp_search_dir: Path) -> None:
     """Test that hidden files are not searched."""
     spec = _search_spec()
+    ctx = _search_context()
     result = await spec.execute(
       path=str(temp_search_dir),
+      ctx=ctx,
       pattern="this should be ignored",
       type="content",
     )
@@ -192,7 +241,8 @@ class TestSearchToolContentSearch:
     (tmp_path / "small.txt").write_text("TODO: small file\n")
 
     spec = _search_spec()
-    result = await spec.execute(path=str(tmp_path), pattern="TODO", type="content")
+    ctx = _search_context()
+    result = await spec.execute(path=str(tmp_path), ctx=ctx, pattern="TODO", type="content")
 
     assert result.success
     # Should only match the small file
@@ -225,8 +275,10 @@ class TestSearchToolFilenameSearch:
   async def test_glob_pattern_py(self, temp_search_dir: Path) -> None:
     """Test glob pattern for Python files."""
     spec = _search_spec()
+    ctx = _search_context()
     result = await spec.execute(
       path=str(temp_search_dir),
+      ctx=ctx,
       pattern="*.py",
       type="filename",
     )
@@ -247,8 +299,10 @@ class TestSearchToolFilenameSearch:
     (temp_search_dir / "core.py").write_text("def core(): pass\n")
 
     spec = _search_spec()
+    ctx = _search_context()
     result = await spec.execute(
       path=str(temp_search_dir),
+      ctx=ctx,
       pattern="????.py",  # Matches main.py, core.py (4 chars)
       type="filename",
     )
@@ -265,8 +319,10 @@ class TestSearchToolFilenameSearch:
     (tmp_path / "test_c.py").write_text("c\n")
 
     spec = _search_spec()
+    ctx = _search_context()
     result = await spec.execute(
       path=str(tmp_path),
+      ctx=ctx,
       pattern="test_[ab].py",
       type="filename",
     )
@@ -278,8 +334,10 @@ class TestSearchToolFilenameSearch:
   async def test_no_matches(self, temp_search_dir: Path) -> None:
     """Test search with no matches returns empty results."""
     spec = _search_spec()
+    ctx = _search_context()
     result = await spec.execute(
       path=str(temp_search_dir),
+      ctx=ctx,
       pattern="*.nonexistent",
       type="filename",
     )
@@ -292,8 +350,10 @@ class TestSearchToolFilenameSearch:
   async def test_default_pattern_filename(self, temp_search_dir: Path) -> None:
     """Test default pattern for filename search matches all files."""
     spec = _search_spec()
+    ctx = _search_context()
     result = await spec.execute(
       path=str(temp_search_dir),
+      ctx=ctx,
       type="filename",
     )
 
@@ -309,8 +369,10 @@ class TestSearchToolValidation:
   async def test_invalid_regex_pattern(self, tmp_path: Path) -> None:
     """Test invalid regex pattern returns error."""
     spec = _search_spec()
+    ctx = _search_context()
     result = await spec.execute(
       path=str(tmp_path),
+      ctx=ctx,
       pattern="[invalid",  # Missing closing bracket
       type="content",
     )
@@ -322,8 +384,10 @@ class TestSearchToolValidation:
   async def test_redos_pattern_nested_quantifier(self, tmp_path: Path) -> None:
     """Test ReDoS pattern with nested quantifier is rejected."""
     spec = _search_spec()
+    ctx = _search_context()
     result = await spec.execute(
       path=str(tmp_path),
+      ctx=ctx,
       pattern=r"(\w+)+",
       type="content",
     )
@@ -335,8 +399,10 @@ class TestSearchToolValidation:
   async def test_redos_pattern_alternation_quantifier(self, tmp_path: Path) -> None:
     """Test ReDoS pattern with alternation and quantifier is rejected."""
     spec = _search_spec()
+    ctx = _search_context()
     result = await spec.execute(
       path=str(tmp_path),
+      ctx=ctx,
       pattern=r"(a|b)+",
       type="content",
     )
@@ -348,10 +414,12 @@ class TestSearchToolValidation:
   async def test_pattern_too_long(self, tmp_path: Path) -> None:
     """Test pattern length limit."""
     spec = _search_spec()
+    ctx = _search_context()
     long_pattern = "a" * 600  # Exceeds MAX_PATTERN_LENGTH (500)
 
     result = await spec.execute(
       path=str(tmp_path),
+      ctx=ctx,
       pattern=long_pattern,
       type="content",
     )
@@ -363,7 +431,8 @@ class TestSearchToolValidation:
   async def test_path_not_found(self) -> None:
     """Test error when path does not exist."""
     spec = _search_spec()
-    result = await spec.execute(path="/nonexistent/path", pattern="test", type="content")
+    ctx = _search_context()
+    result = await spec.execute(path="/nonexistent/path", pattern="test", type="content", ctx=ctx)
 
     assert not result.success
     assert "Path not found" in result.error
@@ -375,7 +444,8 @@ class TestSearchToolValidation:
     file_path.write_text("content")
 
     spec = _search_spec()
-    result = await spec.execute(path=str(file_path), pattern="test", type="content")
+    ctx = _search_context()
+    result = await spec.execute(path=str(file_path), ctx=ctx, pattern="test", type="content")
 
     assert not result.success
     assert "not a directory" in result.error.lower()
@@ -384,8 +454,10 @@ class TestSearchToolValidation:
   async def test_invalid_search_type(self, tmp_path: Path) -> None:
     """Test error for invalid search type."""
     spec = _search_spec()
+    ctx = _search_context()
     result = await spec.execute(
       path=str(tmp_path),
+      ctx=ctx,
       pattern="test",
       type="invalid",
     )
@@ -397,8 +469,10 @@ class TestSearchToolValidation:
   async def test_invalid_max_results(self, tmp_path: Path) -> None:
     """Test error for invalid max_results parameter."""
     spec = _search_spec()
+    ctx = _search_context()
     result = await spec.execute(
       path=str(tmp_path),
+      ctx=ctx,
       pattern="test",
       max_results="not_a_number",
     )
@@ -410,10 +484,11 @@ class TestSearchToolValidation:
   async def test_missing_path_parameter(self) -> None:
     """Test error when path parameter is missing."""
     spec = _search_spec()
-    result = await spec.execute(pattern="test", type="content")
+    ctx = _search_context()
+    result = await _execute_tool(spec, pattern="test", type="content", ctx=ctx)
 
     assert not result.success
-    assert "missing a required argument" in result.error
+    assert "Invalid tool arguments" in result.error
 
 
 class TestSearchToolLimiting:
@@ -425,8 +500,10 @@ class TestSearchToolLimiting:
     (tmp_path / "test.txt").write_text("content\n")
 
     spec = _search_spec()
+    ctx = _search_context()
     result = await spec.execute(
       path=str(tmp_path),
+      ctx=ctx,
       pattern=".*",
       type="content",
       max_results=0,  # Below minimum of 1
@@ -441,8 +518,10 @@ class TestSearchToolLimiting:
     (tmp_path / "test.txt").write_text("content\n")
 
     spec = _search_spec()
+    ctx = _search_context()
     result = await spec.execute(
       path=str(tmp_path),
+      ctx=ctx,
       pattern=".*",
       type="content",
       max_results=2000,  # Above ABSOLUTE_MAX_RESULTS (1000)
@@ -459,8 +538,10 @@ class TestSearchToolLimiting:
       (tmp_path / f"file{i}.txt").write_text(f"TODO: item {i}\n")
 
     spec = _search_spec()
+    ctx = _search_context()
     result = await spec.execute(
       path=str(tmp_path),
+      ctx=ctx,
       pattern="TODO",
       type="content",
       max_results=5,
@@ -487,7 +568,8 @@ class TestSearchToolDirectorySkipping:
     (tmp_path / "main.py").write_text("TODO: regular\n")
 
     spec = _search_spec()
-    result = await spec.execute(path=str(tmp_path), pattern="TODO", type="content")
+    ctx = _search_context()
+    result = await spec.execute(path=str(tmp_path), ctx=ctx, pattern="TODO", type="content")
 
     assert result.success
     # Should only find the regular file
@@ -503,8 +585,10 @@ class TestSearchToolDirectorySkipping:
     (tmp_path / "module.py").write_text("# source\n")
 
     spec = _search_spec()
+    ctx = _search_context()
     result = await spec.execute(
       path=str(tmp_path),
+      ctx=ctx,
       pattern="*",
       type="filename",
     )
@@ -527,6 +611,7 @@ class TestSearchToolWithGuardrail:
     guardrail = PathGuardrail(config)
 
     spec = _search_spec()
+    _search_context()
     validation = guardrail.validate(spec.name, {"path": str(tmp_path)})
 
     assert not validation.valid
@@ -541,10 +626,11 @@ class TestSearchToolWithGuardrail:
     guardrail = PathGuardrail(config)
 
     spec = _search_spec()
+    ctx = _search_context()
     validation = guardrail.validate(spec.name, {"path": str(tmp_path)})
     assert validation.valid
 
-    result = await spec.execute(path=str(tmp_path), pattern="TODO", type="content")
+    result = await spec.execute(path=str(tmp_path), ctx=ctx, pattern="TODO", type="content")
     assert result.success
 
 
@@ -567,8 +653,10 @@ class TestSearchToolSymlinkSkipping:
       pytest.skip("Symlinks not supported")
 
     spec = _search_spec()
+    ctx = _search_context()
     result = await spec.execute(
       path=str(tmp_path),
+      ctx=ctx,
       pattern="TODO",
       type="content",
     )
@@ -596,8 +684,10 @@ class TestSearchToolTimeout:
     (tmp_path / "test.txt").write_text("content\n")
 
     spec = _search_spec()
+    ctx = _search_context()
     result = await spec.execute(
       path=str(tmp_path),
+      ctx=ctx,
       pattern=".*",
       type="content",
       timeout_ms=50,  # Below minimum of 100
@@ -612,8 +702,10 @@ class TestSearchToolTimeout:
     (tmp_path / "test.txt").write_text("content\n")
 
     spec = _search_spec()
+    ctx = _search_context()
     result = await spec.execute(
       path=str(tmp_path),
+      ctx=ctx,
       pattern=".*",
       type="content",
       timeout_ms=60000,  # Above ABSOLUTE_TIMEOUT_MS (30000)
@@ -626,8 +718,10 @@ class TestSearchToolTimeout:
   async def test_invalid_timeout_ms(self, tmp_path: Path) -> None:
     """Test error for invalid timeout_ms parameter."""
     spec = _search_spec()
+    ctx = _search_context()
     result = await spec.execute(
       path=str(tmp_path),
+      ctx=ctx,
       pattern="test",
       timeout_ms="not_a_number",
     )
@@ -645,9 +739,11 @@ class TestSearchToolTimeout:
       (tmp_path / f"file{i}.txt").write_text(f"TODO: item {i}\n")
 
     spec = _search_spec()
+    ctx = _search_context()
     start = time.monotonic()
     result = await spec.execute(
       path=str(tmp_path),
+      ctx=ctx,
       pattern="TODO",
       type="content",
       timeout_ms=100,  # Very short timeout (100ms)
@@ -668,8 +764,10 @@ class TestSearchToolTimeout:
       (tmp_path / f"file{i}.txt").write_text(f"TODO: item {i}\n")
 
     spec = _search_spec()
+    ctx = _search_context()
     result = await spec.execute(
       path=str(tmp_path),
+      ctx=ctx,
       pattern="TODO",
       type="content",
       timeout_ms=100,  # Very short timeout
@@ -688,8 +786,10 @@ class TestSearchToolTimeout:
     (tmp_path / "test.txt").write_text("content\n")
 
     spec = _search_spec()
+    ctx = _search_context()
     result = await spec.execute(
       path=str(tmp_path),
+      ctx=ctx,
       pattern=".*",
       type="content",
     )
@@ -711,6 +811,7 @@ class TestSearchToolErrorHandling:
     (tmp_path / "file2.txt").write_text("TODO: file2\n")
 
     spec = _search_spec()
+    ctx = _search_context()
 
     # Mock Path.stat to raise PermissionError for file2.txt only
     original_stat = Path.stat
@@ -722,7 +823,7 @@ class TestSearchToolErrorHandling:
       return original_stat(self, follow_symlinks=follow_symlinks)
 
     with patch.object(Path, "stat", mock_stat):
-      result = await spec.execute(path=str(tmp_path), pattern="TODO", type="content")
+      result = await spec.execute(path=str(tmp_path), ctx=ctx, pattern="TODO", type="content")
 
     # Should succeed, skipping file2
     assert result.success
@@ -741,6 +842,7 @@ class TestSearchToolErrorHandling:
     (tmp_path / "unreadable.txt").write_text("TODO: unreadable\n")
 
     spec = _search_spec()
+    ctx = _search_context()
 
     # Mock read_text to raise PermissionError for unreadable file
     original_read_text = Path.read_text
@@ -751,7 +853,7 @@ class TestSearchToolErrorHandling:
       return original_read_text(self, encoding=encoding, errors=errors)
 
     with patch.object(Path, "read_text", mock_read_text):
-      result = await spec.execute(path=str(tmp_path), pattern="TODO", type="content")
+      result = await spec.execute(path=str(tmp_path), ctx=ctx, pattern="TODO", type="content")
 
     # Should succeed and only find the readable file
     assert result.success
@@ -769,6 +871,7 @@ class TestSearchToolErrorHandling:
     (tmp_path / "file2.txt").write_text("TODO: file2\n")
 
     spec = _search_spec()
+    ctx = _search_context()
 
     # Mock Path.stat to raise OSError for file2.txt only
     original_stat = Path.stat
@@ -780,7 +883,7 @@ class TestSearchToolErrorHandling:
       return original_stat(self, follow_symlinks=follow_symlinks)
 
     with patch.object(Path, "stat", mock_stat):
-      result = await spec.execute(path=str(tmp_path), pattern="TODO", type="content")
+      result = await spec.execute(path=str(tmp_path), ctx=ctx, pattern="TODO", type="content")
 
     # Should succeed, skipping file2
     assert result.success
@@ -801,7 +904,8 @@ class TestSearchToolErrorHandling:
     (tmp_path / "text.txt").write_text("TODO: text file\n")
 
     spec = _search_spec()
-    result = await spec.execute(path=str(tmp_path), pattern="TODO", type="content")
+    ctx = _search_context()
+    result = await spec.execute(path=str(tmp_path), ctx=ctx, pattern="TODO", type="content")
 
     assert result.success
     # Should only find the text file, binary file is skipped
@@ -823,7 +927,8 @@ class TestSearchToolErrorHandling:
     (tmp_path / "valid.txt").write_text("TODO: valid\n")
 
     spec = _search_spec()
-    result = await spec.execute(path=str(tmp_path), pattern="TODO", type="content")
+    ctx = _search_context()
+    result = await spec.execute(path=str(tmp_path), ctx=ctx, pattern="TODO", type="content")
 
     # Should succeed because errors="replace" is used
     assert result.success
@@ -851,7 +956,8 @@ class TestSearchToolErrorHandling:
     (tmp_path / ".hidden").write_text("TODO: hidden\n")
 
     spec = _search_spec()
-    result = await spec.execute(path=str(tmp_path), pattern="TODO", type="content")
+    ctx = _search_context()
+    result = await spec.execute(path=str(tmp_path), ctx=ctx, pattern="TODO", type="content")
 
     assert result.success
     # Should search 5 files (not hidden file)
@@ -874,6 +980,7 @@ class TestSearchToolErrorHandling:
     (tmp_path / "file3.txt").write_text("TODO: file3\n")
 
     spec = _search_spec()
+    ctx = _search_context()
 
     # Mock read_text to fail on file2
     original_read_text = Path.read_text
@@ -886,7 +993,7 @@ class TestSearchToolErrorHandling:
       return original_read_text(self, encoding=encoding, errors=errors)
 
     with patch.object(Path, "read_text", mock_read_text):
-      result = await spec.execute(path=str(tmp_path), pattern="TODO", type="content")
+      result = await spec.execute(path=str(tmp_path), ctx=ctx, pattern="TODO", type="content")
 
     assert result.success
     # Should have attempted to read all 3 files
@@ -908,7 +1015,8 @@ class TestSearchToolErrorHandling:
     (tmp_path / "small2.txt").write_text("TODO: small2\n")
 
     spec = _search_spec()
-    result = await spec.execute(path=str(tmp_path), pattern="TODO", type="content")
+    ctx = _search_context()
+    result = await spec.execute(path=str(tmp_path), ctx=ctx, pattern="TODO", type="content")
 
     assert result.success
     # All 3 files should be counted in files_searched
@@ -925,8 +1033,9 @@ class TestSearchToolErrorHandling:
     mixed_file.write_bytes(b"Valid line\n\xff\xfe\nAnother valid line\n")
 
     spec = _search_spec()
+    ctx = _search_context()
     # Search for "Valid" - should still find it despite invalid bytes
-    result = await spec.execute(path=str(tmp_path), pattern="Valid", type="content")
+    result = await spec.execute(path=str(tmp_path), ctx=ctx, pattern="Valid", type="content")
 
     assert result.success
     # Should find the match because errors="replace" allows reading

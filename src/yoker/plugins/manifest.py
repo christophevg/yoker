@@ -24,7 +24,7 @@ class PluginManifest:
     # In package/yoker/__init__.py
 
     from typing import Annotated
-    from yoker.annotations import Text
+    from yoker.tools.annotations import Text
     from yoker.plugins import PluginManifest
 
     def echo(message: Annotated[str, Text("Message to echo")]) -> str:

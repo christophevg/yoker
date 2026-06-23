@@ -12,16 +12,16 @@ from yoker.ui.commands.skills import create_command as create_skills_command
 class TestSkillsCommand:
   """Test /skills command creation and invocation."""
 
-  def _make_agent(self, skill_registry=None, directories=()):
+  def _make_agent(self, skills=None, directories=()):
     agent = Mock()
-    agent.skill_registry = skill_registry
+    agent.skills = skills
     agent.config.skills.directories = directories
     return agent
 
   @pytest.mark.asyncio
   async def test_create_skills_command_empty_registry(self):
     """Test /skills command with empty registry."""
-    agent = self._make_agent(skill_registry=SkillRegistry())
+    agent = self._make_agent(skills=SkillRegistry())
     command = create_skills_command()
 
     result = await command.handler("", agent, Mock())
@@ -33,13 +33,13 @@ class TestSkillsCommand:
     """Test /skills command with one skill."""
     registry = SkillRegistry()
     skill = Skill(
-      name="commit",
+      simple_name="commit",
       description="Guide git commits",
       content="Instructions for committing...",
     )
     registry.register(skill)
 
-    agent = self._make_agent(skill_registry=registry)
+    agent = self._make_agent(skills=registry)
     command = create_skills_command()
     result = await command.handler("", agent, Mock())
 
@@ -53,17 +53,17 @@ class TestSkillsCommand:
     registry = SkillRegistry()
 
     skill1 = Skill(
-      name="commit",
+      simple_name="commit",
       description="Guide git commits",
       content="Commit instructions...",
     )
     skill2 = Skill(
-      name="review",
+      simple_name="review",
       description="Review code changes",
       content="Review instructions...",
     )
     skill3 = Skill(
-      name="test",
+      simple_name="test",
       description="Run tests",
       content="Test instructions...",
     )
@@ -72,7 +72,7 @@ class TestSkillsCommand:
     registry.register(skill2)
     registry.register(skill3)
 
-    agent = self._make_agent(skill_registry=registry)
+    agent = self._make_agent(skills=registry)
     command = create_skills_command()
     result = await command.handler("", agent, Mock())
 
@@ -89,14 +89,14 @@ class TestSkillsCommand:
     """Test /skills command with namespaced skill."""
     registry = SkillRegistry()
     skill = Skill(
-      name="commit",
+      simple_name="commit",
       description="Guide git commits",
       content="Commit instructions...",
       namespace="c3",
     )
     registry.register(skill)
 
-    agent = self._make_agent(skill_registry=registry)
+    agent = self._make_agent(skills=registry)
     command = create_skills_command()
     result = await command.handler("", agent, Mock())
 
@@ -109,7 +109,7 @@ class TestSkillsCommand:
     """Test that /skills command can be registered in CommandRegistry."""
     skill_registry = SkillRegistry()
     skill = Skill(
-      name="commit",
+      simple_name="commit",
       description="Guide git commits",
       content="Commit instructions...",
     )
@@ -118,7 +118,7 @@ class TestSkillsCommand:
     command_registry = CommandRegistry()
     command_registry.register(create_skills_command())
 
-    agent = self._make_agent(skill_registry=skill_registry)
+    agent = self._make_agent(skills=skill_registry)
 
     # Test dispatch
     result = await command_registry.dispatch("/skills", agent, Mock())
@@ -131,13 +131,13 @@ class TestSkillsCommand:
     """Test that /skills command ignores arguments."""
     registry = SkillRegistry()
     skill = Skill(
-      name="commit",
+      simple_name="commit",
       description="Guide git commits",
       content="Commit instructions...",
     )
     registry.register(skill)
 
-    agent = self._make_agent(skill_registry=registry)
+    agent = self._make_agent(skills=registry)
     command = create_skills_command()
 
     # Arguments should be ignored
@@ -155,17 +155,17 @@ class TestSkillsCommand:
 
     # Register skills in non-alphabetical order
     skill3 = Skill(
-      name="zebra",
+      simple_name="zebra",
       description="Zebra skill",
       content="Zebra content...",
     )
     skill1 = Skill(
-      name="alpha",
+      simple_name="alpha",
       description="Alpha skill",
       content="Alpha content...",
     )
     skill2 = Skill(
-      name="middle",
+      simple_name="middle",
       description="Middle skill",
       content="Middle content...",
     )
@@ -174,7 +174,7 @@ class TestSkillsCommand:
     registry.register(skill1)
     registry.register(skill2)
 
-    agent = self._make_agent(skill_registry=registry)
+    agent = self._make_agent(skills=registry)
     command = create_skills_command()
     result = await command.handler("", agent, Mock())
 
@@ -193,18 +193,18 @@ class TestSkillsCommand:
     registry = SkillRegistry()
 
     skill1 = Skill(
-      name="commit",
+      simple_name="commit",
       description="Guide git commits",
       content="...",
     )
     skill2 = Skill(
-      name="commit",
+      simple_name="commit",
       description="Guide git commits",
       content="...",
       namespace="c3",
     )
     skill3 = Skill(
-      name="review",
+      simple_name="review",
       description="Review code",
       content="...",
     )
@@ -213,7 +213,7 @@ class TestSkillsCommand:
     registry.register(skill2)
     registry.register(skill3)
 
-    agent = self._make_agent(skill_registry=registry)
+    agent = self._make_agent(skills=registry)
     command = create_skills_command()
     result = await command.handler("", agent, Mock())
 

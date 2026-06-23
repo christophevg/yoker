@@ -40,10 +40,7 @@ class Guardrail(ABC):
     """
 
 
-from yoker.tools.guardrails.path import PathGuardrail
-
 __all__ = [
   "Guardrail",
-  "PathGuardrail",
   "ValidationResult",
 ]

@@ -13,7 +13,6 @@ matches exactly. Ambiguous or unknown names raise ``ValueError``.
 import asyncio
 import traceback
 import uuid
-from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any
 
 from structlog import get_logger
@@ -75,6 +74,8 @@ def make_agent_tool(parent_agent: "Agent | None" = None) -> Any:
         )
 
     try:
+      if parent_agent is None:
+        return ToolResult(success=False, error="No parent agent available to resolve sub-agent")
       agent_definition = parent_agent.agents.resolve(agent_name)
     except ValueError as e:
       available_names = parent_agent.agents.names if parent_agent is not None else []
@@ -90,6 +91,7 @@ def make_agent_tool(parent_agent: "Agent | None" = None) -> Any:
     try:
       subagent = _create_subagent(parent_agent, agent_definition)
       response = await _run_with_timeout(subagent, prompt, timeout_seconds)
+      logger.info("sub agent response", response=response)
       return ToolResult(success=True, result=response)
     except TimeoutError:
       logger.warning("subagent_timeout", agent_name=agent_name, timeout_seconds=timeout_seconds)
@@ -114,25 +116,24 @@ def _clamp(value: int, minimum: int, maximum: int) -> int:
 def _create_subagent(parent_agent: "Agent | None", agent_definition: "AgentDefinition") -> "Agent":
   """Create a sub-agent with fresh context."""
   from yoker.agent import Agent
-  from yoker.context import PersistenceContextManager
 
   depth = 1
   if parent_agent is not None:
     depth = parent_agent.recursion_depth + 1
 
   parent_session = "root"
-  storage_path = Path("./context")
+  # storage_path = Path("./context")
 
   if parent_agent is not None:
     parent_session = parent_agent.context.get_session_id()
-    storage_path = Path(parent_agent.config.context.storage_path)
+    # TODO: the agent tool had a hardcoded dependency on Persistence Context Manager
+    #       this created a bad context. Simple Context Manager is doing a better job
+    #       -> we need to create a better way to selecting a good context manager, for
+    #          all agents. Idea: create the same as the parent, which should come from
+    #          configuration, which is currently also not yet the case.
+    # storage_path = Path(parent_agent.config.context.storage_path)
 
   fresh_session_id = f"{parent_session}_{str(uuid.uuid4())[:8]}"
-
-  fresh_context = PersistenceContextManager(
-    storage_path=storage_path,
-    session_id=fresh_session_id,
-  )
 
   model = agent_definition.model
   parent_config = parent_agent.config if parent_agent else None
@@ -168,7 +169,6 @@ def _create_subagent(parent_agent: "Agent | None", agent_definition: "AgentDefin
   subagent = Agent(
     config=config,
     agent_definition=agent_definition,
-    context_manager=fresh_context,
     _recursion_depth=depth,
   )
 

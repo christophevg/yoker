@@ -8,11 +8,13 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from yoker.tools import ToolRegistry, websearch
+from yoker.builtin import websearch
+from yoker.config import Config
+from yoker.tools import ToolRegistry
 from yoker.tools.context import ToolContext
-from yoker.tools.web_backend import WebSearchBackend
-from yoker.tools.web_guardrail import WebGuardrail, WebGuardrailConfig
-from yoker.tools.web_types import SearchResult, WebSearchError
+from yoker.tools.web.backend import WebSearchBackend
+from yoker.tools.web.guardrail import WebGuardrail, WebGuardrailConfig
+from yoker.tools.web.types import SearchResult, WebSearchError
 
 
 def _websearch_spec():
@@ -21,13 +23,25 @@ def _websearch_spec():
   return registry.register(websearch, name="websearch")
 
 
+def _websearch_context(config: Config | None = None) -> ToolContext:
+  """Create a ToolContext for websearch tool tests."""
+  if config is None:
+    config = Config()
+  return ToolContext(
+    config=config.tools.websearch,
+    shared=config.tools_shared,
+    backends={},
+  )
+
+
 def _get_ctx(backend=None) -> ToolContext | None:
   """Get ToolContext for tests that need backend."""
-  from yoker.config import ToolSharedConfig
+  from yoker.config import ToolsSharedConfig
+
   if backend:
     return ToolContext(
       config=None,
-      shared=ToolSharedConfig(),
+      shared=ToolsSharedConfig(),
       backends={"websearch": backend},
     )
   return None
@@ -152,12 +166,13 @@ class TestWebSearchToolExecution:
   @pytest.mark.asyncio
   async def test_execute_query_required(self) -> None:
     """
-    Given: A websearch tool execute call without query
-    When: Calling execute without query parameter
+    Given: A websearch tool execute call with empty query
+    When: Calling execute with empty query string
     Then: Returns error ToolResult
     """
     spec = _websearch_spec()
-    result = await spec.execute()
+    ctx = _websearch_context()
+    result = await spec.execute(query="", ctx=ctx)
 
     assert not result.success
     assert result.error is not None
@@ -171,7 +186,8 @@ class TestWebSearchToolExecution:
     Then: Returns error ToolResult
     """
     spec = _websearch_spec()
-    result = await spec.execute(query="")
+    ctx = _websearch_context()
+    result = await spec.execute(query="", ctx=ctx)
 
     assert not result.success
     assert result.error is not None
@@ -184,7 +200,8 @@ class TestWebSearchToolExecution:
     Then: Returns error ToolResult
     """
     spec = _websearch_spec()
-    result = await spec.execute(query="   ")
+    ctx = _websearch_context()
+    result = await spec.execute(query="   ", ctx=ctx)
 
     assert not result.success
     assert result.error is not None
@@ -217,6 +234,7 @@ class TestWebSearchToolExecution:
     """
     guardrail = WebGuardrail(WebGuardrailConfig(domain_blocklist=("blocked.com",)))
     spec = _websearch_spec()
+    _websearch_context()
 
     validation = guardrail.validate(spec.name, {"query": "site:blocked.com secret data"})
 
@@ -314,7 +332,8 @@ class TestWebSearchToolResultFormat:
     Then: success=False, result is empty, error contains message
     """
     spec = _websearch_spec()
-    result = await spec.execute()  # No query provided
+    ctx = _websearch_context()
+    result = await spec.execute(query="", ctx=ctx)  # Empty query
 
     assert not result.success
     assert result.result == ""
@@ -366,7 +385,8 @@ class TestWebSearchToolConfiguration:
     Then: Returns error about missing backend
     """
     spec = _websearch_spec()
-    result = await spec.execute(query="test query")
+    ctx = _websearch_context()
+    result = await spec.execute(query="test query", ctx=ctx)
 
     assert not result.success
     assert "backend" in result.error.lower()

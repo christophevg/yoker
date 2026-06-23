@@ -111,6 +111,10 @@ class PathGuardrail(Guardrail):
         return ValidationResult(valid=True)
       return ValidationResult(valid=False, reason="Missing required parameter: path")
 
+    # Handle whitespace-only string paths
+    if isinstance(path_param, str) and not path_param.strip():
+      return ValidationResult(valid=False, reason="Path cannot be empty")
+
     if not isinstance(path_param, str):
       return ValidationResult(
         valid=False, reason=f"Parameter 'path' must be a string, got {type(path_param).__name__}"
@@ -157,9 +161,11 @@ class PathGuardrail(Guardrail):
       if ext_reason:
         return ValidationResult(valid=False, reason=ext_reason)
 
-      size_reason = self._check_write_content_size(value)
-      if size_reason:
-        return ValidationResult(valid=False, reason=size_reason)
+      # Only check content size if we have full params dict
+      if isinstance(value, dict):
+        size_reason = self._check_write_content_size(value)
+        if size_reason:
+          return ValidationResult(valid=False, reason=size_reason)
 
     # Update-specific checks
     if tool_name == "update":
@@ -179,10 +185,11 @@ class PathGuardrail(Guardrail):
       if ext_reason:
         return ValidationResult(valid=False, reason=ext_reason)
 
-      # Check diff size
-      size_reason = self._check_update_diff_size(value)
-      if size_reason:
-        return ValidationResult(valid=False, reason=size_reason)
+      # Check diff size - only if we have full params dict
+      if isinstance(value, dict):
+        size_reason = self._check_update_diff_size(value)
+        if size_reason:
+          return ValidationResult(valid=False, reason=size_reason)
 
     # Log allowed decision
     if self._config.logging.include_permission_checks:
@@ -307,11 +314,11 @@ class PathGuardrail(Guardrail):
       return f"Extension blocked for writing: {ext}"
     return None
 
-  def _check_write_content_size(self, content: str) -> str | None:
+  def _check_write_content_size(self, params: dict[str, Any]) -> str | None:
     """Check if write content exceeds the maximum allowed size.
 
     Args:
-      params: Tool parameters dictionary.
+      params: Tool parameters dictionary containing 'content' key.
 
     Returns:
       Error message if content too large, None if within limits.
@@ -324,6 +331,7 @@ class PathGuardrail(Guardrail):
     if max_size_kb <= 0:
       return None
 
+    content = params.get("content", "")
     if not isinstance(content, str):
       return None
 
@@ -332,7 +340,7 @@ class PathGuardrail(Guardrail):
       return f"Content exceeds size limit: {size_kb:.1f}KB > {max_size_kb}KB"
     return None
 
-  def _check_update_diff_size(self, new_string: str) -> str | None:
+  def _check_update_diff_size(self, params: dict[str, Any]) -> str | None:
     """Check if update diff size exceeds the maximum allowed.
 
     Args:
@@ -349,6 +357,7 @@ class PathGuardrail(Guardrail):
     if max_size_kb <= 0:
       return None
 
+    new_string = params.get("new_string", "")
     if not isinstance(new_string, str):
       return None
 

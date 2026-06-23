@@ -97,9 +97,8 @@ definition = "{agent_file.as_posix()}"
       agent = Agent(config=config)
 
     # Should have loaded agent definition from config
-    assert agent.agent_definition is not None
-    assert agent.agent_definition.name == "researcher"
-    assert "research agent" in agent.agent_definition.system_prompt
+    assert agent.definition.name == "file:researcher"
+    assert "research agent" in agent.definition.system_prompt
 
   def test_agent_definition_config_missing_file(
     self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -153,7 +152,7 @@ definition = "./agents/researcher.md"
 
     # Create explicit agent definition
     explicit_definition = AgentDefinition(
-      name="explicit",
+      simple_name="explicit",
       description="Explicit agent",
       tools=("read",),
       system_prompt="You are the explicit agent.",
@@ -176,8 +175,7 @@ definition = "./agents/researcher.md"
       agent = Agent(config=config, agent_definition=explicit_definition)
 
     # Should use explicit agent definition, not config
-    assert agent.agent_definition is not None
-    assert agent.agent_definition.name == "explicit"
+    assert agent.definition.name == "explicit"
 
   def test_agent_definition_path_overrides_config(
     self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -237,5 +235,4 @@ definition = "{config_agent_file.as_posix()}"
       agent = Agent(config=config, agent_path=explicit_agent_file)
 
     # Should use explicit path, not config
-    assert agent.agent_definition is not None
-    assert agent.agent_definition.name == "explicit-agent"
+    assert agent.definition.name == "file:explicit-agent"

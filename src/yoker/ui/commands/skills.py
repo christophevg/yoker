@@ -29,7 +29,7 @@ async def handle(args: str, agent: "Agent", ui: "UIHandler") -> str:
 
   lines = ["Loaded skills:", ""]
 
-  if registry is None or registry.count == 0:
+  if registry is None or len(registry) == 0:
     lines.append("  No skills loaded.")
     lines.append("")
     if agent.config.skills.directories:
@@ -42,7 +42,7 @@ async def handle(args: str, agent: "Agent", ui: "UIHandler") -> str:
   plugin_skills: list[tuple[str, str]] = []
   builtin_skills: list[tuple[str, str]] = []
 
-  for skill_name, skill in registry:
+  for skill_name, skill in registry.items():
     if ":" in skill_name:
       if skill_name.startswith("yoker:"):
         builtin_skills.append((skill_name, skill.description))

@@ -26,10 +26,9 @@ from yoker.events import (
 )
 from yoker.exceptions import NetworkError
 from yoker.logging import log_timing
-from yoker.tools.schema import ToolResult, ValidationResult
 from yoker.tools.context import ToolContext
 from yoker.tools.guardrails import Guardrail
-from yoker.tools.schema import ToolSpec
+from yoker.tools.schema import ToolResult, ToolSpec, ValidationResult
 
 logger = get_logger(__name__)
 
@@ -67,7 +66,6 @@ async def process_message(agent: Any, message: str) -> str:
   while True:
     stream = await _chat_stream(agent)
     content, thinking, tool_calls, stats = await _consume_stream(agent, stream)
-
     if not tool_calls:
       agent.context.end_turn(content, thinking=thinking or None)
       await emit(_turn_end_event(content, tool_calls, stats), agent._event_handlers)
@@ -239,7 +237,10 @@ def _deduplicate_tool_calls(tool_calls: list[Any]) -> list[Any]:
 
 async def _execute_single_tool_call(agent: Any, call: Any) -> None:
   """Execute a single tool call and emit result events."""
-  tool_name = call.function.name
+  # Convert schema format (__) to canonical format (:) for display and lookup
+  tool_name = (
+    call.function.name.replace("__", ":", 1) if "__" in call.function.name else call.function.name
+  )
   tool_args = call.function.arguments
 
   await emit(
@@ -288,6 +289,7 @@ async def _run_tool(agent: Any, tool_name: str, tool_args: dict[str, Any]) -> tu
   spec = agent.tools.get(tool_name)
   if spec is None:
     logger.warning("tool_not_found", tool=tool_name)
+    logger.warning(f"available: {list(agent.tools.keys())}")
     return f"Error: Unknown tool '{tool_name}'", False, None
 
   validation = _validate_tool_args(agent, spec, tool_args)
@@ -319,6 +321,8 @@ async def _execute_tool(spec: ToolSpec, agent: Any, tool_args: dict[str, Any]) -
   - Normalizing the result to ToolResult
   """
   # Get the original tool signature
+  if spec.execute is None:
+    return ToolResult(success=False, error=f"Tool '{spec.name}' has no execute function")
   sig = inspect.signature(spec.execute)
 
   # Build kwargs, injecting context if needed
@@ -370,6 +374,8 @@ def _tool_needs_context(spec: ToolSpec) -> bool:
   Inspects the original tool function signature (not a wrapper).
   """
   try:
+    if spec.execute is None:
+      return False
     sig = inspect.signature(spec.execute)
     for param in sig.parameters.values():
       if param.annotation is ToolContext:
@@ -381,7 +387,8 @@ def _tool_needs_context(spec: ToolSpec) -> bool:
         continue
       # Check for ForwardRef
       if hasattr(param.annotation, "__forward_arg__"):
-        return param.annotation.__forward_arg__ == "ToolContext"
+        forward_arg: str = param.annotation.__forward_arg__
+        return forward_arg == "ToolContext"
     return False
   except (ValueError, TypeError):
     return False

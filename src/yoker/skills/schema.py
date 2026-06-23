@@ -32,7 +32,7 @@ class Skill(NameSpaced):
   tools: tuple[str, ...] = ()
   source_path: str = ""
 
-  def __post_init__(self):
+  def __post_init__(self) -> None:
     if not self.description:
       raise ValueError("A skill needs a description.")
     if not self.content:

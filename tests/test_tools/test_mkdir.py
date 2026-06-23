@@ -20,13 +20,47 @@ from yoker.config import (
   ToolsConfig,
 )
 from yoker.tools import ToolRegistry
-from yoker.tools.path_guardrail import PathGuardrail
+from yoker.tools.context import ToolContext
+from yoker.tools.guardrails.path import PathGuardrail
 
 
 def _mkdir_spec():
   """Create and register the mkdir tool."""
   registry = ToolRegistry()
   return registry.register(mkdir)
+
+
+def _existence_context(config: Config | None = None) -> ToolContext:
+  """Create a ToolContext for existence tool tests."""
+  if config is None:
+    config = Config()
+  return ToolContext(
+    config=config.tools.existence,
+    shared=config.tools_shared,
+    backends={},
+  )
+
+
+def _mkdir_context(config: Config | None = None) -> ToolContext:
+  """Create a ToolContext for mkdir tool tests."""
+  if config is None:
+    config = Config()
+  return ToolContext(
+    config=config.tools.mkdir,
+    shared=config.tools_shared,
+    backends={},
+  )
+
+
+def _list_context(config: Config | None = None) -> ToolContext:
+  """Create a ToolContext for list tool tests."""
+  if config is None:
+    config = Config()
+  return ToolContext(
+    config=config.tools.list,
+    shared=config.tools_shared,
+    backends={},
+  )
 
 
 class TestMkdirToolSchema:
@@ -94,8 +128,9 @@ class TestMkdirToolBasicCreation:
     Then: Directory is created and result shows created=True
     """
     spec = _mkdir_spec()
+    ctx = _mkdir_context()
     new_dir = temp_dir / "newdir"
-    result = await spec.execute(path=str(new_dir))
+    result = await spec.execute(path=str(new_dir), ctx=ctx)
 
     assert result.success
     assert result.result["created"] is True
@@ -110,8 +145,9 @@ class TestMkdirToolBasicCreation:
     Then: All parent directories are created
     """
     spec = _mkdir_spec()
+    ctx = _mkdir_context()
     nested_path = temp_dir / "a" / "b" / "c"
-    result = await spec.execute(path=str(nested_path), recursive=True)
+    result = await spec.execute(path=str(nested_path), ctx=ctx, recursive=True)
 
     assert result.success
     assert result.result["created"] is True
@@ -127,8 +163,9 @@ class TestMkdirToolBasicCreation:
     Then: Returns error about missing parent
     """
     spec = _mkdir_spec()
+    ctx = _mkdir_context()
     nested_path = temp_dir / "newdir" / "nested"
-    result = await spec.execute(path=str(nested_path), recursive=False)
+    result = await spec.execute(path=str(nested_path), ctx=ctx, recursive=False)
 
     assert not result.success
     assert "parent" in result.error.lower()
@@ -142,13 +179,14 @@ class TestMkdirToolBasicCreation:
     Then: Only missing directories are created
     """
     spec = _mkdir_spec()
+    ctx = _mkdir_context()
     # Create parent
     parent = temp_dir / "parent"
     parent.mkdir()
 
     # Create nested directory with recursive
     nested_path = parent / "child" / "grandchild"
-    result = await spec.execute(path=str(nested_path), recursive=True)
+    result = await spec.execute(path=str(nested_path), ctx=ctx, recursive=True)
 
     assert result.success
     assert result.result["created"] is True
@@ -173,8 +211,9 @@ class TestMkdirToolIdempotency:
     Then: Returns success with created=False and message about existing directory
     """
     spec = _mkdir_spec()
+    ctx = _mkdir_context()
     existing_dir = temp_structure / "existing_dir"
-    result = await spec.execute(path=str(existing_dir))
+    result = await spec.execute(path=str(existing_dir), ctx=ctx)
 
     assert result.success
     assert result.result["created"] is False
@@ -188,8 +227,9 @@ class TestMkdirToolIdempotency:
     Then: Returns success with created=False (idempotent)
     """
     spec = _mkdir_spec()
+    ctx = _mkdir_context()
     existing_dir = temp_structure / "existing_dir"
-    result = await spec.execute(path=str(existing_dir), recursive=True)
+    result = await spec.execute(path=str(existing_dir), ctx=ctx, recursive=True)
 
     assert result.success
     assert result.result["created"] is False
@@ -203,11 +243,12 @@ class TestMkdirToolIdempotency:
     Then: Returns generic error about path not accessible
     """
     spec = _mkdir_spec()
+    ctx = _mkdir_context()
     # Create a file at the path
     file_path = temp_structure / "file.txt"
     file_path.write_text("content")
 
-    result = await spec.execute(path=str(file_path))
+    result = await spec.execute(path=str(file_path), ctx=ctx)
 
     assert not result.success
     assert "not accessible" in result.error.lower()
@@ -224,13 +265,14 @@ class TestMkdirToolSymlinkRejection:
     Then: Returns error about path not accessible
     """
     spec = _mkdir_spec()
+    ctx = _mkdir_context()
     # Create a directory and a symlink to it
     target_dir = tmp_path / "target"
     target_dir.mkdir()
     symlink_path = tmp_path / "link_to_dir"
     symlink_path.symlink_to(target_dir)
 
-    result = await spec.execute(path=str(symlink_path))
+    result = await spec.execute(path=str(symlink_path), ctx=ctx)
 
     assert not result.success
     assert "not accessible" in result.error.lower()
@@ -243,6 +285,7 @@ class TestMkdirToolSymlinkRejection:
     Then: Returns error about path not accessible
     """
     spec = _mkdir_spec()
+    ctx = _mkdir_context()
     # Create target directory
     target = tmp_path / "target"
     target.mkdir()
@@ -250,7 +293,7 @@ class TestMkdirToolSymlinkRejection:
     symlink = tmp_path / "symlink"
     symlink.symlink_to(target)
 
-    result = await spec.execute(path=str(symlink))
+    result = await spec.execute(path=str(symlink), ctx=ctx)
 
     assert not result.success
     assert "not accessible" in result.error.lower()
@@ -263,6 +306,7 @@ class TestMkdirToolSymlinkRejection:
     Then: Returns error about path not accessible
     """
     spec = _mkdir_spec()
+    ctx = _mkdir_context()
     # Create target directory and symlink
     target = tmp_path / "target"
     target.mkdir()
@@ -270,7 +314,7 @@ class TestMkdirToolSymlinkRejection:
     symlink.symlink_to(target)
 
     # Try to create a subdirectory through the symlink
-    result = await spec.execute(path=str(symlink / "subdir"))
+    result = await spec.execute(path=str(symlink / "subdir"), ctx=ctx)
 
     # This should work because realpath resolves the symlink
     # The test expects rejection of symlinks at the input path itself
@@ -292,6 +336,7 @@ class TestMkdirToolPathTraversal:
     config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
     guardrail = PathGuardrail(config)
     spec = _mkdir_spec()
+    _mkdir_context()
 
     # Try to traverse outside allowed path
     traversal_path = str(tmp_path / ".." / ".." / ".." / "etc" / "newdir")
@@ -309,12 +354,13 @@ class TestMkdirToolPathTraversal:
     Then: Path is resolved to absolute path in result
     """
     spec = _mkdir_spec()
+    ctx = _mkdir_context()
 
     # Change to temp directory
     original_cwd = os.getcwd()
     try:
       os.chdir(tmp_path)
-      result = await spec.execute(path="newdir")
+      result = await spec.execute(path="newdir", ctx=ctx)
 
       assert result.success
       # Path should be absolute
@@ -331,10 +377,11 @@ class TestMkdirToolPathTraversal:
     Then: Path is normalized without ./ in result
     """
     spec = _mkdir_spec()
+    ctx = _mkdir_context()
 
     # Create a subdirectory path with ./
     dotted_path = str(tmp_path / "." / "newdir")
-    result = await spec.execute(path=dotted_path)
+    result = await spec.execute(path=dotted_path, ctx=ctx)
 
     assert result.success
     # Path should not contain ./
@@ -378,6 +425,7 @@ class TestMkdirToolBlockedPatterns:
     )
     guardrail = PathGuardrail(config)
     spec = _mkdir_spec()
+    _mkdir_context()
 
     validation = guardrail.validate(spec.name, {"path": str(tmp_path / ".git")})
 
@@ -397,6 +445,7 @@ class TestMkdirToolBlockedPatterns:
     )
     guardrail = PathGuardrail(config)
     spec = _mkdir_spec()
+    _mkdir_context()
 
     validation = guardrail.validate(spec.name, {"path": str(tmp_path / ".ssh")})
 
@@ -416,6 +465,7 @@ class TestMkdirToolBlockedPatterns:
     )
     guardrail = PathGuardrail(config)
     spec = _mkdir_spec()
+    _mkdir_context()
 
     validation = guardrail.validate(spec.name, {"path": str(tmp_path / ".aws")})
 
@@ -435,6 +485,7 @@ class TestMkdirToolBlockedPatterns:
     )
     guardrail = PathGuardrail(config)
     spec = _mkdir_spec()
+    _mkdir_context()
 
     validation = guardrail.validate(spec.name, {"path": str(tmp_path / ".env")})
 
@@ -453,12 +504,13 @@ class TestMkdirToolDepthLimit:
     Then: All directories are created successfully
     """
     spec = _mkdir_spec()
+    ctx = _mkdir_context()
     # Create path within depth limit
     path = tmp_path
     for i in range(10):
       path = path / f"level{i}"
 
-    result = await spec.execute(path=str(path), recursive=True)
+    result = await spec.execute(path=str(path), ctx=ctx, recursive=True)
 
     assert result.success
     assert path.is_dir()
@@ -476,6 +528,7 @@ class TestMkdirToolDepthLimit:
     )
     guardrail = PathGuardrail(config)
     spec = _mkdir_spec()
+    _mkdir_context()
 
     # Create path exceeding depth limit (10 levels deep)
     path = tmp_path
@@ -501,6 +554,7 @@ class TestMkdirToolDepthLimit:
     )
     guardrail = PathGuardrail(config)
     spec = _mkdir_spec()
+    _mkdir_context()
 
     # Create path exactly at depth limit (5 levels)
     path = tmp_path / "a" / "b" / "c" / "d" / "e"
@@ -524,6 +578,7 @@ class TestMkdirToolDepthLimit:
     )
     guardrail = PathGuardrail(config)
     spec = _mkdir_spec()
+    ctx = _mkdir_context()
 
     # Create path below depth limit (3 levels)
     path = tmp_path / "a" / "b" / "c"
@@ -531,7 +586,7 @@ class TestMkdirToolDepthLimit:
     validation = guardrail.validate(spec.name, {"path": str(path)})
     assert validation.valid
 
-    result = await spec.execute(path=str(path), recursive=True)
+    result = await spec.execute(path=str(path), ctx=ctx, recursive=True)
     assert result.success
     assert path.is_dir()
 
@@ -545,13 +600,14 @@ class TestMkdirToolDepthLimit:
     config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
     guardrail = PathGuardrail(config)
     spec = _mkdir_spec()
+    ctx = _mkdir_context()
 
     # Create path well within default limit
     path = tmp_path / "a" / "b" / "c" / "d" / "e"
     validation = guardrail.validate(spec.name, {"path": str(path)})
     assert validation.valid
 
-    result = await spec.execute(path=str(path), recursive=True)
+    result = await spec.execute(path=str(path), ctx=ctx, recursive=True)
     assert result.success
 
   @pytest.mark.asyncio
@@ -562,12 +618,13 @@ class TestMkdirToolDepthLimit:
     Then: Directories are created regardless of depth
     """
     spec = _mkdir_spec()
+    ctx = _mkdir_context()
     # Create a deeply nested path (25 levels)
     path = tmp_path
     for i in range(25):
       path = path / f"level{i}"
 
-    result = await spec.execute(path=str(path), recursive=True)
+    result = await spec.execute(path=str(path), ctx=ctx, recursive=True)
     assert result.success
 
 
@@ -582,7 +639,8 @@ class TestMkdirToolValidation:
     Then: Returns error about path cannot be empty
     """
     spec = _mkdir_spec()
-    result = await spec.execute(path="")
+    ctx = _mkdir_context()
+    result = await spec.execute(path="", ctx=ctx)
 
     assert not result.success
     assert "empty" in result.error.lower()
@@ -595,7 +653,8 @@ class TestMkdirToolValidation:
     Then: Returns error about path cannot be empty
     """
     spec = _mkdir_spec()
-    result = await spec.execute(path="   ")
+    ctx = _mkdir_context()
+    result = await spec.execute(path="   ", ctx=ctx)
 
     assert not result.success
     assert "empty" in result.error.lower()
@@ -608,7 +667,8 @@ class TestMkdirToolValidation:
     Then: Returns error about invalid path parameter
     """
     spec = _mkdir_spec()
-    result = await spec.execute(path=123)  # type: ignore
+    ctx = _mkdir_context()
+    result = await spec.execute(path=123, ctx=ctx)  # type: ignore
 
     assert not result.success
     assert "invalid" in result.error.lower()
@@ -621,7 +681,8 @@ class TestMkdirToolValidation:
     Then: Returns error about invalid path
     """
     spec = _mkdir_spec()
-    result = await spec.execute(path="/tmp/test\x00dir")
+    ctx = _mkdir_context()
+    result = await spec.execute(path="/tmp/test\x00dir", ctx=ctx)
 
     assert not result.success
     assert "invalid" in result.error.lower()
@@ -643,6 +704,7 @@ class TestMkdirToolWithGuardrail:
     config = Config(permissions=PermissionsConfig(filesystem_paths=(str(allowed_path),)))
     guardrail = PathGuardrail(config)
     spec = _mkdir_spec()
+    _mkdir_context()
 
     blocked_path = tmp_path / "blocked" / "newdir"
     validation = guardrail.validate(spec.name, {"path": str(blocked_path)})
@@ -661,12 +723,13 @@ class TestMkdirToolWithGuardrail:
     config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
     guardrail = PathGuardrail(config)
     spec = _mkdir_spec()
+    ctx = _mkdir_context()
 
     new_dir = tmp_path / "newdir"
     validation = guardrail.validate(spec.name, {"path": str(new_dir)})
     assert validation.valid
 
-    result = await spec.execute(path=str(new_dir))
+    result = await spec.execute(path=str(new_dir), ctx=ctx)
     assert result.success
     assert result.result["created"] is True
     assert new_dir.is_dir()
@@ -679,8 +742,9 @@ class TestMkdirToolWithGuardrail:
     Then: Directory is created successfully
     """
     spec = _mkdir_spec()  # No guardrail
+    ctx = _mkdir_context()
     new_dir = tmp_path / "newdir"
-    result = await spec.execute(path=str(new_dir))
+    result = await spec.execute(path=str(new_dir), ctx=ctx)
 
     assert result.success
     assert result.result["created"] is True
@@ -696,6 +760,7 @@ class TestMkdirToolWithGuardrail:
     config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
     guardrail = PathGuardrail(config)
     spec = _mkdir_spec()
+    _mkdir_context()
 
     # Try to create outside allowed path
     outside_path = tmp_path.parent / "outside_newdir"
@@ -714,6 +779,7 @@ class TestMkdirToolWithGuardrail:
     config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
     guardrail = PathGuardrail(config)
     spec = _mkdir_spec()
+    _mkdir_context()
 
     # Try blocked pattern
     validation = guardrail.validate(spec.name, {"path": str(tmp_path / ".ssh")})
@@ -734,11 +800,12 @@ class TestMkdirToolErrorHandling:
     Then: Returns error about permission denied
     """
     spec = _mkdir_spec()
+    ctx = _mkdir_context()
 
     # Mock mkdir to raise PermissionError
     with mocker.patch.object(Path, "mkdir", side_effect=PermissionError("Permission denied")):
       new_dir = tmp_path / "newdir"
-      result = await spec.execute(path=str(new_dir))
+      result = await spec.execute(path=str(new_dir), ctx=ctx)
 
       assert not result.success
       assert "permission" in result.error.lower()
@@ -751,11 +818,12 @@ class TestMkdirToolErrorHandling:
     Then: Returns error about directory creation failure
     """
     spec = _mkdir_spec()
+    ctx = _mkdir_context()
 
     # Mock mkdir to raise OSError
     with mocker.patch.object(Path, "mkdir", side_effect=OSError("OS error")):
       new_dir = tmp_path / "newdir"
-      result = await spec.execute(path=str(new_dir))
+      result = await spec.execute(path=str(new_dir), ctx=ctx)
 
       assert not result.success
       assert "error" in result.error.lower()
@@ -768,10 +836,11 @@ class TestMkdirToolErrorHandling:
     Then: Returns error about invalid path
     """
     spec = _mkdir_spec()
+    ctx = _mkdir_context()
 
     # Mock os.path.realpath to raise OSError
     with mocker.patch("os.path.realpath", side_effect=OSError("Resolution failed")):
-      result = await spec.execute(path="/tmp/test")
+      result = await spec.execute(path="/tmp/test", ctx=ctx)
 
       assert not result.success
       assert "invalid" in result.error.lower()
@@ -784,11 +853,12 @@ class TestMkdirToolErrorHandling:
     Then: Returns error about permission denied
     """
     spec = _mkdir_spec()
+    ctx = _mkdir_context()
 
     # Mock exists to raise PermissionError
     with mocker.patch.object(Path, "exists", side_effect=PermissionError("Permission denied")):
       new_dir = tmp_path / "newdir"
-      result = await spec.execute(path=str(new_dir))
+      result = await spec.execute(path=str(new_dir), ctx=ctx)
 
       assert not result.success
       assert "permission" in result.error.lower()
@@ -805,8 +875,9 @@ class TestMkdirToolPathResolution:
     Then: Result contains the resolved absolute path
     """
     spec = _mkdir_spec()
+    ctx = _mkdir_context()
     abs_path = str(tmp_path / "newdir")
-    result = await spec.execute(path=abs_path)
+    result = await spec.execute(path=abs_path, ctx=ctx)
 
     assert result.success
     assert os.path.isabs(result.result["path"])
@@ -820,13 +891,14 @@ class TestMkdirToolPathResolution:
     Then: Path is normalized in result
     """
     spec = _mkdir_spec()
+    ctx = _mkdir_context()
     # Create a parent directory first
     parent = tmp_path / "parent"
     parent.mkdir()
 
     # Path with redundant .. and back to parent
     path = str(tmp_path / "parent" / ".." / "parent" / "child")
-    result = await spec.execute(path=path)
+    result = await spec.execute(path=path, ctx=ctx)
 
     assert result.success
     # The result should be normalized
@@ -840,14 +912,15 @@ class TestMkdirToolPathResolution:
     Then: All resolve to the same canonical path
     """
     spec = _mkdir_spec()
+    ctx = _mkdir_context()
     original_cwd = os.getcwd()
 
     try:
       os.chdir(tmp_path)
 
       # Create with different path forms
-      result1 = await spec.execute(path="newdir1")
-      result2 = await spec.execute(path="./newdir2")
+      result1 = await spec.execute(path="newdir1", ctx=ctx)
+      result2 = await spec.execute(path="./newdir2", ctx=ctx)
 
       # All should be absolute paths
       assert os.path.isabs(result1.result["path"])
@@ -868,8 +941,9 @@ class TestMkdirToolReturnFormat:
     Then: Returns {created: true, path: str}
     """
     spec = _mkdir_spec()
+    ctx = _mkdir_context()
     new_dir = tmp_path / "newdir"
-    result = await spec.execute(path=str(new_dir))
+    result = await spec.execute(path=str(new_dir), ctx=ctx)
 
     assert result.success
     assert "created" in result.result
@@ -885,10 +959,11 @@ class TestMkdirToolReturnFormat:
     Then: Returns {created: false, path: str, message: str}
     """
     spec = _mkdir_spec()
+    ctx = _mkdir_context()
     existing_dir = tmp_path / "existing"
     existing_dir.mkdir()
 
-    result = await spec.execute(path=str(existing_dir))
+    result = await spec.execute(path=str(existing_dir), ctx=ctx)
 
     assert result.success
     assert result.result["created"] is False
@@ -904,7 +979,8 @@ class TestMkdirToolReturnFormat:
     Then: Returns ToolResult with success=False and error message
     """
     spec = _mkdir_spec()
-    result = await spec.execute(path="")
+    ctx = _mkdir_context()
+    result = await spec.execute(path="", ctx=ctx)
 
     assert not result.success
     assert result.error is not None
@@ -918,11 +994,12 @@ class TestMkdirToolReturnFormat:
     Then: Returned path is absolute
     """
     spec = _mkdir_spec()
+    ctx = _mkdir_context()
     original_cwd = os.getcwd()
 
     try:
       os.chdir(tmp_path)
-      result = await spec.execute(path="newdir")
+      result = await spec.execute(path="newdir", ctx=ctx)
 
       assert result.success
       assert os.path.isabs(result.result["path"])
@@ -941,7 +1018,8 @@ class TestMkdirToolSpecialCases:
     Then: Returns success with created=False (already exists)
     """
     spec = _mkdir_spec()
-    result = await spec.execute(path=".")
+    ctx = _mkdir_context()
+    result = await spec.execute(path=".", ctx=ctx)
 
     assert result.success
     assert result.result["created"] is False
@@ -955,11 +1033,12 @@ class TestMkdirToolSpecialCases:
     Then: Returns success with created=False (already exists)
     """
     spec = _mkdir_spec()
+    ctx = _mkdir_context()
     original_cwd = os.getcwd()
 
     try:
       os.chdir(tmp_path)
-      result = await spec.execute(path="..")
+      result = await spec.execute(path="..", ctx=ctx)
 
       assert result.success
       assert result.result["created"] is False
@@ -974,9 +1053,10 @@ class TestMkdirToolSpecialCases:
     Then: Creates directory successfully
     """
     spec = _mkdir_spec()
+    ctx = _mkdir_context()
 
     new_dir = tmp_path / "newdir"
-    result = await spec.execute(path=str(new_dir))
+    result = await spec.execute(path=str(new_dir), ctx=ctx)
 
     assert result.success
     assert result.result["created"] is True
@@ -990,8 +1070,9 @@ class TestMkdirToolSpecialCases:
     Then: Creates directory successfully
     """
     spec = _mkdir_spec()
+    ctx = _mkdir_context()
     dir_with_spaces = tmp_path / "dir with spaces"
-    result = await spec.execute(path=str(dir_with_spaces))
+    result = await spec.execute(path=str(dir_with_spaces), ctx=ctx)
 
     assert result.success
     assert result.result["created"] is True
@@ -1005,8 +1086,9 @@ class TestMkdirToolSpecialCases:
     Then: Creates directory successfully
     """
     spec = _mkdir_spec()
+    ctx = _mkdir_context()
     unicode_dir = tmp_path / "unicode_目录_🎉"
-    result = await spec.execute(path=str(unicode_dir))
+    result = await spec.execute(path=str(unicode_dir), ctx=ctx)
 
     assert result.success
     assert result.result["created"] is True
@@ -1020,8 +1102,9 @@ class TestMkdirToolSpecialCases:
     Then: All intermediate directories are created
     """
     spec = _mkdir_spec()
+    ctx = _mkdir_context()
     deep_path = tmp_path / "a" / "b" / "c" / "d" / "e"
-    result = await spec.execute(path=str(deep_path), recursive=True)
+    result = await spec.execute(path=str(deep_path), ctx=ctx, recursive=True)
 
     assert result.success
     assert result.result["created"] is True
@@ -1043,13 +1126,14 @@ class TestMkdirToolIntegration:
     Then: Existence tool reports directory exists
     """
     mkdir_spec = _mkdir_spec()
+    ctx = _mkdir_context()
     existence_spec = ToolRegistry().register(existence)
 
     new_dir = tmp_path / "newdir"
-    mkdir_result = await mkdir_spec.execute(path=str(new_dir))
+    mkdir_result = await mkdir_spec.execute(path=str(new_dir), ctx=ctx)
     assert mkdir_result.success
 
-    existence_result = await existence_spec.execute(path=str(new_dir))
+    existence_result = await existence_spec.execute(path=str(new_dir), ctx=_existence_context())
     assert existence_result.success
     assert existence_result.result["exists"] is True
     assert existence_result.result["type"] == "directory"
@@ -1062,13 +1146,15 @@ class TestMkdirToolIntegration:
     Then: New directory appears in listing
     """
     mkdir_spec = _mkdir_spec()
+    mkdir_ctx = _mkdir_context()
     list_spec = ToolRegistry().register(list)
+    list_ctx = _list_context()
 
     new_dir = tmp_path / "newdir"
-    mkdir_result = await mkdir_spec.execute(path=str(new_dir))
+    mkdir_result = await mkdir_spec.execute(path=str(new_dir), ctx=mkdir_ctx)
     assert mkdir_result.success
 
-    list_result = await list_spec.execute(path=str(tmp_path))
+    list_result = await list_spec.execute(path=str(tmp_path), ctx=list_ctx)
     assert list_result.success
     assert "newdir" in list_result.result
 
@@ -1080,9 +1166,10 @@ class TestMkdirToolIntegration:
     Then: Directory is created successfully
     """
     spec = _mkdir_spec()
+    ctx = _mkdir_context()
 
     new_dir = tmp_path / "newdir"
-    result = await spec.execute(path=str(new_dir))
+    result = await spec.execute(path=str(new_dir), ctx=ctx)
 
     assert result.success
     assert result.result["created"] is True

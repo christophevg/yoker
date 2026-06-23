@@ -34,7 +34,7 @@ class TestPluginManifest:
 
     skills = [
       Skill(
-        name="test-skill",
+        simple_name="test-skill",
         description="Test skill",
         content="Test content",
       )
