@@ -15,15 +15,15 @@ from typing import TYPE_CHECKING, Annotated, Any
 
 from structlog import get_logger
 
-from yoker.annotations import Path as PathArg
-from yoker.annotations import Text
-from yoker.tools.schema import ToolResult
+from yoker.tools.annotations import Path as PathArg
+from yoker.tools.annotations import Text
 from yoker.tools.context import ToolContext
+from yoker.tools.schema import ToolResult
 
 if TYPE_CHECKING:
   from yoker.config import SearchToolConfig
 
-log = get_logger(__name__)
+logger = get_logger(__name__)
 
 ABSOLUTE_MAX_RESULTS: int = 1000
 MAX_FILE_SIZE_KB: int = 500
@@ -84,7 +84,7 @@ async def search(
   if not path:
     return ToolResult(success=False, error="Missing required parameter: path")
 
-  config: "SearchToolConfig" = ctx.config
+  config: SearchToolConfig = ctx.config
   default_max_results = config.max_results
   default_timeout_ms = config.timeout_ms
 
@@ -146,7 +146,7 @@ async def search(
         "truncated": truncated,
       }
 
-    log.info(
+    logger.info(
       "search_success",
       path=str(resolved),
       type=search_type,
@@ -158,7 +158,7 @@ async def search(
   except PermissionError:
     return ToolResult(success=False, error=f"Permission denied: {path}")
   except Exception as e:
-    log.error("search_error", error=str(e))
+    logger.error("search_error", error=str(e))
     return ToolResult(success=False, error=f"Error searching: {e}")
 
 

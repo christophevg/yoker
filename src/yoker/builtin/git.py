@@ -7,18 +7,18 @@ security guardrails.
 import re
 import subprocess
 from pathlib import Path
-from typing import Annotated, TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Annotated, Any
 
 from structlog import get_logger
 
-from yoker.annotations import Path as PathArg
-from yoker.tools.schema import ToolResult, ValidationResult
+from yoker.tools.annotations import Path as PathArg
 from yoker.tools.context import ToolContext
+from yoker.tools.schema import ToolResult, ValidationResult
 
 if TYPE_CHECKING:
   from yoker.config import GitToolConfig
 
-log = get_logger(__name__)
+logger = get_logger(__name__)
 
 OPERATION_ARGS: dict[str, dict[str, dict[str, Any]]] = {
   "status": {
@@ -102,7 +102,7 @@ async def git(
 ) -> ToolResult:
   """Execute a Git operation on a repository."""
   # Get config values
-  git_config: "GitToolConfig" = ctx.config
+  git_config: GitToolConfig = ctx.config
   allowed_commands = git_config.allowed_commands
   requires_permission = git_config.requires_permission
 
@@ -122,9 +122,11 @@ async def git(
       error=f"Operation not allowed: {operation}. Allowed: {allowed_list}",
     )
 
-  allowed, reason = _check_permission(operation, allowed_commands, requires_permission, permission_handlers)
+  allowed, reason = _check_permission(
+    operation, allowed_commands, requires_permission, permission_handlers
+  )
   if not allowed:
-    log.info("git_permission_denied", operation=operation, reason=reason)
+    logger.info("git_permission_denied", operation=operation, reason=reason)
     return ToolResult(
       success=False, error=reason or f"Permission denied for operation: {operation}"
     )
@@ -134,7 +136,7 @@ async def git(
 
   validation = _validate_repository_path(path)
   if not validation.valid:
-    log.info("git_path_invalid", path=path, reason=validation.reason)
+    logger.info("git_path_invalid", path=path, reason=validation.reason)
     return ToolResult(success=False, error=validation.reason)
 
   try:
@@ -170,14 +172,14 @@ async def git(
   if file_arg is not None:
     cmd.extend(["--", file_arg])
 
-  log.info("git_executing", operation=operation, path=str(work_dir))
+  logger.info("git_executing", operation=operation, path=str(work_dir))
 
   try:
     returncode, stdout, stderr = _execute_command(cmd, work_dir)
 
     if returncode == 0:
       sanitized_output = _sanitize_output(stdout)
-      log.info(
+      logger.info(
         "git_success",
         operation=operation,
         path=str(work_dir),
@@ -186,7 +188,7 @@ async def git(
       return ToolResult(success=True, result=sanitized_output.strip() or "(no output)")
     else:
       sanitized_stderr = _sanitize_output(stderr)
-      log.warning(
+      logger.warning(
         "git_failed",
         operation=operation,
         path=str(work_dir),
@@ -199,13 +201,13 @@ async def git(
       )
 
   except subprocess.TimeoutExpired:
-    log.warning("git_timeout", operation=operation, path=str(work_dir))
+    logger.warning("git_timeout", operation=operation, path=str(work_dir))
     return ToolResult(success=False, error="Git command timeout exceeded")
   except FileNotFoundError:
-    log.error("git_not_found", operation=operation)
+    logger.error("git_not_found", operation=operation)
     return ToolResult(success=False, error="Git is not installed or not found in PATH")
   except Exception as e:
-    log.error("git_error", operation=operation, path=str(work_dir), error=str(e))
+    logger.error("git_error", operation=operation, path=str(work_dir), error=str(e))
     return ToolResult(success=False, error=f"Error executing Git command: {e}")
 
 

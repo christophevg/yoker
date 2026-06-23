@@ -11,14 +11,14 @@ from typing import TYPE_CHECKING, Annotated
 
 from structlog import get_logger
 
-from yoker.annotations import Path as PathArg
-from yoker.tools.schema import ToolResult
+from yoker.tools.annotations import Path as PathArg
 from yoker.tools.context import ToolContext
+from yoker.tools.schema import ToolResult
 
 if TYPE_CHECKING:
   pass
 
-log = get_logger(__name__)
+logger = get_logger(__name__)
 
 
 async def existence(
@@ -35,22 +35,22 @@ async def existence(
     ToolResult with existence check result.
   """
   if not isinstance(path, str):
-    log.warning("existence_invalid_path_type", path_type=type(path).__name__)
+    logger.warning("existence_invalid_path_type", path_type=type(path).__name__)
     return ToolResult(success=False, error="Invalid path parameter")
 
   if not path.strip():
-    log.warning("existence_empty_path")
+    logger.warning("existence_empty_path")
     return ToolResult(success=False, error="Parameter 'path' cannot be empty")
 
   original_path = Path(path)
   if original_path.is_symlink():
-    log.warning("existence_symlink_rejected", path=path)
+    logger.warning("existence_symlink_rejected", path=path)
     return ToolResult(success=False, error="Path not accessible")
 
   try:
     resolved = Path(os.path.realpath(path))
   except (OSError, ValueError):
-    log.warning("existence_invalid_path", path=path)
+    logger.warning("existence_invalid_path", path=path)
     return ToolResult(success=False, error="Invalid path")
 
   try:
@@ -62,22 +62,22 @@ async def existence(
       else:
         path_type = "other"
 
-      log.info("existence_check_success", path=str(resolved), exists=True, type=path_type)
+      logger.info("existence_check_success", path=str(resolved), exists=True, type=path_type)
       return ToolResult(
         success=True,
         result={"exists": True, "type": path_type, "path": str(resolved)},
       )
 
-    log.info("existence_check_success", path=str(resolved), exists=False, type=None)
+    logger.info("existence_check_success", path=str(resolved), exists=False, type=None)
     return ToolResult(
       success=True,
       result={"exists": False, "type": None, "path": str(resolved)},
     )
   except PermissionError:
-    log.warning("existence_permission_denied", path=str(resolved))
+    logger.warning("existence_permission_denied", path=str(resolved))
     return ToolResult(success=False, error="Path check failed")
   except OSError as e:
-    log.error("existence_os_error", path=str(resolved), error=str(e))
+    logger.error("existence_os_error", path=str(resolved), error=str(e))
     return ToolResult(success=False, error="Path check failed")
 
 

@@ -8,8 +8,8 @@ from typing import TYPE_CHECKING, Annotated, Any
 
 from structlog import get_logger
 
-from yoker.annotations import Text
 from yoker.skills import format_invocation_block
+from yoker.tools.annotations import Text
 from yoker.tools.schema import ToolResult
 
 if TYPE_CHECKING:
@@ -31,7 +31,7 @@ def make_skill_tool(skill_registry: "SkillRegistry") -> Any:
     if s is None:
       available_skills = ", ".join(sorted(skill_registry.names))
       error_msg = f"Unknown skill: {skill_name}. Available skills: {available_skills}"
-      log.warning("skill_not_found", skill_name=skill_name, available=available_skills)
+      logger.warning("skill_not_found", skill_name=skill_name, available=available_skills)
       return ToolResult(success=False, error=error_msg)
 
     invocation = format_invocation_block(s, args)
