@@ -30,21 +30,26 @@ test-all: env-dev ## Run tests on all Python versions
 ## Code Quality
 
 format: env-dev ## Format code and fix linting issues
-	uv run ruff format src tests
-	uv run ruff check --fix src tests
+	uv run ruff format src tests examples
+	uv run ruff check --fix src tests examples
 
 lint: env-dev ## Check code for linting issues
-	uv run ruff check src tests
+	uv run ruff check src tests examples
 
 typecheck: env-dev ## Run type checking
-	uv run mypy --strict src
+	uv run mypy --strict src examples
 
-format-check: format lint typecheck
+format-check: format lint typecheck  ## Run all quality checks
 
-check: format-check test ## Run all quality checks
+check: format-check test ## Run all quality checks and test
+
+check-all: format-check test-all ## Run all quality checks and test all
 
 size:
+	@echo "src/"
 	@find src/ | grep "\.py$$" | xargs wc -l | sort -rn | head -10
+	@echo "tests/"
+	@find tests/ | grep "\.py$$" | xargs wc -l | sort -rn | head -10
 
 ## Running
 
