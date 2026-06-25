@@ -46,9 +46,7 @@ class TestMainErrorHandling:
             "(mode 0o644). Use 'chmod 600 /path/to/yoker.toml' to fix."
           )
           mock_agent_cls.side_effect = SecurityError(
-            error_msg,
-            path="/path/to/yoker.toml",
-            check="file_permissions"
+            error_msg, path="/path/to/yoker.toml", check="file_permissions"
           )
           with pytest.raises(SystemExit) as exc_info:
             from yoker.__main__ import main
