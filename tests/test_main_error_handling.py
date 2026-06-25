@@ -5,6 +5,7 @@ from io import StringIO
 from unittest.mock import patch
 
 import pytest
+from clevis import SecurityError
 
 
 class TestMainErrorHandling:
@@ -31,3 +32,38 @@ class TestMainErrorHandling:
         output = mock_stderr.getvalue()
         assert "Error:" in output
         assert "Agent definition file not found" in output
+
+  def test_security_error_on_insecure_config_permissions(self):
+    """Test that SecurityError from clevis is caught and displayed cleanly."""
+    # Simulate running: python -m yoker when config file has wrong permissions
+    test_args = ["yoker"]
+
+    with patch.object(sys, "argv", test_args):
+      with patch("sys.stderr", new_callable=StringIO) as mock_stderr:
+        with patch("yoker.__main__.Agent") as mock_agent_cls:
+          error_msg = (
+            "Configuration file /path/to/yoker.toml is readable by group/other "
+            "(mode 0o644). Use 'chmod 600 /path/to/yoker.toml' to fix."
+          )
+          mock_agent_cls.side_effect = SecurityError(
+            error_msg,
+            path="/path/to/yoker.toml",
+            check="file_permissions"
+          )
+          with pytest.raises(SystemExit) as exc_info:
+            from yoker.__main__ import main
+
+            main()
+
+        # Should exit with code 1
+        assert exc_info.value.code == 1
+
+        # Check error message in stderr (no stack trace)
+        output = mock_stderr.getvalue()
+        assert "Error:" in output
+        assert "Configuration file" in output
+        assert "readable by group/other" in output
+        assert "chmod 600" in output
+        # Should NOT contain stack trace indicators
+        assert "Traceback" not in output
+        assert "SecurityError" not in output
