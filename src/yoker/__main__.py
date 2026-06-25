@@ -18,6 +18,7 @@ import asyncio
 import os
 import sys
 
+from clevis import SecurityError
 from structlog import get_logger
 
 from yoker.agent import Agent
@@ -152,6 +153,9 @@ def main() -> None:
       parse_cli_args=True,
     )
   except ValueError as e:
+    sys.stderr.write(f"Error: {e}\n")
+    sys.exit(1)
+  except SecurityError as e:
     sys.stderr.write(f"Error: {e}\n")
     sys.exit(1)
 
