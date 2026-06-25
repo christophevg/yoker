@@ -1,12 +1,114 @@
 # TODO
 
-## unsorted input
+## Priority Overview
 
-- let's rename yoker: plugin tools to builtin:
-  - + when listing them (e.g. /tools) don't include the "builtin:" prefix
-- when an agent has no explicit tools, ALL tools should be available
-- allow for namespace frontmatter configuration of skills and agents
-- there are duplicate tests (e.g. tests/test_tools/test_base.py and tests/tools/test_base.py), and more. Review all tests for such duplicated tests and clean up.
+| Priority | MBI/Task | Status |
+|----------|----------|--------|
+| **P1** | MBI-002: Bootstrap | Active |
+| **P1** | MBI-001 Validation | Pending (validate with pkgq, then publish) |
+| **P2** | MBI-003: Python API | Backlog (after Bootstrap) |
+| **P2** | MBI-004: yoker Commands | Backlog (after Python API) |
+| **P2** | MBI-005: Assistant Integration | Backlog (showcase project) |
+| **P3** | Maintenance Tasks | M.1-M.4 |
+| **P4+** | Launch Preparation, Architecture, Future Work | See sections below |
+
+---
+
+## Active: MBI-002: Bootstrap
+
+**Goal:** Interactive guided setup for first-time users without configuration.
+
+**Milestone:** Users run `yoker` and are guided through backend selection, model selection, Ollama account creation, and config creation.
+
+### Tasks
+
+- [ ] **2.1 Detect Missing Configuration**
+  - Check for yoker.toml existence
+  - Check for minimal required configuration (backend, model)
+  - Detect if configuration is incomplete
+  - Write unit tests
+  **Satisfies:** Bootstrap trigger condition
+
+- [ ] **2.2 Backend Selection Wizard**
+  - Implement interactive prompt for backend selection
+  - Support Ollama local, ollama.com API, other backends
+  - Provide guidance for each option
+  - Write unit tests
+  **Satisfies:** Backend selection capability
+
+- [ ] **2.3 Model Selection Wizard**
+  - Query available models for chosen backend
+  - Implement interactive prompt for model selection
+  - Handle model listing failures gracefully
+  - Write unit tests
+  **Satisfies:** Model selection capability
+
+- [ ] **2.4 Ollama Account Creation Assistance**
+  - Guide users to create Ollama account
+  - Explain free tier benefits
+  - Provide link to account creation
+  - Write unit tests
+  **Satisfies:** Account creation guidance
+
+- [ ] **2.5 Config File Creation**
+  - Create yoker.toml with user's choices
+  - Set appropriate defaults
+  - Write to user-level config location
+  - Handle write failures
+  - Write unit tests
+  **Satisfies:** Config creation capability
+
+---
+
+## MBI-001 Validation: Package Plugin System
+
+**Goal:** Final validation before MBI-001 closure.
+
+- [ ] **1.1 Validate with pkgq Project**
+  - Test plugin system with pkgq project locally
+  - Verify all acceptance criteria work
+  - Document any issues found
+  **Priority:** P1
+
+- [ ] **1.2 Publish Release to PyPI**
+  - Finalize pyproject.toml metadata
+  - Test installation from source distribution
+  - Upload to TestPyPI
+  - Upload to PyPI
+  **Priority:** P1
+  **Note:** Requires release manager credentials
+
+---
+
+## Maintenance Tasks
+
+Unsorted improvements and fixes.
+
+- [ ] **M.1 Rename yoker: plugin tools to builtin:**
+  - Rename namespace from `yoker:` to `builtin:`
+  - When listing tools (e.g. /tools), don't include the `builtin:` prefix
+  - Update documentation
+  **Priority:** P3
+
+- [ ] **M.2 Default Tools Behavior**
+  - When agent has no explicit tools configuration, ALL tools should be available
+  - Update agent initialization logic
+  - Write unit tests
+  **Priority:** P3
+
+- [ ] **M.3 Namespace Frontmatter Configuration**
+  - Allow namespace configuration in skill and agent frontmatter
+  - Update SkillLoader and AgentLoader
+  - Write unit tests
+  **Priority:** P3
+
+- [ ] **M.4 Clean Up Duplicate Tests**
+  - Review all tests for duplicates (e.g. tests/test_tools/test_base.py and tests/tools/test_base.py)
+  - Consolidate duplicate tests
+  - Ensure full coverage maintained
+  **Priority:** P4
+
+---
 
 ## Active: UI Separation Migration (Complete)
 
@@ -29,112 +131,22 @@
 ---
 
 
-## MVP: Package Plugin System (Issue #14)
+## Done: MBI-001: Package Plugin System (2026-06-25)
 
 **Goal:** Enable Python packages to provide tools and skills to yoker via `yoker --with <package>`
 
-**Milestone:** Users can run `uvx --with pkgq yoker --with pkgq` and invoke `/pkgq:create`
+**Status:** Core implementation complete. Validation with pkgq project pending before final PyPI release.
 
-### Phase 2: Skill System (Core)
+### Completed Phases
 
-**Goal:** Basic skill system that users can invoke immediately.
+- [x] **Phase 2: Skill System (Core)** — Skill Infrastructure, Slash Commands, Skill Tool
+- [x] **Phase 3: Package Plugin System** — Package Plugin Discovery, CLI --with Argument
+- [x] **Phase 5: Polish** — Error Handling, Documentation, Testing
+- [x] **Phase 6.2: Examples and Tutorials**
 
-**Milestone:** Users can define skills in configured directories and invoke them via `/skill-name` commands or through agent tool calls.
+### Remaining
 
-- [x] **2.1 Skill Infrastructure** (2026-06-07)
-  - Define `Skill` dataclass (Markdown + YAML frontmatter, similar to AgentDefinition)
-  - Implement `SkillLoader` class (load from directory, parse frontmatter)
-  - Implement skill context injection (user-level message with skill content)
-  - Add skill discovery (`list_skills()` method)
-  - Add skill registry to track loaded skills
-  - Write unit tests for SkillLoader and skill injection
-  - **Satisfies:** Skill invocation capability
-  - **See:** PR #15
-
-- [x] **2.2 Slash Command Support** (2026-06-07)
-  - Add `/skill-name` command parsing in CLI (prompt_toolkit)
-  - Parse `/skill-name` and `/skill-name args` formats
-  - Lookup skill in SkillRegistry
-  - Build skill context message using `format_invocation_block()`
-  - Inject as user message into conversation
-  - Handle skill not found error gracefully
-  - Load skills from configured directories (yoker.toml `skills_dirs`)
-  - Support `YOKER_SKILLS_PATH` environment variable
-  - Write unit tests for command parsing and skill injection
-  - **Depends on:** 2.1
-  - **Estimated time:** 1-2 hours
-  - **Satisfies:** User-facing skill invocation via CLI
-  - **See:** PR #15
-
-- [x] **2.3 Skill Tool for Agent Invocation** (2026-06-07)
-  - Create `SkillTool` in `src/yoker/tools/skill.py`
-  - Implement `execute(name: str, args: str = "")` method
-  - Lookup skill in SkillRegistry
-  - Return skill content via `format_invocation_block()`
-  - Add SkillTool to default tool registry
-  - Update PathGuardrail (not a filesystem tool)
-  - Write unit tests for SkillTool
-  - **Depends on:** 2.1
-  - **Estimated time:** 1-2 hours
-  - **Satisfies:** Agent can invoke skills dynamically
-  - **See:** PR #15
-
-### Phase 3: Package Plugin System
-
-**Goal:** Enable Python packages to provide tools, skills, and agents to yoker.
-
-**Milestone:** Packages can register components via `yoker` module namespace.
-
-- [x] **3.2 CLI --with Argument** (2026-06-15)
-  - Add `--with <package>` argument to `__main__.py`
-  - Support multiple packages: `--with pkgq --with another`
-  - Load packages before agent starts (in `main()`)
-  - Handle package import errors with user-friendly messages
-  - Update README.md with `--with` usage examples
-  - Write unit tests for CLI argument handling
-  - **Depends on:** 3.1
-  - **Satisfies:** User-facing package integration
-
-### Phase 5: Polish (Post-MVP)
-
-- [x] **5.1 Error Handling** (2026-06-15)
-  - Define error codes and messages
-  - Implement graceful error recovery
-  - Add user-friendly error messages
-  - Ensure all exceptions are handled
-  - **Priority:** P2
-
-- [x] **5.2 Documentation** (2026-06-15)
-  - Write README with quick start guide
-  - Document all configuration options
-  - Write API documentation (Sphinx autodoc)
-  - Create usage examples
-  - Publish to ReadTheDocs
-  - **Priority:** P2
-
-- [x] **5.3 Testing** (2026-06-15)
-  - Achieve high test coverage (>80%)
-  - Add integration tests for full flows
-  - Add guardrail enforcement tests
-  - Add edge case tests
-  - **Priority:** P2
-
-### Phase 6: Release Preparation
-
-- [ ] **6.1 PyPI Package**
-  - [x] Create release notes (HISTORY.md updated for v0.5.0)
-  - [ ] Finalize pyproject.toml metadata
-  - [ ] Test installation from source distribution
-  - [ ] Upload to TestPyPI
-  - [ ] Upload to PyPI
-  - **Note:** The actual PyPI/TestPyPI upload step cannot be performed by an agent because it requires release manager credentials and authorization. This task remains open pending release manager execution.
-  - **Priority:** P3
-
-- [x] **6.2 Examples and Tutorials** (2026-06-15)
-  - Create basic example
-  - Create research workflow example
-  - Write tutorial documentation
-  - **Priority:** P3
+- See **MBI-001 Validation** section above for pkgq validation and PyPI release tasks
 
 ---
 
