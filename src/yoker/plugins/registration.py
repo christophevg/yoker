@@ -3,10 +3,11 @@
 Provides functions to register tools, skills, and agents with namespace prefixes.
 """
 
-from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from structlog import get_logger
+
+from yoker.tools.schema import ToolSpec
 
 if TYPE_CHECKING:
   from yoker.agents import AgentDefinition, AgentRegistry
@@ -17,18 +18,19 @@ logger = get_logger(__name__)
 
 
 def register_tools(
-  tools: list[Callable[..., Any]],
+  tools: list[ToolSpec],
   registry: "ToolRegistry",
   namespace: str,
 ) -> list[str]:
-  """Register tools with namespace prefix.
+  """Register pre-built ToolSpec objects with namespace prefix.
 
-  Creates a namespaced name for each tool: {namespace}:{tool_name}
+  Tools are already parsed into ToolSpec objects during plugin load,
+  so this function simply registers them in the registry.
 
   Args:
-    tools: List of functions or callable class instances.
+    tools: List of ToolSpec objects (already namespaced).
     registry: ToolRegistry to register with.
-    namespace: Package namespace prefix (e.g., "pkgq", "yoker").
+    namespace: Package namespace prefix (for logging).
 
   Returns:
     List of registered tool names (with namespace).
@@ -38,14 +40,17 @@ def register_tools(
   """
   registered = []
 
-  for tool in tools:
-    spec = registry.register(tool, namespace=namespace)
-    registered.append(spec.name)
+  for tool_spec in tools:
+    if tool_spec.name in registry:
+      raise ValueError(f"Tool '{tool_spec.name}' is already registered")
+
+    registry[tool_spec.name] = tool_spec
+    registered.append(tool_spec.name)
 
     logger.info(
       "tool_registered",
-      original_name=spec.name.split(":", 1)[-1],
-      namespaced_name=spec.name,
+      original_name=tool_spec.simple_name,
+      namespaced_name=tool_spec.name,
       namespace=namespace,
     )
 
@@ -187,3 +192,4 @@ __all__ = [
   "register_skills",
   "register_agents",
 ]
+

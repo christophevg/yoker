@@ -16,6 +16,7 @@ from yoker.plugins.registration import register_agents, register_skills, registe
 from yoker.plugins.security import check_plugin_allowed, check_plugins_enabled
 from yoker.resources import find_package_subdirectory
 from yoker.skills import load_skills
+from yoker.tools.schema import ToolSpec, build_tool_spec
 
 if TYPE_CHECKING:
   from yoker.agent import Agent
@@ -28,7 +29,7 @@ logger = get_logger(__name__)
 class PluginComponents:
   """Container for plugin-discovered components."""
 
-  tools: list[Any]
+  tools: list[ToolSpec]
   skills: list[Any]
   agents: list[Any]
   source: str
@@ -68,9 +69,12 @@ def load_plugin(package_name: str) -> PluginComponents:
 
   logger.info("plugin_manifest_found", package=package_name)
   manifest = package.__YOKER_MANIFEST__
-  tools = list(getattr(manifest, "tools", []))
+  tools_raw = list(getattr(manifest, "tools", []))
   skills = _load_manifest_skills(manifest, package_name)
   agents = _load_manifest_agents(manifest, package_name)
+
+  # Parse tools into ToolSpec objects during load (consistent with skills/agents)
+  tools = [build_tool_spec(tool, namespace=package_name) for tool in tools_raw]
 
   logger.info(
     "plugin_loaded",
@@ -192,10 +196,10 @@ def _load_manifest_skills(manifest: Any, package_name: str) -> list[Any]:
 
 
 def _filter_enabled_tools(
-  tools: list[Any],
+  tools: list[ToolSpec],
   config: "Config",
   namespace: str,
-) -> list[Any]:
+) -> list[ToolSpec]:
   """Filter tools based on their enabled flag in config.
 
   For built-in yoker tools, check config.tools.<name>.enabled.
@@ -205,18 +209,18 @@ def _filter_enabled_tools(
   (config.backend.ollama.api_key) in addition to being enabled.
 
   Args:
-    tools: List of tool functions/callables.
+    tools: List of ToolSpec objects.
     config: Configuration to check enabled flags.
     namespace: Tool namespace (e.g., "yoker" for built-in tools).
 
   Returns:
-    List of enabled tools.
+    List of enabled ToolSpec objects.
   """
   # Only filter built-in yoker tools
   if namespace != "yoker":
     return tools
 
-  # Map tool function names to config attribute names
+  # Map tool simple names to config attribute names
   tool_config_map = {
     "list": "list",
     "read": "read",
@@ -236,19 +240,27 @@ def _filter_enabled_tools(
   api_key_required_tools = {"websearch", "webfetch"}
 
   enabled_tools = []
-  for tool in tools:
-    tool_name = getattr(tool, "__name__", str(tool))
+  for tool_spec in tools:
+    tool_name = tool_spec.simple_name
+    # simple_name should never be None for ToolSpec (set during build_tool_spec)
+    # but we check for type safety
+    if tool_name is None:
+      # Skip tools without a name (shouldn't happen in practice)
+      continue
+
     config_attr = tool_config_map.get(tool_name)
 
     if config_attr is None:
       # Tool not in config map, include by default (e.g., agent, skill tools)
-      enabled_tools.append(tool)
+      enabled_tools.append(tool_spec)
       continue
 
+    # Type narrowing: config_attr is str after None check
+    assert config_attr is not None  # For mypy
     tool_config = getattr(config.tools, config_attr, None)
     if tool_config is None:
       # No config for this tool, include by default
-      enabled_tools.append(tool)
+      enabled_tools.append(tool_spec)
       continue
 
     if not tool_config.enabled:
@@ -265,7 +277,7 @@ def _filter_enabled_tools(
         )
         continue
 
-    enabled_tools.append(tool)
+    enabled_tools.append(tool_spec)
 
   return enabled_tools
 
@@ -289,3 +301,4 @@ __all__ = [
   "load_skills_from_package",
   "load_agents_from_package",
 ]
+
