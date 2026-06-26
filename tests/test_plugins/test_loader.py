@@ -133,4 +133,3 @@ class TestPluginComponents:
     assert components.skills == []
     assert components.agents == []
     assert components.source == "empty_pkg"
-

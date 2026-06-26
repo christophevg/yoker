@@ -184,4 +184,3 @@ class TestCloneAgentWithName:
     assert cloned.description == original.description
     assert cloned.model == original.model
     assert cloned.tools == original.tools
-
