@@ -1,6 +1,6 @@
 # Yoker Version History
 
-## 0.5.0 (2026-06-15)
+## 0.5.0 (2026-06-26)
 
 ### New Features
 - UI Separation migration complete: Agent layer is purely event-driven, UI layer owns all presentation
@@ -22,6 +22,8 @@
 ### Bug Fixes
 - Graceful handling of non-recoverable `NetworkError` in the CLI session loop
 - Fixed content type detection fallbacks for unknown file types
+- Fixed tool parsing: tools are now parsed into `ToolSpec` during plugin load for consistent architecture
+- Fixed error handling: `clevis.SecurityError` is now caught and displays a clean error message
 
 ---
 

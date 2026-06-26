@@ -46,7 +46,7 @@ from yoker.exceptions import (
 )
 from yoker.logging import LoggingContext, configure_logging, log_timing
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 __author__ = "Christophe VG"
 
 __all__ = [

@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from rich.console import Console
 
+from yoker import __version__
 from yoker.agent.thinking import ThinkingMode
 from yoker.exceptions import NetworkError, ToolError
 from yoker.ui import InteractiveUIHandler
@@ -89,7 +90,7 @@ class TestInteractiveUIHandlerLifecycle:
     await handler.start(agent)
 
     text = output.getvalue()
-    assert "Yoker v0.4.0" in text
+    assert f"Yoker v{__version__}" in text
     assert "Using model: llama3.1" in text
     assert "Harness: test-harness v1.2.3 by Test Author" in text
     assert "Thinking mode: enabled" in text
