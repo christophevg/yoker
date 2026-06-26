@@ -1,9 +1,6 @@
 """Test that plugin skills are loaded correctly and warnings are emitted."""
 
-import importlib.resources as resources
 from unittest.mock import patch
-
-import pytest
 
 from yoker.plugins.loader import _load_manifest_skills, load_plugin
 
@@ -53,8 +50,8 @@ def test_plugin_skills_dir_not_exists_warning(capsys):
 
 def test_plugin_skills_dir_exists_but_empty(caplog):
   """Test that no warning is emitted when skills_dir exists but is empty."""
-  from types import SimpleNamespace
   from pathlib import Path
+  from types import SimpleNamespace
 
   # Mock manifest with skills_dir that exists but is empty
   manifest = SimpleNamespace(
@@ -84,6 +81,7 @@ def test_plugin_skills_dir_exists_but_empty(caplog):
 def test_plugin_skills_inline():
   """Test that inline skills from manifest are loaded."""
   from types import SimpleNamespace
+
   from yoker.skills.schema import Skill
 
   # Create a manifest with inline skills only (no skills_dir)
@@ -110,8 +108,9 @@ def test_plugin_skills_inline():
 
 def test_plugin_skills_combined():
   """Test that inline skills and discovered skills are combined."""
-  from types import SimpleNamespace
   from pathlib import Path
+  from types import SimpleNamespace
+
   from yoker.skills.schema import Skill
 
   # Create a manifest with both inline skills and skills_dir
