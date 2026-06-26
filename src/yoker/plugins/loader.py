@@ -189,9 +189,19 @@ def _load_manifest_skills(manifest: Any, package_name: str) -> list[Any]:
   skills_dir = getattr(manifest, "skills_dir", None)
   if not skills_dir:
     return skills
-  discovered = load_skills_from_package(package_name, skills_dir)
-  if discovered:
-    return skills + discovered
+  # Try to find the skills directory in the package
+  path = find_package_subdirectory(package_name, skills_dir)
+  if path:
+    discovered = list(load_skills(path, namespace=package_name).values())
+    if discovered:
+      return skills + discovered
+  else:
+    # Warn if skills_dir was specified but directory doesn't exist
+    logger.warning(
+      "plugin_skills_dir_not_found",
+      package=package_name,
+      skills_dir=skills_dir,
+    )
   return skills
 
 
