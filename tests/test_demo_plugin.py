@@ -6,7 +6,6 @@ registered correctly with the function-as-tool API.
 
 import pytest
 
-from yoker.tools import ToolRegistry
 from yoker.tools.schema import build_tool_spec
 
 
@@ -113,9 +112,10 @@ class TestDemoPluginLoading:
     assert plugin is not None
     assert plugin.source == "yoker_plugin_demo"
     assert len(plugin.tools) == 1
-    registry = ToolRegistry()
-    spec = registry.register(plugin.tools[0])
-    assert spec.name == "echo"
+    # Tools are now ToolSpec objects (not raw callables)
+    assert plugin.tools[0].simple_name == "echo"
+    assert plugin.tools[0].namespace == "yoker_plugin_demo"
+    assert plugin.tools[0].name == "yoker_plugin_demo:echo"
 
   def test_load_demo_plugin_skills(self) -> None:
     """Demo plugin should provide skills from skills directory."""
@@ -215,3 +215,4 @@ class TestDemoPluginIntegration:
       f"but got {len(plugin.agents)} agents. "
       f"load_plugin should check __YOKER_MANIFEST__ and call load_agents_from_package"
     )
+

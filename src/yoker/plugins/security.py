@@ -83,7 +83,7 @@ def confirm_plugin(plugin_name: str, plugin: "PluginComponents") -> bool:
     return False
 
   # Build styled panel content
-  # Tools section
+  # Tools section (tools are now ToolSpec objects, so .name is directly accessible)
   if plugin.tools:
     tools_str = ", ".join(t.name for t in plugin.tools[:5])
     if len(plugin.tools) > 5:
@@ -231,3 +231,4 @@ __all__ = [
   "check_plugin_allowed",
   "reset_session_trusted",
 ]
+

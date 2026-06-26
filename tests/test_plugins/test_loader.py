@@ -30,8 +30,10 @@ class TestLoadPlugin:
 
       assert plugin is not None
       assert len(plugin.tools) == 1
-      spec = build_tool_spec(plugin.tools[0])
-      assert spec.name == "read"
+      # Tools are now ToolSpec objects (not raw callables)
+      assert isinstance(plugin.tools[0], type(build_tool_spec(read)))
+      assert plugin.tools[0].name == "test_pkg:read"
+      assert plugin.tools[0].simple_name == "read"
       assert plugin.source == "test_pkg"
 
   def test_load_plugin_with_skills(self):
@@ -131,3 +133,4 @@ class TestPluginComponents:
     assert components.skills == []
     assert components.agents == []
     assert components.source == "empty_pkg"
+
