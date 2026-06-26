@@ -12,14 +12,18 @@ def test_plugin_skills_are_loaded():
   plugin = load_plugin("yoker_plugin_demo")
 
   # Plugin should have loaded the skill from skills_dir
-  assert len(plugin.skills) == 1, f"Expected 1 skill, got {len(plugin.skills)}: {[s.simple_name for s in plugin.skills]}"
+  assert len(plugin.skills) == 1, (
+    f"Expected 1 skill, got {len(plugin.skills)}: {[s.simple_name for s in plugin.skills]}"
+  )
 
   # Check that skill has correct name
   skill = plugin.skills[0]
   assert skill.simple_name == "greeting", f"Expected skill 'greeting', got '{skill.simple_name}'"
 
   # Check that skill is properly namespaced
-  assert skill.namespace == "yoker_plugin_demo", f"Expected namespace 'yoker_plugin_demo', got '{skill.namespace}'"
+  assert skill.namespace == "yoker_plugin_demo", (
+    f"Expected namespace 'yoker_plugin_demo', got '{skill.namespace}'"
+  )
 
 
 def test_plugin_skills_dir_not_exists_warning(capsys):
@@ -141,7 +145,9 @@ def test_plugin_skills_combined():
 
   with patch("yoker.plugins.loader.find_package_subdirectory", return_value=mock_path):
     # Mock load_skills to return a skill
-    with patch("yoker.plugins.loader.load_skills", return_value={"discovered_skill": discovered_skill}):
+    with patch(
+      "yoker.plugins.loader.load_skills", return_value={"discovered_skill": discovered_skill}
+    ):
       # Load skills from the manifest
       skills = _load_manifest_skills(manifest, "test_package")
 
