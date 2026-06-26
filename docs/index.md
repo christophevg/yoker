@@ -39,6 +39,7 @@ python -m yoker
 
 installation
 quickstart
+plugins
 rationale
 NAME
 api/index

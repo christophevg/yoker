@@ -117,45 +117,67 @@ See the `examples/` directory for more complete examples:
 
 ## Plugins
 
-Yoker can load tools, skills, and agents from external Python packages via
-the `--with` argument. Packages declare what they provide through a
-`__YOKER_MANIFEST__` object in their top-level `__init__.py`.
+Yoker can load tools, skills, and agents from external Python packages via the plugin system.
 
-Install a plugin package (for example, the demo plugin in
-`examples/plugins/demo/`):
+### Quick Start
 
-```bash
-uv pip install -e examples/plugins/demo
-```
-
-Run Yoker with one or more plugins:
+Plugins are **disabled by default** for security. Enable them in your configuration:
 
 ```bash
-# Load a single plugin
-python -m yoker --with yoker_plugin_demo
+# Create yoker.toml
+cat > yoker.toml << EOF
+[plugins]
+enabled = true
+EOF
 
-# Load multiple plugins
-python -m yoker --with yoker_plugin_demo --with another
+# Secure the configuration file
+chmod 600 yoker.toml
 ```
 
-When a plugin is loaded, its namespaced tools and skills become available to
-the agent. For example, after loading `yoker_plugin_demo` you can invoke its
-skill with a slash command:
+Load plugins with `--with`:
 
 ```bash
-python -m yoker --with yoker_plugin_demo
-/greeting
+# Using uvx (recommended)
+uvx --with pkgq yoker --with pkgq
+
+# Or install first
+pip install pkgq
+python -m yoker --with pkgq
 ```
 
-Or you can ask the agent to use a plugin tool by name:
+### Security Workflow
 
-```text
-Use the echo tool to repeat "hello world"
+When you load a plugin for the first time, Yoker shows a confirmation dialog with the plugin's components (tools, skills, agents). Review them carefully—plugins can execute arbitrary code.
+
+After accepting, Yoker displays instructions to trust the plugin permanently:
+
+```toml
+[plugins.trusted]
+pkgq = true
 ```
 
-See `examples/plugins/demo/README.md` for a complete walkthrough of creating
-a plugin package, declaring `__YOKER_MANIFEST__`, and providing tools, skills,
-and agent definitions.
+### Using Plugin Components
+
+Verify loaded components with:
+
+```
+> /skills     # List all skills (including plugin skills)
+> /tools      # List all tools (including plugin tools)
+> /pkgq:create  # Invoke a plugin skill directly
+```
+
+### Available Plugins
+
+- **pkgq** - Package documentation tools (PyPI: `pip install pkgq`)
+  - `pkgq:find` tool - Find Python package documentation
+  - `pkgq:create` skill - Generate PACKAGE.md for a project
+  - `pkgq:update` skill - Update documentation for new versions
+
+### Developing Plugins
+
+See `examples/plugins/demo/README.md` for a complete plugin development guide.
+
+For comprehensive plugin documentation including security best practices, configuration reference, and troubleshooting, see [docs/plugins.md](docs/plugins.md).
 
 ## Why Yoker?
 

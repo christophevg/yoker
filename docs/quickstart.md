@@ -327,29 +327,40 @@ Key features:
 ## Plugins
 
 External Python packages can provide tools, skills, and agents through the plugin
-system. A plugin declares its components with a `__YOKER_MANIFEST__` object in its
-top-level package `__init__.py`.
+system.
 
-Install the demo plugin and run Yoker with it:
+**Important**: Plugins are disabled by default. Enable them in your configuration:
+
+```toml
+[plugins]
+enabled = true
+```
+
+Then load plugins with `--with`:
 
 ```bash
-uv pip install -e examples/plugins/demo
-python -m yoker --with yoker_plugin_demo
+# Install and load a plugin
+pip install pkgq
+python -m yoker --with pkgq
 ```
 
-Load multiple plugins by repeating `--with`:
+When you load a plugin for the first time, Yoker displays a confirmation dialog
+showing the plugin's components. Review them carefully—plugins can execute
+arbitrary code on your system.
 
-```bash
-python -m yoker --with yoker_plugin_demo --with pkgq
+After accepting a plugin, you can trust it permanently by adding to your config:
+
+```toml
+[plugins.trusted]
+pkgq = true
 ```
 
-Inside the session, plugin skills are invoked by name:
+Verify loaded components with `/skills` and `/tools` commands.
 
-```
-> /greeting
-```
+For comprehensive plugin documentation including the complete workflow, security
+best practices, and troubleshooting, see [Using Plugins](plugins.md).
 
-See `examples/plugins/demo/README.md` for a complete plugin development guide.
+See `examples/plugins/demo/README.md` for plugin development guide.
 
 ## Agent Definitions
 
