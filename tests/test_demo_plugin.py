@@ -215,4 +215,3 @@ class TestDemoPluginIntegration:
       f"but got {len(plugin.agents)} agents. "
       f"load_plugin should check __YOKER_MANIFEST__ and call load_agents_from_package"
     )
-

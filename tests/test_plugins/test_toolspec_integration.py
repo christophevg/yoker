@@ -84,4 +84,3 @@ class TestToolSpecIntegration:
       tool_names = {t.name for t in plugin.tools}
       assert "test_pkg_multi:read" in tool_names
       assert "test_pkg_multi:list" in tool_names
-

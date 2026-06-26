@@ -231,4 +231,3 @@ __all__ = [
   "check_plugin_allowed",
   "reset_session_trusted",
 ]
-
