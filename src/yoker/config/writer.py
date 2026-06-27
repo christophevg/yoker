@@ -153,6 +153,12 @@ def write_config(
   API key (if present via ``overrides``) is only readable by the owner. The
   writer does not log or echo any field values.
 
+  This is a **full replace**, not a merge: any existing file at ``path`` is
+  overwritten with the rendered config plus ``overrides``. Callers that need
+  to preserve existing keys must load-merge-render themselves. The bootstrap
+  wizard relies on this clobber behavior because it only runs when no config
+  file exists.
+
   Args:
     config: The configuration to render.
     path: Destination file path. Parent directories are not created here; the

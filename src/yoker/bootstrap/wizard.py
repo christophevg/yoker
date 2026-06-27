@@ -118,7 +118,16 @@ class BootstrapWizard:
     if connection.use_api_key and connection.api_key:
       # API key is stored ONLY in ~/.yoker.toml; writer sets chmod 600.
       overrides["backend.ollama.api_key"] = connection.api_key
-    write_config(self._config, self._config_path, overrides=overrides)
+    try:
+      write_config(self._config, self._config_path, overrides=overrides)
+    except OSError as e:
+      self._ui.output_error(e)
+      self._ui.output_info(
+        f"Could not write {self._config_path}: {e}.\n"
+        "Fix the issue (e.g. create the parent directory or adjust "
+        "permissions) and re-run `yoker`.\n"
+      )
+      return BootstrapResult.MANUAL
 
     await step_confirm(self._ui, self._config_path)
     return BootstrapResult.WRITTEN
