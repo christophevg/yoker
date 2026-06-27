@@ -39,6 +39,7 @@ python -m yoker
 
 installation
 quickstart
+guides/getting-started-with-yoker
 guides/getting-started-with-ollama
 plugins
 rationale
