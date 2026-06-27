@@ -25,41 +25,118 @@
 
 ### Tasks
 
+- [ ] **2.0 Change Config Default Model to `gemini-3-flash-preview:cloud`**
+  - Update `Config` schema default model in `src/yoker/config.py` (and anywhere
+    else the default is defined) from `llama3.2:latest` to
+    `gemini-3-flash-preview:cloud`
+  - Rationale (owner): frictionless first run — cloud model, no local download
+    needed. `llama3.2:latest` would force a download on first use.
+  - This default is referenced by the wizard's Step 5 curated list and by the
+    generated config
+  - Write unit tests (default value assertion; any code that hardcodes the old
+    default must be updated)
+  **Satisfies:** Frictionless default model
+  **Design:** See `analysis/bootstrap-wizard-design.md` (Resolved Q2 + task 2.0)
+
 - [ ] **2.1 Detect Missing Configuration**
   - Check for yoker.toml existence
   - Check for minimal required configuration (backend, model)
   - Detect if configuration is incomplete
   - Write unit tests
   **Satisfies:** Bootstrap trigger condition
+  **API design:** See `analysis/bootstrap-config-detection.md`.
+    - New `yoker/bootstrap/` package; detection operates at the **file level**
+      (raw TOML), not the `Config` object, because Clevis fills all defaults.
+    - Public API: `detect_config() -> ConfigStatus` where `ConfigStatus.state`
+      is `"missing" | "incomplete" | "complete"` and `.needs_bootstrap` drives
+      the wizard trigger.
+    - `REQUIRED_CONFIG_FIELDS` constant centralizes required keys; starts with
+      `backend.ollama.model`.
+    - Wire into `__main__.py::main()` as a pre-flight check before `Agent()`;
+      library mode (`Agent(config=...)`) skips detection.
+    - Edge cases: empty TOML -> `incomplete`; malformed TOML ->
+      `ConfigurationError` (not silent); permission denied -> error.
 
-- [ ] **2.2 Backend Selection Wizard**
-  - Implement interactive prompt for backend selection
-  - Support Ollama local, ollama.com API, other backends
-  - Provide guidance for each option
+- [ ] **2.2 Welcome & Guided-vs-Manual Flow**
+  - Step 0: explain yoker (provider-neutral AI backend for agentic workflows)
+  - Step 1: report no config found; offer guided (recommended) vs manual setup
+  - Manual path: print config skeleton + docs link, exit without writing
+  - All I/O via `UIHandler` (UI-layer separation intact)
   - Write unit tests
-  **Satisfies:** Backend selection capability
+  **Satisfies:** Bootstrap entry / low-friction onboarding
+  **Design:** See `analysis/bootstrap-wizard-design.md`
 
-- [ ] **2.3 Model Selection Wizard**
-  - Query available models for chosen backend
-  - Implement interactive prompt for model selection
-  - Handle model listing failures gracefully
+- [ ] **2.3 Ollama Account & Connection-Method Steps**
+  - Step 2: backend intro (single backend today: Ollama, free tier, no fake
+    multi-way menu)
+  - Step 3: "Do you have an ollama account?" → no: **open the docs guide URL**
+    (may launch browser via `webbrowser.open()`), say we'll wait, then resume
+    — the wizard does **not** abort or exit. yes: continue.
+  - Step 4: split choice — (1) ollama app signed in (default backend, no API key)
+    or (2) API key (masked input, optional guide link). Locked wording (app-first
+    key-second):
+    "Connect via: 1) The ollama app running locally (recommended — no key needed)
+     2) An ollama API key"
+  - Per-owner principle: least-possible steps to a minimal yet complete config
+  - Write unit tests
+  **Satisfies:** Account/connection guidance
+  **Design:** See `analysis/bootstrap-wizard-design.md`
+
+- [ ] **2.4 Model Selection Wizard**
+  - `modellist.py`: holds a **curated list** of recommended models (including
+    the default `gemini-3-flash-preview:cloud`) plus a **free-text entry**
+    option — **NO network call**. Live fetch via `AsyncClient.list()` /
+    `GET /api/tags` was considered and **rejected** for first-install UX (owner:
+    first-time install has no models pulled yet, so the tag list is empty/useless).
+    Curated list + free text is the **primary and only** approach.
+  - Step 5 prompt: pick from curated list / accept default / free text
+  - Default model `gemini-3-flash-preview:cloud` (matches task 2.0's Config
+    default — cloud, no download needed)
   - Write unit tests
   **Satisfies:** Model selection capability
+  **Design:** See `analysis/bootstrap-wizard-design.md` (Resolved Q2, Q5)
 
-- [ ] **2.4 Ollama Account Creation Assistance**
-  - Guide users to create Ollama account
-  - Explain free tier benefits
-  - Provide link to account creation
-  - Write unit tests
-  **Satisfies:** Account creation guidance
-
-- [ ] **2.5 Config File Creation**
-  - Create yoker.toml with user's choices
-  - Set appropriate defaults
-  - Write to user-level config location
-  - Handle write failures
+- [ ] **2.5 Config Writer & Continue into Session**
+  - Render full default `Config` → TOML with inline comment annotations
+  - Override only non-default values collected by wizard (model, optionally
+    api_key/base_url); preserve unknown keys when merging into incomplete file
+  - Write to user-level `~/.yoker.toml` (works across all yoker-based apps)
+  - **`chmod 600`** every yoker config file written
+  - API key stored **only** in `~/.yoker.toml`; never project config, never
+    env var, never logged, never echoed
+  - Brief confirmation that config was created (home-folder level, shared by
+    all yoker-based apps) and that **yoker is continuing into the normal
+    session now** — the user does NOT need to rerun `yoker`
+  - **Return control to `__main__.py`**, which proceeds straight into normal
+    Agent startup using the freshly-written config, as if a config had existed
+    all along. The wizard does NOT exit the process or ask the user to relaunch.
   - Write unit tests
   **Satisfies:** Config creation capability
+  **Design:** See `analysis/bootstrap-wizard-design.md`
+
+- [ ] **2.6 Non-Interactive Path & `__main__.py` Wiring**
+  - Wire `detect_config()` → `BootstrapWizard` in interactive mode (async). The
+    wizard returns after writing config; `__main__.py` then continues into
+    normal Agent startup (does not exit after bootstrap).
+  - Non-interactive mode (BatchUIHandler): do **not** instantiate wizard; print
+    approved stderr warning and exit non-zero:
+    "No yoker configuration found at ~/.yoker.toml.
+     Run `yoker` interactively to configure, or see <docs URL>.
+     Aborting (non-interactive mode)."
+  - Library mode (`Agent(config=...)`) skips bootstrap entirely
+  - Write unit tests
+  **Satisfies:** Safe non-interactive behavior
+  **Design:** See `analysis/bootstrap-wizard-design.md` (Resolved Q3)
+
+- [ ] **2.7 Bootstrap Documentation Guide (docs site)**
+  - **One merged page** covering ollama account creation + local app/proxy
+    install + (optional) API-key creation, with screenshots; optional per-OS
+    variants
+  - Wizard links to anchors within this page (account check, key creation)
+  - Decision: one merged page (least duplication; resolved Q4)
+  **Satisfies:** External account/install guidance (referenced by wizard)
+  **Owner:** Confirmed new requirement
+  **Design:** See `analysis/bootstrap-wizard-design.md` (Resolved Q4)
 
 ---
 
