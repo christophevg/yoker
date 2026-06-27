@@ -82,6 +82,23 @@ class PrintUIHandler:
     """
     print(f"[info] {text}")
 
+  async def output_step_title(self, step: int, total: int, title: str) -> None:
+    """Print a wizard step title as plain text.
+
+    Custom handlers typically render no markup; this mirrors the batch
+    handler. A leading blank line is emitted before the title for every step
+    after the first (``step > 1``) so consecutive steps are visually
+    separated.
+
+    Args:
+      step: 1-based step index.
+      total: Total number of steps in the wizard flow.
+      title: Human-readable step title.
+    """
+    if step > 1:
+      print()
+    print(f"Step {step} of {total}: {title}")
+
   def output_command_result(self, result: str) -> None:
     """Print a slash-command result.
 

@@ -86,6 +86,23 @@ class UIHandler(Protocol):
     """
     ...
 
+  async def output_step_title(self, step: int, total: int, title: str) -> None:
+    """Output a wizard step title with a progress indicator.
+
+    Used by the bootstrap wizard to render the "Step N of M: Title" line that
+    precedes a step's body content. Interactive implementations may render it
+    with visual emphasis (bold/underline); batch implementations render it as
+    plain text. Implementations should emit a leading blank line before the
+    title for steps after the first (``step > 1``) so consecutive steps are
+    visually separated.
+
+    Args:
+      step: The 1-based step index.
+      total: The total number of steps in the wizard flow.
+      title: The human-readable step title.
+    """
+    ...
+
   # === Content Output (stdout in batch) ===
 
   def output_content(self, content: str, content_type: str = "text/plain") -> None:

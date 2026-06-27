@@ -7,10 +7,10 @@ instantiated; :mod:`yoker.__main__` emits the approved warning and exits.
 
 Flow (see ``analysis/bootstrap-wizard-design.md``):
 
-  Step 0  welcome            — explain yoker
-  Step 1  offer guided/manual
+  Step 1  opening            — explain yoker, state no config found, ask
+                                guided / manual / visit docs / abort
   Step 2  backend intro      — Ollama, free tier (no fake choice)
-  Step 3  account check      — no -> open docs URL + wait, resume
+  Step 3  account check      — no -> propose docs URL (confirm) + wait, resume
   Step 4  connection method — ollama app (no key) vs API key (masked)
   Step 5  model selection    — curated list / default / free text
   Step 6  generate ~/.yoker.toml (chmod 600) and return so __main__ continues
@@ -34,8 +34,7 @@ from yoker.bootstrap.steps import (
   step_connection_method,
   step_manual,
   step_model_selection,
-  step_offer_guided_manual,
-  step_welcome,
+  step_opening,
 )
 from yoker.config import Config
 from yoker.config.writer import write_config
@@ -99,28 +98,25 @@ class BootstrapWizard:
       case no file is written.
     """
     try:
-      # Step 1 — explain yoker.
-      await step_welcome(self._ui)
-
-      # Step 2 — report no config found; offer guided vs manual vs abort.
-      choice = await step_offer_guided_manual(self._ui)
+      # Step 1 — explain yoker, state no config found, ask what to do.
+      choice = await step_opening(self._ui)
       if choice == "manual":
         await step_manual(self._ui, self._config, self._config_path)
         return BootstrapResult.MANUAL
 
-      # Step 3 — backend intro (Ollama, free tier; no choice).
+      # Step 2 — backend intro (Ollama, free tier; no choice).
       await step_backend_intro(self._ui)
 
-      # Step 4 — ollama account check (may open a browser, then resume).
+      # Step 3 — ollama account check (may propose to open the docs, then resume).
       await step_account_check(self._ui)
 
-      # Step 5 — connection method (app vs API key vs abort).
+      # Step 4 — connection method (app vs API key vs abort).
       connection = await step_connection_method(self._ui)
 
-      # Step 6 — model selection (curated list / default / free text).
+      # Step 5 — model selection (curated list / default / free text).
       model = await step_model_selection(self._ui, self._config)
 
-      # Step 7 — render ~/.yoker.toml with the collected overrides and write it.
+      # Step 6 — render ~/.yoker.toml with the collected overrides and write it.
       overrides: dict[str, Any] = {"backend.ollama.model": model}
       if connection.use_api_key and connection.api_key:
         # API key is stored ONLY in ~/.yoker.toml; writer sets chmod 600.
