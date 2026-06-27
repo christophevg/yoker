@@ -44,19 +44,6 @@ from typing import Literal, cast
 
 from clevis import SecurityAction, SecurityConfig, get_config
 
-from yoker.config.providers import (
-  AnthropicConfig,
-  AnthropicParameters,
-  GeminiConfig,
-  GeminiParameters,
-  GenericConfig,
-  GenericParameters,
-  OllamaConfig,
-  OllamaParameters,
-  OpenAIConfig,
-  OpenAIParameters,
-  ProviderConfig,
-)
 from yoker.config.validators import (
   validate_choice,
   validate_directory_exists,
@@ -65,11 +52,9 @@ from yoker.config.validators import (
   validate_non_negative_int,
   validate_positive_int,
   validate_regex_patterns,
+  validate_url,
 )
 from yoker.exceptions import ValidationError
-
-# Known backend providers with specific config classes
-KNOWN_PROVIDERS = ("ollama", "openai", "anthropic", "gemini")
 
 
 def get_yoker_config(cli: bool = False) -> "Config":
@@ -115,69 +100,100 @@ class HarnessConfig:
   author: str | None = None
 
   def __post_init__(self) -> None:
+    """Validate harness configuration."""
     validate_non_empty_string(self.name, "harness.name")
     validate_non_empty_string(self.version, "harness.version")
 
 
 @dataclass(frozen=True)
-class BackendConfig:
-  """Backend provider configuration (tagged union by `provider`).
+class OllamaParameters:
+  """Ollama model parameters.
 
   Attributes:
-    provider: Backend provider name. Can be:
-      - 'ollama': Local inference server (native OllamaBackend)
-      - 'openai': OpenAI GPT models (via LitellmBackend)
-      - 'anthropic': Anthropic Claude models (via LitellmBackend)
-      - 'gemini': Google Gemini models (via LitellmBackend)
-      - Any other litellm-supported provider (e.g., 'groq', 'cohere', 'azure', 'mistral')
-    ollama: Ollama-specific configuration (required when provider='ollama').
-    openai: OpenAI-specific configuration (required when provider='openai').
-    anthropic: Anthropic-specific configuration (required when provider='anthropic').
-    gemini: Gemini-specific configuration (required when provider='gemini').
-
-  Note:
-    For known providers ('ollama', 'openai', 'anthropic', 'gemini'), the corresponding
-    config attribute must be set. For unknown providers (any litellm-supported provider),
-    a GenericConfig is created automatically. Litellm handles authentication and routing.
+    temperature: Sampling temperature (0.0-2.0).
+    top_p: Nucleus sampling probability (0.0-1.0).
+    top_k: Top-k sampling parameter.
+    num_ctx: Context window size.
   """
 
-  provider: str = "ollama"
-  ollama: OllamaConfig = field(default_factory=OllamaConfig)
-  openai: OpenAIConfig | None = None
-  anthropic: AnthropicConfig | None = None
-  gemini: GeminiConfig | None = None
+  temperature: float = field(default=0.7, metadata={"help": "Sampling temperature (0.0-2.0)"})
+  top_p: float = field(default=0.9, metadata={"help": "Nucleus sampling probability (0.0-1.0)"})
+  top_k: int = field(default=40, metadata={"help": "Top-k sampling parameter"})
+  num_ctx: int = field(default=4096, metadata={"help": "Context window size"})
 
   def __post_init__(self) -> None:
-    validate_non_empty_string(self.provider, "backend.provider")
+    """Validate Ollama parameters."""
+    if not 0.0 <= self.temperature <= 2.0:
+      raise ValidationError(
+        "backend.ollama.parameters.temperature",
+        self.temperature,
+        "must be between 0.0 and 2.0",
+      )
+    if not 0.0 <= self.top_p <= 1.0:
+      raise ValidationError(
+        "backend.ollama.parameters.top_p",
+        self.top_p,
+        "must be between 0.0 and 1.0",
+      )
+    validate_positive_int(self.top_k, "backend.ollama.parameters.top_k")
+    validate_positive_int(self.num_ctx, "backend.ollama.parameters.num_ctx")
 
-    # Known providers must have their config set
-    # Unknown providers (handled by litellm) will use GenericConfig
-    if self.provider in KNOWN_PROVIDERS:
-      config = getattr(self, self.provider, None)
-      if config is None:
-        raise ValidationError(
-          f"backend.{self.provider}", None, f"required when provider='{self.provider}'"
-        )
 
-  @property
-  def config(self) -> ProviderConfig:
-    """Get the active provider's config.
+@dataclass(frozen=True)
+class OllamaConfig:
+  """Ollama backend configuration.
 
-    Returns the config for the currently selected provider.
-    For unknown providers, returns a GenericConfig with model from environment
-    or defaults (model must be specified in agent definition or config).
+  Attributes:
+    base_url: URL of the Ollama API server.
+    api_key: Optional API key for Ollama authorization.
+    model: Default model to use.
+    timeout_seconds: Request timeout in seconds.
+    parameters: Model generation parameters.
+  """
 
-    Returns:
-      ProviderConfig for the active provider. Never None.
-    """
-    # Known providers have their config as an attribute
-    if self.provider in KNOWN_PROVIDERS:
-      # Type assertion: validation in __post_init__ guarantees non-None
-      return cast(ProviderConfig, getattr(self, self.provider))
+  base_url: str = field(
+    default="http://localhost:11434",
+    metadata={"help": "URL of the Ollama API server (local app or cloud)"},
+  )
+  api_key: str | None = field(
+    default=None,
+    metadata={"help": "Optional API key for Ollama authorization (cloud models)"},
+  )
+  model: str = field(
+    default="gemini-3-flash-preview:cloud",
+    metadata={"help": "Default model to use (cloud model needs no local download)"},
+  )
+  timeout_seconds: int = field(
+    default=60,
+    metadata={"help": "Request timeout in seconds"},
+  )
+  parameters: OllamaParameters = field(default_factory=OllamaParameters)
 
-    # Unknown provider: return GenericConfig
-    # Model should come from agent definition or fallback
-    return GenericConfig(model="")
+  def __post_init__(self) -> None:
+    """Validate Ollama configuration."""
+    validate_url(self.base_url, "backend.ollama.base_url")
+    validate_non_empty_string(self.model, "backend.ollama.model")
+    validate_positive_int(self.timeout_seconds, "backend.ollama.timeout_seconds")
+
+
+@dataclass(frozen=True)
+class BackendConfig:
+  """Backend provider configuration.
+
+  Attributes:
+    provider: Backend provider name (currently only 'ollama').
+    ollama: Ollama-specific configuration.
+  """
+
+  provider: str = field(
+    default="ollama",
+    metadata={"help": "Backend provider name (currently only 'ollama')"},
+  )
+  ollama: OllamaConfig = field(default_factory=OllamaConfig)
+
+  def __post_init__(self) -> None:
+    """Validate backend configuration."""
+    validate_choice(self.provider, "backend.provider", ("ollama",))
 
 
 @dataclass(frozen=True)
@@ -197,6 +213,7 @@ class ContextConfig:
   persist_after_turn: bool = True
 
   def __post_init__(self) -> None:
+    """Validate context configuration."""
     validate_choice(
       self.manager,
       "context.manager",
@@ -236,6 +253,7 @@ class PermissionsConfig:
   handlers: dict[str, HandlerConfig] = field(default_factory=dict)
 
   def __post_init__(self) -> None:
+    """Validate permissions configuration."""
     validate_choice(self.network_access, "permissions.network_access", ("none", "local", "all"))
     validate_positive_int(self.max_file_size_kb, "permissions.max_file_size_kb")
     validate_non_negative_int(self.max_recursion_depth, "permissions.max_recursion_depth")
@@ -271,6 +289,7 @@ class ListToolConfig(ToolConfig):
   max_entries: int = 2000
 
   def __post_init__(self) -> None:
+    """Validate list tool configuration."""
     validate_positive_int(self.max_depth, "tools.list.max_depth")
     validate_positive_int(self.max_entries, "tools.list.max_entries")
 
@@ -314,6 +333,7 @@ class ReadToolConfig(ToolConfig):
   )
 
   def __post_init__(self) -> None:
+    """Validate read tool configuration."""
     validate_regex_patterns(self.blocked_patterns, "tools.read.blocked_patterns")
 
 
@@ -332,6 +352,7 @@ class WriteToolConfig(ToolConfig):
   blocked_extensions: tuple[str, ...] = (".exe", ".sh", ".bat")
 
   def __post_init__(self) -> None:
+    """Validate write tool configuration."""
     validate_positive_int(self.max_size_kb, "tools.write.max_size_kb")
 
 
@@ -348,6 +369,7 @@ class UpdateToolConfig(ToolConfig):
   max_diff_size_kb: int = 100
 
   def __post_init__(self) -> None:
+    """Validate update tool configuration."""
     validate_positive_int(self.max_diff_size_kb, "tools.update.max_diff_size_kb")
 
 
@@ -386,6 +408,7 @@ class SearchToolConfig(ToolConfig):
   timeout_ms: int = 10000
 
   def __post_init__(self) -> None:
+    """Validate search tool configuration."""
     validate_positive_int(self.max_results, "tools.search.max_results")
     validate_positive_int(self.timeout_ms, "tools.search.timeout_ms")
 
@@ -403,6 +426,7 @@ class AgentToolConfig(ToolConfig):
   timeout_seconds: int = 300
 
   def __post_init__(self) -> None:
+    """Validate agent tool configuration."""
     validate_positive_int(self.max_recursion_depth, "tools.agent.max_recursion_depth")
     validate_positive_int(self.timeout_seconds, "tools.agent.timeout_seconds")
 
@@ -579,6 +603,7 @@ class AgentsConfig:
   definition: str = ""
 
   def __post_init__(self) -> None:
+    """Validate agents configuration."""
     for directory in self.directories:
       validate_directory_exists(directory, "agents.directories")
 
@@ -606,8 +631,10 @@ class PluginsConfig:
     trusted: Dictionary of trusted plugin names. Key is package name, value is True.
   """
 
-  enabled: bool = False
-  packages: tuple[str, ...] = ()
+  enabled: bool = field(default=False, metadata={"help": "Whether plugins are enabled globally"})
+  packages: tuple[str, ...] = field(
+    default=(), metadata={"help": "Plugin packages to load (e.g. pkgq, c3)"}
+  )
   trusted: dict[str, bool] = field(default_factory=dict)
 
 
@@ -631,6 +658,7 @@ class LoggingConfig:
   timestamp_format_string: str = "iso"
 
   def __post_init__(self) -> None:
+    """Validate logging configuration."""
     validate_log_level(self.level, "logging.level")
     validate_choice(self.format, "logging.format", ("json", "text"))
 
@@ -646,12 +674,16 @@ class UIConfig:
     show_stats: Whether to display turn statistics.
   """
 
-  mode: str = "interactive"
-  show_thinking: bool = True
-  show_tool_calls: bool = True
-  show_stats: bool = True
+  mode: str = field(
+    default="interactive",
+    metadata={"help": "UI mode ('interactive' or 'batch')"},
+  )
+  show_thinking: bool = field(default=True, metadata={"help": "Display thinking output"})
+  show_tool_calls: bool = field(default=True, metadata={"help": "Display tool call information"})
+  show_stats: bool = field(default=True, metadata={"help": "Display turn statistics"})
 
   def __post_init__(self) -> None:
+    """Validate UI configuration."""
     validate_choice(self.mode, "ui.mode", ("interactive", "batch"))
 
 
@@ -693,19 +725,8 @@ __all__ = [
   "Config",
   "HarnessConfig",
   "BackendConfig",
-  # Provider configuration classes (from providers.py)
   "OllamaConfig",
   "OllamaParameters",
-  "OpenAIConfig",
-  "OpenAIParameters",
-  "AnthropicConfig",
-  "AnthropicParameters",
-  "GeminiConfig",
-  "GeminiParameters",
-  "GenericConfig",
-  "GenericParameters",
-  "ProviderConfig",
-  # Other configuration classes
   "ContextConfig",
   "HandlerConfig",
   "PermissionsConfig",
@@ -729,8 +750,6 @@ __all__ = [
   "PluginsConfig",
   "LoggingConfig",
   "UIConfig",
-  # Constants
-  "KNOWN_PROVIDERS",
   # Helper function
   "get_yoker_config",
 ]

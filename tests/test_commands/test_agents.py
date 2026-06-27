@@ -33,7 +33,7 @@ class TestAgentsCommand:
     agent_def = AgentDefinition(
       simple_name="test-agent",
       description="A test agent",
-      model="llama3.2:latest",
+      model="gemini-3-flash-preview:cloud",
       tools=["read", "write"],
     )
 
@@ -44,7 +44,7 @@ class TestAgentsCommand:
     assert "Current agent:" in result
     assert "test-agent" in result
     assert "A test agent" in result
-    assert "llama3.2:latest" in result
+    assert "gemini-3-flash-preview:cloud" in result
     assert "read, write" in result
 
   @pytest.mark.asyncio
@@ -73,7 +73,7 @@ class TestAgentsCommand:
       simple_name="no-tools-agent",
       description="An agent without tools",
       tools=(),
-      model="llama3.2:latest",
+      model="gemini-3-flash-preview:cloud",
     )
 
     agent = self._make_agent(agent_def=agent_def)

@@ -37,7 +37,7 @@ You should see:
 ```
 Yoker v0.1.0
 ========================================
-Yoker v0.1.0 - Using model: llama3.2:latest
+Yoker v0.1.0 - Using model: gemini-3-flash-preview:cloud
 Type your message and press Enter. Press Ctrl+D to quit.
 
 >

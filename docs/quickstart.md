@@ -127,7 +127,7 @@ to a separate executor.
 ### Interactive Session
 
 ```
-Yoker v0.4.0 - Using model: llama3.2:latest
+Yoker v0.4.0 - Using model: gemini-3-flash-preview:cloud
 Type /help for available commands.
 Press Ctrl+D (or Ctrl+Z on Windows) to quit.
 
@@ -441,7 +441,7 @@ provider = "ollama"
 
 [backend.ollama]
 base_url = "http://localhost:11434"
-model = "llama3.2:latest"
+model = "gemini-3-flash-preview:cloud"
 timeout_seconds = 60
 
 [backend.ollama.parameters]

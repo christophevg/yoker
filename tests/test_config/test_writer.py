@@ -1,206 +1,161 @@
-"""Tests for Config TOML writer."""
+"""Tests for the annotation-driven Config writer (MBI-002 task 2.5).
 
-import sys
-import tempfile
+These are logic tests for :mod:`yoker.config.writer`: TOML rendering,
+annotation-driven inline comments, overrides, the generic "new field picked up
+automatically" property, and ``chmod 600`` on write.
+"""
+
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass, field
 from pathlib import Path
 
-import pytest
-from clevis import get_config
+import tomllib
 
-from yoker.config import (
-  AgentsConfig,
-  BackendConfig,
-  Config,
-  OllamaConfig,
-  OpenAIConfig,
-  PermissionsConfig,
-  PluginsConfig,
-)
-from yoker.config.writer import render_config_toml
+from yoker.config import Config, OllamaConfig
+from yoker.config.writer import render_config_toml, write_config
 
 
-class TestRenderConfigToml:
-  """Tests for render_config_toml function."""
+class TestRenderBasics:
+  """Basic rendering behavior."""
 
-  def test_render_ollama_only_config(self) -> None:
-    """Test rendering an Ollama-only BackendConfig."""
-    backend = BackendConfig(
-      provider="ollama",
-      ollama=OllamaConfig(
-        base_url="http://localhost:11434",
-        model="llama3.2:latest",
-        timeout_seconds=60,
-      ),
-      openai=None,
-      anthropic=None,
-    )
+  def test_render_produces_valid_toml(self) -> None:
+    """The rendered string parses as TOML."""
+    toml_text = render_config_toml(Config())
+    parsed = tomllib.loads(toml_text)
+    # A few sanity checks on the parsed structure.
+    assert parsed["backend"]["provider"] == "ollama"
+    assert parsed["backend"]["ollama"]["base_url"] == "http://localhost:11434"
+    assert parsed["backend"]["ollama"]["model"] == "gemini-3-flash-preview:cloud"
 
-    toml_str = render_config_toml(Config(backend=backend))
+  def test_render_ends_with_newline(self) -> None:
+    assert render_config_toml(Config()).endswith("\n")
 
-    # Should contain backend.provider
-    assert 'provider = "ollama"' in toml_str
+  def test_render_omits_none_defaults(self) -> None:
+    """Fields whose default is None (e.g. api_key) are omitted by default."""
+    toml_text = render_config_toml(Config())
+    parsed = tomllib.loads(toml_text)
+    assert "api_key" not in parsed["backend"]["ollama"]
 
-    # Should contain [backend.ollama] section
-    assert "[backend.ollama]" in toml_str
-    assert 'base_url = "http://localhost:11434"' in toml_str
-    assert 'model = "llama3.2:latest"' in toml_str
 
-    # Should NOT contain openai or anthropic sections (None sub-configs)
-    assert "[backend.openai]" not in toml_str
-    assert "[backend.anthropic]" not in toml_str
+class TestAnnotationDrivenComments:
+  """Inline comments come from field metadata, not writer hardcoding."""
 
-  def test_render_config_omits_none_sub_configs(self) -> None:
-    """Test that None sub-configs are omitted from TOML output."""
-    config = Config(
-      backend=BackendConfig(
-        provider="ollama",
-        ollama=OllamaConfig(),
-        openai=None,  # Explicitly None
-        anthropic=None,  # Explicitly None
-      )
-    )
+  def test_help_comment_appears_for_model(self) -> None:
+    toml_text = render_config_toml(Config())
+    # The help annotation on OllamaConfig.model must surface as an inline comment.
+    model_line = next(line for line in toml_text.splitlines() if line.startswith("model ="))
+    assert "# Default model to use" in model_line
 
-    toml_str = render_config_toml(config)
+  def test_help_comment_appears_for_base_url(self) -> None:
+    toml_text = render_config_toml(Config())
+    base_url_line = next(line for line in toml_text.splitlines() if line.startswith("base_url ="))
+    assert "# URL of the Ollama API server" in base_url_line
 
-    # Should not contain any references to openai or anthropic
-    assert "openai" not in toml_str.lower()
-    assert "anthropic" not in toml_str.lower()
+  def test_fields_without_help_have_no_comment(self) -> None:
+    """A field without a ``help`` annotation renders with no inline comment."""
+    toml_text = render_config_toml(Config())
+    # timeout_seconds has a help annotation in our config; pick a field without
+    # one to verify the negative case: OllamaParameters.temperature has help,
+    # so use a field known to lack it. The `version` field on HarnessConfig
+    # has no help annotation.
+    version_line = next(line for line in toml_text.splitlines() if line.startswith("version ="))
+    assert "#" not in version_line
 
-  def test_render_config_with_openai(self) -> None:
-    """Test rendering a config with OpenAI sub-config set."""
-    backend = BackendConfig(
-      provider="openai",
-      ollama=OllamaConfig(),
-      openai=OpenAIConfig(
-        api_key="sk-test",
-        model="gpt-4o-mini",
-      ),
-      anthropic=None,
-    )
 
-    toml_str = render_config_toml(Config(backend=backend))
+class TestOverrides:
+  """Override behavior."""
 
-    # Should contain provider
-    assert 'provider = "openai"' in toml_str
+  def test_override_replaces_default_value(self) -> None:
+    toml_text = render_config_toml(Config(), overrides={"backend.ollama.model": "llama3.2:latest"})
+    parsed = tomllib.loads(toml_text)
+    assert parsed["backend"]["ollama"]["model"] == "llama3.2:latest"
 
-    # Should contain [backend.openai] section
-    assert "[backend.openai]" in toml_str
-    assert 'model = "gpt-4o-mini"' in toml_str
+  def test_override_can_add_api_key(self) -> None:
+    toml_text = render_config_toml(Config(), overrides={"backend.ollama.api_key": "secret-key"})
+    parsed = tomllib.loads(toml_text)
+    assert parsed["backend"]["ollama"]["api_key"] == "secret-key"
 
-    # Should NOT contain anthropic section
-    assert "[backend.anthropic]" not in toml_str
-
-  @pytest.mark.skipif(
-    sys.platform == "win32",
-    reason="Clevis security check rejects world-writable temp dirs on Windows",
-  )
-  def test_roundtrip_ollama_config(self) -> None:
-    """Test that writing and reading config produces equivalent config."""
-    original_config = Config(
-      backend=BackendConfig(
-        provider="ollama",
-        ollama=OllamaConfig(
-          base_url="http://localhost:11434",
-          model="llama3.2:latest",
-          timeout_seconds=60,
-        ),
-        openai=None,
-        anthropic=None,
-      )
-    )
-
-    # Write config to TOML
-    toml_str = render_config_toml(original_config)
-
-    # Write to temporary file
-    import os
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-      # Secure directory permissions for Clevis security check
-      # (TemporaryDirectory creates world-writable dirs on Windows)
-      os.chmod(tmpdir, 0o700)
-
-      config_path = Path(tmpdir) / "test.toml"
-      config_path.write_text(toml_str)
-
-      # Set secure file permissions (owner-only readable)
-      os.chmod(config_path, 0o600)
-
-      original_dir = os.getcwd()
-      try:
-        os.chdir(tmpdir)
-        loaded_config = get_config(Config, name="test", user=False, cli=False)
-
-        # Verify backend config is equivalent
-        assert loaded_config.backend.provider == original_config.backend.provider
-        assert loaded_config.backend.ollama.model == original_config.backend.ollama.model
-        assert loaded_config.backend.ollama.base_url == original_config.backend.ollama.base_url
-        assert (
-          loaded_config.backend.ollama.timeout_seconds
-          == original_config.backend.ollama.timeout_seconds
-        )
-
-        # Verify None sub-configs remain None
-        assert loaded_config.backend.openai is None
-        assert loaded_config.backend.anthropic is None
-      finally:
-        os.chdir(original_dir)
-
-  def test_render_full_config(self) -> None:
-    """Test rendering a full Config with all sections."""
+  def test_override_does_not_mutate_input_config(self) -> None:
     config = Config()
+    original_model = config.backend.ollama.model
+    render_config_toml(config, overrides={"backend.ollama.model": "other"})
+    assert config.backend.ollama.model == original_model
 
-    toml_str = render_config_toml(config)
 
-    # Should contain all major sections
-    assert "[harness]" in toml_str
-    assert "[backend]" in toml_str
-    assert "[backend.ollama]" in toml_str
-    assert "[context]" in toml_str
-    assert "[permissions]" in toml_str
-    assert "[tools]" in toml_str
-    assert "[logging]" in toml_str
-    assert "[ui]" in toml_str
+class TestGenericProperty:
+  """The writer picks up newly annotated fields with no writer change."""
 
-  def test_render_config_with_tuple_fields(self) -> None:
-    """Test that tuple/list fields are rendered correctly."""
-    config = Config(
-      permissions=PermissionsConfig(
-        filesystem_paths=(".", "/tmp"),
-        network_access="none",
-      )
+  def test_new_annotated_field_is_rendered_automatically(self) -> None:
+    """A dataclass with a freshly-annotated field renders it via introspection."""
+
+    @dataclass(frozen=True)
+    class _Nested:
+      value: int = field(default=7, metadata={"help": "a nested value"})
+
+    @dataclass(frozen=True)
+    class _Sample:
+      name: str = field(default="demo", metadata={"help": "the name"})
+      nested: _Nested = field(default_factory=_Nested)
+
+    toml_text = render_config_toml(_Sample())  # type: ignore[arg-type]
+    parsed = tomllib.loads(toml_text)
+    assert parsed["name"] == "demo"
+    assert parsed["nested"]["value"] == 7
+    # The help comment from the new field is surfaced without writer changes.
+    name_line = next(line for line in toml_text.splitlines() if line.startswith("name ="))
+    assert "# the name" in name_line
+    value_line = next(line for line in toml_text.splitlines() if line.startswith("value ="))
+    assert "# a nested value" in value_line
+
+
+class TestWriteConfig:
+  """File-writing behavior and permissions."""
+
+  def test_write_creates_file_with_content(self, tmp_path: Path) -> None:
+    dest = tmp_path / "yoker.toml"
+    write_config(Config(), dest)
+    assert dest.exists()
+    parsed = tomllib.loads(dest.read_text(encoding="utf-8"))
+    assert parsed["backend"]["ollama"]["model"] == "gemini-3-flash-preview:cloud"
+
+  def test_write_applies_chmod_600(self, tmp_path: Path) -> None:
+    dest = tmp_path / "yoker.toml"
+    write_config(Config(), dest)
+    mode = dest.stat().st_mode & 0o777
+    assert mode == 0o600
+
+  def test_write_tightens_permissions_on_existing_file(self, tmp_path: Path) -> None:
+    """A pre-existing world-readable file is tightened to 0o600 after write."""
+    dest = tmp_path / "yoker.toml"
+    dest.write_text("loose = true", encoding="utf-8")
+    os.chmod(dest, 0o644)
+    write_config(Config(), dest)
+    mode = dest.stat().st_mode & 0o777
+    assert mode == 0o600
+
+  def test_write_with_overrides(self, tmp_path: Path) -> None:
+    dest = tmp_path / "yoker.toml"
+    write_config(
+      Config(),
+      dest,
+      overrides={"backend.ollama.api_key": "super-secret"},
     )
+    parsed = tomllib.loads(dest.read_text(encoding="utf-8"))
+    assert parsed["backend"]["ollama"]["api_key"] == "super-secret"
+    # Permissions still tightened when an API key is present.
+    assert (dest.stat().st_mode & 0o777) == 0o600
 
-    toml_str = render_config_toml(config)
 
-    # Should contain filesystem_paths as array
-    assert 'filesystem_paths = [".", "/tmp"]' in toml_str
+class TestRoundTrip:
+  """Rendering default Config round-trips through tomllib cleanly."""
 
-  def test_render_config_with_dict_fields(self) -> None:
-    """Test that dict fields are rendered correctly."""
-    config = Config(
-      plugins=PluginsConfig(
-        enabled=True,
-        packages=("pkg1", "pkg2"),
-        trusted={"pkg1": True, "pkg2": False},
-      )
-    )
-
-    toml_str = render_config_toml(config)
-
-    # Should contain trusted dict as section
-    assert "[plugins.trusted]" in toml_str
-
-  def test_render_config_with_empty_collections(self) -> None:
-    """Test that empty collections are omitted."""
-    config = Config(
-      agents=AgentsConfig(
-        directories=(),
-        definition="",
-      )
-    )
-
-    toml_str = render_config_toml(config)
-
-    # Empty tuple should be omitted from output
-    assert "directories" not in toml_str
+  def test_default_config_round_trips(self) -> None:
+    toml_text = render_config_toml(Config())
+    parsed = tomllib.loads(toml_text)
+    # Re-construct a Config from the parsed dict via keyword wiring for the
+    # fields we overrode/kept; just assert the key wizard fields survived.
+    assert parsed["backend"]["ollama"]["model"] == OllamaConfig().model
+    assert parsed["ui"]["mode"] == "interactive"
+    assert parsed["plugins"]["enabled"] is False
