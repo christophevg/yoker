@@ -203,7 +203,14 @@ class InteractiveUIHandler(UIHandler):
       return message
 
     try:
-      result: str = await self._session.prompt_async(prompt)
+      # ``is_password=False`` is passed explicitly because prompt_toolkit's
+      # ``PromptSession`` stores ``is_password`` as instance state when it is
+      # passed to ``prompt_async`` (see prompt_toolkit 3.x: ``if is_password
+      # is not None: self.is_password = is_password``). A prior
+      # ``get_secret_input`` call would otherwise leave the session in
+      # password mode and mask this regular prompt. Passing ``False`` here
+      # resets it for every normal input.
+      result: str = await self._session.prompt_async(prompt, is_password=False)
       return result
     except EOFError:
       return None

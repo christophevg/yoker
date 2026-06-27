@@ -57,7 +57,11 @@ from yoker.ui.handler import UIHandler
 DOCS_GUIDE_URL = "https://yoker.readthedocs.io/en/latest/guides/getting-started-with-ollama.html"
 DOCS_GUIDE_ACCOUNT_URL = f"{DOCS_GUIDE_URL}#account"
 DOCS_GUIDE_API_KEY_URL = f"{DOCS_GUIDE_URL}#api-key"
-DOCS_HOME_URL = "https://yoker.readthedocs.io/"
+# End-user getting-started page (authored at
+# docs/guides/getting-started-with-yoker.md). The wizard deep-links here from
+# the opening step and the manual-setup path so first-time users land on a
+# page that describes Yoker for end-users (not the bare readthedocs landing).
+DOCS_HOME_URL = "https://yoker.readthedocs.io/en/latest/guides/getting-started-with-yoker.html"
 
 # Total number of steps in the guided path. Used for the progress indicator
 # ("Step N of TOTAL_STEPS"). The manual path exits at step 1.
@@ -118,6 +122,12 @@ async def _open_docs_confirmed(ui: UIHandler, url: str, *, blurb: str = "") -> N
   browser (default yes), opens it on yes, then waits for the user to return
   (press Enter). On EOF/Ctrl+C while waiting, raises :class:`WizardAbort`.
 
+  The "Press Enter to continue" pause is only shown when the browser was
+  actually opened (the user confirmed). When the user declines ("n"), the
+  wizard proceeds straight to the next prompt — the pause is redundant when
+  the very next interaction is itself a question (e.g. "Paste your ollama
+  API key:").
+
   Args:
     ui: The UI handler used for all IO.
     url: The documentation URL to (propose to) open.
@@ -129,12 +139,16 @@ async def _open_docs_confirmed(ui: UIHandler, url: str, *, blurb: str = "") -> N
   lines.append("")
   ui.output_info("\n".join(lines))
   open_it = await _ask_yes_no(ui, "Open this in your browser?", default=True)
-  if open_it:
-    try:
-      webbrowser.open(url)
-    except webbrowser.Error:
-      # Could not launch a browser; the URL is already shown above.
-      ui.output_info("Could not launch a browser; open the URL above manually.\n")
+  if not open_it:
+    # User declined: no browser was opened, so there is nothing to come back
+    # from. Skip the "Press Enter" wait and proceed straight to the next
+    # prompt.
+    return
+  try:
+    webbrowser.open(url)
+  except webbrowser.Error:
+    # Could not launch a browser; the URL is already shown above.
+    ui.output_info("Could not launch a browser; open the URL above manually.\n")
   cont = await ui.get_input("Press Enter when you're ready to continue... ")
   if cont is None:
     # EOF / Ctrl+C while waiting: explicit abort.
