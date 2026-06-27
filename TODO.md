@@ -25,44 +25,50 @@
 
 ### Tasks
 
-- [ ] **2.0 Change Config Default Model to `gemini-3-flash-preview:cloud`**
-  - Update `Config` schema default model in `src/yoker/config.py` (and anywhere
-    else the default is defined) from `llama3.2:latest` to
-    `gemini-3-flash-preview:cloud`
+- [ ] **2.0 Change Config Default Model to `gemini-3-flash-preview:cloud` (single location)**
+  - Update **only** `OllamaConfig.model` in `src/yoker/config/__init__.py` from
+    `llama3.2:latest` to `gemini-3-flash-preview:cloud`. This is the **single
+    source** of the default model (owner PR #34 point 1).
+  - Audit the codebase for any other location referencing a default model
+    (literals in `src/`, tests, docs, examples, agent defaults). Any code that
+    needs the default must obtain it from the `Config` class (e.g.
+    `Config().backend.ollama.model`), not by redefining the literal. Test
+    assertions and docs that currently hardcode `llama3.2:latest` are updated to
+    the new default or to read it from `Config`.
   - Rationale (owner): frictionless first run — cloud model, no local download
     needed. `llama3.2:latest` would force a download on first use.
-  - This default is referenced by the wizard's Step 5 curated list and by the
-    generated config
-  - Write unit tests (default value assertion; any code that hardcodes the old
-    default must be updated)
+  - This default is referenced by the wizard's Step 5 curated list (via
+    `Config()`, not a literal) and by the generated config.
+  - Write unit tests (assert the single default value; verify no duplicate
+    default literals remain in `src/`).
   **Satisfies:** Frictionless default model
-  **Design:** See `analysis/bootstrap-wizard-design.md` (Resolved Q2 + task 2.0)
+  **Design:** See `analysis/bootstrap-wizard-design.md` (Resolved Q2 + task 2.0; PR #34 point 1)
 
-- [ ] **2.1 Detect Missing Configuration**
-  - Check for yoker.toml existence
-  - Check for minimal required configuration (backend, model)
-  - Detect if configuration is incomplete
-  - Write unit tests
+- [ ] **2.1 Detect Missing Configuration (`config_provided() -> bool`)**
+  - Implement `config_provided() -> bool` in `src/yoker/bootstrap/detect.py`
+    (owner PR #34 point 2 — replaces the `ConfigStatus` / `detect_config()` /
+    state-machine design).
+  - "Provided" means the user induced any config source: `~/.yoker.toml` exists,
+    `./yoker.toml` exists, or CLI args override defaults. No field-presence
+    check, no `REQUIRED_CONFIG_FIELDS`, no `missing/incomplete/complete` state.
+  - Trigger: `if not config_provided(): <wizard or warn-and-exit>`.
+  - Wire into `__main__.py::main()` as a pre-flight check before `Agent()`;
+    library mode (`Agent(config=...)`) skips detection.
+  - Edge cases: empty TOML file exists → `True` (sparse is still provided);
+    malformed TOML → `ConfigurationError` (not silent); permission denied →
+    error; dangling symlink → treated as not existing.
+  - **Write unit tests for the logic** (boolean, file-existence, CLI-arg
+    detection) — this is logic, not IO.
   **Satisfies:** Bootstrap trigger condition
   **API design:** See `analysis/bootstrap-config-detection.md`.
-    - New `yoker/bootstrap/` package; detection operates at the **file level**
-      (raw TOML), not the `Config` object, because Clevis fills all defaults.
-    - Public API: `detect_config() -> ConfigStatus` where `ConfigStatus.state`
-      is `"missing" | "incomplete" | "complete"` and `.needs_bootstrap` drives
-      the wizard trigger.
-    - `REQUIRED_CONFIG_FIELDS` constant centralizes required keys; starts with
-      `backend.ollama.model`.
-    - Wire into `__main__.py::main()` as a pre-flight check before `Agent()`;
-      library mode (`Agent(config=...)`) skips detection.
-    - Edge cases: empty TOML -> `incomplete`; malformed TOML ->
-      `ConfigurationError` (not silent); permission denied -> error.
 
 - [ ] **2.2 Welcome & Guided-vs-Manual Flow**
   - Step 0: explain yoker (provider-neutral AI backend for agentic workflows)
   - Step 1: report no config found; offer guided (recommended) vs manual setup
   - Manual path: print config skeleton + docs link, exit without writing
   - All I/O via `UIHandler` (UI-layer separation intact)
-  - Write unit tests
+  - **No unit tests** — pure IO/user interaction (owner PR #34 point 3);
+    testing is user-driven.
   **Satisfies:** Bootstrap entry / low-friction onboarding
   **Design:** See `analysis/bootstrap-wizard-design.md`
 
@@ -78,28 +84,39 @@
     "Connect via: 1) The ollama app running locally (recommended — no key needed)
      2) An ollama API key"
   - Per-owner principle: least-possible steps to a minimal yet complete config
-  - Write unit tests
+  - **No unit tests** — pure IO/user interaction (owner PR #34 point 3);
+    testing is user-driven.
   **Satisfies:** Account/connection guidance
   **Design:** See `analysis/bootstrap-wizard-design.md`
 
 - [ ] **2.4 Model Selection Wizard**
   - `modellist.py`: holds a **curated list** of recommended models (including
-    the default `gemini-3-flash-preview:cloud`) plus a **free-text entry**
-    option — **NO network call**. Live fetch via `AsyncClient.list()` /
-    `GET /api/tags` was considered and **rejected** for first-install UX (owner:
-    first-time install has no models pulled yet, so the tag list is empty/useless).
-    Curated list + free text is the **primary and only** approach.
+    the default, read from `Config().backend.ollama.model` — not a literal) plus
+    a **free-text entry** option — **NO network call**. Live fetch via
+    `AsyncClient.list()` / `GET /api/tags` was considered and **rejected** for
+    first-install UX (owner: first-time install has no models pulled yet, so
+    the tag list is empty/useless). Curated list + free text is the **primary
+    and only** approach.
   - Step 5 prompt: pick from curated list / accept default / free text
-  - Default model `gemini-3-flash-preview:cloud` (matches task 2.0's Config
-    default — cloud, no download needed)
-  - Write unit tests
+  - Default model `gemini-3-flash-preview:cloud` (matches task 2.0's single
+    Config default — cloud, no download needed)
+  - **No unit tests** — pure IO/user interaction (owner PR #34 point 3);
+    testing is user-driven.
   **Satisfies:** Model selection capability
   **Design:** See `analysis/bootstrap-wizard-design.md` (Resolved Q2, Q5)
 
-- [ ] **2.5 Config Writer & Continue into Session**
-  - Render full default `Config` → TOML with inline comment annotations
+- [ ] **2.5 Config Writer (in the config module) & Continue into Session**
+  - **Lives in `src/yoker/config/writer.py`**, NOT `yoker/bootstrap/writer.py`
+    (owner PR #34 point 4). It is a general-purpose config-writing utility;
+    the bootstrap wizard calls it, it does not own it. Reusable for in-session
+    config augmentation (e.g. "add `plugins enabled = true` to your
+    configuration?").
+  - **Annotation-driven / generic** (owner PR #34 point 5): reads config-class
+    metadata/`help` annotations to render full default `Config` → TOML with
+    inline comments. Adding a config field requires NO writer change —
+    instrument the config class instead. Never hardcode current field names.
   - Override only non-default values collected by wizard (model, optionally
-    api_key/base_url); preserve unknown keys when merging into incomplete file
+    api_key/base_url); merge preserving unknown keys.
   - Write to user-level `~/.yoker.toml` (works across all yoker-based apps)
   - **`chmod 600`** every yoker config file written
   - API key stored **only** in `~/.yoker.toml`; never project config, never
@@ -110,13 +127,15 @@
   - **Return control to `__main__.py`**, which proceeds straight into normal
     Agent startup using the freshly-written config, as if a config had existed
     all along. The wizard does NOT exit the process or ask the user to relaunch.
-  - Write unit tests
-  **Satisfies:** Config creation capability
-  **Design:** See `analysis/bootstrap-wizard-design.md`
+  - **Write unit tests for the rendering logic** (TOML output, overrides,
+    annotation-driven comments, chmod) — this is logic, not IO.
+  **Satisfies:** Config creation capability (generic, reusable)
+  **Design:** See `analysis/bootstrap-wizard-design.md` (Annotation-Driven
+  ConfigWriter section; PR #34 points 4 & 5)
 
 - [ ] **2.6 Non-Interactive Path & `__main__.py` Wiring**
-  - Wire `detect_config()` → `BootstrapWizard` in interactive mode (async). The
-    wizard returns after writing config; `__main__.py` then continues into
+  - Wire `config_provided()` → `BootstrapWizard` in interactive mode (async).
+    The wizard returns after writing config; `__main__.py` then continues into
     normal Agent startup (does not exit after bootstrap).
   - Non-interactive mode (BatchUIHandler): do **not** instantiate wizard; print
     approved stderr warning and exit non-zero:
@@ -124,7 +143,8 @@
      Run `yoker` interactively to configure, or see <docs URL>.
      Aborting (non-interactive mode)."
   - Library mode (`Agent(config=...)`) skips bootstrap entirely
-  - Write unit tests
+  - **No unit tests for the wizard IO path** (owner PR #34 point 3); the
+    boolean gate logic is tested in 2.1.
   **Satisfies:** Safe non-interactive behavior
   **Design:** See `analysis/bootstrap-wizard-design.md` (Resolved Q3)
 
