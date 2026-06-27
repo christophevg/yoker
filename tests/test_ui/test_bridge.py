@@ -38,6 +38,12 @@ class MockUIHandler:
     self.calls.append(("get_input", prompt))
     return None
 
+  def output_info(self, text: str) -> None:
+    self.calls.append(("output_info", text))
+
+  async def output_step_title(self, step: int, total: int, title: str) -> None:
+    self.calls.append(("output_step_title", step, total, title))
+
   def output_command_result(self, result: str) -> None:
     self.calls.append(("output_command_result", result))
 

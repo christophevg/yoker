@@ -26,6 +26,7 @@ from yoker.ui.spinner import LiveDisplay
 THINKING_STYLE = Style(color="bright_black", dim=True)
 TOOL_STYLE = Style(color="cyan")
 ERROR_STYLE = Style(color="red", bold=True)
+STEP_TITLE_STYLE = Style(bold=True, underline=True)
 
 
 class InteractiveUIHandler(UIHandler):
@@ -250,6 +251,24 @@ class InteractiveUIHandler(UIHandler):
     """
     self._exit_live()
     self.console.print(text)
+
+  async def output_step_title(self, step: int, total: int, title: str) -> None:
+    """Output a wizard step title with emphasis (bold + underline).
+
+    Renders the ``Step N of M: Title`` line with Rich bold+underline styling
+    so the user can easily see where a new step begins. A leading blank line
+    is emitted before the title for every step after the first (``step > 1``)
+    so consecutive steps are visually separated and the flow feels lighter.
+
+    Args:
+      step: 1-based step index.
+      total: Total number of steps in the wizard flow.
+      title: Human-readable step title.
+    """
+    self._exit_live()
+    if step > 1:
+      self.console.print()
+    self.console.print(f"Step {step} of {total}: {title}", style=STEP_TITLE_STYLE)
 
   # === Content Output ===
 

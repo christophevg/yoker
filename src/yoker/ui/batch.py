@@ -141,6 +141,22 @@ class BatchUIHandler(UIHandler):
     """
     print(text, file=self._stdout)
 
+  async def output_step_title(self, step: int, total: int, title: str) -> None:
+    """Output a wizard step title as plain text.
+
+    Batch mode renders no markup. A leading blank line is emitted before the
+    title for every step after the first (``step > 1``) so consecutive steps
+    are visually separated, mirroring the interactive handler.
+
+    Args:
+      step: 1-based step index.
+      total: Total number of steps in the wizard flow.
+      title: Human-readable step title.
+    """
+    if step > 1:
+      print(file=self._stdout)
+    print(f"Step {step} of {total}: {title}", file=self._stdout)
+
   # === Content Output (stdout) ===
 
   def start_content_stream(self) -> None:
