@@ -42,7 +42,7 @@ class TestConfigSchema:
     """Test OllamaConfig default values."""
     config = OllamaConfig()
     assert config.base_url == "http://localhost:11434"
-    assert config.model == "llama3.2:latest"
+    assert config.model == "gemini-3-flash-preview:cloud"
     assert config.timeout_seconds == 60
 
   def test_config_defaults(self) -> None:
@@ -50,7 +50,7 @@ class TestConfigSchema:
     config = Config()
     assert config.harness.name == "yoker"
     assert config.backend.provider == "ollama"
-    assert config.backend.ollama.model == "llama3.2:latest"
+    assert config.backend.ollama.model == "gemini-3-flash-preview:cloud"
     assert config.context.manager == "basic_persistence"
     assert config.permissions.network_access == "none"
     assert config.permissions.filesystem_paths == (".",)
@@ -84,6 +84,16 @@ class TestConfigSchema:
     config = HarnessConfig(name="test")
     with pytest.raises(AttributeError):
       config.name = "changed"  # type: ignore
+
+  def test_default_model_is_gemini_cloud(self) -> None:
+    """The default model is the frictionless cloud model, defined once.
+
+    Per MBI-002 task 2.0, the default model lives in exactly one place:
+    ``OllamaConfig.model``. This test locks that value so unintended changes
+    are caught.
+    """
+    assert OllamaConfig().model == "gemini-3-flash-preview:cloud"
+    assert Config().backend.ollama.model == "gemini-3-flash-preview:cloud"
 
 
 class TestConfigValidation:
@@ -201,3 +211,24 @@ class TestExampleConfig:
       # Default config has the standard values (no config files in tmp_path)
       assert config.harness.name == "yoker"
       assert config.backend.provider == "ollama"
+
+
+class TestSingleDefaultModel:
+  """Guard against duplicate default-model literals (MBI-002 task 2.0).
+
+  The default model must be defined in exactly one place: ``OllamaConfig.model``
+  in ``src/yoker/config/__init__.py``. No other source file under ``src/yoker``
+  may carry the old or new default as a literal that could drift.
+  """
+
+  def test_no_stale_default_literal_in_source(self) -> None:
+    """No ``llama3.2:latest`` literal remains in the yoker source tree."""
+    src_root = Path(__file__).parent.parent / "src" / "yoker"
+    stale = []
+    for path in src_root.rglob("*.py"):
+      if "__pycache__" in path.parts:
+        continue
+      text = path.read_text(encoding="utf-8")
+      if "llama3.2:latest" in text:
+        stale.append(str(path.relative_to(src_root)))
+    assert not stale, f"stale default literal found in: {stale}"

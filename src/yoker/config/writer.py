@@ -1,129 +1,174 @@
-"""Configuration TOML writer for Yoker.
+"""Annotation-driven Config writer (MBI-002 task 2.5).
 
-Renders Config dataclasses to TOML format with support for tagged unions
-(BackendConfig with provider-specific sub-configs).
+Renders a :class:`~yoker.config.Config` (or any config dataclass) as TOML with
+inline comments sourced from each field's ``metadata["help"]`` annotation. The
+writer is **generic**: it walks the dataclass tree via :func:`dataclasses.fields`
+and never hardcodes field names. Adding a new annotated config field requires
+no change here — instrument the config class instead.
+
+The writer is reusable for both the bootstrap wizard and in-session config
+augmentation (e.g. "add ``plugins enabled = true`` to your configuration?").
+
+Security:
+  - :func:`write_config` sets the file mode to ``0o600`` immediately after
+    writing, before any API key is persisted on disk.
+  - The writer never logs or echoes field values; it only serializes them.
 """
 
-from dataclasses import fields, is_dataclass
+from __future__ import annotations
+
+import dataclasses
+import os
+from pathlib import Path
 from typing import Any
 
+from yoker.config import Config
 
-def render_config_toml(config: Any, overrides: dict[str, Any] | None = None) -> str:
-  """Render a Config dataclass to TOML format.
 
-  This function converts a Config dataclass to a TOML string. It handles
-  the tagged-union structure of BackendConfig by omitting None sub-configs.
+def _set_dotted(config: Any, dotted: str, value: Any) -> Any:
+  """Return a copy of ``config`` with ``dotted`` path set to ``value``.
 
-  Args:
-    config: A Config dataclass instance to render.
-    overrides: Optional dictionary of field overrides (reserved for future use).
-
-  Returns:
-    TOML string representation of the config.
-
-  Example:
-      >>> from yoker.config import Config, BackendConfig
-      >>> config = Config(backend=BackendConfig(provider="ollama"))
-      >>> toml_str = render_config_toml(config)
-      >>> print(toml_str)
-      [harness]
-      name = "yoker"
-      version = "1.0"
-
-      [backend]
-      provider = "ollama"
-
-      [backend.ollama]
-      base_url = "http://localhost:11434"
-      model = "llama3.2:latest"
-      ...
+  Works on frozen dataclasses via :func:`dataclasses.replace`, rebuilding each
+  ancestor along the path. ``dotted`` uses dots as section separators, e.g.
+  ``"backend.ollama.model"``.
   """
-  lines: list[str] = []
-  _render_dataclass_section(config, lines, is_root=True)
-  return "\n".join(lines)
+  parts = dotted.split(".")
+
+  def _rebuild(obj: Any, idx: int) -> Any:
+    if idx == len(parts) - 1:
+      return dataclasses.replace(obj, **{parts[idx]: value})
+    child = getattr(obj, parts[idx])
+    new_child = _rebuild(child, idx + 1)
+    return dataclasses.replace(obj, **{parts[idx]: new_child})
+
+  return _rebuild(config, 0)
 
 
-def _render_dataclass_section(
-  obj: Any, lines: list[str], section_path: str = "", is_root: bool = False
-) -> None:
-  """Render a dataclass as a TOML section.
+def _format_scalar(value: Any) -> str | None:
+  """Serialize a scalar/collection value as a TOML fragment.
 
-  Args:
-    obj: The dataclass instance to render.
-    lines: List of TOML lines to append to.
-    section_path: Current section path (e.g., "backend.ollama").
-    is_root: Whether this is the root Config dataclass.
+  Returns ``None`` for values that should be omitted from output (``None``
+  itself and empty collections), so the caller can skip the line entirely.
   """
-  if not is_dataclass(obj):
-    return
-
-  # Separate fields into simple values and nested dataclasses
-  simple_fields: list[tuple[str, Any]] = []
-  nested_dataclasses: list[tuple[str, Any]] = []
-  nested_dicts: list[tuple[str, Any]] = []
-
-  for field in fields(obj):
-    value = getattr(obj, field.name)
-
-    # Skip None values (including None sub-configs for tagged unions)
-    if value is None:
-      continue
-
-    if is_dataclass(value):
-      nested_dataclasses.append((field.name, value))
-    elif isinstance(value, dict) and len(value) > 0:
-      nested_dicts.append((field.name, value))
-    elif isinstance(value, (list, tuple)) and len(value) > 0:
-      # Lists/tuples are simple fields rendered inline
-      simple_fields.append((field.name, value))
-    elif not isinstance(value, (list, tuple, dict)):
-      # Simple scalar value
-      simple_fields.append((field.name, value))
-
-  # Write section header (if not root and has content)
-  if not is_root and (simple_fields or nested_dataclasses or nested_dicts):
-    lines.append(f"\n[{section_path}]")
-
-  # Write simple fields
-  for field_name, value in simple_fields:
-    formatted_value = _format_value(value)
-    lines.append(f"{field_name} = {formatted_value}")
-
-  # Write nested dicts as inline tables or subsections
-  for field_name, dict_value in nested_dicts:
-    dict_path = f"{section_path}.{field_name}" if section_path else field_name
-    lines.append(f"\n[{dict_path}]")
-    for key, val in dict_value.items():
-      formatted_value = _format_value(val)
-      lines.append(f"{key} = {formatted_value}")
-
-  # Recursively render nested dataclasses
-  for field_name, nested_obj in nested_dataclasses:
-    nested_path = f"{section_path}.{field_name}" if section_path else field_name
-    _render_dataclass_section(nested_obj, lines, section_path=nested_path)
-
-
-def _format_value(value: Any) -> str:
-  """Format a Python value as TOML literal.
-
-  Args:
-    value: The value to format.
-
-  Returns:
-    TOML-formatted string representation.
-  """
+  if value is None:
+    return None
   if isinstance(value, bool):
     return "true" if value else "false"
-  elif isinstance(value, str):
-    # Escape special characters in strings
+  if isinstance(value, str):
     escaped = value.replace("\\", "\\\\").replace('"', '\\"')
     return f'"{escaped}"'
-  elif isinstance(value, (int, float)):
+  if isinstance(value, int):
     return str(value)
-  elif isinstance(value, (list, tuple)):
-    # Format as TOML array
-    items = [_format_value(item) for item in value]
-    return "[" + ", ".join(items) + "]"
-  else:
-    # Fallback: convert to string
-    return f'"{str(value)}"'
+  if isinstance(value, float):
+    return repr(value)
+  if isinstance(value, tuple):
+    if not value:
+      return None
+    return "[" + ", ".join(_format_scalar(v) or "" for v in value) + "]"
+  if isinstance(value, dict):
+    if not value:
+      return None
+    items = ", ".join(f"{_format_scalar(k)} = {_format_scalar(v) or ''}" for k, v in value.items())
+    return "{" + items + "}"
+  # Fallback: stringify defensively.
+  escaped = str(value).replace("\\", "\\\\").replace('"', '\\"')
+  return f'"{escaped}"'
+
+
+def _is_dataclass_instance(value: Any) -> bool:
+  """True when ``value`` is a dataclass instance (i.e. a nested config section)."""
+  return dataclasses.is_dataclass(value) and not isinstance(value, type)
+
+
+def _render_section(obj: Any, prefix: str, lines: list[str], *, is_root: bool) -> None:
+  """Render a dataclass section into ``lines``.
+
+  Root sections emit no table header; nested sections emit ``[prefix]``.
+  Scalars are emitted before sub-tables (TOML ordering rule), each with an
+  inline ``# help`` comment when the field carries a ``help`` annotation.
+  """
+  if not is_root:
+    lines.append(f"[{prefix}]")
+
+  scalar_fields: list[dataclasses.Field[Any]] = []
+  section_fields: list[dataclasses.Field[Any]] = []
+  for field_obj in dataclasses.fields(obj):
+    value = getattr(obj, field_obj.name)
+    if _is_dataclass_instance(value):
+      section_fields.append(field_obj)
+    else:
+      scalar_fields.append(field_obj)
+
+  for field_obj in scalar_fields:
+    value = getattr(obj, field_obj.name)
+    fragment = _format_scalar(value)
+    if fragment is None:
+      # None defaults and empty collections are omitted from output.
+      continue
+    help_text = field_obj.metadata.get("help") if field_obj.metadata else None
+    line = f"{field_obj.name} = {fragment}"
+    if help_text:
+      line = f"{line}  # {help_text}"
+    lines.append(line)
+
+  for field_obj in section_fields:
+    child = getattr(obj, field_obj.name)
+    child_prefix = field_obj.name if is_root else f"{prefix}.{field_obj.name}"
+    _render_section(child, child_prefix, lines, is_root=False)
+
+
+def render_config_toml(config: Config, overrides: dict[str, Any] | None = None) -> str:
+  """Render ``config`` as TOML with inline help comments.
+
+  Args:
+    config: The configuration to render. Typically ``Config()`` for the full
+      default config.
+    overrides: Optional mapping of dotted-path -> value applied to ``config``
+      before rendering (e.g. ``{"backend.ollama.model": "x"}``). Only the
+      paths listed are overridden; all other fields keep their ``config``
+      values.
+
+  Returns:
+    A TOML string with inline ``# help`` comments sourced from each field's
+    ``metadata["help"]`` annotation. ``None`` values and empty collections are
+    omitted. The string always ends with a newline.
+  """
+  rendered = config
+  if overrides:
+    for dotted, value in overrides.items():
+      rendered = _set_dotted(rendered, dotted, value)
+  lines: list[str] = []
+  _render_section(rendered, "", lines, is_root=True)
+  return "\n".join(lines) + "\n"
+
+
+def write_config(
+  config: Config,
+  path: Path,
+  overrides: dict[str, Any] | None = None,
+) -> None:
+  """Render ``config`` and write it to ``path`` with mode ``0o600``.
+
+  The file is written and then its permissions are set to ``0o600`` so that an
+  API key (if present via ``overrides``) is only readable by the owner. The
+  writer does not log or echo any field values.
+
+  Args:
+    config: The configuration to render.
+    path: Destination file path. Parent directories are not created here; the
+      caller ensures the directory exists (e.g. ``~`` always exists).
+    overrides: Optional dotted-path overrides applied before rendering.
+  """
+  toml_text = render_config_toml(config, overrides=overrides)
+  # Write with restrictive permissions: open with O_CREAT and mode 0o600.
+  flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+  fd = os.open(str(path), flags, 0o600)
+  try:
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+      handle.write(toml_text)
+  finally:
+    # Ensure the file mode is 0o600 even if it pre-existed with looser bits.
+    os.chmod(str(path), 0o600)
+
+
+__all__ = ["render_config_toml", "write_config"]

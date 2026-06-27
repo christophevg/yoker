@@ -32,8 +32,6 @@ def _make_parent_config(tmp_path: Path) -> MagicMock:
   config.backend.ollama.parameters.top_p = 0.9
   config.backend.ollama.parameters.top_k = 40
   config.backend.ollama.parameters.num_ctx = 4096
-  # Support the generic config property
-  config.backend.config = config.backend.ollama
   # Context config
   config.context.storage_path = "/tmp/context"
   config.context.manager = "basic_persistence"
@@ -525,24 +523,9 @@ class TestAgentToolSubagentCreation:
   @pytest.mark.asyncio
   async def test_subagent_uses_agent_model(self, tmp_path: Path) -> None:
     """Test that subagent uses model from agent definition."""
-    from yoker.config import BackendConfig, Config, OllamaConfig
-
-    # Use real Config objects, not MagicMock, since with_model uses dataclasses.replace
-    parent_config = Config(
-      backend=BackendConfig(ollama=OllamaConfig(model="parent-model")),
-    )
-
-    parent = MagicMock(spec=Agent)
-    parent.recursion_depth = 0
-    parent.max_recursion_depth = 3
-    parent.config = parent_config
-    parent.model = "parent-model"
-    parent.context = MagicMock()
-    parent.context.get_session_id.return_value = "parent-session"
-    parent.agents = MagicMock(spec=AgentRegistry)
-    parent.agents.names = []
-
-    agent_def = _make_agent_definition("sub-agent", model="llama3.2:latest")
+    parent = _make_parent_agent(tmp_path)
+    parent.config.backend.ollama.model = "parent-model"
+    agent_def = _make_agent_definition("sub-agent", model="gemini-3-flash-preview:cloud")
     parent.agents.resolve.return_value = agent_def
     spec = _agent_spec(parent_agent=parent)
 
@@ -563,10 +546,12 @@ class TestAgentToolSubagentCreation:
     # Verify the model is passed to the subagent
     from yoker.builtin.agent import _create_subagent
 
-    subagent = _create_subagent(parent, agent_def)
+    _create_subagent(parent, agent_def)
 
-    # The subagent should have the model from agent_def
-    assert subagent.config.backend.ollama.model == "llama3.2:latest"
+    kwargs = mock_agent_class.call_args[1]
+    config = kwargs.get("config")
+    assert config is not None
+    assert config.backend.ollama.model == "gemini-3-flash-preview:cloud"
 
 
 class TestAgentToolClamp:

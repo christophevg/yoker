@@ -108,7 +108,7 @@ class TestRunSession:
 
   def _make_agent(self):
     agent = MagicMock()
-    agent.model = "llama3.2:latest"
+    agent.model = "gemini-3-flash-preview:cloud"
     agent.thinking_mode.value = "on"
     agent.process = AsyncMock(return_value="response")
     return agent

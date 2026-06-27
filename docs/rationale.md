@@ -101,7 +101,7 @@ provider = "ollama"  # or "openai", "anthropic", etc.
 base_url = "http://localhost:11434"  # Local
 # base_url = "https://api.ollama.ai"  # Cloud
 
-model = "llama3.2:latest"  # Your choice
+model = "gemini-3-flash-preview:cloud"  # Your choice
 ```
 
 **Why this matters:**
@@ -155,7 +155,7 @@ When yoker spawns a sub-agent, it creates a **full library instance**:
 sub_agent = Agent(
     config=child_config,      # Isolated configuration
     context=child_context,    # Isolated context
-    model="llama3.2:latest",  # Configurable model
+    model="gemini-3-flash-preview:cloud",  # Configurable model
 )
 ```
 
