@@ -58,6 +58,34 @@ class UIHandler(Protocol):
     """
     ...
 
+  async def get_secret_input(self, prompt: str = "> ") -> str | None:
+    """Get secret user input (masked, not echoed).
+
+    Used for credentials such as API keys. Implementations should mask the
+    typed characters (e.g. prompt_toolkit ``is_password=True``). The value
+    must never be echoed or logged by the handler.
+
+    Args:
+      prompt: Prompt string to display.
+
+    Returns:
+      User input string, or None if end of input (EOF).
+    """
+    ...
+
+  def output_info(self, text: str) -> None:
+    """Output an informational text block.
+
+    Used by the bootstrap wizard (and similar pre-session flows) to display
+    multi-line informational text outside the streaming agent turn flow.
+    Unlike :meth:`output_content`, this does not start a live/streaming
+    display; it prints the text as a discrete block.
+
+    Args:
+      text: Informational text (may contain newlines).
+    """
+    ...
+
   # === Content Output (stdout in batch) ===
 
   def output_content(self, content: str, content_type: str = "text/plain") -> None:

@@ -22,12 +22,44 @@ from clevis import SecurityError
 from structlog import get_logger
 
 from yoker.agent import Agent
+from yoker.bootstrap import BootstrapResult, BootstrapWizard, config_provided
+from yoker.bootstrap.steps import DOCS_HOME_URL
 from yoker.config import Config
 from yoker.exceptions import NetworkError, YokerError
 from yoker.ui import BatchUIHandler, InteractiveUIHandler, UIBridge, UIHandler
 from yoker.ui.commands import CommandRegistry, create_default_registry
 
 logger = get_logger(__name__)
+
+
+def _abort_non_interactive() -> None:
+  """Print the approved no-config warning to stderr and exit non-zero.
+
+  Used when ``config_provided()`` is False in non-interactive mode. The
+  wizard is not instantiated (it requires a TTY).
+  """
+  sys.stderr.write(
+    "No yoker configuration found at ~/.yoker.toml.\n"
+    "Run `yoker` interactively to configure, or see "
+    f"{DOCS_HOME_URL}\n"
+    "Aborting (non-interactive mode).\n"
+  )
+  sys.exit(1)
+
+
+async def _run_bootstrap(ui: UIHandler) -> bool:
+  """Run the bootstrap wizard when no config is provided.
+
+  Args:
+    ui: The interactive UI handler to drive the wizard.
+
+  Returns:
+    True when the wizard wrote a config (caller should continue into the
+    normal Agent session); False when the user chose manual setup (caller
+    should exit cleanly).
+  """
+  result = await BootstrapWizard(ui).run()
+  return result == BootstrapResult.WRITTEN
 
 
 def _parse_plugin_args(argv: list[str]) -> tuple[list[str], list[str]]:
@@ -139,9 +171,33 @@ def main() -> None:
 
   Creates the Agent (which loads its own config and env files), wires the
   UI handler to it via the event bridge, and starts the session loop.
+
+  Before constructing the Agent, a pre-flight check runs: when no user
+  configuration is provided, the interactive bootstrap wizard is invoked
+  (interactive mode only). In non-interactive mode a warning is printed to
+  stderr and the process exits non-zero. After the wizard writes
+  ``~/.yoker.toml`` it returns, and the normal Agent startup proceeds using
+  the freshly-written config (the wizard does not exit the process).
   """
   plugin_packages, argv = _parse_plugin_args(sys.argv)
   sys.argv = argv
+
+  # Pre-flight: detect missing configuration and bootstrap when needed.
+  # When config_provided() is False there are no yoker CLI overrides (any
+  # --ui-mode batch flag would have made it True), so the UI mode is the
+  # default "interactive". The interactive/non-interactive gate therefore
+  # reduces to TTY detection here, mirroring _create_ui's selection.
+  if not config_provided():
+    if not sys.stdin.isatty():
+      _abort_non_interactive()
+    # Interactive: drive the wizard through an interactive UI handler.
+    bootstrap_ui = _create_ui(Config())
+    written = asyncio.run(_run_bootstrap(bootstrap_ui))
+    if not written:
+      # Manual setup: a skeleton was printed but no file was written.
+      sys.exit(0)
+    # Config was written; fall through to normal Agent startup, which will
+    # load the freshly-written ~/.yoker.toml.
 
   try:
     # Agent is autonomous: it loads .env/.env.local, discovers config, and

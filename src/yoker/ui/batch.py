@@ -117,6 +117,30 @@ class BatchUIHandler(UIHandler):
     except EOFError:
       return None
 
+  async def get_secret_input(self, prompt: str = "> ") -> str | None:
+    """Get secret user input.
+
+    In batch mode there is no terminal echo to mask; this reads a line from
+    stdin like :meth:`get_input`. The wizard is not invoked in
+    non-interactive mode, so this is effectively a safety net for scripted
+    interactive runs.
+
+    Args:
+      prompt: Prompt string (ignored in batch mode).
+
+    Returns:
+      User input string, or None if end of input (EOF).
+    """
+    return await self.get_input(prompt)
+
+  def output_info(self, text: str) -> None:
+    """Output an informational text block to stdout.
+
+    Args:
+      text: Informational text (may contain newlines).
+    """
+    print(text, file=self._stdout)
+
   # === Content Output (stdout) ===
 
   def start_content_stream(self) -> None:

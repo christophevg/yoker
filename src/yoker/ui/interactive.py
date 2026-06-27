@@ -210,6 +210,47 @@ class InteractiveUIHandler(UIHandler):
       self.console.print()  # Newline after ^C
       return None
 
+  async def get_secret_input(self, prompt: str = "> ") -> str | None:
+    """Get secret user input (masked) from prompt_toolkit.
+
+    The typed characters are masked (prompt_toolkit ``is_password=True``).
+    The value is never echoed or logged. Uses the predefined input source
+    when one is set (for scripted/demo usage), same as :meth:`get_input`.
+
+    Args:
+      prompt: Prompt string to display.
+
+    Returns:
+      User input string, or None if end of input (EOF) or interrupt.
+    """
+    if self._input_source is not None:
+      if self._input_index >= len(self._input_source):
+        return None
+      message = self._input_source[self._input_index]
+      self._input_index += 1
+      return message
+
+    try:
+      result: str = await self._session.prompt_async(prompt, is_password=True)
+      return result
+    except EOFError:
+      return None
+    except KeyboardInterrupt:
+      self.console.print()
+      return None
+
+  def output_info(self, text: str) -> None:
+    """Output a discrete informational text block.
+
+    Exits any active live display first so the text renders as a static
+    block. Used by the bootstrap wizard for pre-session prompts.
+
+    Args:
+      text: Informational text (may contain newlines).
+    """
+    self._exit_live()
+    self.console.print(text)
+
   # === Content Output ===
 
   def start_content_stream(self) -> None:
