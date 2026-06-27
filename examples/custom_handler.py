@@ -63,6 +63,25 @@ class PrintUIHandler:
     """
     return None
 
+  async def get_secret_input(self, prompt: str = "> ") -> str | None:
+    """Return no input; this example drives events manually.
+
+    Args:
+      prompt: Prompt string (ignored here).
+
+    Returns:
+      None to signal end of input.
+    """
+    return None
+
+  def output_info(self, text: str) -> None:
+    """Print an informational text block.
+
+    Args:
+      text: Informational text (may contain newlines).
+    """
+    print(f"[info] {text}")
+
   def output_command_result(self, result: str) -> None:
     """Print a slash-command result.
 
