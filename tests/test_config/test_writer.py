@@ -11,10 +11,16 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import pytest
 import tomllib
 
 from yoker.config import Config, OllamaConfig
 from yoker.config.writer import render_config_toml, write_config
+
+# chmod 600 permission checks rely on POSIX permission bits that are not
+# enforceable on Windows NTFS (the Windows stat mode masks everything to
+# 0o666 for regular files). Skip the permission-mode assertions there.
+_IS_WINDOWS = os.name == "nt"
 
 
 class TestRenderBasics:
@@ -123,6 +129,10 @@ class TestWriteConfig:
   def test_write_applies_chmod_600(self, tmp_path: Path) -> None:
     dest = tmp_path / "yoker.toml"
     write_config(Config(), dest)
+    # File is written on all platforms.
+    assert dest.exists()
+    if _IS_WINDOWS:
+      pytest.skip("chmod 600 not enforceable on Windows NTFS")
     mode = dest.stat().st_mode & 0o777
     assert mode == 0o600
 
@@ -132,6 +142,10 @@ class TestWriteConfig:
     dest.write_text("loose = true", encoding="utf-8")
     os.chmod(dest, 0o644)
     write_config(Config(), dest)
+    # File is overwritten on all platforms.
+    assert tomllib.loads(dest.read_text(encoding="utf-8"))["backend"]["provider"] == "ollama"
+    if _IS_WINDOWS:
+      pytest.skip("chmod 600 not enforceable on Windows NTFS")
     mode = dest.stat().st_mode & 0o777
     assert mode == 0o600
 
@@ -144,7 +158,9 @@ class TestWriteConfig:
     )
     parsed = tomllib.loads(dest.read_text(encoding="utf-8"))
     assert parsed["backend"]["ollama"]["api_key"] == "super-secret"
-    # Permissions still tightened when an API key is present.
+    # Permissions still tightened when an API key is present (POSIX only).
+    if _IS_WINDOWS:
+      pytest.skip("chmod 600 not enforceable on Windows NTFS")
     assert (dest.stat().st_mode & 0o777) == 0o600
 
 
