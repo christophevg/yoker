@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any
 
 from yoker.bootstrap.steps import (
+  ConnectionChoice,
   WizardAbort,
   step_account_check,
   step_backend_intro,
@@ -39,6 +40,46 @@ from yoker.bootstrap.steps import (
 from yoker.config import Config
 from yoker.config.writer import write_config
 from yoker.ui.handler import UIHandler
+
+# Ollama's cloud API endpoint. When the user selects the API-key connection
+# method (Step 4, option 2) they are explicitly choosing to connect to
+# Ollama's cloud-hosted models without running the local app/proxy, so the
+# wizard overrides ``base_url`` away from ``http://localhost:11434`` and
+# points the client straight at the cloud API. This is the documented
+# endpoint for Ollama's cloud-hosted API; if it changes, update it here
+# (and only here).
+OLLAMA_CLOUD_BASE_URL = "https://api.ollama.com"
+
+
+def build_bootstrap_overrides(
+  model: str,
+  connection: ConnectionChoice,
+) -> dict[str, Any]:
+  """Build the override dict passed to :func:`write_config` from wizard choices.
+
+  This is a pure function (no IO) so it can be unit-tested independently of
+  the wizard's UI flow.
+
+  Args:
+    model: The chosen model id.
+    connection: The Step 4 connection-method result.
+
+  Returns:
+    A flat dotted-key override dict. Always sets
+    ``backend.ollama.model``. When the user chose the API-key path with a
+    non-empty key, also sets ``backend.ollama.api_key`` AND
+    ``backend.ollama.base_url`` to the Ollama cloud endpoint — the user
+    picked the API key because they don't run the local proxy/app, so the
+    connection should go straight to the cloud.
+  """
+  overrides: dict[str, Any] = {"backend.ollama.model": model}
+  if connection.use_api_key and connection.api_key:
+    # API key is stored ONLY in ~/.yoker.toml; writer sets chmod 600.
+    overrides["backend.ollama.api_key"] = connection.api_key
+    # Bypass the local app/proxy (which the user does not run) and connect
+    # straight to Ollama's cloud API.
+    overrides["backend.ollama.base_url"] = OLLAMA_CLOUD_BASE_URL
+  return overrides
 
 
 class BootstrapResult(Enum):
@@ -117,10 +158,7 @@ class BootstrapWizard:
       model = await step_model_selection(self._ui, self._config)
 
       # Step 6 — render ~/.yoker.toml with the collected overrides and write it.
-      overrides: dict[str, Any] = {"backend.ollama.model": model}
-      if connection.use_api_key and connection.api_key:
-        # API key is stored ONLY in ~/.yoker.toml; writer sets chmod 600.
-        overrides["backend.ollama.api_key"] = connection.api_key
+      overrides = build_bootstrap_overrides(model, connection)
       try:
         write_config(self._config, self._config_path, overrides=overrides)
       except OSError as e:
@@ -141,4 +179,9 @@ class BootstrapWizard:
       return BootstrapResult.ABORTED
 
 
-__all__ = ["BootstrapResult", "BootstrapWizard"]
+__all__ = [
+  "OLLAMA_CLOUD_BASE_URL",
+  "BootstrapResult",
+  "BootstrapWizard",
+  "build_bootstrap_overrides",
+]
