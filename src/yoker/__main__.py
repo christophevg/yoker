@@ -55,10 +55,12 @@ async def _run_bootstrap(ui: UIHandler) -> bool:
 
   Returns:
     True when the wizard wrote a config (caller should continue into the
-    normal Agent session); False when the user chose manual setup (caller
-    should exit cleanly).
+    normal Agent session); False when the user chose manual setup or aborted
+    (caller should exit cleanly with no file written).
   """
   result = await BootstrapWizard(ui).run()
+  # WRITTEN -> continue into the session. MANUAL and ABORTED -> exit cleanly.
+  # The wizard emits the abort/manual message itself; __main__ just exits.
   return result == BootstrapResult.WRITTEN
 
 
@@ -192,9 +194,16 @@ def main() -> None:
       _abort_non_interactive()
     # Interactive: drive the wizard through an interactive UI handler.
     bootstrap_ui = _create_ui(Config())
-    written = asyncio.run(_run_bootstrap(bootstrap_ui))
+    try:
+      written = asyncio.run(_run_bootstrap(bootstrap_ui))
+    except KeyboardInterrupt:
+      # Ctrl+C that bypassed the wizard's inner handler (e.g. arrived at the
+      # event-loop level): treat as a clean abort, no file written.
+      sys.stderr.write("Aborted. No configuration written.\n")
+      sys.exit(0)
     if not written:
-      # Manual setup: a skeleton was printed but no file was written.
+      # Manual setup or abort: no file was written. The wizard already
+      # emitted the appropriate message; exit cleanly.
       sys.exit(0)
     # Config was written; fall through to normal Agent startup, which will
     # load the freshly-written ~/.yoker.toml.

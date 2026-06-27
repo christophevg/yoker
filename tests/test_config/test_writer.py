@@ -44,6 +44,29 @@ class TestRenderBasics:
     parsed = tomllib.loads(toml_text)
     assert "api_key" not in parsed["backend"]["ollama"]
 
+  def test_render_inserts_blank_line_between_sections(self) -> None:
+    """A blank line separates each table header from the previous section.
+
+    Per MBI-002 PR #34 feedback, rendered TOML has an empty line between
+    sections/tables. The first table header has no leading blank line; every
+    subsequent header is preceded by a blank line.
+    """
+    toml_text = render_config_toml(Config())
+    lines = toml_text.splitlines()
+    header_idx = [i for i, line in enumerate(lines) if line.startswith("[")]
+    # There is more than one section in the default config.
+    assert len(header_idx) > 1
+    # The first header has no blank line before it (it is at the top).
+    assert header_idx[0] == 0 or not all(bl == "" for bl in lines[: header_idx[0]])
+    # Every subsequent header is preceded by a blank line.
+    for i in header_idx[1:]:
+      assert lines[i - 1] == "", f"expected blank line before header at line {i}"
+
+  def test_render_first_header_has_no_leading_blank(self) -> None:
+    """The very first table header is at the top of the document (no leading blank)."""
+    toml_text = render_config_toml(Config())
+    assert toml_text.startswith("[")
+
 
 class TestAnnotationDrivenComments:
   """Inline comments come from field metadata, not writer hardcoding."""

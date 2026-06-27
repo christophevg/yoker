@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any
 
 from yoker.bootstrap.steps import (
+  WizardAbort,
   step_account_check,
   step_backend_intro,
   step_confirm,
@@ -49,10 +50,13 @@ class BootstrapResult(Enum):
       continue into the normal Agent session using the fresh config.
     MANUAL: The user chose manual setup; a skeleton was printed but no file
       was written. ``__main__`` should exit cleanly.
+    ABORTED: The user chose to abort (Ctrl+C / EOF / explicit "abort"). No
+      file was written; ``__main__`` should exit cleanly.
   """
 
   WRITTEN = "written"
   MANUAL = "manual"
+  ABORTED = "aborted"
 
 
 class BootstrapWizard:
@@ -90,47 +94,55 @@ class BootstrapWizard:
     Returns:
       :attr:`BootstrapResult.WRITTEN` if a config file was written
       (guided path completed); :attr:`BootstrapResult.MANUAL` if the user
-      chose manual setup (no file written).
+      chose manual setup (no file written); :attr:`BootstrapResult.ABORTED`
+      if the user chose to abort (Ctrl+C / EOF / explicit "abort"), in which
+      case no file is written.
     """
-    # Step 0 — explain yoker.
-    await step_welcome(self._ui)
-
-    # Step 1 — report no config found; offer guided vs manual.
-    choice = await step_offer_guided_manual(self._ui)
-    if choice == "manual":
-      await step_manual(self._ui, self._config, self._config_path)
-      return BootstrapResult.MANUAL
-
-    # Step 2 — backend intro (Ollama, free tier; no choice).
-    await step_backend_intro(self._ui)
-
-    # Step 3 — ollama account check (may open a browser, then resume).
-    await step_account_check(self._ui)
-
-    # Step 4 — connection method (app vs API key).
-    connection = await step_connection_method(self._ui)
-
-    # Step 5 — model selection (curated list / default / free text).
-    model = await step_model_selection(self._ui, self._config)
-
-    # Step 6 — render ~/.yoker.toml with the collected overrides and write it.
-    overrides: dict[str, Any] = {"backend.ollama.model": model}
-    if connection.use_api_key and connection.api_key:
-      # API key is stored ONLY in ~/.yoker.toml; writer sets chmod 600.
-      overrides["backend.ollama.api_key"] = connection.api_key
     try:
-      write_config(self._config, self._config_path, overrides=overrides)
-    except OSError as e:
-      self._ui.output_error(e)
-      self._ui.output_info(
-        f"Could not write {self._config_path}: {e}.\n"
-        "Fix the issue (e.g. create the parent directory or adjust "
-        "permissions) and re-run `yoker`.\n"
-      )
-      return BootstrapResult.MANUAL
+      # Step 1 — explain yoker.
+      await step_welcome(self._ui)
 
-    await step_confirm(self._ui, self._config_path)
-    return BootstrapResult.WRITTEN
+      # Step 2 — report no config found; offer guided vs manual vs abort.
+      choice = await step_offer_guided_manual(self._ui)
+      if choice == "manual":
+        await step_manual(self._ui, self._config, self._config_path)
+        return BootstrapResult.MANUAL
+
+      # Step 3 — backend intro (Ollama, free tier; no choice).
+      await step_backend_intro(self._ui)
+
+      # Step 4 — ollama account check (may open a browser, then resume).
+      await step_account_check(self._ui)
+
+      # Step 5 — connection method (app vs API key vs abort).
+      connection = await step_connection_method(self._ui)
+
+      # Step 6 — model selection (curated list / default / free text).
+      model = await step_model_selection(self._ui, self._config)
+
+      # Step 7 — render ~/.yoker.toml with the collected overrides and write it.
+      overrides: dict[str, Any] = {"backend.ollama.model": model}
+      if connection.use_api_key and connection.api_key:
+        # API key is stored ONLY in ~/.yoker.toml; writer sets chmod 600.
+        overrides["backend.ollama.api_key"] = connection.api_key
+      try:
+        write_config(self._config, self._config_path, overrides=overrides)
+      except OSError as e:
+        self._ui.output_error(e)
+        self._ui.output_info(
+          f"Could not write {self._config_path}: {e}.\n"
+          "Fix the issue (e.g. create the parent directory or adjust "
+          "permissions) and re-run `yoker`.\n"
+        )
+        return BootstrapResult.MANUAL
+
+      await step_confirm(self._ui, self._config_path)
+      return BootstrapResult.WRITTEN
+    except (WizardAbort, KeyboardInterrupt):
+      # Clean abort: never a silent fall-through to manual setup. No file is
+      # written; __main__ exits cleanly.
+      self._ui.output_info("Aborted. No configuration written.\n")
+      return BootstrapResult.ABORTED
 
 
 __all__ = ["BootstrapResult", "BootstrapWizard"]
