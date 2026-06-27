@@ -147,7 +147,7 @@ async def step_account_check(ui: UIHandler) -> None:
     webbrowser.open(DOCS_GUIDE_ACCOUNT_URL)
   except webbrowser.Error:
     # Could not launch a browser; the URL is already shown above.
-    pass
+    ui.output_info("Could not launch a browser; open the URL above manually.\n")
   await ui.get_input("Press Enter when you're ready to continue... ")
 
 
@@ -203,6 +203,7 @@ async def step_model_selection(ui: UIHandler, config: Config) -> str:
       return default_id
     answer = raw.strip()
     if answer == "":
+      ui.output_info("No model entered; using default.\n")
       return default_id
     if answer.isdigit():
       n = int(answer)
@@ -212,7 +213,9 @@ async def step_model_selection(ui: UIHandler, config: Config) -> str:
         custom = await ui.get_input("Model id: ")
         if custom and custom.strip():
           return custom.strip()
+        ui.output_info("No model entered; using default.\n")
         return default_id
+    ui.output_info("Invalid choice.\n")
     # Unrecognized: re-ask.
 
 

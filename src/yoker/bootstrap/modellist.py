@@ -47,6 +47,25 @@ def default_model_id(config: Config | None = None) -> str:
   return cfg.backend.ollama.model
 
 
+def _note_for(model_id: str) -> str:
+  """Derive a short helper note from the model id convention.
+
+  Cloud models (ids ending in ``:cloud``) need no local download; anything
+  else is treated as a local model. This keeps the curated-list note
+  consistent with the actual default without a separate config field.
+
+  Args:
+    model_id: The ollama model id to describe.
+
+  Returns:
+    ``"cloud model, no local download needed"`` when ``model_id`` ends with
+    ``":cloud"``; ``"local model"`` otherwise.
+  """
+  if model_id.endswith(":cloud"):
+    return "cloud model, no local download needed"
+  return "local model"
+
+
 def curated_models(config: Config | None = None) -> list[CuratedModel]:
   """Return the curated list of recommended models.
 
@@ -67,7 +86,7 @@ def curated_models(config: Config | None = None) -> list[CuratedModel]:
     CuratedModel(
       model_id=default_id,
       label=f"{default_id} (default)",
-      note="cloud model, no local download needed",
+      note=_note_for(default_id),
     ),
     CuratedModel(
       model_id="gpt-oss:20b",
