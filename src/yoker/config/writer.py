@@ -80,15 +80,34 @@ def _is_dataclass_instance(value: Any) -> bool:
   return dataclasses.is_dataclass(value) and not isinstance(value, type)
 
 
-def _render_section(obj: Any, prefix: str, lines: list[str], *, is_root: bool) -> None:
+def _render_section(
+  obj: Any,
+  prefix: str,
+  lines: list[str],
+  *,
+  is_root: bool,
+  _emitted_header: list[bool] | None = None,
+) -> None:
   """Render a dataclass section into ``lines``.
 
   Root sections emit no table header; nested sections emit ``[prefix]``.
   Scalars are emitted before sub-tables (TOML ordering rule), each with an
   inline ``# help`` comment when the field carries a ``help`` annotation.
+
+  A blank line is inserted before each table header except the first one, so
+  rendered TOML has whitespace between sections/tables (see MBI-002 PR #34
+  feedback). The ``_emitted_header`` flag tracks whether any header has been
+  emitted yet across the recursive walk.
   """
+  if _emitted_header is None:
+    _emitted_header = [False]
   if not is_root:
+    # Whitespace between sections/tables: blank line before every header
+    # except the very first one in the document.
+    if _emitted_header[0]:
+      lines.append("")
     lines.append(f"[{prefix}]")
+    _emitted_header[0] = True
 
   scalar_fields: list[dataclasses.Field[Any]] = []
   section_fields: list[dataclasses.Field[Any]] = []
@@ -114,7 +133,7 @@ def _render_section(obj: Any, prefix: str, lines: list[str], *, is_root: bool) -
   for field_obj in section_fields:
     child = getattr(obj, field_obj.name)
     child_prefix = field_obj.name if is_root else f"{prefix}.{field_obj.name}"
-    _render_section(child, child_prefix, lines, is_root=False)
+    _render_section(child, child_prefix, lines, is_root=False, _emitted_header=_emitted_header)
 
 
 def render_config_toml(config: Config, overrides: dict[str, Any] | None = None) -> str:
@@ -138,7 +157,7 @@ def render_config_toml(config: Config, overrides: dict[str, Any] | None = None) 
     for dotted, value in overrides.items():
       rendered = _set_dotted(rendered, dotted, value)
   lines: list[str] = []
-  _render_section(rendered, "", lines, is_root=True)
+  _render_section(rendered, "", lines, is_root=True, _emitted_header=[False])
   return "\n".join(lines) + "\n"
 
 
