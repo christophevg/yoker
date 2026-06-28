@@ -158,6 +158,12 @@
   **Owner:** Confirmed new requirement
   **Design:** See `analysis/bootstrap-wizard-design.md` (Resolved Q4)
 
+- [x] **2.8 End-to-end onboarding guide (Python/uv install → yoker → wizard → hello agent)** ✅ (2026-06-28)
+  - New docs page `docs/guides/getting-started.md`: Python + uv setup (macOS,
+    Windows, Linux), install yoker, run the bootstrap wizard, and perform a
+    first "hello agent" interaction on Ollama's free tier.
+  - Placed at the top of the `docs/index.md` toctree (entry point for new users).
+
 ---
 
 ## Active: MBI-006: Multi-Provider Backend Support (Phase 1)
