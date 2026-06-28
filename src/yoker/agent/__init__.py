@@ -16,6 +16,7 @@ from yoker.agent._processing import process_message
 from yoker.agent._setup import (
   add_skill_discovery_block,
   create_client,
+  create_web_backends,
   create_web_guardrails,
   validate_recursion_depth,
 )
@@ -136,8 +137,11 @@ class Agent:
       "url": url_guardrail,
     }
 
-    # tool backends for context injection (populated when tools are registered)
-    self._tool_backends: dict[str, Any] = {}
+    # tool backends for context injection. Populated for the configured
+    # provider (Ollama today) so the websearch/webfetch tools resolve to
+    # OllamaWebSearchBackend / OllamaWebFetchBackend instead of failing
+    # with "No backend configured".
+    self._tool_backends: dict[str, Any] = create_web_backends(self.config, self._client)
 
     # set up the context manager
     # Note: Use explicit None check because empty UserList is falsy
