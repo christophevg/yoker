@@ -35,6 +35,14 @@ The following precursor must be completed **before** starting Phase 1. It is tra
 
 Phase 1 references PRE-1 in its preconditions (§5) but does not perform the fix.
 
+### 2.1 Follow-up tasks (maintenance)
+
+Maintenance items arising from owner decisions and the security review (`analysis/security-multi-provider-backend.md`). These are tracked separately from the phases.
+
+| ID | Follow-up | Trigger | Note |
+|---|---|---|---|
+| M.6 | **Exclude `api_key` from Clevis CLI generation once Clevis supports field-exclusion.** | Q6 amendment (security H1) | Blocked on an upstream Clevis feature request being filed with the Clevis project. The pre-existing CLI exposure of `--backend-{provider}-api-key` (including today's `--backend-ollama-api-key`) is accepted as a known limitation until Clevis ships field-exclusion. No code change in Phases 1-3; revisit once Clevis supports it. |
+
 ---
 
 ## 3. Current State (Ollama-Only Coupling)
@@ -316,9 +324,9 @@ The tagged-union shape keeps Clevis CLI arg generation working (`--backend-ollam
 | Layer | Change |
 |---|---|
 | `pyproject.toml` | Add `openai` dependency. |
-| `src/yoker/backends/openai.py` | New. `OpenAIBackend` wraps `openai.AsyncOpenAI` (constructed with `base_url` from `OpenAIConfig.base_url` when set — Q18, enables Azure/compat gateways). `chat_stream()` calls `client.chat.completions.create(model, messages, tools, stream=True)`. Translate OpenAI deltas into `ChatChunk`: `delta.content` -> `CONTENT_DELTA`; `delta.reasoning_content` (o-series reasoning models) -> `THINKING_DELTA` (Q14); `delta.tool_calls[i]` -> `TOOL_CALL_*` with `index=i`, assembling `id`/`function.name` on the first delta and `function.arguments` fragments on subsequent deltas; final `usage` -> `USAGE`; stream end -> `DONE`. Synthesise `CONTENT_START`/`CONTENT_STOP`/`THINKING_START`/`THINKING_STOP` since OpenAI does not signal block boundaries natively. The `think` flag maps to `reasoning_effort` on reasoning models and is a no-op otherwise (Q11). |
+| `src/yoker/backends/openai.py` | New. `OpenAIBackend` wraps `openai.AsyncOpenAI` (constructed with `base_url` from `OpenAIConfig.base_url` when set — Q18, enables Azure/compat gateways). **`base_url` is a trust boundary (Q18 amendment, §9.7):** a non-default `base_url` triggers the interactive warning/confirmation (or batch-mode `YOKER_ALLOW_CUSTOM_BASE_URL=1` gate) applied once at startup, before the backend is constructed. `chat_stream()` calls `client.chat.completions.create(model, messages, tools, stream=True)`. Translate OpenAI deltas into `ChatChunk`: `delta.content` -> `CONTENT_DELTA`; `delta.reasoning_content` (o-series reasoning models) -> `THINKING_DELTA` (Q14); `delta.tool_calls[i]` -> `TOOL_CALL_*` with `index=i`, assembling `id`/`function.name` on the first delta and `function.arguments` fragments on subsequent deltas; final `usage` -> `USAGE`; stream end -> `DONE`. Synthesise `CONTENT_START`/`CONTENT_STOP`/`THINKING_START`/`THINKING_STOP` since OpenAI does not signal block boundaries natively. The `think` flag maps to `reasoning_effort` on reasoning models and is a no-op otherwise (Q11). |
 | `src/yoker/backends/factory.py` | Register `"openai"` in `BACKENDS`. |
-| `src/yoker/config/__init__.py` | Add `OpenAIConfig` (`api_key`, `base_url: str \| None = None` (Q18), `model`, `timeout_seconds`, `parameters: OpenAIParameters` with `temperature`, `top_p`, `max_tokens`, etc.). Wire `openai` field on `BackendConfig`; expand `validate_choice(self.provider, ..., ("ollama", "openai"))`. `OpenAIParameters` is its own class — no shared base with `OllamaParameters` (Q4). |
+| `src/yoker/config/__init__.py` | Add `OpenAIConfig` (`api_key`, `base_url: str \| None = None` (Q18, trust boundary per §9.7), `model`, `timeout_seconds`, `parameters: OpenAIParameters` with `temperature`, `top_p`, `max_tokens`, etc.). Wire `openai` field on `BackendConfig`; expand `validate_choice(self.provider, ..., ("ollama", "openai"))`. `OpenAIParameters` is its own class — no shared base with `OllamaParameters` (Q4). |
 | `src/yoker/agent/_processing.py` | No change — already consumes `ChatChunk`. Verify `UsageStats.input_tokens`/`output_tokens` map into `TurnEndEvent` (fall back to 0 when native Ollama fields absent). |
 | `src/yoker/builtin/agent.py` | `with_model` helper extended to handle `OpenAIConfig`. |
 | `src/yoker/bootstrap/modellist.py` | Per-provider curated lists: `curated_models(config, provider)` returns the list for the active provider; `default_model_id(config, provider)` reads the active sub-config. |
@@ -344,7 +352,7 @@ CURATED: dict[str, list[CuratedModel]] = {
 - `TurnEndEvent` carries `input_tokens`/`output_tokens` for OpenAI sessions (Ollama-native fields remain 0).
 - Web tools (`websearch`/`webfetch`) under OpenAI retain the existing failure behaviour and do not crash.
 - Subagent spawn under OpenAI produces a faithful backend config copy with the model overridden.
-- `OpenAIConfig(base_url=...)` is forwarded to `AsyncOpenAI(base_url=...)` when set (Q18).
+- `OpenAIConfig(base_url=...)` is forwarded to `AsyncOpenAI(base_url=...)` when set (Q18). A non-default `base_url` triggers the trust-boundary warning/confirmation (interactive) or the `YOKER_ALLOW_CUSTOM_BASE_URL=1` gate (batch) per §9.7.
 
 *(The wizard's provider-selection step and `build_bootstrap_overrides` provider-awareness are deferred — see §8.)*
 
@@ -361,7 +369,7 @@ CURATED: dict[str, list[CuratedModel]] = {
 | `pyproject.toml` | Add `anthropic` dependency. |
 | `src/yoker/backends/anthropic.py` | New. `AnthropicBackend` wraps `anthropic.AsyncAnthropic`. The core work is translation (see §7.2-7.5). The `think` flag maps to `thinking={"type": "enabled", "budget_tokens": N}` using `AnthropicParameters.budget_tokens` (Q11, Q12). |
 | `src/yoker/backends/factory.py` | Register `"anthropic"`. |
-| `src/yoker/config/__init__.py` | Add `AnthropicConfig` (`api_key`, `base_url`, `model`, `timeout_seconds`, `max_tokens: int = 4096` default (Q13), `parameters: AnthropicParameters` with `temperature`, `top_p`, `top_k`, `budget_tokens: int = 1024` (Q12)). Wire `anthropic` field; expand `validate_choice` to include `"anthropic"`. |
+| `src/yoker/config/__init__.py` | Add `AnthropicConfig` (`api_key`, `base_url` (trust boundary per §9.7, same warning/confirmation behaviour as OpenAI), `model`, `timeout_seconds`, `max_tokens: int = 4096` default (Q13), `parameters: AnthropicParameters` with `temperature`, `top_p`, `top_k`, `budget_tokens: int = 1024` (Q12)). Wire `anthropic` field; expand `validate_choice` to include `"anthropic"`. |
 | `src/yoker/bootstrap/modellist.py` | Add `CURATED["anthropic"]` (e.g. `claude-3-5-sonnet-20241022`, `claude-3-5-haiku-20241022`, `claude-opus-4-...`). |
 | `src/yoker/builtin/agent.py` | `with_model` extended to `AnthropicConfig`. |
 
@@ -437,6 +445,8 @@ The bootstrap wizard's provider-selection step is **out of scope** for the backe
 ### 9.2 CLI arg generation (Clevis)
 Clevis auto-generates `--backend-{provider}-{field}` args from the nested dataclass fields. The new `OpenAIConfig`/`AnthropicConfig` dataclasses automatically yield `--backend-openai-model`, `--backend-anthropic-max-tokens`, etc. The existing `--backend-ollama-model` is unchanged. The `provider` field yields `--backend-provider {ollama,openai,anthropic}` (Q6 — kept as a Clevis-generated choice arg, plus per-provider sub-config args).
 
+**`api_key` CLI exposure (Q6 amendment, security H1):** Clevis currently has no mechanism to exclude a field from CLI arg generation, so `--backend-{provider}-api-key` args are generated for every provider. This is the same pre-existing exposure as `--backend-ollama-api-key` today and is accepted as a **known limitation** for Phase 1. A feature request is being filed with the Clevis project for field-exclusion support; once available, `api_key` will be suppressed (tracked by follow-up M.6, §2). Phase 1 task 6.3 proceeds without `api_key` CLI exclusion.
+
 ### 9.3 Subagent spawn
 `src/yoker/builtin/agent.py::_create_subagent` currently hardcodes `BackendConfig(provider=..., ollama=OllamaConfig(...))`. Introduce a helper:
 
@@ -466,6 +476,14 @@ Phase 1 implements this for `ollama`; Phase 2/3 extend to `openai`/`anthropic`. 
 - **OpenAI** (Q11, Q14): reasoning models (`o*` series) emit `reasoning_content` deltas, mapped to `THINKING_*` chunks. The `think` flag maps to `reasoning_effort` on reasoning models and is a no-op on non-reasoning models.
 - **Anthropic** (Q11, Q12): thinking is a `content_block` of type `thinking` with a `thinking_delta`. The `think` flag maps to `thinking={"type": "enabled", "budget_tokens": N}` where `N` comes from `AnthropicParameters.budget_tokens` (default 1024, overridable). Requires `max_tokens` config (Q13: `AnthropicConfig.max_tokens: int = 4096` default).
 
+### 9.7 `base_url` trust boundary (Q18 amendment, security M1)
+`base_url` is a **trust boundary** for every provider (Ollama, OpenAI, Anthropic). Setting a non-default `base_url` routes model traffic — including the provider `api_key` and all conversation content — to an arbitrary endpoint. Yoker gates its use uniformly across all backends:
+
+- **Interactive mode:** when any provider's `base_url` is set to a non-default value, yoker **warns the user and requests confirmation** before continuing. The warning states that a custom endpoint will receive the API key and all conversation content.
+- **Batch / non-interactive mode:** when `base_url` is non-default, yoker **terminates with a warning** unless the explicit environment variable `YOKER_ALLOW_CUSTOM_BASE_URL=1` is set. This keeps automated pipelines safe-by-default while permitting deliberate override.
+
+HTTPS is **recommended but not enforced** — the owner did not require an `https://` mandate; the warning/confirmation mechanism is the mitigation. This behaviour is backend-agnostic: it applies to `OllamaConfig.base_url`, `OpenAIConfig.base_url`, and `AnthropicConfig.base_url` alike, and is implemented in the config validation / startup path (not inside each backend) so the rule is applied once for all providers.
+
 ---
 
 ## 10. Effort Sizing (T-shirt)
@@ -484,6 +502,15 @@ Phase 1 implements this for `ollama`; Phase 2/3 extend to `openai`/`anthropic`. 
 
 All twenty owner decisions are resolved below. Option context is kept brief where it aids readability.
 
+### 11.0 Security amendments (2026-06-28)
+
+The security review (`analysis/security-multi-provider-backend.md`) raised two findings against the backend design. The owner resolved both on 2026-06-28 (PR #36 comment) with the specifics recorded here and applied to the relevant decisions and cross-cutting sections:
+
+- **H1 (high) → Q6 amendment:** Clevis CLI generation exposes `--backend-{provider}-api-key`. The owner did not adopt original options A or B; instead a feature request is being filed with Clevis for field-exclusion support. `api_key` CLI exclusion is **deferred** until Clevis ships that capability; the pre-existing exposure is accepted as a known limitation. Tracked by follow-up M.6 (§2.1). See §11.6 and §9.2.
+- **M1 (medium) → Q18 amendment:** `base_url` is a trust boundary. The owner adopted a variant of option A: interactive warning + confirmation for non-default `base_url`; batch mode terminates with a warning unless `YOKER_ALLOW_CUSTOM_BASE_URL=1` is set. The original option A's `https://` requirement is **not** adopted (https recommended but not enforced). Applies uniformly to all providers. See §11.18 and §9.7.
+
+No other decisions (Q1-Q5, Q7-Q17, Q19-Q20) were changed by the security review.
+
 ### 11.1 Q1 — Native Ollama SDK
 **Decision: KEEP the native `ollama` SDK as the Ollama backend.** Three adapters total (Ollama native, OpenAI, Anthropic). Rejected alternative: switching Ollama to the `openai` SDK against its compat endpoint, which would lose native `prompt_eval_count`/`eval_count`/`total_duration`, native `think`, and native `web_search`/`web_fetch`.
 
@@ -501,6 +528,15 @@ All twenty owner decisions are resolved below. Option context is kept brief wher
 
 ### 11.6 Q6 — CLI field
 **Decision: Keep `--backend-provider {ollama,openai,anthropic}` as a Clevis-generated choice arg, plus per-provider sub-config args** (`--backend-openai-model`, `--backend-anthropic-max-tokens`, etc.). Users can switch provider without editing TOML.
+
+**Amendment (2026-06-28, security review H1):** The `api_key` CLI-exclusion is **deferred** pending an upstream Clevis capability. The owner chose a third path (neither original option A nor B): a feature request is being filed with the Clevis project for a way to exclude fields from CLI argument generation; once Clevis supports field-exclusion, yoker will use it to suppress `--backend-{provider}-api-key`.
+
+Until then:
+- Phase 1 task 6.3 proceeds **without** `api_key` CLI exclusion.
+- The pre-existing CLI exposure of `api_key` (already present for Ollama today: `--backend-ollama-api-key`) is accepted as a **known limitation** for now, unchanged by Phase 1.
+- A follow-up maintenance item (M.6, see §2 "Follow-up tasks") tracks implementing `api_key` CLI exclusion once Clevis supports field-exclusion.
+
+Q6 otherwise stands: `--backend-provider {ollama,openai,anthropic}` remains a Clevis-generated choice arg and per-provider sub-config args remain generated; only `api_key` exclusion is the deferred part.
 
 ### 11.7 Q7 — Writer backfill (split)
 **Decision (split):**
@@ -544,6 +580,13 @@ Rejected: dropping the `think` flag from the Protocol and having each backend re
 
 ### 11.18 Q18 — OpenAI `base_url`
 **Decision: `OpenAIConfig.base_url: str | None = None`, passed to `AsyncOpenAI(base_url=...)` when set.** Enables Azure OpenAI and OpenAI-compatible gateways. Does not conflict with keeping native Ollama (Q1).
+
+**Amendment (2026-06-28, security review M1):** `base_url` is treated as a **trust boundary** for every provider, not just OpenAI. A non-default `base_url` routes model traffic (including `api_key` and message content) to an arbitrary endpoint, so yoker gates its use with a warning/confirmation mechanism:
+
+- **Interactive mode:** when `base_url` is set to a non-default value, yoker **warns the user and requests confirmation** before continuing. The warning identifies that a custom endpoint will receive the API key and all conversation content.
+- **Batch / non-interactive mode:** when `base_url` is non-default, yoker **terminates with a warning** unless the explicit environment variable `YOKER_ALLOW_CUSTOM_BASE_URL=1` is set. This keeps automated pipelines safe-by-default while permitting deliberate override.
+
+The original option A's `https://` requirement is **NOT adopted** — the owner did not require https. HTTPS is **recommended but not enforced**; the warning/confirmation mechanism is the mitigation. This applies to any provider's `base_url` (Ollama, OpenAI, Anthropic) uniformly.
 
 ### 11.19 Q19 — Phase ordering
 **Decision: Sequential — Phase 2 then Phase 3.** Phase 2's backend/config patterns inform Phase 3. Rejected: parallel execution.
