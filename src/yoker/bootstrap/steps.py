@@ -21,13 +21,14 @@ UX refinements applied (PR #34 follow-up):
 The flow (six steps in the guided path):
 
   Step 1 of 6  opening         — explain yoker, state no config found, ask
-                                  guided / manual / visit docs / abort
+                                  guided / manual / visit docs (Ctrl+C to
+                                  interrupt at any time)
   Step 2 of 6  backend_intro   — single supported backend today (Ollama, free tier)
   Step 3 of 6  account_check   — "do you have an ollama account?"; no proposes
                                   to open the docs guide URL (no force), then
                                   resumes; the wizard never aborts here
   Step 4 of 6  connection      — split: ollama app (no key) vs API key (masked)
-                                  vs abort
+                                  (Ctrl+C to interrupt at any time)
   Step 5 of 6  model_select    — curated list / accept default / free text
   Step 6 of 6  confirm         — written confirmation that config was created
                                   and yoker is continuing into the session
@@ -69,7 +70,7 @@ TOTAL_STEPS = 6
 
 
 class WizardAbort(Exception):
-  """Raised by a step when the user chooses to abort (Ctrl+C / EOF / "abort").
+  """Raised by a step when the user interrupts the wizard (Ctrl+C / EOF).
 
   The wizard catches this and exits cleanly with no file written, after
   emitting a brief abort message. It is never raised as a silent fall-through
@@ -167,8 +168,9 @@ async def step_opening(ui: UIHandler) -> str:
     ``"guided"`` or ``"manual"``.
 
   Raises:
-    WizardAbort: When the user chooses abort (option 4) or sends EOF/Ctrl+C,
-      or sends EOF/Ctrl+C while waiting to return from the docs.
+    WizardAbort: When the user sends EOF/Ctrl+C (the wizard no longer offers
+      an explicit abort option; Ctrl+C interrupts at any time), or sends
+      EOF/Ctrl+C while waiting to return from the docs.
   """
   await ui.output_step_title(1, TOTAL_STEPS, "Welcome")
   ui.output_info(
@@ -184,11 +186,11 @@ async def step_opening(ui: UIHandler) -> str:
     "  2) Manual setup — I'll print a config skeleton and a docs link, and "
     "you author ~/.yoker.toml yourself.\n"
     "  3) Visit the documentation first — I'll open the docs in your "
-    "browser, then come back here.\n"
-    "  4) Abort — exit now without writing anything.\n"
+    "browser, then come back here.\n\n"
+    "Ctrl+c interrupts the setup at any time, without writing anything.\n"
   )
   while True:
-    raw = await ui.get_input("Choose [1/2/3/4] (Enter = 1 guided): ")
+    raw = await ui.get_input("Choose [1/2/3] (Enter = 1 guided): ")
     if raw is None:
       # EOF / Ctrl+C: explicit abort, never a silent fall-through to manual.
       raise WizardAbort
@@ -209,9 +211,7 @@ async def step_opening(ui: UIHandler) -> str:
       )
       # Loop back and re-ask the opening question.
       continue
-    if answer == "4":
-      raise WizardAbort
-    ui.output_info("Invalid choice. Enter 1, 2, 3, or 4 (or press Enter for guided).\n")
+    ui.output_info("Invalid choice. Enter 1, 2, or 3 (or press Enter for guided).\n")
 
 
 async def step_manual(ui: UIHandler, config: Config, config_path: Path) -> None:
@@ -272,18 +272,19 @@ async def step_connection_method(ui: UIHandler) -> ConnectionChoice:
   before prompting for the key, then waits for the user to return.
 
   Raises:
-    WizardAbort: When the user chooses abort (option 3) or sends EOF/Ctrl+C,
-      or sends EOF/Ctrl+C while waiting to return from the docs.
+    WizardAbort: When the user sends EOF/Ctrl+C (the wizard no longer offers
+      an explicit abort option; Ctrl+C interrupts at any time), or sends
+      EOF/Ctrl+C while waiting to return from the docs.
   """
   await ui.output_step_title(4, TOTAL_STEPS, "Connection Method")
   ui.output_info(
     "Connect via:\n"
     "  1) The ollama app running locally (recommended — no key needed)\n"
-    "  2) An ollama API key\n"
-    "  3) Abort — exit now without writing anything.\n"
+    "  2) An ollama API key\n\n"
+    "Ctrl+c interrupts the setup at any time, without writing anything.\n"
   )
   while True:
-    raw = await ui.get_input("Choose [1/2/3] (Enter = 1 app): ")
+    raw = await ui.get_input("Choose [1/2] (Enter = 1 app): ")
     if raw is None:
       # EOF / Ctrl+C: explicit abort, never a silent fall-through to the app.
       raise WizardAbort
@@ -295,9 +296,7 @@ async def step_connection_method(ui: UIHandler) -> ConnectionChoice:
       return ConnectionChoice(use_api_key=False)
     if answer == "2":
       break
-    if answer == "3":
-      raise WizardAbort
-    ui.output_info("Invalid choice. Enter 1, 2, or 3 (or press Enter for the app).\n")
+    ui.output_info("Invalid choice. Enter 1 or 2 (or press Enter for the app).\n")
   # API-key path: propose opening the key-creation guide (no force), wait,
   # then prompt for the key.
   await _open_docs_confirmed(
