@@ -4,9 +4,8 @@ This guide takes you from zero to a working Ollama account, a signed-in local
 app/proxy, and (if you choose that path) an API key, so you can run yoker
 against Ollama's free tier.
 
-> **Note:** Screenshots are pending. Placeholder image references below are
-> marked with `<!-- TODO: add screenshot -->` and will be replaced with real
-> captures in a later update.
+> **Note:** Screenshots below show the Ollama account-creation and sign-in
+> flow. Your actual screens may differ slightly as Ollama updates its UI.
 
 yoker connects to Ollama as its model provider. Ollama offers a free tier you
 can use to explore yoker and agentic workflows at no cost. You can connect in
@@ -28,15 +27,19 @@ If you don't yet have an Ollama account, create one now. The account lets you
 sign in to the local app/proxy so cloud models work, and lets you generate an
 API key if you choose that path.
 
-1. Open <https://ollama.com> in your browser.
+1. Open [https://signin.ollama.com/sign-up](https://signin.ollama.com/sign-up) in your browser.
 2. Click **Sign up** (top right).
 3. Enter your email address and choose a password, or sign up with a
-   third-party provider if offered.
+   third-party provider.
 4. Confirm your email via the verification link sent to your inbox.
 5. Once signed in, you'll land on your account dashboard.
 
-![Ollama account creation form](../_static/ollama-account-creation.png)
-<!-- TODO: add screenshot: Ollama sign-up form at ollama.com -->
+![Ollama account creation - email](../_static/ollama-email.png)
+![Ollama account creation - email code](../_static/ollama-email-code.png)
+![Ollama account creation - phone](../_static/ollama-phone.png)
+![Ollama account creation - phone code](../_static/ollama-phone-code.png)
+![Ollama account creation - settings](../_static/ollama-settings.png)
+![Ollama account creation - settings usage](../_static/ollama-settings-usage.png)
 
 You now have an Ollama account. The next step is to install the local app/proxy
 so cloud models work on your machine.
@@ -53,9 +56,14 @@ Choose your operating system:
 
 ### macOS
 
+![Ollama download](../_static/ollama-download.png)
+
 1. Download the macOS build from <https://ollama.com/download/mac>.
 2. Unzip and drag **Ollama.app** to your **Applications** folder.
 3. Launch **Ollama.app**. A menu-bar icon appears.
+
+   ![Ollama app](../_static/ollama-app.png)
+
 4. Sign in with the Ollama account you created above (see [Verify cloud-model
    access](#verify-cloud-model-access) below).
 
@@ -63,6 +71,20 @@ Alternatively, with Homebrew:
 
 ```bash
 brew install ollama
+```
+
+Ollama operates as a client-server architecture. You can manage the background service easily using Homebrew services: 
+
+* Start the server automatically in the background:
+```bash
+brew services start ollama
+```
+* Stop the background service:
+```bash
+brew services stop ollama
+```
+* Alternatively, if you only want to run the server on-demand for a single session without it running in the background, simply run
+```bash
 ollama serve
 ```
 
@@ -91,8 +113,7 @@ ollama serve
 4. Sign in with the Ollama account you created above (see [Verify cloud-model
    access](#verify-cloud-model-access) below).
 
-![Ollama app sign-in](../_static/ollama-app-signin.png)
-<!-- TODO: add screenshot: Ollama app sign-in dialog -->
+![Ollama app download](../_static/ollama-windows-download.png)
 
 ---
 
@@ -109,8 +130,9 @@ Once the app/proxy is installed and running, sign in so that cloud models
 4. After a successful sign-in, the app shows your account email and a
    "Signed in" status.
 
-![Ollama signed-in status](../_static/ollama-signed-in.png)
-<!-- TODO: add screenshot: Ollama app showing signed-in status -->
+![Ollama not yet signed in](../_static/ollama-windows-not-yet-signed-in.png)
+![Ollama connect device](../_static/ollama-windows-connect-device.png)
+![Ollama signed in](../_static/ollama-windows-signed-in.png)
 
 To confirm cloud models are reachable, pull a small model and run it:
 
@@ -143,8 +165,7 @@ the local app, generate an API key from your account.
 5. Give the key a name, e.g. `yoker`.
 6. Copy the generated key immediately — it is shown only once.
 
-![Ollama API key creation](../_static/ollama-api-key-creation.png)
-<!-- TODO: add screenshot: Ollama API key creation dialog -->
+![Ollama API keys](../_static/ollama-keys.png)
 
 Treat the key like a password: store it in a secret manager, never commit it to
 source control, and rotate it if it leaks.

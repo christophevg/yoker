@@ -27,16 +27,17 @@ once, and every Yoker-based tool benefits.
 - **Provider- and model-neutral.** Yoker does not lock you into a single
   vendor. Today it ships with an [Ollama](https://ollama.com) backend; more
   backends (OpenAI, Anthropic, and others) are planned. You choose the provider
-  and model that fit your cost, privacy, and performance needs.
+  and model that fit your cost, privacy, and performance needs. Not once! You can change model and/or provider whenever you want, your apps just follow you. And in the near future, when models go local, you are already set up.
 - **Transparent.** Yoker does not hide what it does. Prompts, tool calls, and
   agent decisions are visible and inspectable, so you stay in control of what
   the AI does on your behalf.
+- **Open** Yoker is Open Source and free to use. You can change it to your liking.
 
 ## One config, many apps
 
 Yoker stores its configuration in a single file in your home directory:
 
-```
+```text
 ~/.yoker.toml
 ```
 
