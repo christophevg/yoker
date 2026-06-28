@@ -9,6 +9,7 @@
 | **P2** | MBI-003: Python API | Backlog (after Bootstrap) |
 | **P2** | MBI-004: yoker Commands | Backlog (after Python API) |
 | **P2** | MBI-005: Assistant Integration | Backlog (showcase project) |
+| **P2** | Maintenance Tasks | M.5 (prerequisite for multi-provider backend) |
 | **P3** | Maintenance Tasks | M.1-M.4 |
 | **P4+** | Launch Preparation, Architecture, Future Work | See sections below |
 
@@ -107,6 +108,28 @@ Unsorted improvements and fixes.
   - Consolidate duplicate tests
   - Ensure full coverage maintained
   **Priority:** P4
+
+- [ ] **M.5 Populate `Agent._tool_backends` for Ollama web tools (prerequisite for multi-provider backend)**
+  - `Agent._tool_backends` is initialised to `{}` and never populated, so the
+    `websearch` and `webfetch` built-in tools already fail today with
+    "No backend configured" regardless of provider. This is a pre-existing bug
+    independent of the multi-provider backend design.
+  - Fix scope: populate `Agent._tool_backends` with the
+    `OllamaWebSearchBackend` / `OllamaWebFetchBackend` instances when the
+    configured provider is Ollama, so the web tools actually work. Keep it small
+    and focused — this is a bug fix, not a feature.
+  - **Prerequisite for:** the multi-provider backend work
+    (`analysis/multi-provider-backend-design.md`). The design note documents
+    this gap (§7.4 and §9.17 Q17 Option B) and the owner has decided to fix it
+    as a separate precondition before the backend phases begin. Do this before
+    Phase 1 of the multi-provider backend effort.
+  - Write unit tests asserting the `websearch` / `webfetch` backends are
+    populated under the Ollama provider and that the tools execute successfully.
+  - Do not extend web tools to non-Ollama providers — that remains out of scope
+    (design note §7.4); the multi-provider backend effort will handle the
+    "Ollama provider required" error path for other providers.
+  **Priority:** P2
+  **Date:** 2026-06-28
 
 ---
 
