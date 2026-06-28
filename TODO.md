@@ -4,12 +4,12 @@
 
 | Priority | MBI/Task | Status |
 |----------|----------|--------|
-| **P1** | MBI-002: Bootstrap | Active |
+| **P1** | MBI-006: Multi-Provider Backend (Phase 1) | Active |
+| **P1** | MBI-002: Bootstrap | Wrapping up |
 | **P1** | MBI-001 Validation | Pending (validate with pkgq, then publish) |
 | **P2** | MBI-003: Python API | Backlog (after Bootstrap) |
 | **P2** | MBI-004: yoker Commands | Backlog (after Python API) |
 | **P2** | MBI-005: Assistant Integration | Backlog (showcase project) |
-| **P2** | Maintenance Tasks | M.5 (prerequisite for multi-provider backend) |
 | **P3** | Maintenance Tasks | M.1-M.4 |
 | **P4+** | Launch Preparation, Architecture, Future Work | See sections below |
 
@@ -58,6 +58,149 @@
   - Handle write failures
   - Write unit tests
   **Satisfies:** Config creation capability
+
+---
+
+## Active: MBI-006: Multi-Provider Backend Support (Phase 1)
+
+**Goal:** Introduce the `ModelBackend` async Protocol and provider-neutral `ChatChunk` stream type, reimplement the existing Ollama behaviour on top of them, widen the config schema to the tagged-union shape, make subagent spawn provider-agnostic, and add optional stats fields to `TurnEndEvent`. **Pure refactor — no behaviour change, no new provider, no wizard changes.**
+
+**Design source of truth:** `analysis/multi-provider-backend-design.md` §5 (Phase 1). Functional counterpart: `analysis/functional-multi-provider-backend.md`.
+
+**Preconditions:** PRE-1 (M.5 — populate `Agent._tool_backends` for Ollama) — DONE/merged.
+
+**Out of scope for Phase 1:** OpenAI backend, Anthropic backend, bootstrap wizard provider selection, `build_bootstrap_overrides` provider-awareness, web tools for non-Ollama providers, live API model discovery.
+
+### Tasks
+
+- [ ] **[MBI-006] 6.1 Backends package: ModelBackend Protocol + ChatChunk types**
+  - Create new `src/yoker/backends/` package
+  - `src/yoker/backends/protocol.py`: define `ModelBackend` async Protocol with
+    `provider` property and `chat_stream(*, model, messages, tools, think, **kwargs) -> AsyncIterator[ChatChunk]` (signature per design §4.3; `**kwargs` purely internal per Q20)
+  - `src/yoker/backends/protocol.py`: define provider-neutral stream types:
+    `ChatChunkEvent` enum (CONTENT_START/DELTA/STOP, THINKING_START/DELTA/STOP, TOOL_CALL_START/DELTA/STOP, USAGE, DONE), `ToolCallDelta` (index, id, name, arguments_delta), `UsageStats` (input_tokens, output_tokens, prompt_eval_count, eval_count, total_duration_ms), and `ChatChunk` (event, index, text, tool_call, usage) — per design §4.2
+  - `src/yoker/backends/__init__.py`: re-export `ModelBackend`, `ChatChunk`, `ChatChunkEvent`, `ToolCallDelta`, `UsageStats` (and `create_backend` once 6.5 lands)
+  - Design `ChatChunk` to accommodate Anthropic's block-style streaming even though Anthropic is Phase 3 (explicit `index` for block indexing; START/DELTA/STOP bracketing)
+  - Write unit tests asserting the dataclasses are frozen and field defaults are correct
+  - **Acceptance:**
+    - `from yoker.backends import ModelBackend, ChatChunk, ChatChunkEvent, ToolCallDelta, UsageStats` works
+    - `ChatChunk` is frozen; exactly one of `text`/`tool_call`/`usage` is set per `event`
+    - `UsageStats` preserves Ollama-native fields (`prompt_eval_count`/`eval_count`/`total_duration_ms`) alongside `input_tokens`/`output_tokens`
+    - `make check` green (no existing tests modified)
+  **Satisfies:** Protocol + neutral stream type foundation
+  **Depends on:** —
+
+- [ ] **[MBI-006] 6.2 TurnEndEvent: optional input_tokens/output_tokens stats fields**
+  - `src/yoker/events/types.py`: add `input_tokens: int = 0` and `output_tokens: int = 0` to `TurnEndEvent` (Q15)
+  - Keep Ollama-native `prompt_eval_count`/`eval_count`/`total_duration_ms` for backwards compatibility
+  - Non-breaking: defaults of 0 preserve existing behaviour
+  - Update UIBridge/stats display to read whichever is non-zero (UI reads `input_tokens`/`output_tokens` when Ollama-native fields are 0)
+  - Write unit tests asserting new fields default to 0 and existing Ollama-native stats still populate
+  - **Acceptance:**
+    - `TurnEndEvent` has `input_tokens` and `output_tokens` fields defaulting to 0
+    - Existing Ollama sessions still populate `prompt_eval_count`/`eval_count`/`total_duration_ms`
+    - All existing event tests pass without modification
+  **Satisfies:** Provider-agnostic stats surface
+  **Depends on:** —
+
+- [ ] **[MBI-006] 6.3 Config tagged-union shape + Clevis CLI args**
+  - `src/yoker/config/__init__.py`: widen `BackendConfig` to discriminated-dataclass shape — add `openai: OpenAIConfig | None = None` and `anthropic: AnthropicConfig | None = None` Optional fields (Q2)
+  - Forward-declare `OpenAIConfig`/`AnthropicConfig` stubs under `TYPE_CHECKING` (Phase 2/3 populate them; Phase 1 only needs the field slots to exist with `None` defaults)
+  - Widen `provider` whitelist from `("ollama",)` to `("ollama", "openai", "anthropic")` so the choice arg lists all future providers, but only wire the ollama validation guard in `__post_init__` (require `backend.ollama` when `provider == "ollama"`; openai/anthropic guards added in Phase 2/3)
+  - Keep `OllamaParameters.top_k`/`num_ctx` Ollama-specific (Q4); do NOT introduce a shared parameter base class
+  - Keep `provider` default `"ollama"` (Q9)
+  - Verify Clevis auto-generates `--backend-provider {ollama,openai,anthropic}` and `--backend-openai-*` / `--backend-anthropic-*` args (default None, ignored at runtime in Phase 1)
+  - Write unit tests: default `BackendConfig()` yields `provider="ollama"`, `openai=None`, `anthropic=None`; old TOML files (single-Ollama shape) still load (Q8 — strict superset, no migration); `provider="openai"` with `openai=None` does NOT raise in Phase 1 (guard only enforces ollama) — or raises a clear `ValidationError` per design §4.5; pick the behaviour consistent with the design note and document it
+  - **Acceptance:**
+    - `BackendConfig()` defaults to `provider="ollama"` with `openai`/`anthropic` None
+    - Existing `~/.yoker.toml` files load unchanged (no migration script)
+    - `--backend-provider` lists all three providers; `--backend-openai-*`/`--backend-anthropic-*` args exist and default to None
+    - `make check` green
+  **Satisfies:** Config schema superset for all three phases
+  **Depends on:** —
+
+- [ ] **[MBI-006] 6.4 render_config_toml union-aware**
+  - `src/yoker/config/writer.py::render_config_toml`: confirm the generic dataclass walk omits `None` per-provider sub-configs; add explicit handling/tests if needed (Q7 split — writer stays in Phase 1 because it lives in the config module and is reusable)
+  - Do NOT touch `build_bootstrap_overrides` (wizard-specific, deferred with §8)
+  - Write unit tests asserting a config with `openai=None`/`anthropic=None` writes a TOML file with no `[backend.openai]`/`[backend.anthropic]` section, and that the written file round-trips back to an equal `BackendConfig`
+  - **Acceptance:**
+    - `render_config_toml` omits `None` per-provider sub-configs
+    - Round-trip: `load(render_config_toml(cfg)) == cfg` for an Ollama-only config
+    - `make check` green
+  **Satisfies:** Config writer union-awareness (reusable, non-wizard)
+  **Depends on:** 6.3
+
+- [ ] **[MBI-006] 6.5 OllamaBackend adapter + create_backend factory**
+  - `src/yoker/backends/ollama.py`: new `OllamaBackend` wrapping `ollama.AsyncClient`
+    - Constructor builds the client from `config.backend.ollama` (relocate `agent/_setup.py::create_client` logic here — no behaviour change)
+    - `provider` property returns `"ollama"`
+    - `chat_stream(*, model, messages, tools, think, **kwargs)` calls `self._client.chat(model, messages, tools, think=think, stream=True)` and translates each native chunk into `ChatChunk`:
+      - `message.thinking` -> `THINKING_START`/`THINKING_DELTA`/`THINKING_STOP` (synthesise START before first thinking delta, STOP at end of thinking)
+      - `message.content` -> `CONTENT_START` (before first content delta) / `CONTENT_DELTA` / `CONTENT_STOP` (synthesise boundaries; Ollama is delta-style per design §4.2)
+      - `message.tool_calls` -> `TOOL_CALL_START`/`TOOL_CALL_DELTA`/`TOOL_CALL_STOP` per call
+      - `chunk.done` + native stats (`prompt_eval_count`/`eval_count`/`total_duration`) -> `USAGE` (populate `UsageStats` native fields) then terminal `DONE`
+    - Preserves native `think=` flag mapping (Q11) and native stats (Q15)
+  - `src/yoker/backends/factory.py`: new. `create_backend(config) -> ModelBackend`; `BACKENDS = {"ollama": lambda cfg: OllamaBackend(cfg)}` only in Phase 1. Unknown provider raises `ConfigurationError` listing configured providers (Q10 — no silent fallback)
+  - `src/yoker/agent/_setup.py`: remove `create_client()` (moved into `OllamaBackend`); keep `create_web_guardrails`, `validate_recursion_depth`, `add_skill_discovery_block` unchanged
+  - Write unit tests:
+    - `create_backend(Config())` returns an `OllamaBackend` instance
+    - `create_backend` with unknown provider raises `ConfigurationError` naming configured providers
+    - `OllamaBackend.chat_stream` fed a recorded Ollama chunk sequence emits `CONTENT_START` before first `CONTENT_DELTA`, `THINKING_START`/`STOP` around thinking deltas, `TOOL_CALL_START`/`DELTA`/`STOP` per call, and a terminal `DONE` with `UsageStats` populated from native fields
+  - **Acceptance:**
+    - `create_backend(Config())` is an `OllamaBackend`
+    - Unknown provider -> `ConfigurationError` (Agent never starts)
+    - `OllamaBackend.chat_stream` emits the documented `ChatChunk` event sequence with synthesised block boundaries
+    - `make check` green
+  **Satisfies:** Ollama adapter on the new Protocol + factory dispatch
+  **Depends on:** 6.1, 6.3
+
+- [ ] **[MBI-006] 6.6 Agent wiring: _backend, _resolve_model, _chat_stream, _consume_stream rewrite**
+  - `src/yoker/agent/agent.py`:
+    - Replace `self._client: AsyncClient | None` with `self._backend: ModelBackend | None`
+    - Replace `create_client(self.config, AsyncClient)` with `create_backend(self.config)`
+    - Keep optional `backend: ModelBackend | None = None` injection param (renamed from `client`)
+    - `_resolve_model()`: read from the active provider's sub-config, not `config.backend.ollama.model` directly. Introduce helper `_active_backend_config(config)` (or `getattr(config.backend, config.backend.provider)`) — keep returning the Ollama model in Phase 1
+  - `src/yoker/agent/_processing.py`:
+    - `_chat_stream()`: replace `agent._client.chat(...)` with `agent._backend.chat_stream(model=..., messages=..., tools=..., think=...)`
+    - `_consume_stream()`: rewrite to iterate `ChatChunk` instead of Ollama-native chunks. Map `ChatChunkEvent` to existing `Event` types (ThinkingStart/Chunk/End, ContentStart/Chunk/End, ToolCallEvent). Accumulate tool calls from `TOOL_CALL_START`/`DELTA`/`STOP`. Build `TurnEndEvent` from `UsageStats`: map `prompt_eval_count`/`eval_count`/`total_duration_ms` to native fields; fall back to `input_tokens`/`output_tokens` for non-Ollama (set native fields to 0 when absent)
+  - Add a golden-stream unit test: feed a recorded sequence of `ChatChunk` through `_consume_stream` and assert the emitted `Event` sequence matches a captured Ollama session (design §5.4 acceptance)
+  - Do NOT change event types (beyond 6.2), UIBridge mapping, or UI handlers
+  - **Acceptance:**
+    - All existing tests pass without modification (behaviour unchanged)
+    - Golden-stream test: recorded `ChatChunk` sequence -> expected `Event` sequence
+    - Ollama round-trip works exactly as before through the new Protocol (interactive + batch)
+    - `make check` green
+  **Satisfies:** Agent hot path on the new Protocol
+  **Depends on:** 6.5, 6.2
+
+- [ ] **[MBI-006] 6.7 Subagent spawn provider-agnostic**
+  - Introduce `with_model(backend: BackendConfig, model: str) -> BackendConfig` helper in `src/yoker/backends/__init__.py` (or `config` module) — returns a copy of `backend` with `model` overridden on the active sub-config via `getattr`/`dataclasses.replace` (design §9.3)
+  - `src/yoker/builtin/agent.py::_create_subagent`: replace the hardcoded `BackendConfig(provider=..., ollama=OllamaConfig(...))` rebuild with the provider-agnostic copy using `with_model`
+  - `src/yoker/bootstrap/modellist.py`: read default model from the active provider config (helper), not `config.backend.ollama.model` directly. Curated list stays Ollama-only in Phase 1
+  - Phase 1 implements `with_model` for `ollama` only; Phase 2/3 extend to `openai`/`anthropic`
+  - Write unit tests: subagent spawn produces a `Config` whose `backend` is a faithful copy of the parent's with only the model overridden, regardless of provider (test under `provider="ollama"`)
+  - **Acceptance:**
+    - Subagent `Config.backend` equals parent's `backend` with only `model` overridden
+    - No hardcoded `OllamaConfig` rebuild in `_create_subagent`
+    - `make check` green
+  **Satisfies:** Provider-agnostic subagent spawn
+  **Depends on:** 6.3, 6.6
+
+- [ ] **[MBI-006] 6.8 Phase 1 verification**
+  - Run `make check` end-to-end (format, lint, typecheck, test) — all green
+  - Verify no existing tests were modified to make the refactor pass (behaviour unchanged)
+  - Verify `~/.yoker.toml` written by the wizard still produces a working Ollama session (round-trip unchanged — manual or integration check)
+  - Verify `render_config_toml` writes a config with `openai`/`anthropic` absent when those sub-configs are `None`
+  - Verify `create_backend(Config())` returns an `OllamaBackend` and unknown provider raises `ConfigurationError`
+  - Confirm wizard files (`bootstrap/wizard.py`, `bootstrap/steps.py`) are unchanged (deferred per §8)
+  - Confirm `build_bootstrap_overrides` is NOT touched (deferred with the wizard)
+  - Confirm web tools (`websearch`/`webfetch`) under Ollama still work (PRE-1 base) and are not extended to other providers
+  - **Acceptance:**
+    - `make check` green; zero behaviour change on the Ollama path
+    - All Phase 1 design §5.4 acceptance criteria verified
+    - No wizard changes; no `build_bootstrap_overrides` changes; no new provider wired
+  **Satisfies:** Phase 1 completion gate
+  **Depends on:** 6.1-6.7
 
 ---
 
