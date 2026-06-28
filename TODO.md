@@ -109,7 +109,7 @@ Unsorted improvements and fixes.
   - Ensure full coverage maintained
   **Priority:** P4
 
-- [ ] **M.5 Populate `Agent._tool_backends` for Ollama web tools (prerequisite for multi-provider backend)**
+- [x] ✅ **M.5 Populate `Agent._tool_backends` for Ollama web tools (prerequisite for multi-provider backend)**
   - `Agent._tool_backends` is initialised to `{}` and never populated, so the
     `websearch` and `webfetch` built-in tools already fail today with
     "No backend configured" regardless of provider. This is a pre-existing bug
