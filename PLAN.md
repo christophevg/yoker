@@ -14,6 +14,36 @@ Quick captures for MBI ideas. These are raw requests that haven't been analyzed 
 
 The MBI currently being implemented. Only one Active MBI at a time.
 
+### MBI-006: Multi-Provider Backend Support
+
+**Goal:** Make Yoker provider-neutral at the model layer. A single `ModelBackend` Protocol abstracts chat streaming; the Agent talks to a backend instance, not to `ollama.AsyncClient` directly. Ollama, OpenAI, and Anthropic each ship as a backend implementation behind the same Protocol, delivered in three phases: Phase 1 introduces the Protocol and reimplements Ollama on it (pure refactor, no behaviour change); Phase 2 adds OpenAI; Phase 3 adds Anthropic. The config schema becomes a tagged-union shape that carries per-provider sub-configs and per-provider parameters. The bootstrap wizard's provider-selection step is deferred to a separate follow-up.
+
+**Value:** Removes vendor lock-in at the model layer. Users can choose Ollama (local/free), OpenAI, or Anthropic by switching a single config field, without changing their agentic workflows. Establishes the abstraction seam that lets future providers land without touching the Agent hot path. Phase 1 alone delivers no user-facing change but unlocks Phases 2 and 3.
+
+**Status:** In Progress
+
+**Design source of truth:** `analysis/multi-provider-backend-design.md` (finalized, owner-approved — all 20 decisions in §11 resolved). Functional counterpart: `analysis/functional-multi-provider-backend.md`.
+
+**Components (3 phases):**
+- [ ] DEV: Phase 1 — Protocol + Ollama Refactor (M-sized pure refactor; see TODO.md tasks 6.1-6.8)
+- [ ] DEV: Phase 2 — OpenAI Backend (M-sized; add `openai` SDK backend, per-provider curated model list)
+- [ ] DEV: Phase 3 — Anthropic Backend (L-sized; block-style stream translation, message-shape rewrite, tool-schema translation, SSE parsing, thinking config)
+
+**Acceptance Criteria (overall MBI):**
+- [ ] `ModelBackend` Protocol and `ChatChunk` neutral stream type introduced in `src/yoker/backends/`
+- [ ] Ollama behaviour unchanged through the new Protocol (Phase 1)
+- [ ] OpenAI backend works end-to-end including tool calls and reasoning-content thinking (Phase 2)
+- [ ] Anthropic backend works end-to-end including block-style streaming, system-message extraction, and tool-use round trips (Phase 3)
+- [ ] Config schema is a tagged union; old `~/.yoker.toml` files remain valid without migration
+- [ ] Subagent spawn is provider-agnostic regardless of active provider
+- [ ] `make check` green at each phase boundary; behaviour unchanged for Ollama path throughout
+
+**Dependencies:** PRE-1 (M.5 — populate `Agent._tool_backends` for Ollama) — DONE, merged. Bootstrap wizard provider selection is deferred to a separate follow-up MBI on top of the merged bootstrap PR.
+
+**Out of scope (deferred):** Bootstrap wizard provider selection; `build_bootstrap_overrides` provider-awareness; web tools (`web_search`/`web_fetch`) for non-Ollama providers; embeddings/image generation/model management; live API model discovery; dropping the native Ollama SDK.
+
+---
+
 ### MBI-002: Bootstrap
 
 **Goal:** Users run `yoker` for the first time and are guided through: backend selection, model selection, Ollama account creation (with free tier), and config file creation. After completing bootstrap, any package using yoker can run immediately.
