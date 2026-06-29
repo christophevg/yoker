@@ -152,7 +152,7 @@ class OllamaConfig:
   """
 
   base_url: str = "http://localhost:11434"
-  api_key: str | None = None
+  api_key: str | None = field(default=None, metadata={"cli": False})
   model: str = "llama3.2:latest"
   timeout_seconds: int = 60
   parameters: OllamaParameters = field(default_factory=OllamaParameters)
@@ -165,20 +165,152 @@ class OllamaConfig:
 
 
 @dataclass(frozen=True)
-class BackendConfig:
-  """Backend provider configuration.
+class OpenAIParameters:
+  """OpenAI model parameters.
 
   Attributes:
-    provider: Backend provider name (currently only 'ollama').
-    ollama: Ollama-specific configuration.
+    temperature: Sampling temperature (0.0-2.0).
+    top_p: Nucleus sampling probability (0.0-1.0).
+    max_tokens: Maximum tokens in response.
+  """
+
+  temperature: float = 0.7
+  top_p: float = 0.9
+  max_tokens: int | None = None
+
+  def __post_init__(self) -> None:
+    """Validate OpenAI parameters."""
+    if not 0.0 <= self.temperature <= 2.0:
+      raise ValidationError(
+        "backend.openai.parameters.temperature",
+        self.temperature,
+        "must be between 0.0 and 2.0",
+      )
+    if not 0.0 <= self.top_p <= 1.0:
+      raise ValidationError(
+        "backend.openai.parameters.top_p",
+        self.top_p,
+        "must be between 0.0 and 1.0",
+      )
+    if self.max_tokens is not None:
+      validate_positive_int(self.max_tokens, "backend.openai.parameters.max_tokens")
+
+
+@dataclass(frozen=True)
+class OpenAIConfig:
+  """OpenAI backend configuration.
+
+  Attributes:
+    api_key: API key for OpenAI authorization.
+    model: Default model to use.
+    base_url: Optional base URL for OpenAI-compatible APIs.
+    timeout_seconds: Request timeout in seconds.
+    parameters: Model generation parameters.
+  """
+
+  api_key: str | None = field(default=None, metadata={"cli": False})
+  model: str = "gpt-4o-mini"
+  base_url: str | None = None
+  timeout_seconds: int = 60
+  parameters: OpenAIParameters = field(default_factory=OpenAIParameters)
+
+  def __post_init__(self) -> None:
+    """Validate OpenAI configuration."""
+    validate_non_empty_string(self.model, "backend.openai.model")
+    validate_positive_int(self.timeout_seconds, "backend.openai.timeout_seconds")
+    if self.base_url is not None:
+      validate_url(self.base_url, "backend.openai.base_url")
+
+
+@dataclass(frozen=True)
+class AnthropicParameters:
+  """Anthropic model parameters.
+
+  Attributes:
+    temperature: Sampling temperature (0.0-1.0).
+    top_p: Nucleus sampling probability (0.0-1.0).
+    top_k: Top-k sampling parameter.
+    budget_tokens: Budget tokens for thinking (default 1024).
+  """
+
+  temperature: float = 0.7
+  top_p: float = 0.9
+  top_k: int | None = None
+  budget_tokens: int = 1024
+
+  def __post_init__(self) -> None:
+    """Validate Anthropic parameters."""
+    if not 0.0 <= self.temperature <= 1.0:
+      raise ValidationError(
+        "backend.anthropic.parameters.temperature",
+        self.temperature,
+        "must be between 0.0 and 1.0",
+      )
+    if not 0.0 <= self.top_p <= 1.0:
+      raise ValidationError(
+        "backend.anthropic.parameters.top_p",
+        self.top_p,
+        "must be between 0.0 and 1.0",
+      )
+    if self.top_k is not None:
+      validate_positive_int(self.top_k, "backend.anthropic.parameters.top_k")
+    validate_positive_int(self.budget_tokens, "backend.anthropic.parameters.budget_tokens")
+
+
+@dataclass(frozen=True)
+class AnthropicConfig:
+  """Anthropic backend configuration.
+
+  Attributes:
+    api_key: API key for Anthropic authorization.
+    model: Default model to use.
+    base_url: Optional base URL for Anthropic-compatible APIs.
+    timeout_seconds: Request timeout in seconds.
+    max_tokens: Maximum tokens in response (required by Anthropic API).
+    parameters: Model generation parameters.
+  """
+
+  api_key: str | None = field(default=None, metadata={"cli": False})
+  model: str = "claude-3-5-sonnet-20241022"
+  base_url: str | None = None
+  timeout_seconds: int = 60
+  max_tokens: int = 4096
+  parameters: AnthropicParameters = field(default_factory=AnthropicParameters)
+
+  def __post_init__(self) -> None:
+    """Validate Anthropic configuration."""
+    validate_non_empty_string(self.model, "backend.anthropic.model")
+    validate_positive_int(self.timeout_seconds, "backend.anthropic.timeout_seconds")
+    validate_positive_int(self.max_tokens, "backend.anthropic.max_tokens")
+    if self.base_url is not None:
+      validate_url(self.base_url, "backend.anthropic.base_url")
+
+
+_ALLOWED_PROVIDERS = ("ollama", "openai", "anthropic")
+
+
+@dataclass(frozen=True)
+class BackendConfig:
+  """Backend provider configuration (tagged union by `provider`).
+
+  Attributes:
+    provider: Backend provider name ('ollama', 'openai', or 'anthropic').
+    ollama: Ollama-specific configuration (required when provider='ollama').
+    openai: OpenAI-specific configuration (required when provider='openai').
+    anthropic: Anthropic-specific configuration (required when provider='anthropic').
   """
 
   provider: str = "ollama"
   ollama: OllamaConfig = field(default_factory=OllamaConfig)
+  openai: OpenAIConfig | None = None
+  anthropic: AnthropicConfig | None = None
 
   def __post_init__(self) -> None:
     """Validate backend configuration."""
-    validate_choice(self.provider, "backend.provider", ("ollama",))
+    validate_choice(self.provider, "backend.provider", _ALLOWED_PROVIDERS)
+    # Only the selected provider's config is required; others may be None.
+    if self.provider == "ollama" and self.ollama is None:
+      raise ValidationError("backend.ollama", None, "required when provider='ollama'")
 
 
 @dataclass(frozen=True)
@@ -707,6 +839,10 @@ __all__ = [
   "BackendConfig",
   "OllamaConfig",
   "OllamaParameters",
+  "OpenAIConfig",
+  "OpenAIParameters",
+  "AnthropicConfig",
+  "AnthropicParameters",
   "ContextConfig",
   "HandlerConfig",
   "PermissionsConfig",
