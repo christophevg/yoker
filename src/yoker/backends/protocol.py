@@ -93,7 +93,7 @@ class ModelBackend(Protocol):
     """Provider id, e.g. 'ollama' | 'openai' | 'anthropic'."""
     ...
 
-  async def chat_stream(
+  def chat_stream(
     self,
     *,
     model: str,
