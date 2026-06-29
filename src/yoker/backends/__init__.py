@@ -52,23 +52,20 @@ def with_model(backend: "BackendConfig", model: str) -> "BackendConfig":
 
   Returns:
     A new BackendConfig with the model overridden on the active provider's sub-config.
+
+  Raises:
+    ValueError: If no config is available for the active provider.
   """
-  # Get the active provider's sub-config and override the model
-  if backend.provider == "ollama" and backend.ollama:
-    new_ollama = replace(backend.ollama, model=model)
-    return replace(backend, ollama=new_ollama)
-  elif backend.provider == "openai" and backend.openai:
-    new_openai = replace(backend.openai, model=model)
-    return replace(backend, openai=new_openai)
-  elif backend.provider == "anthropic" and backend.anthropic:
-    new_anthropic = replace(backend.anthropic, model=model)
-    return replace(backend, anthropic=new_anthropic)
-  else:
-    # Fallback: try to set model on whatever sub-config exists
-    if backend.ollama:
-      new_ollama = replace(backend.ollama, model=model)
-      return replace(backend, ollama=new_ollama)
-    raise ValueError(f"Cannot set model for unknown provider: {backend.provider}")
+  # Get the active provider's config using the generic property
+  sub_config = backend.config
+  if sub_config is None:
+    raise ValueError(f"No config for provider: {backend.provider}")
+
+  # Override model on the sub-config
+  new_sub_config = replace(sub_config, model=model)
+
+  # Return new BackendConfig with updated sub-config
+  return replace(backend, **{backend.provider: new_sub_config})
 
 
 __all__ = [
@@ -87,3 +84,4 @@ __all__ = [
   "DEFAULT_BASE_URLS",
   "ENV_ALLOW_CUSTOM_BASE_URL",
 ]
+

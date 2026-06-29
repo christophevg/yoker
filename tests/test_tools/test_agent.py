@@ -32,6 +32,8 @@ def _make_parent_config(tmp_path: Path) -> MagicMock:
   config.backend.ollama.parameters.top_p = 0.9
   config.backend.ollama.parameters.top_k = 40
   config.backend.ollama.parameters.num_ctx = 4096
+  # Support the generic config property
+  config.backend.config = config.backend.ollama
   # Context config
   config.context.storage_path = "/tmp/context"
   config.context.manager = "basic_persistence"
@@ -618,3 +620,4 @@ class TestAgentToolIntegration:
       assert result.success
       assert result.result == "Sub-agent response"
       assert result.error is None
+

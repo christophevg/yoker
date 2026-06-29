@@ -172,12 +172,10 @@ def _create_subagent(parent_agent: "Agent | None", agent_definition: "AgentDefin
   # Get model from the active provider's config for logging
   active_model = model
   if active_model is None and config:
-    if config.backend.provider == "ollama" and config.backend.ollama:
-      active_model = config.backend.ollama.model
-    elif config.backend.provider == "openai" and config.backend.openai:
-      active_model = config.backend.openai.model
-    elif config.backend.provider == "anthropic" and config.backend.anthropic:
-      active_model = config.backend.anthropic.model
+    # Use the generic config property
+    sub_config = config.backend.config
+    if sub_config is not None:
+      active_model = sub_config.model
     else:
       active_model = "default"
 
@@ -206,3 +204,4 @@ async def _run_with_timeout(agent: "Agent", prompt: str, timeout_seconds: int) -
 
 
 __all__ = ["make_agent_tool"]
+

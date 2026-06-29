@@ -74,8 +74,11 @@ def create_backend(config: Config, interactive: bool | None = None) -> "ModelBac
     # Import AsyncClient here to avoid hard dependency for other providers
     from ollama import AsyncClient
 
-    # Create AsyncClient with ollama-specific config
-    ollama_config = backend_config.ollama
+    # Use the generic config property instead of provider-specific access
+    ollama_config = backend_config.config
+    if ollama_config is None:
+      raise ValueError(f"No config for provider: {provider}")
+
     client = AsyncClient(
       host=ollama_config.base_url,
       timeout=ollama_config.timeout_seconds,
@@ -90,3 +93,4 @@ def create_backend(config: Config, interactive: bool | None = None) -> "ModelBac
 
 
 __all__ = ["create_backend"]
+
