@@ -11,7 +11,7 @@
 | **P2** | MBI-004: yoker Commands | Backlog (after Python API) |
 | **P2** | MBI-005: Assistant Integration | Backlog (showcase project) |
 | **P3** | Maintenance Tasks | M.1-M.4 |
-| **P3** | Maintenance Tasks | M.6 (blocked on Clevis FR) |
+| **P3** | Maintenance Tasks | M.6 (done in MBI-006 Phase 1) |
 | **P4+** | Launch Preparation, Architecture, Future Work | See sections below |
 
 ---
@@ -275,25 +275,18 @@ Unsorted improvements and fixes.
   **Priority:** P2
   **Date:** 2026-06-28
 
-- [ ] **M.6 Exclude api_key from Clevis CLI generation once Clevis supports field-exclusion**
-  - Today Clevis auto-generates `--backend-{ollama,openai,anthropic}-api-key` from
-    every dataclass leaf field with no opt-out. API keys on the command line leak
-    via shell history, `ps`, and `/proc`.
-  - The owner decided (PR #36, 2026-06-28) to defer exclusion until Clevis supports
-    a field-exclusion mechanism (e.g. `metadata["cli"] = False`). A feature request
-    has been filed with `christophevg/clevis` (FR: christophevg/clevis#30 —
-    https://github.com/christophevg/clevis/issues/30).
+- [x] **M.6 Exclude api_key from Clevis CLI generation** ✅ (2026-06-29)
+  - Clevis released `metadata={'cli': False}` support (FR christophevg/clevis#30).
+  - Implemented in Phase 1 task 6.3 as part of the config tagged-union + Clevis
+    CLI args work (see MBI-006 task 6.3 acceptance criteria).
   - This is a follow-up to the multi-provider backend security review
     (`analysis/security-multi-provider-backend.md`, finding H1) and amends
     design decision Q6 (`analysis/multi-provider-backend-design.md` §11.6).
-  - **Blocked on:** the upstream Clevis feature request landing. Do not implement
-    until Clevis supports field-exclusion.
-  - When unblocked: annotate `api_key` fields on `OllamaConfig`/`OpenAIConfig`/
-    `AnthropicConfig` with `metadata={"cli": False}` (or whatever convention
-    Clevis adopts); add a test asserting no `--backend-*-api-key` CLI arg is
-    generated.
+  - `api_key` fields on `OllamaConfig`/`OpenAIConfig`/`AnthropicConfig` will be
+    annotated with `metadata={"cli": False}` in Phase 1 task 6.3; test asserts
+    no `--backend-*-api-key` CLI arg is generated.
   **Priority:** P3
-  **Date:** 2026-06-28
+  **Date:** 2026-06-29
 
 ---
 
