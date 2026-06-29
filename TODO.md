@@ -5,6 +5,7 @@
 | Priority | MBI/Task | Status |
 |----------|----------|--------|
 | **P1** | MBI-006: Multi-Provider Backend (Phase 1) | Complete |
+| **P1** | MBI-006 Phase 2: LitellmBackend | Ready to start |
 | **P1** | MBI-002: Bootstrap | Wrapping up |
 | **P1** | MBI-001 Validation | Pending (validate with pkgq, then publish) |
 | **P2** | MBI-003: Python API | Backlog (after Bootstrap) |
@@ -202,6 +203,162 @@
     - No wizard changes; no `build_bootstrap_overrides` changes; no new provider wired
   **Satisfies:** Phase 1 completion gate
   **Depends on:** 6.1-6.7
+
+---
+
+## Active: MBI-006 Phase 2: LitellmBackend for Multi-Provider Support
+
+**Goal:** Implement `LitellmBackend` wrapping the litellm library to support OpenAI, Anthropic, and 100+ other providers through a unified interface.
+
+**Design source of truth:** `analysis/dual-backend-architecture.md` (Phase 2). This replaces the original Phase 2 (OpenAI backend) and Phase 3 (Anthropic backend) with a single unified approach.
+
+**Architecture decision:** Dual backend — OllamaBackend (Phase 1, native SDK) for Ollama, LitellmBackend (Phase 2, new) for all other providers.
+
+**Out of scope for Phase 2:** Bootstrap wizard provider selection, `build_bootstrap_overrides` provider-awareness, live API model discovery for non-Ollama providers, extending web tools to non-Ollama providers.
+
+### Tasks
+
+- [ ] **[MBI-006] 8.1 Add litellm dependency**
+  - Add `litellm>=1.90.0` to `pyproject.toml` dependencies
+  - Run `uv sync` to install the dependency
+  - Verify litellm supports Ollama, OpenAI, Anthropic in dependency documentation
+  - **Acceptance:**
+    - `litellm>=1.90.0` in `pyproject.toml`
+    - `uv lock` updated with litellm and its transitive dependencies
+    - Import `litellm` succeeds in Python environment
+  **Satisfies:** Dependency foundation for LitellmBackend
+  **Depends on:** —
+
+- [ ] **[MBI-006] 8.2 Create LitellmBackend implementation**
+  - Create `src/yoker/backends/litellm.py` with `LitellmBackend` class
+  - Implement `ModelBackend` Protocol from `backends/protocol.py`
+  - Constructor takes Yoker config, extracts provider credentials
+  - `provider` property returns current provider name
+  - `chat_stream()` method:
+    - Map Yoker model to litellm model string (`ollama/llama3.2`, `openai/gpt-4o`, `anthropic/claude-sonnet-4`, etc.)
+    - Call `litellm.acompletion()` with streaming enabled
+    - Translate `ModelResponseStream` chunks to Yoker `ChatChunk` events
+    - Synthesize START/STOP events (litellm only emits deltas)
+    - Handle `reasoning_content` for thinking/reasoning models
+  - Write unit tests with mocked litellm
+  - **Acceptance:**
+    - `LitellmBackend` implements all `ModelBackend` Protocol methods
+    - Constructor extracts API keys from provider-specific config
+    - `chat_stream()` returns `AsyncIterator[ChatChunk]`
+    - Model string mapping works for OpenAI, Anthropic, and Ollama prefixes
+  **Satisfies:** LitellmBackend core implementation
+  **Depends on:** 8.1
+
+- [ ] **[MBI-006] 8.3 Implement stream translation**
+  - Create `_translate_chunk()` method in LitellmBackend
+  - Translate litellm's `ModelResponseStream` to Yoker's `ChatChunk`
+  - State tracking for `CONTENT_START`/`CONTENT_STOP` synthesis
+  - State tracking for `THINKING_START`/`THINKING_STOP` synthesis (from `reasoning_content`)
+  - State tracking for `TOOL_CALL_START`/`TOOL_CALL_STOP` synthesis
+  - Emit `USAGE` with `input_tokens`/`output_tokens` from litellm usage stats
+  - Emit terminal `DONE` after final chunk
+  - Handle litellm exceptions gracefully (network errors, rate limits, auth errors)
+  - Write unit tests with recorded chunk sequences
+  - **Acceptance:**
+    - Delta-only litellm chunks correctly synthesized into START/DELTA/STOP sequences
+    - `reasoning_content` mapped to THINKING events
+    - Tool calls properly bracketed with START/STOP
+    - USAGE event contains token counts from litellm
+    - Terminal DONE event always emitted (even on error)
+  **Satisfies:** Stream translation layer
+  **Depends on:** 8.2
+
+- [ ] **[MBI-006] 8.4 Register LitellmBackend in factory**
+  - Update `src/yoker/backends/factory.py`
+  - Map OpenAI, Anthropic, and other providers to `LitellmBackend`
+  - Keep Ollama mapping to `OllamaBackend` (dual backend architecture)
+  - Unknown providers default to `LitellmBackend` (leverages litellm's 100+ providers)
+  - Import `LitellmBackend` in `backends/__init__.py`
+  - Write unit tests asserting correct backend instantiation per provider
+  - **Acceptance:**
+    - `create_backend(Config(backend=BackendConfig(provider="openai")))` returns `LitellmBackend`
+    - `create_backend(Config(backend=BackendConfig(provider="anthropic")))` returns `LitellmBackend`
+    - `create_backend(Config(backend=BackendConfig(provider="ollama")))` returns `OllamaBackend`
+    - Unknown provider like `"groq"` returns `LitellmBackend` (litellm handles it)
+  **Satisfies:** Factory dispatch for dual backend
+  **Depends on:** 8.2
+
+- [ ] **[MBI-006] 8.5 Preserve base_url trust boundary**
+  - Keep existing trust boundary validation from Phase 1 (OllamaBackend)
+  - Apply to all providers (not just Ollama)
+  - `base_url` warning/confirmation for custom endpoints
+  - Batch mode `YOKER_ALLOW_CUSTOM_BASE_URL` environment variable support
+  - Document security implications in code comments
+  - Write unit tests for trust boundary behavior
+  - **Acceptance:**
+    - Custom `base_url` triggers warning in interactive mode
+    - Batch mode requires `YOKER_ALLOW_CUSTOM_BASE_URL=1` for custom endpoints
+    - Behavior consistent across Ollama, OpenAI, Anthropic providers
+  **Satisfies:** Security: base_url validation
+  **Depends on:** 8.2
+
+- [ ] **[MBI-006] 8.6 Configure litellm from Yoker config**
+  - Extract API key from provider-specific config (`config.backend.openai.api_key`, `config.backend.anthropic.api_key`, etc.)
+  - Map provider-specific parameters to litellm kwargs (`num_ctx`, `budget_tokens`, etc.)
+  - Handle `think` flag mapping:
+    - OpenAI o-series: `reasoning_effort` parameter
+    - Anthropic: `budget_tokens` parameter
+    - Other providers: pass through or warn
+  - Support all Phase 1 config fields (`model`, `base_url`, `api_key`)
+  - Write unit tests for config mapping
+  - **Acceptance:**
+    - API keys correctly extracted from provider sub-configs
+    - Provider-specific parameters passed to litellm
+    - `think` flag mapped appropriately per provider
+    - Missing API key raises clear `ConfigurationError`
+  **Satisfies:** Config → litellm parameter mapping
+  **Depends on:** 8.2, 8.4
+
+- [ ] **[MBI-006] 8.7 Verify web tools dispatch**
+  - Verify web tools (`websearch`/`webfetch`) still work with Ollama (native SDK path)
+  - Verify graceful failure for non-Ollama providers
+  - `Agent._create_tool_backends()` only populates web backends when `provider == "ollama"`
+  - No changes to web tools implementation (they remain Ollama-specific)
+  - Write unit tests asserting web tools behavior per provider
+  - **Acceptance:**
+    - Ollama provider: web tools populated and functional
+    - OpenAI provider: web tools not populated (no error)
+    - Anthropic provider: web tools not populated (no error)
+    - Attempting to use web tools with non-Ollama provider raises clear error
+  **Satisfies:** Web tools dual-backend behavior
+  **Depends on:** 8.4
+
+- [ ] **[MBI-006] 8.8 Update with_model helper**
+  - Extend `with_model()` helper from Phase 1 to support LitellmBackend
+  - Model override works for all litellm providers (simple prefix change in model string)
+  - Ollama model override continues to work (Phase 1 behavior)
+  - Write unit tests for all providers
+  - **Acceptance:**
+    - `with_model(backend, "gpt-4o")` produces correct config for OpenAI
+    - `with_model(backend, "claude-sonnet-4")` produces correct config for Anthropic
+    - `with_model(backend, "llama3.2")` produces correct config for Ollama
+    - Unknown provider model strings work via litellm prefix logic
+  **Satisfies:** Provider-agnostic model override
+  **Depends on:** 8.4, 8.6
+
+- [ ] **[MBI-006] 8.9 Phase 2 verification**
+  - Run `make check` end-to-end (format, lint, typecheck, test) — all green
+  - Verify no existing tests modified (behaviour unchanged for Ollama path)
+  - Write integration tests with mocked OpenAI/Anthropic API responses
+  - Optional: integration tests with real OpenAI API (requires API key)
+  - Verify `create_backend()` returns `LitellmBackend` for non-Ollama providers
+  - Verify `TurnEndEvent` carries `input_tokens`/`output_tokens` from litellm
+  - Verify `base_url` trust boundary enforcement
+  - **Acceptance:**
+    - `make check` green
+    - Ollama path unchanged (all existing tests pass)
+    - OpenAI backend works end-to-end (mocked or real API)
+    - Anthropic backend works end-to-end (mocked or real API)
+    - Web tools work with Ollama, fail gracefully with others
+    - Native Ollama features preserved (stats, thinking, web tools)
+    - Phase 2 acceptance criteria from `analysis/dual-backend-architecture.md` verified
+  **Satisfies:** Phase 2 completion gate
+  **Depends on:** 8.1-8.8
 
 ---
 
@@ -1321,3 +1478,4 @@ Unsorted improvements and fixes.
 - [x] **Issue #9: Fix ~ in Storage Path** (2026-05-25)
   - Fixed tilde expansion bug
   - PR: #11
+
