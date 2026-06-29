@@ -107,13 +107,17 @@ class TestRenderConfigToml:
     toml_str = render_config_toml(original_config)
 
     # Write to temporary file
+    import os
+
     with tempfile.TemporaryDirectory() as tmpdir:
+      # Secure directory permissions for Clevis security check
+      # (TemporaryDirectory creates world-writable dirs on Windows)
+      os.chmod(tmpdir, 0o700)
+
       config_path = Path(tmpdir) / "test.toml"
       config_path.write_text(toml_str)
 
-      # Set secure permissions (owner-only readable) for Clevis security check
-      import os
-
+      # Set secure file permissions (owner-only readable)
       os.chmod(config_path, 0o600)
 
       original_dir = os.getcwd()
