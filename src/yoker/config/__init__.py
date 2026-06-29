@@ -40,7 +40,7 @@ CLI Arguments:
 
 import os
 from dataclasses import asdict, dataclass, field
-from typing import Any, Literal, cast
+from typing import Any, Literal, Union, cast
 
 from clevis import SecurityAction, SecurityConfig, get_config
 
@@ -84,6 +84,10 @@ def get_yoker_config(cli: bool = False) -> "Config":
     )
 
   return get_config(Config, name="yoker", cli=cli, security=security)
+
+
+# Type alias for provider configs (used for type hints)
+ProviderConfig = Union["OllamaConfig", "OpenAIConfig", "AnthropicConfig"]
 
 
 @dataclass(frozen=True)
@@ -320,15 +324,15 @@ class BackendConfig:
     # Validate provider is a non-empty string
     validate_non_empty_string(self.provider, "backend.provider")
 
-    # For known providers, validate that the required config is present
-    if self.provider in ("ollama", "openai", "anthropic"):
-      if self.config is None:
-        raise ValidationError(
-          f"backend.{self.provider}", None, f"required when provider='{self.provider}'"
-        )
+    # For known providers (ollama, openai, anthropic), validate that config is present
+    # Unknown providers are allowed - they'll use litellm with env vars or base_url
+    if self.provider in ("ollama", "openai", "anthropic") and self.config is None:
+      raise ValidationError(
+        f"backend.{self.provider}", None, f"required when provider='{self.provider}'"
+      )
 
   @property
-  def config(self) -> "OllamaConfig | OpenAIConfig | AnthropicConfig | None":
+  def config(self) -> ProviderConfig | None:
     """Get the active provider's config.
 
     Returns the config for the currently selected provider, or None if not set.
@@ -360,11 +364,9 @@ class BackendConfig:
       >>> config.params
       {'model': 'gpt-4o', 'api_key': 'sk-test', 'base_url': None, 'timeout_seconds': 60, ...}
     """
-    # Get the active provider's config using the generic property
     sub_config = self.config
 
     if sub_config is None:
-      # Unknown provider or missing config - return empty dict
       return {}
 
     # Flatten dataclass to dict
@@ -930,3 +932,4 @@ __all__ = [
   # Helper function
   "get_yoker_config",
 ]
+

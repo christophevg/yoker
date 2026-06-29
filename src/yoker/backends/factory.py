@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING
 from yoker.backends.litellm import LitellmBackend
 from yoker.backends.ollama import OllamaBackend
 from yoker.backends.trust import validate_base_url_trust
-from yoker.config import BackendConfig, Config
+from yoker.config import Config
 
 if TYPE_CHECKING:
   from yoker.backends.protocol import ModelBackend
@@ -52,9 +52,6 @@ def create_backend(config: Config, interactive: bool | None = None) -> "ModelBac
     ConfigurationError: If provider is unknown or not configured.
     TrustBoundaryError: If custom base_url is not allowed in batch mode.
   """
-  backend_config: BackendConfig = config.backend
-  provider = backend_config.provider
-
   # Auto-detect interactive mode
   if interactive is None:
     # Interactive if YOKER_DEV_MODE is set (takes priority)
@@ -67,9 +64,9 @@ def create_backend(config: Config, interactive: bool | None = None) -> "ModelBac
       interactive = True
 
   # Validate base_url trust boundary (all providers)
-  validate_base_url_trust(backend_config, interactive=interactive)
+  validate_base_url_trust(config.backend, interactive=interactive)
 
-  if provider == "ollama":
+  if config.backend.provider == "ollama":
     # Ollama uses native SDK for full features (web tools, native stats)
     return OllamaBackend(config)
 
@@ -79,3 +76,4 @@ def create_backend(config: Config, interactive: bool | None = None) -> "ModelBac
 
 
 __all__ = ["create_backend"]
+
