@@ -369,18 +369,19 @@ class Agent:
         "model from agent definition", model=self.definition.model, agent=self.definition.name
       )
       return self.definition.model
-    # Read from the active provider's config
-    provider = self.config.backend.provider
-    if provider == "ollama" and self.config.backend.ollama:
-      model = self.config.backend.ollama.model
-    elif provider == "openai" and self.config.backend.openai:
-      model = self.config.backend.openai.model
-    elif provider == "anthropic" and self.config.backend.anthropic:
-      model = self.config.backend.anthropic.model
+
+    # Read from the active provider's config using the generic property
+    sub_config = self.config.backend.config
+    if sub_config is not None:
+      model = sub_config.model
     else:
       # Fallback to Ollama config (default provider)
-      model = self.config.backend.ollama.model
-    logger.info("model from config", model=model, provider=provider)
+      if self.config.backend.ollama:
+        model = self.config.backend.ollama.model
+      else:
+        raise ValueError("No model configured and no fallback available")
+
+    logger.info("model from config", model=model, provider=self.config.backend.provider)
     return model
 
   def _create_tool_backends(self) -> dict[str, Any]:
@@ -397,10 +398,18 @@ class Agent:
     """
     backends: dict[str, Any] = {}
 
+    # Web tools only work with Ollama
     if self.config.backend.provider != "ollama":
       return backends
 
-    api_key = self.config.backend.ollama.api_key
+    # Use the generic config property
+    sub_config = self.config.backend.config
+    if sub_config is None:
+      return backends
+
+    # Access api_key through the config
+    # Type: ignore is needed because we know this is OllamaConfig but mypy doesn't
+    api_key = getattr(sub_config, 'api_key', None)  # type: ignore
     if not api_key:
       return backends
 
@@ -455,3 +464,4 @@ class Agent:
         logger.info("agents loaded", count=len(new_agents), source=directory)
       except Exception as e:
         logger.warning("loading agents failed", directory=directory, error=str(e))
+

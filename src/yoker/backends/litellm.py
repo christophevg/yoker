@@ -96,6 +96,9 @@ class LitellmBackend(ModelBackend):
     # Build litellm model string: "provider/model"
     litellm_model = f"{self._provider}/{model}"
 
+    # Remove model from params (it's passed separately)
+    params.pop("model", None)
+
     # litellm-specific transform: base_url → api_base
     if "base_url" in params:
       params["api_base"] = params.pop("base_url")
@@ -234,3 +237,4 @@ class LitellmBackend(ModelBackend):
     """
     model_lower = model.lower()
     return any(o in model_lower for o in ["o1-", "o1_", "o3-", "o3_", "o1", "o3"])
+

@@ -52,30 +52,28 @@ def is_custom_base_url(backend_config: "BackendConfig") -> bool:
   Returns:
     True if base_url differs from default, False otherwise.
   """
-  provider = backend_config.provider
+  # Get the active provider's config
+  sub_config = backend_config.config
+  if sub_config is None:
+    return False
 
-  if provider == "ollama" and backend_config.ollama:
-    default_url = DEFAULT_BASE_URLS.get("ollama")
-    return backend_config.ollama.base_url != default_url
-  elif provider == "openai" and backend_config.openai:
-    # None means default; any non-None value is custom
-    return backend_config.openai.base_url is not None
-  elif provider == "anthropic" and backend_config.anthropic:
-    # None means default; any non-None value is custom
-    return backend_config.anthropic.base_url is not None
+  # Check if the config has a base_url attribute
+  if not hasattr(sub_config, 'base_url'):
+    return False
 
-  # Unknown provider - only custom if base_url is explicitly set
-  # Since we can't know the default URL for unknown providers, we check
-  # if there's any config with base_url set
-  if backend_config.ollama and backend_config.ollama.base_url:
-    return backend_config.ollama.base_url != DEFAULT_BASE_URLS.get("ollama")
-  if backend_config.openai and backend_config.openai.base_url:
-    return True  # Any explicit base_url for unknown provider is custom
-  if backend_config.anthropic and backend_config.anthropic.base_url:
-    return True  # Any explicit base_url for unknown provider is custom
+  base_url = sub_config.base_url
+  if base_url is None:
+    return False
 
-  # No base_url set for unknown provider - not custom
-  return False
+  # Get the default URL for this provider
+  default = DEFAULT_BASE_URLS.get(backend_config.provider)
+
+  # For providers with None default (OpenAI, Anthropic), any non-None base_url is custom
+  if default is None:
+    return True
+
+  # For providers with known defaults (Ollama), check if it differs
+  return base_url != default
 
 
 def validate_base_url_trust(backend_config: "BackendConfig", interactive: bool = True) -> None:
@@ -146,16 +144,13 @@ def _get_base_url(backend_config: "BackendConfig") -> str | None:
   Returns:
     Configured base_url or None if using default.
   """
-  provider = backend_config.provider
+  # Get the active provider's config
+  sub_config = backend_config.config
+  if sub_config is None:
+    return None
 
-  if provider == "ollama" and backend_config.ollama:
-    return backend_config.ollama.base_url
-  elif provider == "openai" and backend_config.openai:
-    return backend_config.openai.base_url
-  elif provider == "anthropic" and backend_config.anthropic:
-    return backend_config.anthropic.base_url
-
-  return None
+  # Return base_url if the config has this attribute
+  return getattr(sub_config, 'base_url', None)
 
 
 __all__ = [
@@ -165,3 +160,4 @@ __all__ = [
   "DEFAULT_BASE_URLS",
   "ENV_ALLOW_CUSTOM_BASE_URL",
 ]
+

@@ -318,13 +318,25 @@ class BackendConfig:
     if self.provider in ("ollama", "openai", "anthropic"):
       validate_choice(self.provider, "backend.provider", _ALLOWED_PROVIDERS)
 
-    # Only the selected provider's config is required; others may be None.
-    if self.provider == "ollama" and self.ollama is None:
-      raise ValidationError("backend.ollama", None, "required when provider='ollama'")
-    if self.provider == "openai" and self.openai is None:
-      raise ValidationError("backend.openai", None, "required when provider='openai'")
-    if self.provider == "anthropic" and self.anthropic is None:
-      raise ValidationError("backend.anthropic", None, "required when provider='anthropic'")
+      # For known providers, the config is required
+      if self.config is None:
+        raise ValidationError(
+          f"backend.{self.provider}", None, f"required when provider='{self.provider}'"
+        )
+
+  @property
+  def config(self) -> "OllamaConfig | OpenAIConfig | AnthropicConfig | None":
+    """Get the active provider's config.
+
+    Returns the config for the currently selected provider, or None if not set.
+    This provides a generic way to access provider-specific config without
+    if-then-else chains.
+
+    Returns:
+      The provider-specific config (OllamaConfig, OpenAIConfig, or AnthropicConfig)
+      or None if not configured.
+    """
+    return getattr(self, self.provider, None)
 
   @property
   def params(self) -> dict[str, Any]:
@@ -345,16 +357,8 @@ class BackendConfig:
       >>> config.params
       {'model': 'gpt-4o', 'api_key': 'sk-test', 'base_url': None, 'timeout_seconds': 60, ...}
     """
-    # Get the active provider's sub-config
-    # For known providers (ollama, openai, anthropic), use the dedicated attribute
-    sub_config: OllamaConfig | OpenAIConfig | AnthropicConfig | None = None
-
-    if self.provider == "ollama" and self.ollama is not None:
-      sub_config = self.ollama
-    elif self.provider == "openai" and self.openai is not None:
-      sub_config = self.openai
-    elif self.provider == "anthropic" and self.anthropic is not None:
-      sub_config = self.anthropic
+    # Get the active provider's config using the generic property
+    sub_config = self.config
 
     if sub_config is None:
       # Unknown provider or missing config - return empty dict
@@ -923,3 +927,4 @@ __all__ = [
   # Helper function
   "get_yoker_config",
 ]
+
