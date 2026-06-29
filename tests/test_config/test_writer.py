@@ -1,8 +1,10 @@
 """Tests for Config TOML writer."""
 
+import sys
 import tempfile
 from pathlib import Path
 
+import pytest
 from clevis import get_config
 
 from yoker.config import (
@@ -88,6 +90,10 @@ class TestRenderConfigToml:
     # Should NOT contain anthropic section
     assert "[backend.anthropic]" not in toml_str
 
+  @pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="Clevis security check rejects world-writable temp dirs on Windows",
+  )
   def test_roundtrip_ollama_config(self) -> None:
     """Test that writing and reading config produces equivalent config."""
     original_config = Config(
