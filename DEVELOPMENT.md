@@ -1,0 +1,125 @@
+# Yoker Development Guide
+
+This document provides an overview of the project architecture, conventions, and recent changes for development purposes.
+
+## Project Overview
+
+Yoker is a Python agent harness with configurable tools and guardrails. It provides a provider-neutral backend architecture for LLM interactions, currently supporting Ollama with plans for OpenAI and Anthropic.
+
+## Recent Changes
+
+### Phase 1: Multi-Provider Backend Architecture (2026-06-29)
+
+**Task 6.1**: Created `backends/` package with foundational types and Protocol.
+
+#### Package Structure
+
+```
+src/yoker/backends/
+├── __init__.py          # Public exports: ModelBackend, ChatChunk, ChatChunkEvent, ToolCallDelta, UsageStats
+└── protocol.py          # ModelBackend Protocol + ChatChunk + supporting types
+```
+
+#### Key Components
+
+1. **ModelBackend Protocol**: Provider-neutral streaming chat backend interface
+   - Async `chat_stream()` method yields `ChatChunk` instances
+   - `provider` property returns backend identifier
+   - Designed for delta-style (Ollama/OpenAI) and block-style (Anthropic) streaming
+
+2. **ChatChunk**: Frozen dataclass representing streaming events
+   - One-of semantics: each chunk is primarily one kind (text, tool_call, or usage)
+   - `event` field (ChatChunkEvent) determines chunk type
+   - Optional fields: `index`, `text`, `tool_call`, `usage`
+
+3. **ChatChunkEvent**: Enum of all event types
+   - Content events: `CONTENT_START`, `CONTENT_DELTA`, `CONTENT_STOP`
+   - Thinking events: `THINKING_START`, `THINKING_DELTA`, `THINKING_STOP`
+   - Tool events: `TOOL_CALL_START`, `TOOL_CALL_DELTA`, `TOOL_CALL_STOP`
+   - Stats events: `USAGE`, `DONE`
+
+4. **ToolCallDelta**: Incremental tool-call fragment
+   - `index`, `id`, `name`, `arguments_delta` fields
+   - Supports both delta-style (OpenAI/Ollama) and block-style (Anthropic) streaming
+
+5. **UsageStats**: Token/duration statistics
+   - Ollama-native fields: `prompt_eval_count`, `eval_count`, `total_duration_ms`
+   - Generic fields: `input_tokens`, `output_tokens`
+   - All fields optional with `None` defaults
+
+#### Design Decisions
+
+- **Frozen dataclasses**: Immutable types prevent accidental mutation
+- **Protocol-based interface**: Structural subtyping for backends
+- **Provider-agnostic types**: Single `ChatChunk` type serves all providers
+- **Backward compatibility**: Ollama-native stats preserved as first-class fields
+
+#### Tests
+
+- `tests/test_backends/test_protocol.py`: 14 tests covering all types
+- Tests verify frozen behavior, imports, defaults, and Protocol structure
+
+## Architecture
+
+### Backend Layer
+
+The `backends/` package provides a clean abstraction layer between the agent and LLM providers:
+
+```
+Agent → ModelBackend Protocol → Backend Implementation → Provider SDK
+                                                    ├─ OllamaBackend (Phase 1)
+                                                    ├─ OpenAIBackend (Phase 2)
+                                                    └─ AnthropicBackend (Phase 3)
+```
+
+### Event Flow
+
+```
+Backend.chat_stream() → ChatChunk → Agent._consume_stream() → Event → UIBridge
+```
+
+The Agent consumes provider-neutral `ChatChunk` instances and translates them into existing `Event` types (`ThinkingStartEvent`, `ContentChunkEvent`, `ToolCallEvent`, `TurnEndEvent`, etc.).
+
+## Conventions
+
+### Code Style
+
+- **Two-space indentation** in all file types
+- **Fully qualified imports**: `from yoker.backends.protocol import ChatChunk`
+- **Type annotations**: Full type hints with strict mypy checking
+- **Docstrings**: Comprehensive docstrings for all public types
+
+### Testing
+
+- **pytest** with descriptive test names
+- **Frozen dataclasses**: Verify immutability with `pytest.raises(AttributeError)`
+- **Protocol compliance**: Verify interface structure with minimal mock implementations
+
+### Module Organization
+
+- `__init__.py`: Public API exports with `__all__`
+- `protocol.py`: Core types and Protocol definitions
+- `factory.py`: Backend factory (Phase 1 task 6.4)
+- `<provider>.py`: Backend implementations (Phase 1 task 6.5, Phase 2, Phase 3)
+
+## Next Steps
+
+### Phase 1 Remaining Tasks
+
+1. **Task 6.2**: Add `input_tokens`/`output_tokens` to `TurnEndEvent` (update events/types.py)
+2. **Task 6.3**: Widen `BackendConfig` to tagged-union shape (update config/__init__.py)
+3. **Task 6.4**: Create `backends/factory.py` with `create_backend()` dispatch
+4. **Task 6.5**: Create `OllamaBackend` adapter wrapping `ollama.AsyncClient`
+5. **Task 6.6**: Update Agent to use ModelBackend instead of direct client
+
+### Phase 2 (Future)
+
+- Add OpenAI backend implementation
+- Per-provider curated model lists
+- Update bootstrap for multi-provider support
+
+### Phase 3 (Future)
+
+- Add Anthropic backend implementation
+- Message-shape translation (system extraction, tool blocks)
+- SSE stream parsing for Anthropic
