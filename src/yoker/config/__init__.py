@@ -294,10 +294,15 @@ class BackendConfig:
   """Backend provider configuration (tagged union by `provider`).
 
   Attributes:
-    provider: Backend provider name ('ollama', 'openai', or 'anthropic').
+    provider: Backend provider name ('ollama', 'openai', 'anthropic', or any litellm-supported provider).
     ollama: Ollama-specific configuration (required when provider='ollama').
     openai: OpenAI-specific configuration (required when provider='openai').
     anthropic: Anthropic-specific configuration (required when provider='anthropic').
+
+  Note:
+    For providers other than 'ollama', 'openai', or 'anthropic', litellm handles the provider.
+    The provider string can be any litellm-supported provider (e.g., 'groq', 'cohere', 'azure').
+    For these providers, only api_key and base_url are needed (via environment variables or config).
   """
 
   provider: str = "ollama"
@@ -307,10 +312,19 @@ class BackendConfig:
 
   def __post_init__(self) -> None:
     """Validate backend configuration."""
-    validate_choice(self.provider, "backend.provider", _ALLOWED_PROVIDERS)
+    # We allow any provider string since litellm supports 100+ providers
+    # Known providers have dedicated config validation
+    # Unknown providers will use litellm's generic support
+    if self.provider in ("ollama", "openai", "anthropic"):
+      validate_choice(self.provider, "backend.provider", _ALLOWED_PROVIDERS)
+
     # Only the selected provider's config is required; others may be None.
     if self.provider == "ollama" and self.ollama is None:
       raise ValidationError("backend.ollama", None, "required when provider='ollama'")
+    if self.provider == "openai" and self.openai is None:
+      raise ValidationError("backend.openai", None, "required when provider='openai'")
+    if self.provider == "anthropic" and self.anthropic is None:
+      raise ValidationError("backend.anthropic", None, "required when provider='anthropic'")
 
 
 @dataclass(frozen=True)

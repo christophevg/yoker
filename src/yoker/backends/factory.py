@@ -2,41 +2,75 @@
 
 Provides create_backend() factory function that instantiates the appropriate
 backend based on configuration.
+
+Architecture (dual backend):
+  - Ollama: Native OllamaBackend (preserves web tools, native stats)
+  - OpenAI/Anthropic/other: LitellmBackend (unified interface via litellm)
+
+Security:
+  - Validates base_url trust boundary before creating backend
+  - Prevents credential leakage through malicious configs
 """
 
+import os
 from typing import TYPE_CHECKING
 
+from yoker.backends.litellm import LitellmBackend
 from yoker.backends.ollama import OllamaBackend
+from yoker.backends.trust import validate_base_url_trust
 from yoker.config import BackendConfig, Config
-from yoker.exceptions import ConfigurationError
 
 if TYPE_CHECKING:
   from yoker.backends.protocol import ModelBackend
 
 
-def create_backend(config: Config) -> "ModelBackend":
+def create_backend(config: Config, interactive: bool | None = None) -> "ModelBackend":
   """Create a ModelBackend instance based on configuration.
 
   This is the recommended way to instantiate backend instances. The factory
   reads config.backend.provider and returns the appropriate backend.
 
-  For Phase 1, only 'ollama' is fully implemented. Other providers are
-  recognized but will raise NotImplementedError.
+  Architecture:
+    - Ollama: Native OllamaBackend (full features: web tools, native stats)
+    - OpenAI/Anthropic/others: LitellmBackend (unified interface via litellm)
+
+  Security:
+    - Validates base_url trust boundary before creating backend
+    - Prevents credential leakage through malicious configs
+    - Interactive mode: warns and asks for confirmation
+    - Batch mode: requires YOKER_ALLOW_CUSTOM_BASE_URL=1
 
   Args:
     config: Yoker configuration object.
+    interactive: Whether to show interactive prompts. If None, auto-detects
+      from environment (YOKER_DEV_MODE or PYTEST_CURRENT_TEST).
 
   Returns:
-    ModelBackend instance (OllamaBackend for provider='ollama').
+    ModelBackend instance (OllamaBackend for 'ollama', LitellmBackend for others).
 
   Raises:
     ConfigurationError: If provider is unknown or not configured.
-    NotImplementedError: If provider is known but not yet implemented.
+    TrustBoundaryError: If custom base_url is not allowed in batch mode.
   """
   backend_config: BackendConfig = config.backend
   provider = backend_config.provider
 
+  # Auto-detect interactive mode
+  if interactive is None:
+    # Interactive if YOKER_DEV_MODE is set (takes priority)
+    # Otherwise, interactive if not in pytest
+    if os.environ.get("YOKER_DEV_MODE") == "1":
+      interactive = True
+    elif os.environ.get("PYTEST_CURRENT_TEST"):
+      interactive = False
+    else:
+      interactive = True
+
+  # Validate base_url trust boundary (all providers)
+  validate_base_url_trust(backend_config, interactive=interactive)
+
   if provider == "ollama":
+    # Ollama uses native SDK for full features (web tools, native stats)
     # Import AsyncClient here to avoid hard dependency for other providers
     from ollama import AsyncClient
 
@@ -50,23 +84,9 @@ def create_backend(config: Config) -> "ModelBackend":
     # but we track it in config for future use
     return OllamaBackend(client)
 
-  if provider == "openai":
-    # Phase 2 will implement OpenAI backend
-    raise NotImplementedError(
-      "OpenAI backend not implemented. OpenAI backend will be implemented in Phase 2."
-    )
-
-  if provider == "anthropic":
-    # Phase 3 will implement Anthropic backend
-    raise NotImplementedError(
-      "Anthropic backend not implemented. Anthropic backend will be implemented in Phase 3."
-    )
-
-  # Unknown provider
-  raise ConfigurationError(
-    setting="backend.provider",
-    message=f"Unknown provider: {provider}. Supported providers: ollama, openai, anthropic",
-  )
+  # All other providers use LitellmBackend
+  # litellm supports 100+ providers: OpenAI, Anthropic, Azure, Google, etc.
+  return LitellmBackend(config)
 
 
 __all__ = ["create_backend"]

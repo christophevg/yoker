@@ -27,6 +27,7 @@ keywords = ["agent", "llm", "ollama", "ai", "harness"]
 dependencies = [
   "clevis[tomlev]>=0.3.3",
   "httpx>=0.25.0",
+  "litellm>=1.90.0",
   "ollama>=0.6.0",
   "prompt_toolkit>=3.0.0",
   "python-dotenv>=1.0.0",
@@ -153,3 +154,4 @@ base_python = ["python3.12"]
 
 [tool.uv.workspace]
 members = ["examples/plugins/demo"]
+
