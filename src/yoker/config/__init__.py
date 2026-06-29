@@ -104,7 +104,6 @@ class HarnessConfig:
   author: str | None = None
 
   def __post_init__(self) -> None:
-    """Validate harness configuration."""
     validate_non_empty_string(self.name, "harness.name")
     validate_non_empty_string(self.version, "harness.version")
 
@@ -126,7 +125,6 @@ class OllamaParameters:
   num_ctx: int = 4096
 
   def __post_init__(self) -> None:
-    """Validate Ollama parameters."""
     if not 0.0 <= self.temperature <= 2.0:
       raise ValidationError(
         "backend.ollama.parameters.temperature",
@@ -162,7 +160,6 @@ class OllamaConfig:
   parameters: OllamaParameters = field(default_factory=OllamaParameters)
 
   def __post_init__(self) -> None:
-    """Validate Ollama configuration."""
     validate_url(self.base_url, "backend.ollama.base_url")
     validate_non_empty_string(self.model, "backend.ollama.model")
     validate_positive_int(self.timeout_seconds, "backend.ollama.timeout_seconds")
@@ -183,7 +180,6 @@ class OpenAIParameters:
   max_tokens: int | None = None
 
   def __post_init__(self) -> None:
-    """Validate OpenAI parameters."""
     if not 0.0 <= self.temperature <= 2.0:
       raise ValidationError(
         "backend.openai.parameters.temperature",
@@ -221,7 +217,6 @@ class OpenAIConfig:
   reasoning_effort: str | None = None
 
   def __post_init__(self) -> None:
-    """Validate OpenAI configuration."""
     validate_non_empty_string(self.model, "backend.openai.model")
     validate_positive_int(self.timeout_seconds, "backend.openai.timeout_seconds")
     if self.base_url is not None:
@@ -251,7 +246,6 @@ class AnthropicParameters:
   budget_tokens: int = 1024
 
   def __post_init__(self) -> None:
-    """Validate Anthropic parameters."""
     if not 0.0 <= self.temperature <= 1.0:
       raise ValidationError(
         "backend.anthropic.parameters.temperature",
@@ -290,7 +284,6 @@ class AnthropicConfig:
   parameters: AnthropicParameters = field(default_factory=AnthropicParameters)
 
   def __post_init__(self) -> None:
-    """Validate Anthropic configuration."""
     validate_non_empty_string(self.model, "backend.anthropic.model")
     validate_positive_int(self.timeout_seconds, "backend.anthropic.timeout_seconds")
     validate_positive_int(self.max_tokens, "backend.anthropic.max_tokens")
@@ -320,7 +313,6 @@ class BackendConfig:
   anthropic: AnthropicConfig | None = None
 
   def __post_init__(self) -> None:
-    """Validate backend configuration."""
     # Validate provider is a non-empty string
     validate_non_empty_string(self.provider, "backend.provider")
 
@@ -393,7 +385,6 @@ class ContextConfig:
   persist_after_turn: bool = True
 
   def __post_init__(self) -> None:
-    """Validate context configuration."""
     validate_choice(
       self.manager,
       "context.manager",
@@ -433,7 +424,6 @@ class PermissionsConfig:
   handlers: dict[str, HandlerConfig] = field(default_factory=dict)
 
   def __post_init__(self) -> None:
-    """Validate permissions configuration."""
     validate_choice(self.network_access, "permissions.network_access", ("none", "local", "all"))
     validate_positive_int(self.max_file_size_kb, "permissions.max_file_size_kb")
     validate_non_negative_int(self.max_recursion_depth, "permissions.max_recursion_depth")
@@ -469,7 +459,6 @@ class ListToolConfig(ToolConfig):
   max_entries: int = 2000
 
   def __post_init__(self) -> None:
-    """Validate list tool configuration."""
     validate_positive_int(self.max_depth, "tools.list.max_depth")
     validate_positive_int(self.max_entries, "tools.list.max_entries")
 
@@ -513,7 +502,6 @@ class ReadToolConfig(ToolConfig):
   )
 
   def __post_init__(self) -> None:
-    """Validate read tool configuration."""
     validate_regex_patterns(self.blocked_patterns, "tools.read.blocked_patterns")
 
 
@@ -532,7 +520,6 @@ class WriteToolConfig(ToolConfig):
   blocked_extensions: tuple[str, ...] = (".exe", ".sh", ".bat")
 
   def __post_init__(self) -> None:
-    """Validate write tool configuration."""
     validate_positive_int(self.max_size_kb, "tools.write.max_size_kb")
 
 
@@ -549,7 +536,6 @@ class UpdateToolConfig(ToolConfig):
   max_diff_size_kb: int = 100
 
   def __post_init__(self) -> None:
-    """Validate update tool configuration."""
     validate_positive_int(self.max_diff_size_kb, "tools.update.max_diff_size_kb")
 
 
@@ -588,7 +574,6 @@ class SearchToolConfig(ToolConfig):
   timeout_ms: int = 10000
 
   def __post_init__(self) -> None:
-    """Validate search tool configuration."""
     validate_positive_int(self.max_results, "tools.search.max_results")
     validate_positive_int(self.timeout_ms, "tools.search.timeout_ms")
 
@@ -606,7 +591,6 @@ class AgentToolConfig(ToolConfig):
   timeout_seconds: int = 300
 
   def __post_init__(self) -> None:
-    """Validate agent tool configuration."""
     validate_positive_int(self.max_recursion_depth, "tools.agent.max_recursion_depth")
     validate_positive_int(self.timeout_seconds, "tools.agent.timeout_seconds")
 
@@ -783,7 +767,6 @@ class AgentsConfig:
   definition: str = ""
 
   def __post_init__(self) -> None:
-    """Validate agents configuration."""
     for directory in self.directories:
       validate_directory_exists(directory, "agents.directories")
 
@@ -836,7 +819,6 @@ class LoggingConfig:
   timestamp_format_string: str = "iso"
 
   def __post_init__(self) -> None:
-    """Validate logging configuration."""
     validate_log_level(self.level, "logging.level")
     validate_choice(self.format, "logging.format", ("json", "text"))
 
@@ -858,7 +840,6 @@ class UIConfig:
   show_stats: bool = True
 
   def __post_init__(self) -> None:
-    """Validate UI configuration."""
     validate_choice(self.mode, "ui.mode", ("interactive", "batch"))
 
 
