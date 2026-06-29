@@ -1,10 +1,15 @@
-"""Unit tests for LitellmBackend implementation."""
+"""Unit tests for LitellmBackend implementation (simplified design).
+
+The simplified design uses:
+  - config.backend.params for all provider parameters (flattened dict)
+  - litellm-specific transforms (base_url → api_base, provider/model prefix)
+"""
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from yoker.backends.litellm import LitellmBackend, model_has_reasoning
+from yoker.backends.litellm import LitellmBackend
 from yoker.backends.protocol import ChatChunkEvent
 from yoker.config import (
   AnthropicConfig,
@@ -79,93 +84,32 @@ class TestLitellmBackend:
     backend = LitellmBackend(mock_config_ollama)
     assert backend.provider == "ollama"
 
-  def test_get_model_string_openai(self, mock_config_openai: Config) -> None:
-    """Test model string conversion for OpenAI."""
-    backend = LitellmBackend(mock_config_openai)
-    model_string = backend._get_model_string("gpt-4o-mini")
-    assert model_string == "openai/gpt-4o-mini"
+  def test_params_includes_api_key(self, mock_config_openai: Config) -> None:
+    """Test that params includes api_key from config."""
+    params = mock_config_openai.backend.params
+    assert params["api_key"] == "test-openai-key"
 
-  def test_get_model_string_anthropic(self, mock_config_anthropic: Config) -> None:
-    """Test model string conversion for Anthropic."""
-    backend = LitellmBackend(mock_config_anthropic)
-    model_string = backend._get_model_string("claude-3-opus-20240229")
-    assert model_string == "anthropic/claude-3-opus-20240229"
+  def test_params_includes_model(self, mock_config_openai: Config) -> None:
+    """Test that params includes model from config."""
+    params = mock_config_openai.backend.params
+    assert params["model"] == "gpt-4o"
 
-  def test_get_model_string_ollama(self, mock_config_ollama: Config) -> None:
-    """Test model string conversion for Ollama."""
-    backend = LitellmBackend(mock_config_ollama)
-    model_string = backend._get_model_string("llama3.2:latest")
-    assert model_string == "ollama/llama3.2:latest"
+  def test_params_includes_base_url(self, mock_config_ollama: Config) -> None:
+    """Test that params includes base_url from config."""
+    params = mock_config_ollama.backend.params
+    assert params["base_url"] == "http://localhost:11434"
 
-  def test_get_api_key_openai(self, mock_config_openai: Config) -> None:
-    """Test API key extraction for OpenAI."""
-    backend = LitellmBackend(mock_config_openai)
-    api_key = backend._get_api_key()
-    assert api_key == "test-openai-key"
+  def test_params_filters_none_values(self, mock_config_openai: Config) -> None:
+    """Test that params filters out None values."""
+    params = mock_config_openai.backend.params
+    # base_url is None for default OpenAI config
+    assert "base_url" not in params
 
-  def test_get_api_key_anthropic(self, mock_config_anthropic: Config) -> None:
-    """Test API key extraction for Anthropic."""
-    backend = LitellmBackend(mock_config_anthropic)
-    api_key = backend._get_api_key()
-    assert api_key == "test-anthropic-key"
-
-  def test_get_api_key_ollama(self, mock_config_ollama: Config) -> None:
-    """Test API key extraction for Ollama."""
-    backend = LitellmBackend(mock_config_ollama)
-    api_key = backend._get_api_key()
-    assert api_key == "test-ollama-key"
-
-  def test_get_base_url_openai(self, mock_config_openai: Config) -> None:
-    """Test base URL extraction for OpenAI (None = use default)."""
-    backend = LitellmBackend(mock_config_openai)
-    base_url = backend._get_base_url()
-    assert base_url is None
-
-  def test_get_base_url_anthropic(self, mock_config_anthropic: Config) -> None:
-    """Test base URL extraction for Anthropic (None = use default)."""
-    backend = LitellmBackend(mock_config_anthropic)
-    base_url = backend._get_base_url()
-    assert base_url is None
-
-  def test_get_base_url_ollama(self, mock_config_ollama: Config) -> None:
-    """Test base URL extraction for Ollama."""
-    backend = LitellmBackend(mock_config_ollama)
-    base_url = backend._get_base_url()
-    assert base_url == "http://localhost:11434"
-
-  def test_build_kwargs_openai(self, mock_config_openai: Config) -> None:
-    """Test kwargs building for OpenAI."""
-    backend = LitellmBackend(mock_config_openai)
-    kwargs = backend._build_kwargs(think=False)
-
-    assert kwargs["temperature"] == 0.7
-    assert kwargs["top_p"] == 0.9
-
-  def test_build_kwargs_anthropic(self, mock_config_anthropic: Config) -> None:
-    """Test kwargs building for Anthropic."""
-    backend = LitellmBackend(mock_config_anthropic)
-    kwargs = backend._build_kwargs(think=False)
-
-    assert kwargs["temperature"] == 0.7
-    assert kwargs["top_p"] == 0.9
-    assert kwargs["max_tokens"] == 4096
-
-  def test_build_kwargs_anthropic_thinking(self, mock_config_anthropic: Config) -> None:
-    """Test kwargs building for Anthropic with thinking enabled."""
-    backend = LitellmBackend(mock_config_anthropic)
-    kwargs = backend._build_kwargs(think=True)
-
-    assert kwargs["budget_tokens"] == 1024  # From config
-
-  def test_build_kwargs_ollama(self, mock_config_ollama: Config) -> None:
-    """Test kwargs building for Ollama."""
-    backend = LitellmBackend(mock_config_ollama)
-    kwargs = backend._build_kwargs(think=False)
-
-    assert kwargs["temperature"] == 0.7
-    assert kwargs["top_p"] == 0.9
-    assert kwargs["top_k"] == 40
-    assert kwargs["num_ctx"] == 4096
+  def test_params_includes_parameters(self, mock_config_openai: Config) -> None:
+    """Test that params includes nested parameters dict."""
+    params = mock_config_openai.backend.params
+    # Nested parameters are included (asdict behavior)
+    assert "parameters" in params
 
   @pytest.mark.asyncio
   async def test_chat_stream_content(self, mock_config_openai: Config) -> None:
@@ -202,35 +146,120 @@ class TestLitellmBackend:
       assert any(c.event == ChatChunkEvent.USAGE for c in chunks)
       assert any(c.event == ChatChunkEvent.DONE for c in chunks)
 
+  @pytest.mark.asyncio
+  async def test_chat_stream_thinking(self, mock_config_openai: Config) -> None:
+    """Test chat_stream yields thinking events for reasoning_content."""
+    backend = LitellmBackend(mock_config_openai)
 
-class TestModelHasReasoning:
-  """Tests for model_has_reasoning function."""
+    # Mock litellm.acompletion with reasoning_content
+    mock_chunk = MagicMock()
+    mock_chunk.choices = [MagicMock()]
+    mock_chunk.choices[0].delta.reasoning_content = "Thinking..."
+    mock_chunk.choices[0].delta.content = None
+    mock_chunk.choices[0].delta.tool_calls = None
+    mock_chunk.usage.prompt_tokens = 10
+    mock_chunk.usage.completion_tokens = 5
+
+    with patch("litellm.acompletion", new_callable=AsyncMock) as mock_acompletion:
+
+      async def async_gen():
+        yield mock_chunk
+
+      mock_acompletion.return_value = async_gen()
+
+      chunks = []
+      async for chunk in backend.chat_stream(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": "test"}],
+      ):
+        chunks.append(chunk)
+
+      # Verify thinking events
+      assert any(c.event == ChatChunkEvent.THINKING_START for c in chunks)
+      assert any(c.event == ChatChunkEvent.THINKING_DELTA for c in chunks)
+      assert any(c.event == ChatChunkEvent.THINKING_STOP for c in chunks)
+
+  @pytest.mark.asyncio
+  async def test_chat_stream_with_base_url_transform(
+    self,
+  ) -> None:
+    """Test that base_url is transformed to api_base for litellm."""
+    config = Config(
+      backend=BackendConfig(
+        provider="openai",
+        openai=OpenAIConfig(
+          api_key="test-key",
+          model="gpt-4o",
+          base_url="https://custom.api.com/v1",
+        ),
+      )
+    )
+    backend = LitellmBackend(config)
+
+    mock_chunk = MagicMock()
+    mock_chunk.choices = [MagicMock()]
+    mock_chunk.choices[0].delta.content = "Hello"
+    mock_chunk.choices[0].delta.tool_calls = None
+    mock_chunk.usage.prompt_tokens = 10
+    mock_chunk.usage.completion_tokens = 5
+
+    with patch("litellm.acompletion", new_callable=AsyncMock) as mock_acompletion:
+
+      async def async_gen():
+        yield mock_chunk
+
+      mock_acompletion.return_value = async_gen()
+
+      async for _chunk in backend.chat_stream(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": "test"}],
+      ):
+        pass  # Just consume the stream
+
+      # Verify litellm.acompletion was called with api_base (not base_url)
+      call_kwargs = mock_acompletion.call_args.kwargs
+      assert "api_base" in call_kwargs
+      assert call_kwargs["api_base"] == "https://custom.api.com/v1"
+      assert "base_url" not in call_kwargs
+
+
+class TestIsReasoningModel:
+  """Tests for _is_reasoning_model method."""
 
   def test_o1_model_has_reasoning(self) -> None:
     """Test OpenAI o1 models are detected as reasoning models."""
-    assert model_has_reasoning("openai/o1-preview")
-    assert model_has_reasoning("openai/o1-mini")
-    assert model_has_reasoning("openai/O1-Preview")  # Case insensitive
-    assert model_has_reasoning("openai/o1_2024_12_17")
+    config = Config(backend=BackendConfig(provider="openai", openai=OpenAIConfig()))
+    backend = LitellmBackend(config)
+    assert backend._is_reasoning_model("o1-preview")
+    assert backend._is_reasoning_model("o1-mini")
+    assert backend._is_reasoning_model("O1-Preview")  # Case insensitive
+    assert backend._is_reasoning_model("o1_2024_12_17")
 
   def test_o3_model_has_reasoning(self) -> None:
     """Test OpenAI o3 models are detected as reasoning models."""
-    assert model_has_reasoning("openai/o3-mini")
-    assert model_has_reasoning("openai/o3_2025_01_31")
+    config = Config(backend=BackendConfig(provider="openai", openai=OpenAIConfig()))
+    backend = LitellmBackend(config)
+    assert backend._is_reasoning_model("o3-mini")
+    assert backend._is_reasoning_model("o3_2025_01_31")
 
   def test_gpt_model_no_reasoning(self) -> None:
     """Test GPT models are not reasoning models."""
-    assert not model_has_reasoning("openai/gpt-4o")
-    assert not model_has_reasoning("openai/gpt-4o-mini")
-    assert not model_has_reasoning("openai/gpt-3.5-turbo")
+    config = Config(backend=BackendConfig(provider="openai", openai=OpenAIConfig()))
+    backend = LitellmBackend(config)
+    assert not backend._is_reasoning_model("gpt-4o")
+    assert not backend._is_reasoning_model("gpt-4o-mini")
+    assert not backend._is_reasoning_model("gpt-3.5-turbo")
 
   def test_anthropic_model_no_reasoning(self) -> None:
     """Test Anthropic models are not reasoning models."""
-    assert not model_has_reasoning("anthropic/claude-3-5-sonnet-20241022")
-    assert not model_has_reasoning("anthropic/claude-3-opus-20240229")
+    config = Config(backend=BackendConfig(provider="anthropic", anthropic=AnthropicConfig()))
+    backend = LitellmBackend(config)
+    assert not backend._is_reasoning_model("claude-3-5-sonnet-20241022")
+    assert not backend._is_reasoning_model("claude-3-opus-20240229")
 
   def test_ollama_model_no_reasoning(self) -> None:
     """Test Ollama models are not reasoning models."""
-    assert not model_has_reasoning("ollama/llama3.2")
-    assert not model_has_reasoning("ollama/mistral")
-
+    config = Config(backend=BackendConfig(provider="ollama", ollama=OllamaConfig()))
+    backend = LitellmBackend(config)
+    assert not backend._is_reasoning_model("llama3.2")
+    assert not backend._is_reasoning_model("mistral")

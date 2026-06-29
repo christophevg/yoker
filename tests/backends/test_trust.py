@@ -173,4 +173,3 @@ class TestDefaultBaseUrls:
   def test_anthropic_default(self) -> None:
     """Test Anthropic default URL is None."""
     assert DEFAULT_BASE_URLS["anthropic"] is None
-

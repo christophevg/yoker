@@ -3,6 +3,11 @@
 Implements the ModelBackend Protocol for multiple providers (OpenAI, Anthropic,
 and 100+ others) via the litellm library. Translates litellm's streaming events
 into Yoker's ChatChunk instances with proper block boundaries.
+
+Design:
+  - Uses config.backend.params for all provider parameters (flattened dict)
+  - Applies litellm-specific transforms (base_url → api_base, provider/model prefix)
+  - OllamaBackend continues to read config directly (not via params)
 """
 
 from collections.abc import AsyncIterator
@@ -51,112 +56,6 @@ class LitellmBackend(ModelBackend):
     """Return the provider identifier."""
     return self._provider
 
-  def _get_model_string(self, model: str) -> str:
-    """Convert Yoker model name to litellm model string.
-
-    Litellm uses the pattern "provider/model" to identify models:
-      - "openai/gpt-4o" for OpenAI
-      - "anthropic/claude-3-5-sonnet-20241022" for Anthropic
-      - "ollama/llama3.2" for Ollama
-
-    Args:
-      model: Yoker model name (e.g., "gpt-4o", "claude-3-5-sonnet-20241022").
-
-    Returns:
-      Litellm model string with provider prefix.
-    """
-    return f"{self._provider}/{model}"
-
-  def _get_api_key(self) -> str | None:
-    """Extract API key from provider-specific config.
-
-    Returns:
-      API key for the configured provider, or None if not set.
-    """
-    backend_config = self.config.backend
-
-    if self._provider == "ollama":
-      return backend_config.ollama.api_key if backend_config.ollama else None
-    elif self._provider == "openai":
-      return backend_config.openai.api_key if backend_config.openai else None
-    elif self._provider == "anthropic":
-      return backend_config.anthropic.api_key if backend_config.anthropic else None
-    else:
-      # For unknown providers, check if there's a matching sub-config
-      # This allows for future provider support without code changes
-      return None
-
-  def _get_base_url(self) -> str | None:
-    """Extract base URL from provider-specific config.
-
-    Returns:
-      Base URL for the configured provider, or None if using default.
-    """
-    backend_config = self.config.backend
-
-    if self._provider == "ollama" and backend_config.ollama:
-      return backend_config.ollama.base_url
-    elif self._provider == "openai" and backend_config.openai:
-      return backend_config.openai.base_url
-    elif self._provider == "anthropic" and backend_config.anthropic:
-      return backend_config.anthropic.base_url
-
-    return None
-
-  def _build_kwargs(self, think: bool = False, **kwargs: Any) -> dict[str, Any]:
-    """Build litellm kwargs from Yoker config and parameters.
-
-    Handles provider-specific parameter mapping:
-      - OpenAI o-series: reasoning_effort parameter
-      - Anthropic: budget_tokens parameter
-      - All providers: temperature, top_p, etc.
-
-    Args:
-      think: Enable thinking/reasoning mode.
-      **kwargs: Additional parameters (for future extensibility).
-
-    Returns:
-      Dictionary of litellm kwargs.
-    """
-    litellm_kwargs: dict[str, Any] = {}
-    backend_config = self.config.backend
-
-    # Get provider-specific parameters
-    if self._provider == "ollama" and backend_config.ollama:
-      ollama_params = backend_config.ollama.parameters
-      litellm_kwargs["temperature"] = ollama_params.temperature
-      litellm_kwargs["top_p"] = ollama_params.top_p
-      litellm_kwargs["top_k"] = ollama_params.top_k
-      litellm_kwargs["num_ctx"] = ollama_params.num_ctx
-
-    elif self._provider == "openai" and backend_config.openai:
-      openai_params = backend_config.openai.parameters
-      litellm_kwargs["temperature"] = openai_params.temperature
-      litellm_kwargs["top_p"] = openai_params.top_p
-      if openai_params.max_tokens is not None:
-        litellm_kwargs["max_tokens"] = openai_params.max_tokens
-
-      # OpenAI o-series models use reasoning_effort for thinking
-      # Map think=True to reasoning_effort="high"
-      if think and model_has_reasoning(self._get_model_string(backend_config.openai.model)):
-        litellm_kwargs["reasoning_effort"] = "high"
-
-    elif self._provider == "anthropic" and backend_config.anthropic:
-      anthropic_params = backend_config.anthropic.parameters
-      litellm_kwargs["temperature"] = anthropic_params.temperature
-      litellm_kwargs["top_p"] = anthropic_params.top_p
-      if anthropic_params.top_k is not None:
-        litellm_kwargs["top_k"] = anthropic_params.top_k
-
-      # Anthropic uses budget_tokens for thinking
-      if think:
-        litellm_kwargs["budget_tokens"] = anthropic_params.budget_tokens
-
-      # Anthropic requires max_tokens
-      litellm_kwargs["max_tokens"] = backend_config.anthropic.max_tokens
-
-    return litellm_kwargs
-
   async def chat_stream(
     self,
     *,
@@ -191,28 +90,41 @@ class LitellmBackend(ModelBackend):
     in_content = False
     in_tool_call: dict[int, bool] = {}  # tool_index -> in_block
 
-    # Build litellm model string
-    litellm_model = self._get_model_string(model)
+    # Get flattened params from config
+    params = self.config.backend.params.copy()
 
-    # Build kwargs
-    litellm_kwargs = self._build_kwargs(think=think)
+    # Build litellm model string: "provider/model"
+    litellm_model = f"{self._provider}/{model}"
 
-    # Add API key and base_url
-    api_key = self._get_api_key()
-    if api_key:
-      litellm_kwargs["api_key"] = api_key
+    # litellm-specific transform: base_url → api_base
+    if "base_url" in params:
+      params["api_base"] = params.pop("base_url")
 
-    base_url = self._get_base_url()
-    if base_url:
-      litellm_kwargs["api_base"] = base_url
+    # Remove timeout_seconds (not used by litellm in acompletion)
+    params.pop("timeout_seconds", None)
+
+    # Remove nested parameters object if present (we flatten in params)
+    params.pop("parameters", None)
+
+    # Add stream=True for streaming
+    params["stream"] = True
+
+    # Add tools if provided
+    if tools:
+      params["tools"] = tools
+
+    # Handle think flag (provider-specific translation)
+    if think:
+      # For OpenAI o-series models, use reasoning_effort
+      # For Anthropic, use budget_tokens (already in params from config)
+      if self._provider == "openai" and self._is_reasoning_model(model):
+        params["reasoning_effort"] = "medium"
 
     # Call litellm.acompletion
     response = await litellm.acompletion(
       model=litellm_model,
       messages=messages,
-      tools=tools,
-      stream=True,
-      **litellm_kwargs,
+      **params,
     )
 
     # Process the stream
@@ -309,22 +221,16 @@ class LitellmBackend(ModelBackend):
         # Emit DONE
         yield ChatChunk(event=ChatChunkEvent.DONE)
 
+  def _is_reasoning_model(self, model: str) -> bool:
+    """Check if a model supports reasoning_effort parameter.
 
-def model_has_reasoning(model: str) -> bool:
-  """Check if a litellm model supports reasoning_effort parameter.
+    OpenAI o-series models (o1, o3) support reasoning_effort.
 
-  OpenAI o-series models (o1, o3) support reasoning_effort.
+    Args:
+      model: Model name (without provider prefix).
 
-  Args:
-    model: Litellm model string (e.g., "openai/o1-preview").
-
-  Returns:
-    True if the model supports reasoning_effort parameter.
-  """
-  # OpenAI o-series models
-  if "openai/" in model:
+    Returns:
+      True if the model supports reasoning_effort parameter.
+    """
     model_lower = model.lower()
-    return any(o in model_lower for o in ["o1-", "o1_", "o3-", "o3_", "/o1", "/o3"])
-
-  return False
-
+    return any(o in model_lower for o in ["o1-", "o1_", "o3-", "o3_", "o1", "o3"])

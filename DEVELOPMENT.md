@@ -8,6 +8,62 @@ Yoker is a Python agent harness with configurable tools and guardrails. It provi
 
 ## Recent Changes
 
+### Phase 2: Simplified LitellmBackend Architecture (2026-06-29)
+
+**Task**: Rewrote LitellmBackend with simplified design.
+
+#### Design Changes
+
+1. **Provider configs are plain dataclasses** - No `params` property on `OpenAIConfig`, `AnthropicConfig`, or `OllamaConfig`
+2. **`BackendConfig.params` property** - Single place that flattens provider config using `dataclasses.asdict()`
+3. **LitellmBackend simplification** - Uses `config.backend.params` directly, applies litellm-specific transforms
+4. **OllamaBackend unchanged** - Continues to read config directly, not via params
+
+#### Key Implementation
+
+```python
+# BackendConfig.params - the ONLY place that flattens
+@property
+def params(self) -> dict[str, Any]:
+    """Flatten provider-specific config to dict."""
+    sub_config: OllamaConfig | OpenAIConfig | AnthropicConfig | None = None
+
+    if self.provider == "ollama" and self.ollama is not None:
+        sub_config = self.ollama
+    elif self.provider == "openai" and self.openai is not None:
+        sub_config = self.openai
+    elif self.provider == "anthropic" and self.anthropic is not None:
+        sub_config = self.anthropic
+
+    if sub_config is None:
+        return {}
+
+    d = asdict(sub_config)
+    return {k: v for k, v in d.items() if v is not None}
+
+# LitellmBackend - simplified implementation
+async def chat_stream(...):
+    params = self.config.backend.params.copy()
+
+    # litellm-specific transforms
+    litellm_model = f"{self._provider}/{model}"
+    if "base_url" in params:
+        params["api_base"] = params.pop("base_url")
+
+    response = await litellm.acompletion(
+        model=litellm_model,
+        messages=messages,
+        **params,
+    )
+```
+
+#### Files Modified
+
+- `src/yoker/config/__init__.py` - Added `params` property to `BackendConfig`
+- `src/yoker/backends/litellm.py` - Simplified to use `config.backend.params`
+- `tests/test_config/test_multi_provider.py` - Added `BackendConfig.params` tests
+- `tests/backends/test_litellm.py` - Updated for simplified design
+
 ### Phase 1: Multi-Provider Backend Architecture (2026-06-29)
 
 **Task 6.1**: Created `backends/` package with foundational types and Protocol.
