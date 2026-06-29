@@ -440,28 +440,36 @@ class TestAgentContextManager:
     assert system_messages[1].get("content", "") == "Custom system prompt for context test."
 
 
-class TestAgentClientParameter:
-  """Tests for client parameter and conditional WebSearch/WebFetch tools."""
+class TestAgentBackendParameter:
+  """Tests for backend parameter and conditional WebSearch/WebFetch tools."""
 
-  def test_client_parameter_accepts_client(self) -> None:
-    """Test that Agent accepts a client parameter."""
-    from ollama import Client
+  def test_backend_parameter_accepts_backend(self) -> None:
+    """Test that Agent accepts a backend parameter."""
+    from unittest.mock import MagicMock
 
-    client = Client(host="http://localhost:11434")
-    core = Agent(config=Config(), client=client)
+    from yoker.backends.ollama import OllamaBackend
 
-    # Agent should accept the client without error
+    # Create a mock backend
+    mock_client = MagicMock()
+    backend = OllamaBackend(mock_client)
+    core = Agent(config=Config(), backend=backend)
+
+    # Agent should accept the backend without error
     assert core is not None
+    assert core._backend is backend
 
-  def test_websearch_requires_api_key_and_client(self) -> None:
-    """Test that WebSearch tool is only added when API key and client are present."""
-    from ollama import Client
+  def test_websearch_requires_api_key_and_backend(self) -> None:
+    """Test that WebSearch tool is only added when API key and backend are present."""
+    from unittest.mock import MagicMock
+
+    from yoker.backends.ollama import OllamaBackend
 
     config = Config(backend=BackendConfig(ollama=OllamaConfig(api_key="test-key")))
-    client = Client(host="http://localhost:11434")
-    core = Agent(config=config, client=client)
+    mock_client = MagicMock()
+    backend = OllamaBackend(mock_client)
+    core = Agent(config=config, backend=backend)
 
-    # WebSearch and WebFetch tools should be present (API key + client provided)
+    # WebSearch and WebFetch tools should be present (API key + backend provided)
     assert core.tools.get("yoker:websearch") is not None
     assert core.tools.get("yoker:webfetch") is not None
 

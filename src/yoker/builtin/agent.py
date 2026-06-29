@@ -115,7 +115,11 @@ def _clamp(value: int, minimum: int, maximum: int) -> int:
 
 def _create_subagent(parent_agent: "Agent | None", agent_definition: "AgentDefinition") -> "Agent":
   """Create a sub-agent with fresh context."""
+  from dataclasses import replace
+
   from yoker.agent import Agent
+  from yoker.backends import with_model
+  from yoker.config import Config
 
   depth = 1
   if parent_agent is not None:
@@ -138,30 +142,19 @@ def _create_subagent(parent_agent: "Agent | None", agent_definition: "AgentDefin
   model = agent_definition.model
   parent_config = parent_agent.config if parent_agent else None
 
-  from yoker.config import BackendConfig, Config, OllamaConfig
-
   config: Config | None = None
   if model is not None:
     if parent_config is not None:
-      config = Config(
-        harness=parent_config.harness,
-        backend=BackendConfig(
-          provider=parent_config.backend.provider,
-          ollama=OllamaConfig(
-            base_url=parent_config.backend.ollama.base_url,
-            model=model,
-            timeout_seconds=parent_config.backend.ollama.timeout_seconds,
-            parameters=parent_config.backend.ollama.parameters,
-          ),
-        ),
-        context=parent_config.context,
-        permissions=parent_config.permissions,
-        tools=parent_config.tools,
-        agents=parent_config.agents,
-        skills=parent_config.skills,
-        logging=parent_config.logging,
+      # Use with_model to create provider-agnostic config copy with model override
+      backend = with_model(parent_config.backend, model)
+      config = replace(
+        parent_config,
+        backend=backend,
       )
     else:
+      # No parent config, create default with model
+      from yoker.config import BackendConfig, OllamaConfig
+
       config = Config(backend=BackendConfig(ollama=OllamaConfig(model=model)))
   else:
     config = parent_config
@@ -172,13 +165,25 @@ def _create_subagent(parent_agent: "Agent | None", agent_definition: "AgentDefin
     _recursion_depth=depth,
   )
 
+  # Get model from the active provider's config for logging
+  active_model = model
+  if active_model is None and config:
+    if config.backend.provider == "ollama" and config.backend.ollama:
+      active_model = config.backend.ollama.model
+    elif config.backend.provider == "openai" and config.backend.openai:
+      active_model = config.backend.openai.model
+    elif config.backend.provider == "anthropic" and config.backend.anthropic:
+      active_model = config.backend.anthropic.model
+    else:
+      active_model = "default"
+
   logger.info(
     "subagent_created",
     agent_name=agent_definition.name,
     depth=depth,
     session_id=fresh_session_id,
     source_path=agent_definition.source_path,
-    model=model or (config.backend.ollama.model if config else "default"),
+    model=active_model or "default",
   )
 
   return subagent

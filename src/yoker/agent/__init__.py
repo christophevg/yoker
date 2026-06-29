@@ -6,17 +6,14 @@ Asynchronous Agent implementation for Yoker.
 
 import inspect
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from dotenv import load_dotenv
-from ollama import AsyncClient
 from structlog import get_logger
 
 from yoker.agent._processing import process_message
 from yoker.agent._setup import (
   add_skill_discovery_block,
-  create_client,
-  create_web_backends,
   create_web_guardrails,
   validate_recursion_depth,
 )
@@ -27,6 +24,7 @@ from yoker.agents import (
   load_agent_definition,
   load_agent_definitions,
 )
+from yoker.backends import ModelBackend, create_backend
 from yoker.builtin import make_agent_tool, make_skill_tool
 from yoker.config import Config, get_yoker_config
 from yoker.context import ContextManager
@@ -39,11 +37,14 @@ from yoker.tools import ToolRegistry
 from yoker.tools.guardrails import Guardrail
 from yoker.tools.guardrails.path import PathGuardrail
 
+if TYPE_CHECKING:
+  pass
+
 logger = get_logger(__name__)
 
 
 class Agent:
-  """Asynchronous agent that chats with Ollama and uses tools."""
+  """Asynchronous agent that chats with model backends and uses tools."""
 
   def __init__(
     self,
@@ -54,7 +55,7 @@ class Agent:
     context_manager: "ContextManager | None" = None,
     plugins: list[str] | None = None,
     _recursion_depth: int = 0,
-    client: "AsyncClient | None" = None,
+    backend: "ModelBackend | None" = None,
     parse_cli_args: bool = False,
     console_logging: bool = True,
   ) -> None:
@@ -69,7 +70,8 @@ class Agent:
       context_manager: Optional context manager.
       plugins: Optional plugin packages to load.
       _recursion_depth: Internal recursion depth tracking.
-      client: Optional Ollama async client.
+      backend: Optional ModelBackend instance. If not provided, one will be
+        created from config.
       parse_cli_args: Whether to parse CLI arguments
       console_logging: Whether to enable console logging. The CLI sets this to
         False so the UI layer owns all terminal output.
@@ -126,8 +128,8 @@ class Agent:
     self.model: str = self._resolve_model()
     self.thinking_mode: ThinkingMode = thinking_mode
 
-    # setup the client to the model-provider backend
-    self._client: AsyncClient | None = client or create_client(self.config, AsyncClient)
+    # setup the backend for the model provider
+    self._backend: ModelBackend | None = backend or create_backend(self.config)
 
     # prepare guardrails
     query_guardrail, url_guardrail = create_web_guardrails(self.config)
@@ -141,7 +143,8 @@ class Agent:
     # provider (Ollama today) so the websearch/webfetch tools resolve to
     # OllamaWebSearchBackend / OllamaWebFetchBackend instead of failing
     # with "No backend configured".
-    self._tool_backends: dict[str, Any] = create_web_backends(self.config, self._client)
+    # Note: We extract the Ollama client from the backend for web tools.
+    self._tool_backends: dict[str, Any] = self._create_tool_backends()
 
     # set up the context manager
     # Note: Use explicit None check because empty UserList is falsy
@@ -360,14 +363,76 @@ class Agent:
     return definition
 
   def _resolve_model(self) -> str:
-    """Determine the model to use."""
+    """Determine the model to use from agent definition or config."""
     if self.definition and self.definition.model:
       logger.info(
         "model from agent definition", model=self.definition.model, agent=self.definition.name
       )
       return self.definition.model
-    logger.info("model from config", model=self.config.backend.ollama.model)
-    return self.config.backend.ollama.model
+    # Read from the active provider's config
+    provider = self.config.backend.provider
+    if provider == "ollama" and self.config.backend.ollama:
+      model = self.config.backend.ollama.model
+    elif provider == "openai" and self.config.backend.openai:
+      model = self.config.backend.openai.model
+    elif provider == "anthropic" and self.config.backend.anthropic:
+      model = self.config.backend.anthropic.model
+    else:
+      # Fallback to Ollama config (default provider)
+      model = self.config.backend.ollama.model
+    logger.info("model from config", model=model, provider=provider)
+    return model
+
+  def _create_tool_backends(self) -> dict[str, Any]:
+    """Create tool backends for web tools.
+
+    Populates the ``_tool_backends`` dict used by the ``websearch`` and
+    ``webfetch`` tools. Backends are only populated when:
+    - The configured provider is ``ollama`` (the only supported web-tool provider).
+    - An Ollama API key is configured.
+    - The corresponding tool is enabled in config.
+
+    Returns:
+      A dict mapping tool names to backend instances. May be empty.
+    """
+    backends: dict[str, Any] = {}
+
+    if self.config.backend.provider != "ollama":
+      return backends
+
+    api_key = self.config.backend.ollama.api_key
+    if not api_key:
+      return backends
+
+    # Extract the Ollama client from the backend for web tools
+    # The OllamaBackend wraps the AsyncClient
+    from yoker.backends.ollama import OllamaBackend
+
+    if not isinstance(self._backend, OllamaBackend):
+      return backends
+
+    client = self._backend._client
+
+    if self.config.tools.websearch.enabled:
+      from yoker.tools.web import OllamaWebSearchBackend
+
+      backends["websearch"] = OllamaWebSearchBackend(
+        async_client=client,
+        timeout_seconds=self.config.tools.websearch.timeout_seconds,
+      )
+      logger.info("web_search_backend_populated", backend="ollama")
+
+    if self.config.tools.webfetch.enabled:
+      from yoker.tools.web import OllamaWebFetchBackend
+
+      backends["webfetch"] = OllamaWebFetchBackend(
+        async_client=client,
+        timeout_seconds=self.config.tools.webfetch.timeout_seconds,
+        max_size_kb=self.config.tools.webfetch.max_size_kb,
+      )
+      logger.info("web_fetch_backend_populated", backend="ollama")
+
+    return backends
 
   def _load_skills(self) -> None:
     """Load skills from configured directories into the registry."""

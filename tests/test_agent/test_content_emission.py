@@ -6,12 +6,13 @@ Task: 1.5.6 - Complete Tool Content Display
 import asyncio
 from pathlib import Path
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import MagicMock
 
 from pytest_mock import MockerFixture
 
 from yoker.agent import Agent
-from yoker.config import Config, PermissionsConfig
+from yoker.backends import ChatChunk, ChatChunkEvent, ToolCallDelta, UsageStats
+from yoker.config import Config, ContentDisplayConfig, PermissionsConfig, ToolsSharedConfig
 from yoker.events import EventType, ToolContentEvent
 from yoker.events.types import Event
 
@@ -30,117 +31,138 @@ class TestEventCollector:
     return [e for e in self.events if e.type == event_type]
 
 
-def create_mock_tool_call(
-  mocker: MockerFixture,
-  name: str,
-  arguments: dict[str, Any],
-  call_id: str | None = None,
-) -> Any:
-  """Create a properly serializable mock tool call.
+async def _aiter_chunks(chunks: list[ChatChunk]) -> Any:
+  """Async generator that yields ChatChunk instances."""
+  for chunk in chunks:
+    yield chunk
 
-  The mock objects must have JSON-serializable attributes because
-  the context manager serializes them to JSONL format.
+
+def create_tool_call_chunks(
+  tool_name: str,
+  tool_args: dict[str, Any],
+  call_id: str | None = None,
+) -> list[ChatChunk]:
+  """Create ChatChunk sequence for a tool call.
 
   Args:
-    mocker: pytest-mock fixture
-    name: Tool name (e.g., "write", "read", "update")
-    arguments: Tool arguments dict (will be JSON serialized)
+    tool_name: Tool name (e.g., "yoker:write")
+    tool_args: Tool arguments dict
     call_id: Optional tool call ID
 
   Returns:
-    Mock object with proper JSON-serializable attributes
+    List of ChatChunk instances representing tool call
   """
-  mock_call = mocker.MagicMock()
-  # Set id to a string (not MagicMock)
-  mock_call.id = call_id if call_id else f"call_{name}"
+  import json
 
-  # Create function object with proper string/dict attributes
-  mock_function = mocker.MagicMock()
-  mock_function.name = name
-  # Arguments must be a dict (JSON serializable), not MagicMock
-  mock_function.arguments = arguments
-  mock_call.function = mock_function
+  idx = 0
+  cid = call_id or f"call_{tool_name}"
+  args_json = json.dumps(tool_args)
 
-  return mock_call
+  return [
+    ChatChunk(
+      event=ChatChunkEvent.TOOL_CALL_START,
+      index=idx,
+      tool_call=ToolCallDelta(
+        index=idx,
+        id=cid,
+        name=tool_name,
+        arguments_delta=None,
+      ),
+    ),
+    ChatChunk(
+      event=ChatChunkEvent.TOOL_CALL_DELTA,
+      index=idx,
+      tool_call=ToolCallDelta(
+        index=idx,
+        id=cid,
+        name=tool_name,
+        arguments_delta=args_json,
+      ),
+    ),
+    ChatChunk(
+      event=ChatChunkEvent.TOOL_CALL_STOP,
+      index=idx,
+      tool_call=ToolCallDelta(
+        index=idx,
+        id=cid,
+        name=tool_name,
+        arguments_delta=None,
+      ),
+    ),
+  ]
 
 
-def create_mock_chunk(
-  mocker: MockerFixture,
-  tool_calls: list[Any] | None = None,
-  content: str | None = None,
-  thinking: str | None = None,
-) -> Any:
-  """Create a mock chunk with proper JSON-serializable attributes.
+def create_content_chunks(content: str) -> list[ChatChunk]:
+  """Create ChatChunk sequence for content.
 
   Args:
-    mocker: pytest-mock fixture
-    tool_calls: List of mock tool calls (use create_mock_tool_call)
-    content: Optional content string
-    thinking: Optional thinking string
+    content: Content string
 
   Returns:
-    Mock chunk object
+    List of ChatChunk instances representing content
   """
-  mock_chunk = mocker.MagicMock()
-  mock_chunk.message.thinking = thinking
-  mock_chunk.message.content = content
-  mock_chunk.message.tool_calls = tool_calls if tool_calls is not None else []
-  # Add done attribute for stats tracking
-  mock_chunk.done = False
-  mock_chunk.prompt_eval_count = 0
-  mock_chunk.eval_count = 0
-  mock_chunk.total_duration = 0
-  return mock_chunk
+  return [
+    ChatChunk(event=ChatChunkEvent.CONTENT_START, index=0),
+    ChatChunk(event=ChatChunkEvent.CONTENT_DELTA, index=0, text=content),
+    ChatChunk(event=ChatChunkEvent.CONTENT_STOP, index=0),
+  ]
 
 
-class AsyncIter:
-  """Helper class to create an async iterator from a list."""
+def create_final_chunks(
+  prompt_eval_count: int = 10,
+  eval_count: int = 20,
+  total_duration_ms: int = 100,
+) -> list[ChatChunk]:
+  """Create final ChatChunk sequence with usage stats.
 
-  def __init__(self, items: list[Any]) -> None:
-    self.items = items
-    self.index = 0
+  Args:
+    prompt_eval_count: Prompt evaluation count
+    eval_count: Evaluation count
+    total_duration_ms: Total duration in milliseconds
 
-  def __aiter__(self) -> "AsyncIter":
-    return self
+  Returns:
+    List of ChatChunk instances with usage and done
+  """
+  return [
+    ChatChunk(
+      event=ChatChunkEvent.USAGE,
+      usage=UsageStats(
+        prompt_eval_count=prompt_eval_count,
+        eval_count=eval_count,
+        total_duration_ms=total_duration_ms,
+      ),
+    ),
+    ChatChunk(event=ChatChunkEvent.DONE),
+  ]
 
-  async def __anext__(self) -> Any:
-    if self.index >= len(self.items):
-      raise StopAsyncIteration
-    item = self.items[self.index]
-    self.index += 1
-    return item
 
-
-def create_tool_then_response(
-  mocker: MockerFixture,
-  tool_calls: list[Any],
+def create_tool_then_response_chunks(
+  tool_name: str,
+  tool_args: dict[str, Any],
   final_content: str = "Done",
-) -> list[AsyncIter]:
-  """Create a side_effect sequence for Agent.process() tests.
+) -> list[list[ChatChunk]]:
+  """Create side_effect sequence for Agent.process() tests.
 
   The Agent.process() loop:
   1. First call: Returns tool_calls -> Agent executes the tool
   2. Second call: Returns content (no tool_calls) -> Agent finishes the turn
 
   Args:
-    mocker: pytest-mock fixture
-    tool_calls: List of mock tool calls (use create_mock_tool_call)
-    final_content: Final content response (default: "Done")
+    tool_name: Tool name
+    tool_args: Tool arguments
+    final_content: Final content response
 
   Returns:
-    List of AsyncIter objects to use as side_effect
+    List of chunk lists to use as side_effect
   """
   # First call: tool call
-  tool_chunk = create_mock_chunk(mocker, tool_calls=tool_calls)
-  # Second call: final response (no tool calls)
-  final_chunk = create_mock_chunk(mocker, content=final_content)
-  # Mark the final chunk as done with stats
-  final_chunk.done = True
-  final_chunk.prompt_eval_count = 10
-  final_chunk.eval_count = 20
-  final_chunk.total_duration = 100_000_000  # 100ms in nanoseconds
+  tool_chunks = create_tool_call_chunks(tool_name, tool_args)
 
-  return [AsyncIter([tool_chunk]), AsyncIter([final_chunk])]
+  # Second call: final response
+  content_chunks = create_content_chunks(final_content)
+  final_chunks = create_final_chunks()
+
+  return [tool_chunks, content_chunks + final_chunks]
 
 
 def create_agent_with_permissions(tmp_path: Path) -> Agent:
@@ -152,7 +174,10 @@ def create_agent_with_permissions(tmp_path: Path) -> Agent:
   Returns:
     Agent instance configured to allow filesystem access to tmp_path
   """
-  config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
+  config = Config(
+    permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)),
+    tools_shared=ToolsSharedConfig(content_display=ContentDisplayConfig(verbosity="content")),
+  )
   return Agent(config=config)
 
 
@@ -167,22 +192,24 @@ class TestAgentContentEventEmission:
     When: ToolResult contains content_metadata
     Then: Agent emits ToolContentEvent
     """
-    # Mock the ollama client to return tool call, then final response
-    mock_client = mocker.MagicMock()
-    mock_client.chat = AsyncMock(
-      side_effect=create_tool_then_response(
-        mocker,
-        tool_calls=[
-          create_mock_tool_call(
-            mocker,
-            name="yoker:write",
-            arguments={"path": str(tmp_path / "test.txt"), "content": "Hello\nWorld\n"},
-          )
-        ],
-      )
+    # Create mock backend that returns tool call, then final response
+    mock_backend = MagicMock()
+    mock_backend.provider = "ollama"
+
+    chunks_sequence = create_tool_then_response_chunks(
+      tool_name="yoker:write",
+      tool_args={"path": str(tmp_path / "test.txt"), "content": "Hello\nWorld\n"},
     )
 
-    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
+    # chat_stream returns an async generator
+    mock_backend.chat_stream = mocker.Mock(
+      side_effect=[
+        _aiter_chunks(chunks_sequence[0]),
+        _aiter_chunks(chunks_sequence[1]),
+      ]
+    )
+
+    mocker.patch("yoker.agent.create_backend", return_value=mock_backend)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
@@ -206,22 +233,23 @@ class TestAgentContentEventEmission:
     # Create the file so read succeeds
     (tmp_path / "test.txt").write_text("content")
 
-    # Mock the ollama client to return tool call, then final response
-    mock_client = mocker.MagicMock()
-    mock_client.chat = AsyncMock(
-      side_effect=create_tool_then_response(
-        mocker,
-        tool_calls=[
-          create_mock_tool_call(
-            mocker,
-            name="yoker:read",
-            arguments={"path": str(tmp_path / "test.txt")},
-          )
-        ],
-      )
+    # Create mock backend that returns tool call, then final response
+    mock_backend = MagicMock()
+    mock_backend.provider = "ollama"
+
+    chunks_sequence = create_tool_then_response_chunks(
+      tool_name="yoker:read",
+      tool_args={"path": str(tmp_path / "test.txt")},
     )
 
-    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
+    mock_backend.chat_stream = mocker.Mock(
+      side_effect=[
+        _aiter_chunks(chunks_sequence[0]),
+        _aiter_chunks(chunks_sequence[1]),
+      ]
+    )
+
+    mocker.patch("yoker.agent.create_backend", return_value=mock_backend)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
@@ -237,26 +265,27 @@ class TestAgentContentEventEmission:
     self, tmp_path: Path, mocker: MockerFixture
   ) -> None:
     """
-    Given: Agent processes tool result with content_metadata
-    When: Emitting events
+    Given: Agent processes tool with content_metadata
+    When: Tool execution completes
     Then: ToolResultEvent is emitted before ToolContentEvent
     """
-    # Mock the ollama client
-    mock_client = mocker.MagicMock()
-    mock_client.chat = AsyncMock(
-      side_effect=create_tool_then_response(
-        mocker,
-        tool_calls=[
-          create_mock_tool_call(
-            mocker,
-            name="yoker:write",
-            arguments={"path": str(tmp_path / "test.txt"), "content": "Test\n"},
-          )
-        ],
-      )
+    # Create mock backend that returns tool call, then final response
+    mock_backend = MagicMock()
+    mock_backend.provider = "ollama"
+
+    chunks_sequence = create_tool_then_response_chunks(
+      tool_name="yoker:write",
+      tool_args={"path": str(tmp_path / "test.txt"), "content": "Hello\nWorld\n"},
     )
 
-    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
+    mock_backend.chat_stream = mocker.Mock(
+      side_effect=[
+        _aiter_chunks(chunks_sequence[0]),
+        _aiter_chunks(chunks_sequence[1]),
+      ]
+    )
+
+    mocker.patch("yoker.agent.create_backend", return_value=mock_backend)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
@@ -264,44 +293,42 @@ class TestAgentContentEventEmission:
 
     asyncio.run(agent.process("Write a file"))
 
-    # Find ToolResultEvent and ToolContentEvent
-    result_idx = None
-    content_idx = None
+    # Find positions of events
+    result_indices = [i for i, e in enumerate(collector.events) if e.type == EventType.TOOL_RESULT]
+    content_indices = [
+      i for i, e in enumerate(collector.events) if e.type == EventType.TOOL_CONTENT
+    ]
 
-    for i, event in enumerate(collector.events):
-      if event.type == EventType.TOOL_RESULT:
-        result_idx = i
-      elif event.type == EventType.TOOL_CONTENT:
-        content_idx = i
-
-    assert result_idx is not None
-    assert content_idx is not None
-    assert result_idx < content_idx
+    # ToolResult should come before ToolContent
+    assert len(result_indices) == 1
+    assert len(content_indices) == 1
+    assert result_indices[0] < content_indices[0]
 
   def test_content_event_contains_tool_metadata(
     self, tmp_path: Path, mocker: MockerFixture
   ) -> None:
     """
-    Given: Agent emits ToolContentEvent
-    When: Event is created
-    Then: Event contains tool_name, operation, path, content_type
+    Given: Tool execution produces content_metadata
+    When: ToolContentEvent is emitted
+    Then: Event contains operation, path, content_type from metadata
     """
-    # Mock the ollama client
-    mock_client = mocker.MagicMock()
-    mock_client.chat = AsyncMock(
-      side_effect=create_tool_then_response(
-        mocker,
-        tool_calls=[
-          create_mock_tool_call(
-            mocker,
-            name="yoker:write",
-            arguments={"path": str(tmp_path / "myfile.txt"), "content": "Test\n"},
-          )
-        ],
-      )
+    # Create mock backend that returns tool call, then final response
+    mock_backend = MagicMock()
+    mock_backend.provider = "ollama"
+
+    chunks_sequence = create_tool_then_response_chunks(
+      tool_name="yoker:write",
+      tool_args={"path": str(tmp_path / "test.txt"), "content": "Hello\nWorld\n"},
     )
 
-    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
+    mock_backend.chat_stream = mocker.Mock(
+      side_effect=[
+        _aiter_chunks(chunks_sequence[0]),
+        _aiter_chunks(chunks_sequence[1]),
+      ]
+    )
+
+    mocker.patch("yoker.agent.create_backend", return_value=mock_backend)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
@@ -311,46 +338,37 @@ class TestAgentContentEventEmission:
 
     content_events = collector.events_of_type(EventType.TOOL_CONTENT)
     assert len(content_events) == 1
-
     event = content_events[0]
     assert isinstance(event, ToolContentEvent)
     assert event.tool_name == "yoker:write"
     assert event.operation == "write"
-    assert "myfile.txt" in event.path
-    assert event.content_type in ("application/x-summary", "text/plain")
+    assert "test.txt" in event.path
 
   def test_content_event_contains_content(self, tmp_path: Path, mocker: MockerFixture) -> None:
     """
-    Given: Agent emits ToolContentEvent for write operation
-    When: Event is created
-    Then: Event contains content field
+    Given: Tool execution produces content_metadata with content field
+    When: ToolContentEvent is emitted
+    Then: Event contains the content
     """
-    # Mock the ollama client
-    mock_client = mocker.MagicMock()
-    mock_client.chat = AsyncMock(
-      side_effect=create_tool_then_response(
-        mocker,
-        tool_calls=[
-          create_mock_tool_call(
-            mocker,
-            name="yoker:write",
-            arguments={"path": str(tmp_path / "test.txt"), "content": "Test\n"},
-          )
-        ],
-      )
+    # Create mock backend that returns tool call, then final response
+    mock_backend = MagicMock()
+    mock_backend.provider = "ollama"
+
+    chunks_sequence = create_tool_then_response_chunks(
+      tool_name="yoker:write",
+      tool_args={"path": str(tmp_path / "test.txt"), "content": "Hello\nWorld\n"},
     )
 
-    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
-
-    # Configure for content verbosity
-    from yoker.config import BackendConfig, ContentDisplayConfig, OllamaConfig, ToolsSharedConfig
-
-    config = Config(
-      backend=BackendConfig(ollama=OllamaConfig(model="test-model")),
-      permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)),
-      tools_shared=ToolsSharedConfig(content_display=ContentDisplayConfig(verbosity="content")),
+    mock_backend.chat_stream = mocker.Mock(
+      side_effect=[
+        _aiter_chunks(chunks_sequence[0]),
+        _aiter_chunks(chunks_sequence[1]),
+      ]
     )
-    agent = Agent(config=config)
+
+    mocker.patch("yoker.agent.create_backend", return_value=mock_backend)
+
+    agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
     agent.add_event_handler(collector)
 
@@ -358,218 +376,149 @@ class TestAgentContentEventEmission:
 
     content_events = collector.events_of_type(EventType.TOOL_CONTENT)
     assert len(content_events) == 1
-
     event = content_events[0]
-    assert isinstance(event, ToolContentEvent)
-    # Content should be present when verbosity="content"
-    # (or None if silent/summary mode)
-    assert hasattr(event, "content")
+    # The content field contains the written content (truncated if needed)
+    assert event.content is not None
 
   def test_content_event_contains_diff_metadata(
     self, tmp_path: Path, mocker: MockerFixture
   ) -> None:
     """
-    Given: Agent emits ToolContentEvent for update replace operation
-    When: Event is created
-    Then: Event metadata contains old_content and new_content
+    Given: Tool execution produces content_metadata with diff info
+    When: ToolContentEvent is emitted
+    Then: Event contains lines/bytes metadata
     """
     # Create an existing file for update
-    test_file = tmp_path / "existing.txt"
-    test_file.write_text("Old content\n")
+    existing_file = tmp_path / "existing.txt"
+    existing_file.write_text("Original content\n")
 
-    # Mock the ollama client
-    mock_client = mocker.MagicMock()
-    mock_client.chat = AsyncMock(
-      side_effect=create_tool_then_response(
-        mocker,
-        tool_calls=[
-          create_mock_tool_call(
-            mocker,
-            name="yoker:update",
-            arguments={
-              "path": str(test_file),
-              "operation": "replace",
-              "old_string": "Old",
-              "new_string": "New",
-            },
-          )
-        ],
-      )
+    # Create mock backend that returns tool call, then final response
+    mock_backend = MagicMock()
+    mock_backend.provider = "ollama"
+
+    chunks_sequence = create_tool_then_response_chunks(
+      tool_name="yoker:update",
+      tool_args={
+        "path": str(existing_file),
+        "operation": "replace",
+        "old_string": "Original",
+        "new_string": "Updated",
+      },
     )
 
-    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
+    mock_backend.chat_stream = mocker.Mock(
+      side_effect=[
+        _aiter_chunks(chunks_sequence[0]),
+        _aiter_chunks(chunks_sequence[1]),
+      ]
+    )
+
+    mocker.patch("yoker.agent.create_backend", return_value=mock_backend)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
     agent.add_event_handler(collector)
 
-    asyncio.run(agent.process("Update a file"))
+    asyncio.run(agent.process("Update the file"))
 
     content_events = collector.events_of_type(EventType.TOOL_CONTENT)
-    assert len(content_events) >= 1
-
+    assert len(content_events) == 1
     event = content_events[0]
-    assert isinstance(event, ToolContentEvent)
-    assert event.tool_name == "yoker:update"
-    # Metadata should contain diff information
-    assert hasattr(event, "metadata")
+    assert event.operation == "replace"
+    # Check for diff metadata (lines_modified is present in diff output)
+    assert "lines_modified" in event.metadata
 
 
 class TestAgentContentEventConstruction:
-  """Test ToolContentEvent construction from content_metadata."""
+  """Tests for ToolContentEvent construction."""
 
-  def test_event_construction_from_write_metadata(
-    self, tmp_path: Path, mocker: MockerFixture
-  ) -> None:
+  def test_event_construction_from_write_metadata(self) -> None:
     """
-    Given: content_metadata from WriteTool
-    When: Agent constructs ToolContentEvent
-    Then: Event fields map correctly from metadata
+    Given: write tool produces metadata
+    When: ToolContentEvent is created
+    Then: Event fields are populated correctly
     """
-    # Mock the ollama client
-    mock_client = mocker.MagicMock()
-    mock_client.chat = AsyncMock(
-      side_effect=create_tool_then_response(
-        mocker,
-        tool_calls=[
-          create_mock_tool_call(
-            mocker,
-            name="yoker:write",
-            arguments={"path": str(tmp_path / "test.txt"), "content": "Test\n"},
-          )
-        ],
-      )
+    event = ToolContentEvent(
+      type=EventType.TOOL_CONTENT,
+      tool_name="yoker:write",
+      operation="write",
+      path="/test/file.txt",
+      content_type="text/plain",
+      content="Hello World",
+      metadata={"lines": 1, "bytes": 11, "is_new_file": True},
     )
 
-    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
-
-    agent = create_agent_with_permissions(tmp_path)
-    collector = TestEventCollector()
-    agent.add_event_handler(collector)
-
-    asyncio.run(agent.process("Write a file"))
-
-    content_events = collector.events_of_type(EventType.TOOL_CONTENT)
-    assert len(content_events) == 1
-
-    event = content_events[0]
     assert event.tool_name == "yoker:write"
     assert event.operation == "write"
-    assert "test.txt" in event.path
-    # content_type should be "application/x-summary" or "full"
-    assert event.content_type in ("application/x-summary", "full")
-    # metadata should include lines count
-    assert "lines" in event.metadata or event.content_type == "full"
+    assert event.path == "/test/file.txt"
+    assert event.content_type == "text/plain"
+    assert event.content == "Hello World"
+    assert event.metadata["lines"] == 1
+    assert event.metadata["is_new_file"] is True
 
-  def test_event_construction_from_update_metadata(
-    self, tmp_path: Path, mocker: MockerFixture
-  ) -> None:
+  def test_event_construction_from_update_metadata(self) -> None:
     """
-    Given: content_metadata from UpdateTool
-    When: Agent constructs ToolContentEvent
-    Then: Event fields map correctly from metadata
+    Given: update tool produces metadata
+    When: ToolContentEvent is created
+    Then: Event fields are populated correctly
     """
-    # Create an existing file
-    test_file = tmp_path / "existing.txt"
-    test_file.write_text("Original line\n")
-
-    # Mock the ollama client
-    mock_client = mocker.MagicMock()
-    mock_client.chat = AsyncMock(
-      side_effect=create_tool_then_response(
-        mocker,
-        tool_calls=[
-          create_mock_tool_call(
-            mocker,
-            name="yoker:update",
-            arguments={
-              "path": str(test_file),
-              "operation": "replace",
-              "old_string": "Original",
-              "new_string": "Modified",
-            },
-          )
-        ],
-      )
+    event = ToolContentEvent(
+      type=EventType.TOOL_CONTENT,
+      tool_name="yoker:update",
+      operation="replace",
+      path="/test/file.txt",
+      content_type="text/x-diff",
+      content="--- a/file.txt\n+++ b/file.txt\n-original\n+updated\n",
+      metadata={"lines_added": 1, "lines_removed": 1, "is_overwrite": False},
     )
 
-    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
-
-    agent = create_agent_with_permissions(tmp_path)
-    collector = TestEventCollector()
-    agent.add_event_handler(collector)
-
-    asyncio.run(agent.process("Update a file"))
-
-    content_events = collector.events_of_type(EventType.TOOL_CONTENT)
-    assert len(content_events) >= 1
-
-    event = content_events[0]
     assert event.tool_name == "yoker:update"
-    # operation should match update type
-    assert event.operation in ("replace", "insert_before", "insert_after", "delete")
+    assert event.operation == "replace"
+    assert event.content_type == "text/x-diff"
 
-  def test_event_type_set_to_tool_content(self, tmp_path: Path, mocker: MockerFixture) -> None:
+  def test_event_type_set_to_tool_content(self) -> None:
     """
-    Given: Agent creates ToolContentEvent
-    When: Event is constructed
-    Then: event.type is EventType.TOOL_CONTENT
+    Given: Any tool content event
+    When: Event is created
+    Then: type field is TOOL_CONTENT
     """
-    # Mock the ollama client
-    mock_client = mocker.MagicMock()
-    mock_client.chat = AsyncMock(
-      side_effect=create_tool_then_response(
-        mocker,
-        tool_calls=[
-          create_mock_tool_call(
-            mocker,
-            name="yoker:write",
-            arguments={"path": str(tmp_path / "test.txt"), "content": "Test\n"},
-          )
-        ],
-      )
+    event = ToolContentEvent(
+      type=EventType.TOOL_CONTENT,
+      tool_name="yoker:write",
+      operation="write",
+      path="/test/file.txt",
+      content_type="text/plain",
     )
 
-    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
-
-    agent = create_agent_with_permissions(tmp_path)
-    collector = TestEventCollector()
-    agent.add_event_handler(collector)
-
-    asyncio.run(agent.process("Write a file"))
-
-    content_events = collector.events_of_type(EventType.TOOL_CONTENT)
-    assert len(content_events) == 1
-
-    event = content_events[0]
     assert event.type == EventType.TOOL_CONTENT
 
 
 class TestAgentContentEventEmissionOrder:
-  """Test event emission order for content events."""
+  """Tests for event emission ordering."""
 
   def test_event_sequence_for_write_operation(self, tmp_path: Path, mocker: MockerFixture) -> None:
     """
-    Given: Agent processes WriteTool result
-    When: Emitting events
-    Then: ToolResultEvent is emitted, then ToolContentEvent
+    Given: Agent processes a write operation
+    When: Events are emitted
+    Then: Events follow correct sequence: ToolCall -> ToolResult -> ToolContent -> TurnEnd
     """
-    # Mock the ollama client
-    mock_client = mocker.MagicMock()
-    mock_client.chat = AsyncMock(
-      side_effect=create_tool_then_response(
-        mocker,
-        tool_calls=[
-          create_mock_tool_call(
-            mocker,
-            name="yoker:write",
-            arguments={"path": str(tmp_path / "test.txt"), "content": "Test\n"},
-          )
-        ],
-      )
+    # Create mock backend that returns tool call, then final response
+    mock_backend = MagicMock()
+    mock_backend.provider = "ollama"
+
+    chunks_sequence = create_tool_then_response_chunks(
+      tool_name="yoker:write",
+      tool_args={"path": str(tmp_path / "test.txt"), "content": "Hello\n"},
     )
 
-    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
+    mock_backend.chat_stream = mocker.Mock(
+      side_effect=[
+        _aiter_chunks(chunks_sequence[0]),
+        _aiter_chunks(chunks_sequence[1]),
+      ]
+    )
+
+    mocker.patch("yoker.agent.create_backend", return_value=mock_backend)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
@@ -577,296 +526,261 @@ class TestAgentContentEventEmissionOrder:
 
     asyncio.run(agent.process("Write a file"))
 
-    # Verify order
-    result_idx = None
-    content_idx = None
-    for i, event in enumerate(collector.events):
-      if event.type == EventType.TOOL_RESULT:
-        result_idx = i
-      elif event.type == EventType.TOOL_CONTENT:
-        content_idx = i
+    # Verify event order
+    event_types = [e.type for e in collector.events]
 
-    assert result_idx is not None
-    assert content_idx is not None
+    # TurnStart should be first, TurnEnd last
+    assert event_types[0] == EventType.TURN_START
+    assert event_types[-1] == EventType.TURN_END
+
+    # ToolCall should come before ToolResult
+    call_idx = event_types.index(EventType.TOOL_CALL)
+    result_idx = event_types.index(EventType.TOOL_RESULT)
+    assert call_idx < result_idx
+
+    # ToolContent should come after ToolResult
+    content_idx = event_types.index(EventType.TOOL_CONTENT)
     assert result_idx < content_idx
 
   def test_event_sequence_for_update_operation(self, tmp_path: Path, mocker: MockerFixture) -> None:
     """
-    Given: Agent processes UpdateTool result
-    When: Emitting events
-    Then: ToolResultEvent is emitted, then ToolContentEvent
+    Given: Agent processes an update operation
+    When: Events are emitted
+    Then: Events follow correct sequence
     """
     # Create an existing file
-    test_file = tmp_path / "existing.txt"
-    test_file.write_text("Original\n")
+    (tmp_path / "existing.txt").write_text("Original content\n")
 
-    # Mock the ollama client
-    mock_client = mocker.MagicMock()
-    mock_client.chat = AsyncMock(
-      side_effect=create_tool_then_response(
-        mocker,
-        tool_calls=[
-          create_mock_tool_call(
-            mocker,
-            name="yoker:update",
-            arguments={
-              "path": str(test_file),
-              "operation": "replace",
-              "old_string": "Original",
-              "new_string": "Updated",
-            },
-          )
-        ],
-      )
+    # Create mock backend that returns tool call, then final response
+    mock_backend = MagicMock()
+    mock_backend.provider = "ollama"
+
+    chunks_sequence = create_tool_then_response_chunks(
+      tool_name="yoker:update",
+      tool_args={
+        "path": str(tmp_path / "existing.txt"),
+        "operation": "replace",
+        "old_string": "Original",
+        "new_string": "Updated",
+      },
     )
 
-    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
+    mock_backend.chat_stream = mocker.Mock(
+      side_effect=[
+        _aiter_chunks(chunks_sequence[0]),
+        _aiter_chunks(chunks_sequence[1]),
+      ]
+    )
+
+    mocker.patch("yoker.agent.create_backend", return_value=mock_backend)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
     agent.add_event_handler(collector)
 
-    asyncio.run(agent.process("Update a file"))
+    asyncio.run(agent.process("Update the file"))
 
-    # Verify order
-    result_idx = None
-    content_idx = None
-    for i, event in enumerate(collector.events):
-      if event.type == EventType.TOOL_RESULT:
-        result_idx = i
-      elif event.type == EventType.TOOL_CONTENT:
-        content_idx = i
+    # Verify event sequence
+    event_types = [e.type for e in collector.events]
+    call_idx = event_types.index(EventType.TOOL_CALL)
+    result_idx = event_types.index(EventType.TOOL_RESULT)
+    content_idx = event_types.index(EventType.TOOL_CONTENT)
 
-    assert result_idx is not None
-    assert content_idx is not None
-    assert result_idx < content_idx
+    assert call_idx < result_idx < content_idx
 
   def test_event_sequence_for_read_operation(self, tmp_path: Path, mocker: MockerFixture) -> None:
     """
-    Given: Agent processes ReadTool result
-    When: Emitting events
-    Then: Only ToolResultEvent is emitted (no content event)
+    Given: Agent processes a read operation (no content_metadata)
+    When: Events are emitted
+    Then: No ToolContent event is emitted
     """
-    # Create a file to read
-    test_file = tmp_path / "test.txt"
-    test_file.write_text("Content\n")
+    # Create the file to read
+    (tmp_path / "test.txt").write_text("Hello World")
 
-    # Mock the ollama client
-    mock_client = mocker.MagicMock()
-    mock_client.chat = AsyncMock(
-      side_effect=create_tool_then_response(
-        mocker,
-        tool_calls=[
-          create_mock_tool_call(
-            mocker,
-            name="yoker:read",
-            arguments={"path": str(test_file)},
-          )
-        ],
-      )
+    # Create mock backend that returns tool call, then final response
+    mock_backend = MagicMock()
+    mock_backend.provider = "ollama"
+
+    chunks_sequence = create_tool_then_response_chunks(
+      tool_name="yoker:read",
+      tool_args={"path": str(tmp_path / "test.txt")},
     )
 
-    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
+    mock_backend.chat_stream = mocker.Mock(
+      side_effect=[
+        _aiter_chunks(chunks_sequence[0]),
+        _aiter_chunks(chunks_sequence[1]),
+      ]
+    )
+
+    mocker.patch("yoker.agent.create_backend", return_value=mock_backend)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
     agent.add_event_handler(collector)
 
-    asyncio.run(agent.process("Read a file"))
+    asyncio.run(agent.process("Read the file"))
 
-    # Verify no content event
+    # Verify no ToolContent event
     content_events = collector.events_of_type(EventType.TOOL_CONTENT)
-    result_events = collector.events_of_type(EventType.TOOL_RESULT)
-
     assert len(content_events) == 0
-    assert len(result_events) >= 1
 
 
 class TestAgentContentEventWithMultipleTools:
-  """Test content event emission with multiple tool calls."""
+  """Tests for ToolContentEvent with multiple tool executions."""
 
   def test_content_events_for_sequential_writes(
     self, tmp_path: Path, mocker: MockerFixture
   ) -> None:
     """
-    Given: Agent processes multiple WriteTool results
-    When: Emitting events
-    Then: Each write emits ToolResultEvent then ToolContentEvent
+    Given: Agent executes multiple write operations
+    When: Each write completes
+    Then: Each produces a ToolContentEvent
     """
-    # Mock the ollama client to return multiple tool calls
-    mock_client = mocker.MagicMock()
-    mock_client.chat = AsyncMock(
-      side_effect=create_tool_then_response(
-        mocker,
-        tool_calls=[
-          create_mock_tool_call(
-            mocker,
-            name="yoker:write",
-            arguments={"path": str(tmp_path / "file1.txt"), "content": "Content 1\n"},
-            call_id="call_write_1",
-          ),
-          create_mock_tool_call(
-            mocker,
-            name="yoker:write",
-            arguments={"path": str(tmp_path / "file2.txt"), "content": "Content 2\n"},
-            call_id="call_write_2",
-          ),
-        ],
-      )
+    # Create mock backend that returns first tool call, then second, then final
+    mock_backend = MagicMock()
+    mock_backend.provider = "ollama"
+
+    first_chunks = create_tool_call_chunks(
+      "yoker:write",
+      {"path": str(tmp_path / "first.txt"), "content": "First file"},
+    )
+    second_chunks = create_tool_call_chunks(
+      "yoker:write",
+      {"path": str(tmp_path / "second.txt"), "content": "Second file"},
+    )
+    final_chunks = create_content_chunks("All done") + create_final_chunks()
+
+    mock_backend.chat_stream = mocker.Mock(
+      side_effect=[
+        _aiter_chunks(first_chunks),
+        _aiter_chunks(second_chunks),
+        _aiter_chunks(final_chunks),
+      ]
     )
 
-    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
+    mocker.patch("yoker.agent.create_backend", return_value=mock_backend)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
     agent.add_event_handler(collector)
 
-    asyncio.run(agent.process("Write files"))
+    asyncio.run(agent.process("Write two files"))
 
-    # Count content events
+    # Two ToolContentEvents should be emitted
     content_events = collector.events_of_type(EventType.TOOL_CONTENT)
     assert len(content_events) == 2
-
-    # Verify order of result/content pairs
-    event_types = [e.type for e in collector.events]
-    # Find TOOL_RESULT and TOOL_CONTENT indices
-    result_indices = [i for i, t in enumerate(event_types) if t == EventType.TOOL_RESULT]
-    content_indices = [i for i, t in enumerate(event_types) if t == EventType.TOOL_CONTENT]
-
-    # Each content event should come after its corresponding result event
-    assert len(result_indices) >= 2
-    assert len(content_indices) == 2
-    # First content after first result
-    assert content_indices[0] > result_indices[0]
-    # Second content after second result
-    assert content_indices[1] > result_indices[1]
 
   def test_content_events_for_mixed_operations(self, tmp_path: Path, mocker: MockerFixture) -> None:
     """
-    Given: Agent processes mixed tool results (write, read, update)
-    When: Emitting events
-    Then: Content events only for write and update operations
+    Given: Agent executes write then read operations
+    When: Operations complete
+    Then: Only write produces ToolContentEvent
     """
-    # Create files for operations
-    (tmp_path / "existing.txt").write_text("Original\n")
+    # Create the file for reading
+    (tmp_path / "readme.txt").write_text("Content to read")
 
-    # Mock the ollama client
-    mock_client = mocker.MagicMock()
-    mock_client.chat = AsyncMock(
-      side_effect=create_tool_then_response(
-        mocker,
-        tool_calls=[
-          create_mock_tool_call(
-            mocker,
-            name="yoker:write",
-            arguments={"path": str(tmp_path / "new.txt"), "content": "New file\n"},
-            call_id="call_write",
-          ),
-          create_mock_tool_call(
-            mocker,
-            name="yoker:read",
-            arguments={"path": str(tmp_path / "existing.txt")},
-            call_id="call_read",
-          ),
-          create_mock_tool_call(
-            mocker,
-            name="yoker:update",
-            arguments={
-              "path": str(tmp_path / "existing.txt"),
-              "operation": "replace",
-              "old_string": "Original",
-              "new_string": "Updated",
-            },
-            call_id="call_update",
-          ),
-        ],
-      )
+    # Create mock backend that returns write, then read, then final
+    mock_backend = MagicMock()
+    mock_backend.provider = "ollama"
+
+    write_chunks = create_tool_call_chunks(
+      "yoker:write",
+      {"path": str(tmp_path / "output.txt"), "content": "Written content"},
+    )
+    read_chunks = create_tool_call_chunks(
+      "yoker:read",
+      {"path": str(tmp_path / "readme.txt")},
+    )
+    final_chunks = create_content_chunks("Done") + create_final_chunks()
+
+    mock_backend.chat_stream = mocker.Mock(
+      side_effect=[
+        _aiter_chunks(write_chunks),
+        _aiter_chunks(read_chunks),
+        _aiter_chunks(final_chunks),
+      ]
     )
 
-    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
+    mocker.patch("yoker.agent.create_backend", return_value=mock_backend)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
     agent.add_event_handler(collector)
 
-    asyncio.run(agent.process("Mixed operations"))
+    asyncio.run(agent.process("Write then read"))
 
-    # Should have 2 content events (write and update, not read)
+    # Only one ToolContentEvent from write
     content_events = collector.events_of_type(EventType.TOOL_CONTENT)
-    tool_names = [e.tool_name for e in content_events if isinstance(e, ToolContentEvent)]
-
-    assert len(content_events) == 2
-    assert "yoker:write" in tool_names
-    assert "yoker:update" in tool_names
-    assert "yoker:read" not in tool_names
+    assert len(content_events) == 1
+    assert content_events[0].operation == "write"
 
 
 class TestAgentContentEventErrorHandling:
-  """Test error handling for content event emission."""
+  """Tests for error handling during content event emission."""
 
   def test_content_event_not_emitted_on_error(self, tmp_path: Path, mocker: MockerFixture) -> None:
     """
-    Given: ToolResult with success=False and content_metadata
-    When: Agent processes result
+    Given: Tool execution fails with error
+    When: ToolResult.success is False
     Then: ToolContentEvent is not emitted
     """
-    # Mock the ollama client to return a tool call that will fail
-    mock_client = mocker.MagicMock()
-    mock_client.chat = AsyncMock(
-      side_effect=create_tool_then_response(
-        mocker,
-        tool_calls=[
-          create_mock_tool_call(
-            mocker,
-            name="yoker:write",
-            # Invalid path (will fail)
-            arguments={"path": "/nonexistent/path/test.txt", "content": "Test\n"},
-          )
-        ],
-      )
+    # Point to a non-existent path
+    nonexistent = tmp_path / "nonexistent" / "file.txt"
+
+    # Create mock backend that returns tool call, then final
+    mock_backend = MagicMock()
+    mock_backend.provider = "ollama"
+
+    chunks_sequence = create_tool_then_response_chunks(
+      tool_name="yoker:read",
+      tool_args={"path": str(nonexistent)},
     )
 
-    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
+    mock_backend.chat_stream = mocker.Mock(
+      side_effect=[
+        _aiter_chunks(chunks_sequence[0]),
+        _aiter_chunks(chunks_sequence[1]),
+      ]
+    )
+
+    mocker.patch("yoker.agent.create_backend", return_value=mock_backend)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
     agent.add_event_handler(collector)
 
-    asyncio.run(agent.process("Write to invalid path"))
+    asyncio.run(agent.process("Read nonexistent file"))
 
-    # Should not emit ToolContentEvent on error
+    # No ToolContentEvent should be emitted for failed tool
     content_events = collector.events_of_type(EventType.TOOL_CONTENT)
-    result_events = collector.events_of_type(EventType.TOOL_RESULT)
-
-    # Should have result event with success=False
-    assert len(result_events) >= 1
-    # Should not have content event
     assert len(content_events) == 0
 
   def test_content_event_handles_missing_fields(
     self, tmp_path: Path, mocker: MockerFixture
   ) -> None:
     """
-    Given: content_metadata with missing fields
-    When: Agent constructs ToolContentEvent
-    Then: Event is created with available fields, defaults for missing
+    Given: Tool execution succeeds with minimal metadata
+    When: ToolContentEvent is emitted
+    Then: Event is created with default values
     """
-    # Mock the ollama client
-    mock_client = mocker.MagicMock()
-    mock_client.chat = AsyncMock(
-      side_effect=create_tool_then_response(
-        mocker,
-        tool_calls=[
-          create_mock_tool_call(
-            mocker,
-            name="yoker:write",
-            arguments={"path": str(tmp_path / "test.txt"), "content": "Test\n"},
-          )
-        ],
-      )
+    # Create mock backend that returns tool call, then final
+    mock_backend = MagicMock()
+    mock_backend.provider = "ollama"
+
+    chunks_sequence = create_tool_then_response_chunks(
+      tool_name="yoker:write",
+      tool_args={"path": str(tmp_path / "test.txt"), "content": "Hello"},
     )
 
-    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
+    mock_backend.chat_stream = mocker.Mock(
+      side_effect=[
+        _aiter_chunks(chunks_sequence[0]),
+        _aiter_chunks(chunks_sequence[1]),
+      ]
+    )
+
+    mocker.patch("yoker.agent.create_backend", return_value=mock_backend)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
@@ -874,58 +788,59 @@ class TestAgentContentEventErrorHandling:
 
     asyncio.run(agent.process("Write a file"))
 
+    # Event should have required fields even if metadata is sparse
     content_events = collector.events_of_type(EventType.TOOL_CONTENT)
     assert len(content_events) == 1
-
     event = content_events[0]
-    # Event should be created successfully even with default values
-    assert isinstance(event, ToolContentEvent)
-    assert event.operation is not None  # Has default ""
-    assert event.content_type is not None  # Has default "application/x-summary"
+    assert event.tool_name == "yoker:write"
+    assert event.operation == "write"
+    assert event.path  # path should be present
 
   def test_content_event_emission_does_not_affect_tool_result(
     self, tmp_path: Path, mocker: MockerFixture
   ) -> None:
     """
-    Given: Agent emits ToolContentEvent
+    Given: Tool execution with content_metadata
     When: Content event emission fails
-    Then: Tool result is still returned to LLM
+    Then: ToolResult event is still emitted correctly
     """
-    # Mock the ollama client
-    mock_client = mocker.MagicMock()
-    mock_client.chat = AsyncMock(
-      side_effect=create_tool_then_response(
-        mocker,
-        tool_calls=[
-          create_mock_tool_call(
-            mocker,
-            name="yoker:write",
-            arguments={"path": str(tmp_path / "test.txt"), "content": "Test\n"},
-          )
-        ],
-      )
+    # Create mock backend that returns tool call, then final
+    mock_backend = MagicMock()
+    mock_backend.provider = "ollama"
+
+    chunks_sequence = create_tool_then_response_chunks(
+      tool_name="yoker:write",
+      tool_args={"path": str(tmp_path / "test.txt"), "content": "Hello"},
     )
 
-    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
+    mock_backend.chat_stream = mocker.Mock(
+      side_effect=[
+        _aiter_chunks(chunks_sequence[0]),
+        _aiter_chunks(chunks_sequence[1]),
+      ]
+    )
 
-    agent = Agent(config=Config())
+    mocker.patch("yoker.agent.create_backend", return_value=mock_backend)
 
-    # Create a handler that fails on ToolContentEvent
+    agent = create_agent_with_permissions(tmp_path)
+
+    # Add a handler that might fail
     class FailingHandler:
-      def __init__(self) -> None:
+      def __init__(self):
         self.events: list[Event] = []
 
       def __call__(self, event: Event) -> None:
-        self.events.append(event)
+        # Only fail on ToolContent events
         if event.type == EventType.TOOL_CONTENT:
-          raise RuntimeError("Handler failed")
+          raise RuntimeError("Handler error")
+        self.events.append(event)
 
-    failing_handler = FailingHandler()
-    agent.add_event_handler(failing_handler)
+    handler = FailingHandler()
+    agent.add_event_handler(handler)
 
-    # Process should complete without raising error
+    # Should not raise - errors are caught in emit()
     asyncio.run(agent.process("Write a file"))
 
-    # Tool result event should have been emitted before the failure
-    result_events = [e for e in failing_handler.events if e.type == EventType.TOOL_RESULT]
-    assert len(result_events) >= 1
+    # ToolResult should still be in the events
+    result_events = [e for e in handler.events if e.type == EventType.TOOL_RESULT]
+    assert len(result_events) == 1

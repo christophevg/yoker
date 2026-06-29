@@ -2,7 +2,6 @@
 
 import asyncio
 from typing import Any
-from unittest.mock import AsyncMock
 
 import pytest
 from pytest_mock import MockerFixture
@@ -199,39 +198,30 @@ class TestAgentEventEmission:
 
   def test_agent_emits_events_during_process(self, mocker: MockerFixture) -> None:
     """Test that Agent emits events during process()."""
-    mock_client = mocker.MagicMock()
-
-    class AsyncIter:
-      """Helper class to create an async iterator from a list."""
-
-      def __init__(self, items: list) -> None:
-        self.items = items
-        self.index = 0
-
-      def __aiter__(self) -> "AsyncIter":
-        return self
-
-      async def __anext__(self) -> Any:
-        if self.index >= len(self.items):
-          raise StopAsyncIteration
-        item = self.items[self.index]
-        self.index += 1
-        return item
-
-    mock_chunk = mocker.MagicMock()
-    mock_chunk.message.thinking = None
-    mock_chunk.message.content = "Hello there"
-    mock_chunk.message.tool_calls: list = []
-    mock_chunk.done = True
-    mock_chunk.prompt_eval_count = 10
-    mock_chunk.eval_count = 20
-    mock_chunk.total_duration = 100_000_000
-
-    mock_client.chat = AsyncMock(return_value=AsyncIter([mock_chunk]))
-
-    mocker.patch("yoker.agent.AsyncClient", return_value=mock_client)
-
     from yoker.agent import Agent
+    from yoker.backends import ChatChunk, ChatChunkEvent, UsageStats
+
+    # Create ChatChunk events for the backend to return
+    chunks = [
+      ChatChunk(event=ChatChunkEvent.CONTENT_START, index=0),
+      ChatChunk(event=ChatChunkEvent.CONTENT_DELTA, index=0, text="Hello there"),
+      ChatChunk(event=ChatChunkEvent.CONTENT_STOP, index=0),
+      ChatChunk(
+        event=ChatChunkEvent.USAGE,
+        usage=UsageStats(prompt_eval_count=10, eval_count=20, total_duration_ms=100),
+      ),
+      ChatChunk(event=ChatChunkEvent.DONE),
+    ]
+
+    async def _aiter_chunks() -> Any:
+      for chunk in chunks:
+        yield chunk
+
+    mock_backend = mocker.MagicMock()
+    mock_backend.provider = "ollama"
+    mock_backend.chat_stream = mocker.Mock(return_value=_aiter_chunks())
+
+    mocker.patch("yoker.agent.create_backend", return_value=mock_backend)
 
     agent = Agent(config=Config())
     collector = TestEventCollector()
