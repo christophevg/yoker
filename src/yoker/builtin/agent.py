@@ -152,10 +152,14 @@ def _create_subagent(parent_agent: "Agent | None", agent_definition: "AgentDefin
         backend=backend,
       )
     else:
-      # No parent config, create default with model
-      from yoker.config import BackendConfig, OllamaConfig
+      # No parent config (should not happen in practice - parent_agent is validated).
+      # Use default BackendConfig (defaults to Ollama) and set model via with_model.
+      from yoker.backends import with_model as _with_model
+      from yoker.config import BackendConfig
 
-      config = Config(backend=BackendConfig(ollama=OllamaConfig(model=model)))
+      default_backend = BackendConfig()  # Defaults to Ollama per Q9
+      backend = _with_model(default_backend, model)
+      config = Config(backend=backend)
   else:
     config = parent_config
 
