@@ -372,15 +372,13 @@ class Agent:
 
     # Read from the active provider's config using the generic property
     sub_config = self.config.backend.config
-    if sub_config is not None:
-      model = sub_config.model
-    else:
-      # Fallback to Ollama config (default provider)
-      if self.config.backend.ollama:
-        model = self.config.backend.ollama.model
-      else:
-        raise ValueError("No model configured and no fallback available")
+    if sub_config is None:
+      raise ValueError(
+        f"No config available for provider '{self.config.backend.provider}'. "
+        f"Please configure backend.{self.config.backend.provider} in your yoker.toml."
+      )
 
+    model = sub_config.model
     logger.info("model from config", model=model, provider=self.config.backend.provider)
     return model
 
@@ -463,3 +461,4 @@ class Agent:
         logger.info("agents loaded", count=len(new_agents), source=directory)
       except Exception as e:
         logger.warning("loading agents failed", directory=directory, error=str(e))
+

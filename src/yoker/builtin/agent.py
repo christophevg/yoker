@@ -146,8 +146,6 @@ def _create_subagent(parent_agent: "Agent | None", agent_definition: "AgentDefin
     if parent_config is not None:
       # Inline with_model logic: create provider-agnostic config copy with model override
       # Get the active provider's config using the generic property
-      from yoker.config import AnthropicConfig, OllamaConfig, OpenAIConfig
-
       sub_config = parent_config.backend.config
       if sub_config is None:
         raise ValueError(f"No config for provider: {parent_config.backend.provider}")
@@ -156,17 +154,9 @@ def _create_subagent(parent_agent: "Agent | None", agent_definition: "AgentDefin
       new_sub_config = replace(sub_config, model=model)
 
       # Create new BackendConfig with updated sub-config
-      # Use conditional logic to satisfy mypy's type checker
+      # Use generic provider-agnostic approach with getattr/setattr pattern
       provider = parent_config.backend.provider
-      if provider == "ollama" and isinstance(new_sub_config, OllamaConfig):
-        backend = replace(parent_config.backend, ollama=new_sub_config)
-      elif provider == "openai" and isinstance(new_sub_config, OpenAIConfig):
-        backend = replace(parent_config.backend, openai=new_sub_config)
-      elif provider == "anthropic" and isinstance(new_sub_config, AnthropicConfig):
-        backend = replace(parent_config.backend, anthropic=new_sub_config)
-      else:
-        # Unknown provider or type mismatch - shouldn't happen in practice
-        raise ValueError(f"Unknown provider or type mismatch: {provider}")
+      backend = replace(parent_config.backend, **{provider: new_sub_config})  # type: ignore[arg-type]
 
       config = replace(
         parent_config,
@@ -219,3 +209,4 @@ async def _run_with_timeout(agent: "Agent", prompt: str, timeout_seconds: int) -
 
 
 __all__ = ["make_agent_tool"]
+
