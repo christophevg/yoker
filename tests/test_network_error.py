@@ -1,11 +1,14 @@
 """Tests for network error handling in Agent."""
 
-from unittest.mock import AsyncMock, patch
+from collections.abc import AsyncIterator
+from typing import Any
+from unittest.mock import patch
 
 import httpx
 import pytest
 
 from yoker.agent import Agent
+from yoker.backends import ChatChunk
 from yoker.exceptions import NetworkError
 
 
@@ -32,6 +35,12 @@ class TestNetworkError:
     assert error.recoverable is False
 
 
+async def _aiter_chunks(chunks: list[ChatChunk]) -> AsyncIterator[ChatChunk]:
+  """Async generator that yields ChatChunk instances."""
+  for chunk in chunks:
+    yield chunk
+
+
 class TestAgentNetworkErrors:
   """Tests for Agent network error handling."""
 
@@ -40,12 +49,14 @@ class TestAgentNetworkErrors:
     """Test that RemoteProtocolError is converted to NetworkError."""
     agent = Agent()
 
-    # Mock the _client.chat to raise RemoteProtocolError
-    with patch.object(agent._client, "chat", new_callable=AsyncMock) as mock_chat:
-      mock_chat.side_effect = httpx.RemoteProtocolError(
+    # Mock the backend's chat_stream to raise RemoteProtocolError
+    async def raise_error(*args: Any, **kwargs: Any) -> AsyncIterator[ChatChunk]:
+      raise httpx.RemoteProtocolError(
         "peer closed connection without sending complete message body"
       )
+      yield  # type: ignore # Never reached, but needed for type checker
 
+    with patch.object(agent._backend, "chat_stream", side_effect=raise_error):
       with pytest.raises(NetworkError) as exc_info:
         await agent.process("Hello")
 
@@ -58,9 +69,11 @@ class TestAgentNetworkErrors:
     """Test that ConnectError is converted to NetworkError."""
     agent = Agent()
 
-    with patch.object(agent._client, "chat", new_callable=AsyncMock) as mock_chat:
-      mock_chat.side_effect = httpx.ConnectError("Connection refused")
+    async def raise_error(*args: Any, **kwargs: Any) -> AsyncIterator[ChatChunk]:
+      raise httpx.ConnectError("Connection refused")
+      yield  # type: ignore
 
+    with patch.object(agent._backend, "chat_stream", side_effect=raise_error):
       with pytest.raises(NetworkError) as exc_info:
         await agent.process("Hello")
 
@@ -72,9 +85,11 @@ class TestAgentNetworkErrors:
     """Test that ReadTimeout is converted to NetworkError."""
     agent = Agent()
 
-    with patch.object(agent._client, "chat", new_callable=AsyncMock) as mock_chat:
-      mock_chat.side_effect = httpx.ReadTimeout("Read timed out")
+    async def raise_error(*args: Any, **kwargs: Any) -> AsyncIterator[ChatChunk]:
+      raise httpx.ReadTimeout("Read timed out")
+      yield  # type: ignore
 
+    with patch.object(agent._backend, "chat_stream", side_effect=raise_error):
       with pytest.raises(NetworkError) as exc_info:
         await agent.process("Hello")
 
@@ -86,9 +101,11 @@ class TestAgentNetworkErrors:
     """Test that ConnectTimeout is converted to NetworkError."""
     agent = Agent()
 
-    with patch.object(agent._client, "chat", new_callable=AsyncMock) as mock_chat:
-      mock_chat.side_effect = httpx.ConnectTimeout("Connection timed out")
+    async def raise_error(*args: Any, **kwargs: Any) -> AsyncIterator[ChatChunk]:
+      raise httpx.ConnectTimeout("Connection timed out")
+      yield  # type: ignore
 
+    with patch.object(agent._backend, "chat_stream", side_effect=raise_error):
       with pytest.raises(NetworkError) as exc_info:
         await agent.process("Hello")
 
@@ -99,47 +116,35 @@ class TestAgentNetworkErrors:
   async def test_agent_context_preserved_on_network_error(self) -> None:
     """Test that context state is preserved when NetworkError is raised."""
     agent = Agent()
+    initial_message_count = len(agent.context.get_messages())
 
-    # Add initial context
-    agent.context.add_message("user", "First message")
-    initial_messages = agent.context.get_messages().copy()
+    async def raise_error(*args: Any, **kwargs: Any) -> AsyncIterator[ChatChunk]:
+      raise httpx.ConnectError("Connection refused")
+      yield  # type: ignore
 
-    with patch.object(agent._client, "chat", new_callable=AsyncMock) as mock_chat:
-      mock_chat.side_effect = httpx.ConnectError("Connection refused")
-
+    with patch.object(agent._backend, "chat_stream", side_effect=raise_error):
       with pytest.raises(NetworkError):
-        await agent.process("Second message")
+        await agent.process("Hello")
 
-      # Context should still have the original message
-      # (the failed turn's message was added but can be recovered from)
-      assert len(agent.context.get_messages()) >= len(initial_messages)
+    # Context should still have the user message
+    assert len(agent.context.get_messages()) == initial_message_count + 1
 
 
 class TestNetworkErrorRecovery:
-  """Tests for recovering from network errors."""
+  """Tests for NetworkError recovery behavior."""
 
-  def test_network_error_is_recoverable(self) -> None:
-    """Test that network errors are marked recoverable."""
-    error = NetworkError("Connection failed")
-    assert error.recoverable is True
-
-  @pytest.mark.asyncio
-  async def test_different_httpx_errors_are_recoverable(self) -> None:
-    """Test that all common httpx errors are recoverable."""
-    agent = Agent()
-
-    httpx_errors = [
-      httpx.RemoteProtocolError("protocol error"),
-      httpx.ConnectError("connection failed"),
-      httpx.ReadTimeout("timeout"),
-      httpx.ConnectTimeout("timeout"),
+  def test_different_httpx_errors_are_recoverable(self) -> None:
+    """Test that different httpx error types can be wrapped in NetworkError."""
+    errors = [
+      httpx.RemoteProtocolError("peer closed"),
+      httpx.ConnectError("connection refused"),
+      httpx.ReadError("read error"),
+      httpx.WriteError("write error"),
+      httpx.ConnectTimeout("connect timeout"),
+      httpx.ReadTimeout("read timeout"),
     ]
 
-    for error in httpx_errors:
-      with patch.object(agent._client, "chat", new_callable=AsyncMock) as mock_chat:
-        mock_chat.side_effect = error
-
-        with pytest.raises(NetworkError) as exc_info:
-          await agent.process("test")
-
-        assert exc_info.value.recoverable is True
+    for original_error in errors:
+      network_error = NetworkError("Network error", original_error=original_error)
+      assert network_error.recoverable is True
+      assert network_error.original_error is original_error

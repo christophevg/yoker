@@ -1,14 +1,11 @@
 """Agent initialization helpers."""
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
-from ollama import AsyncClient
 from structlog import get_logger
 
 from yoker.config import Config
 from yoker.tools.web import (
-  OllamaWebFetchBackend,
-  OllamaWebSearchBackend,
   QueryWebGuardrail,
   UrlWebGuardrail,
   WebGuardrailConfig,
@@ -19,18 +16,6 @@ if TYPE_CHECKING:
   from yoker.skills import SkillRegistry
 
 logger = get_logger(__name__)
-
-
-def create_client(config: Config, client_cls: "type[AsyncClient] | None" = None) -> AsyncClient:
-  """Create an async Ollama client from config."""
-  cls = client_cls or AsyncClient
-  api_key = config.backend.ollama.api_key
-  base_url = config.backend.ollama.base_url
-  if api_key:
-    logger.info("async_ollama_client_initialized", host=base_url, auth="api_key")
-    return cls(host=base_url, headers={"Authorization": f"Bearer {api_key}"})
-  logger.info("async_ollama_client_initialized", host=base_url, auth="none")
-  return cls(host=base_url)
 
 
 def create_web_guardrails(
@@ -73,58 +58,6 @@ def create_web_guardrails(
     url_guardrail = UrlWebGuardrail(config=url_config)
 
   return (query_guardrail, url_guardrail)
-
-
-def create_web_backends(config: Config, client: "AsyncClient | None") -> dict[str, Any]:
-  """Create web tool backends for the configured provider.
-
-  Populates the ``_tool_backends`` dict used by the ``websearch`` and
-  ``webfetch`` tools. Backends are only populated when:
-
-  - The configured provider is ``ollama`` (the only supported web-tool
-    provider today).
-  - An Ollama API key is configured (the Ollama web_search/web_fetch SDK
-    calls require an authenticated client; the tools are also only
-    registered when an API key is present).
-  - The corresponding tool is enabled in config.
-
-  Args:
-    config: The Yoker configuration.
-    client: The Ollama AsyncClient used by the Agent. May be None when no
-      client could be constructed; in that case no backends are populated.
-
-  Returns:
-    A dict mapping tool names to backend instances. May be empty when the
-    conditions above are not met.
-  """
-  backends: dict[str, Any] = {}
-
-  if client is None:
-    return backends
-
-  if config.backend.provider != "ollama":
-    return backends
-
-  api_key = config.backend.ollama.api_key
-  if not api_key:
-    return backends
-
-  if config.tools.websearch.enabled:
-    backends["websearch"] = OllamaWebSearchBackend(
-      async_client=client,
-      timeout_seconds=config.tools.websearch.timeout_seconds,
-    )
-    logger.info("web_search_backend_populated", backend="ollama")
-
-  if config.tools.webfetch.enabled:
-    backends["webfetch"] = OllamaWebFetchBackend(
-      async_client=client,
-      timeout_seconds=config.tools.webfetch.timeout_seconds,
-      max_size_kb=config.tools.webfetch.max_size_kb,
-    )
-    logger.info("web_fetch_backend_populated", backend="ollama")
-
-  return backends
 
 
 def validate_recursion_depth(config: Config, depth: int) -> int:

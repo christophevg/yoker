@@ -14,6 +14,7 @@ import pytest
 
 from yoker.agent import Agent
 from yoker.agent._processing import _build_tool_context
+from yoker.backends.ollama import OllamaBackend
 from yoker.config import BackendConfig, Config, OllamaConfig
 from yoker.tools.web.backend import OllamaWebFetchBackend, OllamaWebSearchBackend
 
@@ -84,11 +85,12 @@ class TestToolBackendsPopulation:
     When: Inspecting Agent._tool_backends after initialization
     Then: Contains an OllamaWebSearchBackend under the "websearch" key
     """
-    client = _mock_ollama_client()
-    agent = Agent(config=_ollama_config_with_api_key(), client=client)
+    mock_client = _mock_ollama_client()
+    backend = OllamaBackend(mock_client)
+    agent = Agent(config=_ollama_config_with_api_key(), backend=backend)
 
-    backend = agent._tool_backends.get("websearch")
-    assert isinstance(backend, OllamaWebSearchBackend)
+    backend_obj = agent._tool_backends.get("websearch")
+    assert isinstance(backend_obj, OllamaWebSearchBackend)
 
   def test_webfetch_backend_populated_for_ollama(self) -> None:
     """
@@ -96,23 +98,25 @@ class TestToolBackendsPopulation:
     When: Inspecting Agent._tool_backends after initialization
     Then: Contains an OllamaWebFetchBackend under the "webfetch" key
     """
-    client = _mock_ollama_client()
-    agent = Agent(config=_ollama_config_with_api_key(), client=client)
+    mock_client = _mock_ollama_client()
+    backend = OllamaBackend(mock_client)
+    agent = Agent(config=_ollama_config_with_api_key(), backend=backend)
 
-    backend = agent._tool_backends.get("webfetch")
-    assert isinstance(backend, OllamaWebFetchBackend)
+    backend_obj = agent._tool_backends.get("webfetch")
+    assert isinstance(backend_obj, OllamaWebFetchBackend)
 
   def test_backends_use_agent_client(self) -> None:
     """
-    Given: An Agent built with an explicit Ollama client
+    Given: An Agent built with an explicit Ollama backend
     When: Inspecting the populated web backends
-    Then: The backends reference the same client as the Agent
+    Then: The backends reference the same client as the Agent's backend
     """
-    client = _mock_ollama_client()
-    agent = Agent(config=_ollama_config_with_api_key(), client=client)
+    mock_client = _mock_ollama_client()
+    backend = OllamaBackend(mock_client)
+    agent = Agent(config=_ollama_config_with_api_key(), backend=backend)
 
-    assert agent._tool_backends["websearch"]._client is client
-    assert agent._tool_backends["webfetch"]._client is client
+    assert agent._tool_backends["websearch"]._client is mock_client
+    assert agent._tool_backends["webfetch"]._client is mock_client
 
   def test_backends_not_populated_without_api_key(self) -> None:
     """
@@ -120,14 +124,15 @@ class TestToolBackendsPopulation:
     When: Inspecting Agent._tool_backends after initialization
     Then: _tool_backends is empty (the web tools are not registered either)
     """
-    client = _mock_ollama_client()
+    mock_client = _mock_ollama_client()
+    backend = OllamaBackend(mock_client)
     config = Config(
       backend=BackendConfig(
         provider="ollama",
         ollama=OllamaConfig(model="test-model", api_key=""),
       )
     )
-    agent = Agent(config=config, client=client)
+    agent = Agent(config=config, backend=backend)
 
     assert agent._tool_backends == {}
 
@@ -137,12 +142,11 @@ class TestToolBackendsPopulation:
     When: Inspecting Agent._tool_backends after initialization
     Then: No websearch backend is populated
     """
-    client = _mock_ollama_client()
-    config = _ollama_config_with_api_key()
-    config = config._replace() if hasattr(config, "_replace") else config
-    # WebSearchToolConfig is frozen; reconstruct via dataclass replace
     from dataclasses import replace
 
+    mock_client = _mock_ollama_client()
+    backend = OllamaBackend(mock_client)
+    config = _ollama_config_with_api_key()
     config = replace(
       config,
       tools=replace(
@@ -150,7 +154,7 @@ class TestToolBackendsPopulation:
         websearch=replace(config.tools.websearch, enabled=False),
       ),
     )
-    agent = Agent(config=config, client=client)
+    agent = Agent(config=config, backend=backend)
 
     assert "websearch" not in agent._tool_backends
     # webfetch still populated
@@ -170,8 +174,9 @@ class TestWebToolExecutionViaAgent:
     from yoker.builtin import websearch
     from yoker.tools import ToolRegistry
 
-    client = _mock_ollama_client()
-    agent = Agent(config=_ollama_config_with_api_key(), client=client)
+    mock_client = _mock_ollama_client()
+    backend = OllamaBackend(mock_client)
+    agent = Agent(config=_ollama_config_with_api_key(), backend=backend)
 
     registry = ToolRegistry()
     spec = registry.register(websearch, name="websearch")
@@ -183,7 +188,7 @@ class TestWebToolExecutionViaAgent:
     assert isinstance(result.result, dict)
     assert "results" in result.result
     assert result.result["count"] >= 1
-    client.web_search.assert_awaited()
+    mock_client.web_search.assert_awaited()
 
   @pytest.mark.asyncio
   async def test_webfetch_tool_executes_successfully(self) -> None:
@@ -195,8 +200,9 @@ class TestWebToolExecutionViaAgent:
     from yoker.builtin import webfetch
     from yoker.tools import ToolRegistry
 
-    client = _mock_ollama_client()
-    agent = Agent(config=_ollama_config_with_api_key(), client=client)
+    mock_client = _mock_ollama_client()
+    backend = OllamaBackend(mock_client)
+    agent = Agent(config=_ollama_config_with_api_key(), backend=backend)
 
     registry = ToolRegistry()
     spec = registry.register(webfetch, name="webfetch")
@@ -206,7 +212,7 @@ class TestWebToolExecutionViaAgent:
 
     assert result.success
     assert isinstance(result.result, dict)
-    client.web_fetch.assert_awaited()
+    mock_client.web_fetch.assert_awaited()
 
   @pytest.mark.asyncio
   async def test_websearch_no_backend_when_no_api_key(self) -> None:
@@ -218,14 +224,15 @@ class TestWebToolExecutionViaAgent:
     from yoker.builtin import websearch
     from yoker.tools import ToolRegistry
 
-    client = _mock_ollama_client()
+    mock_client = _mock_ollama_client()
+    backend = OllamaBackend(mock_client)
     config = Config(
       backend=BackendConfig(
         provider="ollama",
         ollama=OllamaConfig(model="test-model", api_key=""),
       )
     )
-    agent = Agent(config=config, client=client)
+    agent = Agent(config=config, backend=backend)
 
     registry = ToolRegistry()
     spec = registry.register(websearch, name="websearch")
