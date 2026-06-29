@@ -620,4 +620,3 @@ class TestAgentToolIntegration:
       assert result.success
       assert result.result == "Sub-agent response"
       assert result.error is None
-

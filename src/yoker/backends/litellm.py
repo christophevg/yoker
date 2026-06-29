@@ -49,12 +49,11 @@ class LitellmBackend(ModelBackend):
       config: Yoker configuration object.
     """
     self.config = config
-    self._provider = config.backend.provider
 
   @property
   def provider(self) -> str:
     """Return the provider identifier."""
-    return self._provider
+    return self.config.backend.provider
 
   async def chat_stream(
     self,
@@ -91,10 +90,10 @@ class LitellmBackend(ModelBackend):
     in_tool_call: dict[int, bool] = {}  # tool_index -> in_block
 
     # Get flattened params from config
-    params = self.config.backend.params.copy()
+    params = self.config.backend.params
 
     # Build litellm model string: "provider/model"
-    litellm_model = f"{self._provider}/{model}"
+    litellm_model = f"{self.config.backend.provider}/{model}"
 
     # Remove model from params (it's passed separately)
     params.pop("model", None)
@@ -117,11 +116,9 @@ class LitellmBackend(ModelBackend):
       params["tools"] = tools
 
     # Handle think flag (provider-specific translation)
-    if think:
-      # For OpenAI o-series models, use reasoning_effort
-      # For Anthropic, use budget_tokens (already in params from config)
-      if self._provider == "openai" and self._is_reasoning_model(model):
-        params["reasoning_effort"] = "medium"
+    # For OpenAI o-series models, reasoning_effort from config is passed through
+    # For Anthropic, budget_tokens from config is passed through
+    # No special handling needed - params already include these from config
 
     # Call litellm.acompletion
     response = await litellm.acompletion(
@@ -223,18 +220,3 @@ class LitellmBackend(ModelBackend):
 
         # Emit DONE
         yield ChatChunk(event=ChatChunkEvent.DONE)
-
-  def _is_reasoning_model(self, model: str) -> bool:
-    """Check if a model supports reasoning_effort parameter.
-
-    OpenAI o-series models (o1, o3) support reasoning_effort.
-
-    Args:
-      model: Model name (without provider prefix).
-
-    Returns:
-      True if the model supports reasoning_effort parameter.
-    """
-    model_lower = model.lower()
-    return any(o in model_lower for o in ["o1-", "o1_", "o3-", "o3_", "o1", "o3"])
-

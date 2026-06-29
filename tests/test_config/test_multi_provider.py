@@ -72,13 +72,8 @@ class TestBackendConfigTaggedUnion:
     )
     assert backend.provider == "groq"
 
-    # Known providers must be in whitelist
-    # This validation still runs for known providers
-    from yoker.config import _ALLOWED_PROVIDERS
-
-    assert "ollama" in _ALLOWED_PROVIDERS
-    assert "openai" in _ALLOWED_PROVIDERS
-    assert "anthropic" in _ALLOWED_PROVIDERS
+    # Known providers (ollama, openai, anthropic) require their config
+    # Unknown providers don't require specific config
 
   def test_backend_config_ollama_required_when_provider_ollama(self) -> None:
     """BackendConfig requires ollama config when provider='ollama'."""

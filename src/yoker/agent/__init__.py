@@ -408,8 +408,7 @@ class Agent:
       return backends
 
     # Access api_key through the config
-    # Type: ignore is needed because we know this is OllamaConfig but mypy doesn't
-    api_key = getattr(sub_config, 'api_key', None)  # type: ignore
+    api_key = getattr(sub_config, "api_key", None)
     if not api_key:
       return backends
 
@@ -464,4 +463,3 @@ class Agent:
         logger.info("agents loaded", count=len(new_agents), source=directory)
       except Exception as e:
         logger.warning("loading agents failed", directory=directory, error=str(e))
-
