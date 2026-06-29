@@ -138,12 +138,19 @@ class BackendConfig:
   gemini: GeminiConfig | None = None
 
   def __post_init__(self) -> None:
-    # Validate provider is a non-empty string
     validate_non_empty_string(self.provider, "backend.provider")
 
-    # For known providers (ollama, openai, anthropic, gemini), validate that config is present
-    # Unknown providers are allowed - they'll use litellm with env vars or base_url
-    if self.provider in ("ollama", "openai", "anthropic", "gemini") and self.config is None:
+    # Check if this provider has a dedicated config attribute
+    # Known providers (ollama, openai, anthropic, gemini) must have their config set
+    # Unknown providers (handled by litellm) don't need a config attribute
+    try:
+      config = getattr(self, self.provider)
+    except AttributeError:
+      # Unknown provider - allowed, litellm will handle it
+      return
+
+    # Known provider - config must be non-None
+    if config is None:
       raise ValidationError(
         f"backend.{self.provider}", None, f"required when provider='{self.provider}'"
       )
