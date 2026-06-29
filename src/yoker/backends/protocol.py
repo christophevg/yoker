@@ -88,11 +88,6 @@ class ChatChunk:
 class ModelBackend(Protocol):
   """Provider-neutral streaming chat backend."""
 
-  @property
-  def provider(self) -> str:
-    """Provider id, e.g. 'ollama' | 'openai' | 'anthropic'."""
-    ...
-
   def chat_stream(
     self,
     *,

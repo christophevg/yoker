@@ -70,15 +70,6 @@ def _create_mock_config() -> Config:
 class TestOllamaBackend:
   """Tests for OllamaBackend class."""
 
-  def test_provider_returns_ollama(self):
-    """OllamaBackend.provider returns 'ollama'."""
-    config = _create_mock_config()
-
-    # Mock the AsyncClient creation
-    with patch("yoker.backends.ollama.AsyncClient"):
-      backend = OllamaBackend(config)
-      assert backend.provider == "ollama"
-
   @pytest.mark.asyncio
   async def test_chat_stream_yields_content_blocks(self):
     """OllamaBackend.chat_stream yields CONTENT_START/DELTA/STOP for content."""

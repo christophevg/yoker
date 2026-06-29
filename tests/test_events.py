@@ -218,7 +218,6 @@ class TestAgentEventEmission:
         yield chunk
 
     mock_backend = mocker.MagicMock()
-    mock_backend.provider = "ollama"
     mock_backend.chat_stream = mocker.Mock(return_value=_aiter_chunks())
 
     mocker.patch("yoker.agent.create_backend", return_value=mock_backend)

@@ -19,7 +19,6 @@ class TestCreateBackend:
       backend = create_backend(config)
 
     assert isinstance(backend, OllamaBackend)
-    assert backend.provider == "ollama"
 
   def test_create_backend_returns_ollama_backend_with_ollama_config(self):
     """create_backend returns OllamaBackend when provider is explicitly set."""
@@ -38,7 +37,6 @@ class TestCreateBackend:
       backend = create_backend(config)
 
     assert isinstance(backend, OllamaBackend)
-    assert backend.provider == "ollama"
 
   def test_create_backend_returns_litellm_for_unknown_provider(self):
     """create_backend returns LitellmBackend for unknown providers."""
@@ -58,7 +56,6 @@ class TestCreateBackend:
       backend = create_backend(config)
 
     assert isinstance(backend, LitellmBackend)
-    assert backend.provider == "groq"
 
   def test_create_backend_returns_litellm_for_openai(self):
     """create_backend returns LitellmBackend for openai provider."""
@@ -74,7 +71,6 @@ class TestCreateBackend:
       backend = create_backend(config)
 
     assert isinstance(backend, LitellmBackend)
-    assert backend.provider == "openai"
 
   def test_create_backend_returns_litellm_for_anthropic(self):
     """create_backend returns LitellmBackend for anthropic provider."""
@@ -90,4 +86,3 @@ class TestCreateBackend:
       backend = create_backend(config)
 
     assert isinstance(backend, LitellmBackend)
-    assert backend.provider == "anthropic"

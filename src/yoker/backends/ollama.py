@@ -48,11 +48,6 @@ class OllamaBackend(ModelBackend):
       timeout=ollama_config.timeout_seconds,
     )
 
-  @property
-  def provider(self) -> str:
-    """Return the provider identifier."""
-    return "ollama"
-
   async def chat_stream(
     self,
     *,

@@ -69,21 +69,6 @@ class TestLitellmBackend:
       )
     )
 
-  def test_provider_property_openai(self, mock_config_openai: Config) -> None:
-    """Test provider property returns 'openai' for OpenAI backend."""
-    backend = LitellmBackend(mock_config_openai)
-    assert backend.provider == "openai"
-
-  def test_provider_property_anthropic(self, mock_config_anthropic: Config) -> None:
-    """Test provider property returns 'anthropic' for Anthropic backend."""
-    backend = LitellmBackend(mock_config_anthropic)
-    assert backend.provider == "anthropic"
-
-  def test_provider_property_ollama(self, mock_config_ollama: Config) -> None:
-    """Test provider property returns 'ollama' for Ollama backend."""
-    backend = LitellmBackend(mock_config_ollama)
-    assert backend.provider == "ollama"
-
   def test_params_includes_api_key(self, mock_config_openai: Config) -> None:
     """Test that params includes api_key from config."""
     params = mock_config_openai.backend.params
