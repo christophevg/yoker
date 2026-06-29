@@ -194,7 +194,6 @@ class TestAgentContentEventEmission:
     """
     # Create mock backend that returns tool call, then final response
     mock_backend = MagicMock()
-    mock_backend.provider = "ollama"
 
     chunks_sequence = create_tool_then_response_chunks(
       tool_name="yoker:write",
@@ -235,7 +234,6 @@ class TestAgentContentEventEmission:
 
     # Create mock backend that returns tool call, then final response
     mock_backend = MagicMock()
-    mock_backend.provider = "ollama"
 
     chunks_sequence = create_tool_then_response_chunks(
       tool_name="yoker:read",
@@ -271,7 +269,6 @@ class TestAgentContentEventEmission:
     """
     # Create mock backend that returns tool call, then final response
     mock_backend = MagicMock()
-    mock_backend.provider = "ollama"
 
     chunks_sequence = create_tool_then_response_chunks(
       tool_name="yoker:write",
@@ -314,7 +311,6 @@ class TestAgentContentEventEmission:
     """
     # Create mock backend that returns tool call, then final response
     mock_backend = MagicMock()
-    mock_backend.provider = "ollama"
 
     chunks_sequence = create_tool_then_response_chunks(
       tool_name="yoker:write",
@@ -352,7 +348,6 @@ class TestAgentContentEventEmission:
     """
     # Create mock backend that returns tool call, then final response
     mock_backend = MagicMock()
-    mock_backend.provider = "ollama"
 
     chunks_sequence = create_tool_then_response_chunks(
       tool_name="yoker:write",
@@ -394,7 +389,6 @@ class TestAgentContentEventEmission:
 
     # Create mock backend that returns tool call, then final response
     mock_backend = MagicMock()
-    mock_backend.provider = "ollama"
 
     chunks_sequence = create_tool_then_response_chunks(
       tool_name="yoker:update",
@@ -504,7 +498,6 @@ class TestAgentContentEventEmissionOrder:
     """
     # Create mock backend that returns tool call, then final response
     mock_backend = MagicMock()
-    mock_backend.provider = "ollama"
 
     chunks_sequence = create_tool_then_response_chunks(
       tool_name="yoker:write",
@@ -553,7 +546,6 @@ class TestAgentContentEventEmissionOrder:
 
     # Create mock backend that returns tool call, then final response
     mock_backend = MagicMock()
-    mock_backend.provider = "ollama"
 
     chunks_sequence = create_tool_then_response_chunks(
       tool_name="yoker:update",
@@ -599,7 +591,6 @@ class TestAgentContentEventEmissionOrder:
 
     # Create mock backend that returns tool call, then final response
     mock_backend = MagicMock()
-    mock_backend.provider = "ollama"
 
     chunks_sequence = create_tool_then_response_chunks(
       tool_name="yoker:read",

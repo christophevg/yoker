@@ -50,11 +50,6 @@ class LitellmBackend(ModelBackend):
     """
     self.config = config
 
-  @property
-  def provider(self) -> str:
-    """Return the provider identifier."""
-    return self.config.backend.provider
-
   async def chat_stream(
     self,
     *,

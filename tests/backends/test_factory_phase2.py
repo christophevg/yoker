@@ -54,21 +54,18 @@ class TestCreateBackend:
     with patch.dict("os.environ", {"YOKER_DEV_MODE": "1"}):
       backend = create_backend(mock_config_ollama)
       assert isinstance(backend, OllamaBackend)
-      assert backend.provider == "ollama"
 
   def test_create_backend_openai(self, mock_config_openai: Config) -> None:
     """Test create_backend returns LitellmBackend for provider='openai'."""
     with patch.dict("os.environ", {"YOKER_DEV_MODE": "1"}):
       backend = create_backend(mock_config_openai)
       assert isinstance(backend, LitellmBackend)
-      assert backend.provider == "openai"
 
   def test_create_backend_anthropic(self, mock_config_anthropic: Config) -> None:
     """Test create_backend returns LitellmBackend for provider='anthropic'."""
     with patch.dict("os.environ", {"YOKER_DEV_MODE": "1"}):
       backend = create_backend(mock_config_anthropic)
       assert isinstance(backend, LitellmBackend)
-      assert backend.provider == "anthropic"
 
   def test_create_backend_unknown_provider(self) -> None:
     """Test create_backend returns LitellmBackend for unknown provider."""
@@ -86,7 +83,6 @@ class TestCreateBackend:
     with patch.dict("os.environ", {"YOKER_DEV_MODE": "1"}):
       backend = create_backend(mock_config)
       assert isinstance(backend, LitellmBackend)
-      assert backend.provider == "groq"
 
   def test_create_backend_custom_url_trust_boundary(self) -> None:
     """Test create_backend validates custom base_url trust boundary."""

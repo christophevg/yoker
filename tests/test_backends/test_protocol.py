@@ -190,10 +190,6 @@ class TestModelBackend:
     class MockBackend:
       """Minimal implementation of ModelBackend."""
 
-      @property
-      def provider(self) -> str:
-        return "mock"
-
       async def chat_stream(
         self,
         *,
@@ -207,7 +203,6 @@ class TestModelBackend:
 
     # Should satisfy the Protocol
     backend = MockBackend()
-    assert backend.provider == "mock"
     # Verify the method exists and has correct signature
     assert hasattr(backend, "chat_stream")
     assert callable(backend.chat_stream)
