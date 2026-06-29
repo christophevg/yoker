@@ -68,6 +68,60 @@ class TestEventClasses:
     )
     assert event.response == "Hi there"
     assert event.tool_calls_count == 2
+    # New fields should default to 0
+    assert event.input_tokens == 0
+    assert event.output_tokens == 0
+
+  def test_turn_end_event_with_token_stats(self) -> None:
+    """Test TurnEndEvent with provider-neutral token stats."""
+    event = TurnEndEvent(
+      type=EventType.TURN_END,
+      response="Response",
+      input_tokens=100,
+      output_tokens=50,
+    )
+    assert event.response == "Response"
+    assert event.input_tokens == 100
+    assert event.output_tokens == 50
+    # Ollama fields should default to 0
+    assert event.prompt_eval_count == 0
+    assert event.eval_count == 0
+    assert event.total_duration_ms == 0
+
+  def test_turn_end_event_with_ollama_stats(self) -> None:
+    """Test TurnEndEvent with Ollama-native stats."""
+    event = TurnEndEvent(
+      type=EventType.TURN_END,
+      response="Response",
+      prompt_eval_count=10,
+      eval_count=20,
+      total_duration_ms=500,
+    )
+    assert event.response == "Response"
+    assert event.prompt_eval_count == 10
+    assert event.eval_count == 20
+    assert event.total_duration_ms == 500
+    # New fields should default to 0
+    assert event.input_tokens == 0
+    assert event.output_tokens == 0
+
+  def test_turn_end_event_with_both_stats(self) -> None:
+    """Test TurnEndEvent with both provider-neutral and Ollama stats."""
+    event = TurnEndEvent(
+      type=EventType.TURN_END,
+      response="Response",
+      input_tokens=100,
+      output_tokens=50,
+      prompt_eval_count=10,
+      eval_count=20,
+      total_duration_ms=500,
+    )
+    assert event.response == "Response"
+    assert event.input_tokens == 100
+    assert event.output_tokens == 50
+    assert event.prompt_eval_count == 10
+    assert event.eval_count == 20
+    assert event.total_duration_ms == 500
 
   def test_thinking_chunk_event(self) -> None:
     """Test ThinkingChunkEvent creation."""

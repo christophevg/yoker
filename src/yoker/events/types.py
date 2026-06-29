@@ -56,10 +56,13 @@ class TurnEndEvent(Event):
 
   response: str
   tool_calls_count: int = 0
-  # Token statistics (from Ollama response)
+  # Provider-neutral token statistics (OpenAI/Anthropic)
+  input_tokens: int = 0
+  output_tokens: int = 0
+  # Ollama-native token statistics
   prompt_eval_count: int = 0
   eval_count: int = 0
-  # Duration in milliseconds
+  # Duration in milliseconds (Ollama-native)
   total_duration_ms: int = 0
 
 

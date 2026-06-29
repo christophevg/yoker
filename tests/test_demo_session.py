@@ -80,6 +80,47 @@ class TestSerializeEvent:
 
     assert result["data"]["tool_calls_count"] == 0
 
+  def test_serialize_turn_end_event_with_token_stats(self) -> None:
+    """Test serializing TurnEndEvent with provider-neutral token stats."""
+    timestamp = datetime(2026, 4, 21, 10, 30, 0)
+    event = TurnEndEvent(
+      type=EventType.TURN_END,
+      timestamp=timestamp,
+      response="Response",
+      input_tokens=100,
+      output_tokens=50,
+    )
+    result = serialize_event(event)
+
+    assert result["type"] == "TURN_END"
+    assert result["data"]["response"] == "Response"
+    assert result["data"]["input_tokens"] == 100
+    assert result["data"]["output_tokens"] == 50
+    assert result["data"]["prompt_eval_count"] == 0
+    assert result["data"]["eval_count"] == 0
+    assert result["data"]["total_duration_ms"] == 0
+
+  def test_serialize_turn_end_event_with_ollama_stats(self) -> None:
+    """Test serializing TurnEndEvent with Ollama-native stats."""
+    timestamp = datetime(2026, 4, 21, 10, 30, 0)
+    event = TurnEndEvent(
+      type=EventType.TURN_END,
+      timestamp=timestamp,
+      response="Response",
+      prompt_eval_count=10,
+      eval_count=20,
+      total_duration_ms=500,
+    )
+    result = serialize_event(event)
+
+    assert result["type"] == "TURN_END"
+    assert result["data"]["response"] == "Response"
+    assert result["data"]["prompt_eval_count"] == 10
+    assert result["data"]["eval_count"] == 20
+    assert result["data"]["total_duration_ms"] == 500
+    assert result["data"]["input_tokens"] == 0
+    assert result["data"]["output_tokens"] == 0
+
   def test_serialize_thinking_start_event(self) -> None:
     """Test serializing ThinkingStartEvent (no data fields)."""
     timestamp = datetime(2026, 4, 21, 10, 30, 0)
@@ -257,6 +298,49 @@ class TestDeserializeEvent:
     event = deserialize_event(entry)
 
     assert event.tool_calls_count == 0
+
+  def test_deserialize_turn_end_event_with_token_stats(self) -> None:
+    """Test deserializing TurnEndEvent with provider-neutral token stats."""
+    entry: dict[str, Any] = {
+      "type": "TURN_END",
+      "timestamp": "2026-04-21T10:30:00",
+      "data": {
+        "response": "Response",
+        "input_tokens": 100,
+        "output_tokens": 50,
+      },
+    }
+    event = deserialize_event(entry)
+
+    assert isinstance(event, TurnEndEvent)
+    assert event.response == "Response"
+    assert event.input_tokens == 100
+    assert event.output_tokens == 50
+    assert event.prompt_eval_count == 0
+    assert event.eval_count == 0
+    assert event.total_duration_ms == 0
+
+  def test_deserialize_turn_end_event_with_ollama_stats(self) -> None:
+    """Test deserializing TurnEndEvent with Ollama-native stats."""
+    entry: dict[str, Any] = {
+      "type": "TURN_END",
+      "timestamp": "2026-04-21T10:30:00",
+      "data": {
+        "response": "Response",
+        "prompt_eval_count": 10,
+        "eval_count": 20,
+        "total_duration_ms": 500,
+      },
+    }
+    event = deserialize_event(entry)
+
+    assert isinstance(event, TurnEndEvent)
+    assert event.response == "Response"
+    assert event.prompt_eval_count == 10
+    assert event.eval_count == 20
+    assert event.total_duration_ms == 500
+    assert event.input_tokens == 0
+    assert event.output_tokens == 0
 
   def test_deserialize_thinking_start_event(self) -> None:
     """Test deserializing ThinkingStartEvent."""
