@@ -461,4 +461,3 @@ class Agent:
         logger.info("agents loaded", count=len(new_agents), source=directory)
       except Exception as e:
         logger.warning("loading agents failed", directory=directory, error=str(e))
-
