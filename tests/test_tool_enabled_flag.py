@@ -229,36 +229,38 @@ class TestWebToolsEnabledFlag:
 
   def test_websearch_disabled_flag(self) -> None:
     """Test that websearch respects enabled flag even with API key."""
-    from unittest.mock import MagicMock
+    from unittest.mock import MagicMock, patch
 
     from yoker.backends.ollama import OllamaBackend
 
     mock_client = MagicMock()
-    backend = OllamaBackend(mock_client)
-
     config = Config(
       backend=BackendConfig(ollama=OllamaConfig(api_key="test-key")),
       tools=ToolsConfig(websearch=WebSearchToolConfig(enabled=False)),
     )
-    core = Agent(config=config, backend=backend)
 
-    # websearch should not be in tools (disabled)
-    assert core.tools.get("yoker:websearch") is None
+    with patch("yoker.backends.ollama.AsyncClient", return_value=mock_client):
+      backend = OllamaBackend(config)
+      core = Agent(config=config, backend=backend)
+
+      # websearch should not be in tools (disabled)
+      assert core.tools.get("yoker:websearch") is None
 
   def test_webfetch_disabled_flag(self) -> None:
     """Test that webfetch respects enabled flag even with API key."""
-    from unittest.mock import MagicMock
+    from unittest.mock import MagicMock, patch
 
     from yoker.backends.ollama import OllamaBackend
 
     mock_client = MagicMock()
-    backend = OllamaBackend(mock_client)
-
     config = Config(
       backend=BackendConfig(ollama=OllamaConfig(api_key="test-key")),
       tools=ToolsConfig(webfetch=WebFetchToolConfig(enabled=False)),
     )
-    core = Agent(config=config, backend=backend)
 
-    # webfetch should not be in tools (disabled)
-    assert core.tools.get("yoker:webfetch") is None
+    with patch("yoker.backends.ollama.AsyncClient", return_value=mock_client):
+      backend = OllamaBackend(config)
+      core = Agent(config=config, backend=backend)
+
+      # webfetch should not be in tools (disabled)
+      assert core.tools.get("yoker:webfetch") is None

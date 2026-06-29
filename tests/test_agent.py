@@ -445,14 +445,15 @@ class TestAgentBackendParameter:
 
   def test_backend_parameter_accepts_backend(self) -> None:
     """Test that Agent accepts a backend parameter."""
-    from unittest.mock import MagicMock
+    from unittest.mock import patch
 
     from yoker.backends.ollama import OllamaBackend
 
     # Create a mock backend
-    mock_client = MagicMock()
-    backend = OllamaBackend(mock_client)
-    core = Agent(config=Config(), backend=backend)
+    config = Config()
+    with patch("yoker.backends.ollama.AsyncClient"):
+      backend = OllamaBackend(config)
+    core = Agent(config=config, backend=backend)
 
     # Agent should accept the backend without error
     assert core is not None
@@ -460,13 +461,13 @@ class TestAgentBackendParameter:
 
   def test_websearch_requires_api_key_and_backend(self) -> None:
     """Test that WebSearch tool is only added when API key and backend are present."""
-    from unittest.mock import MagicMock
+    from unittest.mock import patch
 
     from yoker.backends.ollama import OllamaBackend
 
     config = Config(backend=BackendConfig(ollama=OllamaConfig(api_key="test-key")))
-    mock_client = MagicMock()
-    backend = OllamaBackend(mock_client)
+    with patch("yoker.backends.ollama.AsyncClient"):
+      backend = OllamaBackend(config)
     core = Agent(config=config, backend=backend)
 
     # WebSearch and WebFetch tools should be present (API key + backend provided)

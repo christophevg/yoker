@@ -206,6 +206,7 @@ class OpenAIConfig:
     base_url: Optional base URL for OpenAI-compatible APIs.
     timeout_seconds: Request timeout in seconds.
     parameters: Model generation parameters.
+    reasoning_effort: Reasoning effort for o-series models ("low", "medium", or "high").
   """
 
   api_key: str | None = field(default=None, metadata={"cli": False})
@@ -213,6 +214,7 @@ class OpenAIConfig:
   base_url: str | None = None
   timeout_seconds: int = 60
   parameters: OpenAIParameters = field(default_factory=OpenAIParameters)
+  reasoning_effort: str | None = None
 
   def __post_init__(self) -> None:
     """Validate OpenAI configuration."""
@@ -220,6 +222,12 @@ class OpenAIConfig:
     validate_positive_int(self.timeout_seconds, "backend.openai.timeout_seconds")
     if self.base_url is not None:
       validate_url(self.base_url, "backend.openai.base_url")
+    if self.reasoning_effort is not None:
+      validate_choice(
+        self.reasoning_effort,
+        "backend.openai.reasoning_effort",
+        ("low", "medium", "high"),
+      )
 
 
 @dataclass(frozen=True)
@@ -286,9 +294,6 @@ class AnthropicConfig:
       validate_url(self.base_url, "backend.anthropic.base_url")
 
 
-_ALLOWED_PROVIDERS = ("ollama", "openai", "anthropic")
-
-
 @dataclass(frozen=True)
 class BackendConfig:
   """Backend provider configuration (tagged union by `provider`).
@@ -312,13 +317,11 @@ class BackendConfig:
 
   def __post_init__(self) -> None:
     """Validate backend configuration."""
-    # We allow any provider string since litellm supports 100+ providers
-    # Known providers have dedicated config validation
-    # Unknown providers will use litellm's generic support
-    if self.provider in ("ollama", "openai", "anthropic"):
-      validate_choice(self.provider, "backend.provider", _ALLOWED_PROVIDERS)
+    # Validate provider is a non-empty string
+    validate_non_empty_string(self.provider, "backend.provider")
 
-      # For known providers, the config is required
+    # For known providers, validate that the required config is present
+    if self.provider in ("ollama", "openai", "anthropic"):
       if self.config is None:
         raise ValidationError(
           f"backend.{self.provider}", None, f"required when provider='{self.provider}'"
@@ -927,4 +930,3 @@ __all__ = [
   # Helper function
   "get_yoker_config",
 ]
-

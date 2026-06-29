@@ -58,7 +58,7 @@ def is_custom_base_url(backend_config: "BackendConfig") -> bool:
     return False
 
   # Check if the config has a base_url attribute
-  if not hasattr(sub_config, 'base_url'):
+  if not hasattr(sub_config, "base_url"):
     return False
 
   base_url = sub_config.base_url
@@ -150,7 +150,7 @@ def _get_base_url(backend_config: "BackendConfig") -> str | None:
     return None
 
   # Return base_url if the config has this attribute
-  return getattr(sub_config, 'base_url', None)
+  return getattr(sub_config, "base_url", None)
 
 
 __all__ = [
@@ -160,4 +160,3 @@ __all__ = [
   "DEFAULT_BASE_URLS",
   "ENV_ALLOW_CUSTOM_BASE_URL",
 ]
-

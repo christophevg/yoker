@@ -8,7 +8,7 @@ failing with "No backend configured".
 """
 
 from dataclasses import dataclass
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -86,11 +86,14 @@ class TestToolBackendsPopulation:
     Then: Contains an OllamaWebSearchBackend under the "websearch" key
     """
     mock_client = _mock_ollama_client()
-    backend = OllamaBackend(mock_client)
-    agent = Agent(config=_ollama_config_with_api_key(), backend=backend)
+    config = _ollama_config_with_api_key()
 
-    backend_obj = agent._tool_backends.get("websearch")
-    assert isinstance(backend_obj, OllamaWebSearchBackend)
+    with patch("yoker.backends.ollama.AsyncClient", return_value=mock_client):
+      backend = OllamaBackend(config)
+      agent = Agent(config=config, backend=backend)
+
+      backend_obj = agent._tool_backends.get("websearch")
+      assert isinstance(backend_obj, OllamaWebSearchBackend)
 
   def test_webfetch_backend_populated_for_ollama(self) -> None:
     """
@@ -99,11 +102,14 @@ class TestToolBackendsPopulation:
     Then: Contains an OllamaWebFetchBackend under the "webfetch" key
     """
     mock_client = _mock_ollama_client()
-    backend = OllamaBackend(mock_client)
-    agent = Agent(config=_ollama_config_with_api_key(), backend=backend)
+    config = _ollama_config_with_api_key()
 
-    backend_obj = agent._tool_backends.get("webfetch")
-    assert isinstance(backend_obj, OllamaWebFetchBackend)
+    with patch("yoker.backends.ollama.AsyncClient", return_value=mock_client):
+      backend = OllamaBackend(config)
+      agent = Agent(config=config, backend=backend)
+
+      backend_obj = agent._tool_backends.get("webfetch")
+      assert isinstance(backend_obj, OllamaWebFetchBackend)
 
   def test_backends_use_agent_client(self) -> None:
     """
@@ -112,11 +118,14 @@ class TestToolBackendsPopulation:
     Then: The backends reference the same client as the Agent's backend
     """
     mock_client = _mock_ollama_client()
-    backend = OllamaBackend(mock_client)
-    agent = Agent(config=_ollama_config_with_api_key(), backend=backend)
+    config = _ollama_config_with_api_key()
 
-    assert agent._tool_backends["websearch"]._client is mock_client
-    assert agent._tool_backends["webfetch"]._client is mock_client
+    with patch("yoker.backends.ollama.AsyncClient", return_value=mock_client):
+      backend = OllamaBackend(config)
+      agent = Agent(config=config, backend=backend)
+
+      assert agent._tool_backends["websearch"]._client is mock_client
+      assert agent._tool_backends["webfetch"]._client is mock_client
 
   def test_backends_not_populated_without_api_key(self) -> None:
     """
@@ -125,16 +134,18 @@ class TestToolBackendsPopulation:
     Then: _tool_backends is empty (the web tools are not registered either)
     """
     mock_client = _mock_ollama_client()
-    backend = OllamaBackend(mock_client)
     config = Config(
       backend=BackendConfig(
         provider="ollama",
         ollama=OllamaConfig(model="test-model", api_key=""),
       )
     )
-    agent = Agent(config=config, backend=backend)
 
-    assert agent._tool_backends == {}
+    with patch("yoker.backends.ollama.AsyncClient", return_value=mock_client):
+      backend = OllamaBackend(config)
+      agent = Agent(config=config, backend=backend)
+
+      assert agent._tool_backends == {}
 
   def test_websearch_backend_not_populated_when_disabled(self) -> None:
     """
@@ -145,7 +156,6 @@ class TestToolBackendsPopulation:
     from dataclasses import replace
 
     mock_client = _mock_ollama_client()
-    backend = OllamaBackend(mock_client)
     config = _ollama_config_with_api_key()
     config = replace(
       config,
@@ -154,11 +164,14 @@ class TestToolBackendsPopulation:
         websearch=replace(config.tools.websearch, enabled=False),
       ),
     )
-    agent = Agent(config=config, backend=backend)
 
-    assert "websearch" not in agent._tool_backends
-    # webfetch still populated
-    assert isinstance(agent._tool_backends.get("webfetch"), OllamaWebFetchBackend)
+    with patch("yoker.backends.ollama.AsyncClient", return_value=mock_client):
+      backend = OllamaBackend(config)
+      agent = Agent(config=config, backend=backend)
+
+      assert "websearch" not in agent._tool_backends
+      # webfetch still populated
+      assert isinstance(agent._tool_backends.get("webfetch"), OllamaWebFetchBackend)
 
 
 class TestWebToolExecutionViaAgent:
@@ -175,20 +188,23 @@ class TestWebToolExecutionViaAgent:
     from yoker.tools import ToolRegistry
 
     mock_client = _mock_ollama_client()
-    backend = OllamaBackend(mock_client)
-    agent = Agent(config=_ollama_config_with_api_key(), backend=backend)
+    config = _ollama_config_with_api_key()
 
-    registry = ToolRegistry()
-    spec = registry.register(websearch, name="websearch")
+    with patch("yoker.backends.ollama.AsyncClient", return_value=mock_client):
+      backend = OllamaBackend(config)
+      agent = Agent(config=config, backend=backend)
 
-    ctx = _build_tool_context(agent, "websearch")
-    result = await spec.execute(query="test query", ctx=ctx)
+      registry = ToolRegistry()
+      spec = registry.register(websearch, name="websearch")
 
-    assert result.success
-    assert isinstance(result.result, dict)
-    assert "results" in result.result
-    assert result.result["count"] >= 1
-    mock_client.web_search.assert_awaited()
+      ctx = _build_tool_context(agent, "websearch")
+      result = await spec.execute(query="test query", ctx=ctx)
+
+      assert result.success
+      assert isinstance(result.result, dict)
+      assert "results" in result.result
+      assert result.result["count"] >= 1
+      mock_client.web_search.assert_awaited()
 
   @pytest.mark.asyncio
   async def test_webfetch_tool_executes_successfully(self) -> None:
@@ -201,18 +217,21 @@ class TestWebToolExecutionViaAgent:
     from yoker.tools import ToolRegistry
 
     mock_client = _mock_ollama_client()
-    backend = OllamaBackend(mock_client)
-    agent = Agent(config=_ollama_config_with_api_key(), backend=backend)
+    config = _ollama_config_with_api_key()
 
-    registry = ToolRegistry()
-    spec = registry.register(webfetch, name="webfetch")
+    with patch("yoker.backends.ollama.AsyncClient", return_value=mock_client):
+      backend = OllamaBackend(config)
+      agent = Agent(config=config, backend=backend)
 
-    ctx = _build_tool_context(agent, "webfetch")
-    result = await spec.execute(url="https://example.com", ctx=ctx)
+      registry = ToolRegistry()
+      spec = registry.register(webfetch, name="webfetch")
 
-    assert result.success
-    assert isinstance(result.result, dict)
-    mock_client.web_fetch.assert_awaited()
+      ctx = _build_tool_context(agent, "webfetch")
+      result = await spec.execute(url="https://example.com", ctx=ctx)
+
+      assert result.success
+      assert isinstance(result.result, dict)
+      mock_client.web_fetch.assert_awaited()
 
   @pytest.mark.asyncio
   async def test_websearch_no_backend_when_no_api_key(self) -> None:
@@ -225,21 +244,23 @@ class TestWebToolExecutionViaAgent:
     from yoker.tools import ToolRegistry
 
     mock_client = _mock_ollama_client()
-    backend = OllamaBackend(mock_client)
     config = Config(
       backend=BackendConfig(
         provider="ollama",
         ollama=OllamaConfig(model="test-model", api_key=""),
       )
     )
-    agent = Agent(config=config, backend=backend)
 
-    registry = ToolRegistry()
-    spec = registry.register(websearch, name="websearch")
+    with patch("yoker.backends.ollama.AsyncClient", return_value=mock_client):
+      backend = OllamaBackend(config)
+      agent = Agent(config=config, backend=backend)
 
-    ctx = _build_tool_context(agent, "websearch")
-    result = await spec.execute(query="test query", ctx=ctx)
+      registry = ToolRegistry()
+      spec = registry.register(websearch, name="websearch")
 
-    assert not result.success
+      ctx = _build_tool_context(agent, "websearch")
+      result = await spec.execute(query="test query", ctx=ctx)
+
+      assert not result.success
     assert result.error is not None
     assert "backend" in result.error.lower()

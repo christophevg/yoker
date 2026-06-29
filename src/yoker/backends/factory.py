@@ -71,21 +71,7 @@ def create_backend(config: Config, interactive: bool | None = None) -> "ModelBac
 
   if provider == "ollama":
     # Ollama uses native SDK for full features (web tools, native stats)
-    # Import AsyncClient here to avoid hard dependency for other providers
-    from ollama import AsyncClient
-
-    # Use the generic config property instead of provider-specific access
-    ollama_config = backend_config.config
-    if ollama_config is None:
-      raise ValueError(f"No config for provider: {provider}")
-
-    client = AsyncClient(
-      host=ollama_config.base_url,
-      timeout=ollama_config.timeout_seconds,
-    )
-    # Note: Ollama AsyncClient doesn't have an api_key parameter yet,
-    # but we track it in config for future use
-    return OllamaBackend(client)
+    return OllamaBackend(config)
 
   # All other providers use LitellmBackend
   # litellm supports 100+ providers: OpenAI, Anthropic, Azure, Google, etc.
@@ -93,4 +79,3 @@ def create_backend(config: Config, interactive: bool | None = None) -> "ModelBac
 
 
 __all__ = ["create_backend"]
-

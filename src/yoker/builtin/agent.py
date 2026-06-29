@@ -118,7 +118,6 @@ def _create_subagent(parent_agent: "Agent | None", agent_definition: "AgentDefin
   from dataclasses import replace
 
   from yoker.agent import Agent
-  from yoker.backends import with_model
   from yoker.config import Config
 
   depth = 1
@@ -145,21 +144,37 @@ def _create_subagent(parent_agent: "Agent | None", agent_definition: "AgentDefin
   config: Config | None = None
   if model is not None:
     if parent_config is not None:
-      # Use with_model to create provider-agnostic config copy with model override
-      backend = with_model(parent_config.backend, model)
+      # Inline with_model logic: create provider-agnostic config copy with model override
+      # Get the active provider's config using the generic property
+      from yoker.config import AnthropicConfig, OllamaConfig, OpenAIConfig
+
+      sub_config = parent_config.backend.config
+      if sub_config is None:
+        raise ValueError(f"No config for provider: {parent_config.backend.provider}")
+
+      # Override model on the sub-config
+      new_sub_config = replace(sub_config, model=model)
+
+      # Create new BackendConfig with updated sub-config
+      # Use conditional logic to satisfy mypy's type checker
+      provider = parent_config.backend.provider
+      if provider == "ollama" and isinstance(new_sub_config, OllamaConfig):
+        backend = replace(parent_config.backend, ollama=new_sub_config)
+      elif provider == "openai" and isinstance(new_sub_config, OpenAIConfig):
+        backend = replace(parent_config.backend, openai=new_sub_config)
+      elif provider == "anthropic" and isinstance(new_sub_config, AnthropicConfig):
+        backend = replace(parent_config.backend, anthropic=new_sub_config)
+      else:
+        # Unknown provider or type mismatch - shouldn't happen in practice
+        raise ValueError(f"Unknown provider or type mismatch: {provider}")
+
       config = replace(
         parent_config,
         backend=backend,
       )
     else:
-      # No parent config (should not happen in practice - parent_agent is validated).
-      # Use default BackendConfig (defaults to Ollama) and set model via with_model.
-      from yoker.backends import with_model as _with_model
-      from yoker.config import BackendConfig
-
-      default_backend = BackendConfig()  # Defaults to Ollama per Q9
-      backend = _with_model(default_backend, model)
-      config = Config(backend=backend)
+      # This should not happen in practice - parent_agent is validated earlier
+      raise RuntimeError("parent_config is None when model is specified - this should not happen")
   else:
     config = parent_config
 
@@ -204,4 +219,3 @@ async def _run_with_timeout(agent: "Agent", prompt: str, timeout_seconds: int) -
 
 
 __all__ = ["make_agent_tool"]
-
