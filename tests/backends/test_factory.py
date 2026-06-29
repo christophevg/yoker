@@ -1,11 +1,12 @@
 """Tests for backend factory function."""
 
-import pytest
+import os
+from unittest.mock import patch
 
 from yoker.backends import create_backend
+from yoker.backends.litellm import LitellmBackend
 from yoker.backends.ollama import OllamaBackend
 from yoker.config import Config
-from yoker.exceptions import ConfigurationError
 
 
 class TestCreateBackend:
@@ -14,7 +15,8 @@ class TestCreateBackend:
   def test_create_backend_returns_ollama_backend_for_ollama_provider(self):
     """create_backend(Config()) returns OllamaBackend for default config."""
     config = Config()
-    backend = create_backend(config)
+    with patch.dict(os.environ, {"YOKER_DEV_MODE": "1"}):
+      backend = create_backend(config)
 
     assert isinstance(backend, OllamaBackend)
     assert backend.provider == "ollama"
@@ -32,37 +34,60 @@ class TestCreateBackend:
         ),
       ),
     )
-    backend = create_backend(config)
+    with patch.dict(os.environ, {"YOKER_ALLOW_CUSTOM_BASE_URL": "1"}):
+      backend = create_backend(config)
 
     assert isinstance(backend, OllamaBackend)
     assert backend.provider == "ollama"
 
-  def test_create_backend_raises_configuration_error_for_unknown_provider(self):
-    """create_backend raises ConfigurationError for unknown provider."""
+  def test_create_backend_returns_litellm_for_unknown_provider(self):
+    """create_backend returns LitellmBackend for unknown providers."""
     from yoker.config import BackendConfig
 
-    # Create a config that bypasses validation (for testing)
-    config = Config(backend=BackendConfig(provider="ollama"))
-    # Manually set provider to unknown after creation (bypasses validator)
-    object.__setattr__(config.backend, "provider", "unknown")
+    # Create a config with an unknown provider
+    # Note: Unknown providers use LitellmBackend
+    config = Config(
+      backend=BackendConfig(
+        provider="groq",  # Not explicitly handled, but litellm supports it
+        ollama=None,
+        openai=None,
+        anthropic=None,
+      )
+    )
+    with patch.dict(os.environ, {"YOKER_DEV_MODE": "1"}):
+      backend = create_backend(config)
 
-    with pytest.raises(ConfigurationError, match="Unknown provider"):
-      create_backend(config)
+    assert isinstance(backend, LitellmBackend)
+    assert backend.provider == "groq"
 
-  def test_create_backend_raises_not_implemented_for_openai(self):
-    """create_backend raises NotImplementedError for openai provider."""
-    from yoker.config import BackendConfig
+  def test_create_backend_returns_litellm_for_openai(self):
+    """create_backend returns LitellmBackend for openai provider."""
+    from yoker.config import BackendConfig, OpenAIConfig
 
-    config = Config(backend=BackendConfig(provider="openai"))
+    config = Config(
+      backend=BackendConfig(
+        provider="openai",
+        openai=OpenAIConfig(api_key="test-key"),
+      )
+    )
+    with patch.dict(os.environ, {"YOKER_DEV_MODE": "1"}):
+      backend = create_backend(config)
 
-    with pytest.raises(NotImplementedError, match="OpenAI backend not implemented"):
-      create_backend(config)
+    assert isinstance(backend, LitellmBackend)
+    assert backend.provider == "openai"
 
-  def test_create_backend_raises_not_implemented_for_anthropic(self):
-    """create_backend raises NotImplementedError for anthropic provider."""
-    from yoker.config import BackendConfig
+  def test_create_backend_returns_litellm_for_anthropic(self):
+    """create_backend returns LitellmBackend for anthropic provider."""
+    from yoker.config import AnthropicConfig, BackendConfig
 
-    config = Config(backend=BackendConfig(provider="anthropic"))
+    config = Config(
+      backend=BackendConfig(
+        provider="anthropic",
+        anthropic=AnthropicConfig(api_key="test-key"),
+      )
+    )
+    with patch.dict(os.environ, {"YOKER_DEV_MODE": "1"}):
+      backend = create_backend(config)
 
-    with pytest.raises(NotImplementedError, match="Anthropic backend not implemented"):
-      create_backend(config)
+    assert isinstance(backend, LitellmBackend)
+    assert backend.provider == "anthropic"

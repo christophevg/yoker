@@ -10,15 +10,15 @@ class TestCliGeneration:
     This test verifies the field exists in the Config structure.
     Actual CLI generation is tested via integration tests or manual verification.
     """
-    from yoker.config import BackendConfig, Config
+    from yoker.config import BackendConfig, Config, OpenAIConfig
 
     # Verify the provider field exists and has the right type
     config = Config()
     assert hasattr(config.backend, "provider")
     assert config.backend.provider == "ollama"
 
-    # Verify we can set it to other values
-    backend = BackendConfig(provider="openai", openai=None)
+    # Verify we can set it to other values (with required config)
+    backend = BackendConfig(provider="openai", openai=OpenAIConfig(api_key="test"))
     assert backend.provider == "openai"
 
   def test_api_key_cli_args_absent(self) -> None:
