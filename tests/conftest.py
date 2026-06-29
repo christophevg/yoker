@@ -1,5 +1,6 @@
 """Pytest configuration and fixtures."""
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -9,7 +10,12 @@ def pytest_configure(config):
   """Configure pytest before running tests.
 
   Install the demo plugin package for integration tests.
+  Set environment variables for trust boundary checks.
   """
+  # Set YOKER_ALLOW_CUSTOM_BASE_URL to allow custom base URLs during tests
+  # This prevents TrustBoundaryError when tests run in batch mode
+  os.environ["YOKER_ALLOW_CUSTOM_BASE_URL"] = "1"
+
   plugin_path = Path(__file__).parent.parent / "examples" / "plugins" / "demo"
 
   if plugin_path.exists():

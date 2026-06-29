@@ -61,11 +61,23 @@ class TestBackendConfigTaggedUnion:
     assert backend.openai is None
 
   def test_backend_config_provider_validation(self) -> None:
-    """BackendConfig validates provider against whitelist."""
-    with pytest.raises(ValidationError) as exc_info:
-      BackendConfig(provider="invalid")
-    assert "backend.provider" in str(exc_info.value)
-    assert "invalid" in str(exc_info.value)
+    """BackendConfig allows any provider (litellm supports 100+ providers)."""
+    # Unknown providers are allowed and use litellm
+    backend = BackendConfig(
+      provider="groq",  # Unknown provider, but allowed
+      ollama=None,
+      openai=None,
+      anthropic=None,
+    )
+    assert backend.provider == "groq"
+
+    # Known providers must be in whitelist
+    # This validation still runs for known providers
+    from yoker.config import _ALLOWED_PROVIDERS
+
+    assert "ollama" in _ALLOWED_PROVIDERS
+    assert "openai" in _ALLOWED_PROVIDERS
+    assert "anthropic" in _ALLOWED_PROVIDERS
 
   def test_backend_config_ollama_required_when_provider_ollama(self) -> None:
     """BackendConfig requires ollama config when provider='ollama'."""
