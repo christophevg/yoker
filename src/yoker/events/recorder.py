@@ -45,7 +45,15 @@ def serialize_event(event: Event) -> dict[str, Any]:
   if isinstance(event, TurnStartEvent):
     data = {"message": event.message}
   elif isinstance(event, TurnEndEvent):
-    data = {"response": event.response, "tool_calls_count": event.tool_calls_count}
+    data = {
+      "response": event.response,
+      "tool_calls_count": event.tool_calls_count,
+      "input_tokens": event.input_tokens,
+      "output_tokens": event.output_tokens,
+      "prompt_eval_count": event.prompt_eval_count,
+      "eval_count": event.eval_count,
+      "total_duration_ms": event.total_duration_ms,
+    }
   elif isinstance(event, ThinkingChunkEvent):
     data = {"text": event.text}
   elif isinstance(event, ThinkingEndEvent):
@@ -108,6 +116,11 @@ def deserialize_event(entry: dict[str, Any]) -> Event:
         timestamp=timestamp,
         response=data["response"],
         tool_calls_count=data.get("tool_calls_count", 0),
+        input_tokens=data.get("input_tokens", 0),
+        output_tokens=data.get("output_tokens", 0),
+        prompt_eval_count=data.get("prompt_eval_count", 0),
+        eval_count=data.get("eval_count", 0),
+        total_duration_ms=data.get("total_duration_ms", 0),
       )
     case EventType.THINKING_START:
       return ThinkingStartEvent(type=event_type, timestamp=timestamp)
