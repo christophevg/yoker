@@ -8,22 +8,32 @@ Provides:
   - UsageStats: Token/duration statistics
   - create_backend: Factory function to create backend instances
   - with_model: Helper to create a copy of backend config with overridden model
+  - validate_base_url_trust: Trust boundary validation for custom endpoints
 
-This package defines the protocol that backends must implement.
-Concrete backend implementations (OllamaBackend, OpenAIBackend, AnthropicBackend)
-are in separate modules and are registered via the factory module.
+Architecture (dual backend):
+  - OllamaBackend: Native Ollama SDK for full features (web tools, native stats)
+  - LitellmBackend: Unified interface for OpenAI, Anthropic, and 100+ providers
 """
 
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from yoker.backends.factory import create_backend
+from yoker.backends.litellm import LitellmBackend
+from yoker.backends.ollama import OllamaBackend
 from yoker.backends.protocol import (
   ChatChunk,
   ChatChunkEvent,
   ModelBackend,
   ToolCallDelta,
   UsageStats,
+)
+from yoker.backends.trust import (
+  DEFAULT_BASE_URLS,
+  ENV_ALLOW_CUSTOM_BASE_URL,
+  TrustBoundaryError,
+  is_custom_base_url,
+  validate_base_url_trust,
 )
 
 if TYPE_CHECKING:
@@ -69,4 +79,11 @@ __all__ = [
   "UsageStats",
   "create_backend",
   "with_model",
+  "OllamaBackend",
+  "LitellmBackend",
+  "validate_base_url_trust",
+  "is_custom_base_url",
+  "TrustBoundaryError",
+  "DEFAULT_BASE_URLS",
+  "ENV_ALLOW_CUSTOM_BASE_URL",
 ]
