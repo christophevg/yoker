@@ -122,4 +122,3 @@ class TestCreateBackend:
       # Restore original value
       if original_value is not None:
         os.environ["YOKER_ALLOW_CUSTOM_BASE_URL"] = original_value
-

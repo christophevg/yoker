@@ -39,8 +39,8 @@ CLI Arguments:
 """
 
 import os
-from dataclasses import dataclass, field
-from typing import Literal, cast
+from dataclasses import asdict, dataclass, field
+from typing import Any, Literal, cast
 
 from clevis import SecurityAction, SecurityConfig, get_config
 
@@ -325,6 +325,46 @@ class BackendConfig:
       raise ValidationError("backend.openai", None, "required when provider='openai'")
     if self.provider == "anthropic" and self.anthropic is None:
       raise ValidationError("backend.anthropic", None, "required when provider='anthropic'")
+
+  @property
+  def params(self) -> dict[str, Any]:
+    """Flatten provider-specific config to dict.
+
+    Used by LitellmBackend to get all provider parameters in a single dict.
+    OllamaBackend reads its config directly, not via this property.
+
+    Returns:
+      Dictionary with all non-None provider config fields.
+      Includes 'model' from the sub-config.
+
+    Example:
+      >>> config = BackendConfig(
+      ...     provider="openai",
+      ...     openai=OpenAIConfig(api_key="sk-test", model="gpt-4o")
+      ... )
+      >>> config.params
+      {'model': 'gpt-4o', 'api_key': 'sk-test', 'base_url': None, 'timeout_seconds': 60, ...}
+    """
+    # Get the active provider's sub-config
+    # For known providers (ollama, openai, anthropic), use the dedicated attribute
+    sub_config: OllamaConfig | OpenAIConfig | AnthropicConfig | None = None
+
+    if self.provider == "ollama" and self.ollama is not None:
+      sub_config = self.ollama
+    elif self.provider == "openai" and self.openai is not None:
+      sub_config = self.openai
+    elif self.provider == "anthropic" and self.anthropic is not None:
+      sub_config = self.anthropic
+
+    if sub_config is None:
+      # Unknown provider or missing config - return empty dict
+      return {}
+
+    # Flatten dataclass to dict
+    d = asdict(sub_config)
+
+    # Filter None values for cleaner kwargs
+    return {k: v for k, v in d.items() if v is not None}
 
 
 @dataclass(frozen=True)

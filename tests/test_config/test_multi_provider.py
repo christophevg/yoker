@@ -7,6 +7,7 @@ from yoker.config import (
   AnthropicParameters,
   BackendConfig,
   OllamaConfig,
+  OllamaParameters,
   OpenAIConfig,
   OpenAIParameters,
 )
@@ -248,3 +249,107 @@ class TestOldTomlLoading:
     assert backend.ollama.model == "llama3.2:latest"
     assert backend.openai is None
     assert backend.anthropic is None
+
+
+class TestBackendConfigParams:
+  """Tests for BackendConfig.params property (simplified LitellmBackend design)."""
+
+  def test_params_flattens_ollama_config(self) -> None:
+    """BackendConfig.params flattens OllamaConfig to dict."""
+
+    backend = BackendConfig(
+      provider="ollama",
+      ollama=OllamaConfig(
+        model="llama3.2:latest",
+        base_url="http://localhost:11434",
+        timeout_seconds=60,
+        parameters=OllamaParameters(temperature=0.7, top_p=0.9, top_k=40, num_ctx=4096),
+      ),
+    )
+    params = backend.params
+
+    # Should include all OllamaConfig fields
+    assert params["model"] == "llama3.2:latest"
+    assert params["base_url"] == "http://localhost:11434"
+    assert params["timeout_seconds"] == 60
+    # Parameters should be included as nested dict (asdict behavior)
+    assert "parameters" in params
+
+  def test_params_flattens_openai_config(self) -> None:
+    """BackendConfig.params flattens OpenAIConfig to dict."""
+    backend = BackendConfig(
+      provider="openai",
+      openai=OpenAIConfig(
+        model="gpt-4o",
+        api_key="sk-test",
+        base_url="https://api.openai.com/v1",
+      ),
+      ollama=None,
+    )
+    params = backend.params
+
+    # Should include all OpenAIConfig fields
+    assert params["model"] == "gpt-4o"
+    assert params["api_key"] == "sk-test"
+    assert params["base_url"] == "https://api.openai.com/v1"
+
+  def test_params_flattens_anthropic_config(self) -> None:
+    """BackendConfig.params flattens AnthropicConfig to dict."""
+    backend = BackendConfig(
+      provider="anthropic",
+      anthropic=AnthropicConfig(
+        model="claude-3-5-sonnet-20241022",
+        api_key="sk-ant-test",
+        max_tokens=4096,
+      ),
+      ollama=None,
+    )
+    params = backend.params
+
+    # Should include all AnthropicConfig fields
+    assert params["model"] == "claude-3-5-sonnet-20241022"
+    assert params["api_key"] == "sk-ant-test"
+    assert params["max_tokens"] == 4096
+
+  def test_params_filters_none_values(self) -> None:
+    """BackendConfig.params excludes None values from flattened dict."""
+    backend = BackendConfig(
+      provider="openai",
+      openai=OpenAIConfig(
+        model="gpt-4o-mini",
+        # api_key and base_url default to None
+      ),
+      ollama=None,
+    )
+    params = backend.params
+
+    # None values should be filtered out
+    assert "api_key" not in params
+    assert "base_url" not in params
+    # model should be present
+    assert params["model"] == "gpt-4o-mini"
+
+  def test_params_returns_empty_dict_for_none_config(self) -> None:
+    """BackendConfig.params returns empty dict when sub-config is None."""
+    backend = BackendConfig(
+      provider="groq",  # Unknown provider
+      ollama=None,
+      openai=None,
+      anthropic=None,
+    )
+    params = backend.params
+
+    # Should return empty dict since no sub-config is set
+    assert params == {}
+
+  def test_params_includes_model_from_subconfig(self) -> None:
+    """BackendConfig.params includes model field from sub-config."""
+    backend = BackendConfig(
+      provider="openai",
+      openai=OpenAIConfig(model="gpt-4o"),
+      ollama=None,
+    )
+    params = backend.params
+
+    # model should be included
+    assert params["model"] == "gpt-4o"
