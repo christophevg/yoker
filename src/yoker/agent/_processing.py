@@ -6,6 +6,7 @@ from collections.abc import AsyncIterator, Awaitable
 from typing import Any, cast
 
 import httpx
+import litellm
 from structlog import get_logger
 
 from yoker.backends import ChatChunk, ChatChunkEvent
@@ -91,15 +92,105 @@ async def _chat_stream(agent: Any) -> AsyncIterator[ChatChunk]:
     ):
       yield chunk
   except (
+    # HTTP network errors (recoverable)
     httpx.RemoteProtocolError,
     httpx.ConnectError,
     httpx.ReadError,
     httpx.WriteError,
     httpx.ConnectTimeout,
     httpx.ReadTimeout,
+    # LiteLLM transient errors (recoverable)
+    litellm.ServiceUnavailableError,  # 503 - service temporarily unavailable
+    litellm.RateLimitError,  # 429 - rate limit exceeded
+    litellm.APIConnectionError,  # connection issues
+    litellm.InternalServerError,  # 500 - internal server error
   ) as e:
     logger.error("network_error", error_type=type(e).__name__, message=str(e))
-    raise NetworkError(f"Network error: {e}", original_error=e, recoverable=True) from e
+    # Extract user-friendly message
+    message = _extract_user_friendly_message(e)
+    raise NetworkError(message, original_error=e, recoverable=True) from e
+  except (
+    # LiteLLM authentication/permission errors (non-recoverable)
+    litellm.AuthenticationError,
+    litellm.PermissionDeniedError,
+    litellm.NotFoundError,
+  ) as e:
+    logger.error("auth_error", error_type=type(e).__name__, message=str(e))
+    message = _extract_user_friendly_message(e)
+    raise NetworkError(message, original_error=e, recoverable=False) from e
+
+
+def _extract_user_friendly_message(error: Exception) -> str:
+  """Extract a user-friendly message from backend exceptions.
+
+  LiteLLM exceptions often contain verbose error details. This function
+  extracts the essential information for the user.
+
+  For httpx errors, preserves the original "Network error" prefix for
+  backward compatibility with tests.
+
+  Args:
+    error: The exception to extract a message from.
+
+  Returns:
+    A user-friendly error message.
+  """
+  error_type = type(error).__name__
+
+  # For httpx errors, use the original format "Network error: {error}"
+  # This maintains backward compatibility with tests
+  if isinstance(
+    error,
+    (
+      httpx.RemoteProtocolError,
+      httpx.ConnectError,
+      httpx.ReadError,
+      httpx.WriteError,
+      httpx.ConnectTimeout,
+      httpx.ReadTimeout,
+    ),
+  ):
+    return f"Network error: {error}"
+
+  # Service Unavailable (503) - common with Vertex AI/Gemini during high demand
+  if isinstance(error, litellm.ServiceUnavailableError):
+    # Try to extract the actual message from the error
+    error_str = str(error)
+    # Vertex AI errors often contain JSON with message field
+    if "This model is currently experiencing high demand" in error_str:
+      return (
+        f"{error_type}: The model is currently experiencing high demand. Please try again later."
+      )
+    return f"{error_type}: The service is temporarily unavailable. Please try again later."
+
+  # Rate Limit (429)
+  if isinstance(error, litellm.RateLimitError):
+    return f"{error_type}: Rate limit exceeded. Please wait a moment and try again."
+
+  # Connection errors
+  if isinstance(error, litellm.APIConnectionError):
+    return f"{error_type}: Unable to connect to the model provider. Please check your network connection."
+
+  # Internal Server Error (500)
+  if isinstance(error, litellm.InternalServerError):
+    return (
+      f"{error_type}: The model provider encountered an internal error. Please try again later."
+    )
+
+  # Authentication errors
+  if isinstance(error, litellm.AuthenticationError):
+    return f"{error_type}: Authentication failed. Please check your API key configuration."
+
+  # Permission errors
+  if isinstance(error, litellm.PermissionDeniedError):
+    return f"{error_type}: Permission denied. Please check your API key permissions."
+
+  # Not found errors
+  if isinstance(error, litellm.NotFoundError):
+    return f"{error_type}: Model or resource not found. Please check your model configuration."
+
+  # Default: use the error type and message
+  return f"{error_type}: {error}"
 
 
 async def _consume_stream(
