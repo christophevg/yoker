@@ -336,4 +336,3 @@ class LitellmBackend(ModelBackend):
       yield ChatChunk(event=ChatChunkEvent.DONE)
 
     logger.info("=== Exited stream processing loop (processed %d chunks) ===", chunk_count)
-
