@@ -140,17 +140,9 @@ class BackendConfig:
   def __post_init__(self) -> None:
     validate_non_empty_string(self.provider, "backend.provider")
 
-    # Check if this provider has a dedicated config attribute
-    # Known providers (ollama, openai, anthropic, gemini) must have their config set
-    # Unknown providers (handled by litellm) don't need a config attribute
-    try:
-      config = getattr(self, self.provider)
-    except AttributeError:
-      # Unknown provider - allowed, litellm will handle it
-      return
-
-    # Known provider - config must be non-None
-    if config is None:
+    # Known providers must have their config set; unknown providers (handled by litellm) are allowed
+    config = getattr(self, self.provider, None)
+    if config is None and hasattr(self, self.provider):
       raise ValidationError(
         f"backend.{self.provider}", None, f"required when provider='{self.provider}'"
       )
@@ -160,12 +152,6 @@ class BackendConfig:
     """Get the active provider's config.
 
     Returns the config for the currently selected provider, or None if not set.
-    This provides a generic way to access provider-specific config without
-    if-then-else chains.
-
-    Returns:
-      The provider-specific config (OllamaConfig, OpenAIConfig, AnthropicConfig, or GeminiConfig)
-      or None if not configured.
     """
     return getattr(self, self.provider, None)
 

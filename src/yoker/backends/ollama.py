@@ -48,6 +48,47 @@ class OllamaBackend(ModelBackend):
       timeout=ollama_config.timeout_seconds,
     )
 
+  def create_tool_backends(self) -> dict[str, Any]:
+    """Create tool backends for web tools.
+
+    Returns:
+      A dict mapping tool names to backend instances. May be empty.
+    """
+    from structlog import get_logger
+
+    from yoker.tools.web import OllamaWebFetchBackend, OllamaWebSearchBackend
+
+    logger = get_logger(__name__)
+    backends: dict[str, Any] = {}
+
+    # Get Ollama config
+    ollama_config = self.config.backend.config
+    if ollama_config is None:
+      return backends
+
+    # Check for API key
+    if not ollama_config.api_key:
+      return backends
+
+    # Create web search backend if enabled
+    if self.config.tools.websearch.enabled:
+      backends["websearch"] = OllamaWebSearchBackend(
+        async_client=self._client,
+        timeout_seconds=self.config.tools.websearch.timeout_seconds,
+      )
+      logger.info("web_search_backend_populated", backend="ollama")
+
+    # Create web fetch backend if enabled
+    if self.config.tools.webfetch.enabled:
+      backends["webfetch"] = OllamaWebFetchBackend(
+        async_client=self._client,
+        timeout_seconds=self.config.tools.webfetch.timeout_seconds,
+        max_size_kb=self.config.tools.webfetch.max_size_kb,
+      )
+      logger.info("web_fetch_backend_populated", backend="ollama")
+
+    return backends
+
   async def chat_stream(
     self,
     *,

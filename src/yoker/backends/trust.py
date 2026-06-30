@@ -126,20 +126,9 @@ def validate_base_url_trust(backend_config: "BackendConfig", interactive: bool =
 
 
 def _get_base_url(backend_config: "BackendConfig") -> str | None:
-  """Get the configured base_url for a backend.
-
-  Args:
-    backend_config: Backend configuration.
-
-  Returns:
-    Configured base_url or None if using default.
-  """
-  sub_config = backend_config.config
-  if sub_config is None:
-    return None
-
-  # All provider configs have base_url attribute
-  return sub_config.base_url
+  """Get the configured base_url for a backend."""
+  config = backend_config.config
+  return config.base_url if config else None
 
 
 __all__ = [
