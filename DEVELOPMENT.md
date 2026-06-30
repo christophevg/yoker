@@ -8,6 +8,26 @@ Yoker is a Python agent harness with configurable tools and guardrails. It provi
 
 ## Recent Changes
 
+### CI Discrepancy Fix (2026-06-30)
+
+**Issue**: Local `make check` passed but CI type checking failed.
+
+**Root Cause**: The `Makefile` used `mypy --strict` while CI used plain `mypy`. Due to a mypy quirk, the `--strict` flag doesn't properly detect certain unused type ignore comments, even though it's supposed to enable `--warn-unused-ignores`.
+
+**Solution**: 
+1. Removed `--strict` flag from `Makefile` typecheck target
+2. Fixed unnecessary `type: ignore[attr-defined]` comment in `litellm.py`
+3. Both local and CI now use plain `mypy` with strict settings from `pyproject.toml`
+
+**Why this matters**: The `pyproject.toml` already configures comprehensive strict type checking (`warn_unused_ignores = true`, `disallow_untyped_defs`, etc.). Using plain `mypy` with this config:
+- Aligns local and CI behavior
+- Avoids the mypy quirk with `--strict` flag
+- Keeps configuration centralized in `pyproject.toml`
+
+**Files Modified**:
+- `Makefile` - Removed `--strict` from typecheck target
+- `src/yoker/backends/litellm.py` - Removed unnecessary type ignore comment
+
 ### Tool Call Arguments Format Fix (2026-06-30)
 
 **Issue**: Different LLM providers expect different formats for tool call `arguments`:
@@ -229,4 +249,5 @@ The Agent consumes provider-neutral `ChatChunk` instances and translates them in
 - Add Anthropic backend implementation
 - Message-shape translation (system extraction, tool blocks)
 - SSE stream parsing for Anthropic
+
 

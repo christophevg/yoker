@@ -54,9 +54,8 @@ def create_backend(config: Config, interactive: bool | None = None) -> "ModelBac
   """
   # Auto-detect interactive mode from environment
   if interactive is None:
-    interactive = (
-      os.environ.get("YOKER_DEV_MODE") == "1"
-      or not os.environ.get("PYTEST_CURRENT_TEST")
+    interactive = os.environ.get("YOKER_DEV_MODE") == "1" or not os.environ.get(
+      "PYTEST_CURRENT_TEST"
     )
 
   # Validate base_url trust boundary (all providers)
@@ -69,3 +68,4 @@ def create_backend(config: Config, interactive: bool | None = None) -> "ModelBac
 
 
 __all__ = ["create_backend"]
+
