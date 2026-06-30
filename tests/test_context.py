@@ -192,6 +192,71 @@ class TestPersistenceContextManager:
     assert context[0]["role"] == "tool"
     assert context[0]["name"] == "read"
 
+  def test_add_tool_calls_stores_arguments_as_dict(self, tmp_path: Path) -> None:
+    """Test that add_tool_calls stores arguments as dict (internal format).
+
+    Context stores tool calls with arguments as dict (generic format).
+    Backends convert to the format expected by each provider:
+    - OllamaBackend: keeps as dict
+    - LitellmBackend: converts to JSON string
+    """
+    cm = PersistenceContextManager(tmp_path, session_id="test-session")
+
+    # Tool calls with arguments as a dict (internal format)
+    tool_calls = [
+      {
+        "id": "call_123",
+        "function": {
+          "name": "read_file",
+          "arguments": {"path": "/tmp/test.txt", "mode": "r"},  # dict format
+        },
+      }
+    ]
+
+    cm.add_tool_calls(tool_calls)
+
+    # Get the stored context
+    context = cm.get_context()
+    assert len(context) == 1
+
+    # Verify the assistant message was stored
+    assistant_msg = context[0]
+    assert assistant_msg["role"] == "assistant"
+    assert "tool_calls" in assistant_msg
+
+    # Verify arguments remain as dict in context
+    stored_tool_call = assistant_msg["tool_calls"][0]
+    assert stored_tool_call["id"] == "call_123"
+    assert stored_tool_call["function"]["name"] == "read_file"
+
+    # This is the key assertion - arguments must remain a dict
+    assert isinstance(stored_tool_call["function"]["arguments"], dict)
+    assert stored_tool_call["function"]["arguments"] == {"path": "/tmp/test.txt", "mode": "r"}
+
+  def test_add_tool_calls_with_arguments_already_string(self, tmp_path: Path) -> None:
+    """Test that add_tool_calls handles arguments that are already strings."""
+    cm = PersistenceContextManager(tmp_path, session_id="test-session")
+
+    # Tool calls with arguments already as JSON string
+    tool_calls = [
+      {
+        "id": "call_456",
+        "function": {
+          "name": "write_file",
+          "arguments": '{"content": "hello world"}',  # already a string
+        },
+      }
+    ]
+
+    cm.add_tool_calls(tool_calls)
+
+    context = cm.get_context()
+    stored_tool_call = context[0]["tool_calls"][0]
+
+    # Should remain a string
+    assert isinstance(stored_tool_call["function"]["arguments"], str)
+    assert stored_tool_call["function"]["arguments"] == '{"content": "hello world"}'
+
   def test_turn_lifecycle(self, tmp_path: Path) -> None:
     """Test turn start and end."""
     cm = PersistenceContextManager(tmp_path, session_id="test-session")
@@ -562,3 +627,4 @@ class TestListSessions:
     sessions = list_sessions()
     assert len(sessions) == 1
     assert sessions[0].session_id == "test-default"
+

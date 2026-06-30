@@ -28,12 +28,15 @@ class TestConfigSchema:
     assert config.version == "1.0"
 
   def test_ollama_parameters_defaults(self) -> None:
-    """Test OllamaParameters default values."""
+    """Test OllamaParameters default values (all None to allow provider defaults)."""
     params = OllamaParameters()
-    assert params.temperature == 0.7
-    assert params.top_p == 0.9
-    assert params.top_k == 40
-    assert params.num_ctx == 4096
+    assert params.temperature is None
+    assert params.top_p is None
+    assert params.top_k is None
+    assert params.num_ctx is None
+    assert params.num_predict is None
+    assert params.repeat_penalty is None
+    assert params.seed is None
 
   def test_ollama_config_defaults(self) -> None:
     """Test OllamaConfig default values."""
@@ -198,3 +201,4 @@ class TestExampleConfig:
       # Default config has the standard values (no config files in tmp_path)
       assert config.harness.name == "yoker"
       assert config.backend.provider == "ollama"
+

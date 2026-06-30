@@ -119,14 +119,19 @@ class TestOpenAIConfig:
     assert "backend.openai.base_url" in str(exc_info.value)
 
   def test_openai_parameters_defaults(self) -> None:
-    """OpenAIParameters has sensible defaults."""
+    """OpenAIParameters defaults to None to allow provider defaults."""
     params = OpenAIParameters()
-    assert params.temperature == 0.7
-    assert params.top_p == 0.9
+    assert params.temperature is None
+    assert params.top_p is None
     assert params.max_tokens is None
+    assert params.max_completion_tokens is None
+    assert params.presence_penalty is None
+    assert params.frequency_penalty is None
+    assert params.seed is None
+    assert params.reasoning_effort is None
 
   def test_openai_parameters_validation(self) -> None:
-    """OpenAIParameters validates temperature and top_p."""
+    """OpenAIParameters validates temperature, top_p, and reasoning_effort."""
     # Temperature out of range
     with pytest.raises(ValidationError):
       OpenAIParameters(temperature=3.0)  # > 2.0
@@ -139,6 +144,10 @@ class TestOpenAIConfig:
     with pytest.raises(ValidationError):
       OpenAIParameters(max_tokens=-1)
 
+    # reasoning_effort must be valid
+    with pytest.raises(ValidationError):
+      OpenAIParameters(reasoning_effort="invalid")  # not in ("low", "medium", "high", "xhigh")
+
 
 class TestAnthropicConfig:
   """Tests for Anthropic backend configuration (Phase 3 forward declaration)."""
@@ -150,9 +159,9 @@ class TestAnthropicConfig:
     assert config.model == "claude-3-5-sonnet-20241022"
     assert config.base_url is None
     assert config.timeout_seconds == 60
-    assert config.max_tokens == 4096  # Q13: required by Anthropic API, sensible default
     assert isinstance(config.parameters, AnthropicParameters)
-    assert config.parameters.budget_tokens == 1024  # Q12: dedicated field with sensible default
+    # max_tokens is in parameters now, with default 4096 (required by Anthropic API)
+    assert config.parameters.max_tokens == 4096
 
   def test_anthropic_config_with_api_key(self) -> None:
     """AnthropicConfig accepts API key."""
@@ -171,15 +180,19 @@ class TestAnthropicConfig:
     assert "backend.anthropic.base_url" in str(exc_info.value)
 
   def test_anthropic_parameters_defaults(self) -> None:
-    """AnthropicParameters has sensible defaults."""
+    """AnthropicParameters has required max_tokens default and optional parameters."""
     params = AnthropicParameters()
-    assert params.temperature == 0.7
-    assert params.top_p == 0.9
+    # max_tokens is REQUIRED by Anthropic API, so it must have a default
+    assert params.max_tokens == 4096
+    # All other parameters default to None
+    assert params.temperature is None
+    assert params.top_p is None
     assert params.top_k is None
-    assert params.budget_tokens == 1024
+    assert params.budget_tokens is None
+    assert params.stop_sequences is None
 
   def test_anthropic_parameters_validation(self) -> None:
-    """AnthropicParameters validates temperature, top_p, and budget_tokens."""
+    """AnthropicParameters validates temperature, top_p, max_tokens, and budget_tokens."""
     # Temperature out of range (Anthropic uses 0.0-1.0)
     with pytest.raises(ValidationError):
       AnthropicParameters(temperature=1.5)  # > 1.0
@@ -188,7 +201,11 @@ class TestAnthropicConfig:
     with pytest.raises(ValidationError):
       AnthropicParameters(top_p=1.5)  # > 1.0
 
-    # Budget_tokens must be positive
+    # Max_tokens must be positive
+    with pytest.raises(ValidationError):
+      AnthropicParameters(max_tokens=-1)
+
+    # Budget_tokens must be positive if provided
     with pytest.raises(ValidationError):
       AnthropicParameters(budget_tokens=-1)
 
@@ -295,7 +312,7 @@ class TestBackendConfigParams:
       anthropic=AnthropicConfig(
         model="claude-3-5-sonnet-20241022",
         api_key="sk-ant-test",
-        max_tokens=4096,
+        parameters=AnthropicParameters(max_tokens=4096),
       ),
       ollama=None,
     )
@@ -304,7 +321,9 @@ class TestBackendConfigParams:
     # Should include all AnthropicConfig fields
     assert params["model"] == "claude-3-5-sonnet-20241022"
     assert params["api_key"] == "sk-ant-test"
-    assert params["max_tokens"] == 4096
+    # max_tokens is now in parameters (nested dict)
+    assert "parameters" in params
+    assert params["parameters"]["max_tokens"] == 4096
 
   def test_params_filters_none_values(self) -> None:
     """BackendConfig.params excludes None values from flattened dict."""
@@ -348,3 +367,4 @@ class TestBackendConfigParams:
 
     # model should be included
     assert params["model"] == "gpt-4o"
+
