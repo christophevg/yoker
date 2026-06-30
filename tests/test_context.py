@@ -627,4 +627,3 @@ class TestListSessions:
     sessions = list_sessions()
     assert len(sessions) == 1
     assert sessions[0].session_id == "test-default"
-

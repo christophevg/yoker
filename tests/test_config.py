@@ -201,4 +201,3 @@ class TestExampleConfig:
       # Default config has the standard values (no config files in tmp_path)
       assert config.harness.name == "yoker"
       assert config.backend.provider == "ollama"
-
