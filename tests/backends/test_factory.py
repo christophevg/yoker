@@ -6,7 +6,7 @@ from unittest.mock import patch
 from yoker.backends import create_backend
 from yoker.backends.litellm import LitellmBackend
 from yoker.backends.ollama import OllamaBackend
-from yoker.config import Config
+from yoker.config import BackendConfig, Config, GenericConfig, OllamaConfig, OpenAIConfig
 
 
 class TestCreateBackend:
@@ -22,7 +22,6 @@ class TestCreateBackend:
 
   def test_create_backend_returns_ollama_backend_with_ollama_config(self):
     """create_backend returns OllamaBackend when provider is explicitly set."""
-    from yoker.config import BackendConfig, OllamaConfig
 
     config = Config(
       backend=BackendConfig(
@@ -40,10 +39,9 @@ class TestCreateBackend:
 
   def test_create_backend_returns_litellm_for_unknown_provider(self):
     """create_backend returns LitellmBackend for unknown providers."""
-    from yoker.config import BackendConfig
 
     # Create a config with an unknown provider
-    # Note: Unknown providers use LitellmBackend
+    # Note: Unknown providers use LitellmBackend with GenericConfig
     config = Config(
       backend=BackendConfig(
         provider="groq",  # Not explicitly handled, but litellm supports it
@@ -52,6 +50,11 @@ class TestCreateBackend:
         anthropic=None,
       )
     )
+    # GenericConfig is created automatically for unknown providers
+    # Model can come from agent definition
+    assert config.backend.provider == "groq"
+    assert isinstance(config.backend.config, GenericConfig)
+
     with patch.dict(os.environ, {"YOKER_DEV_MODE": "1"}):
       backend = create_backend(config)
 
@@ -59,7 +62,6 @@ class TestCreateBackend:
 
   def test_create_backend_returns_litellm_for_openai(self):
     """create_backend returns LitellmBackend for openai provider."""
-    from yoker.config import BackendConfig, OpenAIConfig
 
     config = Config(
       backend=BackendConfig(
@@ -74,7 +76,7 @@ class TestCreateBackend:
 
   def test_create_backend_returns_litellm_for_anthropic(self):
     """create_backend returns LitellmBackend for anthropic provider."""
-    from yoker.config import AnthropicConfig, BackendConfig
+    from yoker.config import AnthropicConfig
 
     config = Config(
       backend=BackendConfig(

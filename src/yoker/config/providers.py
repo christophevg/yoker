@@ -32,7 +32,9 @@ from yoker.config.validators import (
 from yoker.exceptions import ValidationError
 
 # Type alias for provider configs (used for type hints)
-ProviderConfig = Union["OllamaConfig", "OpenAIConfig", "AnthropicConfig", "GeminiConfig"]
+ProviderConfig = Union[
+  "OllamaConfig", "OpenAIConfig", "AnthropicConfig", "GeminiConfig", "GenericConfig"
+]
 
 
 @dataclass(frozen=True)
@@ -351,6 +353,73 @@ class GeminiConfig:
       validate_url(self.base_url, "backend.gemini.base_url")
 
 
+@dataclass(frozen=True)
+class GenericParameters:
+  """Generic provider parameters for unknown providers.
+
+  Used as a catch-all for any litellm-supported provider not explicitly
+  defined (e.g., 'groq', 'cohere', 'azure').
+
+  All parameters default to None to allow providers to use their own defaults.
+  """
+
+  temperature: float | None = None
+  top_p: float | None = None
+  max_tokens: int | None = None
+
+  def __post_init__(self) -> None:
+    if self.temperature is not None and not 0.0 <= self.temperature <= 2.0:
+      raise ValidationError(
+        "backend.generic.parameters.temperature",
+        self.temperature,
+        "must be between 0.0 and 2.0",
+      )
+    if self.top_p is not None and not 0.0 <= self.top_p <= 1.0:
+      raise ValidationError(
+        "backend.generic.parameters.top_p",
+        self.top_p,
+        "must be between 0.0 and 1.0",
+      )
+    if self.max_tokens is not None:
+      validate_positive_int(self.max_tokens, "backend.generic.parameters.max_tokens")
+
+
+@dataclass(frozen=True)
+class GenericConfig:
+  """Generic provider configuration for unknown providers.
+
+  Used as a catch-all for any litellm-supported provider not explicitly
+  defined (e.g., 'groq', 'cohere', 'azure', 'mistral').
+
+  Litellm handles the provider routing and authentication. The provider string
+  should match litellm's expected format (e.g., 'groq/llama-3.1-8b-instant').
+
+  Attributes:
+    api_key: API key for the provider (optional, can also use environment variables).
+    model: Default model to use (optional, can be specified in agent definition).
+    base_url: Optional base URL for provider APIs.
+    timeout_seconds: Request timeout in seconds.
+    parameters: Model generation parameters.
+  """
+
+  # No default base URLs - use SDK/provider defaults
+  DEFAULT_BASE_URLS: None = None
+
+  api_key: str | None = field(default=None, metadata={"cli": False})
+  model: str = ""  # Optional - can come from agent definition
+  base_url: str | None = None
+  timeout_seconds: int = 60
+  parameters: GenericParameters = field(default_factory=GenericParameters)
+
+  def __post_init__(self) -> None:
+    # model is optional for GenericConfig - can be specified in agent definition
+    if self.model:  # Only validate if model is provided
+      validate_non_empty_string(self.model, "backend.generic.model")
+    validate_positive_int(self.timeout_seconds, "backend.generic.timeout_seconds")
+    if self.base_url is not None:
+      validate_url(self.base_url, "backend.generic.base_url")
+
+
 __all__ = [
   "ProviderConfig",
   "OllamaConfig",
@@ -361,4 +430,6 @@ __all__ = [
   "AnthropicParameters",
   "GeminiConfig",
   "GeminiParameters",
+  "GenericConfig",
+  "GenericParameters",
 ]

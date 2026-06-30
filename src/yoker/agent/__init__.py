@@ -370,15 +370,17 @@ class Agent:
       )
       return self.definition.model
 
-    # Read from the active provider's config using the generic property
+    # Read from the active provider's config
+    # Validation in BackendConfig.__post_init__ ensures config is always set
     sub_config = self.config.backend.config
-    if sub_config is None:
+    model = sub_config.model
+
+    if not model:
       raise ValueError(
-        f"No model specified and no config for provider '{self.config.backend.provider}'. "
-        "Either specify a model in the agent definition or configure the provider."
+        f"No model specified for provider '{self.config.backend.provider}'. "
+        "Specify a model in the agent definition or configure the provider."
       )
 
-    model = sub_config.model
     logger.info("model from config", model=model, provider=self.config.backend.provider)
     return model
 

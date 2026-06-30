@@ -11,6 +11,7 @@ from yoker.config import (
   AnthropicConfig,
   BackendConfig,
   Config,
+  GenericConfig,
   OllamaConfig,
   OpenAIConfig,
 )
@@ -69,17 +70,21 @@ class TestCreateBackend:
 
   def test_create_backend_unknown_provider(self) -> None:
     """Test create_backend returns LitellmBackend for unknown provider."""
+
     # Create a mock config with an unknown provider
     # This tests the "litellm supports 100+ providers" feature
-    # Note: Unknown providers don't need provider-specific config
+    # Note: Unknown providers get GenericConfig automatically
     mock_config = Config(
       backend=BackendConfig(
         provider="groq",  # Not explicitly handled, but litellm supports it
-        ollama=None,  # Not required for unknown providers
+        ollama=None,
         openai=None,
         anthropic=None,
       )
     )
+    # Verify GenericConfig is created for unknown providers
+    assert isinstance(mock_config.backend.config, GenericConfig)
+
     with patch.dict("os.environ", {"YOKER_DEV_MODE": "1"}):
       backend = create_backend(mock_config)
       assert isinstance(backend, LitellmBackend)

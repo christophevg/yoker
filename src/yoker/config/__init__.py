@@ -39,8 +39,8 @@ CLI Arguments:
 """
 
 import os
-from dataclasses import asdict, dataclass, field
-from typing import Any, Literal, cast
+from dataclasses import dataclass, field
+from typing import Literal, cast
 
 from clevis import SecurityAction, SecurityConfig, get_config
 
@@ -49,6 +49,8 @@ from yoker.config.providers import (
   AnthropicParameters,
   GeminiConfig,
   GeminiParameters,
+  GenericConfig,
+  GenericParameters,
   OllamaConfig,
   OllamaParameters,
   OpenAIConfig,
@@ -119,16 +121,21 @@ class BackendConfig:
   """Backend provider configuration (tagged union by `provider`).
 
   Attributes:
-    provider: Backend provider name ('ollama', 'openai', 'anthropic', 'gemini', or any litellm-supported provider).
+    provider: Backend provider name. Can be:
+      - 'ollama': Local inference server (native OllamaBackend)
+      - 'openai': OpenAI GPT models (via LitellmBackend)
+      - 'anthropic': Anthropic Claude models (via LitellmBackend)
+      - 'gemini': Google Gemini models (via LitellmBackend)
+      - Any other litellm-supported provider (e.g., 'groq', 'cohere', 'azure', 'mistral')
     ollama: Ollama-specific configuration (required when provider='ollama').
     openai: OpenAI-specific configuration (required when provider='openai').
     anthropic: Anthropic-specific configuration (required when provider='anthropic').
     gemini: Gemini-specific configuration (required when provider='gemini').
 
   Note:
-    For providers other than 'ollama', 'openai', 'anthropic', or 'gemini', litellm handles the provider.
-    The provider string can be any litellm-supported provider (e.g., 'groq', 'cohere', 'azure').
-    For these providers, only api_key and base_url are needed (via environment variables or config).
+    For known providers ('ollama', 'openai', 'anthropic', 'gemini'), the corresponding
+    config attribute must be set. For unknown providers (any litellm-supported provider),
+    a GenericConfig is created automatically. Litellm handles authentication and routing.
   """
 
   provider: str = "ollama"
@@ -140,49 +147,36 @@ class BackendConfig:
   def __post_init__(self) -> None:
     validate_non_empty_string(self.provider, "backend.provider")
 
-    # Known providers must have their config set; unknown providers (handled by litellm) are allowed
-    config = getattr(self, self.provider, None)
-    if config is None and hasattr(self, self.provider):
-      raise ValidationError(
-        f"backend.{self.provider}", None, f"required when provider='{self.provider}'"
-      )
+    # Known providers must have their config set
+    # Unknown providers (handled by litellm) will use GenericConfig
+    known_providers = ("ollama", "openai", "anthropic", "gemini")
+    if self.provider in known_providers:
+      config = getattr(self, self.provider, None)
+      if config is None:
+        raise ValidationError(
+          f"backend.{self.provider}", None, f"required when provider='{self.provider}'"
+        )
 
   @property
-  def config(self) -> ProviderConfig | None:
+  def config(self) -> ProviderConfig:
     """Get the active provider's config.
 
-    Returns the config for the currently selected provider, or None if not set.
-    """
-    return getattr(self, self.provider, None)
-
-  @property
-  def params(self) -> dict[str, Any]:
-    """Flatten provider-specific config to dict.
-
-    Used by LitellmBackend to get all provider parameters in a single dict.
-    OllamaBackend reads its config directly, not via this property.
+    Returns the config for the currently selected provider.
+    For unknown providers, returns a GenericConfig with model from environment
+    or defaults (model must be specified in agent definition or config).
 
     Returns:
-      Dictionary with all non-None provider config fields.
-      Includes 'model' from the sub-config.
-
-    Example:
-      >>> config = BackendConfig(
-      ...     provider="openai",
-      ...     openai=OpenAIConfig(api_key="sk-test", model="gpt-4o")
-      ... )
-      >>> config.params
-      {'model': 'gpt-4o', 'api_key': 'sk-test', 'base_url': None, 'timeout_seconds': 60, ...}
+      ProviderConfig for the active provider. Never None.
     """
-    sub_config = self.config
+    # Known providers have their config as an attribute
+    known_providers = ("ollama", "openai", "anthropic", "gemini")
+    if self.provider in known_providers:
+      # Type assertion: validation in __post_init__ guarantees non-None
+      return cast(ProviderConfig, getattr(self, self.provider))
 
-    if sub_config is None:
-      return {}
-
-    d = asdict(sub_config)
-
-    # Filter None values for cleaner kwargs
-    return {k: v for k, v in d.items() if v is not None}
+    # Unknown provider: return GenericConfig
+    # Model should come from agent definition or fallback
+    return GenericConfig(model="")
 
 
 @dataclass(frozen=True)
@@ -707,6 +701,8 @@ __all__ = [
   "AnthropicParameters",
   "GeminiConfig",
   "GeminiParameters",
+  "GenericConfig",
+  "GenericParameters",
   "ProviderConfig",
   # Other configuration classes
   "ContextConfig",
