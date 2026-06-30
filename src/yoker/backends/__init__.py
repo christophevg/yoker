@@ -25,7 +25,6 @@ from yoker.backends.protocol import (
   UsageStats,
 )
 from yoker.backends.trust import (
-  DEFAULT_BASE_URLS,
   ENV_ALLOW_CUSTOM_BASE_URL,
   TrustBoundaryError,
   is_custom_base_url,
@@ -44,6 +43,5 @@ __all__ = [
   "validate_base_url_trust",
   "is_custom_base_url",
   "TrustBoundaryError",
-  "DEFAULT_BASE_URLS",
   "ENV_ALLOW_CUSTOM_BASE_URL",
 ]

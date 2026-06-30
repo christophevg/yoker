@@ -21,7 +21,7 @@ All providers except Ollama are handled via litellm, which supports 100+ provide
 """
 
 from dataclasses import dataclass, field
-from typing import Union
+from typing import ClassVar, Union
 
 from yoker.config.validators import (
   validate_choice,
@@ -98,6 +98,9 @@ class OllamaConfig:
     timeout_seconds: Request timeout in seconds.
     parameters: Model generation parameters.
   """
+
+  # Default base URLs for Ollama (localhost and cloud)
+  DEFAULT_BASE_URLS: ClassVar[list[str] | None] = ["http://localhost:11434", "https://ollama.com"]
 
   base_url: str = "http://localhost:11434"
   api_key: str | None = field(default=None, metadata={"cli": False})
@@ -189,6 +192,9 @@ class OpenAIConfig:
     parameters: Model generation parameters.
   """
 
+  # No default base URLs - use SDK default
+  DEFAULT_BASE_URLS: None = None
+
   api_key: str | None = field(default=None, metadata={"cli": False})
   model: str = "gpt-4o-mini"
   base_url: str | None = None
@@ -258,6 +264,9 @@ class AnthropicConfig:
     parameters: Model generation parameters (includes max_tokens).
   """
 
+  # No default base URLs - use SDK default
+  DEFAULT_BASE_URLS: None = None
+
   api_key: str | None = field(default=None, metadata={"cli": False})
   model: str = "claude-3-5-sonnet-20241022"
   base_url: str | None = None
@@ -325,6 +334,9 @@ class GeminiConfig:
     timeout_seconds: Request timeout in seconds.
     parameters: Model generation parameters.
   """
+
+  # No default base URLs - use SDK default
+  DEFAULT_BASE_URLS: None = None
 
   api_key: str | None = field(default=None, metadata={"cli": False})
   model: str = "gemini-1.5-flash"

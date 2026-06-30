@@ -371,13 +371,10 @@ class Agent:
       return self.definition.model
 
     # Read from the active provider's config using the generic property
+    # Validation happens at BackendConfig construction time, so config is guaranteed non-None
     sub_config = self.config.backend.config
-    if sub_config is None:
-      raise ValueError(
-        f"No config available for provider '{self.config.backend.provider}'. "
-        f"Please configure backend.{self.config.backend.provider} in your yoker.toml."
-      )
-
+    # Type assertion: validation at construction guarantees non-None for known providers
+    assert sub_config is not None, "Provider config validated at construction"
     model = sub_config.model
     logger.info("model from config", model=model, provider=self.config.backend.provider)
     return model
