@@ -367,4 +367,3 @@ class TestBackendConfigParams:
 
     # model should be included
     assert params["model"] == "gpt-4o"
-

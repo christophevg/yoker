@@ -28,7 +28,11 @@ from yoker.config import Config
 
 # Disable litellm's verbose logging
 litellm.set_verbose = False  # type: ignore[attr-defined]
-logging.getLogger("litellm").setLevel(logging.WARNING)
+
+# Suppress INFO logging from litellm (try multiple logger names)
+# litellm uses different logger names in different contexts
+for logger_name in ["litellm", "LiteLLM", "LITELLM"]:
+  logging.getLogger(logger_name).setLevel(logging.WARNING)
 
 logger = logging.getLogger(__name__)
 
@@ -332,4 +336,3 @@ class LitellmBackend(ModelBackend):
       yield ChatChunk(event=ChatChunkEvent.DONE)
 
     logger.info("=== Exited stream processing loop (processed %d chunks) ===", chunk_count)
-

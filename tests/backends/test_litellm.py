@@ -287,4 +287,3 @@ class TestLitellmBackend:
       tool_call = assistant_msg["tool_calls"][0]
       assert isinstance(tool_call["function"]["arguments"], str)
       assert tool_call["function"]["arguments"] == '{"path": "/tmp/test.txt", "mode": "r"}'
-
