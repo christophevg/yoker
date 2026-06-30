@@ -5,14 +5,15 @@ and 100+ others) via the litellm library. Translates litellm's streaming events
 into Yoker's ChatChunk instances with proper block boundaries.
 
 Design:
-  - Uses config.backend.params for all provider parameters (flattened dict)
+  - Reads config.backend.config directly for provider parameters
   - Applies litellm-specific transforms (base_url → api_base, provider/model prefix)
-  - OllamaBackend continues to read config directly (not via params)
+  - Flattens parameters dict into litellm kwargs
 """
 
 import json
 import logging
 from collections.abc import AsyncIterator
+from dataclasses import asdict
 from typing import Any
 
 import litellm
@@ -105,31 +106,33 @@ class LitellmBackend(ModelBackend):
     in_tool_call: dict[int, bool] = {}  # tool_index -> in_block
     finish_reason: str | None = None
 
-    # Get flattened params from config
-    params = self.config.backend.params
+    # Get provider config
+    sub_config = self.config.backend.config
 
     # Build litellm model string: "provider/model"
     litellm_model = f"{self.config.backend.provider}/{model}"
 
-    # Flatten nested parameters dict into top-level kwargs
-    # params structure: {'model': 'gpt-4o', 'timeout_seconds': 60, 'parameters': {'temperature': 0.7, ...}}
-    # litellm needs: {'model': 'openai/gpt-4o', 'temperature': 0.7, ...}
+    # Flatten config into litellm kwargs
     flattened: dict[str, Any] = {}
 
-    for key, value in params.items():
-      if key == "parameters":
-        # Flatten parameters dict into top-level
-        if isinstance(value, dict):
-          flattened.update(value)
-      elif key == "base_url":
-        # litellm-specific transform: base_url → api_base
-        flattened["api_base"] = value
-      elif key == "timeout_seconds":
-        # litellm uses 'timeout' not 'timeout_seconds'
-        flattened["timeout"] = value
-      elif key != "model":
-        # Skip model (passed separately), keep everything else
-        flattened[key] = value
+    # Add api_key if present
+    if sub_config.api_key:
+      flattened["api_key"] = sub_config.api_key
+
+    # Add base_url if present (litellm uses 'api_base')
+    if sub_config.base_url:
+      flattened["api_base"] = sub_config.base_url
+
+    # Add timeout (litellm uses 'timeout')
+    flattened["timeout"] = sub_config.timeout_seconds
+
+    # Flatten parameters dataclass into top-level kwargs, filtering None values
+    if sub_config.parameters:
+      params_dict = asdict(sub_config.parameters)
+      # Filter None values and add to flattened
+      for key, value in params_dict.items():
+        if value is not None:
+          flattened[key] = value
 
     # Add stream=True for streaming
     flattened["stream"] = True

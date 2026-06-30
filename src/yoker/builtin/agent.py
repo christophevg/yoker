@@ -144,10 +144,8 @@ def _create_subagent(parent_agent: "Agent | None", agent_definition: "AgentDefin
   config: Config | None = None
   if model is not None and parent_config is not None:
     # Create provider-agnostic config copy with model override
+    # Validation in BackendConfig.__post_init__ ensures config is always set
     sub_config = parent_config.backend.config
-    if sub_config is None:
-      raise RuntimeError(f"No config for provider '{parent_config.backend.provider}'")
-
     new_sub_config = replace(sub_config, model=model)
     provider = parent_config.backend.provider
     backend = replace(parent_config.backend, **{provider: new_sub_config})  # type: ignore[arg-type]
@@ -164,9 +162,8 @@ def _create_subagent(parent_agent: "Agent | None", agent_definition: "AgentDefin
   # Get model from the active provider's config for logging
   active_model = model
   if active_model is None and config:
+    # Validation in BackendConfig.__post_init__ ensures config is always set
     sub_config = config.backend.config
-    if sub_config is None:
-      raise RuntimeError(f"No config for provider '{config.backend.provider}'")
     active_model = sub_config.model
 
   logger.info(
