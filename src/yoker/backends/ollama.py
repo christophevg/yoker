@@ -7,7 +7,7 @@ block boundaries.
 
 import json
 from collections.abc import AsyncIterator
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from ollama import AsyncClient
 
@@ -20,7 +20,7 @@ from yoker.backends.protocol import (
 )
 
 if TYPE_CHECKING:
-  from yoker.config import Config
+  from yoker.config import Config, OllamaConfig
 
 
 class OllamaBackend(ModelBackend):
@@ -39,9 +39,9 @@ class OllamaBackend(ModelBackend):
     """
     self.config = config
     # Create AsyncClient from ollama config
-    ollama_config = config.backend.config
-    if ollama_config is None:
-      raise ValueError("No Ollama config found")
+    # Validation happens in BackendConfig.__post_init__()
+    # Type assertion: OllamaConfig is guaranteed non-None when provider='ollama'
+    ollama_config = cast("OllamaConfig", config.backend.config)
 
     self._client = AsyncClient(
       host=ollama_config.base_url,
