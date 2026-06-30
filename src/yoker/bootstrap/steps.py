@@ -18,17 +18,16 @@ UX refinements applied (PR #34 follow-up):
     only calls :func:`webbrowser.open` after an explicit yes from the user.
     It then waits for the user to return before resuming.
 
-The flow (six steps in the guided path):
+Multi-Provider Flow (6 steps in the guided path):
 
   Step 1 of 6  opening         — explain yoker, state no config found, ask
                                   guided / manual / visit docs (Ctrl+C to
                                   interrupt at any time)
-  Step 2 of 6  backend_intro   — single supported backend today (Ollama, free tier)
-  Step 3 of 6  account_check   — "do you have an ollama account?"; no proposes
+  Step 2 of 6  provider        — select provider (Ollama, OpenAI, Anthropic, Gemini)
+  Step 3 of 6  account_check   — "do you have a <provider> account?"; no proposes
                                   to open the docs guide URL (no force), then
                                   resumes; the wizard never aborts here
-  Step 4 of 6  connection      — split: ollama app (no key) vs API key (masked)
-                                  (Ctrl+C to interrupt at any time)
+  Step 4 of 6  authentication  — provider-specific auth (API key vs app)
   Step 5 of 6  model_select    — curated list / accept default / free text
   Step 6 of 6  confirm         — written confirmation that config was created
                                   and yoker is continuing into the session
@@ -47,14 +46,18 @@ import webbrowser
 from dataclasses import dataclass
 from pathlib import Path
 
-from yoker.bootstrap.modellist import curated_models, default_model_id
+from yoker.bootstrap.modellist import curated_models_for_provider, default_model_for_provider
+from yoker.bootstrap.providers import (
+  PROVIDER_ORDER,
+  ProviderInfo,
+  get_default_provider,
+  get_provider_info,
+)
 from yoker.config import Config
 from yoker.config.writer import render_config_toml
 from yoker.ui.handler import UIHandler
 
-# Docs guide URL. The dedicated guide is authored on the docs site (task 2.7);
-# the wizard deep-links to its anchors. The path follows the readthedocs
-# convention used elsewhere in the project.
+# Docs guide URL (legacy, kept for backward compatibility).
 DOCS_GUIDE_URL = "https://yoker.readthedocs.io/en/latest/guides/getting-started-with-ollama.html"
 DOCS_GUIDE_ACCOUNT_URL = f"{DOCS_GUIDE_URL}#account"
 DOCS_GUIDE_API_KEY_URL = f"{DOCS_GUIDE_URL}#api-key"
@@ -80,7 +83,7 @@ class WizardAbort(Exception):
 
 @dataclass(frozen=True)
 class ConnectionChoice:
-  """Result of the Step 4 connection-method choice.
+  """Result of the Step 4 authentication choice.
 
   Attributes:
     use_api_key: Whether the user chose the API-key path.
@@ -175,7 +178,7 @@ async def step_opening(ui: UIHandler) -> str:
   await ui.output_step_title(1, TOTAL_STEPS, "Welcome")
   ui.output_info(
     "Welcome to yoker — a provider-neutral AI backend for running agentic "
-    "workflows.\nyoker connects to model providers (today: Ollama) and gives "
+    "workflows.\nyoker connects to model providers and gives "
     "your tools, skills,\nand agents a single place to run.\n\n"
     "No yoker configuration was found at ~/.yoker.toml — that's why this "
     "wizard is showing.\n"
@@ -207,7 +210,7 @@ async def step_opening(ui: UIHandler) -> str:
       await _open_docs_confirmed(
         ui,
         DOCS_HOME_URL,
-        blurb="The docs cover getting started with yoker and configuring Ollama.",
+        blurb="The docs cover getting started with yoker and configuring providers.",
       )
       # Loop back and re-ask the opening question.
       continue
@@ -228,8 +231,226 @@ async def step_manual(ui: UIHandler, config: Config, config_path: Path) -> None:
   )
 
 
+async def step_provider_selection(ui: UIHandler) -> ProviderInfo:
+  """Step 2: Select provider from available options.
+
+  Shows a list of available providers and lets the user select one.
+  Default is Ollama (option 1) for backward compatibility.
+
+  Returns:
+    ProviderInfo for the selected provider.
+
+  Raises:
+    WizardAbort: When the user sends EOF/Ctrl+C.
+  """
+  await ui.output_step_title(2, TOTAL_STEPS, "Select Provider")
+  lines = ["Choose your preferred LLM provider:\n"]
+  for idx, provider_id in enumerate(PROVIDER_ORDER, start=1):
+    provider = get_provider_info(provider_id)
+    lines.append(f"  {idx}) {provider.display_name} — {provider.description}")
+  lines.append("\nCtrl+c interrupts the setup at any time, without writing anything.\n")
+  ui.output_info("\n".join(lines))
+
+  default_provider = get_default_provider()
+  while True:
+    raw = await ui.get_input(
+      f"Choose [1-{len(PROVIDER_ORDER)}] (Enter = 1 {default_provider.display_name}): "
+    )
+    if raw is None:
+      raise WizardAbort
+    answer = raw.strip()
+    if answer == "":
+      return default_provider
+    if answer.isdigit():
+      n = int(answer)
+      if 1 <= n <= len(PROVIDER_ORDER):
+        return get_provider_info(PROVIDER_ORDER[n - 1])
+    ui.output_info(f"Invalid choice. Enter a number from 1 to {len(PROVIDER_ORDER)}.\n")
+
+
+async def step_account_check_provider(ui: UIHandler, provider: ProviderInfo) -> None:
+  """Step 3: Check if user has an account for the selected provider.
+
+  No -> PROPOSE opening the getting-started guide in the browser (the user
+  confirms; nothing is forced), wait for the user to return, then resume.
+  The wizard does not abort on "no" — it helps the user get set up. EOF /
+  Ctrl+C at the yes/no or the "press Enter to continue" prompt is an explicit
+  abort.
+
+  The default is "no" since the wizard targets first-time users who typically
+  do not yet have an account; pressing Enter proposes to open the
+  getting-started guide.
+
+  Args:
+    ui: The UI handler.
+    provider: The selected provider info.
+  """
+  has_account = await _ask_yes_no(
+    ui, f"Do you have a {provider.display_name} account?", default=False
+  )
+  if has_account:
+    return
+  await _open_docs_confirmed(
+    ui,
+    provider.account_url,
+    blurb=f"The guide covers creating a {provider.display_name} account.",
+  )
+
+
+async def step_authentication(ui: UIHandler, provider: ProviderInfo) -> ConnectionChoice:
+  """Step 4: Collect authentication credentials for the provider.
+
+  For Ollama: offer app vs API key choice.
+  For others (OpenAI/Anthropic/Gemini): collect API key only.
+
+  Args:
+    ui: The UI handler.
+    provider: The selected provider info.
+
+  Returns:
+    ConnectionChoice with auth details.
+
+  Raises:
+    WizardAbort: When the user sends EOF/Ctrl+C.
+  """
+  if provider.has_local_app:
+    # Ollama: offer app vs API key choice
+    return await _collect_ollama_auth(ui, provider)
+  else:
+    # OpenAI/Anthropic/Gemini: collect API key only
+    return await _collect_api_key(ui, provider)
+
+
+async def _collect_ollama_auth(ui: UIHandler, provider: ProviderInfo) -> ConnectionChoice:
+  """Collect Ollama authentication (app or API key)."""
+  await ui.output_step_title(4, TOTAL_STEPS, "Connection Method")
+  ui.output_info(
+    "Connect via:\n"
+    "  1) The Ollama app running locally (recommended — no key needed)\n"
+    "  2) An Ollama API key\n\n"
+    "Ctrl+c interrupts the setup at any time, without writing anything.\n"
+  )
+
+  while True:
+    raw = await ui.get_input("Choose [1/2] (Enter = 1 app): ")
+    if raw is None:
+      raise WizardAbort
+    answer = raw.strip()
+    if answer == "" or answer == "1":
+      return ConnectionChoice(use_api_key=False)
+    if answer == "2":
+      break
+    ui.output_info("Invalid choice. Enter 1 or 2 (or press Enter for the app).\n")
+
+  # API-key path: propose opening the key-creation guide (no force), wait,
+  # then prompt for the key.
+  if provider.api_key_url:
+    await _open_docs_confirmed(
+      ui,
+      provider.api_key_url,
+      blurb=f"The guide walks through creating a {provider.display_name} API key.",
+    )
+  key = await ui.get_secret_input("Paste your Ollama API key: ")
+  api_key = key.strip() if key else None
+  if not api_key:
+    ui.output_info("No key entered. Falling back to the Ollama app path.\n")
+    return ConnectionChoice(use_api_key=False)
+  return ConnectionChoice(use_api_key=True, api_key=api_key)
+
+
+async def _collect_api_key(ui: UIHandler, provider: ProviderInfo) -> ConnectionChoice:
+  """Collect API key for providers that require it."""
+  await ui.output_step_title(4, TOTAL_STEPS, "API Key")
+
+  # Check if user has an API key
+  has_key = await _ask_yes_no(ui, f"Do you have a {provider.display_name} API key?", default=False)
+
+  if not has_key and provider.api_key_url:
+    await _open_docs_confirmed(
+      ui,
+      provider.api_key_url,
+      blurb=f"The guide walks through creating a {provider.display_name} API key.",
+    )
+
+  # Collect the key
+  key = await ui.get_secret_input(f"Paste your {provider.display_name} API key: ")
+  api_key = key.strip() if key else None
+
+  if not api_key:
+    ui.output_info("No key entered. You can set the API key later in your config.\n")
+    return ConnectionChoice(use_api_key=False)
+
+  return ConnectionChoice(use_api_key=True, api_key=api_key)
+
+
+async def step_model_selection_provider(ui: UIHandler, provider: ProviderInfo) -> str:
+  """Step 5: Select a model from the provider's curated list.
+
+  Args:
+    ui: The UI handler.
+    provider: The selected provider info.
+
+  Returns:
+    The chosen model id (never empty — falls back to the default).
+
+  Raises:
+    WizardAbort: When the user sends EOF/Ctrl+C at the main choice prompt.
+  """
+  models = curated_models_for_provider(provider.id)
+  default_id = default_model_for_provider(provider.id)
+
+  await ui.output_step_title(5, TOTAL_STEPS, "Model Selection")
+  lines = ["Pick a model, or accept the default:"]
+  for idx, model in enumerate(models, start=1):
+    lines.append(f"  {idx}) {model.label} — {model.note}")
+  lines.append(f"  {len(models) + 1}) Enter a model id by hand")
+  lines.append("")
+  ui.output_info("\n".join(lines))
+
+  while True:
+    raw = await ui.get_input(f"Choose [1-{len(models) + 1}] (Enter = default): ")
+    if raw is None:
+      raise WizardAbort
+    answer = raw.strip()
+    if answer == "":
+      ui.output_info("No model entered; using default.\n")
+      return default_id
+    if answer.isdigit():
+      n = int(answer)
+      if 1 <= n <= len(models):
+        return models[n - 1].model_id
+      if n == len(models) + 1:
+        custom = await ui.get_input("Model id: ")
+        if custom is None:
+          raise WizardAbort
+        if custom.strip():
+          return custom.strip()
+        ui.output_info("No model entered; using default.\n")
+        return default_id
+    ui.output_info("Invalid choice.\n")
+
+
+async def step_confirm_provider(
+  ui: UIHandler, provider: ProviderInfo, model: str, config_path: Path
+) -> None:
+  """Step 6: Confirm config was created."""
+  await ui.output_step_title(6, TOTAL_STEPS, "Configuration Created")
+  ui.output_info(
+    f"Configuration written to {config_path} (chmod 600).\n"
+    f"Provider: {provider.display_name}\n"
+    f"Model: {model}\n"
+    "yoker is continuing into the normal session now.\n"
+  )
+
+
+# Legacy functions for backward compatibility
+
+
 async def step_backend_intro(ui: UIHandler) -> None:
-  """Step 2: short informational panel about the backend (no choice)."""
+  """Step 2 (legacy): short informational panel about the backend (no choice).
+
+  DEPRECATED: Use step_provider_selection instead.
+  """
   await ui.output_step_title(2, TOTAL_STEPS, "Backend")
   ui.output_info(
     "Today yoker supports Ollama as the model-neutral provider. Ollama has a "
@@ -239,17 +460,9 @@ async def step_backend_intro(ui: UIHandler) -> None:
 
 
 async def step_account_check(ui: UIHandler) -> None:
-  """Step 3: 'Do you have an ollama account?'
+  """Step 3 (legacy): 'Do you have an ollama account?'
 
-  No -> PROPOSE opening the getting-started guide in the browser (the user
-  confirms; nothing is forced), wait for the user to return, then resume.
-  The wizard does not abort on "no" — it helps the user get set up. EOF /
-  Ctrl+C at the yes/no or the "press Enter to continue" prompt is an explicit
-  abort.
-
-  The default is "no" since the wizard targets first-time users who typically
-  do not yet have an ollama account; pressing Enter proposes to open the
-  getting-started guide.
+  DEPRECATED: Use step_account_check_provider instead.
   """
   has_account = await _ask_yes_no(ui, "Do you have an ollama account?", default=False)
   if has_account:
@@ -262,19 +475,9 @@ async def step_account_check(ui: UIHandler) -> None:
 
 
 async def step_connection_method(ui: UIHandler) -> ConnectionChoice:
-  """Step 4: split choice — ollama app (no key) vs API key vs abort.
+  """Step 4 (legacy): split choice — ollama app (no key) vs API key vs abort.
 
-  Uses the locked wording from the design doc (app-first, key-second). The
-  recommended option 1 (ollama app) is the default — Enter accepts it.
-
-  If the user chooses the API-key path, the wizard shows the key-creation
-  guide URL and proposes opening it (the user confirms; nothing is forced)
-  before prompting for the key, then waits for the user to return.
-
-  Raises:
-    WizardAbort: When the user sends EOF/Ctrl+C (the wizard no longer offers
-      an explicit abort option; Ctrl+C interrupts at any time), or sends
-      EOF/Ctrl+C while waiting to return from the docs.
+  DEPRECATED: Use step_authentication instead.
   """
   await ui.output_step_title(4, TOTAL_STEPS, "Connection Method")
   ui.output_info(
@@ -286,19 +489,15 @@ async def step_connection_method(ui: UIHandler) -> ConnectionChoice:
   while True:
     raw = await ui.get_input("Choose [1/2] (Enter = 1 app): ")
     if raw is None:
-      # EOF / Ctrl+C: explicit abort, never a silent fall-through to the app.
       raise WizardAbort
     answer = raw.strip()
     if answer == "":
-      # Enter accepts the recommended default (ollama app).
       return ConnectionChoice(use_api_key=False)
     if answer == "1":
       return ConnectionChoice(use_api_key=False)
     if answer == "2":
       break
     ui.output_info("Invalid choice. Enter 1 or 2 (or press Enter for the app).\n")
-  # API-key path: propose opening the key-creation guide (no force), wait,
-  # then prompt for the key.
   await _open_docs_confirmed(
     ui,
     DOCS_GUIDE_API_KEY_URL,
@@ -313,14 +512,12 @@ async def step_connection_method(ui: UIHandler) -> ConnectionChoice:
 
 
 async def step_model_selection(ui: UIHandler, config: Config) -> str:
-  """Step 5: pick a model from the curated list, accept the default, or free text.
+  """Step 5 (legacy): pick a model from the curated list, accept the default, or free text.
 
-  Returns:
-    The chosen model id (never empty — falls back to the default).
-
-  Raises:
-    WizardAbort: When the user sends EOF/Ctrl+C at the main choice prompt.
+  DEPRECATED: Use step_model_selection_provider instead.
   """
+  from yoker.bootstrap.modellist import curated_models, default_model_id
+
   models = curated_models(config)
   default_id = default_model_id(config)
   await ui.output_step_title(5, TOTAL_STEPS, "Model Selection")
@@ -334,7 +531,6 @@ async def step_model_selection(ui: UIHandler, config: Config) -> str:
   while True:
     raw = await ui.get_input(f"Choose [1-{len(models) + 1}] (Enter = default): ")
     if raw is None:
-      # EOF / Ctrl+C: explicit abort.
       raise WizardAbort
     answer = raw.strip()
     if answer == "":
@@ -347,18 +543,19 @@ async def step_model_selection(ui: UIHandler, config: Config) -> str:
       if n == len(models) + 1:
         custom = await ui.get_input("Model id: ")
         if custom is None:
-          # EOF at the free-text prompt: abort rather than silently default.
           raise WizardAbort
         if custom.strip():
           return custom.strip()
         ui.output_info("No model entered; using default.\n")
         return default_id
     ui.output_info("Invalid choice.\n")
-    # Unrecognized: re-ask.
 
 
 async def step_confirm(ui: UIHandler, config_path: Path) -> None:
-  """Step 6: confirm that config was created and yoker is continuing."""
+  """Step 6 (legacy): confirm that config was created and yoker is continuing.
+
+  DEPRECATED: Use step_confirm_provider instead.
+  """
   await ui.output_step_title(6, TOTAL_STEPS, "Configuration Created")
   ui.output_info(
     f"Configuration written to {config_path} (chmod 600).\n"
@@ -375,8 +572,15 @@ __all__ = [
   "DOCS_HOME_URL",
   "TOTAL_STEPS",
   "WizardAbort",
+  # New multi-provider steps
   "step_opening",
   "step_manual",
+  "step_provider_selection",
+  "step_account_check_provider",
+  "step_authentication",
+  "step_model_selection_provider",
+  "step_confirm_provider",
+  # Legacy steps (deprecated but kept for backward compatibility)
   "step_backend_intro",
   "step_account_check",
   "step_connection_method",

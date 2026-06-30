@@ -5,14 +5,14 @@ The wizard is async (yoker is async-first) and consumes a
 ``print()``. In batch / non-interactive mode the wizard is **not**
 instantiated; :mod:`yoker.__main__` emits the approved warning and exits.
 
-Flow (see ``analysis/bootstrap-wizard-design.md``):
+Multi-Provider Flow (see ``analysis/bootstrap-multi-provider-design.md``):
 
   Step 1  opening            — explain yoker, state no config found, ask
                                 guided / manual / visit docs / abort
-  Step 2  backend intro      — Ollama, free tier (no fake choice)
-  Step 3  account check      — no -> propose docs URL (confirm) + wait, resume
-  Step 4  connection method — ollama app (no key) vs API key (masked)
-  Step 5  model selection    — curated list / default / free text
+  Step 2  provider selection — select from available providers
+  Step 3  account check      — provider-specific account check
+  Step 4  authentication     — provider-specific auth (API key vs app)
+  Step 5  model selection    — provider-specific curated models
   Step 6  generate ~/.yoker.toml (chmod 600) and return so __main__ continues
 
 The wizard returns a :class:`BootstrapResult` so ``__main__.py`` can decide
@@ -29,13 +29,13 @@ from typing import Any
 from yoker.bootstrap.steps import (
   ConnectionChoice,
   WizardAbort,
-  step_account_check,
-  step_backend_intro,
-  step_confirm,
-  step_connection_method,
+  step_account_check_provider,
+  step_authentication,
+  step_confirm_provider,
   step_manual,
-  step_model_selection,
+  step_model_selection_provider,
   step_opening,
+  step_provider_selection,
 )
 from yoker.config import Config
 from yoker.config.writer import write_config
@@ -52,8 +52,9 @@ OLLAMA_CLOUD_BASE_URL = "https://api.ollama.com"
 
 
 def build_bootstrap_overrides(
+  provider: str,
   model: str,
-  connection: ConnectionChoice,
+  connection: ConnectionChoice | None = None,
 ) -> dict[str, Any]:
   """Build the override dict passed to :func:`write_config` from wizard choices.
 
@@ -61,24 +62,29 @@ def build_bootstrap_overrides(
   the wizard's UI flow.
 
   Args:
+    provider: The provider identifier ('ollama', 'openai', 'anthropic', 'gemini').
     model: The chosen model id.
-    connection: The Step 4 connection-method result.
+    connection: The authentication result (may have API key).
 
   Returns:
-    A flat dotted-key override dict. Always sets
-    ``backend.ollama.model``. When the user chose the API-key path with a
-    non-empty key, also sets ``backend.ollama.api_key`` AND
-    ``backend.ollama.base_url`` to the Ollama cloud endpoint — the user
-    picked the API key because they don't run the local proxy/app, so the
-    connection should go straight to the cloud.
+    A flat dotted-key override dict. Always sets ``backend.provider`` and
+    ``backend.<provider>.model``. When an API key is provided, also sets
+    ``backend.<provider>.api_key``. For Ollama API-key path, also sets
+    ``backend.ollama.base_url`` to the cloud endpoint.
   """
-  overrides: dict[str, Any] = {"backend.ollama.model": model}
-  if connection.use_api_key and connection.api_key:
-    # API key is stored ONLY in ~/.yoker.toml; writer sets chmod 600.
-    overrides["backend.ollama.api_key"] = connection.api_key
-    # Bypass the local app/proxy (which the user does not run) and connect
-    # straight to Ollama's cloud API.
-    overrides["backend.ollama.base_url"] = OLLAMA_CLOUD_BASE_URL
+  overrides: dict[str, Any] = {
+    "backend.provider": provider,
+    f"backend.{provider}.model": model,
+  }
+
+  if connection and connection.use_api_key and connection.api_key:
+    # Store API key in config
+    overrides[f"backend.{provider}.api_key"] = connection.api_key
+
+    # For Ollama API-key path: point base_url to cloud endpoint
+    if provider == "ollama":
+      overrides["backend.ollama.base_url"] = OLLAMA_CLOUD_BASE_URL
+
   return overrides
 
 
@@ -145,20 +151,20 @@ class BootstrapWizard:
         await step_manual(self._ui, self._config, self._config_path)
         return BootstrapResult.MANUAL
 
-      # Step 2 — backend intro (Ollama, free tier; no choice).
-      await step_backend_intro(self._ui)
+      # Step 2 — provider selection (Ollama, OpenAI, Anthropic, Gemini)
+      provider = await step_provider_selection(self._ui)
 
-      # Step 3 — ollama account check (may propose to open the docs, then resume).
-      await step_account_check(self._ui)
+      # Step 3 — provider-specific account check
+      await step_account_check_provider(self._ui, provider)
 
-      # Step 4 — connection method (app vs API key vs abort).
-      connection = await step_connection_method(self._ui)
+      # Step 4 — provider-specific authentication
+      connection = await step_authentication(self._ui, provider)
 
-      # Step 5 — model selection (curated list / default / free text).
-      model = await step_model_selection(self._ui, self._config)
+      # Step 5 — model selection from provider's curated list
+      model = await step_model_selection_provider(self._ui, provider)
 
       # Step 6 — render ~/.yoker.toml with the collected overrides and write it.
-      overrides = build_bootstrap_overrides(model, connection)
+      overrides = build_bootstrap_overrides(provider.id, model, connection)
       try:
         write_config(self._config, self._config_path, overrides=overrides)
       except OSError as e:
@@ -170,7 +176,7 @@ class BootstrapWizard:
         )
         return BootstrapResult.MANUAL
 
-      await step_confirm(self._ui, self._config_path)
+      await step_confirm_provider(self._ui, provider, model, self._config_path)
       return BootstrapResult.WRITTEN
     except (WizardAbort, KeyboardInterrupt):
       # Clean abort: never a silent fall-through to manual setup. No file is
