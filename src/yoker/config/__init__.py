@@ -179,7 +179,6 @@ class BackendConfig:
     if sub_config is None:
       return {}
 
-    # Flatten dataclass to dict
     d = asdict(sub_config)
 
     # Filter None values for cleaner kwargs

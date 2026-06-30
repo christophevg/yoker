@@ -6,7 +6,7 @@ Asynchronous Agent implementation for Yoker.
 
 import inspect
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from dotenv import load_dotenv
 from structlog import get_logger
@@ -26,7 +26,7 @@ from yoker.agents import (
 )
 from yoker.backends import ModelBackend, create_backend
 from yoker.builtin import make_agent_tool, make_skill_tool
-from yoker.config import Config, ProviderConfig, get_yoker_config
+from yoker.config import Config, get_yoker_config
 from yoker.context import ContextManager
 from yoker.context.basic import SimpleContextManager
 from yoker.events import EventCallback
@@ -371,9 +371,13 @@ class Agent:
       return self.definition.model
 
     # Read from the active provider's config using the generic property
-    # Validation happens in BackendConfig.__post_init__()
-    # Type assertion: config is guaranteed non-None for known providers
-    sub_config = cast(ProviderConfig, self.config.backend.config)
+    sub_config = self.config.backend.config
+    if sub_config is None:
+      raise ValueError(
+        f"No model specified and no config for provider '{self.config.backend.provider}'. "
+        "Either specify a model in the agent definition or configure the provider."
+      )
+
     model = sub_config.model
     logger.info("model from config", model=model, provider=self.config.backend.provider)
     return model

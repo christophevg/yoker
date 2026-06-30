@@ -9,6 +9,7 @@ import pytest
 
 from yoker.agent import Agent
 from yoker.backends import ChatChunk
+from yoker.config import Config
 from yoker.exceptions import NetworkError
 
 
@@ -47,7 +48,7 @@ class TestAgentNetworkErrors:
   @pytest.mark.asyncio
   async def test_agent_raises_network_error_on_remote_protocol_error(self) -> None:
     """Test that RemoteProtocolError is converted to NetworkError."""
-    agent = Agent()
+    agent = Agent(config=Config())
 
     # Mock the backend's chat_stream to raise RemoteProtocolError
     async def raise_error(*args: Any, **kwargs: Any) -> AsyncIterator[ChatChunk]:
@@ -67,7 +68,7 @@ class TestAgentNetworkErrors:
   @pytest.mark.asyncio
   async def test_agent_raises_network_error_on_connect_error(self) -> None:
     """Test that ConnectError is converted to NetworkError."""
-    agent = Agent()
+    agent = Agent(config=Config())
 
     async def raise_error(*args: Any, **kwargs: Any) -> AsyncIterator[ChatChunk]:
       raise httpx.ConnectError("Connection refused")
@@ -83,7 +84,7 @@ class TestAgentNetworkErrors:
   @pytest.mark.asyncio
   async def test_agent_raises_network_error_on_read_timeout(self) -> None:
     """Test that ReadTimeout is converted to NetworkError."""
-    agent = Agent()
+    agent = Agent(config=Config())
 
     async def raise_error(*args: Any, **kwargs: Any) -> AsyncIterator[ChatChunk]:
       raise httpx.ReadTimeout("Read timed out")
@@ -99,7 +100,7 @@ class TestAgentNetworkErrors:
   @pytest.mark.asyncio
   async def test_agent_raises_network_error_on_connect_timeout(self) -> None:
     """Test that ConnectTimeout is converted to NetworkError."""
-    agent = Agent()
+    agent = Agent(config=Config())
 
     async def raise_error(*args: Any, **kwargs: Any) -> AsyncIterator[ChatChunk]:
       raise httpx.ConnectTimeout("Connection timed out")
@@ -115,7 +116,7 @@ class TestAgentNetworkErrors:
   @pytest.mark.asyncio
   async def test_agent_context_preserved_on_network_error(self) -> None:
     """Test that context state is preserved when NetworkError is raised."""
-    agent = Agent()
+    agent = Agent(config=Config())
     initial_message_count = len(agent.context.get_messages())
 
     async def raise_error(*args: Any, **kwargs: Any) -> AsyncIterator[ChatChunk]:
