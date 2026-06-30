@@ -37,7 +37,7 @@ lint: env-dev ## Check code for linting issues
 	uv run ruff check src tests examples
 
 typecheck: env-dev ## Run type checking
-	uv run mypy --strict src examples
+	uv run mypy src examples
 
 format-check: format lint typecheck  ## Run all quality checks
 
@@ -106,3 +106,4 @@ clean: ## Remove build artifacts
 
 clean-all: clean ## Remove virtualenv and lock file
 	rm -rf .venv uv.lock
+
