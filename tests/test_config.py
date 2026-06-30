@@ -42,7 +42,7 @@ class TestConfigSchema:
     """Test OllamaConfig default values."""
     config = OllamaConfig()
     assert config.base_url == "http://localhost:11434"
-    assert config.model == "gemini-3-flash-preview:cloud"
+    assert config.model == "llama3.2:3b"
     assert config.timeout_seconds == 60
 
   def test_config_defaults(self) -> None:
@@ -50,7 +50,7 @@ class TestConfigSchema:
     config = Config()
     assert config.harness.name == "yoker"
     assert config.backend.provider == "ollama"
-    assert config.backend.ollama.model == "gemini-3-flash-preview:cloud"
+    assert config.backend.ollama.model == "llama3.2:3b"
     assert config.context.manager == "basic_persistence"
     assert config.permissions.network_access == "none"
     assert config.permissions.filesystem_paths == (".",)
@@ -85,15 +85,15 @@ class TestConfigSchema:
     with pytest.raises(AttributeError):
       config.name = "changed"  # type: ignore
 
-  def test_default_model_is_gemini_cloud(self) -> None:
-    """The default model is the frictionless cloud model, defined once.
+  def test_default_model_is_llama(self) -> None:
+    """The default model is defined once.
 
     Per MBI-002 task 2.0, the default model lives in exactly one place:
     ``OllamaConfig.model``. This test locks that value so unintended changes
     are caught.
     """
-    assert OllamaConfig().model == "gemini-3-flash-preview:cloud"
-    assert Config().backend.ollama.model == "gemini-3-flash-preview:cloud"
+    assert OllamaConfig().model == "llama3.2:3b"
+    assert Config().backend.ollama.model == "llama3.2:3b"
 
 
 class TestConfigValidation:
