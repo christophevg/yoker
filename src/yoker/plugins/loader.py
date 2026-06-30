@@ -275,7 +275,7 @@ def _filter_enabled_tools(
 
     # WebSearch and WebFetch require API key
     if tool_name in api_key_required_tools:
-      if not config.backend.ollama.api_key:
+      if not config.backend.config.api_key:
         logger.info(
           "tool_disabled_no_api_key",
           tool=tool_name,
@@ -307,3 +307,5 @@ __all__ = [
   "load_skills_from_package",
   "load_agents_from_package",
 ]
+
+
