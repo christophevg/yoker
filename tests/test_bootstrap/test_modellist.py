@@ -4,9 +4,18 @@ Pure-logic tests covering the single-source-of-truth guarantee
 (:func:`default_model_id`) and the UX-critical guarantee that the default
 entry is first in :func:`curated_models`. Also covers the note-derivation
 convention (cloud vs local) introduced by the round-1 review fix.
+
+Extended for multi-provider support.
 """
 
-from yoker.bootstrap.modellist import _note_for, curated_models, default_model_id
+from yoker.bootstrap.modellist import (
+  _note_for,
+  curated_models,
+  curated_models_for_provider,
+  default_model_for_provider,
+  default_model_id,
+)
+from yoker.bootstrap.providers import get_default_model
 from yoker.config import Config
 
 
@@ -55,3 +64,36 @@ class TestNoteDerivation:
       assert "cloud" in default_entry.note
     else:
       assert default_entry.note == "local model"
+
+
+class TestProviderModelLists:
+  """Provider-specific model list functions."""
+
+  def test_curated_models_for_ollama(self) -> None:
+    """Ollama provider has curated models."""
+    models = curated_models_for_provider("ollama")
+    assert len(models) > 0
+    assert models[0].model_id == default_model_for_provider("ollama")
+
+  def test_curated_models_for_openai(self) -> None:
+    """OpenAI provider has curated models."""
+    models = curated_models_for_provider("openai")
+    assert len(models) > 0
+    assert models[0].model_id == "gpt-4o-mini"
+
+  def test_curated_models_for_anthropic(self) -> None:
+    """Anthropic provider has curated models."""
+    models = curated_models_for_provider("anthropic")
+    assert len(models) > 0
+    assert models[0].model_id == "claude-3-5-sonnet-20241022"
+
+  def test_curated_models_for_gemini(self) -> None:
+    """Gemini provider has curated models."""
+    models = curated_models_for_provider("gemini")
+    assert len(models) > 0
+    assert models[0].model_id == "gemini-1.5-flash"
+
+  def test_default_model_matches_provider_registry(self) -> None:
+    """Default model for provider matches the provider registry."""
+    for provider_id in ["ollama", "openai", "anthropic", "gemini"]:
+      assert default_model_for_provider(provider_id) == get_default_model(provider_id)

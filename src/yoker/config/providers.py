@@ -104,10 +104,19 @@ class OllamaConfig:
   # Default base URLs for Ollama (localhost and cloud)
   DEFAULT_BASE_URLS: ClassVar[list[str] | None] = ["http://localhost:11434", "https://ollama.com"]
 
-  base_url: str = "http://localhost:11434"
+  base_url: str = field(
+    default="http://localhost:11434",
+    metadata={"help": "URL of the Ollama API server"},
+  )
   api_key: str | None = field(default=None, metadata={"cli": False})
-  model: str = "llama3.2:latest"
-  timeout_seconds: int = 60
+  model: str = field(
+    default="gemini-3-flash-preview:cloud",
+    metadata={"help": "Default model to use"},
+  )
+  timeout_seconds: int = field(
+    default=60,
+    metadata={"help": "Request timeout in seconds"},
+  )
   parameters: OllamaParameters = field(default_factory=OllamaParameters)
 
   def __post_init__(self) -> None:

@@ -9,12 +9,16 @@ first-install UX (typically nothing pulled yet). See
 The default model is read from :class:`yoker.config.Config` so this module
 never hardcodes the default literal — there is exactly one source of truth
 (``OllamaConfig.model``).
+
+For multi-provider support, this module also provides provider-specific model
+lists from the ProviderInfo registry.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
+from yoker.bootstrap.providers import get_curated_models, get_default_model
 from yoker.config import Config
 
 
@@ -106,4 +110,45 @@ def curated_models(config: Config | None = None) -> list[CuratedModel]:
   ]
 
 
-__all__ = ["CuratedModel", "curated_models", "default_model_id"]
+def curated_models_for_provider(provider_id: str) -> list[CuratedModel]:
+  """Return curated models for a specific provider.
+
+  Converts provider CuratedModel entries to the legacy CuratedModel type
+  for backward compatibility with the wizard.
+
+  Args:
+    provider_id: Provider identifier ('ollama', 'openai', etc.)
+
+  Returns:
+    List of CuratedModel entries for the provider.
+  """
+  provider_models = get_curated_models(provider_id)
+  return [
+    CuratedModel(
+      model_id=m.model_id,
+      label=m.label,
+      note=m.note,
+    )
+    for m in provider_models
+  ]
+
+
+def default_model_for_provider(provider_id: str) -> str:
+  """Return the default model for a specific provider.
+
+  Args:
+    provider_id: Provider identifier.
+
+  Returns:
+    Default model id for the provider.
+  """
+  return get_default_model(provider_id)
+
+
+__all__ = [
+  "CuratedModel",
+  "curated_models",
+  "default_model_id",
+  "curated_models_for_provider",
+  "default_model_for_provider",
+]
