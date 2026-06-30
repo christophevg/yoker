@@ -33,7 +33,7 @@ class TestRenderBasics:
     # A few sanity checks on the parsed structure.
     assert parsed["backend"]["provider"] == "ollama"
     assert parsed["backend"]["ollama"]["base_url"] == "http://localhost:11434"
-    assert parsed["backend"]["ollama"]["model"] == "gemini-3-flash-preview:cloud"
+    assert parsed["backend"]["ollama"]["model"] == "llama3.2:3b"
 
   def test_render_ends_with_newline(self) -> None:
     assert render_config_toml(Config()).endswith("\n")
@@ -147,7 +147,7 @@ class TestWriteConfig:
     write_config(Config(), dest)
     assert dest.exists()
     parsed = tomllib.loads(dest.read_text(encoding="utf-8"))
-    assert parsed["backend"]["ollama"]["model"] == "gemini-3-flash-preview:cloud"
+    assert parsed["backend"]["ollama"]["model"] == "llama3.2:3b"
 
   def test_write_applies_chmod_600(self, tmp_path: Path) -> None:
     dest = tmp_path / "yoker.toml"

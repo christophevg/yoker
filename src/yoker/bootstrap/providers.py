@@ -77,27 +77,27 @@ PROVIDERS: dict[str, ProviderInfo] = {
     docs_guide_url=f"{DOCS_BASE_URL}/getting-started-with-ollama.html",
     curated_models=[
       CuratedModel(
-        model_id="gemini-3-flash-preview:cloud",
-        label="Gemini 3 Flash Preview (default)",
-        note="cloud model, no local download needed",
-      ),
-      CuratedModel(
-        model_id="gpt-oss:20b",
-        label="gpt-oss:20b",
-        note="cloud model, larger reasoning model",
+        model_id="llama3.2:3b",
+        label="Llama 3.2 3B (default)",
+        note="fast local model, good for most tasks",
       ),
       CuratedModel(
         model_id="llama3.1:8b",
         label="Llama 3.1 8B",
-        note="local model, requires `ollama pull llama3.1:8b`",
+        note="larger local model, better quality",
       ),
       CuratedModel(
         model_id="qwen2.5:7b",
         label="Qwen 2.5 7B",
-        note="local model, requires `ollama pull qwen2.5:7b`",
+        note="local model, strong coding abilities",
+      ),
+      CuratedModel(
+        model_id="gemma2:9b",
+        label="Gemma 2 9B",
+        note="local model, efficient and capable",
       ),
     ],
-    default_model="gemini-3-flash-preview:cloud",
+    default_model="llama3.2:3b",
   ),
   "openai": ProviderInfo(
     id="openai",
@@ -163,7 +163,7 @@ PROVIDERS: dict[str, ProviderInfo] = {
   "gemini": ProviderInfo(
     id="gemini",
     display_name="Google Gemini",
-    description="Gemini models via Google AI API",
+    description="Gemini models via Google AI API (free tier available, works with your Google account)",
     requires_api_key=True,
     has_local_app=False,
     account_url=f"{DOCS_BASE_URL}/getting-started-with-gemini.html#account",
@@ -171,22 +171,27 @@ PROVIDERS: dict[str, ProviderInfo] = {
     docs_guide_url=f"{DOCS_BASE_URL}/getting-started-with-gemini.html",
     curated_models=[
       CuratedModel(
-        model_id="gemini-1.5-flash",
-        label="Gemini 1.5 Flash (default)",
+        model_id="gemini-2.5-flash",
+        label="Gemini 2.5 Flash (default)",
+        note="latest fast model, recommended",
+      ),
+      CuratedModel(
+        model_id="gemini-2.0-flash",
+        label="Gemini 2.0 Flash",
         note="fast and efficient",
+      ),
+      CuratedModel(
+        model_id="gemini-1.5-flash",
+        label="Gemini 1.5 Flash",
+        note="previous generation fast model",
       ),
       CuratedModel(
         model_id="gemini-1.5-pro",
         label="Gemini 1.5 Pro",
         note="balanced performance",
       ),
-      CuratedModel(
-        model_id="gemini-2.0-flash-exp",
-        label="Gemini 2.0 Flash",
-        note="experimental",
-      ),
     ],
-    default_model="gemini-1.5-flash",
+    default_model="gemini-2.5-flash",
   ),
 }
 

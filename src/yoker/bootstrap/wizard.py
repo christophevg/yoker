@@ -38,6 +38,11 @@ from yoker.bootstrap.steps import (
   step_provider_selection,
 )
 from yoker.config import Config
+from yoker.config.providers import (
+  AnthropicConfig,
+  GeminiConfig,
+  OpenAIConfig,
+)
 from yoker.config.writer import write_config
 from yoker.ui.handler import UIHandler
 
@@ -68,14 +73,26 @@ def build_bootstrap_overrides(
 
   Returns:
     A flat dotted-key override dict. Always sets ``backend.provider`` and
-    ``backend.<provider>.model``. When an API key is provided, also sets
+    ``backend.<provider>.model``. When switching to a new provider, initializes
+    the provider config section. When an API key is provided, also sets
     ``backend.<provider>.api_key``. For Ollama API-key path, also sets
     ``backend.ollama.base_url`` to the cloud endpoint.
   """
   overrides: dict[str, Any] = {
     "backend.provider": provider,
-    f"backend.{provider}.model": model,
   }
+
+  # Initialize provider config for non-Ollama providers (Ollama has default factory)
+  if provider == "openai":
+    overrides["backend.openai"] = OpenAIConfig()
+  elif provider == "anthropic":
+    overrides["backend.anthropic"] = AnthropicConfig()
+  elif provider == "gemini":
+    overrides["backend.gemini"] = GeminiConfig()
+  # Ollama has default_factory in BackendConfig, so no need to initialize
+
+  # Set the model for the provider
+  overrides[f"backend.{provider}.model"] = model
 
   if connection and connection.use_api_key and connection.api_key:
     # Store API key in config

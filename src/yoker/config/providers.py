@@ -110,7 +110,7 @@ class OllamaConfig:
   )
   api_key: str | None = field(default=None, metadata={"cli": False})
   model: str = field(
-    default="gemini-3-flash-preview:cloud",
+    default="llama3.2:3b",
     metadata={"help": "Default model to use"},
   )
   timeout_seconds: int = field(
@@ -350,7 +350,7 @@ class GeminiConfig:
   DEFAULT_BASE_URLS: None = None
 
   api_key: str | None = field(default=None, metadata={"cli": False})
-  model: str = "gemini-1.5-flash"
+  model: str = "gemini-2.5-flash"
   base_url: str | None = None
   timeout_seconds: int = 60
   parameters: GeminiParameters = field(default_factory=GeminiParameters)

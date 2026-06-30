@@ -46,24 +46,20 @@ class TestCuratedModels:
 
 
 class TestNoteDerivation:
-  """Note convention: cloud vs local, derived from the model id."""
+  """Note convention: local models require pull command."""
 
-  def test_cloud_note_for_cloud_id(self) -> None:
-    """Ids ending in ``:cloud`` get the cloud note."""
-    assert "cloud" in _note_for("gemini-3-flash-preview:cloud")
-
-  def test_local_note_for_non_cloud_id(self) -> None:
-    """Other ids get the local note."""
-    assert _note_for("llama3.1:8b") == "local model"
+  def test_local_note_includes_pull_command(self) -> None:
+    """Local model notes include the pull command."""
+    note = _note_for("llama3.1:8b")
+    assert "local model" in note
+    assert "ollama pull llama3.1:8b" in note
 
   def test_default_entry_note_matches_convention(self) -> None:
-    """The default entry's note is consistent with the default id."""
+    """The default entry's note includes the pull command."""
     default_id = default_model_id()
     default_entry = curated_models()[0]
-    if default_id.endswith(":cloud"):
-      assert "cloud" in default_entry.note
-    else:
-      assert default_entry.note == "local model"
+    assert "local model" in default_entry.note
+    assert f"ollama pull {default_id}" in default_entry.note
 
 
 class TestProviderModelLists:
@@ -91,7 +87,7 @@ class TestProviderModelLists:
     """Gemini provider has curated models."""
     models = curated_models_for_provider("gemini")
     assert len(models) > 0
-    assert models[0].model_id == "gemini-1.5-flash"
+    assert models[0].model_id == "gemini-2.5-flash"
 
   def test_default_model_matches_provider_registry(self) -> None:
     """Default model for provider matches the provider registry."""
