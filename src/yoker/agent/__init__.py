@@ -371,10 +371,9 @@ class Agent:
       return self.definition.model
 
     # Read from the active provider's config using the generic property
-    # Validation happens at BackendConfig construction time, so config is guaranteed non-None
     sub_config = self.config.backend.config
-    # Type assertion: validation at construction guarantees non-None for known providers
-    assert sub_config is not None, "Provider config validated at construction"
+    if sub_config is None:
+      raise RuntimeError(f"No config for provider '{self.config.backend.provider}'")
     model = sub_config.model
     logger.info("model from config", model=model, provider=self.config.backend.provider)
     return model
@@ -382,58 +381,16 @@ class Agent:
   def _create_tool_backends(self) -> dict[str, Any]:
     """Create tool backends for web tools.
 
-    Populates the ``_tool_backends`` dict used by the ``websearch`` and
-    ``webfetch`` tools. Backends are only populated when:
-    - The configured provider is ``ollama`` (the only supported web-tool provider).
-    - An Ollama API key is configured.
-    - The corresponding tool is enabled in config.
+    Delegates to the backend's create_tool_backends() method if available.
 
     Returns:
       A dict mapping tool names to backend instances. May be empty.
     """
     backends: dict[str, Any] = {}
 
-    # Web tools only work with Ollama
-    if self.config.backend.provider != "ollama":
-      return backends
-
-    # Use the generic config property
-    sub_config = self.config.backend.config
-    if sub_config is None:
-      return backends
-
-    # Access api_key through the config
-    api_key = getattr(sub_config, "api_key", None)
-    if not api_key:
-      return backends
-
-    # Extract the Ollama client from the backend for web tools
-    # The OllamaBackend wraps the AsyncClient
-    from yoker.backends.ollama import OllamaBackend
-
-    if not isinstance(self._backend, OllamaBackend):
-      return backends
-
-    client = self._backend._client
-
-    if self.config.tools.websearch.enabled:
-      from yoker.tools.web import OllamaWebSearchBackend
-
-      backends["websearch"] = OllamaWebSearchBackend(
-        async_client=client,
-        timeout_seconds=self.config.tools.websearch.timeout_seconds,
-      )
-      logger.info("web_search_backend_populated", backend="ollama")
-
-    if self.config.tools.webfetch.enabled:
-      from yoker.tools.web import OllamaWebFetchBackend
-
-      backends["webfetch"] = OllamaWebFetchBackend(
-        async_client=client,
-        timeout_seconds=self.config.tools.webfetch.timeout_seconds,
-        max_size_kb=self.config.tools.webfetch.max_size_kb,
-      )
-      logger.info("web_fetch_backend_populated", backend="ollama")
+    # Delegate to backend if it supports tool backends
+    if hasattr(self._backend, "create_tool_backends"):
+      backends = self._backend.create_tool_backends()  # type: ignore
 
     return backends
 

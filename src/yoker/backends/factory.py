@@ -52,26 +52,19 @@ def create_backend(config: Config, interactive: bool | None = None) -> "ModelBac
     ConfigurationError: If provider is unknown or not configured.
     TrustBoundaryError: If custom base_url is not allowed in batch mode.
   """
-  # Auto-detect interactive mode
+  # Auto-detect interactive mode from environment
   if interactive is None:
-    # Interactive if YOKER_DEV_MODE is set (takes priority)
-    # Otherwise, interactive if not in pytest
-    if os.environ.get("YOKER_DEV_MODE") == "1":
-      interactive = True
-    elif os.environ.get("PYTEST_CURRENT_TEST"):
-      interactive = False
-    else:
-      interactive = True
+    interactive = (
+      os.environ.get("YOKER_DEV_MODE") == "1"
+      or not os.environ.get("PYTEST_CURRENT_TEST")
+    )
 
   # Validate base_url trust boundary (all providers)
   validate_base_url_trust(config.backend, interactive=interactive)
 
   if config.backend.provider == "ollama":
-    # Ollama uses native SDK for full features (web tools, native stats)
     return OllamaBackend(config)
 
-  # All other providers use LitellmBackend
-  # litellm supports 100+ providers: OpenAI, Anthropic, Azure, Google, etc.
   return LitellmBackend(config)
 
 

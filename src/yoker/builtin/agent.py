@@ -142,29 +142,16 @@ def _create_subagent(parent_agent: "Agent | None", agent_definition: "AgentDefin
   parent_config = parent_agent.config if parent_agent else None
 
   config: Config | None = None
-  if model is not None:
-    if parent_config is not None:
-      # Inline with_model logic: create provider-agnostic config copy with model override
-      # Validation happens at BackendConfig construction time, so config is guaranteed non-None
-      sub_config = parent_config.backend.config
-      # Type assertion: validation at construction guarantees non-None for known providers
-      assert sub_config is not None, "Provider config validated at construction"
+  if model is not None and parent_config is not None:
+    # Create provider-agnostic config copy with model override
+    sub_config = parent_config.backend.config
+    if sub_config is None:
+      raise RuntimeError(f"No config for provider '{parent_config.backend.provider}'")
 
-      # Override model on the sub-config
-      new_sub_config = replace(sub_config, model=model)
-
-      # Create new BackendConfig with updated sub-config
-      # Use generic provider-agnostic approach with getattr/setattr pattern
-      provider = parent_config.backend.provider
-      backend = replace(parent_config.backend, **{provider: new_sub_config})  # type: ignore[arg-type]
-
-      config = replace(
-        parent_config,
-        backend=backend,
-      )
-    else:
-      # This should not happen in practice - parent_agent is validated earlier
-      raise RuntimeError("parent_config is None when model is specified - this should not happen")
+    new_sub_config = replace(sub_config, model=model)
+    provider = parent_config.backend.provider
+    backend = replace(parent_config.backend, **{provider: new_sub_config})  # type: ignore[arg-type]
+    config = replace(parent_config, backend=backend)
   else:
     config = parent_config
 
@@ -177,10 +164,9 @@ def _create_subagent(parent_agent: "Agent | None", agent_definition: "AgentDefin
   # Get model from the active provider's config for logging
   active_model = model
   if active_model is None and config:
-    # Validation happens at BackendConfig construction time, so config is guaranteed non-None
     sub_config = config.backend.config
-    # Type assertion: validation at construction guarantees non-None for known providers
-    assert sub_config is not None, "Provider config validated at construction"
+    if sub_config is None:
+      raise RuntimeError(f"No config for provider '{config.backend.provider}'")
     active_model = sub_config.model
 
   logger.info(
