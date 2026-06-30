@@ -14,9 +14,10 @@ Validation modes:
   - Batch mode: Terminate unless YOKER_ALLOW_CUSTOM_BASE_URL=1 is set
 
 Default base URLs (no validation required):
-  - Ollama: http://localhost:11434
-  - OpenAI: https://api.openai.com/v1 (None in config = use default)
-  - Anthropic: https://api.anthropic.com/v1 (None in config = use default)
+  - Ollama: http://localhost:11434, https://ollama.com
+  - OpenAI: use provider SDK default (None in config)
+  - Anthropic: use provider SDK default (None in config)
+  - Gemini: use provider SDK default (None in config)
 """
 
 import os
@@ -25,13 +26,6 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
   from yoker.config import BackendConfig
-
-# Default base URLs for each provider
-DEFAULT_BASE_URLS = {
-  "ollama": "http://localhost:11434",
-  "openai": None,  # None means use provider SDK default
-  "anthropic": None,  # None means use provider SDK default
-}
 
 # Environment variable to allow custom base URLs in batch mode
 ENV_ALLOW_CUSTOM_BASE_URL = "YOKER_ALLOW_CUSTOM_BASE_URL"
@@ -57,23 +51,19 @@ def is_custom_base_url(backend_config: "BackendConfig") -> bool:
   if sub_config is None:
     return False
 
-  # Check if the config has a base_url attribute
-  if not hasattr(sub_config, "base_url"):
-    return False
-
   base_url = sub_config.base_url
   if base_url is None:
     return False
 
-  # Get the default URL for this provider
-  default = DEFAULT_BASE_URLS.get(backend_config.provider)
+  # Get default URLs from the provider config class
+  default_urls = getattr(type(sub_config), "DEFAULT_BASE_URLS", None)
 
-  # For providers with None default (OpenAI, Anthropic), any non-None base_url is custom
-  if default is None:
+  # For providers with None default (OpenAI, Anthropic, Gemini), any non-None base_url is custom
+  if default_urls is None:
     return True
 
-  # For providers with known defaults (Ollama), check if it differs
-  return base_url != default
+  # For providers with known defaults (Ollama), check if it differs from any default
+  return base_url not in default_urls
 
 
 def validate_base_url_trust(backend_config: "BackendConfig", interactive: bool = True) -> None:
@@ -144,19 +134,17 @@ def _get_base_url(backend_config: "BackendConfig") -> str | None:
   Returns:
     Configured base_url or None if using default.
   """
-  # Get the active provider's config
   sub_config = backend_config.config
   if sub_config is None:
     return None
 
-  # Return base_url if the config has this attribute
-  return getattr(sub_config, "base_url", None)
+  # All provider configs have base_url attribute
+  return sub_config.base_url
 
 
 __all__ = [
   "TrustBoundaryError",
   "validate_base_url_trust",
   "is_custom_base_url",
-  "DEFAULT_BASE_URLS",
   "ENV_ALLOW_CUSTOM_BASE_URL",
 ]

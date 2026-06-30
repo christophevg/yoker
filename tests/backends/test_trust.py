@@ -6,7 +6,6 @@ from unittest.mock import patch
 import pytest
 
 from yoker.backends.trust import (
-  DEFAULT_BASE_URLS,
   TrustBoundaryError,
   is_custom_base_url,
   validate_base_url_trust,
@@ -14,6 +13,7 @@ from yoker.backends.trust import (
 from yoker.config import (
   AnthropicConfig,
   BackendConfig,
+  GeminiConfig,
   OllamaConfig,
   OpenAIConfig,
 )
@@ -22,11 +22,19 @@ from yoker.config import (
 class TestIsCustomBaseUrl:
   """Tests for is_custom_base_url function."""
 
-  def test_ollama_default_url(self) -> None:
-    """Test Ollama default URL is not custom."""
+  def test_ollama_default_url_localhost(self) -> None:
+    """Test Ollama default URL (localhost) is not custom."""
     backend = BackendConfig(
       provider="ollama",
       ollama=OllamaConfig(base_url="http://localhost:11434"),
+    )
+    assert not is_custom_base_url(backend)
+
+  def test_ollama_default_url_ollama_com(self) -> None:
+    """Test Ollama default URL (ollama.com) is not custom."""
+    backend = BackendConfig(
+      provider="ollama",
+      ollama=OllamaConfig(base_url="https://ollama.com"),
     )
     assert not is_custom_base_url(backend)
 
@@ -67,6 +75,22 @@ class TestIsCustomBaseUrl:
     backend = BackendConfig(
       provider="anthropic",
       anthropic=AnthropicConfig(api_key="test", base_url="https://custom.anthropic.com/v1"),
+    )
+    assert is_custom_base_url(backend)
+
+  def test_gemini_default_url(self) -> None:
+    """Test Gemini default URL (None) is not custom."""
+    backend = BackendConfig(
+      provider="gemini",
+      gemini=GeminiConfig(api_key="test", base_url=None),
+    )
+    assert not is_custom_base_url(backend)
+
+  def test_gemini_custom_url(self) -> None:
+    """Test Gemini custom URL is detected."""
+    backend = BackendConfig(
+      provider="gemini",
+      gemini=GeminiConfig(api_key="test", base_url="https://custom.gemini.com/v1"),
     )
     assert is_custom_base_url(backend)
 
@@ -160,16 +184,20 @@ class TestValidateBaseUrlTrust:
 
 
 class TestDefaultBaseUrls:
-  """Tests for DEFAULT_BASE_URLS constant."""
+  """Tests for DEFAULT_BASE_URLS class variable on provider configs."""
 
-  def test_ollama_default(self) -> None:
-    """Test Ollama default URL."""
-    assert DEFAULT_BASE_URLS["ollama"] == "http://localhost:11434"
+  def test_ollama_defaults(self) -> None:
+    """Test Ollama has multiple default URLs."""
+    assert OllamaConfig.DEFAULT_BASE_URLS == ["http://localhost:11434", "https://ollama.com"]
 
   def test_openai_default(self) -> None:
     """Test OpenAI default URL is None."""
-    assert DEFAULT_BASE_URLS["openai"] is None
+    assert OpenAIConfig.DEFAULT_BASE_URLS is None
 
   def test_anthropic_default(self) -> None:
     """Test Anthropic default URL is None."""
-    assert DEFAULT_BASE_URLS["anthropic"] is None
+    assert AnthropicConfig.DEFAULT_BASE_URLS is None
+
+  def test_gemini_default(self) -> None:
+    """Test Gemini default URL is None."""
+    assert GeminiConfig.DEFAULT_BASE_URLS is None

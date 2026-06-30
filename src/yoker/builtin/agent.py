@@ -145,10 +145,10 @@ def _create_subagent(parent_agent: "Agent | None", agent_definition: "AgentDefin
   if model is not None:
     if parent_config is not None:
       # Inline with_model logic: create provider-agnostic config copy with model override
-      # Get the active provider's config using the generic property
+      # Validation happens at BackendConfig construction time, so config is guaranteed non-None
       sub_config = parent_config.backend.config
-      if sub_config is None:
-        raise ValueError(f"No config for provider: {parent_config.backend.provider}")
+      # Type assertion: validation at construction guarantees non-None for known providers
+      assert sub_config is not None, "Provider config validated at construction"
 
       # Override model on the sub-config
       new_sub_config = replace(sub_config, model=model)
@@ -177,12 +177,11 @@ def _create_subagent(parent_agent: "Agent | None", agent_definition: "AgentDefin
   # Get model from the active provider's config for logging
   active_model = model
   if active_model is None and config:
-    # Use the generic config property
+    # Validation happens at BackendConfig construction time, so config is guaranteed non-None
     sub_config = config.backend.config
-    if sub_config is not None:
-      active_model = sub_config.model
-    else:
-      active_model = "default"
+    # Type assertion: validation at construction guarantees non-None for known providers
+    assert sub_config is not None, "Provider config validated at construction"
+    active_model = sub_config.model
 
   logger.info(
     "subagent_created",
