@@ -61,10 +61,8 @@ class OllamaBackend(ModelBackend):
     logger = get_logger(__name__)
     backends: dict[str, Any] = {}
 
-    # Get Ollama config
-    ollama_config = self.config.backend.config
-    if ollama_config is None:
-      return backends
+    # Get Ollama config (validation guarantees non-None when provider='ollama')
+    ollama_config = cast("OllamaConfig", self.config.backend.config)
 
     # Check for API key
     if not ollama_config.api_key:

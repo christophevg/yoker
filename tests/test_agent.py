@@ -373,7 +373,7 @@ You are a test agent loaded from a file.
 """
     )
 
-    core = Agent(agent_path=agent_file)
+    core = Agent(config=Config(), agent_path=agent_file)
     assert core.definition.name == "file:test-agent"
     assert "file:read" in core.definition.tools
 
@@ -394,7 +394,7 @@ You are a research assistant specialized in finding information.
 """
     )
 
-    core = Agent(agent_path=agent_file)
+    core = Agent(config=Config(), agent_path=agent_file)
     assert core.definition.name == "file:researcher"
     assert core.definition.system_prompt is not None
     assert "research assistant" in core.definition.system_prompt
@@ -411,7 +411,7 @@ class TestAgentContextManager:
       storage_path="custom_storage",
       session_id="custom-session-123",
     )
-    core = Agent(context_manager=custom_context)
+    core = Agent(config=Config(), context_manager=custom_context)
 
     assert core.context is custom_context
     assert core.context.get_session_id() == "custom-session-123"

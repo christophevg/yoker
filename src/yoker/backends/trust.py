@@ -46,7 +46,6 @@ def is_custom_base_url(backend_config: "BackendConfig") -> bool:
   Returns:
     True if base_url differs from default, False otherwise.
   """
-  # Get the active provider's config
   sub_config = backend_config.config
   if sub_config is None:
     return False
@@ -55,14 +54,11 @@ def is_custom_base_url(backend_config: "BackendConfig") -> bool:
   if base_url is None:
     return False
 
-  # Get default URLs from the provider config class
+  # Provider config classes have DEFAULT_BASE_URLS as a class attribute
   default_urls = getattr(type(sub_config), "DEFAULT_BASE_URLS", None)
-
-  # For providers with None default (OpenAI, Anthropic, Gemini), any non-None base_url is custom
   if default_urls is None:
     return True
 
-  # For providers with known defaults (Ollama), check if it differs from any default
   return base_url not in default_urls
 
 

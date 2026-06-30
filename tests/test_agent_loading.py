@@ -28,7 +28,9 @@ class TestAgentDefinitionFileValidation:
     # Use existing example agent
     agent_path = Path("examples/agents/markdown.md")
     if agent_path.exists():
-      agent = Agent(agent_path=agent_path)
+      from yoker.config import Config
+
+      agent = Agent(config=Config(), agent_path=agent_path)
       assert agent.definition is not None
       assert agent.definition.name == "file:markdown"
     else:
@@ -162,6 +164,7 @@ class TestAgentDefinitionLoading:
   def test_agent_path_and_definition_both_provided(self):
     """Test that agent_definition takes precedence when both are provided."""
     from yoker.agents import AgentDefinition
+    from yoker.config import Config
 
     # Create a valid agent definition
     agent_def = AgentDefinition(
@@ -173,7 +176,7 @@ class TestAgentDefinitionLoading:
 
     # When both provided, agent_definition should take precedence
     # agent_path should be ignored (not even validated)
-    agent = Agent(agent_definition=agent_def, agent_path="/nonexistent/path.md")
+    agent = Agent(config=Config(), agent_definition=agent_def, agent_path="/nonexistent/path.md")
 
     # agent_definition should be used, not agent_path
     assert agent.definition is not None

@@ -51,7 +51,6 @@ class LitellmBackend(ModelBackend):
 
   Attributes:
     config: Yoker configuration object.
-    provider: Provider identifier (e.g., "openai", "anthropic").
   """
 
   def __init__(self, config: Config) -> None:
@@ -142,11 +141,6 @@ class LitellmBackend(ModelBackend):
 
     # Log flattened parameters
     logger.debug("Flattened parameters for LiteLLM: %s", flattened)
-
-    # Handle think flag (provider-specific translation)
-    # For OpenAI o-series models, reasoning_effort from config is passed through
-    # For Anthropic, budget_tokens from config is passed through
-    # No special handling needed - params already include these from config
 
     # Call litellm.acompletion
     response = await litellm.acompletion(
