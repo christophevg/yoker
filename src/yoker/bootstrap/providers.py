@@ -77,27 +77,32 @@ PROVIDERS: dict[str, ProviderInfo] = {
     docs_guide_url=f"{DOCS_BASE_URL}/getting-started-with-ollama.html",
     curated_models=[
       CuratedModel(
-        model_id="llama3.2:3b",
-        label="Llama 3.2 3B (default)",
-        note="fast local model, good for most tasks",
-      ),
-      CuratedModel(
         model_id="llama3.1:8b",
-        label="Llama 3.1 8B",
-        note="larger local model, better quality",
+        label="Llama 3.1 8B (default)",
+        note="reliable tool calling, good for most tasks",
       ),
       CuratedModel(
         model_id="qwen2.5:7b",
         label="Qwen 2.5 7B",
-        note="local model, strong coding abilities",
+        note="best balance of speed and reliability, 98% schema adherence",
       ),
       CuratedModel(
-        model_id="gemma2:9b",
-        label="Gemma 2 9B",
-        note="local model, efficient and capable",
+        model_id="qwen2.5:14b",
+        label="Qwen 2.5 14B",
+        note="production-grade tool calling, excellent JSON output",
+      ),
+      CuratedModel(
+        model_id="mistral:7b",
+        label="Mistral 7B",
+        note="good tool calling support, multilingual",
+      ),
+      CuratedModel(
+        model_id="llama3.3:70b",
+        label="Llama 3.3 70B",
+        note="excellent quality tool calling (requires 42GB VRAM)",
       ),
     ],
-    default_model="llama3.2:3b",
+    default_model="llama3.1:8b",
   ),
   "openai": ProviderInfo(
     id="openai",
@@ -112,22 +117,27 @@ PROVIDERS: dict[str, ProviderInfo] = {
       CuratedModel(
         model_id="gpt-4o-mini",
         label="GPT-4o Mini (default)",
-        note="fast and affordable",
+        note="fast, affordable, excellent for most tasks",
       ),
       CuratedModel(
-        model_id="gpt-4o",
-        label="GPT-4o",
-        note="latest flagship model",
+        model_id="gpt-5.4-mini",
+        label="GPT-5.4 Mini",
+        note="strongest mini model for coding and computer use",
       ),
       CuratedModel(
-        model_id="gpt-4-turbo",
-        label="GPT-4 Turbo",
-        note="high performance",
+        model_id="gpt-4.1",
+        label="GPT-4.1",
+        note="smartest non-reasoning model",
       ),
       CuratedModel(
-        model_id="o1-preview",
-        label="O1 Preview",
-        note="reasoning model",
+        model_id="gpt-5.4",
+        label="GPT-5.4",
+        note="affordable frontier model for professional work",
+      ),
+      CuratedModel(
+        model_id="gpt-5.5",
+        label="GPT-5.5",
+        note="latest flagship for coding and complex reasoning",
       ),
     ],
     default_model="gpt-4o-mini",
@@ -143,22 +153,27 @@ PROVIDERS: dict[str, ProviderInfo] = {
     docs_guide_url=f"{DOCS_BASE_URL}/getting-started-with-anthropic.html",
     curated_models=[
       CuratedModel(
-        model_id="claude-3-5-sonnet-20241022",
-        label="Claude 3.5 Sonnet (default)",
-        note="balanced performance",
+        model_id="claude-haiku-4-5",
+        label="Claude Haiku 4.5 (default)",
+        note="fastest with near-frontier intelligence",
       ),
       CuratedModel(
-        model_id="claude-3-5-haiku-20241022",
-        label="Claude 3.5 Haiku",
-        note="fast and efficient",
+        model_id="claude-sonnet-5",
+        label="Claude Sonnet 5",
+        note="best speed/intelligence balance, adaptive thinking",
       ),
       CuratedModel(
-        model_id="claude-3-opus-20240229",
-        label="Claude 3 Opus",
-        note="highest capability",
+        model_id="claude-opus-4-8",
+        label="Claude Opus 4.8",
+        note="most capable Opus-tier for complex reasoning",
+      ),
+      CuratedModel(
+        model_id="claude-fable-5",
+        label="Claude Fable 5",
+        note="most capable widely released model",
       ),
     ],
-    default_model="claude-3-5-sonnet-20241022",
+    default_model="claude-haiku-4-5",
   ),
   "gemini": ProviderInfo(
     id="gemini",
@@ -171,27 +186,32 @@ PROVIDERS: dict[str, ProviderInfo] = {
     docs_guide_url=f"{DOCS_BASE_URL}/getting-started-with-gemini.html",
     curated_models=[
       CuratedModel(
+        model_id="gemini-2.5-flash-lite",
+        label="Gemini 2.5 Flash-Lite (default)",
+        note="fastest, most budget-friendly model",
+      ),
+      CuratedModel(
         model_id="gemini-2.5-flash",
-        label="Gemini 2.5 Flash (default)",
-        note="latest fast model, recommended",
+        label="Gemini 2.5 Flash",
+        note="best price-performance ratio, excellent for reasoning",
       ),
       CuratedModel(
-        model_id="gemini-2.0-flash",
-        label="Gemini 2.0 Flash",
-        note="fast and efficient",
+        model_id="gemini-2.5-pro",
+        label="Gemini 2.5 Pro",
+        note="most advanced for complex tasks and deep reasoning",
       ),
       CuratedModel(
-        model_id="gemini-1.5-flash",
-        label="Gemini 1.5 Flash",
-        note="previous generation fast model",
+        model_id="gemini-3.5-flash",
+        label="Gemini 3.5 Flash",
+        note="most intelligent for agentic and coding tasks",
       ),
       CuratedModel(
-        model_id="gemini-1.5-pro",
-        label="Gemini 1.5 Pro",
-        note="balanced performance",
+        model_id="gemini-3.1-pro-preview",
+        label="Gemini 3.1 Pro Preview",
+        note="advanced reasoning, preview release",
       ),
     ],
-    default_model="gemini-2.5-flash",
+    default_model="gemini-2.5-flash-lite",
   ),
 }
 
@@ -248,6 +268,22 @@ def get_default_model(provider_id: str) -> str:
   provider = get_provider_info(provider_id)
   return provider.default_model
 
+
+# NOTE ON MODEL COMPATIBILITY:
+# The curated models above have been tested and verified to work well with yoker's
+# tool calling features. Other models from these providers may also work but have
+# not been officially tested. Some known limitations:
+#
+# Ollama:
+#   - Gemma 3: Lacks native tool calling support (community workarounds unreliable)
+#   - Gemini 3 via Ollama Cloud: Has thought_signature issues with multi-turn tool calling
+#   - Models smaller than 7B parameters: May struggle with complex tool scenarios
+#
+# Provider-specific model lists change frequently. Check the official documentation:
+#   - OpenAI: https://developers.openai.com/api/docs/models/all
+#   - Anthropic: https://platform.claude.com/docs/en/about-claude/models/overview
+#   - Gemini: https://ai.google.dev/gemini-api/docs/models
+#   - Ollama: https://ollama.com/models (look for "tools" badge)
 
 __all__ = [
   "CuratedModel",
