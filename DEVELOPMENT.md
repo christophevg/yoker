@@ -8,6 +8,56 @@ Yoker is a Python agent harness with configurable tools and guardrails. It provi
 
 ## Recent Changes
 
+### Tool Call Arguments Format Fix (2026-06-30)
+
+**Issue**: Different LLM providers expect different formats for tool call `arguments`:
+- **Ollama SDK**: expects `arguments` as `dict`
+- **LiteLLM (OpenAI/Gemini)**: expects `arguments` as JSON `string`
+
+**Problem**: The conversion was happening in `ContextManager.add_tool_calls()`, which meant all backends received the same format. This broke Ollama which expects `dict` format.
+
+**Solution**: Separation of concerns:
+- **Context layer**: Stores tool calls with `arguments` as `dict` (provider-agnostic)
+- **Backend layer**: Converts to provider-specific format before sending to provider
+
+**Changes**:
+
+1. `src/yoker/context/manager.py`:
+   - Removed argument conversion logic from `add_tool_calls()`
+   - Tool calls are now stored exactly as received (with `arguments` as `dict`)
+
+2. `src/yoker/backends/litellm.py`:
+   - Added conversion logic at start of `chat_stream()` method
+   - Converts `arguments` from `dict` to JSON string before passing to `litellm.acompletion()`
+
+**Architecture**:
+
+```
+┌─────────────────────┐
+│   Context Layer     │
+│  (provider-agnostic)│
+│  arguments: dict    │
+└─────────────────────┘
+          │
+          ├──────────────────┐
+          │                  │
+          ▼                  ▼
+┌─────────────────┐  ┌─────────────────┐
+│  OllamaBackend  │  │ LitellmBackend  │
+│   (no change)   │  │   (converts)    │
+│ arguments: dict │  │ arguments: str  │
+└─────────────────┘  └─────────────────┘
+          │                  │
+          ▼                  ▼
+    Ollama SDK          LiteLLM/OpenAI
+```
+
+**Files Modified**:
+- `src/yoker/context/manager.py` - Reverted conversion logic
+- `src/yoker/backends/litellm.py` - Added conversion logic
+- `tests/test_context.py` - Updated test expectations
+- `tests/backends/test_litellm.py` - Added conversion test
+
 ### Phase 2: Simplified LitellmBackend Architecture (2026-06-29)
 
 **Task**: Rewrote LitellmBackend with simplified design.
@@ -179,3 +229,4 @@ The Agent consumes provider-neutral `ChatChunk` instances and translates them in
 - Add Anthropic backend implementation
 - Message-shape translation (system extraction, tool blocks)
 - SSE stream parsing for Anthropic
+

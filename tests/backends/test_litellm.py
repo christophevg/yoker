@@ -206,3 +206,85 @@ class TestLitellmBackend:
       assert "api_base" in call_kwargs
       assert call_kwargs["api_base"] == "https://custom.api.com/v1"
       assert "base_url" not in call_kwargs
+
+  @pytest.mark.asyncio
+  async def test_tool_call_arguments_conversion(
+    self,
+  ) -> None:
+    """Test that tool call arguments are converted from dict to JSON string.
+
+    Context stores arguments as dict (generic format).
+    LitellmBackend must convert to JSON string before sending to LiteLLM
+    (OpenAI/Gemini expect arguments as JSON string).
+    """
+    config = Config(
+      backend=BackendConfig(
+        provider="openai",
+        openai=OpenAIConfig(
+          api_key="test-key",
+          model="gpt-4o",
+        ),
+      )
+    )
+    backend = LitellmBackend(config)
+
+    # Mock litellm.acompletion
+    mock_chunk = MagicMock()
+    mock_chunk.choices = [MagicMock()]
+    mock_chunk.choices[0].delta.content = "Done"
+    mock_chunk.choices[0].delta.tool_calls = None
+    mock_chunk.usage.prompt_tokens = 10
+    mock_chunk.usage.completion_tokens = 5
+
+    with patch("litellm.acompletion", new_callable=AsyncMock) as mock_acompletion:
+
+      async def async_gen():
+        yield mock_chunk
+
+      mock_acompletion.return_value = async_gen()
+
+      # Messages with tool_calls containing arguments as dict
+      messages = [
+        {
+          "role": "user",
+          "content": "Read the file",
+        },
+        {
+          "role": "assistant",
+          "tool_calls": [
+            {
+              "id": "call_123",
+              "function": {
+                "name": "read_file",
+                "arguments": {"path": "/tmp/test.txt", "mode": "r"},  # dict format
+              },
+            }
+          ],
+        },
+      ]
+
+      async for _chunk in backend.chat_stream(
+        model="gpt-4o",
+        messages=messages,
+      ):
+        pass  # Just consume the stream
+
+      # Verify litellm.acompletion was called with converted arguments
+      call_kwargs = mock_acompletion.call_args.kwargs
+      sent_messages = call_kwargs["messages"]
+
+      # Find the assistant message with tool_calls
+      assistant_msg = None
+      for msg in sent_messages:
+        if msg.get("role") == "assistant" and "tool_calls" in msg:
+          assistant_msg = msg
+          break
+
+      assert assistant_msg is not None
+      assert len(assistant_msg["tool_calls"]) == 1
+
+      # The key assertion: arguments must be converted to JSON string
+      tool_call = assistant_msg["tool_calls"][0]
+      assert isinstance(tool_call["function"]["arguments"], str)
+      assert tool_call["function"]["arguments"] == '{"path": "/tmp/test.txt", "mode": "r"}'
+
