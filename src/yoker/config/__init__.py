@@ -734,5 +734,3 @@ __all__ = [
   # Helper function
   "get_yoker_config",
 ]
-
-
