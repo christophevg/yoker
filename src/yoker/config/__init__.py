@@ -68,6 +68,9 @@ from yoker.config.validators import (
 )
 from yoker.exceptions import ValidationError
 
+# Known backend providers with specific config classes
+KNOWN_PROVIDERS = ("ollama", "openai", "anthropic", "gemini")
+
 
 def get_yoker_config(cli: bool = False) -> "Config":
   """Get Yoker configuration with dev/test security bypass.
@@ -149,8 +152,7 @@ class BackendConfig:
 
     # Known providers must have their config set
     # Unknown providers (handled by litellm) will use GenericConfig
-    known_providers = ("ollama", "openai", "anthropic", "gemini")
-    if self.provider in known_providers:
+    if self.provider in KNOWN_PROVIDERS:
       config = getattr(self, self.provider, None)
       if config is None:
         raise ValidationError(
@@ -169,8 +171,7 @@ class BackendConfig:
       ProviderConfig for the active provider. Never None.
     """
     # Known providers have their config as an attribute
-    known_providers = ("ollama", "openai", "anthropic", "gemini")
-    if self.provider in known_providers:
+    if self.provider in KNOWN_PROVIDERS:
       # Type assertion: validation in __post_init__ guarantees non-None
       return cast(ProviderConfig, getattr(self, self.provider))
 
@@ -728,6 +729,10 @@ __all__ = [
   "PluginsConfig",
   "LoggingConfig",
   "UIConfig",
+  # Constants
+  "KNOWN_PROVIDERS",
   # Helper function
   "get_yoker_config",
 ]
+
+
