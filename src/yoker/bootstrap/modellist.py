@@ -45,12 +45,23 @@ def _note_for(model_id: str) -> str:
 
   Returns:
     ``"local model, requires `ollama pull <model>`"`` for all models.
+
+  Note:
+    This function is only used by the legacy ``curated_models()`` function.
+    New code should use ``curated_models_for_provider()`` instead, which
+    provides provider-aware notes from the ProviderInfo registry.
   """
   return f"local model, requires `ollama pull {model_id}`"
 
 
 def curated_models(config: Config | None = None) -> list[CuratedModel]:
-  """Return the curated list of recommended models.
+  """Return the curated list of recommended models (LEGACY Ollama-only).
+
+  .. deprecated::
+    This function is legacy and only supports Ollama. New code should use
+    ``curated_models_for_provider()`` instead, which provides provider-aware
+    model lists from the ProviderInfo registry. This function is kept for
+    backward compatibility with the legacy wizard step ``step_model_selection()``.
 
   The first entry is always the default model read from ``Config`` so that
   accepting the default is a single keystroke. The list includes popular
@@ -130,4 +141,5 @@ __all__ = [
   "curated_models_for_provider",
   "default_model_for_provider",
 ]
+
 
