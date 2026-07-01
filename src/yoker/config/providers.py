@@ -110,7 +110,7 @@ class OllamaConfig:
   )
   api_key: str | None = field(default=None, metadata={"cli": False})
   model: str = field(
-    default="llama3.2:3b",
+    default="qwen3.5:cloud",
     metadata={"help": "Default model to use"},
   )
   timeout_seconds: int = field(

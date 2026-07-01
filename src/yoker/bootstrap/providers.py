@@ -69,7 +69,7 @@ PROVIDERS: dict[str, ProviderInfo] = {
   "ollama": ProviderInfo(
     id="ollama",
     display_name="Ollama",
-    description="Local inference server with free cloud tier",
+    description="Cloud inference with free tier (no local download required)",
     requires_api_key=False,  # Can use app without key
     has_local_app=True,
     account_url=f"{DOCS_BASE_URL}/getting-started-with-ollama.html#account",
@@ -77,32 +77,27 @@ PROVIDERS: dict[str, ProviderInfo] = {
     docs_guide_url=f"{DOCS_BASE_URL}/getting-started-with-ollama.html",
     curated_models=[
       CuratedModel(
-        model_id="llama3.1:8b",
-        label="Llama 3.1 8B (default)",
-        note="reliable tool calling, good for most tasks",
+        model_id="qwen3.5:cloud",
+        label="Qwen 3.5 Cloud (default)",
+        note="fast cloud model, excellent tool calling and reasoning",
       ),
       CuratedModel(
-        model_id="qwen2.5:7b",
-        label="Qwen 2.5 7B",
-        note="best balance of speed and reliability, 98% schema adherence",
+        model_id="glm-5:cloud",
+        label="GLM-5 Cloud",
+        note="capable cloud model with strong coding abilities",
       ),
       CuratedModel(
-        model_id="qwen2.5:14b",
-        label="Qwen 2.5 14B",
-        note="production-grade tool calling, excellent JSON output",
+        model_id="kimi-k2.6:cloud",
+        label="Kimi K2.6 Cloud",
+        note="advanced cloud model with large context window",
       ),
       CuratedModel(
-        model_id="mistral:7b",
-        label="Mistral 7B",
-        note="good tool calling support, multilingual",
-      ),
-      CuratedModel(
-        model_id="llama3.3:70b",
-        label="Llama 3.3 70B",
-        note="excellent quality tool calling (requires 42GB VRAM)",
+        model_id="gemma4:31b-cloud",
+        label="Gemma 4 31B Cloud",
+        note="larger cloud model for complex reasoning tasks",
       ),
     ],
-    default_model="llama3.1:8b",
+    default_model="qwen3.5:cloud",
   ),
   "openai": ProviderInfo(
     id="openai",
