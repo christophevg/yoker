@@ -65,7 +65,6 @@ from yoker.config.validators import (
   validate_non_negative_int,
   validate_positive_int,
   validate_regex_patterns,
-  validate_url,
 )
 from yoker.exceptions import ValidationError
 
