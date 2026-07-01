@@ -526,4 +526,3 @@ class TestInteractiveUIHandlerErrors:
 
     handler.output_error(ValueError("test"))
     assert handler._live is None
-
