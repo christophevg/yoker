@@ -161,6 +161,15 @@ class NetworkError(YokerError):
     super().__init__(message)
 
   def __str__(self) -> str:
+    """Return user-friendly message without exception chain."""
+    return self.message
+
+  def get_debug_message(self) -> str:
+    """Return full message with exception chain for debugging.
+
+    Returns:
+      Message with original error chain if available.
+    """
     if self.original_error:
       return f"{self.message} (caused by: {self.original_error})"
     return self.message

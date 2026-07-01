@@ -28,7 +28,11 @@ class TestNetworkError:
     original = httpx.RemoteProtocolError("peer closed connection")
     error = NetworkError("Network error", original_error=original)
     assert error.original_error is original
-    assert "Network error" in str(error)
+    # __str__ returns user-friendly message without chain
+    assert str(error) == "Network error"
+    # get_debug_message returns full chain for debugging
+    assert "Network error" in error.get_debug_message()
+    assert "peer closed connection" in error.get_debug_message()
 
   def test_network_error_non_recoverable(self) -> None:
     """Test NetworkError can be marked non-recoverable."""

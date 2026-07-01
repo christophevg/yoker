@@ -91,7 +91,8 @@ class TestInteractiveUIHandlerLifecycle:
 
     text = output.getvalue()
     assert f"Yoker v{__version__}" in text
-    assert "Using model: llama3.1" in text
+    # Banner now shows provider and model together
+    assert "model: llama3.1" in text
     assert "Harness: test-harness v1.2.3 by Test Author" in text
     assert "Thinking mode: enabled" in text
     assert "Type /help" in text
@@ -473,7 +474,7 @@ class TestInteractiveUIHandlerErrors:
     handler.output_error(error)
 
     text = output.getvalue()
-    assert "Network Error" in text
+    # New format shows just the message without "Network Error" prefix
     assert "connection refused" in text
     assert "Try again" in text
 
@@ -487,7 +488,8 @@ class TestInteractiveUIHandlerErrors:
     handler.output_error(error)
 
     text = output.getvalue()
-    assert "Fatal Network Error" in text
+    # New format shows just the message without "Fatal Network Error" prefix
+    assert "fatal error" in text
     assert "restart" in text
 
   def test_output_error_tool(self):

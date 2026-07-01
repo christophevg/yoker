@@ -504,35 +504,55 @@ class InteractiveUIHandler(UIHandler):
 
   # === Error Output ===
 
-  def output_error(self, error: Exception, include_traceback: bool = True) -> None:
+  def output_error(self, error: Exception, include_traceback: bool = False) -> None:
     """Output error message with Rich formatting.
 
     Args:
       error: Exception that occurred.
+      include_traceback: Whether to include full traceback (default: False).
+        For NetworkError, the debug message with exception chain is shown when
+        this is True. For other errors, the full Python traceback is shown.
     """
     self._exit_live()
 
     from yoker.exceptions import NetworkError, ToolError
 
     if isinstance(error, NetworkError):
+      # Show compact user-friendly message by default
       if error.recoverable:
         msg = (
-          f"Network Error: {error}\nYour message was preserved. Try again or type a new message."
+          f"{error.message}\n\n"
+          f"Your message was preserved. Try again or type a new message."
         )
       else:
-        msg = f"Fatal Network Error: {error}\nUnable to recover. Please restart the session."
+        msg = (
+          f"{error.message}\n\n"
+          f"Unable to recover. Please restart the session."
+        )
+      # Include debug message (with exception chain) if traceback requested
+      debug_exc = error if include_traceback else None
+      self._print_error(msg, debug_exc)
     elif isinstance(error, ToolError):
       msg = f"Tool Error ({error.tool_name}): {error}"
+      self._print_error(msg, error if include_traceback else None)
     else:
       msg = f"Error: {error}"
-    self._print_error(msg, error if include_traceback else None)
+      self._print_error(msg, error if include_traceback else None)
 
   # === Tool Formatting Helpers ===
 
   def _print_error(self, msg: str, exc: Exception | None = None) -> None:
     if exc:
-      tb = "".join(traceback.TracebackException.from_exception(exc).format())
-      msg += "\n\n[black]" + tb
+      # For NetworkError, show debug message (with exception chain) instead of full traceback
+      from yoker.exceptions import NetworkError
+
+      if isinstance(exc, NetworkError):
+        # Show the debug message with exception chain
+        msg += f"\n\n[dim]{exc.get_debug_message()}[/dim]"
+      else:
+        # For other exceptions, show full Python traceback
+        tb = "".join(traceback.TracebackException.from_exception(exc).format())
+        msg += "\n\n[black]" + tb
 
     self.console.print(Panel(msg, title="ERROR", style=ERROR_STYLE))
     self.console.print()
