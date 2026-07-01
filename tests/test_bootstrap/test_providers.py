@@ -147,14 +147,14 @@ class TestGetDefaultModel:
     assert default == "gpt-4o-mini"
 
   def test_anthropic_default_model(self) -> None:
-    """Anthropic default model is claude-3-5-sonnet."""
+    """Anthropic default model is claude-haiku-4-5."""
     default = get_default_model("anthropic")
-    assert default == "claude-3-5-sonnet-20241022"
+    assert default == "claude-haiku-4-5"
 
   def test_gemini_default_model(self) -> None:
-    """Gemini default model is gemini-2.5-flash."""
+    """Gemini default model is gemini-2.5-flash-lite."""
     default = get_default_model("gemini")
-    assert default == "gemini-2.5-flash"
+    assert default == "gemini-2.5-flash-lite"
 
 
 class TestCuratedModelsDataclass:

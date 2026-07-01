@@ -81,13 +81,13 @@ class TestProviderModelLists:
     """Anthropic provider has curated models."""
     models = curated_models_for_provider("anthropic")
     assert len(models) > 0
-    assert models[0].model_id == "claude-3-5-sonnet-20241022"
+    assert models[0].model_id == "claude-haiku-4-5"
 
   def test_curated_models_for_gemini(self) -> None:
     """Gemini provider has curated models."""
     models = curated_models_for_provider("gemini")
     assert len(models) > 0
-    assert models[0].model_id == "gemini-2.5-flash"
+    assert models[0].model_id == "gemini-2.5-flash-lite"
 
   def test_default_model_matches_provider_registry(self) -> None:
     """Default model for provider matches the provider registry."""
