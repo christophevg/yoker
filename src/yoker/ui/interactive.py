@@ -180,8 +180,9 @@ class InteractiveUIHandler(UIHandler):
 
     thinking_status = "enabled" if agent.thinking_mode.value == "on" else "disabled"
 
+    provider = agent.config.backend.provider
     motd_lines = [
-      f"Yoker v{__version__} - Using model: {agent.model}",
+      f"Yoker v{__version__} - Using provider: {provider}, model: {agent.model}",
       harness_line,
       f"Thinking mode: {thinking_status} (use /think on|off|silent to toggle)",
     ]
