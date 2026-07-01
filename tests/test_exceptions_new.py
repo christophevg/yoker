@@ -37,7 +37,10 @@ class TestNetworkError:
     original = ValueError("Original error")
     error = NetworkError("Connection failed", original_error=original)
     assert error.original_error is original
-    assert "caused by: Original error" in str(error)
+    # __str__ returns user-friendly message without chain
+    assert str(error) == "Connection failed"
+    # get_debug_message returns full chain for debugging
+    assert "caused by: Original error" in error.get_debug_message()
 
   def test_network_error_non_recoverable(self):
     """NetworkError can be marked as non-recoverable."""
