@@ -6,7 +6,7 @@
 |----------|----------|--------|
 | **P1** | MBI-006: Multi-Provider Backend (Phase 1) | Complete |
 | **P1** | MBI-006 Phase 2: LitellmBackend | Ready to start |
-| **P1** | MBI-002: Bootstrap | Wrapping up |
+| **P1** | MBI-002: Bootstrap | Complete |
 | **P1** | MBI-001 Validation | Pending (validate with pkgq, then publish) |
 | **P2** | MBI-003: Python API | Backlog (after Bootstrap) |
 | **P2** | MBI-004: yoker Commands | Backlog (after Python API) |
@@ -25,7 +25,7 @@
 
 ### Tasks
 
-- [ ] **2.0 Change Config Default Model to `gemini-3-flash-preview:cloud` (single location)**
+- [x] **2.0 Change Config Default Model to `gemini-3-flash-preview:cloud` (single location)** ✅ (2026-07-01)
   - Update **only** `OllamaConfig.model` in `src/yoker/config/__init__.py` from
     `llama3.2:latest` to `gemini-3-flash-preview:cloud`. This is the **single
     source** of the default model (owner PR #34 point 1).
@@ -44,7 +44,7 @@
   **Satisfies:** Frictionless default model
   **Design:** See `analysis/bootstrap-wizard-design.md` (Resolved Q2 + task 2.0; PR #34 point 1)
 
-- [ ] **2.1 Detect Missing Configuration (`config_provided() -> bool`)**
+- [x] **2.1 Detect Missing Configuration (`config_provided() -> bool`)** ✅ (2026-07-01)
   - Implement `config_provided() -> bool` in `src/yoker/bootstrap/detect.py`
     (owner PR #34 point 2 — replaces the `ConfigStatus` / `detect_config()` /
     state-machine design).
@@ -62,7 +62,7 @@
   **Satisfies:** Bootstrap trigger condition
   **API design:** See `analysis/bootstrap-config-detection.md`.
 
-- [ ] **2.2 Welcome & Guided-vs-Manual Flow**
+- [x] **2.2 Welcome & Guided-vs-Manual Flow** ✅ (2026-07-01)
   - Step 0: explain yoker (provider-neutral AI backend for agentic workflows)
   - Step 1: report no config found; offer guided (recommended) vs manual setup
   - Manual path: print config skeleton + docs link, exit without writing
@@ -72,7 +72,7 @@
   **Satisfies:** Bootstrap entry / low-friction onboarding
   **Design:** See `analysis/bootstrap-wizard-design.md`
 
-- [ ] **2.3 Ollama Account & Connection-Method Steps**
+- [x] **2.3 Ollama Account & Connection-Method Steps** ✅ (2026-07-01)
   - Step 2: backend intro (single backend today: Ollama, free tier, no fake
     multi-way menu)
   - Step 3: "Do you have an ollama account?" → no: **open the docs guide URL**
@@ -89,7 +89,7 @@
   **Satisfies:** Account/connection guidance
   **Design:** See `analysis/bootstrap-wizard-design.md`
 
-- [ ] **2.4 Model Selection Wizard**
+- [x] **2.4 Model Selection Wizard** ✅ (2026-07-01)
   - `modellist.py`: holds a **curated list** of recommended models (including
     the default, read from `Config().backend.ollama.model` — not a literal) plus
     a **free-text entry** option — **NO network call**. Live fetch via
@@ -105,7 +105,7 @@
   **Satisfies:** Model selection capability
   **Design:** See `analysis/bootstrap-wizard-design.md` (Resolved Q2, Q5)
 
-- [ ] **2.5 Config Writer (in the config module) & Continue into Session**
+- [x] **2.5 Config Writer (in the config module) & Continue into Session** ✅ (2026-07-01)
   - **Lives in `src/yoker/config/writer.py`**, NOT `yoker/bootstrap/writer.py`
     (owner PR #34 point 4). It is a general-purpose config-writing utility;
     the bootstrap wizard calls it, it does not own it. Reusable for in-session
@@ -133,7 +133,7 @@
   **Design:** See `analysis/bootstrap-wizard-design.md` (Annotation-Driven
   ConfigWriter section; PR #34 points 4 & 5)
 
-- [ ] **2.6 Non-Interactive Path & `__main__.py` Wiring**
+- [x] **2.6 Non-Interactive Path & `__main__.py` Wiring** ✅ (2026-07-01)
   - Wire `config_provided()` → `BootstrapWizard` in interactive mode (async).
     The wizard returns after writing config; `__main__.py` then continues into
     normal Agent startup (does not exit after bootstrap).
@@ -148,7 +148,7 @@
   **Satisfies:** Safe non-interactive behavior
   **Design:** See `analysis/bootstrap-wizard-design.md` (Resolved Q3)
 
-- [ ] **2.7 Bootstrap Documentation Guide (docs site)**
+- [x] **2.7 Bootstrap Documentation Guide (docs site)** ✅ (2026-07-01)
   - **One merged page** covering ollama account creation + local app/proxy
     install + (optional) API-key creation, with screenshots; optional per-OS
     variants
@@ -1598,4 +1598,5 @@ Unsorted improvements and fixes.
 - [x] **Issue #9: Fix ~ in Storage Path** (2026-05-25)
   - Fixed tilde expansion bug
   - PR: #11
+
 
