@@ -244,16 +244,55 @@ Once the wizard finishes, yoker drops you straight into an interactive chat
 session. You should see a prompt like:
 
 ```text
-Yoker vX.Y.Z - Using model: gemini-3-flash-preview:cloud
-Type your message and press Enter. Press Ctrl+D (or Ctrl+Z on Windows) to quit.
+╭───────────────────────────────── 👋 Welcome... ─────────────────────────────────╮
+│ __   __    _                                                                    │
+│ \ \ / /__ | | _____ _ __                                                        │
+│  \ V / _ \| |/ / _ \ '__|                                                       │
+│   | | (_) |   <  __/ |                                                          │
+│   |_|\___/|_|\_\___|_| 0.5.0                                                    │
+│ Model: kimi-k2.7-code:cloud (provider: ollama)                                  │
+│ Harness: yoker-dev v1.0 by Christophe VG                                        │
+│ Thinking: on (use /think on|off|silent to toggle)                               │
+│ Agent: default - The default/minimal Yoker agent.                               │
+│ Type /help for available commands.                                              │
+│ Press Ctrl+D (or Ctrl+Z on Windows) to quit.                                    │
+╰─────────────────────────────────────────────────────────────────────────────────╯
 
 >
 ```
 
+Here, we're using the `kimi-k2.7-code` model provided by Ollama.
+
 Type a simple prompt and press **Enter**:
 
 ```text
-> Say hello in one sentence.
+> Why is the sky blue?
+  The user asks a general knowledge question: "Why is the sky blue?" This is not a coding or repository-related
+  task. I should provide a concise, accurate explanation suitable for a general audience.
+
+  Key physics: Rayleigh scattering — shorter wavelengths (blue/violet) scatter more strongly by gas molecules
+  and particles in Earth's atmosphere than longer wavelengths (red/orange). Sunlight reaches us from all
+  directions after scattering; because blue is scattered much more (~λ^-4), we see blue across the sky. Violet
+  is scattered even more but the sun emits less violet, our eyes are less sensitive to violet, and some violet
+  is absorbed by ozone, so we perceive blue rather than violet.
+
+  I should be friendly, helpful, and possibly mention sunrise/sunset briefly as contrast. No need to call
+  tools.
+
+  The sky appears blue because of a phenomenon called **Rayleigh scattering**.
+
+  Sunlight is made up of many colors, each with a different wavelength. Blue light has a short wavelength, and
+  as it passes through Earth's atmosphere it gets scattered in all directions by the molecules of gas and tiny
+  particles in the air. Because blue light is scattered much more strongly than longer-wavelength colors like
+  red or orange, it appears to come from all over the sky.
+
+  Violet light is scattered even more than blue, but the sun produces less violet light, our eyes are less
+  sensitive to it, and much of it is absorbed high in the atmosphere—so we perceive the sky as blue rather than
+  violet.
+
+  At sunrise and sunset, the light has to pass through much more atmosphere, scattering most of the blue light
+  away before it reaches you. That's why the remaining light looks red, orange, or pink.
+⏱ 4.8s | 642+338=980 tokens | 203 tok/s
 ```
 
 The model responds, streamed in real time. That is your "it works!" moment —
@@ -261,23 +300,56 @@ yoker is configured, connected to Ollama's free tier, and answering prompts.
 
 A few more things to try:
 
-- Ask it to read a file:
+- Ask it to summarize a file:
 
   ```text
-  > Read the first 3 lines of README.md and summarize them.
+> Read README.md and summarize it in 3 short sentences
+  The user wants me to read README.md and summarize it in 3 short sentences. I should use the read tool to read
+  the file.
+
+⏺ Yoker:read tool: README.md  ✓ Success
+  I need to summarize the README.md in 3 short sentences. The README describes Yoker as a Python agent harness
+  with configurable tools, guardrails, and Ollama backend integration. It supports interactive CLI, batch mode,
+  and library usage. It has features like tool calling, plugins, event-driven architecture, etc.
+
+  Let me craft 3 short sentences:
+  1. Yoker is a library-first Python agent harness with configurable tools, guardrails, and Ollama backend
+  integration.
+  2. It can be used interactively, in batch mode, or embedded as a library, and supports plugins, skills, and
+  agent definitions.
+  3. The project features an event-driven architecture, transparent tool execution, static permissions, and
+  extensive configuration via TOML files.
+
+  Yoker is a library-first Python agent harness with configurable tools, guardrails, and Ollama backend
+  integration. It can be used interactively, in batch mode, or embedded as a library, and supports plugins,
+  skills, and agent definitions. The project features an event-driven architecture, transparent tool execution,
+  static permissions, and TOML-based configuration.
+⏱ 3.1s | 4088+226=4314 tokens | 1383 tok/s
   ```
 
 - List the available tools:
 
   ```text
   > /tools
-  ```
-
-- See the thinking trace (the model's reasoning shown before the answer):
-
-  ```text
-  > /think on
-  > Why is the sky blue?
+  Known tools:
+  
+  Built-in:
+    ✗ yoker:agent     - Spawn a sub-agent to perform a specific task.
+    ✗ yoker:existence - Check if a file or folder exists at the given path.
+    ✗ yoker:git       - Execute a Git operation on a repository.
+    ✗ yoker:list      - List files and directories.
+    ✗ yoker:mkdir     - Create a directory at the given path.
+    ✗ yoker:read      - Read the contents of a file.
+    ✗ yoker:search    - Search for patterns in files.
+    ✗ yoker:skill     - Invoke a skill by name to get its full instructions.
+    ✗ yoker:update    - Update an existing file by replacing, inserting, or delet...
+    ✗ yoker:webfetch  - Fetch content from a web URL.
+    ✗ yoker:websearch - Search the web for information.
+    ✗ yoker:write     - Write content to a file.
+  
+  Plugins:
+  Agent: default
+    Allowed tools:
   ```
 
 When you are done, quit with **Ctrl+D** (or **Ctrl+Z** on Windows).

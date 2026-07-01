@@ -13,6 +13,7 @@ from typing import Any
 from prompt_toolkit.history import FileHistory, History, InMemoryHistory
 from prompt_toolkit.key_binding import KeyBindings, KeyPressEvent
 from prompt_toolkit.shortcuts import PromptSession
+from pyfiglet import Figlet
 from rich.console import Console
 from rich.panel import Panel
 from rich.style import Style
@@ -171,29 +172,27 @@ class InteractiveUIHandler(UIHandler):
     Args:
       agent: The Agent instance this UI session is serving.
     """
+    banner = str(Figlet(font="standard").renderText("Yoker")).rstrip()
+    banner = f"[blue bold]{banner} {__version__}[/blue bold]"
+
     harness = agent.config.harness
-    harness_line = f"Harness: {harness.name}"
+    harness_line = f"[blue]Harness[/blue]: {harness.name}"
     if harness.version:
       harness_line += f" v{harness.version}"
     if harness.author:
       harness_line += f" by {harness.author}"
 
-    thinking_status = "enabled" if agent.thinking_mode.value == "on" else "disabled"
-
-    provider = agent.config.backend.provider
-    motd_lines = [
-      f"Yoker v{__version__} - Using provider: {provider}, model: {agent.model}",
+    motd_lines = banner.split("\n") + [
+      f"[blue]Model[/blue]: {agent.model} (provider: {agent.config.backend.provider})",
       harness_line,
-      f"Thinking mode: {thinking_status} (use /think on|off|silent to toggle)",
+      f"[blue]Thinking[/blue]: {agent.thinking_mode.value} (use /think on|off|silent to toggle)",
+      f"[blue]Agent[/blue]: {agent.definition.name} - {agent.definition.description}",
     ]
+    if agent.definition.source_path:
+      motd_lines.append(f"       Source: {agent.definition.source_path}")
 
-    agent_def = agent.definition
-    motd_lines.append(f"Agent: {agent_def.name} - {agent_def.description}")
-    if agent_def.source_path:
-      motd_lines.append(f"  Source: {agent_def.source_path}")
-
-    motd_lines.append("Type /help for available commands.")
-    motd_lines.append("Press Ctrl+D (or Ctrl+Z on Windows) to quit.")
+    motd_lines.append("[dim]Type /help for available commands.")
+    motd_lines.append("Press Ctrl+D (or Ctrl+Z on Windows) to quit.[/dim]")
 
     self.console.print(Panel("\n".join(motd_lines), title="👋 Welcome..."))
     self.console.print()
@@ -520,15 +519,9 @@ class InteractiveUIHandler(UIHandler):
     if isinstance(error, NetworkError):
       # Show compact user-friendly message by default
       if error.recoverable:
-        msg = (
-          f"{error.message}\n\n"
-          f"Your message was preserved. Try again or type a new message."
-        )
+        msg = f"{error.message}\n\nYour message was preserved. Try again or type a new message."
       else:
-        msg = (
-          f"{error.message}\n\n"
-          f"Unable to recover. Please restart the session."
-        )
+        msg = f"{error.message}\n\nUnable to recover. Please restart the session."
       # Include debug message (with exception chain) if traceback requested
       debug_exc = error if include_traceback else None
       self._print_error(msg, debug_exc)
