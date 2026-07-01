@@ -710,6 +710,23 @@ Unsorted improvements and fixes.
 
 ---
 
+## Security Improvements
+
+- [ ] **S.1 Secure API Key Storage with Keyring**
+  - Use Python `keyring` library to securely store API keys instead of plain text in config files
+  - During bootstrap wizard, use `keyring.set_password('yoker', '<provider>', api_key)` to store
+  - On startup, retrieve with `keyring.get_password('yoker', '<provider>')`
+  - Fallback to config file if keyring is unavailable or user opts out
+  - Support all providers: Ollama, OpenAI, Anthropic, Gemini
+  - Update `BootstrapWizard` to use keyring for API key collection
+  - Update config loading to check keyring first, then config file
+  - Document the keyring integration in security docs
+  - Write unit tests with mocked keyring backend
+  - **Priority:** P2
+  - **Reference:** User request 2026-07-01
+
+---
+
 ## Future Work (Post-Release)
 
 ### Additional Tools (Phase 2 continued)
