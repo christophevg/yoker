@@ -175,8 +175,6 @@ explanation of what yoker is and why the wizard exists, see
 > Ollama's free tier. You do not need to add payment details or generate a
 > paid key to complete this guide.
 
----
-
 ## Step 4 — Your first "hello agent" interaction
 
 Once the wizard finishes, yoker drops you straight into an interactive chat
