@@ -29,17 +29,25 @@ API key if you choose that path.
 
 1. Open [https://signin.ollama.com/sign-up](https://signin.ollama.com/sign-up) in your browser.
 2. Click **Sign up** (top right).
+   
+   ![Ollama account creation - email](../_static/ollama-email.png)
+
 3. Enter your email address and choose a password, or sign up with a
    third-party provider.
-4. Confirm your email via the verification link sent to your inbox.
-5. Once signed in, you'll land on your account dashboard.
+   
+   ![Ollama account creation - email code](../_static/ollama-email-code.png)
 
-![Ollama account creation - email](../_static/ollama-email.png)
-![Ollama account creation - email code](../_static/ollama-email-code.png)
-![Ollama account creation - phone](../_static/ollama-phone.png)
-![Ollama account creation - phone code](../_static/ollama-phone-code.png)
-![Ollama account creation - settings](../_static/ollama-settings.png)
-![Ollama account creation - settings usage](../_static/ollama-settings-usage.png)
+4. Confirm your email via the verification link sent to your inbox.
+5. Provide your phone number for verification and enter the code sent to your phone.
+   
+   ![Ollama account creation - phone](../_static/ollama-phone.png)
+   ![Ollama account creation - phone code](../_static/ollama-phone-code.png)
+
+6. Once signed in, you'll land on your account dashboard where you can access
+   settings and view your usage information.
+   
+   ![Ollama account creation - settings](../_static/ollama-settings.png)
+   ![Ollama account creation - settings usage](../_static/ollama-settings-usage.png)
 
 You now have an Ollama account. The next step is to install the local app/proxy
 so cloud models work on your machine.
@@ -120,7 +128,7 @@ ollama serve
 ## Verify cloud-model access
 
 Once the app/proxy is installed and running, sign in so that cloud models
-(those reachable from yoker's free tier) work end-to-end.
+(those reachable from Ollama's free tier) work end-to-end.
 
 1. Open the Ollama app (menu-bar icon on macOS, system tray on Windows, or the
    `ollama` CLI on Linux).
