@@ -16,25 +16,8 @@ lists from the ProviderInfo registry.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
-from yoker.bootstrap.providers import get_curated_models, get_default_model
+from yoker.bootstrap.providers import CuratedModel, get_curated_models, get_default_model
 from yoker.config import Config
-
-
-@dataclass(frozen=True)
-class CuratedModel:
-  """A single curated model entry.
-
-  Attributes:
-    model_id: The ollama model id (e.g. ``"llama3.2:3b"``).
-    label: Human-readable label shown in the wizard.
-    note: Short helper note (e.g. "fast local model").
-  """
-
-  model_id: str
-  label: str
-  note: str
 
 
 def default_model_id(config: Config | None = None) -> str:
@@ -147,3 +130,4 @@ __all__ = [
   "curated_models_for_provider",
   "default_model_for_provider",
 ]
+
