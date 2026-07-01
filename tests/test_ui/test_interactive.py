@@ -90,11 +90,11 @@ class TestInteractiveUIHandlerLifecycle:
     await handler.start(agent)
 
     text = output.getvalue()
-    assert f"Yoker v{__version__}" in text
+    assert __version__ in text
     # Banner now shows provider and model together
-    assert "model: llama3.1" in text
+    assert "Model: llama3.1" in text
     assert "Harness: test-harness v1.2.3 by Test Author" in text
-    assert "Thinking mode: enabled" in text
+    assert "Thinking: on" in text
     assert "Type /help" in text
     assert "Ctrl+D" in text
 
@@ -116,7 +116,7 @@ class TestInteractiveUIHandlerLifecycle:
 
     text = output.getvalue()
     assert "Harness: yoker" in text
-    assert "Thinking mode: disabled" in text
+    assert "Thinking: off" in text
 
   @pytest.mark.asyncio
   async def test_shutdown_prints_goodbye(self):
@@ -526,3 +526,4 @@ class TestInteractiveUIHandlerErrors:
 
     handler.output_error(ValueError("test"))
     assert handler._live is None
+
