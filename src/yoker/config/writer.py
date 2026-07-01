@@ -44,6 +44,50 @@ def _set_dotted(config: Any, dotted: str, value: Any) -> Any:
   return _rebuild(config, 0)
 
 
+def _apply_backend_provider_overrides(
+  config: Config,
+  overrides: dict[str, Any],
+) -> Config:
+  """Apply backend.provider override together with provider config.
+
+  When setting ``backend.provider`` to a known provider, we must also set the
+  corresponding ``backend.<provider>`` config in the same operation to avoid
+  validation errors in BackendConfig.__post_init__.
+
+  This function extracts backend-related overrides and applies them atomically.
+  """
+  # Check if we're setting backend.provider
+  if "backend.provider" not in overrides:
+    return config
+
+  provider = overrides["backend.provider"]
+  provider_config_key = f"backend.{provider}"
+
+  # Check if this is a known provider that needs config initialization
+  from yoker.config import KNOWN_PROVIDERS
+
+  if provider not in KNOWN_PROVIDERS:
+    # Unknown provider - no special handling needed
+    return config
+
+  # Collect all backend overrides to apply together
+  backend_overrides = {}
+
+  # Always include the provider
+  backend_overrides["provider"] = provider
+
+  # Include the provider config if present in overrides
+  if provider_config_key in overrides:
+    backend_overrides[provider] = overrides[provider_config_key]
+
+  # Apply all backend overrides in a single replace operation
+  # This ensures __post_init__ sees both provider and config together
+  new_backend = dataclasses.replace(config.backend, **backend_overrides)
+  result = dataclasses.replace(config, backend=new_backend)
+
+  return result
+
+
 def _format_scalar(value: Any) -> str | None:
   """Serialize a scalar/collection value as a TOML fragment.
 
@@ -154,8 +198,23 @@ def render_config_toml(config: Config, overrides: dict[str, Any] | None = None) 
   """
   rendered = config
   if overrides:
+    # Apply backend.provider and backend.<provider> together atomically
+    # to avoid validation errors in BackendConfig.__post_init__
+    rendered = _apply_backend_provider_overrides(rendered, overrides)
+
+    # Apply remaining overrides (excluding the ones already applied)
+    applied_keys = {"backend.provider"}
+    if "backend.provider" in overrides:
+      provider = overrides["backend.provider"]
+      from yoker.config import KNOWN_PROVIDERS
+
+      if provider in KNOWN_PROVIDERS:
+        applied_keys.add(f"backend.{provider}")
+
     for dotted, value in overrides.items():
-      rendered = _set_dotted(rendered, dotted, value)
+      if dotted not in applied_keys:
+        rendered = _set_dotted(rendered, dotted, value)
+
   lines: list[str] = []
   _render_section(rendered, "", lines, is_root=True, _emitted_header=[False])
   return "\n".join(lines) + "\n"
