@@ -193,7 +193,10 @@ def main() -> None:
     if not sys.stdin.isatty():
       _abort_non_interactive()
     # Interactive: drive the wizard through an interactive UI handler.
-    bootstrap_ui = _create_ui(Config())
+    # IMPORTANT: Use history_file="none" to prevent bootstrap prompts (including
+    # API keys) from being persisted to ~/.yoker_history. Bootstrap is for
+    # one-time configuration, not conversation, and should never log secrets.
+    bootstrap_ui = InteractiveUIHandler(history_file="none")
     try:
       written = asyncio.run(_run_bootstrap(bootstrap_ui))
     except KeyboardInterrupt:

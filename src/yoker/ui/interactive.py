@@ -10,7 +10,7 @@ import traceback
 from pathlib import Path
 from typing import Any
 
-from prompt_toolkit.history import FileHistory
+from prompt_toolkit.history import FileHistory, History, InMemoryHistory
 from prompt_toolkit.key_binding import KeyBindings, KeyPressEvent
 from prompt_toolkit.shortcuts import PromptSession
 from rich.console import Console
@@ -41,7 +41,7 @@ class InteractiveUIHandler(UIHandler):
 
   def __init__(
     self,
-    history_file: Path | None = None,
+    history_file: Path | None | str = None,
     show_thinking: bool = True,
     show_tool_calls: bool = True,
     show_stats: bool = True,
@@ -51,7 +51,11 @@ class InteractiveUIHandler(UIHandler):
     """Initialize the interactive UI handler.
 
     Args:
-      history_file: Path to command history file.
+      history_file: Path to command history file. Pass None to use the
+        default path (~/.yoker_history). Pass a Path object or the string
+        "none" to explicitly disable persistent history (uses in-memory
+        history only). Use history_file=None for bootstrap wizard and other
+        non-conversational flows to avoid logging sensitive data like API keys.
       show_thinking: Whether to display thinking output.
       show_tool_calls: Whether to display tool call info.
       show_stats: Whether to display turn statistics.
@@ -59,7 +63,18 @@ class InteractiveUIHandler(UIHandler):
       console: Optional Rich console (default: new Console).
     """
     self.console = console if console is not None else Console()
-    self.history_file = history_file or Path.home() / ".yoker_history"
+    # If history_file is None, use default path. If it's a Path or string "none",
+    # use that (allows explicit None to disable history).
+    self.history_file: Path | None
+    if history_file is None:
+      self.history_file = Path.home() / ".yoker_history"
+    elif history_file == "none":
+      self.history_file = None
+    elif isinstance(history_file, Path):
+      self.history_file = history_file
+    else:
+      # history_file is a string that's not "none", treat as path
+      self.history_file = Path(history_file)
     self.show_thinking = show_thinking
     self.show_tool_calls = show_tool_calls
     self.show_stats = show_stats
@@ -112,11 +127,18 @@ class InteractiveUIHandler(UIHandler):
     def _handle_meta_enter(event: KeyPressEvent) -> None:
       event.current_buffer.insert_text("\n")
 
-    # Ensure history directory exists
-    self.history_file.parent.mkdir(parents=True, exist_ok=True)
+    # Use in-memory history when history_file is None (e.g., for bootstrap wizard)
+    # This prevents sensitive data like API keys from being persisted to disk.
+    history: History
+    if self.history_file is None:
+      history = InMemoryHistory()
+    else:
+      # Ensure history directory exists for file-based history
+      self.history_file.parent.mkdir(parents=True, exist_ok=True)
+      history = FileHistory(str(self.history_file))
 
     return PromptSession(
-      history=FileHistory(str(self.history_file)),
+      history=history,
       multiline=True,
       mouse_support=False,
       key_bindings=kb,
