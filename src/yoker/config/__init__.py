@@ -44,6 +44,19 @@ from typing import Literal, cast
 
 from clevis import SecurityAction, SecurityConfig, get_config
 
+from yoker.config.providers import (
+  AnthropicConfig,
+  AnthropicParameters,
+  GeminiConfig,
+  GeminiParameters,
+  GenericConfig,
+  GenericParameters,
+  OllamaConfig,
+  OllamaParameters,
+  OpenAIConfig,
+  OpenAIParameters,
+  ProviderConfig,
+)
 from yoker.config.validators import (
   validate_choice,
   validate_directory_exists,
@@ -105,95 +118,69 @@ class HarnessConfig:
     validate_non_empty_string(self.version, "harness.version")
 
 
-@dataclass(frozen=True)
-class OllamaParameters:
-  """Ollama model parameters.
-
-  Attributes:
-    temperature: Sampling temperature (0.0-2.0).
-    top_p: Nucleus sampling probability (0.0-1.0).
-    top_k: Top-k sampling parameter.
-    num_ctx: Context window size.
-  """
-
-  temperature: float = field(default=0.7, metadata={"help": "Sampling temperature (0.0-2.0)"})
-  top_p: float = field(default=0.9, metadata={"help": "Nucleus sampling probability (0.0-1.0)"})
-  top_k: int = field(default=40, metadata={"help": "Top-k sampling parameter"})
-  num_ctx: int = field(default=4096, metadata={"help": "Context window size"})
-
-  def __post_init__(self) -> None:
-    """Validate Ollama parameters."""
-    if not 0.0 <= self.temperature <= 2.0:
-      raise ValidationError(
-        "backend.ollama.parameters.temperature",
-        self.temperature,
-        "must be between 0.0 and 2.0",
-      )
-    if not 0.0 <= self.top_p <= 1.0:
-      raise ValidationError(
-        "backend.ollama.parameters.top_p",
-        self.top_p,
-        "must be between 0.0 and 1.0",
-      )
-    validate_positive_int(self.top_k, "backend.ollama.parameters.top_k")
-    validate_positive_int(self.num_ctx, "backend.ollama.parameters.num_ctx")
-
-
-@dataclass(frozen=True)
-class OllamaConfig:
-  """Ollama backend configuration.
-
-  Attributes:
-    base_url: URL of the Ollama API server.
-    api_key: Optional API key for Ollama authorization.
-    model: Default model to use.
-    timeout_seconds: Request timeout in seconds.
-    parameters: Model generation parameters.
-  """
-
-  base_url: str = field(
-    default="http://localhost:11434",
-    metadata={"help": "URL of the Ollama API server (local app or cloud)"},
-  )
-  api_key: str | None = field(
-    default=None,
-    metadata={"help": "Optional API key for Ollama authorization (cloud models)"},
-  )
-  model: str = field(
-    default="gemini-3-flash-preview:cloud",
-    metadata={"help": "Default model to use (cloud model needs no local download)"},
-  )
-  timeout_seconds: int = field(
-    default=60,
-    metadata={"help": "Request timeout in seconds"},
-  )
-  parameters: OllamaParameters = field(default_factory=OllamaParameters)
-
-  def __post_init__(self) -> None:
-    """Validate Ollama configuration."""
-    validate_url(self.base_url, "backend.ollama.base_url")
-    validate_non_empty_string(self.model, "backend.ollama.model")
-    validate_positive_int(self.timeout_seconds, "backend.ollama.timeout_seconds")
+# Known backend providers with specific config classes
+KNOWN_PROVIDERS = ("ollama", "openai", "anthropic", "gemini")
 
 
 @dataclass(frozen=True)
 class BackendConfig:
-  """Backend provider configuration.
+  """Backend provider configuration (tagged union by `provider`).
 
   Attributes:
-    provider: Backend provider name (currently only 'ollama').
-    ollama: Ollama-specific configuration.
+    provider: Backend provider name. Can be:
+      - 'ollama': Local inference server (native OllamaBackend)
+      - 'openai': OpenAI GPT models (via LitellmBackend)
+      - 'anthropic': Anthropic Claude models (via LitellmBackend)
+      - 'gemini': Google Gemini models (via LitellmBackend)
+      - Any other litellm-supported provider (e.g., 'groq', 'cohere', 'azure', 'mistral')
+    ollama: Ollama-specific configuration (required when provider='ollama').
+    openai: OpenAI-specific configuration (required when provider='openai').
+    anthropic: Anthropic-specific configuration (required when provider='anthropic').
+    gemini: Gemini-specific configuration (required when provider='gemini').
+
+  Note:
+    For known providers ('ollama', 'openai', 'anthropic', 'gemini'), the corresponding
+    config attribute must be set. For unknown providers (any litellm-supported provider),
+    a GenericConfig is created automatically. Litellm handles authentication and routing.
   """
 
-  provider: str = field(
-    default="ollama",
-    metadata={"help": "Backend provider name (currently only 'ollama')"},
-  )
+  provider: str = "ollama"
   ollama: OllamaConfig = field(default_factory=OllamaConfig)
+  openai: OpenAIConfig | None = None
+  anthropic: AnthropicConfig | None = None
+  gemini: GeminiConfig | None = None
 
   def __post_init__(self) -> None:
-    """Validate backend configuration."""
-    validate_choice(self.provider, "backend.provider", ("ollama",))
+    validate_non_empty_string(self.provider, "backend.provider")
+
+    # Known providers must have their config set
+    # Unknown providers (handled by litellm) will use GenericConfig
+    if self.provider in KNOWN_PROVIDERS:
+      config = getattr(self, self.provider, None)
+      if config is None:
+        raise ValidationError(
+          f"backend.{self.provider}", None, f"required when provider='{self.provider}'"
+        )
+
+  @property
+  def config(self) -> ProviderConfig:
+    """Get the active provider's config.
+
+    Returns the config for the currently selected provider.
+    For unknown providers, returns a GenericConfig with model from environment
+    or defaults (model must be specified in agent definition or config).
+
+    Returns:
+      ProviderConfig for the active provider. Never None.
+    """
+    # Known providers have their config as an attribute
+    if self.provider in KNOWN_PROVIDERS:
+      # Type assertion: validation in __post_init__ guarantees non-None
+      return cast(ProviderConfig, getattr(self, self.provider))
+
+    # Unknown provider: return GenericConfig
+    # Model should come from agent definition or fallback
+    return GenericConfig(model="")
 
 
 @dataclass(frozen=True)
@@ -725,8 +712,19 @@ __all__ = [
   "Config",
   "HarnessConfig",
   "BackendConfig",
+  # Provider configuration classes (from providers.py)
   "OllamaConfig",
   "OllamaParameters",
+  "OpenAIConfig",
+  "OpenAIParameters",
+  "AnthropicConfig",
+  "AnthropicParameters",
+  "GeminiConfig",
+  "GeminiParameters",
+  "GenericConfig",
+  "GenericParameters",
+  "ProviderConfig",
+  # Other configuration classes
   "ContextConfig",
   "HandlerConfig",
   "PermissionsConfig",
@@ -750,6 +748,8 @@ __all__ = [
   "PluginsConfig",
   "LoggingConfig",
   "UIConfig",
+  # Constants
+  "KNOWN_PROVIDERS",
   # Helper function
   "get_yoker_config",
 ]

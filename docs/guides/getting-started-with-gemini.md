@@ -45,7 +45,7 @@ Google AI Studio is the web interface for working with Gemini models and
 generating API keys.
 
 1. Open [https://aistudio.google.com/](https://aistudio.google.com/) in your browser.
-2. Sign in with your Google account if prompted.
+2. "Get Started" and sign in with your Google account if prompted.
 3. You'll land on the Google AI Studio dashboard.
 
 ![Google AI Studio dashboard](../_static/gemini-studio-dashboard.png)
