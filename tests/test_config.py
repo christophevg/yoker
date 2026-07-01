@@ -42,7 +42,7 @@ class TestConfigSchema:
     """Test OllamaConfig default values."""
     config = OllamaConfig()
     assert config.base_url == "http://localhost:11434"
-    assert config.model == "llama3.2:3b"
+    assert config.model == "qwen3.5:cloud"
     assert config.timeout_seconds == 60
 
   def test_config_defaults(self) -> None:
@@ -50,7 +50,7 @@ class TestConfigSchema:
     config = Config()
     assert config.harness.name == "yoker"
     assert config.backend.provider == "ollama"
-    assert config.backend.ollama.model == "llama3.2:3b"
+    assert config.backend.ollama.model == "qwen3.5:cloud"
     assert config.context.manager == "basic_persistence"
     assert config.permissions.network_access == "none"
     assert config.permissions.filesystem_paths == (".",)
@@ -92,8 +92,8 @@ class TestConfigSchema:
     ``OllamaConfig.model``. This test locks that value so unintended changes
     are caught.
     """
-    assert OllamaConfig().model == "llama3.2:3b"
-    assert Config().backend.ollama.model == "llama3.2:3b"
+    assert OllamaConfig().model == "qwen3.5:cloud"
+    assert Config().backend.ollama.model == "qwen3.5:cloud"
 
 
 class TestConfigValidation:

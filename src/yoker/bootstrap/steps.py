@@ -287,7 +287,7 @@ async def step_account_check_provider(ui: UIHandler, provider: ProviderInfo) -> 
   """
   # Gemini uses personal Google accounts (lower barrier, more accessible)
   question = (
-    f"Do you have a personal Google account?"
+    "Do you have a personal Google account?"
     if provider.id == "gemini"
     else f"Do you have a {provider.display_name} account?"
   )
