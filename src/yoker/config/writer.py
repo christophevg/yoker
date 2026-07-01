@@ -47,7 +47,7 @@ def _set_dotted(config: Any, dotted: str, value: Any) -> Any:
 def _apply_backend_provider_overrides(
   config: Config,
   overrides: dict[str, Any],
-) -> Config:
+) -> tuple[Config, set[str]]:
   """Apply backend.provider override together with provider config.
 
   When setting ``backend.provider`` to a known provider, we must also set the
@@ -55,12 +55,19 @@ def _apply_backend_provider_overrides(
   validation errors in BackendConfig.__post_init__.
 
   This function extracts backend-related overrides and applies them atomically.
+
+  Returns:
+    A tuple of (modified config, set of applied override keys).
   """
   # Check if we're setting backend.provider
+  applied_keys: set[str] = set()
+
   if "backend.provider" not in overrides:
-    return config
+    return config, applied_keys
 
   provider = overrides["backend.provider"]
+  applied_keys.add("backend.provider")
+
   provider_config_key = f"backend.{provider}"
 
   # Check if this is a known provider that needs config initialization
@@ -68,7 +75,11 @@ def _apply_backend_provider_overrides(
 
   if provider not in KNOWN_PROVIDERS:
     # Unknown provider - no special handling needed
-    return config
+    return config, applied_keys
+
+  # Track that we're applying the provider config key
+  if provider_config_key in overrides:
+    applied_keys.add(provider_config_key)
 
   # Collect all backend overrides to apply together
   backend_overrides = {}
@@ -85,7 +96,7 @@ def _apply_backend_provider_overrides(
   new_backend = dataclasses.replace(config.backend, **backend_overrides)
   result = dataclasses.replace(config, backend=new_backend)
 
-  return result
+  return result, applied_keys
 
 
 def _format_scalar(value: Any) -> str | None:
@@ -99,7 +110,28 @@ def _format_scalar(value: Any) -> str | None:
   if isinstance(value, bool):
     return "true" if value else "false"
   if isinstance(value, str):
-    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+    # Escape special characters for TOML basic strings
+    # TOML spec: https://toml.io/en/v1.0.0#string
+    # Must escape: \ " (and control characters below U+0020)
+    # We also escape newlines and tabs for readability
+    escaped = (
+      value.replace("\\", "\\\\")
+      .replace('"', '\\"')
+      .replace("\n", "\\n")
+      .replace("\t", "\\t")
+      .replace("\r", "\\r")
+    )
+    # Escape control characters (ASCII 0x00-0x1F except for already handled \n, \t, \r)
+    # and U+007F (DEL)
+    result_chars = []
+    for char in escaped:
+      code = ord(char)
+      if code < 0x20 or code == 0x7F:
+        # Escape as \uXXXX
+        result_chars.append(f"\\u{code:04x}")
+      else:
+        result_chars.append(char)
+    escaped = "".join(result_chars)
     return f'"{escaped}"'
   if isinstance(value, int):
     return str(value)
@@ -115,7 +147,22 @@ def _format_scalar(value: Any) -> str | None:
     items = ", ".join(f"{_format_scalar(k)} = {_format_scalar(v) or ''}" for k, v in value.items())
     return "{" + items + "}"
   # Fallback: stringify defensively.
-  escaped = str(value).replace("\\", "\\\\").replace('"', '\\"')
+  escaped = (
+    str(value)
+    .replace("\\", "\\\\")
+    .replace('"', '\\"')
+    .replace("\n", "\\n")
+    .replace("\t", "\\t")
+    .replace("\r", "\\r")
+  )
+  result_chars = []
+  for char in escaped:
+    code = ord(char)
+    if code < 0x20 or code == 0x7F:
+      result_chars.append(f"\\u{code:04x}")
+    else:
+      result_chars.append(char)
+  escaped = "".join(result_chars)
   return f'"{escaped}"'
 
 
@@ -200,17 +247,9 @@ def render_config_toml(config: Config, overrides: dict[str, Any] | None = None) 
   if overrides:
     # Apply backend.provider and backend.<provider> together atomically
     # to avoid validation errors in BackendConfig.__post_init__
-    rendered = _apply_backend_provider_overrides(rendered, overrides)
+    rendered, applied_keys = _apply_backend_provider_overrides(rendered, overrides)
 
     # Apply remaining overrides (excluding the ones already applied)
-    applied_keys = {"backend.provider"}
-    if "backend.provider" in overrides:
-      provider = overrides["backend.provider"]
-      from yoker.config import KNOWN_PROVIDERS
-
-      if provider in KNOWN_PROVIDERS:
-        applied_keys.add(f"backend.{provider}")
-
     for dotted, value in overrides.items():
       if dotted not in applied_keys:
         rendered = _set_dotted(rendered, dotted, value)

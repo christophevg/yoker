@@ -213,6 +213,18 @@ PROVIDERS: dict[str, ProviderInfo] = {
 # Ordered list of provider IDs for display in wizard (Ollama first for backward compat)
 PROVIDER_ORDER: list[str] = ["ollama", "openai", "anthropic", "gemini"]
 
+# Validate that PROVIDER_ORDER matches PROVIDERS keys to prevent drift
+# when adding new providers
+if set(PROVIDER_ORDER) != set(PROVIDERS.keys()):
+  missing_in_order = set(PROVIDERS.keys()) - set(PROVIDER_ORDER)
+  extra_in_order = set(PROVIDER_ORDER) - set(PROVIDERS.keys())
+  raise AssertionError(
+    f"PROVIDER_ORDER does not match PROVIDERS keys. "
+    f"Missing in PROVIDER_ORDER: {missing_in_order}. "
+    f"Extra in PROVIDER_ORDER: {extra_in_order}. "
+    f"Please update PROVIDER_ORDER to match PROVIDERS keys."
+  )
+
 
 def get_provider_info(provider_id: str) -> ProviderInfo:
   """Get provider metadata by id.
@@ -226,6 +238,9 @@ def get_provider_info(provider_id: str) -> ProviderInfo:
   Raises:
     KeyError: If provider_id is not found.
   """
+  if provider_id not in PROVIDERS:
+    available = ", ".join(sorted(PROVIDERS.keys()))
+    raise KeyError(f"Unknown provider '{provider_id}'. Available providers: {available}") from None
   return PROVIDERS[provider_id]
 
 

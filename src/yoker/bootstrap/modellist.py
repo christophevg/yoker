@@ -141,5 +141,3 @@ __all__ = [
   "curated_models_for_provider",
   "default_model_for_provider",
 ]
-
-

@@ -354,6 +354,7 @@ async def _collect_ollama_auth(ui: UIHandler, provider: ProviderInfo) -> Connect
       provider.api_key_url,
       blurb=f"The guide walks through creating a {provider.display_name} API key.",
     )
+  # Note: Ollama API keys don't have a specific format prefix
   key = await ui.get_secret_input("Paste your Ollama API key: ")
   api_key = key.strip() if key else None
   if not api_key:
@@ -366,6 +367,14 @@ async def _collect_api_key(ui: UIHandler, provider: ProviderInfo) -> ConnectionC
   """Collect API key for providers that require it."""
   await ui.output_step_title(4, TOTAL_STEPS, "API Key")
 
+  # Provide format hints for known providers
+  format_hints: dict[str, str] = {
+    "openai": " (typically starts with 'sk-')",
+    "anthropic": " (typically starts with 'sk-ant-')",
+    "gemini": " (typically starts with 'AI')",
+  }
+  hint = format_hints.get(provider.id, "")
+
   # Check if user has an API key
   has_key = await _ask_yes_no(ui, f"Do you have a {provider.display_name} API key?", default=False)
 
@@ -376,8 +385,8 @@ async def _collect_api_key(ui: UIHandler, provider: ProviderInfo) -> ConnectionC
       blurb=f"The guide walks through creating a {provider.display_name} API key.",
     )
 
-  # Collect the key
-  key = await ui.get_secret_input(f"Paste your {provider.display_name} API key: ")
+  # Collect the key with format hint
+  key = await ui.get_secret_input(f"Paste your {provider.display_name} API key{hint}: ")
   api_key = key.strip() if key else None
 
   if not api_key:
