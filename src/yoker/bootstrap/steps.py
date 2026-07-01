@@ -285,9 +285,13 @@ async def step_account_check_provider(ui: UIHandler, provider: ProviderInfo) -> 
     ui: The UI handler.
     provider: The selected provider info.
   """
-  has_account = await _ask_yes_no(
-    ui, f"Do you have a {provider.display_name} account?", default=False
+  # Gemini uses personal Google accounts (lower barrier, more accessible)
+  question = (
+    f"Do you have a personal Google account?"
+    if provider.id == "gemini"
+    else f"Do you have a {provider.display_name} account?"
   )
+  has_account = await _ask_yes_no(ui, question, default=False)
   if has_account:
     return
   await _open_docs_confirmed(
