@@ -4,6 +4,7 @@ The LitellmBackend reads config.backend.config directly and flattens
 parameters inline in chat_stream().
 """
 
+import copy
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -176,3 +177,128 @@ class TestLitellmBackend:
       assert any(c.event == ChatChunkEvent.TOOL_CALL_START for c in chunks)
       assert any(c.event == ChatChunkEvent.TOOL_CALL_DELTA for c in chunks)
       assert any(c.event == ChatChunkEvent.TOOL_CALL_STOP for c in chunks)
+
+  @pytest.mark.asyncio
+  async def test_chat_stream_does_not_mutate_caller_messages(
+    self, mock_config_openai: Config
+  ) -> None:
+    """Regression test for issue #38.
+
+    LitellmBackend.chat_stream must NOT mutate the caller's messages list
+    when converting tool-call arguments from dict to JSON string. The
+    context stores arguments as dicts (generic format) and relies on
+    get_context() returning a shallow copy; mutating inner dicts
+    corrupts the stored context and breaks cross-backend resumption
+    (e.g. Ollama requires dict arguments).
+    """
+    backend = LitellmBackend(mock_config_openai)
+
+    # Mock litellm.acompletion to return an empty stream ending with DONE.
+    mock_chunk = MagicMock()
+    mock_chunk.choices = [MagicMock()]
+    mock_chunk.choices[0].delta.content = "Hello"
+    mock_chunk.choices[0].delta.tool_calls = None
+    mock_chunk.usage.prompt_tokens = 10
+    mock_chunk.usage.completion_tokens = 5
+
+    with patch("litellm.acompletion", new_callable=AsyncMock) as mock_acompletion:
+
+      async def async_gen():
+        yield mock_chunk
+
+      mock_acompletion.return_value = async_gen()
+
+      # Messages with a tool_calls entry whose arguments is a dict (generic format).
+      messages = [
+        {"role": "user", "content": "do a thing"},
+        {
+          "role": "assistant",
+          "content": "",
+          "tool_calls": [
+            {
+              "id": "call_1",
+              "function": {
+                "name": "test_tool",
+                "arguments": {"arg": "value"},
+              },
+            }
+          ],
+        },
+      ]
+      # Snapshot a deep copy for later comparison.
+      original = copy.deepcopy(messages)
+
+      async for _ in backend.chat_stream(
+        model="gpt-4o",
+        messages=messages,
+      ):
+        pass
+
+      # The caller's messages must be unchanged, including the nested
+      # tool_call arguments which must remain a dict.
+      assert messages == original, (
+        "LitellmBackend.chat_stream mutated the caller's messages list; "
+        "it must deep-copy before converting dict arguments to JSON strings."
+      )
+      assert isinstance(messages[1]["tool_calls"][0]["function"]["arguments"], dict), (
+        "tool_call arguments must remain a dict in the caller's messages"
+      )
+
+  @pytest.mark.asyncio
+  async def test_chat_stream_passes_json_string_arguments_to_litellm(
+    self, mock_config_openai: Config
+  ) -> None:
+    """LitellmBackend must still pass JSON-string arguments to litellm.acompletion.
+
+    Even though it must not mutate the caller's messages, the backend is
+    responsible for converting dict arguments to JSON strings before
+    handing them to litellm (which expects OpenAI-format JSON strings).
+    """
+    backend = LitellmBackend(mock_config_openai)
+
+    mock_chunk = MagicMock()
+    mock_chunk.choices = [MagicMock()]
+    mock_chunk.choices[0].delta.content = "Hello"
+    mock_chunk.choices[0].delta.tool_calls = None
+    mock_chunk.usage.prompt_tokens = 10
+    mock_chunk.usage.completion_tokens = 5
+
+    with patch("litellm.acompletion", new_callable=AsyncMock) as mock_acompletion:
+
+      async def async_gen():
+        yield mock_chunk
+
+      mock_acompletion.return_value = async_gen()
+
+      messages = [
+        {
+          "role": "assistant",
+          "content": "",
+          "tool_calls": [
+            {
+              "id": "call_1",
+              "function": {
+                "name": "test_tool",
+                "arguments": {"arg": "value"},
+              },
+            }
+          ],
+        },
+      ]
+
+      async for _ in backend.chat_stream(
+        model="gpt-4o",
+        messages=messages,
+      ):
+        pass
+
+      # Inspect the messages actually passed to litellm.acompletion.
+      call_kwargs = mock_acompletion.call_args
+      sent_messages = call_kwargs.kwargs.get("messages") or call_kwargs.args[0]
+      sent_args = sent_messages[0]["tool_calls"][0]["function"]["arguments"]
+      assert isinstance(sent_args, str), (
+        "litellm.acompletion must receive JSON-string tool-call arguments"
+      )
+      import json as _json
+
+      assert _json.loads(sent_args) == {"arg": "value"}

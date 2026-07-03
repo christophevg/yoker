@@ -10,6 +10,7 @@ Design:
   - Flattens parameters dict into litellm kwargs
 """
 
+import copy
 import json
 import logging
 from collections.abc import AsyncIterator
@@ -91,9 +92,15 @@ class LitellmBackend(ModelBackend):
     Yields:
       ChatChunk instances representing streaming events.
     """
-    # Convert tool call arguments from dict to JSON string for LiteLLM
-    # Context stores arguments as dict (generic format)
-    # LiteLLM expects arguments as JSON string (OpenAI format)
+    # Convert tool call arguments from dict to JSON string for LiteLLM.
+    # Context stores arguments as dict (generic format); LiteLLM expects
+    # arguments as JSON string (OpenAI format). Deep-copy the caller's
+    # messages first so we never mutate the caller's list/dicts -- the
+    # context's get_context() returns a shallow copy and shared inner
+    # dicts would otherwise be corrupted (issue #38), breaking the
+    # generic-format invariant and cross-backend resumption (e.g.
+    # Ollama, which requires dict arguments).
+    messages = copy.deepcopy(messages)
     for message in messages:
       if "tool_calls" in message:
         for tc in message["tool_calls"]:
