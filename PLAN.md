@@ -77,6 +77,55 @@ The MBI currently being implemented. Only one Active MBI at a time.
 
 Future MBIs, ordered by priority (highest first).
 
+### MBI-007: Session
+
+**Goal:** Introduce a `Session` construct that manages a team of agents: their lifecycle (create, spawn, monitor, cancel), their registry, recursion depth tracking, event aggregation, and inter-agent messaging. Reduce `Agent` to a single-agent chat loop with no orchestration responsibilities. Establish the primitive that MBI-003 (Python API) builds its workflow layer on top of.
+
+**Value:** Unlocks true multi-agent workflows (fan-out, pipelines, long-lived teams, inter-agent messaging) that are not expressible today. Cleans up `Agent` to a single-responsibility primitive. Makes sub-agents visible via event aggregation, serving Yoker's transparency philosophy. Prerequisite for MBI-003's `yoker.session()` workflow primitive to be a facade over a real primitive rather than a missing one. Makes the "Recursive Composition: True Sub-Agents" claim in `docs/rationale.md` fully real.
+
+**Status:** Ready
+
+**Design source of truth:** `analysis/session-concept-analysis.md`
+
+**Components:**
+- [ ] RES: Finalise Session API surface (lifecycle, spawn, messaging, event aggregation, addressing) — owner decision on open questions in §7
+- [ ] DEV: Create `src/yoker/session/` module (`Session` class, `Message` dataclass, `spawn()`, event aggregator, lifecycle via `async with`)
+- [ ] DEV: Move `AgentRegistry` ownership from `Agent` to `Session`; plugin loading targets Session
+- [ ] DEV: Move recursion depth tracking from `Agent` to `Session`
+- [ ] DEV: Rework `builtin/agent.py` to capture Session; `_create_subagent` and `_run_with_timeout` move to Session as `spawn()`
+- [ ] DEV: Add session-level event types (`SESSION_START/END`, `AGENT_SPAWNED/FINISHED`, `AGENT_MESSAGE`); extend `EventRecorder` to be session-scoped
+- [ ] DEV: Wire `UIBridge` to Session; add optional `UIHandler` methods for sub-agent events with no-op defaults
+- [ ] DEV: Rework `__main__.py`: construct Session in `main()`, rename `run_session` to `run_repl`, register bridge on Session
+- [ ] DEV: Add optional `[session]` config section; relocate `tools.agent.max_recursion_depth` semantics
+- [ ] DEV: Update `ToolContext` to carry a `session` reference so the agent tool (and future session-aware tools) can reach the Session
+- [ ] TEST: Session lifecycle, spawn, recursion limits, event aggregation, inter-agent messaging, backward compatibility for single-agent use
+- [ ] DOCS: Update `docs/rationale.md` (Recursive Composition), `CLAUDE.md` (module structure), `analysis/mbi-003-python-api-design.md` (Layer 3)
+- [ ] CHECK: `make check` green; existing examples unchanged for single-agent use
+
+**Acceptance Criteria:**
+- [ ] `Session` exists as an async context manager owning an `AgentRegistry`, tracking recursion depth, and aggregating events from all agents it manages
+- [ ] `Agent` no longer holds `agents`, `recursion_depth`, or `max_recursion_depth`; single-agent construction and `process()` work unchanged
+- [ ] `Session.spawn(name, prompt, timeout=...)` creates a child agent, runs it, returns the response string; recursion depth enforced by Session
+- [ ] Events emitted by spawned agents are visible to handlers registered on the Session, tagged with source agent name
+- [ ] The built-in `agent` tool works identically from the model's perspective (same parameters, same string return) but is implemented via `Session.spawn`
+- [ ] `python -m yoker` interactive mode works unchanged; sub-agent activity is observable when aggregation is enabled
+- [ ] Existing examples (`library_usage.py`, `batch_mode.py`, `research_workflow.py`) continue to work without modification
+- [ ] New `examples/session_demo.py` demonstrates spawning multiple agents in one session
+- [ ] `make check` green
+
+**Dependencies:** MBI-006 (Multi-Provider Backend) Phase 1 complete, so Session can share backends across agents regardless of provider.
+
+**Out of scope (deferred):** Inter-agent streaming communication (request-response only in MBI-007); shared context policy beyond `fresh` and `fork`; full session persistence/resumption (one coherent session record); sub-sessions / hierarchical sessions; backend connection pooling.
+
+**Open design decisions needing owner input** (see `analysis/session-concept-analysis.md` §7):
+1. Routed-through-Session messaging vs direct agent-to-agent (recommend routed).
+2. `Agent.agents` removal: hard break vs deprecation shim (recommend hard break).
+3. Session as async context manager vs explicit `start()/stop()` (recommend async context manager).
+4. Event aggregation on by default vs opt-in (recommend on by default, with a config toggle).
+5. Session owns backends vs each Agent creates its own (recommend Session owns a factory and shares where possible).
+
+---
+
 ### MBI-003: Python API
 
 **Goal:** Python developers can easily integrate agentic (sub-)workflows in Python function calls, with a clean utility API wrapping the current class-oriented architecture. Example: `yoker.execute_skill("skill-name", "prompt")` or even `from package.skills import skill_name; skill_name("prompt")`.
@@ -98,7 +147,7 @@ Future MBIs, ordered by priority (highest first).
 - [ ] API documentation shows common integration patterns
 - [ ] Utility functions provide clean abstraction over internal classes
 
-**Dependencies:** MBI-002 (Bootstrap) for first-time users
+**Dependencies:** MBI-002 (Bootstrap) for first-time users; MBI-007 (Session) — the `yoker.session()` workflow primitive in Layer 3 builds on the real Session construct.
 
 ---
 
@@ -176,3 +225,4 @@ Completed MBIs.
 - [ ] Publish release to PyPI
 
 **Achieved:** All core components implemented (Skill Infrastructure, Slash Commands, Skill Tool, Package Plugin Discovery, CLI --with Argument, UI Separation, Error Handling, Documentation, Testing).
+
