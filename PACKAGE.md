@@ -4,10 +4,11 @@
 
 ## Overview
 
-Yoker is a library-first, event-driven agent harness for Python that integrates with Ollama. It provides a transparent, configurable runtime for AI agents with structured tool execution, guardrails, event emission, and a pluggable UI layer. Unlike CLI-first agent frameworks, Yoker is designed to be embedded in applications with full visibility into agent operations.
+Yoker is a library-first, event-driven agent harness for Python that integrates with multiple LLM providers. It provides a transparent, configurable runtime for AI agents with structured tool execution, guardrails, event emission, and a pluggable UI layer. Unlike CLI-first agent frameworks, Yoker is designed to be embedded in applications with full visibility into agent operations.
 
 Key differentiators:
 - **Library-first** - Embed in applications, not locked into CLI
+- **Multi-provider** - Ollama (native SDK), OpenAI, Anthropic, Gemini, and 100+ providers via LiteLLM
 - **Event-driven** - Subscribe to thinking, content, and tool events
 - **UI layer** - Swap interactive TUI, batch mode, or custom handlers
 - **Plugin system** - Load namespaced tools, skills, and agents from Python packages
@@ -86,7 +87,7 @@ async def main():
   bridge = UIBridge(ui)
   agent.add_event_handler(bridge)
 
-  await ui.start(agent.model, "0.4.0", {"thinking_enabled": True})
+  await ui.start(agent)
   await agent.process("Summarize README.md")
   await ui.shutdown("complete")
 
@@ -117,16 +118,19 @@ asyncio.run(main())
 
 ### Custom UI handler
 
-Subclass `BaseUIHandler` and wire it to the agent with `UIBridge`:
+Implement the `UIHandler` protocol and wire it to the agent with `UIBridge`:
 
 ```python
 from typing import Any
 
-from yoker.ui.base import BaseUIHandler
+from yoker.agent import Agent
+from yoker.ui import UIHandler
 
-class MyUIHandler(BaseUIHandler):
-  async def start(self, model: str, version: str, config: dict[str, Any]) -> None:
-    print(f"Session started: {model}")
+class MyUIHandler:
+  """A minimal UIHandler implementation for custom integrations."""
+
+  async def start(self, agent: Agent) -> None:
+    print(f"Session started: {agent.model}")
 
   async def shutdown(self, reason: str) -> None:
     print(f"Session ended: {reason}")
@@ -134,10 +138,25 @@ class MyUIHandler(BaseUIHandler):
   async def get_input(self, prompt: str = "> ") -> str | None:
     return input(prompt)
 
+  async def get_secret_input(self, prompt: str = "> ") -> str | None:
+    return input(prompt)
+
+  def output_info(self, text: str) -> None:
+    print(text)
+
+  async def output_step_title(self, step: int, total: int, title: str) -> None:
+    print(f"Step {step}/{total}: {title}")
+
+  def output_content(self, content: str, content_type: str = "text/plain") -> None:
+    print(content)
+
   def output_command_result(self, result: str) -> None:
     print(result)
 
-  def output_tool_call(self, tool_name: str, args: dict[str, Any]) -> None:
+  def output_thinking(self, text: str) -> None:
+    print(text)
+
+  def output_tool_call(self, tool_name: str, args: dict[str, object]) -> None:
     print(f"Tool: {tool_name}({args})")
 
   def output_tool_result(self, tool_name: str, success: bool, result: str) -> None:
@@ -151,14 +170,14 @@ class MyUIHandler(BaseUIHandler):
     path: str,
     content: str | None,
     content_type: str,
-    metadata: dict[str, Any],
+    metadata: dict[str, object],
   ) -> None:
     print(f"{tool_name} {operation} {path}")
 
   def output_stats(self, duration_ms: int, prompt_tokens: int, eval_tokens: int) -> None:
     print(f"Stats: {duration_ms}ms, {prompt_tokens} + {eval_tokens} tokens")
 
-  def output_error(self, error: Exception) -> None:
+  def output_error(self, error: Exception, include_traceback: bool = False) -> None:
     print(f"Error: {error}")
 
   def start_content_stream(self) -> None:
@@ -184,18 +203,18 @@ class MyUIHandler(BaseUIHandler):
 
 ### `yoker.agent.Agent`
 
-The async agent that chats with Ollama and uses tools.
+The async agent that chats with model backends and uses tools.
 
 ```python
 from yoker import Agent
 
 agent = Agent(agent_path="agents/researcher.md")
 
-print(agent.model)              # Resolved model name
-print(agent.tool_registry.names)  # Available tools (namespaced)
-print(agent.context)            # Conversation history
-print(agent.agent_definition)   # Loaded agent (if any)
-print(agent.skill_registry.names)  # Available skills (namespaced)
+print(agent.model)          # Resolved model name
+print(agent.tools.names)    # Available tools (namespaced)
+print(agent.context)        # Conversation history
+print(agent.definition)    # Loaded agent definition (if any)
+print(agent.skills.names)  # Available skills (namespaced)
 ```
 
 **Key methods:**
@@ -207,7 +226,6 @@ print(agent.skill_registry.names)  # Available skills (namespaced)
 ### UI layer
 
 - `yoker.ui.UIHandler` - Protocol defining the UI interface
-- `yoker.ui.BaseUIHandler` - Abstract base class with state management
 - `yoker.ui.UIBridge` - Event dispatcher that converts agent events into UI method calls
 - `yoker.ui.InteractiveUIHandler` - Terminal UI using `prompt_toolkit` and Rich
 - `yoker.ui.BatchUIHandler` - Non-interactive UI using stdin/stdout/stderr
@@ -344,7 +362,7 @@ tools:
   - yoker:read
   - yoker:search
   - yoker:websearch
-model: llama3.2:latest
+model: qwen3.5:cloud
 ---
 
 You are a research assistant. Your role is to help users find
@@ -453,7 +471,7 @@ agent = Agent(config=config)
 
 ### Custom UI handler
 
-Subclass `BaseUIHandler`, implement the abstract methods, and wire with `UIBridge`. See the [Custom UI handler](#custom-ui-handler) example above.
+Implement the `UIHandler` protocol, implement the methods, and wire with `UIBridge`. See the [Custom UI handler](#custom-ui-handler) example above.
 
 ### Batch processing
 
@@ -509,6 +527,9 @@ Commands are handled by `yoker.ui.commands.CommandRegistry`.
 | `/agents` | Show loaded agent and known agents |
 | `/<skill-name>` | Invoke a skill by name |
 
+Thinking modes: `on` (visible reasoning trace), `off` (no trace), `silent`
+(trace consumed by the agent but not displayed).
+
 ## Tools List
 
 All built-in tools are registered with the `yoker:` namespace.
@@ -535,23 +556,38 @@ src/yoker/
 ├── __init__.py          # Public API exports
 ├── __main__.py          # CLI entry point
 ├── agent/               # Agent implementation
-│   ├── agent.py         # Public Agent class
+│   ├── __init__.py      # Public Agent class
 │   ├── _plugins.py      # Plugin loading helpers
 │   ├── _processing.py   # Message/tool processing
 │   ├── _setup.py        # Client, guardrail, registry setup
 │   ├── _tools.py        # Built-in tool filtering
-│   └── tools.py         # Agent-specific tool setup
+│   └── thinking.py      # Thinking mode enum
 ├── agents/              # Agent definition parsing
-├── commands/            # Core command definitions
-├── config.py            # Configuration system (Clevis)
-├── content_type.py      # MIME content type detection
+├── backends/            # Provider-neutral backend layer
+│   ├── protocol.py      # ModelBackend Protocol, ChatChunk, UsageStats
+│   ├── factory.py       # create_backend() dispatch
+│   ├── ollama.py        # OllamaBackend (native SDK)
+│   ├── litellm.py       # LitellmBackend (OpenAI, Anthropic, Gemini, 100+)
+│   └── trust.py         # Custom base URL trust validation
+├── bootstrap/           # First-run bootstrap wizard
+│   ├── wizard.py        # Wizard orchestration
+│   ├── steps.py         # Provider-specific setup steps
+│   ├── providers.py     # Curated model lists and provider metadata
+│   ├── detect.py        # Config detection
+│   └── modellist.py     # Model list rendering
+├── builtin/             # Built-in tools (read, write, git, websearch, ...)
+├── config/              # Configuration system (Clevis)
+│   ├── __init__.py      # Config dataclasses, get_yoker_config()
+│   ├── providers.py     # Provider configs (Ollama, OpenAI, Anthropic, Gemini, Generic)
+│   ├── validators.py    # Field validators
+│   └── writer.py        # TOML writer with chmod 600
 ├── context/             # Context management
 │   ├── basic.py
 │   ├── interface.py
 │   ├── manager.py
 │   └── persistence.py
 ├── events/              # Event types and recording/replay
-├── exceptions.py        # Exception hierarchy
+├── exceptions.py        # Exception hierarchy (incl. NetworkError)
 ├── logging.py           # Structured logging
 ├── plugins/             # Plugin loading and registration
 │   ├── __init__.py
@@ -564,9 +600,14 @@ src/yoker/
 │   ├── security.py      # Plugin trust checks
 │   ├── skills.py        # Plugin skill discovery
 │   └── urls.py          # plugin:// URL parsing
+├── schema.py            # NameSpaced base class
 ├── skills/              # Skill definitions and registry
-├── thinking.py          # Thinking mode enum
-├── tools/               # Tool implementations
+├── tools/               # Tool framework
+│   ├── annotations.py   # Path, Url, Query, Text markers + @tool decorator
+│   ├── schema.py        # ToolSpec, build_tool_spec()
+│   ├── registry.py      # ToolRegistry
+│   ├── guardrails/      # PathGuardrail, WebGuardrail
+│   └── web/             # Web tool backends
 └── ui/                  # UI layer
     ├── base.py
     ├── batch.py
@@ -579,17 +620,31 @@ src/yoker/
 
 ## Version Notes
 
-**Current stable version:** 0.4.0
+**Current stable version:** 0.5.0
 
-**Pending:** 0.5.0 - Major architecture refresh including:
-- Removed `begin_session()` / `end_session()` and `SessionStartEvent` / `SessionEndEvent` / `ErrorEvent`
-- New UI layer (`yoker/ui/`) with `UIHandler`, `UIBridge`, `InteractiveUIHandler`, and `BatchUIHandler`
-- Plugin system (`yoker/plugins/`) with `--with`, `__YOKER_MANIFEST__`, and namespaced tools/skills/agents
+Major features in 0.5.0:
+- Multi-provider backend architecture: Ollama (native SDK), OpenAI, Anthropic,
+  Gemini, and any LiteLLM-supported provider
+- Bootstrap wizard for interactive first-run setup (writes `~/.yoker.toml`)
+- Dual backend: `OllamaBackend` (native SDK) and `LitellmBackend` (100+ providers)
+- Provider configs: `OllamaConfig`, `OpenAIConfig`, `AnthropicConfig`,
+  `GeminiConfig`, `GenericConfig`
+- Removed `begin_session()` / `end_session()` and session lifecycle events
+- UI layer (`yoker/ui/`) with `UIHandler`, `UIBridge`, `InteractiveUIHandler`,
+  and `BatchUIHandler`
+- Plugin system (`yoker/plugins/`) with `--with`, `__YOKER_MANIFEST__`, and
+  namespaced tools/skills/agents
 - Content type detection with optional `[magic]` extras
 - Config loading through `get_yoker_config()` from Clevis
 - CLI flag `--agents-definition` replaces `--agent`
+- `NetworkError` with user-friendly messages (`__str__`) and debug messages
+  (`get_debug_message()`)
+- Secure API key handling: masked input during bootstrap, `chmod 600` on config
+  files
+- `OLLAMA_API_KEY` env var removed; configure `backend.ollama.api_key` instead
 
-See [GitHub Releases](https://github.com/christophevg/yoker/releases) for full version history.
+See [GitHub Releases](https://github.com/christophevg/yoker/releases) for full
+version history.
 
 ## References
 

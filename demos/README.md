@@ -77,25 +77,25 @@ The skills demo shows how Yoker's skill system works:
 
 ```bash
 # Run the skills demo (requires --skills-dir to load skill files)
-uv run python scripts/demo_session.py --script demos/skills.md --skills-dir demos/skills
+uv run python scripts/demo_session.py --script demos/skills.md --skills-dir examples/skills
 
 # With logging for replay
-uv run python scripts/demo_session.py --script demos/skills.md --skills-dir demos/skills --log
+uv run python scripts/demo_session.py --script demos/skills.md --skills-dir examples/skills --log
 ```
 
 This demo demonstrates:
 
-1. **Skill Discovery** - Skills loaded from `YOKER_SKILLS_PATH` environment variable
+1. **Skill Discovery** - Skills loaded from configured skills directories
 2. **Slash Commands** - Each skill becomes a `/skill-name` command
 3. **Context Injection** - Skill content injected into LLM context when invoked
 4. **Minimal Demo Scripts** - Demo runner handles setup, scripts stay minimal
 
-The `--skills-dir` flag sets `YOKER_SKILLS_PATH` before starting the agent,
-allowing skills to be loaded from a directory of `.md` files.
+The `--skills-dir` flag points the demo runner at a directory of skill files
+(see `examples/skills/` for example skill definitions).
 
 For implementation details, see:
 - `src/yoker/skills/` - Core skill infrastructure (schema, loader, injection, registry)
-- `demos/skills/example.md` - Example skill definition
+- `examples/skills/example.md` - Example skill definition
 - `demos/skills.md` - Demo script using the skill
 
 ## Writing Demos
@@ -145,5 +145,5 @@ Output files:
 ## Related Files
 
 - `scripts/demo_session.py` - Demo runner
-- `src/yoker/demo/` - Demo script loader
+- `scripts/yoker_demo.py` - Demo script loader
 - `media/` - Generated screenshots

@@ -8,12 +8,35 @@ version = "1.0"
 
 [backend]
 provider = "ollama"
+# Other supported providers: "openai", "anthropic", "gemini",
+# or any litellm-supported provider (e.g. "groq", "cohere", "azure", "mistral").
 
 [backend.ollama]
 base_url = "http://localhost:11434"
-api_key = ""
-model = "llama3.2:latest"
+api_key = ""  # Optional API key for authenticated Ollama endpoints
+model = "qwen3.5:cloud"
 timeout_seconds = 60
+
+# --- Alternative provider configs (uncomment and set provider above) ---
+# [backend.openai]
+# api_key = "${OPENAI_API_KEY}"  # Interpolated from environment variables
+# model = "gpt-4o-mini"
+# timeout_seconds = 60
+#
+# [backend.anthropic]
+# api_key = "${ANTHROPIC_API_KEY}"
+# model = "claude-haiku-4-5"
+# timeout_seconds = 60
+#
+# [backend.gemini]
+# api_key = "${GEMINI_API_KEY}"
+# model = "gemini-2.5-flash-lite"
+# timeout_seconds = 60
+#
+# [backend.generic]  # For any litellm-supported provider not listed above
+# api_key = "${GROQ_API_KEY}"
+# model = "groq/llama-3.1-8b-instant"
+# timeout_seconds = 60
 
 [backend.ollama.parameters]
 temperature = 0.7

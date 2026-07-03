@@ -25,9 +25,12 @@ once, and every Yoker-based tool benefits.
   Yoker-based app, package, or module you run afterwards reuses that same
   setup. No per-app configuration, no repeated wizard runs.
 - **Provider- and model-neutral.** Yoker does not lock you into a single
-  vendor. Today it ships with an [Ollama](https://ollama.com) backend; more
-  backends (OpenAI, Anthropic, and others) are planned. You choose the provider
-  and model that fit your cost, privacy, and performance needs. Not once! You can change model and/or provider whenever you want, your apps just follow you. And in the near future, when models go local, you are already set up.
+  vendor. It supports [Ollama](https://ollama.com) (via its native SDK, free
+  tier available), OpenAI, Anthropic, Google Gemini, and 100+ providers via
+  LiteLLM. You choose the provider and model that fit your cost, privacy, and
+  performance needs. Not once! You can change model and/or provider whenever
+  you want, your apps just follow you. And in the near future, when models go
+  local, you are already set up.
 - **Transparent.** Yoker does not hide what it does. Prompts, tool calls, and
   agent decisions are visible and inspectable, so you stay in control of what
   the AI does on your behalf.
@@ -54,11 +57,12 @@ The first time you run any Yoker-based app (or `yoker` itself), Yoker detects
 that no configuration exists yet and launches the **bootstrap wizard**. The
 wizard walks you through the one-time setup in a few short steps:
 
-1. **Backend connection** — choose how Yoker reaches a language model. Today
-   this means connecting to Ollama, either through the local app or with an
-   API key. See {doc}`Getting Started with Ollama <getting-started-with-ollama>`
-   for the exact steps to create an account, install the app, and (optionally)
-   generate a key.
+1. **Provider selection** — choose your LLM provider (Ollama, OpenAI, Anthropic,
+   or Google Gemini). For Ollama, choose how Yoker reaches it: through the
+   local app or with an API key. See
+   {doc}`Getting Started with Ollama <getting-started-with-ollama>` for the exact
+   steps to create an account, install the app, and (optionally) generate a key.
+   For Gemini, see {doc}`Getting Started with Gemini <getting-started-with-gemini>`.
 2. **Model selection** — pick a model from a curated list, or accept the
    default. You can change this later in `~/.yoker.toml`.
 3. **Confirmation** — Yoker writes the configuration to `~/.yoker.toml` and

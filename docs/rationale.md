@@ -50,9 +50,11 @@ Yoker is a **library**, not an application:
 ### Developer-Friendly Tool Registration
 
 ```python
-# Yoker: Simple Python function
-@tool
-def read_file(path: str) -> str:
+# Yoker: Simple Python function with schema-driven guardrails
+from typing import Annotated
+from yoker.tools.annotations import Path
+
+def read_file(path: Annotated[str, Path("Path to the file to read")]) -> str:
     """Read a file from disk."""
     return open(path).read()
 
@@ -63,7 +65,12 @@ def read_file(path: str) -> str:
 # - Manage server lifecycle
 ```
 
-Tools in Yoker are **simple Python functions** that can be registered with a decorator. No MCP servers, no complex protocols.
+Tools in Yoker are **simple Python functions** (or callable classes). There is
+no base class to inherit from. The `Annotated` marker on each string parameter
+tells the harness which guardrail to apply (`Path`, `Url`, `Query`, or `Text`).
+An optional `@tool` decorator from `yoker.tools.annotations` can override the
+inferred name or description, but it is not required. No MCP servers, no
+complex protocols.
 
 ### Static Permissions: Predictable Boundaries
 
@@ -95,13 +102,13 @@ Yoker is **LLM-neutral by design**. No preferred provider, no vendor lock-in - y
 
 ```toml
 [backend]
-provider = "ollama"  # or "openai", "anthropic", etc.
+provider = "ollama"  # or "openai", "anthropic", "gemini", or any litellm provider
 
 [backend.ollama]
 base_url = "http://localhost:11434"  # Local
-# base_url = "https://api.ollama.ai"  # Cloud
+# base_url = "https://ollama.com"  # Cloud
 
-model = "gemini-3-flash-preview:cloud"  # Your choice
+model = "qwen3.5:cloud"  # Your choice
 ```
 
 **Why this matters:**
@@ -109,9 +116,9 @@ model = "gemini-3-flash-preview:cloud"  # Your choice
 | Your Choice | Cost | Privacy | Performance |
 |-------------|------|---------|-------------|
 | Local Ollama | $0 | 100% local | Slower (current hardware) |
-| Ollama Cloud | Pay-per-use | No logging by GPU providers | Fast |
-| Private infrastructure | Your cost | Your control | Configurable |
-| Other providers | Varies | Varies | Varies |
+| Ollama Cloud | Free tier available | No logging by GPU providers | Fast |
+| OpenAI / Anthropic / Gemini | Varies | Provider's terms | Fast |
+| Any LiteLLM provider | Varies | Varies | Varies |
 
 **Note**: Ollama guarantees that no information is logged or used by GPU providers when running models on their infrastructure. This is stated clearly on their website.
 
@@ -153,9 +160,9 @@ When yoker spawns a sub-agent, it creates a **full library instance**:
 ```python
 # Sub-agent in yoker
 sub_agent = Agent(
-    config=child_config,      # Isolated configuration
-    context=child_context,    # Isolated context
-    model="gemini-3-flash-preview:cloud",  # Configurable model
+    config=child_config,           # Isolated configuration
+    context_manager=child_context, # Isolated context
+    agent_path="agents/researcher.md",  # Configurable agent (model set in definition)
 )
 ```
 
@@ -210,8 +217,8 @@ Yoker enables a unique workflow: develop collections interactively, deploy auton
 | **Visibility** | Full event stream | Black box |
 | **Context** | No hidden manipulation | Secret instructions |
 | **Permissions** | Static TOML (deterministic) | Runtime prompts (bypassable) |
-| **Tools** | Python functions | MCP servers |
-| **LLM Provider** | Your choice | Vendor's choice |
+| **Tools** | Python functions with guardrail markers | MCP servers |
+| **LLM Provider** | Your choice (Ollama, OpenAI, Anthropic, Gemini, 100+) | Vendor's choice |
 | **Cost** | Your choice | Vendor pricing |
 | **Privacy** | Your choice | Vendor's terms |
 | **Sub-agents** | Full instances | Function calls |

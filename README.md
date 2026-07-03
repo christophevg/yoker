@@ -8,7 +8,7 @@
 [![License](https://img.shields.io/github/license/christophevg/yoker.svg)][license]
 [![Agentic](https://img.shields.io/badge/workflow-agentic-blueviolet?style=flat-square)](https://christophe.vg/about/Agentic-Workflow)
 
-A Python agent harness with configurable tools, guardrails, and Ollama backend integration.
+A Python agent harness with configurable tools, guardrails, and multi-provider LLM backend integration.
 
 ## Installation
 
@@ -86,7 +86,7 @@ Yoker is designed to be embedded as a library. The `Agent` class emits events; y
 
 ```python
 import asyncio
-from yoker import Agent, __version__
+from yoker import Agent
 from yoker.config import get_yoker_config
 from yoker.ui import BatchUIHandler, UIBridge
 
@@ -98,7 +98,7 @@ async def main():
   bridge = UIBridge(ui)
   agent.add_event_handler(bridge)
 
-  await ui.start(agent.model, __version__, {})
+  await ui.start(agent)
   try:
     response = await agent.process("Hello, how can you help me?")
     print(response)
@@ -195,7 +195,9 @@ See [docs/rationale.md](docs/rationale.md) for the full rationale and comparison
 ## Features
 
 **Current Features:**
-- [x] Chat loop - Interactive conversation with Ollama
+- [x] Chat loop - Interactive conversation with any configured provider
+- [x] Multi-provider backends - Ollama (native SDK), OpenAI, Anthropic, Google Gemini, and 100+ providers via LiteLLM
+- [x] Bootstrap wizard - Interactive first-run setup that writes `~/.yoker.toml` for you
 - [x] Tool calling - Structured tool execution with parameters
 - [x] `read` tool - Read file contents with guardrails
 - [x] `list` tool - Directory listing with pattern filtering
@@ -209,9 +211,9 @@ See [docs/rationale.md](docs/rationale.md) for the full rationale and comparison
 - [x] `webfetch` tool - Fetch web content with SSRF protection, URL validation, and size limits
 - [x] `agent` tool - Spawn subagents with isolated context and recursion limits
 - [x] `skill` tool - Invoke skills dynamically by name with full content loading
-- [x] Slash commands - Built-in commands: `/help`, `/think on|off`, `/skills`, `/context`, `/tools`, `/agents`
-- [x] Thinking mode - LLM reasoning trace with gray output
-- [x] Streaming - Real-time token streaming from Ollama
+- [x] Slash commands - Built-in commands: `/help`, `/think on|off|silent`, `/skills`, `/context`, `/tools`, `/agents`
+- [x] Thinking mode - LLM reasoning trace with gray output (on/off/silent)
+- [x] Streaming - Real-time token streaming from any provider
 - [x] Configuration - TOML-based configuration system via Clevis
 - [x] Agent definitions - Load agents from Markdown files with YAML frontmatter
 - [x] Package plugins - Load tools, skills, and agents from Python packages with `--with`
@@ -221,12 +223,13 @@ See [docs/rationale.md](docs/rationale.md) for the full rationale and comparison
 - [x] Context persistence - Session resumption with JSONL storage
 - [x] Event logging - Full session replay capability
 - [x] Demo scripts - Generate documentation screenshots from Markdown scripts
-- [x] Schema-driven guardrails - Tool parameters are annotated with `yoker.tools.annotations` markers (`Path`, `Url`, `Query`, `Text`); the harness strips the metadata before sending schemas to Ollama and dispatches the matching guardrail at execution time
+- [x] Schema-driven guardrails - Tool parameters are annotated with `yoker.tools.annotations` markers (`Path`, `Url`, `Query`, `Text`); the harness strips the metadata before sending schemas to the model and dispatches the matching guardrail at execution time
 - [x] Permissions - Static TOML-based access control
+- [x] Secure API key handling - Masked input during bootstrap, config files written with `chmod 600`
 
 **Planned Features:**
 - [ ] Multi-agent orchestration - Run coordinated agent teams
-- [ ] Backend providers - OpenAI, Anthropic, custom backends
+- [ ] Keyring integration - Store API keys in the OS keychain instead of config files (TODO S.1)
 - [ ] Tool timing metrics - Performance tracking
 - [ ] Token usage tracking - Cost monitoring
 - [ ] Tool result caching - Reduce redundant calls
@@ -303,7 +306,9 @@ Yoker auto-discovers configuration files:
 python -m yoker
 ```
 
-Or create a `yoker.toml` file for explicit configuration:
+Or create a `yoker.toml` file for explicit configuration. Yoker supports multiple
+providers — Ollama (native SDK), and OpenAI, Anthropic, Google Gemini, plus any
+LiteLLM-supported provider (e.g. Groq, Cohere, Azure, Mistral) via the LiteLLM backend:
 
 ```toml
 [harness]
@@ -313,12 +318,12 @@ name = "my-yoke"
 level = "INFO"
 
 [backend]
-provider = "ollama"
+provider = "ollama"  # or "openai", "anthropic", "gemini", or any litellm provider
 
 [backend.ollama]
 base_url = "http://localhost:11434"
 api_key = ""  # Optional API key for authenticated Ollama endpoints
-model = "llama3.2:latest"
+model = "qwen3.5:cloud"
 
 [agents]
 definition = "./agents/researcher.md"  # Optional: agent definition file
@@ -327,6 +332,22 @@ definition = "./agents/researcher.md"  # Optional: agent definition file
 enabled = true
 allowed_extensions = [".txt", ".md", ".py"]
 ```
+
+Example for OpenAI:
+
+```toml
+[backend]
+provider = "openai"
+
+[backend.openai]
+api_key = "${OPENAI_API_KEY}"  # Interpolated from environment variables
+model = "gpt-4o-mini"
+```
+
+The bootstrap wizard (run `python -m yoker` with no config present) writes
+`~/.yoker.toml` for you interactively, including masked API key entry and
+`chmod 600` file permissions. See [Model Catalog](docs/models.md) for the
+curated model lists per provider.
 
 See `examples/yoker.toml` for the full configuration reference.
 
@@ -338,6 +359,8 @@ Yoker uses an **event-driven architecture** for library-first design. The Agent 
 
 **Agent layer** (`yoker.agent`): Configuration, context management, tool execution, and event emission. It has no terminal or presentation logic.
 
+**Backend layer** (`yoker.backends`): Provider-neutral streaming chat backend. `OllamaBackend` uses the native Ollama SDK; `LitellmBackend` unifies OpenAI, Anthropic, Gemini, and 100+ LiteLLM-supported providers. The `ModelBackend` Protocol normalizes streaming into provider-agnostic `ChatChunk` events.
+
 **UI layer** (`yoker.ui`): Implements the `UIHandler` protocol. Built-in implementations:
 
 - `InteractiveUIHandler` - Rich terminal UI with streaming output
@@ -347,11 +370,34 @@ Yoker uses an **event-driven architecture** for library-first design. The Agent 
 
 **Event Types**: Turn (start/end), Thinking (start/chunk/end), Content (start/chunk/end), Tool (call/result/content), Command
 
+## Providers
+
+Yoker supports multiple LLM providers through a dual backend architecture:
+
+| Provider | Backend | API key required | Free tier |
+|----------|---------|-----------------|-----------|
+| Ollama | Native Ollama SDK | No (app path) or yes (API key) | Yes |
+| OpenAI | LiteLLM | Yes | No |
+| Anthropic | LiteLLM | Yes | No |
+| Google Gemini | LiteLLM | Yes | Yes (limited) |
+| Any LiteLLM provider | LiteLLM | Varies | Varies |
+
+The bootstrap wizard offers curated model lists for each provider. See
+[Model Catalog](docs/models.md) for the full list, or run `python -m yoker`
+with no config to launch the wizard.
+
+**Security**: API keys are collected via masked input during bootstrap, and
+config files are written with `chmod 600` permissions. API keys can also be
+injected from environment variables using Clevis interpolation
+(`${OPENAI_API_KEY}`). Keyring integration for OS keychain storage is planned
+(TODO S.1).
+
 ## Documentation
 
 - [Full documentation](https://yoker.readthedocs.io/)
 - [Installation guide](https://yoker.readthedocs.io/en/latest/installation.html)
 - [Quick start](https://yoker.readthedocs.io/en/latest/quickstart.html)
+- [Model catalog](docs/models.md) - Curated models per provider
 - [Why Yoker?](docs/rationale.md) - Project rationale and comparison
 - [Architecture](https://github.com/christophevg/yoker/blob/master/analysis/architecture.md)
 
