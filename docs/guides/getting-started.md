@@ -19,10 +19,12 @@ If you already have Python and `uv` installed, jump to
 - About 10 minutes.
 - A machine running macOS, Windows, or Linux.
 - An internet connection.
-- An Ollama account (free — created during setup).
+- An account with an LLM provider — Ollama (free), OpenAI, Anthropic, or
+  Google Gemini (free tier available). Created during setup.
 
-You do **not** need a paid model provider. yoker runs on Ollama's free tier,
-which is enough to explore agentic workflows end to end.
+You do **not** need a paid model provider. yoker runs on Ollama's free tier or
+Google Gemini's free tier, which is enough to explore agentic workflows end to
+end.
 
 ---
 
@@ -153,17 +155,18 @@ The wizard walks you through a few steps:
 
 1. **Opening** — yoker explains itself and notes that no config was found. It
    offers a guided setup, manual setup, a link to the docs, or abort.
-2. **Backend intro** — yoker introduces Ollama as the backend and points out
-   the free tier. There is nothing to choose here.
-3. **Account check** — yoker asks whether you already have an Ollama account.
-   If not, it points you to the docs and waits while you create one.
-4. **Connection method** — choose how yoker reaches Ollama:
-   - **The Ollama app running locally** (recommended — no API key needed), or
-   - **An Ollama API key** (use cloud-hosted models without running the app).
+2. **Provider selection** — choose your LLM provider (Ollama, OpenAI, Anthropic,
+   or Google Gemini).
+3. **Account check** — yoker asks whether you already have an account with the
+   chosen provider. If not, it points you to the docs and waits while you
+   create one.
+4. **API key / connection** — for Ollama, choose between the local app (no key
+   needed) or an API key; for other providers, paste your API key (masked
+   input).
 5. **Model selection** — pick a model from the curated list, accept the
    default, or enter a model name by hand.
-6. **Confirmation** — yoker writes `~/.yoker.toml` (with safe file permissions)
-   and you are ready to go.
+6. **Confirmation** — yoker writes `~/.yoker.toml` (with `chmod 600`
+   permissions) and you are ready to go.
 
 For the detailed companion to step 3 (creating an Ollama account, installing
 the local app/proxy, and optionally generating an API key), see
@@ -171,9 +174,10 @@ the local app/proxy, and optionally generating an API key), see
 explanation of what yoker is and why the wizard exists, see
 {doc}`Getting Started with Yoker <getting-started-with-yoker>`.
 
-> **Free tier reminder:** The default model offered by the wizard works on
-> Ollama's free tier. You do not need to add payment details or generate a
-> paid key to complete this guide.
+> **Free tier reminder:** Both Ollama and Google Gemini offer free tiers. You
+> do not need to add payment details to complete this guide. The wizard
+> recording below uses Google Gemini; Ollama is the default and also has a free
+> tier.
 
 Here's an actual recording of the wizard, with a setup for Google Gemini:
 
@@ -250,7 +254,7 @@ session. You should see a prompt like:
 │  \ V / _ \| |/ / _ \ '__|                                                       │
 │   | | (_) |   <  __/ |                                                          │
 │   |_|\___/|_|\_\___|_| 0.5.0                                                    │
-│ Model: kimi-k2.7-code:cloud (provider: ollama)                                  │
+│ Model: gemini-2.5-flash-lite (provider: gemini)                                 │
 │ Harness: yoker-dev v1.0 by Christophe VG                                        │
 │ Thinking: on (use /think on|off|silent to toggle)                               │
 │ Agent: default - The default/minimal Yoker agent.                               │
@@ -261,7 +265,7 @@ session. You should see a prompt like:
 >
 ```
 
-Here, we're using the `kimi-k2.7-code` model provided by Ollama.
+Here, we're using the `gemini-2.5-flash-lite` model provided by Google Gemini.
 
 Type a simple prompt and press **Enter**:
 
@@ -365,8 +369,8 @@ A quick recap so the next steps make sense:
   `~/.yoker.toml` for you.
 - That single config file now backs every yoker-based app you run — you only
   go through the wizard once.
-- You confirmed the setup with a real prompt to the model, on Ollama's free
-  tier, at no cost.
+- You confirmed the setup with a real prompt to the model (in this example,
+  Google Gemini's free tier; Ollama also offers a free tier if you prefer).
 
 ---
 

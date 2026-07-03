@@ -4,7 +4,7 @@ This document provides an overview of the project architecture, conventions, and
 
 ## Project Overview
 
-Yoker is a Python agent harness with configurable tools and guardrails. It provides a provider-neutral backend architecture for LLM interactions, currently supporting Ollama with plans for OpenAI and Anthropic.
+Yoker is a Python agent harness with configurable tools and guardrails. It provides a provider-neutral backend architecture for LLM interactions, supporting Ollama (native SDK), OpenAI, Anthropic, Google Gemini, and 100+ providers via LiteLLM.
 
 ## Recent Changes
 
@@ -193,9 +193,8 @@ The `backends/` package provides a clean abstraction layer between the agent and
 
 ```
 Agent → ModelBackend Protocol → Backend Implementation → Provider SDK
-                                                    ├─ OllamaBackend (Phase 1)
-                                                    ├─ OpenAIBackend (Phase 2)
-                                                    └─ AnthropicBackend (Phase 3)
+                                                    ├─ OllamaBackend (native SDK)
+                                                    └─ LitellmBackend (OpenAI, Anthropic, Gemini, 100+)
 ```
 
 ### Event Flow
@@ -228,26 +227,26 @@ The Agent consumes provider-neutral `ChatChunk` instances and translates them in
 - `factory.py`: Backend factory (Phase 1 task 6.4)
 - `<provider>.py`: Backend implementations (Phase 1 task 6.5, Phase 2, Phase 3)
 
-## Next Steps
+## Current State
 
-### Phase 1 Remaining Tasks
+The multi-provider backend architecture is complete:
 
-1. **Task 6.2**: Add `input_tokens`/`output_tokens` to `TurnEndEvent` (update events/types.py)
-2. **Task 6.3**: Widen `BackendConfig` to tagged-union shape (update config/__init__.py)
-3. **Task 6.4**: Create `backends/factory.py` with `create_backend()` dispatch
-4. **Task 6.5**: Create `OllamaBackend` adapter wrapping `ollama.AsyncClient`
-5. **Task 6.6**: Update Agent to use ModelBackend instead of direct client
+- **Phase 1** (Protocol & OllamaBackend): `ModelBackend` Protocol, `ChatChunk`,
+  `UsageStats`, `create_backend()` factory, and `OllamaBackend` (native SDK
+  adapter) are all implemented.
+- **Phase 2** (LiteLLM backend): `LitellmBackend` unifies OpenAI, Anthropic,
+  Gemini, and 100+ providers. Provider configs (`OllamaConfig`, `OpenAIConfig`,
+  `AnthropicConfig`, `GeminiConfig`, `GenericConfig`) are plain dataclasses.
+  `BackendConfig.params` flattens the active provider config. Tool call argument
+  format conversion (dict vs JSON string) is handled per-backend.
+- **Bootstrap wizard**: Interactive first-run setup with provider selection,
+  curated model lists, masked API key input, and `chmod 600` config files.
 
-### Phase 2 (Future)
+### Planned
 
-- Add OpenAI backend implementation
-- Per-provider curated model lists
-- Update bootstrap for multi-provider support
-
-### Phase 3 (Future)
-
-- Add Anthropic backend implementation
-- Message-shape translation (system extraction, tool blocks)
-- SSE stream parsing for Anthropic
+- **Keyring integration** (TODO S.1): Store API keys in the OS keychain instead
+  of config files, with fallback to config.
+- Multi-agent orchestration, tool timing metrics, token usage tracking, tool
+  result caching, and parallel tool execution.
 
 

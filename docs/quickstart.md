@@ -16,7 +16,9 @@ leaking into the agent.
 ### Prerequisites
 
 - Python 3.10 or higher
-- [Ollama](https://ollama.ai) running with at least one model
+- An LLM provider — Ollama (free tier), OpenAI, Anthropic, or Google Gemini.
+  Run `python -m yoker` with no config to launch the bootstrap wizard, which
+  guides you through provider selection and model setup.
 
 ### Install
 
@@ -50,7 +52,7 @@ Yoker is designed to be embedded as a library. The example below uses the built-
 ```python
 import asyncio
 
-from yoker import Agent, __version__
+from yoker import Agent
 from yoker.config import get_yoker_config
 from yoker.ui import BatchUIHandler, UIBridge
 
@@ -70,7 +72,7 @@ async def main():
     agent.add_event_handler(bridge)
 
     # Start the UI, process a message, then shut down.
-    await ui.start(agent.model, __version__, {})
+    await ui.start(agent)
     try:
         await agent.process("What is 2+2?")
     finally:
@@ -80,9 +82,8 @@ async def main():
 asyncio.run(main())
 ```
 
-For a fully custom integration, implement the `UIHandler` protocol (or extend
-`BaseUIHandler`) and wire it through `UIBridge`. See `examples/custom_handler.py`
-for a minimal custom handler.
+For a fully custom integration, implement the `UIHandler` protocol and wire it
+through `UIBridge`. See `examples/custom_handler.py` for a minimal custom handler.
 
 ### Async Model
 
@@ -94,6 +95,10 @@ Yoker is built with an async-first architecture:
 task as `process()`.
 
 ```python
+from yoker import Agent
+from yoker.events import TurnEndEvent
+
+
 class DatabaseHandler:
     """Example async handler writing to a database."""
 
@@ -107,7 +112,7 @@ class DatabaseHandler:
 
 
 async def main():
-    agent = Agent(model="llama3.2")
+    agent = Agent()  # model resolved from config or agent definition
     agent.add_event_handler(DatabaseHandler(db))
     await agent.process("Hello")  # Handler runs in the same event loop
 ```
@@ -127,7 +132,7 @@ to a separate executor.
 ### Interactive Session
 
 ```
-Yoker v0.4.0 - Using model: gemini-3-flash-preview:cloud
+Yoker v0.5.0 - Using model: qwen3.5:cloud
 Type /help for available commands.
 Press Ctrl+D (or Ctrl+Z on Windows) to quit.
 
@@ -170,7 +175,7 @@ The session supports:
 | Command | Description |
 |---------|-------------|
 | `/help` | Show available commands |
-| `/think on\|off` | Enable/disable LLM thinking trace |
+| `/think on\|off\|silent` | Enable, disable, or silence LLM thinking trace |
 | `/skills` | List available skills |
 | `/context` | Show current conversation context |
 | `/tools` | List all known tools with availability |
@@ -283,8 +288,8 @@ Yoker provides several tools for file operations, web access, and subagent spawn
 | `git` | Git operations with permission-controlled commit/push |
 | `agent` | Spawn subagents with isolated context |
 | `skill` | Invoke skills dynamically by name |
-| `web_search` | Web search with SSRF protection and domain filtering |
-| `web_fetch` | Fetch web content with SSRF protection and URL validation |
+| `websearch` | Web search with SSRF protection and domain filtering |
+| `webfetch` | Fetch web content with SSRF protection and URL validation |
 
 ### Agent Tool
 
@@ -437,11 +442,11 @@ name = "my-yoke"
 level = "INFO"
 
 [backend]
-provider = "ollama"
+provider = "ollama"  # or "openai", "anthropic", "gemini", or any litellm provider
 
 [backend.ollama]
 base_url = "http://localhost:11434"
-model = "gemini-3-flash-preview:cloud"
+model = "qwen3.5:cloud"
 timeout_seconds = 60
 
 [backend.ollama.parameters]
@@ -456,7 +461,21 @@ enabled = true
 allowed_extensions = [".txt", ".md", ".py"]
 ```
 
-See `examples/yoker.toml` for the full configuration reference.
+For OpenAI, Anthropic, or Gemini, change the provider and use the matching
+config section. API keys can be interpolated from environment variables via
+Clevis (`${VAR}` syntax):
+
+```toml
+[backend]
+provider = "anthropic"
+
+[backend.anthropic]
+api_key = "${ANTHROPIC_API_KEY}"
+model = "claude-haiku-4-5"
+```
+
+See `examples/yoker.toml` for the full configuration reference and
+{doc}`models` for the curated model lists per provider.
 
 ### Environment Variables
 
@@ -481,7 +500,13 @@ python -m yoker --config path/to/config.toml
 | `write` | Write content to files with overwrite protection |
 | `update` | Edit existing files with replace, insert, and delete |
 | `search` | Search file contents with regex or filenames with glob |
+| `existence` | Check if a file or folder exists |
+| `mkdir` | Create directories with parent creation |
 | `git` | Git operations (status, log, diff, branch, show) |
+| `agent` | Spawn subagents with isolated context |
+| `skill` | Invoke skills dynamically by name |
+| `websearch` | Web search with SSRF protection |
+| `webfetch` | Fetch web content with URL validation |
 
 ## Tool Examples
 
