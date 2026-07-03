@@ -4,16 +4,101 @@
 
 | Priority | MBI/Task | Status |
 |----------|----------|--------|
+| **P1** | MBI-007: Session | Ready (design finalized, owner-approved PR #42) |
 | **P1** | MBI-006: Multi-Provider Backend (Phase 1) | Complete |
 | **P1** | MBI-006 Phase 2: LitellmBackend | Complete |
 | **P1** | MBI-002: Bootstrap | Complete |
 | **P1** | MBI-001 Validation | Complete (v0.6.0 released to PyPI) |
-| **P2** | MBI-003: Python API | Backlog (after Bootstrap) |
+| **P2** | MBI-003: Python API | On Hold — blocked on MBI-007 (Session) |
 | **P2** | MBI-004: yoker Commands | Backlog (after Python API) |
 | **P2** | MBI-005: Assistant Integration | Backlog (showcase project) |
 | **P3** | Maintenance Tasks | M.1-M.4 |
 | **P3** | Maintenance Tasks | M.6 (done in MBI-006 Phase 1) |
 | **P4+** | Launch Preparation, Architecture, Future Work | See sections below |
+
+---
+
+## Active: MBI-007: Session
+
+**Goal:** Introduce a `Session` construct that manages a team of agents: lifecycle, registry, recursion depth, event aggregation, inter-agent messaging, and backend sharing. Reduce `Agent` to a single-agent chat loop. Establish the primitive that MBI-003 (Python API) builds on.
+
+**Design source of truth:** `analysis/session-concept-analysis.md` (finalized, owner-approved — all 10 decisions in §7 resolved via PR #42).
+
+**Milestone:** A real `Session` primitive lands in master; `Agent` is a single-agent chat loop; sub-agents are visible via event aggregation; MBI-003 unblocks.
+
+**Status:** Design finalized. Detailed implementation tasks will be created when implementation begins. The breakdown below is high-level.
+
+### High-Level Task Breakdown
+
+- [ ] **[MBI-007] 7.1 Session module foundation**
+  - Create `src/yoker/session/` package
+  - `Session` class as async context manager (`async with Session(config=...) as session:`) — Decision 4
+  - `Message` dataclass (`from`, `to`, `content`, `metadata`, frozen) — Decision 3
+  - Session owns `AgentRegistry` (Decision 10); name→agent map with Session-generated unique IDs (Decision 2)
+  - Recursion depth tracking moves to Session
+  - **Satisfies:** D1, D2, D3, D4, D10 (foundation)
+  - **Depends on:** —
+
+- [ ] **[MBI-007] 7.2 Agent extraction**
+  - Remove `agents`, `recursion_depth`, `max_recursion_depth` from `Agent`
+  - Agents retain a list of names they may spawn through the Session (Decision 10)
+  - Single-agent `process()` works unchanged; `Agent(_recursion_depth=...)` removed
+  - **Satisfies:** Agent becomes single-responsibility primitive
+  - **Depends on:** 7.1
+
+- [ ] **[MBI-007] 7.3 Spawn + agent tool rework**
+  - `Session.spawn(name, prompt, timeout=...)` canonical API (Decision 8)
+  - Move `_create_subagent` and `_run_with_timeout` into Session as `spawn()`
+  - `builtin/agent.py` becomes a thin wrapper calling `ctx.session.spawn(...)`
+  - `ToolContext` gains a `session` reference (Decision 8)
+  - Tool identical from the model's perspective (same params, same string return)
+  - **Satisfies:** D8
+  - **Depends on:** 7.1, 7.2
+
+- [ ] **[MBI-007] 7.4 Event aggregation + UI wiring**
+  - New event types: `SESSION_START/END`, `AGENT_SPAWNED/FINISHED`, `AGENT_MESSAGE`
+  - Session fans out aggregated events tagged with `agent_id` (Decision 5)
+  - `UIBridge` registered on Session (not individual agents)
+  - `UIHandler` gains optional `agent_spawned(name)` / `agent_finished(name)`; `BaseUIHandler` provides no-op defaults
+  - `EventRecorder` becomes session-scoped
+  - **Satisfies:** D5
+  - **Depends on:** 7.1
+
+- [ ] **[MBI-007] 7.5 Backend factory + sharing**
+  - Session owns a backend factory; shares backends across agents with the same provider config (Decision 9)
+  - Per-agent model/provider override creates a fresh backend
+  - **Satisfies:** D9
+  - **Depends on:** 7.1
+
+- [ ] **[MBI-007] 7.6 Config `[session]` section**
+  - Add `[session]` section: `max_agents`, `default_isolation_policy`, `event_aggregation` (Decision 7)
+  - Relocate `tools.agent.max_recursion_depth` semantics to session
+  - Per-agent overrides use `dataclasses.replace`
+  - **Satisfies:** D7
+  - **Depends on:** —
+
+- [ ] **[MBI-007] 7.7 Entry point rework**
+  - `__main__.py`: construct Session in `main()`, rename `run_session` to `run_repl`, register bridge on Session (Decision 6)
+  - Plugin loading targets Session (registries belong to the team)
+  - **Satisfies:** D6
+  - **Depends on:** 7.1, 7.4
+
+- [ ] **[MBI-007] 7.8 Tests**
+  - Session lifecycle (create, spawn, cancel, cleanup)
+  - Recursion limits enforced by Session
+  - Event aggregation; inter-agent messaging; backward compatibility for single-agent use
+  - Backend sharing vs per-agent override
+  - **Depends on:** 7.1-7.7
+
+- [ ] **[MBI-007] 7.9 Docs + examples + check**
+  - Update `docs/rationale.md` (Recursive Composition), `CLAUDE.md` (module structure), `analysis/mbi-003-python-api-design.md` (Layer 3)
+  - New `examples/session_demo.py` demonstrating spawning multiple agents in one session
+  - `make check` green; existing examples unchanged for single-agent use
+  - **Depends on:** 7.1-7.8
+
+### Note: Config Factory (belongs to MBI-003, not MBI-007)
+
+The owner requested (PR #42 Comment 1) a **Config factory** for creating `Config` in code, with a flag to enable/skip normal config loading (TOML discovery + CLI args). This is needed by the `agent()` factory function in MBI-003's Python API. It is recorded in `analysis/session-concept-analysis.md` §7.2 and tracked on the MBI-003 entry in PLAN.md. It will be addressed when MBI-003 resumes after MBI-007 merges to master.
 
 ---
 
