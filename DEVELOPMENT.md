@@ -8,6 +8,117 @@ Yoker is a Python agent harness with configurable tools and guardrails. It provi
 
 ## Recent Changes
 
+### MBI-007 Phase 2: Session Migration (2026-07-04)
+
+**Task**: Migrated orchestration responsibilities from `Agent` to `Session`
+(10 sub-tasks across 7.3, 7.2, 7.5). The `AgentRegistry`, recursion depth
+tracking, and backend factory now live on `Session`; `Agent` is a thin
+single-agent primitive that optionally belongs to a `Session`.
+
+**Changes**:
+
+1. **7.3.1 / 7.3.2 / 7.3.4 — Registry migration**: `Session.agents` is a
+   public `AgentRegistry` populated from `config.agents.directories` and
+   plugin manifests (`_load_agents()` relocated from `Agent`). Plugin agent
+   registration in `plugins/loader.py` now targets `session.agents` when a
+   session is provided (warning + skip when session is `None`).
+   `Agent.agents` removed entirely (no shim — PR #43 Clarification 1).
+2. **7.3.3 — Agent allowlist**: added `agents: tuple[str, ...] = ()` field
+   to `AgentDefinition` (`agents/schema.py`) and parsing in
+   `agents/loader.py`. `Session.spawn(name, prompt, *, requester=None)`
+   enforces the allowlist: when `requester` is set and
+   `requester.definition.agents` is non-empty, `name` must be in it;
+   `requester=None` (top-level) bypasses the check.
+3. **7.2.1 / 7.2.2 — Agent field removal**: removed `agents`,
+   `recursion_depth`, `max_recursion_depth` from `Agent`; removed
+   `_recursion_depth` constructor arg; removed `validate_recursion_depth`
+   from `agent/_setup.py`. Callers passing `_recursion_depth=` now get
+   `TypeError`; accessing `agent.agents` now gets `AttributeError`.
+4. **7.2.3 — Session reference**: `Agent.__init__` accepts
+   `session: Session | None = None`, stored as `self._session`. Without a
+   session the Agent is a standalone single-agent primitive (first-class
+   path, not a compat shim — Clarification 1). `_resolve_agent_definition`
+   uses `session.agents.resolve()` when a session is set; without one it
+   raises a clear `ValueError("... cannot be resolved without a Session")`
+   for name-based references (file-path resolution still works).
+5. **7.2.4 — Plugin loading split**: `load_configured_plugins` takes a
+   `*, session: Session | None = None` keyword. Plugin agents →
+   `session.agents`; tools/skills remain per-agent.
+6. **7.5.1 — Backend factory**: `Session.get_backend(config) -> ModelBackend`
+   with a per-provider cache keyed by `provider|model|base_url|api_key`
+   (`_backend_key` static method). Same-config calls share one backend;
+   model overrides produce a fresh backend.
+7. **7.5.2 — Agent backend sharing**: `Agent.__init__` uses
+   `session.get_backend(self.config)` when a session is provided; falls
+   back to `create_backend(self.config)` for the standalone path.
+8. **`Session.spawn`**: full spawn orchestration — allowlist check →
+   registry resolution → recursion depth check (`parent_depth + 1 >
+   max_recursion_depth`) → max_agents cap → `_derive_config` (model
+   override via `dataclasses.replace`) → `session.get_backend` → unique
+   agent name (`_generate_agent_name`) → `Agent(session=self,
+   backend=backend)` → `asyncio.wait_for(child.process(prompt), timeout)`
+   → `finally` removes the agent from `_agents_map`/`_recursion_depths`
+   (Clarification 7: finished agents leave the active list).
+9. **`builtin/agent.py`**: `make_agent_tool` rewritten to delegate to
+   `session.spawn()` via `parent_agent._session`. Returns a clear
+   `ToolResult(success=False)` when no session is available; wraps
+   `ValueError` (allowlist/depth/capacity), `TimeoutError`, and generic
+   exceptions as `ToolResult(success=False, ...)`. `_create_subagent` /
+   `_run_with_timeout` removed (logic moved to `Session.spawn`). The full
+   `SpawnAgent` rewrite lands in Phase 4 (7.8.3).
+10. **`__main__.py`**: `main()` now loads config via `get_yoker_config(cli=True)`
+    first, then calls `asyncio.run(_run_with_session(...))` which constructs
+    `Session(config=config)`, then `Agent(config=config, session=session,
+    plugins=..., console_logging=...)`, wires the `UIBridge`, and runs
+    `run_session`. Errors from `_run_with_session` (ValueError,
+    SecurityError) are caught and printed cleanly with exit code 1.
+11. **`ui/commands/agents.py`**: reads `agent._session.agents` instead of
+    `agent.agents.agents`.
+
+**Tests**:
+- `tests/test_session/test_spawn.py` — new, 15 tests covering allowlist (5),
+  recursion depth (2), max_agents (1), agent map (2), backend factory (3),
+  registry population (2).
+- `tests/test_tools/test_agent.py` — rewritten to verify delegation to
+  `session.spawn` (no-session error, success, ValueError/TimeoutError/generic
+  wrapping, default timeout forwarding) plus retained `_clamp` and schema
+  tests.
+- `tests/test_agent.py` — removed 4 recursion_depth tests; added
+  `test_agent_recursion_depth_arg_removed` (expects `TypeError`),
+  `test_agent_agents_attribute_removed` (expects `AttributeError`),
+  `test_agent_session_reference_defaults_none`.
+- `tests/test_commands/test_agents.py` — `_make_agent` builds a real
+  `AgentRegistry` and mocks `agent._session.agents`.
+- `tests/test_agent_loading.py` — `TestRegistryAgentResolution` now
+  constructs a `Session` for name-based resolution; added
+  `test_resolution_without_session_raises`. File-path resolution tests
+  updated to wrap in a Session where the registry's "Agent not found" error
+  is expected.
+- `tests/test_config/test_discover_config.py` —
+  `test_agent_definition_config_missing_file` wraps in a `Session`.
+- `tests/test_main.py` — `test_main_creates_batch_ui_and_runs_session`
+  asserts the new Agent constructor kwargs (`config`, `session`,
+  `plugins`, `console_logging`).
+
+**Decisions applied**: D9 (Session owns backend factory, shares across
+same-provider agents), D10 (AgentRegistry moves to Session), Clarification 1
+(no backward-compat shims — removals are outright), Clarification 3
+(`AgentDefinition.agents` allowlist enforced before spawn), Clarification 7
+(finished agents leave the active list, visible states `{idle, running}`).
+
+**Files Modified**: `src/yoker/agents/schema.py`,
+`src/yoker/agents/loader.py`, `src/yoker/session/session.py`,
+`src/yoker/agent/__init__.py`, `src/yoker/agent/_setup.py`,
+`src/yoker/plugins/loader.py`, `src/yoker/builtin/agent.py`,
+`src/yoker/ui/commands/agents.py`, `src/yoker/__main__.py`,
+`tests/test_agent.py`, `tests/test_agent_loading.py`,
+`tests/test_commands/test_agents.py`, `tests/test_tools/test_agent.py`,
+`tests/test_config/test_discover_config.py`, `tests/test_main.py`.
+**Files Created**: `tests/test_session/test_spawn.py`.
+
+**Verification**: `make check` green — 1501 tests pass, ruff format/lint
+clean, mypy typecheck clean, 80% coverage.
+
 ### MBI-007 Phase 1: Session Foundation (2026-07-04)
 
 **Task**: Introduced the `Session` construct foundation — a team-of-agents

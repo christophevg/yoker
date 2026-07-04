@@ -21,6 +21,7 @@ from yoker.tools.schema import ToolSpec, build_tool_spec
 if TYPE_CHECKING:
   from yoker.agent import Agent
   from yoker.config import Config
+  from yoker.session import Session
 
 logger = get_logger(__name__)
 
@@ -95,18 +96,27 @@ def load_configured_plugins(
   agent: "Agent",
   config: "Config",
   extra_plugins: tuple[str, ...] = (),
+  *,
+  session: "Session | None" = None,
 ) -> None:
   """Load configured and CLI-specified plugins into the agent's registries.
 
-  Plugin tools, skills and agents are registered into ``agent.tools``,
-  ``agent.skills`` and ``agent.agents`` respectively, namespaced by the
-  plugin's package name. ``yoker`` itself is always included as a plugin.
+  Plugin tools and skills are registered into ``agent.tools`` and
+  ``agent.skills`` respectively, namespaced by the plugin's package name.
+  Plugin *agent definitions* are registered into ``session.agents`` (the
+  Session owns the :class:`AgentRegistry` — Decision 10 / task 7.3.2) when
+  a session is provided. When ``session`` is None, plugin agent definitions
+  are skipped (the agent has no registry to populate — single-agent path).
+
+  ``yoker`` itself is always included as a plugin.
 
   Args:
-    agent: The Agent instance whose registries to populate.
+    agent: The Agent instance whose tool/skill registries to populate.
     config: Resolved configuration (supplies ``config.plugins.packages``).
     extra_plugins: Additional plugin packages from the CLI beyond those
       declared in config.
+    session: Optional :class:`Session` whose ``agents`` registry receives
+      plugin agent definitions (7.3.2).
   """
   plugins_enabled = check_plugins_enabled(config)
   if not plugins_enabled:
@@ -147,7 +157,14 @@ def load_configured_plugins(
       logger.info("skills_registered", package=source, count=len(plugin.skills))
 
     if plugin.agents:
-      register_agents(plugin.agents, agent.agents, namespace=source)
+      if session is None:
+        logger.warning(
+          "plugin_agents_skipped_no_session",
+          package=source,
+          count=len(plugin.agents),
+        )
+        continue
+      register_agents(plugin.agents, session.agents, namespace=source)
       logger.info("agents_registered", package=source, count=len(plugin.agents))
 
 

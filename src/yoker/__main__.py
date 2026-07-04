@@ -24,8 +24,9 @@ from structlog import get_logger
 from yoker.agent import Agent
 from yoker.bootstrap import BootstrapResult, BootstrapWizard, config_provided
 from yoker.bootstrap.steps import DOCS_HOME_URL
-from yoker.config import Config
+from yoker.config import Config, get_yoker_config
 from yoker.exceptions import NetworkError, YokerError
+from yoker.session import Session
 from yoker.ui import BatchUIHandler, InteractiveUIHandler, UIBridge, UIHandler
 from yoker.ui.commands import CommandRegistry, create_default_registry
 
@@ -212,14 +213,11 @@ def main() -> None:
     # load the freshly-written ~/.yoker.toml.
 
   try:
-    # Agent is autonomous: it loads .env/.env.local, discovers config, and
-    # builds its own tool registry. Console logging is disabled by default so the UI
-    # layer owns all terminal output, but can be controlled using the YOKER_CONSOLE_LOGGING environment variable.
-    agent = Agent(
-      plugins=plugin_packages if plugin_packages else None,
-      console_logging=os.environ.get("YOKER_CONSOLE_LOGGING", "NO") != "NO",
-      parse_cli_args=True,
-    )
+    # Load config via Clevis (TOML + env + CLI args), then construct the
+    # Session and primary Agent within it. The Session owns the AgentRegistry
+    # and backend factory (MBI-007); the Agent resolves its definition via
+    # session.agents and shares the session's backend.
+    config = get_yoker_config(cli=True)
   except ValueError as e:
     sys.stderr.write(f"Error: {e}\n")
     sys.exit(1)
@@ -227,18 +225,50 @@ def main() -> None:
     sys.stderr.write(f"Error: {e}\n")
     sys.exit(1)
 
-  logger.info("config loaded via agent", source="agent")
+  logger.info("config loaded", source="clevis")
 
   if plugin_packages:
     logger.info("cli_plugins_specified", packages=plugin_packages)
 
-  ui = _create_ui(agent.config)
+  ui = _create_ui(config)
   bridge = UIBridge(ui)
-  agent.add_event_handler(bridge)
-
   commands = create_default_registry()
 
-  asyncio.run(run_session(agent, ui, commands))
+  try:
+    asyncio.run(_run_with_session(config, plugin_packages, ui, commands, bridge))
+  except ValueError as e:
+    sys.stderr.write(f"Error: {e}\n")
+    sys.exit(1)
+  except SecurityError as e:
+    sys.stderr.write(f"Error: {e}\n")
+    sys.exit(1)
+
+
+async def _run_with_session(
+  config: Config,
+  plugin_packages: list[str],
+  ui: UIHandler,
+  commands: CommandRegistry,
+  bridge: UIBridge,
+) -> None:
+  """Construct the Session and primary Agent, then run the REPL loop.
+
+  The Session owns the agent registry and backend factory (MBI-007). The
+  primary Agent is constructed within the session so plugin agent
+  definitions resolve through ``session.agents`` and the backend is shared.
+  The UIBridge stays attached to the agent (session-level event
+  aggregation lands in 7.7).
+  """
+  console_logging = os.environ.get("YOKER_CONSOLE_LOGGING", "NO") != "NO"
+  async with Session(config=config) as session:
+    agent = Agent(
+      config=config,
+      plugins=plugin_packages if plugin_packages else None,
+      session=session,
+      console_logging=console_logging,
+    )
+    agent.add_event_handler(bridge)
+    await run_session(agent, ui, commands)
 
 
 if __name__ == "__main__":

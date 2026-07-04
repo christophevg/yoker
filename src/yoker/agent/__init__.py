@@ -15,17 +15,14 @@ from yoker.agent._processing import process_message
 from yoker.agent._setup import (
   add_skill_discovery_block,
   create_web_guardrails,
-  validate_recursion_depth,
 )
 from yoker.agent.thinking import ThinkingMode
 from yoker.agents import (
   AgentDefinition,
-  AgentRegistry,
   load_agent_definition,
-  load_agent_definitions,
 )
 from yoker.backends import ModelBackend, create_backend
-from yoker.builtin import make_agent_tool, make_skill_tool
+from yoker.builtin import make_skill_tool
 from yoker.config import Config, get_yoker_config
 from yoker.context import ContextManager
 from yoker.context.basic import SimpleContextManager
@@ -38,7 +35,7 @@ from yoker.tools.guardrails import Guardrail
 from yoker.tools.guardrails.path import PathGuardrail
 
 if TYPE_CHECKING:
-  pass
+  from yoker.session import Session
 
 logger = get_logger(__name__)
 
@@ -54,8 +51,8 @@ class Agent:
     agent_path: Path | str | None = None,
     context_manager: "ContextManager | None" = None,
     plugins: list[str] | None = None,
-    _recursion_depth: int = 0,
     backend: "ModelBackend | None" = None,
+    session: "Session | None" = None,
     parse_cli_args: bool = False,
     console_logging: bool = True,
   ) -> None:
@@ -69,9 +66,14 @@ class Agent:
       agent_path: Optional path to an agent definition.
       context_manager: Optional context manager.
       plugins: Optional plugin packages to load.
-      _recursion_depth: Internal recursion depth tracking.
       backend: Optional ModelBackend instance. If not provided, one will be
-        created from config.
+        created from config (or shared from the session when ``session`` is
+        provided — Decision 9).
+      session: Optional :class:`yoker.session.Session` that owns this agent.
+        When set, the agent resolves its definition via ``session.agents`` and
+        receives a shared/fresh backend from the session (7.2.3, 7.5.2). When
+        unset, the agent is a standalone single-agent chat loop (first-class
+        path, not a compatibility shim — PR #43 Clarification 1).
       parse_cli_args: Whether to parse CLI arguments
       console_logging: Whether to enable console logging. The CLI sets this to
         False so the UI layer owns all terminal output.
@@ -88,26 +90,29 @@ class Agent:
     configure_logging(self.config.logging, console=console_logging)
     logger.info("agent config", source="provided" if config else "loaded")
 
-    # set up registries for tools, skills and agents.
+    # Session reference (7.2.3). When set, the agent uses session.agents to
+    # resolve definitions and session.get_backend() to share backends. When
+    # unset, the agent is a single-agent primitive (no orchestration).
+    self._session: Session | None = session
+
+    # set up registries for tools and skills. Agent registry is owned by the
+    # Session (Decision 10) — Agent no longer holds one.
     self.tools: ToolRegistry = ToolRegistry()
     self.skills: SkillRegistry = SkillRegistry()
-    self.agents: AgentRegistry = AgentRegistry()
 
     # additional plugin packages requested on the CLI (--with). Config is
     # frozen, so these are threaded through to the plugin loader directly.
     self._cli_plugins: tuple[str, ...] = tuple(plugins) if plugins else ()
 
-    # skills and agents can be loaded from directories specified in config
+    # skills are loaded from directories specified in config (per-agent).
     self._load_skills()
-    self._load_agents()
 
-    # load more skills, agents and tools from plugins
-    load_configured_plugins(self, self.config, self._cli_plugins)
+    # load tools and skills from plugins. Agent definitions from plugins are
+    # registered on the session (7.3.2); tools/skills remain per-agent.
+    load_configured_plugins(self, self.config, self._cli_plugins, session=self._session)
 
     # load own definition
     self.definition: AgentDefinition = self._resolve_agent_definition(agent_definition, agent_path)
-    self.recursion_depth = validate_recursion_depth(self.config, _recursion_depth)
-    self.max_recursion_depth = self.config.tools.agent.max_recursion_depth
 
     # check that all requested tools for the agent are available (warn before filtering)
     self._warn_missing_tools()
@@ -115,21 +120,25 @@ class Agent:
     # filter tools based on agent definition (only keep specified tools)
     self._filter_tools_by_definition()
 
-    # all tools, skills and agents are registered. add skill/agent tool IF skills
-    # /agents are available AND if allowed to use them
+    # Skill tool: registered when skills are available and the tool is enabled.
+    # The agent (sub-agent spawning) tool is now Session-injected (SpawnAgent,
+    # Phase 4 / 7.8.3) — Agent no longer registers it itself.
     if self.config.tools.skill.enabled and len(self.skills):
       self.tools.register(make_skill_tool(self.skills), namespace="yoker")
-
-    if self.config.tools.agent.enabled and len(self.agents):
-      if "agent" in self.definition.tools or len(self.definition.tools) == 0:
-        self.tools.register(make_agent_tool(parent_agent=self), namespace="yoker")
 
     # setup the model
     self.model: str = self._resolve_model()
     self.thinking_mode: ThinkingMode = thinking_mode
 
-    # setup the backend for the model provider
-    self._backend: ModelBackend | None = backend or create_backend(self.config)
+    # setup the backend for the model provider. When a session is present,
+    # use the session's shared/fresh backend (Decision 9, 7.5.2). Otherwise
+    # create one from config (single-agent path, unchanged).
+    if backend is not None:
+      self._backend: ModelBackend | None = backend
+    elif self._session is not None:
+      self._backend = self._session.get_backend(self.config)
+    else:
+      self._backend = create_backend(self.config)
 
     # prepare guardrails
     query_guardrail, url_guardrail = create_web_guardrails(self.config)
@@ -353,9 +362,21 @@ class Agent:
 
     # Name -> registry lookup. A bare name matches a unique simple_name across
     # namespaces; a namespaced name matches exactly. Raises ValueError if not
-    # found or ambiguous.
+    # found or ambiguous. The registry is owned by the Session (Decision 10);
+    # when no session is set, fall back to an explicit definition/path only.
+    registry = self._session.agents if self._session is not None else None
+    if registry is None:
+      logger.warning(
+        "agent definition not resolvable",
+        definition=reference,
+        reason="no session registry available",
+      )
+      raise ValueError(
+        f"Agent definition '{reference}' cannot be resolved without a Session. "
+        "Pass an explicit agent_definition or construct the Agent within a Session."
+      )
     try:
-      definition = self.agents.resolve(reference)
+      definition = registry.resolve(reference)
     except ValueError:
       logger.warning("agent definition not found", definition=reference)
       raise
@@ -410,14 +431,3 @@ class Agent:
         logger.info("skills loaded", count=len(new_skills), source=directory)
       except Exception as e:
         logger.warning("loading skills failed", directory=directory, error=str(e))
-
-  def _load_agents(self) -> None:
-    """Load agents from configured directories into the registry."""
-    for directory in self.config.agents.directories:
-      try:
-        new_agents = load_agent_definitions(directory).items()
-        for _, agent in new_agents:
-          self.agents.register(agent)
-        logger.info("agents loaded", count=len(new_agents), source=directory)
-      except Exception as e:
-        logger.warning("loading agents failed", directory=directory, error=str(e))

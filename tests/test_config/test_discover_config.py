@@ -130,9 +130,15 @@ definition = "./agents/missing.md"
         },
       )
 
-      # Should raise ValueError for missing file
+      # MBI-007 Phase 2: name resolution requires a Session. With a Session,
+      # the registry raises ValueError("Agent not found: ...") for the
+      # missing-file reference. Without a Session, the error is the clearer
+      # "cannot be resolved without a Session" message.
+      from yoker.session import Session
+
+      session = Session(config=config)
       with pytest.raises(ValueError, match=r"Agent not found: \./agents/missing\.md"):
-        Agent(config=config)
+        Agent(config=config, session=session)
 
   def test_agent_definition_explicit_overrides_config(
     self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

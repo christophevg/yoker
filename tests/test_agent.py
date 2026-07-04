@@ -20,8 +20,11 @@ class TestAgentInitialization:
     assert core.thinking_mode == ThinkingMode.ON
     assert core.tools is not None
     assert core.context is not None
-    assert core.recursion_depth == 0
-    assert core.max_recursion_depth == core.config.tools.agent.max_recursion_depth
+    # MBI-007 Phase 2: recursion_depth/max_recursion_depth removed from Agent
+    # (moved to Session). Agent no longer holds an agents registry either.
+    assert not hasattr(core, "recursion_depth")
+    assert not hasattr(core, "max_recursion_depth")
+    assert not hasattr(core, "agents")
 
   def test_agent_model_from_config(self) -> None:
     """Test model comes from config."""
@@ -43,28 +46,21 @@ class TestAgentInitialization:
     core_silent = Agent(config=Config(), thinking_mode=ThinkingMode.SILENT)
     assert core_silent.thinking_mode == ThinkingMode.SILENT
 
-  def test_agent_recursion_depth_default(self) -> None:
-    """Test recursion depth starts at 0 by default."""
+  def test_agent_recursion_depth_arg_removed(self) -> None:
+    """PR #43 Clarification 1: _recursion_depth constructor arg is removed."""
+    with pytest.raises(TypeError):
+      Agent(config=Config(), _recursion_depth=2)  # type: ignore[call-arg]
+
+  def test_agent_agents_attribute_removed(self) -> None:
+    """PR #43 Clarification 1 / D10: agent.agents is removed (no shim)."""
     core = Agent(config=Config())
-    assert core.recursion_depth == 0
-    assert core.max_recursion_depth == core.config.tools.agent.max_recursion_depth
+    with pytest.raises(AttributeError):
+      _ = core.agents  # noqa: F841
 
-  def test_agent_recursion_depth_custom(self) -> None:
-    """Test recursion depth can be set via internal parameter."""
-    core = Agent(config=Config(), _recursion_depth=2)
-    assert core.recursion_depth == 2
-
-  def test_agent_recursion_depth_validation_negative(self) -> None:
-    """Test that negative recursion depth raises ValueError."""
-    with pytest.raises(ValueError, match="must be non-negative"):
-      Agent(config=Config(), _recursion_depth=-1)
-
-  def test_agent_recursion_depth_validation_exceeds_max(self) -> None:
-    """Test that recursion depth exceeding max raises ValueError."""
-    config = Config()
-    max_depth = config.tools.agent.max_recursion_depth
-    with pytest.raises(ValueError, match="exceeds max_recursion_depth"):
-      Agent(config=Config(), _recursion_depth=max_depth + 1)
+  def test_agent_session_reference_defaults_none(self) -> None:
+    """Agent constructed without session has _session=None (single-agent path)."""
+    core = Agent(config=Config())
+    assert core._session is None
 
 
 class TestAgentToolRegistry:

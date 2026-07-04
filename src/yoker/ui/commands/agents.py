@@ -46,7 +46,12 @@ async def handle(args: str, agent: "Agent", ui: "UIHandler") -> str:
   lines.append("Known agents:")
   lines.append("")
 
-  known_agents = agent.agents.agents  # yuck that turned out not so nicely ;-)
+  # Agent registry is owned by the Session (Decision 10). The command layer
+  # still receives the agent; reach the session's registry through it. When
+  # no session is set (single-agent standalone use), show "no agents".
+  session = getattr(agent, "_session", None)
+  registry = getattr(session, "agents", None)
+  known_agents = registry.agents if registry is not None else []
 
   if not known_agents:
     lines.append("  No agents configured.")

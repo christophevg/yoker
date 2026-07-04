@@ -7,6 +7,7 @@ This module is part of the Event System (domain layer), providing
 session persistence for replay, debugging, and testing.
 """
 
+import dataclasses
 import json
 from datetime import datetime
 from pathlib import Path
@@ -34,87 +35,63 @@ from yoker.events.types import (
   TurnStartEvent,
 )
 
+# Mapping from EventType to its dataclass. Used by deserialize_event to
+# reconstruct events without per-type isinstance dispatch.
+EVENT_CLASS_MAP: dict[EventType, type[Event]] = {
+  EventType.TURN_START: TurnStartEvent,
+  EventType.TURN_END: TurnEndEvent,
+  EventType.THINKING_START: ThinkingStartEvent,
+  EventType.THINKING_CHUNK: ThinkingChunkEvent,
+  EventType.THINKING_END: ThinkingEndEvent,
+  EventType.CONTENT_START: ContentStartEvent,
+  EventType.CONTENT_CHUNK: ContentChunkEvent,
+  EventType.CONTENT_END: ContentEndEvent,
+  EventType.TOOL_CALL: ToolCallEvent,
+  EventType.TOOL_RESULT: ToolResultEvent,
+  EventType.TOOL_CONTENT: ToolContentEvent,
+  EventType.COMMAND: CommandEvent,
+  EventType.SESSION_START: SessionStartEvent,
+  EventType.SESSION_END: SessionEndEvent,
+  EventType.AGENT_SPAWNED: AgentSpawnedEvent,
+  EventType.AGENT_FINISHED: AgentFinishedEvent,
+  EventType.AGENT_MESSAGE: AgentMessageEvent,
+}
+
 
 def serialize_event(event: Event) -> dict[str, Any]:
   """Serialize an event to a JSON-serializable dictionary.
+
+  Uses :func:`dataclasses.asdict` to convert the event dataclass into a
+  dict, then strips the ``type`` and ``timestamp`` envelope fields (which
+  are returned separately as part of the wrapper). The remaining dict is
+  the event's data payload.
 
   Args:
     event: The event to serialize.
 
   Returns:
-    Dictionary with type, timestamp, and event data.
+    Dictionary with ``type``, ``timestamp``, and ``data`` keys.
   """
-  data: dict[str, Any] = {}
-  timestamp = event.timestamp.isoformat()
-
-  if isinstance(event, TurnStartEvent):
-    data = {"message": event.message}
-  elif isinstance(event, TurnEndEvent):
-    data = {
-      "response": event.response,
-      "tool_calls_count": event.tool_calls_count,
-      "input_tokens": event.input_tokens,
-      "output_tokens": event.output_tokens,
-      "prompt_eval_count": event.prompt_eval_count,
-      "eval_count": event.eval_count,
-      "total_duration_ms": event.total_duration_ms,
-    }
-  elif isinstance(event, ThinkingChunkEvent):
-    data = {"text": event.text}
-  elif isinstance(event, ThinkingEndEvent):
-    data = {"total_length": event.total_length}
-  elif isinstance(event, ContentChunkEvent):
-    data = {"text": event.text, "content_type": event.content_type}
-  elif isinstance(event, ContentEndEvent):
-    data = {"total_length": event.total_length}
-  elif isinstance(event, ToolCallEvent):
-    data = {"tool_name": event.tool_name, "arguments": event.arguments}
-  elif isinstance(event, ToolResultEvent):
-    data = {
-      "tool_name": event.tool_name,
-      "result": event.result,
-      "success": event.success,
-    }
-  elif isinstance(event, ToolContentEvent):
-    data = {
-      "tool_name": event.tool_name,
-      "operation": event.operation,
-      "path": event.path,
-      "content_type": event.content_type,
-      "content": event.content,
-      "metadata": event.metadata,
-    }
-  elif isinstance(event, CommandEvent):
-    data = {"command": event.command, "result": event.result}
-  elif isinstance(event, SessionStartEvent):
-    data = {"session_id": event.session_id}
-  elif isinstance(event, SessionEndEvent):
-    data = {"session_id": event.session_id}
-  elif isinstance(event, AgentSpawnedEvent):
-    data = {
-      "session_id": event.session_id,
-      "agent_id": event.agent_id,
-      "definition_name": event.definition_name,
-    }
-  elif isinstance(event, AgentFinishedEvent):
-    data = {"session_id": event.session_id, "agent_id": event.agent_id}
-  elif isinstance(event, AgentMessageEvent):
-    data = {
-      "session_id": event.session_id,
-      "from_id": event.from_id,
-      "to_id": event.to_id,
-      "content": event.content,
-    }
-  # ThinkingStartEvent, ContentStartEvent have no data fields
-
-  return {"type": event.type.name, "timestamp": timestamp, "data": data}
+  full = dataclasses.asdict(event)
+  # Extract and remove envelope fields; everything else is event data.
+  full.pop("type", None)
+  full.pop("timestamp", None)
+  return {
+    "type": event.type.name,
+    "timestamp": event.timestamp.isoformat(),
+    "data": full,
+  }
 
 
 def deserialize_event(entry: dict[str, Any]) -> Event:
   """Deserialize a dictionary back to an event object.
 
+  Looks up the event class via :data:`EVENT_CLASS_MAP` and constructs it
+  directly from the stored data plus the envelope fields, avoiding per-type
+  dispatch.
+
   Args:
-    entry: Dictionary with type, timestamp, and event data.
+    entry: Dictionary with ``type``, ``timestamp``, and ``data`` keys.
 
   Returns:
     Reconstructed event object.
@@ -124,128 +101,14 @@ def deserialize_event(entry: dict[str, Any]) -> Event:
     ValueError: If event type is unknown.
   """
   event_type = EventType[entry["type"]]
+  event_class = EVENT_CLASS_MAP.get(event_type)
+  if event_class is None:
+    raise ValueError(f"Unknown event type: {event_type}")
+
   timestamp = datetime.fromisoformat(entry["timestamp"])
   data = entry.get("data", {})
-
-  match event_type:
-    case EventType.TURN_START:
-      return TurnStartEvent(
-        type=event_type,
-        timestamp=timestamp,
-        message=data["message"],
-      )
-    case EventType.TURN_END:
-      return TurnEndEvent(
-        type=event_type,
-        timestamp=timestamp,
-        response=data["response"],
-        tool_calls_count=data.get("tool_calls_count", 0),
-        input_tokens=data.get("input_tokens", 0),
-        output_tokens=data.get("output_tokens", 0),
-        prompt_eval_count=data.get("prompt_eval_count", 0),
-        eval_count=data.get("eval_count", 0),
-        total_duration_ms=data.get("total_duration_ms", 0),
-      )
-    case EventType.THINKING_START:
-      return ThinkingStartEvent(type=event_type, timestamp=timestamp)
-    case EventType.THINKING_CHUNK:
-      return ThinkingChunkEvent(
-        type=event_type,
-        timestamp=timestamp,
-        text=data["text"],
-      )
-    case EventType.THINKING_END:
-      return ThinkingEndEvent(
-        type=event_type,
-        timestamp=timestamp,
-        total_length=data["total_length"],
-      )
-    case EventType.CONTENT_START:
-      return ContentStartEvent(type=event_type, timestamp=timestamp)
-    case EventType.CONTENT_CHUNK:
-      return ContentChunkEvent(
-        type=event_type,
-        timestamp=timestamp,
-        text=data["text"],
-        content_type=data.get("content_type", "text/plain"),
-      )
-    case EventType.CONTENT_END:
-      return ContentEndEvent(
-        type=event_type,
-        timestamp=timestamp,
-        total_length=data["total_length"],
-      )
-    case EventType.TOOL_CALL:
-      return ToolCallEvent(
-        type=event_type,
-        timestamp=timestamp,
-        tool_name=data["tool_name"],
-        arguments=data["arguments"],
-      )
-    case EventType.TOOL_RESULT:
-      return ToolResultEvent(
-        type=event_type,
-        timestamp=timestamp,
-        tool_name=data["tool_name"],
-        result=data["result"],
-        success=data.get("success", True),
-      )
-    case EventType.TOOL_CONTENT:
-      return ToolContentEvent(
-        type=event_type,
-        timestamp=timestamp,
-        tool_name=data["tool_name"],
-        operation=data["operation"],
-        path=data["path"],
-        content_type=data.get("content_type", "application/x-summary"),
-        content=data.get("content"),
-        metadata=data.get("metadata", {}),
-      )
-    case EventType.COMMAND:
-      return CommandEvent(
-        type=event_type,
-        timestamp=timestamp,
-        command=data["command"],
-        result=data["result"],
-      )
-    case EventType.SESSION_START:
-      return SessionStartEvent(
-        type=event_type,
-        timestamp=timestamp,
-        session_id=data["session_id"],
-      )
-    case EventType.SESSION_END:
-      return SessionEndEvent(
-        type=event_type,
-        timestamp=timestamp,
-        session_id=data["session_id"],
-      )
-    case EventType.AGENT_SPAWNED:
-      return AgentSpawnedEvent(
-        type=event_type,
-        timestamp=timestamp,
-        session_id=data["session_id"],
-        agent_id=data["agent_id"],
-        definition_name=data["definition_name"],
-      )
-    case EventType.AGENT_FINISHED:
-      return AgentFinishedEvent(
-        type=event_type,
-        timestamp=timestamp,
-        session_id=data["session_id"],
-        agent_id=data["agent_id"],
-      )
-    case EventType.AGENT_MESSAGE:
-      return AgentMessageEvent(
-        type=event_type,
-        timestamp=timestamp,
-        session_id=data["session_id"],
-        from_id=data["from_id"],
-        to_id=data["to_id"],
-        content=data["content"],
-      )
-    case _:
-      raise ValueError(f"Unknown event type: {event_type}")
+  # Reconstruct with envelope + data fields in one shot.
+  return event_class(type=event_type, timestamp=timestamp, **data)
 
 
 class EventRecorder:
@@ -291,4 +154,5 @@ __all__ = [
   "serialize_event",
   "deserialize_event",
   "EventRecorder",
+  "EVENT_CLASS_MAP",
 ]

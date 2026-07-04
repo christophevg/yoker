@@ -7,13 +7,19 @@ A :class:`Session` is the container+coordinator for a team of agents. It owns:
   - the :class:`yoker.agents.AgentRegistry` (Decision 10)
   - recursion depth tracking (Decision 1)
   - event aggregation handlers (Decision 5)
-  - shared backends (Decision 9; populated in 7.5)
+  - shared backends (Decision 9; 7.5)
 
-Phase 1 (this module) implements only the lifecycle skeleton: construction
+Phase 1 (this module) implements the lifecycle skeleton: construction
 with a unique id, async context manager protocol emitting ``SESSION_START``
 and ``SESSION_END`` events, event handler registration, name disambiguation,
-and the ``get_agent`` lookup. Spawning, messaging, registry population, and
-backend sharing land in later phases.
+and the ``get_agent`` lookup.
+
+Phase 2 (MBI-007) adds:
+  - AgentRegistry ownership and population from config + plugins (7.3.1, 7.3.2)
+  - Agent allowlist enforcement in :meth:`spawn` (7.3.3 / PR #43 Clarification 3)
+  - Backend factory + sharing via :meth:`get_backend` (7.5.1)
+  - :meth:`spawn` orchestrating sub-agent creation, depth/max_agents checks,
+    backend injection, and timeout enforcement (7.3.3, 7.5.2).
 
 The recursion depth limit is read from ``config.tools.agent.max_recursion_depth``
 (Decision 7 / task 7.6.3 — the field stays where it is; only the consumer
@@ -23,13 +29,14 @@ changes from Agent to Session).
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import uuid
 from typing import TYPE_CHECKING
 
 from structlog import get_logger
 
-from yoker.agents import AgentRegistry
-from yoker.backends import ModelBackend
+from yoker.agents import AgentDefinition, AgentRegistry, load_agent_definitions
+from yoker.backends import ModelBackend, create_backend
 from yoker.config import Config
 from yoker.events import Event, EventCallback, EventType, SessionEndEvent, SessionStartEvent
 
@@ -58,11 +65,12 @@ class Session:
     self.config: Config = config
     self.id: str = session_id if session_id is not None else self._generate_session_id()
 
-    # name → Agent instance (D2). Populated by spawn() in 7.8.2.
+    # name → Agent instance (D2). Populated by spawn().
     self._agents_map: dict[str, Agent] = {}
-    # Shared agent definitions registry (D10). Populated in 7.3.1.
-    self._agent_registry: AgentRegistry = AgentRegistry()
-    # agent name → current recursion depth (D1). Tracked in 7.8.2.
+    # Shared agent definitions registry (D10). Populated from config
+    # directories in 7.3.1 and from plugins in 7.3.2.
+    self.agents: AgentRegistry = AgentRegistry()
+    # agent name → current recursion depth (D1). Tracked in spawn().
     self._recursion_depths: dict[str, int] = {}
     # Session-scoped event handlers (D5). Replaces agent.add_event_handler
     # for session-scoped consumers.
@@ -73,6 +81,9 @@ class Session:
     self._tasks: set[asyncio.Task] = set()
     # Tracks disambiguation suffix counters per definition name (D2).
     self._name_counters: dict[str, int] = {}
+
+    # Load agent definitions from configured directories (7.3.1).
+    self._load_agents()
 
   # --- lifecycle -----------------------------------------------------------
 
@@ -136,6 +147,24 @@ class Session:
       except Exception:
         logger.exception("session event handler raised")
 
+  # --- agent registry (7.3.1) ---------------------------------------------
+
+  def _load_agents(self) -> None:
+    """Load agent definitions from configured directories into the registry.
+
+    Relocated from ``Agent._load_agents`` (task 7.3.1). The Session loads
+    definitions before any Agent is constructed so agents can resolve their
+    own definition through ``session.agents``.
+    """
+    for directory in self.config.agents.directories:
+      try:
+        new_agents = load_agent_definitions(directory).items()
+        for _, agent in new_agents:
+          self.agents.register(agent)
+        logger.info("agents loaded", count=len(new_agents), source=directory)
+      except Exception as e:
+        logger.warning("loading agents failed", directory=directory, error=str(e))
+
   # --- agent map -----------------------------------------------------------
 
   def get_agent(self, name: str) -> Agent | None:
@@ -157,6 +186,171 @@ class Session:
     if count == 1:
       return definition_name
     return f"{definition_name}-{count}"
+
+  # --- backend factory (7.5.1) --------------------------------------------
+
+  def get_backend(self, config: Config) -> ModelBackend:
+    """Return a shared or fresh backend for the given config.
+
+    Backends are cached by provider config signature (Decision 9). Agents
+    that share the same active provider config reuse the same backend
+    instance. Per-agent model/provider overrides produce a different
+    signature and therefore a fresh backend.
+    """
+    key = self._backend_key(config)
+    backend = self._backends.get(key)
+    if backend is None:
+      backend = create_backend(config)
+      self._backends[key] = backend
+    return backend
+
+  @staticmethod
+  def _backend_key(config: Config) -> str:
+    """Compute a stable cache key for a config's active provider settings."""
+    provider = config.backend.provider
+    sub = config.backend.config
+    return "|".join(
+      (
+        provider,
+        getattr(sub, "model", "") or "",
+        getattr(sub, "base_url", "") or "",
+        getattr(sub, "api_key", "") or "",
+      )
+    )
+
+  # --- spawn (7.3.3, 7.5.2) ------------------------------------------------
+
+  async def spawn(
+    self,
+    name: str,
+    prompt: str,
+    *,
+    requester: Agent | None = None,
+    timeout_seconds: int = 300,
+  ) -> str:
+    """Spawn a child agent by name and run it to completion.
+
+    Phase 2 implementation: enforces the requester's
+    :attr:`AgentDefinition.agents` allowlist (PR #43 Clarification 3) before
+    resolving/spawning, resolves the definition from ``session.agents``,
+    checks recursion depth and ``max_agents`` limits, creates a child
+    :class:`Agent` with a session-injected backend, runs it with a timeout,
+    and returns the response string.
+
+    Args:
+      name: Agent definition name (bare or namespaced) to spawn.
+      prompt: The prompt to send to the spawned agent.
+      requester: The requesting :class:`Agent` (for allowlist enforcement).
+        When ``None`` (top-level spawn) the allowlist check is bypassed.
+      timeout_seconds: Maximum seconds the spawned agent may run.
+
+    Returns:
+      The spawned agent's response string.
+
+    Raises:
+      ValueError: On allowlist violation, unknown agent, or capacity
+        (depth / max_agents) exceeded.
+      TimeoutError: When the spawned agent does not finish in time.
+    """
+    # Allowlist enforcement (PR #43 Clarification 3) — before any other check.
+    if requester is not None:
+      allowed = requester.definition.agents
+      if len(allowed) == 0:
+        raise ValueError(f"Agent '{requester.definition.name}' has no allowed spawns.")
+      if name not in allowed:
+        raise ValueError(f"Agent '{name}' is not in '{requester.definition.name}' allowlist.")
+
+    # Resolve agent definition from the session registry (D10).
+    try:
+      agent_definition: AgentDefinition = self.agents.resolve(name)
+    except ValueError:
+      raise
+    except Exception as e:
+      raise ValueError(f"Agent resolution failed for '{name}': {e}") from e
+
+    # Recursion depth check (D1). Top-level spawn (requester is None) starts
+    # at depth 1; nested spawns derive depth from the requester's tracked
+    # depth in this session.
+    parent_depth = 0
+    if requester is not None:
+      # Look up the requester's depth by matching its session-assigned name.
+      # Fall back to 0 if the requester isn't tracked (e.g. primary agent).
+      parent_depth = next(
+        (d for n, d in self._recursion_depths.items() if self._agents_map.get(n) is requester),
+        0,
+      )
+    child_depth = parent_depth + 1
+    if child_depth > self.max_recursion_depth:
+      raise ValueError(
+        f"Maximum recursion depth ({self.max_recursion_depth}) exceeded. Cannot spawn sub-agent."
+      )
+
+    # max_agents cap (Decision 7).
+    if len(self._agents_map) >= self.config.session.max_agents:
+      raise ValueError(f"Session max_agents limit ({self.config.session.max_agents}) reached.")
+
+    # Derive config with model override if the definition specifies one.
+    child_config = self._derive_config(self.config, agent_definition)
+
+    # Backend: shared when same provider config, fresh when overridden (D9).
+    backend = self.get_backend(child_config)
+
+    # Unique session-assigned agent name (D2).
+    agent_id = self._generate_agent_name(agent_definition.simple_name or name)
+
+    # Construct the child Agent with a session reference (7.2.3, 7.5.2).
+    from yoker.agent import Agent as _Agent
+
+    child = _Agent(
+      config=child_config,
+      agent_definition=agent_definition,
+      backend=backend,
+      session=self,
+      console_logging=False,
+    )
+
+    # Register in the active map and track depth (D1, D2).
+    self._agents_map[agent_id] = child
+    self._recursion_depths[agent_id] = child_depth
+
+    try:
+      response = await asyncio.wait_for(
+        child.process(prompt),
+        timeout=timeout_seconds,
+      )
+      return response
+    except asyncio.TimeoutError as e:
+      raise TimeoutError(f"Sub-agent '{agent_id}' timed out after {timeout_seconds} seconds") from e
+    finally:
+      # Clarification 7: finished agents are removed from the active list.
+      # There is no `finished` state; AGENT_FINISHED events are emitted by
+      # the full spawn() implementation in 7.8.2.
+      self._agents_map.pop(agent_id, None)
+      self._recursion_depths.pop(agent_id, None)
+
+  @staticmethod
+  def _derive_config(parent_config: Config, agent_definition: AgentDefinition) -> Config:
+    """Build a child config with the agent definition's model override applied.
+
+    When the definition has no ``model`` override the parent config is
+    returned unchanged (so the backend is shared). When a model override
+    exists, a derived config is produced via ``dataclasses.replace`` on the
+    active provider's sub-config (provider-agnostic, MBI-006 task 6.7
+    pattern).
+    """
+    model = agent_definition.model
+    if model is None:
+      return parent_config
+    sub_config = parent_config.backend.config
+    new_sub = dataclasses.replace(sub_config, model=model)
+    provider = parent_config.backend.provider
+    # ``dataclasses.replace`` accepts field keywords by name; passing the
+    # active provider's sub-config via a **{provider: ...} mapping confuses
+    # mypy (the union of provider types doesn't narrow to the named field).
+    # Setting the attribute on a replace-built copy keeps the call typed.
+    new_backend = dataclasses.replace(parent_config.backend)
+    setattr(new_backend, provider, new_sub)
+    return dataclasses.replace(parent_config, backend=new_backend)
 
   # --- helpers -------------------------------------------------------------
 
