@@ -1,10 +1,10 @@
-"""Tests for the Session-injected SpawnAgent and SendMessage tools (MBI-007 Phase 4).
+"""Tests for the Session-injected ``agent`` and ``send_message`` tools (MBI-007 Phase 4).
 
 PR #43 Clarifications 2, 4 & 5:
-  - ``SpawnAgent`` replaces the old ``agent`` tool; it is Session-injected
-    (closure capture of the Session back-reference).
-  - ``SendMessage`` enables inter-agent messaging via tool calls.
-  - ``SpawnAgent`` returns both the spawned agent's unique id and its
+  - The ``agent`` tool is Session-injected (closure capture of the Session
+    back-reference).
+  - The ``send_message`` tool enables inter-agent messaging via tool calls.
+  - ``agent`` returns both the spawned agent's unique id and its
     response string (PR #43 Clarification 5).
 
 These tests verify the tool factories in :mod:`yoker.session.tools`:
@@ -29,7 +29,7 @@ from yoker.tools import ToolRegistry
 
 
 def _spawn_agent_spec(session=None, requester=None):
-  """Create and register the SpawnAgent tool."""
+  """Create and register the ``agent`` tool."""
   registry = ToolRegistry()
   if session is None:
     session = MagicMock()
@@ -46,19 +46,19 @@ def _spawn_agent_spec(session=None, requester=None):
   return registry.register(
     make_spawn_agent_tool(session, requester),
     namespace="yoker",
-    name="SpawnAgent",
+    name="agent",
   )
 
 
 def _send_message_spec(session=None, from_id="parent"):
-  """Create and register the SendMessage tool."""
+  """Create and register the ``send_message`` tool."""
   registry = ToolRegistry()
   if session is None:
     session = MagicMock()
   return registry.register(
     make_send_message_tool(session, from_id),
     namespace="yoker",
-    name="SendMessage",
+    name="send_message",
   )
 
 
@@ -86,13 +86,13 @@ def _make_requester(allowlist=("researcher",)):
   return agent
 
 
-class TestSpawnAgentToolSchema:
-  """Tests for SpawnAgent tool schema and properties."""
+class TestAgentToolSchema:
+  """Tests for the ``agent`` tool schema and properties."""
 
   def test_name(self) -> None:
-    """Test tool name is SpawnAgent."""
+    """Test tool name is agent."""
     spec = _spawn_agent_spec()
-    assert spec.name == "yoker:SpawnAgent"
+    assert spec.name == "yoker:agent"
 
   def test_description(self) -> None:
     """Test tool description mentions sub-agent / task."""
@@ -106,7 +106,7 @@ class TestSpawnAgentToolSchema:
     schema = spec.schema
 
     assert schema["type"] == "function"
-    assert schema["function"]["name"] == "yoker__SpawnAgent"
+    assert schema["function"]["name"] == "yoker__agent"
     assert "agent_name" in schema["function"]["parameters"]["properties"]
     assert "prompt" in schema["function"]["parameters"]["properties"]
     assert "timeout_seconds" in schema["function"]["parameters"]["properties"]
@@ -121,7 +121,7 @@ class TestSpawnAgentToolSchema:
     assert timeout_prop["type"] == "integer"
 
 
-class TestSpawnAgentToolParameters:
+class TestAgentToolParameters:
   """Tests for parameter validation."""
 
   @pytest.mark.asyncio
@@ -158,8 +158,8 @@ class TestSpawnAgentToolParameters:
     assert "Invalid numeric parameter" in result.error
 
 
-class TestSpawnAgentToolDelegation:
-  """Tests that SpawnAgent delegates to session.spawn (Phase 4)."""
+class TestAgentToolDelegation:
+  """Tests that the ``agent`` tool delegates to session.spawn (Phase 4)."""
 
   @pytest.mark.asyncio
   async def test_delegates_to_session_spawn(self) -> None:
@@ -275,7 +275,7 @@ class TestSpawnAgentToolDelegation:
     assert "found it" in result.result
 
 
-class TestSpawnAgentToolDescription:
+class TestAgentToolDescription:
   """Tests for the tool description baking (allowlist intersection)."""
 
   def test_description_lists_allowlisted_names(self) -> None:
@@ -313,12 +313,12 @@ class TestSpawnAgentToolDescription:
 
 
 class TestSendMessageToolSchema:
-  """Tests for SendMessage tool schema and properties."""
+  """Tests for the ``send_message`` tool schema and properties."""
 
   def test_name(self) -> None:
-    """Test tool name is SendMessage."""
+    """Test tool name is send_message."""
     spec = _send_message_spec()
-    assert spec.name == "yoker:SendMessage"
+    assert spec.name == "yoker:send_message"
 
   def test_schema_structure(self) -> None:
     """Test schema has to and message parameters."""
@@ -326,14 +326,14 @@ class TestSendMessageToolSchema:
     schema = spec.schema
 
     assert schema["type"] == "function"
-    assert schema["function"]["name"] == "yoker__SendMessage"
+    assert schema["function"]["name"] == "yoker__send_message"
     assert "to" in schema["function"]["parameters"]["properties"]
     assert "message" in schema["function"]["parameters"]["properties"]
     assert schema["function"]["parameters"]["required"] == ["to", "message"]
 
 
 class TestSendMessageToolDelegation:
-  """Tests that SendMessage delegates to session.send."""
+  """Tests that the ``send_message`` tool delegates to session.send."""
 
   @pytest.mark.asyncio
   async def test_delegates_to_session_send(self) -> None:

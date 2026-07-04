@@ -264,7 +264,7 @@ async def _run_with_session(
   backend is shared. The :class:`UIBridge` is registered on the
   :class:`Session` (not on the Agent) so sub-agent events aggregated by the
   Session reach the UI (PR #43 Clarification 9). Session-injected tools
-  (``SpawnAgent`` and ``SendMessage``) are registered on the primary Agent
+  (``agent`` and ``send_message``) are registered on the primary Agent
   by ``session.register_primary_agent`` (PR #43 Clarifications 2 & 4).
   """
   console_logging = os.environ.get("YOKER_CONSOLE_LOGGING", "NO") != "NO"
@@ -276,8 +276,8 @@ async def _run_with_session(
       console_logging=console_logging,
     )
     # Register the primary agent with the session so it gets a runtime id,
-    # is added to the active map (for SendMessage addressing), and receives
-    # the Session-injected tools (SpawnAgent, SendMessage).
+    # is added to the active map (for send_message addressing), and receives
+    # the Session-injected tools (agent, send_message).
     session.register_primary_agent(agent)
     # Decision 5: UIBridge registered on Session so aggregated sub-agent
     # events (SessionEvent envelopes) reach the UI.

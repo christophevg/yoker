@@ -155,22 +155,52 @@ system_prompt: |
 
 ### Recursive Composition: True Sub-Agents
 
-When yoker spawns a sub-agent, it creates a **full library instance**:
+Yoker's sub-agents are real, fully-functioning agent instances — not
+function calls. They are owned and coordinated by a
+:class:`yoker.session.Session` (MBI-007): an async context manager that
+manages a **team of agents**, their lifecycle, registry, recursion depth
+tracking, event aggregation, and inter-agent messaging.
 
 ```python
-# Sub-agent in yoker
-sub_agent = Agent(
-    config=child_config,           # Isolated configuration
-    context_manager=child_context, # Isolated context
-    agent_path="agents/researcher.md",  # Configurable agent (model set in definition)
-)
+# Multi-agent session in yoker
+async with Session(config=config) as session:
+    # The primary agent is registered with the session and receives the
+    # Session-injected SpawnAgent and SendMessage tools.
+    agent = Agent(config=config, session=session)
+    session.register_primary_agent(agent)
+
+    # Programmatic sub-agent spawn (canonical API, Decision 8). The
+    # SpawnAgent tool exposed to the model is a thin wrapper around this.
+    result = await session.spawn(
+        "researcher",                      # agent definition name
+        "Summarize README.md",             # prompt for the sub-agent
+        timeout_seconds=120,
+    )
+    # result.agent_id  -> "researcher" (unique session-assigned id)
+    # result.response   -> the sub-agent's reply string
+
+    # Inter-agent messaging (Decision 3): plain-string request/response.
+    reply = await session.send(
+        Message(from_id=agent_id, to_id=result.agent_id, content="Follow up?")
+    )
 ```
+
+The `Session` owns the team: every spawned agent is a full
+:class:`yoker.agent.Agent` instance with its own context, model, tools,
+and event stream. Sub-agents are addressable by a unique name the Session
+generates (Decision 2), the Session enforces recursion-depth and
+`max_agents` caps, and sub-agent events are aggregated to session-level
+handlers — wrapped in a `SessionEvent` envelope tagged with the source
+`agent_id` so the UI can tell which agent produced what.
 
 **Other solutions** treat sub-agents as function calls. Yoker treats them as **complete agent instances** with:
 - Isolated context (no message leakage)
 - Configurable model (cheaper model for sub-tasks)
 - Scoped permissions (sub-agent can't access parent's files)
-- Own event stream (traceable operations)
+- Own event stream (traceable operations, aggregated to the session)
+- Inter-agent messaging via plain-string `Message` (request/response)
+- Allowlist enforcement: each agent definition declares which agents it
+  may spawn through the Session
 
 ## Target Use Cases
 
@@ -221,7 +251,7 @@ Yoker enables a unique workflow: develop collections interactively, deploy auton
 | **LLM Provider** | Your choice (Ollama, OpenAI, Anthropic, Gemini, 100+) | Vendor's choice |
 | **Cost** | Your choice | Vendor pricing |
 | **Privacy** | Your choice | Vendor's terms |
-| **Sub-agents** | Full instances | Function calls |
+| **Sub-agents** | Full instances, coordinated by a Session | Function calls |
 | **Workflow** | Interactive ↔ Autonomous | Fixed mode |
 | **Transparency** | 100% | Varies |
 
