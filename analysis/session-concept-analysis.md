@@ -1,8 +1,8 @@
 # Session Concept — Deep Analysis
 
-Status: Finalized — owner-approved design (PR #42 comments)
+Status: Finalized — owner-approved design (PR #42 decisions, PR #43 clarifications)
 Author: Functional Analyst
-Date: 2026-07-03 (decisions finalized 2026-07-03)
+Date: 2026-07-03 (decisions finalized 2026-07-03; clarifications added 2026-07-04)
 
 This document analyses the proposed introduction of a `Session` construct to
 Yoker: a "team of agents" coordinator that takes over spawning, lifecycle, and
@@ -693,6 +693,153 @@ the MBI-003 entry and as a TODO note.
 
 ---
 
+## 7.3 Owner Clarifications (PR #43)
+
+The repository owner (christophevg) provided four additional
+clarifications in PR #43 that refine the MBI-007 design. Each is marked
+**CLARIFIED**. These refine — but do not overturn — the ten decisions in
+§7.
+
+### Clarification 1 — No backward-compatibility shims  [CLARIFIED]
+
+Implement **only the final design**. No transitional compatibility
+layers, no dual-field patterns, no deprecation warnings, no proxy
+properties that delegate to the new location. This simplifies the
+implementation: any reference to a deprecation shim, transitional
+pattern, or "keep as no-op/ignored" behaviour in earlier sections of
+this document is **superseded** — remove the old field/arg outright and
+let the call site break loudly.
+
+Consequences for the task breakdown:
+
+- `Agent(_recursion_depth=...)` constructor arg: **removed** (not
+  ignored, not warned — removed). Callers passing it get `TypeError`.
+- `Agent.agents` attribute: **removed**. Code reading it breaks with
+  `AttributeError`. No proxy property.
+- `validate_recursion_depth` on Agent: **removed**, not kept as a no-op.
+- `run_session` name: **removed** (renamed to `run_repl`); no alias.
+- Single-agent use without a Session: the Agent still works on its own
+  (it is a single-agent primitive), but it does *not* synthesise a
+  hidden Session or proxy one. Library callers either wrap in a Session
+  or use the bare Agent as a single-agent chat loop — both are
+  first-class paths, neither is a compatibility shim.
+
+Where earlier sections of this document mention "backward
+compatibility", "deprecation path", "no-op/ignored", or "proxy to
+session", those statements are **superseded by this clarification**.
+The acceptance criteria in §10 and the tasks in TODO.md are updated
+accordingly.
+
+### Clarification 2 — SpawnAgent tool (Session-injected, replaces `agent`)  [CLARIFIED]
+
+The built-in `agent` tool becomes **`SpawnAgent`**, injected by the
+Session. This is *not* the "thin wrapper calling `ctx.session.spawn`"
+formulation from Decision 8 — it is a tighter design:
+
+- The Session holds a **back-reference to itself** when constructing the
+  tool, so `SpawnAgent` is a Session-injected tool that captures the
+  Session directly (closure capture, same pattern as the existing
+  `make_agent_tool(parent_agent)` but capturing `session`).
+- `SpawnAgent` is registered on Agents **by the Session** when it
+  spawns/owns them — it is not registered by the Agent itself and is
+  not part of the Agent's static tool set. Tools that need the Session
+  are Session-injected, not Agent-registered.
+- The model-facing signature is unchanged in spirit (name, prompt,
+  optional timeout → string result), but the tool name becomes
+  `SpawnAgent` and the implementation calls `session.spawn(...)` via the
+  captured back-reference.
+- This supersedes the "ToolContext gains `session`" aspect of Decision 8
+  *for the SpawnAgent tool specifically*: since the Session captures
+  itself in the closure, `SpawnAgent` does not need `ctx.session`.
+  However, `ToolContext.session` is still added (Clarification 4 makes
+  it load-bearing for `SendMessage` and `ListAgents`), so Decision 8's
+  `ToolContext` change stands — it is just no longer the mechanism
+  SpawnAgent uses.
+
+### Clarification 3 — Agent allowlist enforcement before spawn  [CLARIFIED]
+
+`AgentDefinition` already carries an `agents` field: the list of agent
+names this agent is allowed to spawn (the allowlist). The Session
+**must check** whether a requested spawned Agent is in the requesting
+agent's allowed list **before spawning**.
+
+Consequences:
+
+- `Session.spawn()` gains a `requester: Agent` (or `requester_name: str`)
+  parameter so it can look up the requester's `AgentDefinition.agents`
+  allowlist and reject spawns of agents not in that list.
+- The check happens *before* the recursion-depth / max-agents checks —
+  an allowlist violation is a permissions error, not a capacity error.
+- An empty/missing allowlist on the requester's definition means "no
+  spawns allowed" (or, if the existing semantics treat empty as "all
+  allowed", preserve that — implementation must pick one and document
+  it; the conservative default is "empty = none").
+- The existing `config.tools.agent.enabled` flag remains the global
+  kill-switch; the per-agent allowlist is the finer-grained gate.
+- This replaces the looser formulation in task 7.3.3 ("Agent stores
+  `self._allowed_spawns` derived from session registry names"). The
+  source of truth is the `AgentDefinition.agents` tuple, not a derived
+  list — the Session reads it directly from the requester's definition.
+
+### Clarification 4 — SendMessage tool (Session-injected) + ListAgents open question  [CLARIFIED]
+
+`SendMessage` is a tool **available to agents when in a Session**,
+injected by the Session (same injection mechanism as `SpawnAgent`).
+This enables inter-agent messaging via **tool calls** from the model,
+not just via the `session.send_message(...)` Python API. The Session
+captures itself in the closure and routes the message through
+`session.send(...)` (the routing method from Decision 3 / task 7.4.2).
+
+The owner also raised an **open question**: should we provide a
+`ListAgents` tool (also Session-injected) so agents can discover other
+active agents in the session?
+
+#### Recommendation: YES — provide `ListAgents`
+
+**Rationale.** Agents need to discover other active agents to address
+`SendMessage` calls. Without a discovery mechanism, an agent that wants
+to send a message has no way to know which agents exist in the session
+or what their current status is. `SpawnAgent` lets an agent create a new
+agent by name (the name comes from the registry / allowlist), but
+`SendMessage` needs the *runtime* name of an already-active agent —
+which only the Session knows. Without `ListAgents`, inter-agent
+messaging via tool calls is impractical: the model would have to guess
+names or be told them out-of-band.
+
+**Behaviour.**
+
+- `ListAgents` is Session-injected (same mechanism as `SpawnAgent` and
+  `SendMessage`).
+- Returns a list of `(name, status)` tuples for active agents in the
+  Session, where `name` is the unique session-assigned ID (Decision 2)
+  and `status` is one of `{idle, running, finished}` (or a similar small
+  enum — exact values to be finalized in implementation).
+- The list includes the calling agent itself (so it knows its own
+  runtime name).
+- Does *not* include agents that have been cleaned up / removed.
+- The tool description should make clear that these are runtime
+  instances, not registry definitions — an agent listed can be
+  addressed by `SendMessage` using its `name`.
+
+**Status of the open question.** Recommended for inclusion in MBI-007.
+If the owner confirms, `ListAgents` is added as a Session-injected tool
+alongside `SpawnAgent` and `SendMessage`. The three tools form the
+Session-injected tool set: `SpawnAgent` (create), `ListAgents`
+(discover), `SendMessage` (address). All three capture the Session via
+closure; none of them are registered by the Agent itself.
+
+#### Implication for `ToolContext.session`
+
+`ToolContext.session` (Decision 8) is still added. `SendMessage` and
+`ListAgents` *can* be implemented via `ctx.session` instead of closure
+capture — either approach works. The implementation should pick one and
+be consistent across all three Session-injected tools. Closure capture
+is simpler and matches the existing `make_agent_tool` pattern;
+`ctx.session` is more uniform with the rest of the tool framework. The
+choice is an implementation detail, not a design decision.
+
+---
+
 ## 8. Impact Analysis
 
 | Component | Impact | Effort |
@@ -845,10 +992,19 @@ its workflow layer on top of.
 - [ ] `Session.spawn(name, prompt, timeout=...)` creates a child agent,
       runs it, and returns the response string. Recursion depth is
       enforced by the Session (Decision 8).
-- [ ] The built-in `agent` tool is a thin wrapper calling
-      `ctx.session.spawn(...)`; `ToolContext` carries a `session`
-      reference (Decision 8). From the model's perspective the tool is
-      identical (same parameters, same string return).
+- [ ] The built-in `agent` tool is replaced by **`SpawnAgent`**, a
+      Session-injected tool (the Session captures itself in the closure
+      and registers the tool on Agents it owns). From the model's
+      perspective the tool is equivalent (same effective parameters,
+      same string return). `ToolContext` carries a `session` reference
+      (Decision 8, PR #43 Clarification 2).
+- [ ] `Session.spawn(name, prompt, *, requester=...)` enforces the
+      requester's `AgentDefinition.agents` allowlist before spawning
+      (PR #43 Clarification 3); top-level spawns bypass the check.
+- [ ] `SendMessage` and `ListAgents` are Session-injected tools
+      enabling inter-agent messaging and discovery via tool calls
+      (PR #43 Clarification 4). `ListAgents` returns `(name, status)`
+      tuples for active agents.
 - [ ] Events emitted by spawned agents are visible to handlers registered
       on the Session, tagged with source agent name/`agent_id`
       (Decision 5).
