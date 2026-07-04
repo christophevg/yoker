@@ -8,6 +8,81 @@ Yoker is a Python agent harness with configurable tools and guardrails. It provi
 
 ## Recent Changes
 
+### MBI-007 Phase 4: Session Integration — SpawnAgent, SendMessage, run_repl (2026-07-04)
+
+**Task**: Integrated the `Session` primitive into the application flow:
+Session-injected tools (`SpawnAgent`, `SendMessage`), `ToolContext.session`
+reference, `run_session` → `run_repl` rename, and `main()` wiring
+(Decision 5/6/8, PR #43 Clarifications 2, 4, 5, 6).
+
+1. **7.8.1 — `ToolContext.session`**: added `session: Session | None =
+   None` field to `ToolContext` in `src/yoker/tools/context.py`.
+   `_build_tool_context` in `agent/_processing.py` threads
+   `agent._session` through so session-aware tools can reach the owning
+   Session. `None` on the single-agent path (Decision 8).
+
+2. **7.8.2 — `Session.spawn()` returns `SpawnResult`**: new
+   `src/yoker/session/spawn_result.py` defines
+   `SpawnResult(agent_id: str, response: str)` (frozen). `Session.spawn()`
+   now returns `SpawnResult` instead of a bare string (PR #43
+   Clarification 5 — the caller learns the spawned agent's unique id).
+   `SpawnAgent` renders both fields into its `ToolResult` so the model can
+   read the spawned id and address it later via `SendMessage`. Exported
+   via `yoker.session`.
+
+3. **7.8.3 — `SpawnAgent` tool (Session-injected)**: new
+   `src/yoker/session/tools.py` provides `make_spawn_agent_tool(session,
+   requester)` — the Session captures itself in the closure
+   (back-reference, PR #43 Clarification 2) and the tool delegates to
+   `session.spawn(...)` with `requester` set (allowlist enforcement). The
+   tool name is `SpawnAgent` (replaces the old `agent` tool); available
+   agent names are baked into the `agent_name` parameter description from
+   `requester.definition.agents` intersected with `session.agents.names`.
+   The old `make_agent_tool` / `_create_subagent` / `_run_with_timeout` /
+   `_clamp` are removed from `src/yoker/builtin/agent.py` (now an empty
+   placeholder). `src/yoker/builtin/__init__.py` no longer exports
+   `make_agent_tool`.
+
+4. **7.8.6 — `SendMessage` tool (Session-injected)**: new
+   `make_send_message_tool(session, from_id)` in
+   `src/yoker/session/tools.py`. Builds a `Message(from_id=<caller
+   runtime name>, to_id=to, content=message)` and calls
+   `session.send(...)`. Returns the target's response string, or an error
+   result when the target is no longer active (PR #43 Clarification 7 —
+   finished agents are removed from the active map). `ListAgents` is
+   deferred (PR #43 Clarification 6) and is NOT injected.
+
+5. **7.8.4 — `Session.inject_tools` / `register_primary_agent`**: new
+   methods on `Session`. `inject_tools(agent, agent_id)` registers
+   `SpawnAgent` (gated by `config.tools.agent.enabled`) and `SendMessage`
+   on the agent's tool registry. `register_primary_agent(agent)` assigns
+   a session-scoped id, adds the agent to the active map at recursion
+   depth 0, and injects the Session tools. `Session.spawn()` calls
+   `inject_tools` on each spawned child so every agent in a session can
+   spawn sub-agents and send inter-agent messages.
+
+6. **7.8.4 — `run_session` → `run_repl`**: renamed in
+   `src/yoker/__main__.py` (Decision 6, PR #43 Clarification 1 — no
+   alias). All test references updated.
+
+7. **7.8.5 — `main()` constructs Session + UIBridge on Session**:
+   `_run_with_session` in `__main__.py` now calls
+   `session.register_primary_agent(agent)` (injects SpawnAgent and
+   SendMessage on the primary agent) and `session.add_event_handler(bridge)`
+   (Decision 5 — UIBridge registered on Session, not Agent, so
+   aggregated sub-agent events reach the UI). The user-visible behaviour
+   of `python -m yoker` is unchanged.
+
+8. **Pre-existing fix — `Annotated` metadata extraction**: `_build_parameter_schema`
+   in `src/yoker/tools/schema.py` used `getattr(annotation, "__args__", ())`
+   which returns only the first type argument for `Annotated[T, marker]`
+   forms, leaving the marker unreachable. Switched to `typing.get_args()`
+   so `Annotated[str, Text(...)]` markers are correctly extracted. This
+   also required `_validate_tool_args` in `agent/_processing.py` to use
+   `.get()` instead of `[]` for the guardrail lookup (the `Text` guard
+   type is now correctly detected, and the Agent's `_guardrails` dict
+   does not contain a `"text"` entry — `None` is the correct skip path).
+
 ### MBI-007 Phase 3: Session Communication & Event Aggregation (2026-07-04)
 
 **Task**: Implemented inter-agent messaging (7.4) and event aggregation

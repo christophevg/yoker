@@ -1,17 +1,16 @@
-"""Tests for the agent subagent tool implementation (MBI-007 Phase 2).
+"""Tests for the Session-injected SpawnAgent and SendMessage tools (MBI-007 Phase 4).
 
-Phase 2 changes (PR #43 Clarifications 1 & 2):
-  - ``Agent`` no longer holds ``agents`` / ``recursion_depth`` /
-    ``max_recursion_depth`` — the :class:`yoker.session.Session` owns them.
-  - ``make_agent_tool`` is no longer registered by ``Agent.__init__``; it
-    delegates to ``session.spawn(...)`` when a session is available on the
-    parent agent. The full ``SpawnAgent`` rewrite lands in Phase 4 (7.8.3).
+PR #43 Clarifications 2, 4 & 5:
+  - ``SpawnAgent`` replaces the old ``agent`` tool; it is Session-injected
+    (closure capture of the Session back-reference).
+  - ``SendMessage`` enables inter-agent messaging via tool calls.
+  - ``SpawnAgent`` returns both the spawned agent's unique id and its
+    response string (PR #43 Clarification 5).
 
-These tests verify the transitional delegation behaviour: the tool captures
-the parent agent's ``_session``, calls ``session.spawn`` with ``requester``
-set, and wraps the response / errors into ``ToolResult``. The deep behaviour
-(allowlist, depth, timeout, max_agents) is covered by
-``tests/test_session/test_spawn.py``.
+These tests verify the tool factories in :mod:`yoker.session.tools`:
+schema, parameter validation, delegation to ``session.spawn`` /
+``session.send``, and error wrapping. Deep behaviour (allowlist, depth,
+timeout, max_agents) is covered by ``tests/test_session/test_spawn.py``.
 """
 
 from unittest.mock import AsyncMock, MagicMock
@@ -19,15 +18,48 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from yoker.agents import AgentDefinition
-from yoker.builtin import make_agent_tool
-from yoker.builtin.agent import DEFAULT_TIMEOUT_SECONDS, _clamp
+from yoker.session.message import Message
+from yoker.session.spawn_result import SpawnResult
+from yoker.session.tools import (
+  DEFAULT_TIMEOUT_SECONDS,
+  make_send_message_tool,
+  make_spawn_agent_tool,
+)
 from yoker.tools import ToolRegistry
 
 
-def _agent_spec(parent_agent=None):
-  """Create and register the agent tool."""
+def _spawn_agent_spec(session=None, requester=None):
+  """Create and register the SpawnAgent tool."""
   registry = ToolRegistry()
-  return registry.register(make_agent_tool(parent_agent=parent_agent))
+  if session is None:
+    session = MagicMock()
+    session.agents = MagicMock()
+    session.agents.names = []
+  if requester is None:
+    requester = MagicMock()
+    requester.definition = AgentDefinition(
+      simple_name="parent",
+      description="Parent agent",
+      tools=("read",),
+      agents=("researcher",),
+    )
+  return registry.register(
+    make_spawn_agent_tool(session, requester),
+    namespace="yoker",
+    name="SpawnAgent",
+  )
+
+
+def _send_message_spec(session=None, from_id="parent"):
+  """Create and register the SendMessage tool."""
+  registry = ToolRegistry()
+  if session is None:
+    session = MagicMock()
+  return registry.register(
+    make_send_message_tool(session, from_id),
+    namespace="yoker",
+    name="SendMessage",
+  )
 
 
 def _make_session_with_registry(agent_def=None, resolve_error=None):
@@ -42,40 +74,39 @@ def _make_session_with_registry(agent_def=None, resolve_error=None):
   return session
 
 
-def _make_parent_agent(session=None, definition=None):
-  """Build a mock parent agent with a _session reference."""
+def _make_requester(allowlist=("researcher",)):
+  """Build a mock requester agent with a definition allowlist."""
   agent = MagicMock()
-  agent._session = session
-  agent.definition = definition or AgentDefinition(
+  agent.definition = AgentDefinition(
     simple_name="parent",
     description="Parent agent",
     tools=("read",),
-    agents=("researcher",),
+    agents=tuple(allowlist),
   )
   return agent
 
 
-class TestAgentToolSchema:
-  """Tests for agent tool schema and properties."""
+class TestSpawnAgentToolSchema:
+  """Tests for SpawnAgent tool schema and properties."""
 
   def test_name(self) -> None:
-    """Test tool name."""
-    spec = _agent_spec()
-    assert spec.name == "agent"
+    """Test tool name is SpawnAgent."""
+    spec = _spawn_agent_spec()
+    assert spec.name == "yoker:SpawnAgent"
 
   def test_description(self) -> None:
-    """Test tool description."""
-    spec = _agent_spec()
+    """Test tool description mentions sub-agent / task."""
+    spec = _spawn_agent_spec()
     assert "sub-agent" in spec.description.lower()
     assert "task" in spec.description.lower()
 
   def test_schema_structure(self) -> None:
     """Test schema structure."""
-    spec = _agent_spec()
+    spec = _spawn_agent_spec()
     schema = spec.schema
 
     assert schema["type"] == "function"
-    assert schema["function"]["name"] == "agent"
+    assert schema["function"]["name"] == "yoker__SpawnAgent"
     assert "agent_name" in schema["function"]["parameters"]["properties"]
     assert "prompt" in schema["function"]["parameters"]["properties"]
     assert "timeout_seconds" in schema["function"]["parameters"]["properties"]
@@ -83,20 +114,20 @@ class TestAgentToolSchema:
 
   def test_timeout_in_schema(self) -> None:
     """Test that timeout_seconds parameter is present with integer type."""
-    spec = _agent_spec()
+    spec = _spawn_agent_spec()
     schema = spec.schema
 
     timeout_prop = schema["function"]["parameters"]["properties"]["timeout_seconds"]
     assert timeout_prop["type"] == "integer"
 
 
-class TestAgentToolParameters:
+class TestSpawnAgentToolParameters:
   """Tests for parameter validation."""
 
   @pytest.mark.asyncio
   async def test_missing_agent_name(self) -> None:
     """Test error when agent_name is missing."""
-    spec = _agent_spec()
+    spec = _spawn_agent_spec()
     result = await spec.execute(agent_name="", prompt="Test prompt")
 
     assert not result.success
@@ -106,8 +137,7 @@ class TestAgentToolParameters:
   @pytest.mark.asyncio
   async def test_missing_prompt(self) -> None:
     """Test error when prompt is missing."""
-    parent = _make_parent_agent(session=_make_session_with_registry())
-    spec = _agent_spec(parent_agent=parent)
+    spec = _spawn_agent_spec()
     result = await spec.execute(agent_name="researcher", prompt="")
 
     assert not result.success
@@ -117,7 +147,7 @@ class TestAgentToolParameters:
   @pytest.mark.asyncio
   async def test_invalid_timeout_string(self) -> None:
     """Test error for invalid timeout_seconds parameter."""
-    spec = _agent_spec()
+    spec = _spawn_agent_spec()
     result = await spec.execute(
       agent_name="test-agent",
       prompt="Test",
@@ -128,50 +158,42 @@ class TestAgentToolParameters:
     assert "Invalid numeric parameter" in result.error
 
 
-class TestAgentToolDelegation:
-  """Tests that make_agent_tool delegates to session.spawn (Phase 2)."""
-
-  @pytest.mark.asyncio
-  async def test_no_session_returns_error(self) -> None:
-    """Without a session the tool reports no session available."""
-    parent = _make_parent_agent(session=None)
-    spec = _agent_spec(parent_agent=parent)
-
-    result = await spec.execute(agent_name="x", prompt="hi")
-
-    assert not result.success
-    assert "No session" in result.error
+class TestSpawnAgentToolDelegation:
+  """Tests that SpawnAgent delegates to session.spawn (Phase 4)."""
 
   @pytest.mark.asyncio
   async def test_delegates_to_session_spawn(self) -> None:
-    """Successful spawn returns ToolResult(success=True) with the response."""
+    """Successful spawn returns ToolResult with agent_id and response."""
     agent_def = AgentDefinition(
       simple_name="researcher",
       description="Researcher",
       tools=("read",),
     )
     session = _make_session_with_registry(agent_def=agent_def)
-    session.spawn = AsyncMock(return_value="researcher response")
-    parent = _make_parent_agent(session=session)
+    session.spawn = AsyncMock(
+      return_value=SpawnResult(agent_id="researcher", response="researcher response")
+    )
+    requester = _make_requester(allowlist=("researcher",))
 
-    spec = _agent_spec(parent_agent=parent)
+    spec = _spawn_agent_spec(session=session, requester=requester)
     result = await spec.execute(agent_name="researcher", prompt="find X")
 
     assert result.success
-    assert result.result == "researcher response"
+    assert "researcher" in result.result
+    assert "researcher response" in result.result
+    assert "agent_id:" in result.result
     session.spawn.assert_awaited_once()
     call_kwargs = session.spawn.call_args.kwargs
-    assert call_kwargs["requester"] is parent
+    assert call_kwargs["requester"] is requester
 
   @pytest.mark.asyncio
   async def test_value_error_wrapped_as_failure(self) -> None:
     """ValueError from session.spawn (allowlist/depth/capacity) is wrapped."""
     session = _make_session_with_registry(resolve_error=ValueError("Agent not found: ghost"))
     session.spawn = AsyncMock(side_effect=ValueError("not allowed"))
-    session.agents.names = []
-    parent = _make_parent_agent(session=session)
+    requester = _make_requester(allowlist=("researcher",))
 
-    spec = _agent_spec(parent_agent=parent)
+    spec = _spawn_agent_spec(session=session, requester=requester)
     result = await spec.execute(agent_name="ghost", prompt="hi")
 
     assert not result.success
@@ -187,9 +209,9 @@ class TestAgentToolDelegation:
     )
     session = _make_session_with_registry(agent_def=agent_def)
     session.spawn = AsyncMock(side_effect=TimeoutError("timed out after 1s"))
-    parent = _make_parent_agent(session=session)
+    requester = _make_requester(allowlist=("researcher",))
 
-    spec = _agent_spec(parent_agent=parent)
+    spec = _spawn_agent_spec(session=session, requester=requester)
     result = await spec.execute(agent_name="researcher", prompt="hi", timeout_seconds=1)
 
     assert not result.success
@@ -205,9 +227,9 @@ class TestAgentToolDelegation:
     )
     session = _make_session_with_registry(agent_def=agent_def)
     session.spawn = AsyncMock(side_effect=RuntimeError("boom"))
-    parent = _make_parent_agent(session=session)
+    requester = _make_requester(allowlist=("researcher",))
 
-    spec = _agent_spec(parent_agent=parent)
+    spec = _spawn_agent_spec(session=session, requester=requester)
     result = await spec.execute(agent_name="researcher", prompt="hi")
 
     assert not result.success
@@ -222,35 +244,152 @@ class TestAgentToolDelegation:
       tools=("read",),
     )
     session = _make_session_with_registry(agent_def=agent_def)
-    session.spawn = AsyncMock(return_value="ok")
-    parent = _make_parent_agent(session=session)
+    session.spawn = AsyncMock(return_value=SpawnResult(agent_id="researcher", response="ok"))
+    requester = _make_requester(allowlist=("researcher",))
 
-    spec = _agent_spec(parent_agent=parent)
+    spec = _spawn_agent_spec(session=session, requester=requester)
     await spec.execute(agent_name="researcher", prompt="hi")
 
     call_kwargs = session.spawn.call_args.kwargs
     assert call_kwargs["timeout_seconds"] == DEFAULT_TIMEOUT_SECONDS
 
+  @pytest.mark.asyncio
+  async def test_result_contains_agent_id(self) -> None:
+    """PR #43 Clarification 5: result contains the spawned agent's id."""
+    agent_def = AgentDefinition(
+      simple_name="researcher",
+      description="Researcher",
+      tools=("read",),
+    )
+    session = _make_session_with_registry(agent_def=agent_def)
+    session.spawn = AsyncMock(
+      return_value=SpawnResult(agent_id="researcher-2", response="found it")
+    )
+    requester = _make_requester(allowlist=("researcher",))
 
-class TestAgentToolClamp:
-  """Tests for the _clamp helper function (retained in Phase 2)."""
+    spec = _spawn_agent_spec(session=session, requester=requester)
+    result = await spec.execute(agent_name="researcher", prompt="find X")
 
-  def test_clamp_within_range(self) -> None:
-    """Test clamping value within range."""
-    assert _clamp(50, 0, 100) == 50
+    assert result.success
+    assert "researcher-2" in result.result
+    assert "found it" in result.result
 
-  def test_clamp_at_minimum(self) -> None:
-    """Test clamping value at minimum."""
-    assert _clamp(0, 0, 100) == 0
 
-  def test_clamp_at_maximum(self) -> None:
-    """Test clamping value at maximum."""
-    assert _clamp(100, 0, 100) == 100
+class TestSpawnAgentToolDescription:
+  """Tests for the tool description baking (allowlist intersection)."""
 
-  def test_clamp_below_minimum(self) -> None:
-    """Test clamping value below minimum."""
-    assert _clamp(-10, 0, 100) == 0
+  def test_description_lists_allowlisted_names(self) -> None:
+    """Parameter description includes agent names from the requester's allowlist."""
+    agent_def = AgentDefinition(
+      simple_name="researcher",
+      description="Researcher",
+      tools=("read",),
+    )
+    session = _make_session_with_registry(agent_def=agent_def)
+    requester = _make_requester(allowlist=("researcher", "writer"))
 
-  def test_clamp_above_maximum(self) -> None:
-    """Test clamping value above maximum."""
-    assert _clamp(150, 0, 100) == 100
+    spec = _spawn_agent_spec(session=session, requester=requester)
+    # Available names are baked into the agent_name parameter description.
+    agent_name_prop = spec.schema["function"]["parameters"]["properties"]["agent_name"]
+    assert "researcher" in agent_name_prop["description"]
+    # "writer" is in the allowlist but not in the registry. The implementation
+    # intersects the allowlist with the registry, so "writer" is NOT shown.
+    # (The allowlist is the authoritative gate; the registry determines which
+    # are actually available to spawn.)
+    assert "writer" not in agent_name_prop["description"]
+
+  def test_description_falls_back_to_allowlist_when_registry_empty(self) -> None:
+    """When the registry is empty, the full allowlist is shown."""
+    session = MagicMock()
+    session.agents = MagicMock()
+    session.agents.names = []
+    requester = _make_requester(allowlist=("researcher", "writer"))
+
+    spec = _spawn_agent_spec(session=session, requester=requester)
+    agent_name_prop = spec.schema["function"]["parameters"]["properties"]["agent_name"]
+    # When the registry is empty, the fallback uses the full allowlist.
+    assert "researcher" in agent_name_prop["description"]
+    assert "writer" in agent_name_prop["description"]
+
+
+class TestSendMessageToolSchema:
+  """Tests for SendMessage tool schema and properties."""
+
+  def test_name(self) -> None:
+    """Test tool name is SendMessage."""
+    spec = _send_message_spec()
+    assert spec.name == "yoker:SendMessage"
+
+  def test_schema_structure(self) -> None:
+    """Test schema has to and message parameters."""
+    spec = _send_message_spec()
+    schema = spec.schema
+
+    assert schema["type"] == "function"
+    assert schema["function"]["name"] == "yoker__SendMessage"
+    assert "to" in schema["function"]["parameters"]["properties"]
+    assert "message" in schema["function"]["parameters"]["properties"]
+    assert schema["function"]["parameters"]["required"] == ["to", "message"]
+
+
+class TestSendMessageToolDelegation:
+  """Tests that SendMessage delegates to session.send."""
+
+  @pytest.mark.asyncio
+  async def test_delegates_to_session_send(self) -> None:
+    """Successful send returns ToolResult with the target's response."""
+    session = MagicMock()
+    session.send = AsyncMock(return_value="the reply")
+
+    spec = _send_message_spec(session=session, from_id="coordinator")
+    result = await spec.execute(to="researcher", message="hi")
+
+    assert result.success
+    assert result.result == "the reply"
+    session.send.assert_awaited_once()
+    sent_msg: Message = session.send.call_args.args[0]
+    assert sent_msg.from_id == "coordinator"
+    assert sent_msg.to_id == "researcher"
+    assert sent_msg.content == "hi"
+
+  @pytest.mark.asyncio
+  async def test_missing_to_returns_error(self) -> None:
+    """Missing `to` parameter returns a failure result."""
+    spec = _send_message_spec()
+    result = await spec.execute(to="", message="hi")
+
+    assert not result.success
+    assert "to" in result.error
+
+  @pytest.mark.asyncio
+  async def test_missing_message_returns_error(self) -> None:
+    """Missing `message` parameter returns a failure result."""
+    spec = _send_message_spec()
+    result = await spec.execute(to="researcher", message="")
+
+    assert not result.success
+    assert "message" in result.error
+
+  @pytest.mark.asyncio
+  async def test_unknown_target_returns_failure(self) -> None:
+    """ValueError (unknown target) is wrapped as a failure result."""
+    session = MagicMock()
+    session.send = AsyncMock(side_effect=ValueError("No active agent with id 'ghost'"))
+
+    spec = _send_message_spec(session=session, from_id="coordinator")
+    result = await spec.execute(to="ghost", message="hi")
+
+    assert not result.success
+    assert "No active agent" in result.error
+
+  @pytest.mark.asyncio
+  async def test_generic_exception_wrapped_as_failure(self) -> None:
+    """Unexpected exceptions are wrapped, not re-raised."""
+    session = MagicMock()
+    session.send = AsyncMock(side_effect=RuntimeError("boom"))
+
+    spec = _send_message_spec(session=session, from_id="coordinator")
+    result = await spec.execute(to="researcher", message="hi")
+
+    assert not result.success
+    assert "Send message error" in result.error

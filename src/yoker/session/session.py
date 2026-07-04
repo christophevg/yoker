@@ -50,6 +50,8 @@ from yoker.events import (
   SessionStartEvent,
 )
 from yoker.session.message import Message
+from yoker.session.spawn_result import SpawnResult
+from yoker.session.tools import make_send_message_tool, make_spawn_agent_tool
 
 if TYPE_CHECKING:
   from yoker.agent import Agent
@@ -241,15 +243,17 @@ class Session:
     *,
     requester: Agent | None = None,
     timeout_seconds: int = 300,
-  ) -> str:
+  ) -> SpawnResult:
     """Spawn a child agent by name and run it to completion.
 
-    Phase 2 implementation: enforces the requester's
-    :attr:`AgentDefinition.agents` allowlist (PR #43 Clarification 3) before
+    Phase 4 implementation (PR #43 Clarifications 3 & 5): enforces the
+    requester's :attr:`AgentDefinition.agents` allowlist before
     resolving/spawning, resolves the definition from ``session.agents``,
     checks recursion depth and ``max_agents`` limits, creates a child
-    :class:`Agent` with a session-injected backend, runs it with a timeout,
-    and returns the response string.
+    :class:`Agent` with a session-injected backend, injects the
+    Session-injected tools (``SpawnAgent`` and ``SendMessage``) on the
+    child, runs it with a timeout, and returns a :class:`SpawnResult`
+    carrying both the spawned agent's unique id and its response string.
 
     Args:
       name: Agent definition name (bare or namespaced) to spawn.
@@ -259,7 +263,9 @@ class Session:
       timeout_seconds: Maximum seconds the spawned agent may run.
 
     Returns:
-      The spawned agent's response string.
+      A :class:`SpawnResult` with ``agent_id`` (the spawned agent's unique
+      session-assigned id) and ``response`` (the agent's reply string, or
+      an error message on timeout/exception).
 
     Raises:
       ValueError: On allowlist violation, unknown agent, or capacity
@@ -327,6 +333,11 @@ class Session:
     self._agents_map[agent_id] = child
     self._recursion_depths[agent_id] = child_depth
 
+    # Inject Session-injected tools (PR #43 Clarifications 2 & 4):
+    # SpawnAgent and SendMessage are registered on the child by the Session
+    # (closure capture). ListAgents is deferred (PR #43 Clarification 6).
+    self.inject_tools(child, agent_id)
+
     # Event aggregation (D5, PR #43 Clarification 9): register a forwarding
     # handler on the child so its events reach session-level handlers
     # wrapped in a SessionEvent envelope. Suppressed when the caller opts
@@ -350,7 +361,7 @@ class Session:
         child.process(prompt),
         timeout=timeout_seconds,
       )
-      return response
+      return SpawnResult(agent_id=agent_id, response=response)
     except asyncio.TimeoutError as e:
       raise TimeoutError(f"Sub-agent '{agent_id}' timed out after {timeout_seconds} seconds") from e
     finally:
@@ -366,6 +377,58 @@ class Session:
       )
       self._agents_map.pop(agent_id, None)
       self._recursion_depths.pop(agent_id, None)
+
+  def inject_tools(self, agent: Agent, agent_id: str) -> None:
+    """Inject Session-injected tools onto an agent (PR #43 Clarifications 2 & 4).
+
+    Registers ``SpawnAgent`` and ``SendMessage`` on the agent's tool
+    registry. The Session captures itself in the closure (back-reference)
+    so the tools can call ``session.spawn`` / ``session.send`` at execution
+    time. ``ListAgents`` is deferred (PR #43 Clarification 6) and is NOT
+    injected.
+
+    ``SpawnAgent`` is gated by ``config.tools.agent.enabled`` (the existing
+    global kill-switch). ``SendMessage`` is always injected when an agent
+    is part of a session.
+
+    Args:
+      agent: The :class:`Agent` to inject tools onto.
+      agent_id: The agent's session-assigned runtime id (used as
+        ``Message.from_id`` by ``SendMessage``).
+    """
+    if self.config.tools.agent.enabled:
+      agent.tools.register(
+        make_spawn_agent_tool(self, agent),
+        namespace="yoker",
+        name="SpawnAgent",
+      )
+    agent.tools.register(
+      make_send_message_tool(self, agent_id),
+      namespace="yoker",
+      name="SendMessage",
+    )
+
+  def register_primary_agent(self, agent: Agent) -> str:
+    """Register the primary Agent with the session and inject Session tools.
+
+    The primary agent is constructed by the caller (e.g. ``__main__.py``)
+    rather than via ``spawn()``. This method assigns it a session-scoped
+    id, adds it to the active map at recursion depth 0, and injects the
+    Session-injected tools (``SpawnAgent`` and ``SendMessage``) so the
+    primary agent can spawn sub-agents and send inter-agent messages.
+
+    Args:
+      agent: The primary :class:`Agent` constructed within this session.
+
+    Returns:
+      The session-assigned agent id (Decision 2).
+    """
+    definition_name = agent.definition.simple_name or "primary"
+    agent_id = self._generate_agent_name(definition_name)
+    self._agents_map[agent_id] = agent
+    self._recursion_depths[agent_id] = 0
+    self.inject_tools(agent, agent_id)
+    return agent_id
 
   def _make_forwarding_handler(self, agent_id: str) -> EventCallback:
     """Build a handler that wraps agent events in :class:`SessionEvent`.

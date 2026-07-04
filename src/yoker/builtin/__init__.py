@@ -1,9 +1,14 @@
 """Built-in tools for Yoker.
 
 These tools are registered by default when the yoker plugin is loaded.
+
+MBI-007 Phase 4: the ``agent`` tool is replaced by ``SpawnAgent``, which is
+Session-injected (see :mod:`yoker.session.tools`). ``SpawnAgent`` and
+``SendMessage`` are NOT part of the static plugin manifest — they are
+registered on Agents by the :class:`yoker.session.Session` at spawn/registration
+time.
 """
 
-from yoker.builtin.agent import make_agent_tool
 from yoker.builtin.existence import existence
 from yoker.builtin.git import git
 from yoker.builtin.list import list
@@ -28,14 +33,16 @@ __all__ = [
   "webfetch",
   "websearch",
   "write",
-  "make_agent_tool",
   "make_skill_tool",
 ]
 
 # Built-in Yoker plugin manifest.
-# All built-in tools are registered here for discovery.
-# Note: agent and skill tools use factory functions (make_agent_tool, make_skill_tool)
-# because they need runtime dependencies (parent_agent, SkillRegistry).
+# All built-in tools are registered here for discovery. The agent tool
+# (now SpawnAgent) and the SendMessage tool are Session-injected and are
+# NOT listed here — they are registered on Agents by the Session at
+# spawn/registration time (PR #43 Clarifications 2 & 4). The skill tool
+# uses a factory function (make_skill_tool) because it needs the
+# SkillRegistry at runtime.
 
 __YOKER_MANIFEST__ = PluginManifest(
   tools=[existence, git, list, mkdir, read, search, update, webfetch, websearch, write],

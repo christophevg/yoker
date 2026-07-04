@@ -69,9 +69,12 @@ src/yoker/
 │   ├── guardrails/          # PathGuardrail, WebGuardrail
 │   └── web/                 # Web tool backends
 ├── session/                 # Session construct (MBI-007; team-of-agents coordinator)
-│   ├── __init__.py          # Exports Session, Message
+│   ├── __init__.py          # Exports Session, Message, SpawnResult
 │   ├── message.py           # Message frozen dataclass (inter-agent, plain-string content)
-│   └── session.py           # Session: async context manager, lifecycle, name→agent map
+│   ├── session.py           # Session: async context manager, lifecycle, name→agent map,
+│   │                        #   spawn(), send(), inject_tools(), register_primary_agent()
+│   ├── spawn_result.py      # SpawnResult(agent_id, response) — return of Session.spawn
+│   └── tools.py             # Session-injected tools: SpawnAgent, SendMessage factories
 └── ui/                      # UI layer
     ├── __init__.py          # Public UI exports
     ├── handler.py           # UIHandler protocol

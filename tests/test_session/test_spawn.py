@@ -1,4 +1,4 @@
-"""Tests for Session.spawn — allowlist, depth, max_agents, backend (MBI-007 7.3.3, 7.5)."""
+"""Tests for Session.spawn — allowlist, depth, max_agents, backend (MBI-007 7.3.3, 7.5, 7.8.2)."""
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -6,7 +6,7 @@ import pytest
 
 from yoker.agents import AgentDefinition
 from yoker.config import Config
-from yoker.session import Session
+from yoker.session import Session, SpawnResult
 
 
 def _config_with_max_recursion(max_depth: int) -> Config:
@@ -50,9 +50,12 @@ class TestSpawnAllowlist:
       with patch("yoker.agent.Agent") as mock_agent_cls:
         mock_child = MagicMock()
         mock_child.process = AsyncMock(return_value="ok")
+        mock_child.tools = MagicMock()
         mock_agent_cls.return_value = mock_child
-        response = await session.spawn("researcher", "hi", requester=None)
-      assert response == "ok"
+        result = await session.spawn("researcher", "hi", requester=None)
+      assert isinstance(result, SpawnResult)
+      assert result.agent_id == "researcher"
+      assert result.response == "ok"
 
   @pytest.mark.asyncio
   async def test_empty_allowlist_rejects_spawn(self) -> None:
@@ -99,9 +102,11 @@ class TestSpawnAllowlist:
       with patch("yoker.agent.Agent") as mock_agent_cls:
         mock_child = MagicMock()
         mock_child.process = AsyncMock(return_value="ok")
+        mock_child.tools = MagicMock()
         mock_agent_cls.return_value = mock_child
-        response = await session.spawn("researcher", "hi", requester=requester)
-      assert response == "ok"
+        result = await session.spawn("researcher", "hi", requester=requester)
+      assert isinstance(result, SpawnResult)
+      assert result.response == "ok"
 
   @pytest.mark.asyncio
   async def test_allowlist_check_precedes_depth_check(self) -> None:
@@ -145,6 +150,7 @@ class TestSpawnRecursionDepth:
       with patch("yoker.agent.Agent") as mock_agent_cls:
         mock_child = MagicMock()
         mock_child.process = AsyncMock(return_value="ok")
+        mock_child.tools = MagicMock()
         mock_agent_cls.return_value = mock_child
         await session.spawn("researcher", "hi")
       # Depth tracked during the run; removed in the finally block.
@@ -209,10 +215,13 @@ class TestSpawnAgentMap:
       with patch("yoker.agent.Agent") as mock_agent_cls:
         mock_child = MagicMock()
         mock_child.process = AsyncMock(return_value="ok")
+        mock_child.tools = MagicMock()
         mock_agent_cls.return_value = mock_child
-        await session.spawn("researcher", "hi")
+        result = await session.spawn("researcher", "hi")
       # Clarification 7: agent removed from active list after completion.
       assert session.get_agent("researcher") is None
+      assert isinstance(result, SpawnResult)
+      assert result.agent_id == "researcher"
 
   @pytest.mark.asyncio
   async def test_duplicate_spawns_get_disambiguated(self) -> None:
@@ -228,11 +237,14 @@ class TestSpawnAgentMap:
       with patch("yoker.agent.Agent") as mock_agent_cls:
         mock_child = MagicMock()
         mock_child.process = AsyncMock(return_value="ok")
+        mock_child.tools = MagicMock()
         mock_agent_cls.return_value = mock_child
-        await session.spawn("researcher", "first")
-        await session.spawn("researcher", "second")
+        first = await session.spawn("researcher", "first")
+        second = await session.spawn("researcher", "second")
       # Both completed; counters reflect two spawns of "researcher".
       assert session._name_counters["researcher"] == 2
+      assert first.agent_id == "researcher"
+      assert second.agent_id == "researcher-2"
 
 
 class TestSessionBackendFactory:

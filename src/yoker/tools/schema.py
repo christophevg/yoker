@@ -11,7 +11,7 @@ by tool execution and guardrail validation.
 import inspect
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, ForwardRef, get_origin, get_type_hints
+from typing import Any, ForwardRef, get_args, get_origin, get_type_hints
 
 from structlog import get_logger
 
@@ -231,8 +231,11 @@ def _build_parameter_schema(
   guard_type: GuardType | None = None
 
   # Strip Annotated wrapper to find the base type and metadata markers.
+  # Use ``get_args`` (not ``__args__``) so ``Annotated[T, marker]`` metadata
+  # is included — ``__args__`` only returns the first type argument for
+  # ``Annotated`` forms, leaving the marker unreachable.
   origin = get_origin(annotation)
-  args = getattr(annotation, "__args__", ())
+  args = get_args(annotation)
   if origin is not None and args:
     if origin is type and len(args) == 1:
       # typing.Type[T] or similar; not currently supported.
@@ -289,7 +292,7 @@ def _python_type_to_json_schema(annotation: Any) -> str | None:
 
   # Unwrap Optional / Union[T, None].
   origin = get_origin(annotation)
-  args = getattr(annotation, "__args__", ())
+  args = get_args(annotation)
   if origin is not None:
     # typing.Optional[T] -> Union[T, None]
     if type(None) in args:
