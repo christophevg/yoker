@@ -15,17 +15,21 @@ import asyncio
 
 from yoker import Agent, __version__
 from yoker.config import get_yoker_config
-from yoker.events import Event
+from yoker.events import Event, SessionEvent
 from yoker.exceptions import NetworkError
 
 
-def log_events(event: Event) -> None:
+def log_events(event: Event | SessionEvent) -> None:
   """Simple event handler that prints every event type.
 
   Args:
-    event: Event emitted by the Agent.
+    event: Event emitted by the Agent (or a SessionEvent envelope when
+      used inside a Session — MBI-007).
   """
-  print(f"[event] {event.type.name}")
+  if isinstance(event, SessionEvent):
+    print(f"[event] {event.event.type.name} (from {event.agent_id})")
+  else:
+    print(f"[event] {event.type.name}")
 
 
 async def main() -> None:

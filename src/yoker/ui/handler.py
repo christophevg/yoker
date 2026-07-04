@@ -232,3 +232,21 @@ class UIHandler(Protocol):
       total_length: Total thinking length.
     """
     ...
+
+  # === Multi-agent (optional, MBI-007 PR #43 Clarification 8) ===
+  #
+  # ``agent_spawned(name: str) -> None`` and
+  # ``agent_finished(name: str) -> None`` are **optional** protocol
+  # methods, documented here but not defined as Protocol members. The
+  # :class:`yoker.ui.bridge.UIBridge` guards calls with
+  # ``getattr(handler, method, None)`` so handlers that do not implement
+  # them (e.g. :class:`yoker.ui.batch.BatchUIHandler`) are not broken.
+  # :class:`yoker.ui.interactive.InteractiveUIHandler` implements them to
+  # surface sub-agent lifecycle to the user. No ``BaseUIHandler`` mixin
+  # is recreated (PR #43 Clarification 8).
+  #
+  # When implemented:
+  #   agent_spawned(name)  - called when a sub-agent is spawned into the
+  #     session; ``name`` is the spawned agent's session-assigned id.
+  #   agent_finished(name) - called when a sub-agent finishes and is
+  #     removed from the active list; ``name`` is the finished agent's id.

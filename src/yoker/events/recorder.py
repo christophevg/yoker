@@ -13,6 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from yoker.events.session_event import SessionEvent
 from yoker.events.types import (
   AgentFinishedEvent,
   AgentMessageEvent,
@@ -58,7 +59,7 @@ EVENT_CLASS_MAP: dict[EventType, type[Event]] = {
 }
 
 
-def serialize_event(event: Event) -> dict[str, Any]:
+def serialize_event(event: Event | SessionEvent) -> dict[str, Any]:
   """Serialize an event to a JSON-serializable dictionary.
 
   Uses :func:`dataclasses.asdict` to convert the event dataclass into a
@@ -66,12 +67,28 @@ def serialize_event(event: Event) -> dict[str, Any]:
   are returned separately as part of the wrapper). The remaining dict is
   the event's data payload.
 
+  When the input is a :class:`SessionEvent` envelope (MBI-007, PR #43
+  Clarification 9), the wrapper is serialized alongside the inner event::
+
+      {
+        "session_event": True,
+        "agent_id": "<source agent id>",
+        "event": <serialize_event(inner)>,
+      }
+
   Args:
-    event: The event to serialize.
+    event: The event to serialize (bare ``Event`` or ``SessionEvent``).
 
   Returns:
-    Dictionary with ``type``, ``timestamp``, and ``data`` keys.
+    Dictionary with ``type``, ``timestamp``, and ``data`` keys (or the
+    ``session_event`` envelope form for ``SessionEvent`` inputs).
   """
+  if isinstance(event, SessionEvent):
+    return {
+      "session_event": True,
+      "agent_id": event.agent_id,
+      "event": serialize_event(event.event),
+    }
   full = dataclasses.asdict(event)
   # Extract and remove envelope fields; everything else is event data.
   full.pop("type", None)
@@ -83,23 +100,35 @@ def serialize_event(event: Event) -> dict[str, Any]:
   }
 
 
-def deserialize_event(entry: dict[str, Any]) -> Event:
+def deserialize_event(entry: dict[str, Any]) -> Event | SessionEvent:
   """Deserialize a dictionary back to an event object.
 
   Looks up the event class via :data:`EVENT_CLASS_MAP` and constructs it
   directly from the stored data plus the envelope fields, avoiding per-type
   dispatch.
 
+  When the entry carries the ``session_event`` marker (MBI-007), the
+  :class:`SessionEvent` envelope is reconstructed around the deserialized
+  inner event.
+
   Args:
-    entry: Dictionary with ``type``, ``timestamp``, and ``data`` keys.
+    entry: Dictionary with ``type``, ``timestamp``, and ``data`` keys, or
+      the ``session_event`` envelope form.
 
   Returns:
-    Reconstructed event object.
+    Reconstructed event object (bare ``Event`` or ``SessionEvent``).
 
   Raises:
     KeyError: If required fields are missing.
     ValueError: If event type is unknown.
   """
+  if entry.get("session_event") is True:
+    inner = deserialize_event(entry["event"])
+    # Envelopes do not nest in practice (agents emit bare events; the
+    # Session wraps them once). Narrow to Event for the dataclass field.
+    assert not isinstance(inner, SessionEvent)
+    return SessionEvent(agent_id=entry["agent_id"], event=inner)
+
   event_type = EventType[entry["type"]]
   event_class = EVENT_CLASS_MAP.get(event_type)
   if event_class is None:

@@ -2,6 +2,7 @@
 
 from yoker.events.recorder import EventRecorder, deserialize_event, serialize_event
 from yoker.events.replay import EventReplayAgent
+from yoker.events.session_event import SessionEvent
 from yoker.events.types import (
   AgentFinishedEvent,
   AgentMessageEvent,
@@ -53,6 +54,8 @@ __all__ = [
   "AgentSpawnedEvent",
   "AgentFinishedEvent",
   "AgentMessageEvent",
+  # Session event envelope (MBI-007, PR #43 Clarification 9)
+  "SessionEvent",
   # Recording and Replay
   "EventRecorder",
   "EventReplayAgent",

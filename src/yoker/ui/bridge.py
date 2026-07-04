@@ -2,17 +2,33 @@
 
 This module provides the bridge between agent events and the UIHandler
 protocol, dispatching events to appropriate UI methods.
+
+MBI-007 (PR #43 Clarification 9): the bridge handles both wrapped
+(:class:`yoker.events.SessionEvent`) and unwrapped (bare :class:`Event`)
+events. When a ``SessionEvent`` envelope is received, the inner ``event``
+is dispatched unchanged and the envelope's ``agent_id`` is available for
+tagging/display. Session-level events (``AGENT_SPAWNED``, ``AGENT_FINISHED``)
+are dispatched to the optional ``UIHandler.agent_spawned`` /
+``agent_finished`` methods (PR #43 Clarification 8), guarded by ``hasattr``
+so handlers that do not implement them are unaffected.
 """
 
-from yoker.events.types import Event, EventType
+from __future__ import annotations
+
+from yoker.events.session_event import SessionEvent
+from yoker.events.types import (
+  Event,
+  EventType,
+)
 from yoker.ui.handler import UIHandler
 
 
 class UIBridge:
   """Bridge between agent events and UIHandler.
 
-  Receives events from Agent and calls appropriate UIHandler methods.
-  This allows the agent to remain independent of UI implementation details.
+  Receives events from Agent (or wrapped in SessionEvent from a Session)
+  and calls appropriate UIHandler methods. This allows the agent to remain
+  independent of UI implementation details.
   """
 
   def __init__(self, ui_handler: UIHandler):
@@ -22,16 +38,37 @@ class UIBridge:
       ui_handler: The UI handler to dispatch events to.
     """
     self.ui = ui_handler
+    # The agent_id from the most recent SessionEvent envelope, or None when
+    # the bridge is on the single-agent (bare event) path. Available for
+    # tagging/display by UI handlers that opt in.
+    self._current_agent_id: str | None = None
 
-  async def __call__(self, event: Event) -> None:
+  async def __call__(self, event: Event | SessionEvent) -> None:
     """Handle event by dispatching to UI handler.
 
-    Note: SESSION_START and SESSION_END events are removed from Agent.
-    UI calls start() and shutdown() directly, not via events.
+    ``SessionEvent`` envelopes are unpacked: the inner ``event`` is
+    dispatched to the existing UIHandler methods unchanged, and the
+    envelope's ``agent_id`` is recorded on the bridge for any subsequent
+    tagging. Bare events (single-agent path) are dispatched as today.
+
+    SESSION_START and SESSION_END are no-ops here — the UI's ``start`` /
+    ``shutdown`` are called directly by the caller. AGENT_SPAWNED and
+    AGENT_FINISHED dispatch to the optional ``agent_spawned`` /
+    ``agent_finished`` UIHandler methods when present.
 
     Args:
-      event: Event to handle.
+      event: Event to handle (bare ``Event`` or ``SessionEvent`` envelope).
     """
+    if isinstance(event, SessionEvent):
+      inner = event.event
+      self._current_agent_id = event.agent_id
+      await self._dispatch(inner)
+      return
+    self._current_agent_id = None
+    await self._dispatch(event)
+
+  async def _dispatch(self, event: Event) -> None:
+    """Dispatch a bare (unwrapped) event to the UI handler."""
     match event.type:
       case EventType.TURN_START:
         # Internal state - UI doesn't need notification
@@ -74,6 +111,13 @@ class UIBridge:
         )
       case EventType.COMMAND:
         self.ui.output_command_result(event.result)  # type: ignore[attr-defined]
+      case EventType.AGENT_SPAWNED:
+        self._maybe_agent_lifecycle(event, "agent_spawned")
+      case EventType.AGENT_FINISHED:
+        self._maybe_agent_lifecycle(event, "agent_finished")
+      case EventType.SESSION_START | EventType.SESSION_END | EventType.AGENT_MESSAGE:
+        # No UI action for these session-level events.
+        pass
       case _:
         # Unknown event type - ignore
         pass
@@ -89,3 +133,23 @@ class UIBridge:
       prompt_tokens=event.prompt_eval_count,  # type: ignore[attr-defined]
       eval_tokens=event.eval_count,  # type: ignore[attr-defined]
     )
+
+  def _maybe_agent_lifecycle(self, event: Event, method: str) -> None:
+    """Dispatch an agent lifecycle event to an optional UIHandler method.
+
+    PR #43 Clarification 8: ``agent_spawned`` / ``agent_finished`` are
+    optional protocol methods. Handlers that do not implement them
+    (e.g. ``BatchUIHandler``) are silently skipped — the call is guarded
+    by ``hasattr`` so no ``AttributeError`` is raised.
+
+    Args:
+      event: The lifecycle event (``AgentSpawnedEvent`` / ``AgentFinishedEvent``).
+      method: The optional UIHandler method name (``"agent_spawned"`` or
+        ``"agent_finished"``).
+    """
+    handler = getattr(self.ui, method, None)
+    if handler is None:
+      return
+    # Both events carry ``agent_id``; pass it as the ``name`` argument.
+    agent_id = getattr(event, "agent_id", "")
+    handler(agent_id)

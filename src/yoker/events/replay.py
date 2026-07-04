@@ -12,6 +12,7 @@ import json
 from pathlib import Path
 
 from yoker.events.recorder import deserialize_event
+from yoker.events.session_event import SessionEvent
 from yoker.events.types import CommandEvent, Event, EventCallback, TurnEndEvent, TurnStartEvent
 
 
@@ -42,7 +43,9 @@ class EventReplayAgent:
       ValueError: If events file is invalid.
     """
     self.events_path = events_path
-    self.events: list[Event] = []
+    # A replay trace may contain bare events or SessionEvent envelopes
+    # (MBI-007, PR #43 Clarification 9). The list holds either form.
+    self.events: list[Event | SessionEvent] = []
     self.index = 0
     self.thinking_enabled = True
     self._model = "replay"
@@ -133,13 +136,15 @@ class EventReplayAgent:
 
     return ""
 
-  async def _emit(self, event: Event) -> None:
+  async def _emit(self, event: Event | SessionEvent) -> None:
     """Emit an event to all registered handlers asynchronously.
 
     Supports both sync and async handlers for backward compatibility.
+    Accepts either a bare :class:`Event` or a :class:`SessionEvent`
+    envelope (MBI-007, PR #43 Clarification 9).
 
     Args:
-      event: The event to emit.
+      event: The event to emit (bare or envelope-wrapped).
     """
     for handler in self._handlers:
       try:

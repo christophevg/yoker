@@ -38,7 +38,18 @@ from structlog import get_logger
 from yoker.agents import AgentDefinition, AgentRegistry, load_agent_definitions
 from yoker.backends import ModelBackend, create_backend
 from yoker.config import Config
-from yoker.events import Event, EventCallback, EventType, SessionEndEvent, SessionStartEvent
+from yoker.events import (
+  AgentFinishedEvent,
+  AgentMessageEvent,
+  AgentSpawnedEvent,
+  Event,
+  EventCallback,
+  EventType,
+  SessionEndEvent,
+  SessionEvent,
+  SessionStartEvent,
+)
+from yoker.session.message import Message
 
 if TYPE_CHECKING:
   from yoker.agent import Agent
@@ -129,12 +140,15 @@ class Session:
     except ValueError:
       logger.warning("remove_event_handler: handler not registered")
 
-  def _emit(self, event: Event) -> None:
+  def _emit(self, event: Event | SessionEvent) -> None:
     """Fan an event out to all registered session handlers.
 
     Both sync and async handlers are supported. Async handlers are
     scheduled on the running loop without awaiting (fire-and-forget);
-    sync handlers are invoked directly.
+    sync handlers are invoked directly. ``event`` may be a bare session
+    event (``SessionStartEvent``, ``AgentSpawnedEvent``, ...) or a
+    :class:`SessionEvent` envelope wrapping an agent-emitted event
+    (PR #43 Clarification 9).
     """
     for handler in list(self._event_handlers):
       try:
@@ -313,6 +327,24 @@ class Session:
     self._agents_map[agent_id] = child
     self._recursion_depths[agent_id] = child_depth
 
+    # Event aggregation (D5, PR #43 Clarification 9): register a forwarding
+    # handler on the child so its events reach session-level handlers
+    # wrapped in a SessionEvent envelope. Suppressed when the caller opts
+    # out via ``config.session.event_aggregation``.
+    if self.config.session.event_aggregation:
+      child.add_event_handler(self._make_forwarding_handler(agent_id))
+
+    # Lifecycle signal: AGENT_SPAWNED is emitted after registration so
+    # handlers observe the agent in the active map.
+    self._emit(
+      AgentSpawnedEvent(
+        type=EventType.AGENT_SPAWNED,
+        session_id=self.id,
+        agent_id=agent_id,
+        definition_name=agent_definition.simple_name or name,
+      )
+    )
+
     try:
       response = await asyncio.wait_for(
         child.process(prompt),
@@ -322,11 +354,83 @@ class Session:
     except asyncio.TimeoutError as e:
       raise TimeoutError(f"Sub-agent '{agent_id}' timed out after {timeout_seconds} seconds") from e
     finally:
-      # Clarification 7: finished agents are removed from the active list.
-      # There is no `finished` state; AGENT_FINISHED events are emitted by
-      # the full spawn() implementation in 7.8.2.
+      # Clarification 7: AGENT_FINISHED is emitted as a lifecycle signal,
+      # then the agent is removed from the active list. There is no
+      # `finished` state — visible states are {idle, running} only.
+      self._emit(
+        AgentFinishedEvent(
+          type=EventType.AGENT_FINISHED,
+          session_id=self.id,
+          agent_id=agent_id,
+        )
+      )
       self._agents_map.pop(agent_id, None)
       self._recursion_depths.pop(agent_id, None)
+
+  def _make_forwarding_handler(self, agent_id: str) -> EventCallback:
+    """Build a handler that wraps agent events in :class:`SessionEvent`.
+
+    The returned handler is async: it wraps each emitted :class:`Event` in
+    a :class:`SessionEvent` envelope tagged with ``agent_id`` and forwards
+    it to ``session._event_handlers`` (PR #43 Clarification 9). Existing
+    event dataclasses and their construction sites are untouched.
+    """
+
+    async def forward(event: Event | SessionEvent) -> None:
+      # Agents emit bare events; envelopes do not reach agent handlers.
+      assert not isinstance(event, SessionEvent)
+      self._emit(SessionEvent(agent_id=agent_id, event=event))
+
+    forward.__name__ = f"session_forward_{agent_id}"
+    return forward
+
+  # --- inter-agent messaging (7.4.2, D3) ----------------------------------
+
+  async def send(self, message: Message) -> str:
+    """Route an inter-agent message to its target agent and return the reply.
+
+    Looks up the target agent by ``message.to_id`` in the active map,
+    emits an :class:`AgentMessageEvent` carrying the message, then calls
+    ``await target_agent.process(message.content)``. Request-response only
+    — content is a plain string and the response is a plain string (D3,
+    §6.6; no streaming).
+
+    Args:
+      message: The :class:`Message` to route. ``to_id`` must match an
+        active agent's session-assigned id.
+
+    Returns:
+      The target agent's response string. When the target agent raises,
+      the exception is caught and an error string is returned (preserving
+        the ``agent`` tool's behaviour of not propagating exceptions).
+
+    Raises:
+      ValueError: When no active agent has the id ``message.to_id``.
+    """
+    target = self._agents_map.get(message.to_id)
+    if target is None:
+      raise ValueError(f"No active agent with id '{message.to_id}' in session '{self.id}'.")
+
+    self._emit(
+      AgentMessageEvent(
+        type=EventType.AGENT_MESSAGE,
+        session_id=self.id,
+        from_id=message.from_id,
+        to_id=message.to_id,
+        content=message.content,
+      )
+    )
+
+    try:
+      return await target.process(message.content)
+    except Exception as e:
+      logger.warning(
+        "session_send_failed",
+        from_id=message.from_id,
+        to_id=message.to_id,
+        error=str(e),
+      )
+      return f"Error: agent '{message.to_id}' failed: {e}"
 
   @staticmethod
   def _derive_config(parent_config: Config, agent_definition: AgentDefinition) -> Config:
