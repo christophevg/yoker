@@ -8,6 +8,69 @@ Yoker is a Python agent harness with configurable tools and guardrails. It provi
 
 ## Recent Changes
 
+### MBI-007 Phase 1: Session Foundation (2026-07-04)
+
+**Task**: Introduced the `Session` construct foundation — a team-of-agents
+coordinator that will take over spawning, lifecycle, registry, recursion
+depth, event aggregation, and inter-agent messaging (see
+`analysis/session-concept-analysis.md`). Phase 1 lands the config section,
+the module skeleton, and the lifecycle primitives.
+
+**Changes**:
+
+1. `src/yoker/config/__init__.py` — added `SessionConfig` frozen dataclass
+   (`max_agents=10`, `default_isolation_policy="fresh"`,
+   `event_aggregation=True`) with `validate_positive_int` and
+   `validate_choice` validation; added `session: SessionConfig` field to
+   `Config` (Clevis auto-generates `--session-*` CLI args; old TOML files
+   without `[session]` load unchanged — strict superset). Exported from
+   `__all__`.
+2. `src/yoker/events/types.py` — added session lifecycle event types
+   (`SESSION_START`, `SESSION_END`, `AGENT_SPAWNED`, `AGENT_FINISHED`,
+   `AGENT_MESSAGE`) and matching frozen dataclasses
+   (`SessionStartEvent`, `SessionEndEvent`, `AgentSpawnedEvent`,
+   `AgentFinishedEvent`, `AgentMessageEvent`). Updated
+   `events/__init__.py` exports and `events/recorder.py`
+   serialize/deserialize for the new types.
+3. `src/yoker/session/` — new package:
+   - `message.py`: `Message` frozen dataclass
+     (`from_`, `to`, `content`, `metadata`) — plain-string content (D3).
+     Note: the design spec uses `from` which is a Python keyword, so the
+     field is named `from_` (standard Python convention).
+   - `session.py`: `Session` class — async context manager (`__aenter__`/
+     `__aexit__`) emitting `SESSION_START`/`SESSION_END`; UUID-based
+     session id (overridable via `session_id=`); `add_event_handler` /
+     `remove_event_handler`; `get_agent(name)` lookup;
+     `_generate_agent_name(definition_name)` disambiguates duplicate
+     spawns as `researcher`, `researcher-2`, ... (D2); outstanding spawned
+     tasks cancelled on `__aexit__`; `max_recursion_depth` property reads
+     `config.tools.agent.max_recursion_depth` (task 7.6.3 — field location
+     unchanged, only the consumer moves from Agent to Session). Internal
+     state (`_agents_map`, `_agent_registry`, `_recursion_depths`,
+     `_backends`, `_tasks`) is in place for Phases 2-5.
+   - `__init__.py`: exports `Session`, `Message`.
+4. `tests/test_session/` — new test package: `test_config.py` (10 tests),
+   `test_message.py` (7 tests), `test_session.py` (18 tests).
+5. `tests/test_events.py` — updated `test_event_type_count` to include
+   the 5 new session event types.
+
+**Decisions applied**: D1 (container+coordinator), D2 (name disambiguation),
+D3 (Message plain-string), D4 (async context manager), D7 (`[session]`
+config), D10 (registry will move to Session — field reserved). No
+backward-compat shims (Clarification 1) — Phase 1 only adds; removals
+land in Phase 2.
+
+**Files Modified**: `src/yoker/config/__init__.py`,
+`src/yoker/events/types.py`, `src/yoker/events/__init__.py`,
+`src/yoker/events/recorder.py`, `tests/test_events.py`.
+**Files Created**: `src/yoker/session/__init__.py`,
+`src/yoker/session/message.py`, `src/yoker/session/session.py`,
+`tests/test_session/__init__.py`, `tests/test_session/test_config.py`,
+`tests/test_session/test_message.py`, `tests/test_session/test_session.py`.
+
+**Verification**: `make check` green — 1498 tests pass, ruff lint clean,
+mypy typecheck clean.
+
 ### CI Discrepancy Fix (2026-06-30)
 
 **Issue**: Local `make check` passed but CI type checking failed.

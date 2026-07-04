@@ -68,6 +68,10 @@ src/yoker/
 │   ├── registry.py          # ToolRegistry
 │   ├── guardrails/          # PathGuardrail, WebGuardrail
 │   └── web/                 # Web tool backends
+├── session/                 # Session construct (MBI-007; team-of-agents coordinator)
+│   ├── __init__.py          # Exports Session, Message
+│   ├── message.py           # Message frozen dataclass (inter-agent, plain-string content)
+│   └── session.py           # Session: async context manager, lifecycle, name→agent map
 └── ui/                      # UI layer
     ├── __init__.py          # Public UI exports
     ├── handler.py           # UIHandler protocol

@@ -674,6 +674,36 @@ class UIConfig:
 
 
 @dataclass(frozen=True)
+class SessionConfig:
+  """Session configuration.
+
+  A :class:`Session` manages a team of agents: lifecycle, registry,
+  recursion depth, event aggregation, and inter-agent messaging
+  (see ``analysis/session-concept-analysis.md``, Decision 7).
+
+  Attributes:
+    max_agents: Hard cap on concurrent agents in a session.
+    default_isolation_policy: Default context isolation for spawned agents
+      (``"fresh"`` or ``"fork"``).
+    event_aggregation: Whether sub-agent events are aggregated to session
+      handlers.
+  """
+
+  max_agents: int = 10
+  default_isolation_policy: str = "fresh"
+  event_aggregation: bool = True
+
+  def __post_init__(self) -> None:
+    """Validate session configuration."""
+    validate_positive_int(self.max_agents, "session.max_agents")
+    validate_choice(
+      self.default_isolation_policy,
+      "session.default_isolation_policy",
+      ("fresh", "fork"),
+    )
+
+
+@dataclass(frozen=True)
 class Config:
   """Root configuration container.
 
@@ -689,6 +719,7 @@ class Config:
     plugins: Plugin configuration.
     logging: Logging configuration.
     ui: UI layer configuration.
+    session: Session configuration.
   """
 
   agent: str | None = None
@@ -704,6 +735,7 @@ class Config:
   plugins: PluginsConfig = field(default_factory=PluginsConfig)
   logging: LoggingConfig = field(default_factory=LoggingConfig)
   ui: UIConfig = field(default_factory=UIConfig)
+  session: SessionConfig = field(default_factory=SessionConfig)
 
 
 __all__ = [
@@ -747,6 +779,7 @@ __all__ = [
   "PluginsConfig",
   "LoggingConfig",
   "UIConfig",
+  "SessionConfig",
   # Constants
   "KNOWN_PROVIDERS",
   # Helper function

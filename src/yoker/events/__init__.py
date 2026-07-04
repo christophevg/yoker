@@ -3,6 +3,9 @@
 from yoker.events.recorder import EventRecorder, deserialize_event, serialize_event
 from yoker.events.replay import EventReplayAgent
 from yoker.events.types import (
+  AgentFinishedEvent,
+  AgentMessageEvent,
+  AgentSpawnedEvent,
   CommandEvent,
   ContentChunkEvent,
   ContentEndEvent,
@@ -10,6 +13,8 @@ from yoker.events.types import (
   Event,
   EventCallback,
   EventType,
+  SessionEndEvent,
+  SessionStartEvent,
   ThinkingChunkEvent,
   ThinkingEndEvent,
   ThinkingStartEvent,
@@ -42,6 +47,12 @@ __all__ = [
   "ToolResultEvent",
   # Command
   "CommandEvent",
+  # Session lifecycle (MBI-007)
+  "SessionStartEvent",
+  "SessionEndEvent",
+  "AgentSpawnedEvent",
+  "AgentFinishedEvent",
+  "AgentMessageEvent",
   # Recording and Replay
   "EventRecorder",
   "EventReplayAgent",
