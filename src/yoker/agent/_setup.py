@@ -60,16 +60,6 @@ def create_web_guardrails(
   return (query_guardrail, url_guardrail)
 
 
-def validate_recursion_depth(config: Config, depth: int) -> int:
-  """Validate recursion depth and return it."""
-  max_depth = config.tools.agent.max_recursion_depth
-  if depth < 0:
-    raise ValueError(f"_recursion_depth must be non-negative, got {depth}")
-  if depth > max_depth:
-    raise ValueError(f"_recursion_depth ({depth}) exceeds max_recursion_depth ({max_depth})")
-  return depth
-
-
 def add_skill_discovery_block(
   config: Config, skill_registry: "SkillRegistry", context: "ContextManager"
 ) -> None:

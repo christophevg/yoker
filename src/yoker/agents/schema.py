@@ -28,6 +28,10 @@ class AgentDefinition(NameSpaced):
   tools: tuple[str, ...] = ()
   color: str | None = None
   model: str | None = None
+  # Allowlist of agent names this agent is permitted to spawn through the
+  # Session (MBI-007 PR #43 Clarification 3). Empty tuple means "no spawns
+  # allowed". The Session checks this before resolving/spawning.
+  agents: tuple[str, ...] = ()
 
   @property
   def default_simple_name(self) -> str | None:

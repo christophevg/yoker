@@ -146,6 +146,18 @@ def parse_agent_definition(
   if model is not None:
     model = str(model)
 
+  # Extract optional agents allowlist (MBI-007 PR #43 Clarification 3):
+  # the list of agent names this agent is permitted to spawn via the Session.
+  agents_raw = frontmatter.get("agents")
+  if agents_raw is None:
+    agents: tuple[str, ...] = ()
+  elif isinstance(agents_raw, str):
+    agents = tuple(a.strip() for a in agents_raw.split(",") if a.strip())
+  elif isinstance(agents_raw, list):
+    agents = tuple(str(a).strip() for a in agents_raw if a)
+  else:
+    agents = ()
+
   return AgentDefinition(
     simple_name=str(name),
     namespace=namespace,
@@ -155,6 +167,7 @@ def parse_agent_definition(
     model=model,
     system_prompt=body.strip(),
     source_path=source_path,
+    agents=agents,
   )
 
 

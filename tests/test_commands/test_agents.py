@@ -4,7 +4,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from yoker.agents import AgentDefinition
+from yoker.agents import AgentDefinition, AgentRegistry
 from yoker.ui.commands.agents import create_command as create_agents_command
 
 
@@ -16,8 +16,14 @@ class TestAgentsCommand:
     agent.definition = agent_def
     agent.agent_definition = agent_def
     agent.config.agents.directories = directories
-    agent.agents = Mock()
-    agent.agents.agents = list(plugin_agents) if plugin_agents else []
+    # MBI-007 Phase 2: agent.agents is removed; the registry lives on the
+    # session (Decision 10). The command reads agent._session.agents.
+    registry = AgentRegistry()
+    for d in plugin_agents:
+      registry.register(d)
+    session = Mock()
+    session.agents = registry
+    agent._session = session
     return agent
 
   @pytest.mark.asyncio

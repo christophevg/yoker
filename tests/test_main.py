@@ -273,7 +273,12 @@ class TestMainIntegration:
   """Test main() wiring without running a real session."""
 
   def test_main_creates_batch_ui_and_runs_session(self):
-    """main() should create BatchUIHandler in batch mode and wire events."""
+    """main() should create BatchUIHandler in batch mode and wire events.
+
+    MBI-007 Phase 2: main() now loads config via Clevis first, then constructs
+    a Session and Agent within it. The Agent receives the loaded config, the
+    session, plugin packages, and console_logging flag.
+    """
     test_args = ["yoker", "--ui-mode", "batch"]
 
     with patch.object(sys, "argv", test_args):
@@ -287,11 +292,12 @@ class TestMainIntegration:
 
           main()
 
-          mock_agent_cls.assert_called_once_with(
-            plugins=None,
-            console_logging=False,
-            parse_cli_args=True,
-          )
+          mock_agent_cls.assert_called_once()
+          call_kwargs = mock_agent_cls.call_args.kwargs
+          assert call_kwargs["plugins"] is None
+          assert call_kwargs["console_logging"] is False
+          assert "config" in call_kwargs
+          assert "session" in call_kwargs
           mock_run.assert_awaited_once()
           args, _ = mock_run.call_args
           assert isinstance(args[1], BatchUIHandler)
