@@ -44,6 +44,12 @@ class TestEventTypes:
       "TOOL_RESULT",
       "TOOL_CONTENT",
       "COMMAND",
+      # Session lifecycle (MBI-007)
+      "SESSION_START",
+      "SESSION_END",
+      "AGENT_SPAWNED",
+      "AGENT_FINISHED",
+      "AGENT_MESSAGE",
     ]
     actual = [et.name for et in EventType]
     assert set(expected) == set(actual)

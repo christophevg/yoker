@@ -34,6 +34,13 @@ class EventType(Enum):
   # Command execution
   COMMAND = auto()
 
+  # Session lifecycle (MBI-007)
+  SESSION_START = auto()
+  SESSION_END = auto()
+  AGENT_SPAWNED = auto()
+  AGENT_FINISHED = auto()
+  AGENT_MESSAGE = auto()
+
 
 @dataclass(frozen=True, kw_only=True)
 class Event:
@@ -164,3 +171,73 @@ class CommandEvent(Event):
 
   command: str  # The command string (e.g., "/help")
   result: str  # The command output
+
+
+@dataclass(frozen=True)
+class SessionStartEvent(Event):
+  """Emitted when a Session starts (MBI-007).
+
+  Attributes:
+    session_id: The unique session identifier.
+  """
+
+  session_id: str
+
+
+@dataclass(frozen=True)
+class SessionEndEvent(Event):
+  """Emitted when a Session ends (MBI-007).
+
+  Attributes:
+    session_id: The unique session identifier.
+  """
+
+  session_id: str
+
+
+@dataclass(frozen=True)
+class AgentSpawnedEvent(Event):
+  """Emitted when an agent is spawned into a Session (MBI-007).
+
+  Attributes:
+    session_id: The session that owns the spawned agent.
+    agent_id: The unique session-assigned id of the spawned agent.
+    definition_name: The agent definition name the agent was created from.
+  """
+
+  session_id: str
+  agent_id: str
+  definition_name: str
+
+
+@dataclass(frozen=True)
+class AgentFinishedEvent(Event):
+  """Emitted when an agent finishes in a Session (MBI-007).
+
+  This is a lifecycle signal; the agent is removed from the Session's
+  active list after this event is emitted (PR #43 Clarification 7).
+
+  Attributes:
+    session_id: The session that owned the agent.
+    agent_id: The unique session-assigned id of the finished agent.
+  """
+
+  session_id: str
+  agent_id: str
+
+
+@dataclass(frozen=True)
+class AgentMessageEvent(Event):
+  """Emitted when an inter-agent message is routed through a Session (MBI-007).
+
+  Attributes:
+    session_id: The session routing the message.
+    from_id: The unique id of the sending agent.
+    to_id: The unique id of the receiving agent.
+    content: The plain-string message content.
+  """
+
+  session_id: str
+  from_id: str
+  to_id: str
+  content: str

@@ -13,12 +13,17 @@ from pathlib import Path
 from typing import Any
 
 from yoker.events.types import (
+  AgentFinishedEvent,
+  AgentMessageEvent,
+  AgentSpawnedEvent,
   CommandEvent,
   ContentChunkEvent,
   ContentEndEvent,
   ContentStartEvent,
   Event,
   EventType,
+  SessionEndEvent,
+  SessionStartEvent,
   ThinkingChunkEvent,
   ThinkingEndEvent,
   ThinkingStartEvent,
@@ -81,6 +86,25 @@ def serialize_event(event: Event) -> dict[str, Any]:
     }
   elif isinstance(event, CommandEvent):
     data = {"command": event.command, "result": event.result}
+  elif isinstance(event, SessionStartEvent):
+    data = {"session_id": event.session_id}
+  elif isinstance(event, SessionEndEvent):
+    data = {"session_id": event.session_id}
+  elif isinstance(event, AgentSpawnedEvent):
+    data = {
+      "session_id": event.session_id,
+      "agent_id": event.agent_id,
+      "definition_name": event.definition_name,
+    }
+  elif isinstance(event, AgentFinishedEvent):
+    data = {"session_id": event.session_id, "agent_id": event.agent_id}
+  elif isinstance(event, AgentMessageEvent):
+    data = {
+      "session_id": event.session_id,
+      "from_id": event.from_id,
+      "to_id": event.to_id,
+      "content": event.content,
+    }
   # ThinkingStartEvent, ContentStartEvent have no data fields
 
   return {"type": event.type.name, "timestamp": timestamp, "data": data}
@@ -183,6 +207,42 @@ def deserialize_event(entry: dict[str, Any]) -> Event:
         timestamp=timestamp,
         command=data["command"],
         result=data["result"],
+      )
+    case EventType.SESSION_START:
+      return SessionStartEvent(
+        type=event_type,
+        timestamp=timestamp,
+        session_id=data["session_id"],
+      )
+    case EventType.SESSION_END:
+      return SessionEndEvent(
+        type=event_type,
+        timestamp=timestamp,
+        session_id=data["session_id"],
+      )
+    case EventType.AGENT_SPAWNED:
+      return AgentSpawnedEvent(
+        type=event_type,
+        timestamp=timestamp,
+        session_id=data["session_id"],
+        agent_id=data["agent_id"],
+        definition_name=data["definition_name"],
+      )
+    case EventType.AGENT_FINISHED:
+      return AgentFinishedEvent(
+        type=event_type,
+        timestamp=timestamp,
+        session_id=data["session_id"],
+        agent_id=data["agent_id"],
+      )
+    case EventType.AGENT_MESSAGE:
+      return AgentMessageEvent(
+        type=event_type,
+        timestamp=timestamp,
+        session_id=data["session_id"],
+        from_id=data["from_id"],
+        to_id=data["to_id"],
+        content=data["content"],
       )
     case _:
       raise ValueError(f"Unknown event type: {event_type}")
