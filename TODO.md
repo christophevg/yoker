@@ -4,7 +4,7 @@
 
 | Priority | MBI/Task | Status |
 |----------|----------|--------|
-| **P1** | MBI-007: Session | Ready (design finalized, owner-approved PR #42 + PR #43 clarifications) |
+| **P1** | MBI-007: Session | Ready (design finalized, owner-approved PR #42 + PR #43 clarifications rounds 1 & 2) |
 | **P1** | MBI-006: Multi-Provider Backend (Phase 1) | Complete |
 | **P1** | MBI-006 Phase 2: LitellmBackend | Complete |
 | **P1** | MBI-002: Bootstrap | Complete |
@@ -22,17 +22,24 @@
 
 **Goal:** Introduce a `Session` construct that manages a team of agents: lifecycle, registry, recursion depth, event aggregation, inter-agent messaging, and backend sharing. Reduce `Agent` to a single-agent chat loop. Establish the primitive that MBI-003 (Python API) builds on.
 
-**Design source of truth:** `analysis/session-concept-analysis.md` (finalized, owner-approved — all 10 decisions in §7 resolved via PR #42; 4 clarifications in §7.3 resolved via PR #43).
+**Design source of truth:** `analysis/session-concept-analysis.md` (finalized, owner-approved — all 10 decisions in §7 resolved via PR #42; 4 round-1 clarifications in §7.3 + 5 round-2 clarifications in §7.4 resolved via PR #43).
 
 **Milestone:** A real `Session` primitive lands in master; `Agent` is a single-agent chat loop; sub-agents are visible via event aggregation; MBI-003 unblocks.
 
-**Status:** Design finalized (incl. PR #43 clarifications). Detailed implementation task breakdown below (41 sub-tasks).
+**Status:** Design finalized (incl. PR #43 round-1 & round-2 clarifications). Detailed implementation task breakdown below (40 sub-tasks; `ListAgents` deferred per Clarification 6).
 
-**Key PR #43 clarifications (see analysis §7.3):**
+**Key PR #43 round-1 clarifications (see analysis §7.3):**
 - **No backward-compat shims** — implement the final design only; no deprecation warnings, no proxy properties, no ignored args. Remove the old field/arg outright.
 - **SpawnAgent tool** — the `agent` built-in tool becomes `SpawnAgent`, injected by the Session (closure-captured back-reference to Session). Session-injected, not Agent-registered.
 - **Agent allowlist** — Session checks the requester's `AgentDefinition.agents` allowlist before spawning. Source of truth is the definition's allowlist, not a derived list.
-- **SendMessage + ListAgents tools** — Session-injected tools enabling inter-agent messaging via tool calls. `ListAgents` is recommended (agents need to discover active agents to address `SendMessage`).
+- **SendMessage tool** — Session-injected tool enabling inter-agent messaging via tool calls. (`ListAgents` was recommended in round 1 but is deferred per round-2 Clarification 6.)
+
+**Key PR #43 round-2 clarifications (see analysis §7.4):**
+- **SpawnAgent returns the spawned agent's unique id** to the caller (Clarification 5). `Session.spawn()` returns a `SpawnResult(agent_id, response)`; the `SpawnAgent` tool renders both into the `ToolResult` so the model can read the spawned agent's id.
+- **ListAgents deferred to a follow-up MBI** (Clarification 6). MBI-007 scope is the tree-like hierarchy (parent knows children via `SpawnAgent` return value). `ListAgents` enables swarm/team discovery, a separate use case. Task 7.8.7 is marked DEFERRED.
+- **`finished` state dropped** (Clarification 7). Visible agent states are `{idle, running}` only. Finished agents are removed from the Session's active list. `AGENT_FINISHED` events still emitted as lifecycle signals.
+- **BaseUIHandler NOT recreated** (Clarification 8). `agent_spawned` / `agent_finished` added directly to the `UIHandler` protocol as optional methods; the `UIBridge` guards calls with `hasattr` / `getattr`. No new `src/yoker/ui/base.py`.
+- **SessionEvent envelope wrapper** (Clarification 9). Agent-id tagging uses a `SessionEvent(agent_id, event)` frozen envelope; no changes to existing frozen event dataclasses or their construction sites.
 
 ### Dependency Graph
 
@@ -49,10 +56,10 @@
                            │
                            └──► 7.8 (Integration) ◄── 7.2, 7.3, 7.4, 7.5, 7.7
                                  ├── 7.8.1 ToolContext.session
-                                 ├── 7.8.2 Session.spawn()
+                                 ├── 7.8.2 Session.spawn() (returns SpawnResult)
                                  ├── 7.8.3 SpawnAgent tool (Session-injected)
                                  ├── 7.8.6 SendMessage tool (Session-injected)
-                                 ├── 7.8.7 ListAgents tool (Session-injected)
+                                 ├── 7.8.7 ListAgents tool — DEFERRED (Clarification 6)
                                  ├── 7.8.4 run_session → run_repl
                                  └── 7.8.5 Construct Session in main()
                                       │
@@ -460,106 +467,154 @@ constructor args. Remove the old fields/args outright; callers that pass them ge
   - **Satisfies:** D5 (event infrastructure)
   - **Depends on:** 7.1.1 (Message dataclass for AgentMessageEvent)
 
-- [ ] **[MBI-007] 7.7.2 Session event aggregator (fan-out with agent_id tagging)**
+- [ ] **[MBI-007] 7.7.2 Session event aggregator (SessionEvent envelope, fan-out with agent_id tagging)**
   - Session collects events from all agents it manages and re-emits them to
     session-level handlers, tagged with the source agent's name/ID (D5)
+  - **PR #43 Clarification 9 — `SessionEvent` envelope wrapper:** tagging is
+    done by wrapping each agent event in a frozen
+    `SessionEvent(agent_id: str, event: Event)` dataclass. **No changes to
+    existing frozen event dataclasses** (`TurnStartEvent`,
+    `ContentChunkEvent`, etc.) and no changes to their construction sites in
+    `agent/_processing.py`.
+  - Create `SessionEvent` in `src/yoker/events/session_event.py` (or
+    `src/yoker/session/events.py`):
+    ```python
+    @dataclass(frozen=True)
+    class SessionEvent:
+        agent_id: str
+        event: Event
+    ```
   - When Session spawns an agent (7.8.2), it registers an internal forwarding
     handler on the agent that:
-    - Tags each event with `agent_id` (e.g. by wrapping in an envelope or adding
-      a field — design choice: add optional `agent_id: str | None` field to base
-      `Event`, or wrap in a `SessionEvent` envelope)
-    - Forwards the tagged event to `session._event_handlers`
-  - Emits `AGENT_SPAWNED` when an agent is spawned, `AGENT_FINISHED` when it completes
+    - Wraps each emitted `Event` in `SessionEvent(agent_id=<agent's runtime name>, event=<original>)`
+    - Forwards the wrapped `SessionEvent` to `session._event_handlers`
+  - Emits `AGENT_SPAWNED` when an agent is spawned, `AGENT_FINISHED` when it
+    completes. **PR #43 Clarification 7:** on `AGENT_FINISHED`, the agent is
+    **removed from `session._agents_map`** — there is no `finished` state;
+    visible agent states are `{idle, running}` only.
   - When `config.session.event_aggregation` is False, sub-agent events are NOT
     forwarded (preserves current quiet behaviour as opt-out)
-  - **Files:** `src/yoker/session/session.py` (extend), `src/yoker/events/types.py`
-    (add agent_id field or envelope)
+  - **Files:** `src/yoker/session/session.py` (extend), new
+    `SessionEvent` dataclass module (new)
   - **Acceptance:**
-    - Events from spawned agents reach session-level handlers with `agent_id` tag
+    - Events from spawned agents reach session-level handlers wrapped in
+      `SessionEvent` carrying the source `agent_id`
+    - The inner `Event` is dispatched unchanged (no modifications to existing
+      event dataclasses)
     - `AGENT_SPAWNED` / `AGENT_FINISHED` events are emitted at lifecycle boundaries
+    - Finished agents are removed from `session._agents_map` (no `finished` state)
     - When `event_aggregation=False`, sub-agent events do not reach session handlers
-  - **Satisfies:** D5
+  - **Satisfies:** D5, PR #43 Clarifications 7 & 9
   - **Depends on:** 7.1.2, 7.7.1
 
-- [ ] **[MBI-007] 7.7.3 UIBridge registered on Session + handles new events**
-  - `UIBridge.__call__` handles new event types:
+- [ ] **[MBI-007] 7.7.3 UIBridge registered on Session + handles new events + SessionEvent envelope**
+  - `UIBridge.__call__` handles both wrapped (`SessionEvent`) and unwrapped
+    (bare `Event`) incoming events (PR #43 Clarification 9):
+    - If the incoming event is a `SessionEvent`: unpack it — use `agent_id`
+      for tagging/display, dispatch the inner `event` to the existing
+      `UIHandler` method unchanged.
+    - If the incoming event is a bare `Event` (single-agent path): dispatch
+      as today with no `agent_id` tag.
+  - `UIBridge.__call__` handles new session-level event types:
     - `SESSION_START` / `SESSION_END` → no UI action (UI start/shutdown called directly)
-    - `AGENT_SPAWNED` → `self.ui.agent_spawned(name)`
-    - `AGENT_FINISHED` → `self.ui.agent_finished(name)`
+    - `AGENT_SPAWNED` → call `self.ui.agent_spawned(name)` if the handler
+      implements it (guard with `hasattr` / `getattr` — PR #43 Clarification 8)
+    - `AGENT_FINISHED` → call `self.ui.agent_finished(name)` if the handler
+      implements it (same guard)
     - `AGENT_MESSAGE` → optional display (or no-op for now)
-  - Existing event methods receive events tagged with `agent_id`; UIBridge can
-    pass `agent_id` to UI methods so the UI can distinguish which agent produced them
+  - Existing event methods receive the inner event; the `agent_id` from the
+    envelope is available for tagging in the UI display
   - Registration moves from `agent.add_event_handler(bridge)` to
     `session.add_event_handler(bridge)` in `__main__.py` (7.8.5)
   - **Files:** `src/yoker/ui/bridge.py` (modify)
   - **Acceptance:**
-    - UIBridge handles `AGENT_SPAWNED` by calling `ui.agent_spawned(name)`
-    - UIBridge handles `AGENT_FINISHED` by calling `ui.agent_finished(name)`
-    - Existing event handling unchanged for single-agent sessions
-  - **Satisfies:** D5
+    - UIBridge unpacks `SessionEvent` envelopes and dispatches the inner event
+    - UIBridge handles bare `Event` (single-agent path) unchanged
+    - UIBridge handles `AGENT_SPAWNED` by calling `ui.agent_spawned(name)` when
+      the method exists on the handler
+    - UIBridge handles `AGENT_FINISHED` by calling `ui.agent_finished(name)` when
+      the method exists on the handler
+    - Handlers that do not implement `agent_spawned` / `agent_finished` are not
+      broken (no `AttributeError`)
+  - **Satisfies:** D5, PR #43 Clarifications 8 & 9
   - **Depends on:** 7.7.1, 7.7.2, 7.7.4
 
-- [ ] **[MBI-007] 7.7.4 UIHandler new optional methods + BaseUIHandler**
-  - Create `src/yoker/ui/base.py` with `BaseUIHandler` class providing no-op default
-    implementations for the new optional methods (D5):
-    - `agent_spawned(self, name: str) -> None: pass`
-    - `agent_finished(self, name: str) -> None: pass`
-  - Note: `BaseUIHandler` was previously created (UI-003) but later removed; this
-    recreates it as a minimal mixin for the new optional methods only
-  - `InteractiveUIHandler` and `BatchUIHandler` inherit from `BaseUIHandler` (in
-    addition to implementing `UIHandler` protocol)
-  - `InteractiveUIHandler.agent_spawned(name)`: prints "Agent spawned: {name}" (or
-    a styled indicator)
-  - `InteractiveUIHandler.agent_finished(name)`: prints "Agent finished: {name}"
-  - `BatchUIHandler`: no-op (sub-agent activity not shown in batch mode)
-  - Add `agent_spawned` / `agent_finished` to `UIHandler` protocol as optional
-    (documented, not enforced — Python Protocol structural typing)
-  - **Files:** `src/yoker/ui/base.py` (new), `src/yoker/ui/handler.py` (modify —
-    document optional methods), `src/yoker/ui/interactive.py` (modify),
-    `src/yoker/ui/batch.py` (modify), `src/yoker/ui/__init__.py` (export BaseUIHandler)
+- [ ] **[MBI-007] 7.7.4 UIHandler new optional methods (no BaseUIHandler recreation)**
+  - **PR #43 Clarification 8 — do NOT recreate `BaseUIHandler`.** The
+    `agent_spawned` / `agent_finished` methods are added **directly to the
+    `UIHandler` protocol** as optional methods (documented, not enforced —
+    Python `Protocol` structural typing). No new `src/yoker/ui/base.py` file
+    is created; `InteractiveUIHandler` and `BatchUIHandler` do **not** inherit
+    from a new `BaseUIHandler`.
+  - Document `agent_spawned(name: str) -> None` and
+    `agent_finished(name: str) -> None` as optional protocol methods in
+    `src/yoker/ui/handler.py` (the protocol already has optional methods; this
+    is consistent).
+  - `InteractiveUIHandler` implements `agent_spawned(name)`: prints
+    "Agent spawned: {name}" (or a styled indicator).
+  - `InteractiveUIHandler` implements `agent_finished(name)`: prints
+    "Agent finished: {name}".
+  - `BatchUIHandler`: does **not** implement the methods (sub-agent activity
+    not shown in batch mode). The `UIBridge` guards calls with
+    `hasattr(handler, 'agent_spawned')` / `getattr(..., None)` before invoking,
+    so handlers that omit the methods are unaffected.
+  - The `UIBridge` is the sole caller of these methods; the guard lives in
+    task 7.7.3.
+  - **Files:** `src/yoker/ui/handler.py` (modify — document optional methods),
+    `src/yoker/ui/interactive.py` (modify — implement the methods),
+    `src/yoker/ui/batch.py` (no change — does not implement the optional methods)
   - **Acceptance:**
-    - `BaseUIHandler` exists with no-op `agent_spawned` / `agent_finished`
-    - `InteractiveUIHandler` inherits from `BaseUIHandler` and overrides the methods
-    - `BatchUIHandler` inherits from `BaseUIHandler` (no-op defaults)
-    - Existing handlers do not break (no-op defaults)
-  - **Satisfies:** D5
-  - **Depends on:** —
+    - `UIHandler` protocol documents `agent_spawned` / `agent_finished` as
+      optional methods
+    - No `src/yoker/ui/base.py` file is created
+    - `InteractiveUIHandler` implements `agent_spawned` / `agent_finished`
+    - `BatchUIHandler` does not implement them and is not broken (the UIBridge
+      guards calls)
+    - No `BaseUIHandler` class is introduced anywhere in the codebase
+  - **Satisfies:** D5, PR #43 Clarification 8
+  - **Depends on:** 7.7.3 (UIBridge guard)
 
 - [ ] **[MBI-007] 7.7.5 EventRecorder session-scoped**
   - `EventRecorder` registered on Session (via `session.add_event_handler(recorder)`)
     instead of on individual agents
-  - Captures all agents' events (with `agent_id` tags) in one coherent JSONL trace
-  - `serialize_event` includes `agent_id` in the serialized data when present
+  - Captures all agents' events (wrapped in `SessionEvent` envelopes — PR #43
+    Clarification 9) in one coherent JSONL trace
+  - `serialize_event` handles `SessionEvent` envelopes: serializes the
+    `agent_id` alongside the inner event's serialized form
   - Produces one replay file per session that captures the entire multi-agent trace
-  - **Files:** `src/yoker/events/recorder.py` (modify — agent_id in serialize),
-    `src/yoker/session/session.py` (recorder registration site)
+  - **Files:** `src/yoker/events/recorder.py` (modify — SessionEvent-aware
+    serialize/deserialize), `src/yoker/session/session.py` (recorder
+    registration site)
   - **Acceptance:**
-    - `EventRecorder` on Session captures sub-agent events
-    - Serialized events include `agent_id` when tagged
+    - `EventRecorder` on Session captures sub-agent events (wrapped in
+      `SessionEvent`)
+    - Serialized events include `agent_id` from the envelope
     - One JSONL file contains the full session trace
-  - **Satisfies:** D5, §6.9 (session persistence foundation)
+  - **Satisfies:** D5, §6.9 (session persistence foundation), PR #43 Clarification 9
   - **Depends on:** 7.7.2
 
 ---
 
-#### 7.8 Integration: __main__.py, Session-injected tools (SpawnAgent, SendMessage, ListAgents), ToolContext
+#### 7.8 Integration: __main__.py, Session-injected tools (SpawnAgent, SendMessage), ToolContext
 
-**Satisfies:** D6, D8, PR #43 Clarifications 2 & 4
+**Satisfies:** D6, D8, PR #43 Clarifications 2, 4, 5 & 6
 **Depends on:** 7.1-7.7 (all core work)
 
-**PR #43 note (Clarifications 2 & 4):** the `agent` built-in tool becomes
+**PR #43 note (Clarifications 2, 4 & 6):** the `agent` built-in tool becomes
 `SpawnAgent`, a **Session-injected** tool (the Session holds a back-reference to
-itself and registers the tool on Agents it owns). `SendMessage` and `ListAgents`
-are also Session-injected. Session-injected tools are **not** registered by the
-Agent itself and are not part of the Agent's static tool set.
+itself and registers the tool on Agents it owns). `SendMessage` is also
+Session-injected. `ListAgents` is **deferred** to a follow-up MBI (PR #43
+Clarification 6) and is not part of MBI-007. Session-injected tools are **not**
+registered by the Agent itself and are not part of the Agent's static tool set.
 
 - [ ] **[MBI-007] 7.8.1 ToolContext gains session reference**
   - Add `session: Session | None = None` field to `ToolContext` dataclass in
     `src/yoker/tools/context.py` (D8)
   - Update `_build_tool_context()` in `agent/_processing.py` (line 573-595) to pass
     `session=agent._session` when building the context
-  - Load-bearing for `SendMessage` and `ListAgents` (PR #43 Clarification 4);
-    `SpawnAgent` may use closure capture instead (implementation choice)
+  - Load-bearing for `SendMessage` (PR #43 Clarification 4; `ListAgents` is
+    deferred per Clarification 6); `SpawnAgent` may use closure capture
+    instead (implementation choice)
   - **Files:** `src/yoker/tools/context.py` (modify), `src/yoker/agent/_processing.py`
     (modify)
   - **Acceptance:**
@@ -570,9 +625,21 @@ Agent itself and are not part of the Agent's static tool set.
   - **Satisfies:** D8, PR #43 Clarification 4
   - **Depends on:** 7.2.3 (Agent has `_session`)
 
-- [ ] **[MBI-007] 7.8.2 Session.spawn() canonical API**
+- [ ] **[MBI-007] 7.8.2 Session.spawn() canonical API (returns SpawnResult)**
   - Implement `async def session.spawn(name: str, prompt: str, timeout: int = 300,
-    *, requester: Agent | None = None) -> str` (D8, PR #43 Clarification 3)
+    *, requester: Agent | None = None) -> SpawnResult` (D8, PR #43
+    Clarifications 3 & 5)
+  - **PR #43 Clarification 5 — return both agent id and response.** Define a
+    frozen `SpawnResult(agent_id: str, response: str)` dataclass in
+    `src/yoker/session/spawn_result.py` (or in `session.py`). `Session.spawn()`
+    returns `SpawnResult` instead of a bare string. The `SpawnAgent` tool
+    (7.8.3) renders both fields into its `ToolResult` so the model can read
+    the spawned agent's id and the response.
+  - On error / timeout / allowlist rejection: return
+    `SpawnResult(agent_id="", response=<error string>)` (or raise —
+    implementation choice; the tool layer wraps either into a
+    `ToolResult(success=False, ...)`). Preserve the current `agent` tool's
+    "return error string, do not raise" behaviour at the tool boundary.
   - Relocate `_create_subagent` logic from `src/yoker/builtin/agent.py` into Session:
     - **Allowlist check (PR #43 Clarification 3):** if `requester` is not None, check
       `name in requester.definition.agents` *before* resolving/spawning; reject with
@@ -582,38 +649,52 @@ Agent itself and are not part of the Agent's static tool set.
     - Generate unique agent ID via `_generate_agent_name()` (7.4.3)
     - Create child `Agent` with: session reference, shared/fresh backend (7.5),
       agent definition, derived config (model override via `with_model` if needed)
-    - Register agent in `self._agents_map` with unique ID
+    - Register agent in `self._agents_map` with unique ID (state `idle`)
     - Track recursion depth (`self._recursion_depths[agent_id] = parent_depth + 1`)
     - Enforce `max_recursion_depth` and `max_agents` limits (after allowlist check)
-    - **Inject Session tools** (PR #43 Clarifications 2 & 4): register `SpawnAgent`,
-      `SendMessage`, and `ListAgents` on the child Agent (Session-injected, capture
-      Session via closure). The Agent does not register these itself.
+    - **Inject Session tools** (PR #43 Clarifications 2 & 4): register `SpawnAgent`
+      and `SendMessage` on the child Agent (Session-injected, capture Session via
+      closure). **`ListAgents` is NOT injected** — deferred per PR #43
+      Clarification 6. The Agent does not register these itself.
     - Register session's event aggregator on the child agent (7.7.2)
     - Emit `AGENT_SPAWNED` event
   - Relocate `_run_with_timeout` logic: `asyncio.wait_for(agent.process(prompt), timeout)`
     wrapped in the Session's `TaskGroup`
-  - On completion: emit `AGENT_FINISHED`, remove from active tasks
-  - On timeout: return error string (preserving current agent tool behaviour)
-  - On exception: catch, log, return error string (preserving current behaviour)
-  - Returns the response string
-  - **Files:** `src/yoker/session/session.py` (extend), `src/yoker/builtin/agent.py`
-    (logic removed — `agent` tool replaced by `SpawnAgent` in 7.8.3)
+  - On completion: emit `AGENT_FINISHED`, **remove the agent from
+    `self._agents_map`** (PR #43 Clarification 7 — no `finished` state; the
+    agent is removed from the active list)
+  - On timeout: return error string in `SpawnResult` (preserving current agent
+    tool behaviour)
+  - On exception: catch, log, return error string in `SpawnResult` (preserving
+    current behaviour)
+  - Returns `SpawnResult(agent_id=<spawned id>, response=<response string>)`
+  - **Files:** `src/yoker/session/session.py` (extend),
+    `src/yoker/session/spawn_result.py` (new — `SpawnResult` dataclass),
+    `src/yoker/builtin/agent.py` (logic removed — `agent` tool replaced by
+    `SpawnAgent` in 7.8.3)
   - **Acceptance:**
-    - `await session.spawn("researcher", "analyze this")` returns a response string
+    - `await session.spawn("researcher", "analyze this")` returns a
+      `SpawnResult` with `agent_id="researcher"` and the response string
     - `session.spawn("researcher", prompt, requester=agent)` rejects when
       `"researcher"` not in `agent.definition.agents` (allowlist first)
     - `AGENT_SPAWNED` and `AGENT_FINISHED` events are emitted
+    - After completion, the spawned agent is removed from
+      `session._agents_map` (no `finished` state)
     - Recursion depth is enforced (spawn beyond `max_recursion_depth` returns error)
     - `max_agents` limit enforced (spawn beyond cap returns error)
-    - Timeout returns an error string, not an exception
-    - Spawned Agent has `SpawnAgent`, `SendMessage`, `ListAgents` tools registered
-      (Session-injected)
-  - **Satisfies:** D8, D1 (Session as coordinator), PR #43 Clarifications 2, 3, 4
-  - **Depends on:** 7.1.2, 7.1.3, 7.3.1, 7.3.3, 7.5.1, 7.7.2, 7.8.3, 7.8.6, 7.8.7
+    - Timeout returns an error string in `SpawnResult`, not an exception
+    - Spawned Agent has `SpawnAgent` and `SendMessage` tools registered
+      (Session-injected); **no `ListAgents` tool** (deferred)
+  - **Satisfies:** D8, D1 (Session as coordinator), PR #43 Clarifications 2, 3, 5, 6, 7
+  - **Depends on:** 7.1.2, 7.1.3, 7.3.1, 7.3.3, 7.5.1, 7.7.2, 7.8.3, 7.8.6
 
-- [ ] **[MBI-007] 7.8.3 SpawnAgent tool (Session-injected, replaces `agent` tool)**
+- [ ] **[MBI-007] 7.8.3 SpawnAgent tool (Session-injected, replaces `agent` tool, returns spawned id)**
   - PR #43 Clarification 2: the `agent` built-in tool becomes `SpawnAgent`,
     Session-injected.
+  - **PR #43 Clarification 5 — return the spawned agent's id to the caller.**
+    The tool's `ToolResult` carries both the spawned agent's unique id and
+    the response string so the model can address the spawned agent later via
+    `SendMessage`.
   - Create `make_spawn_agent_tool(session)` (replaces `make_agent_tool(parent_agent)`)
     — the Session captures itself in the closure (back-reference), so the tool does
     not need `ctx.session` (implementation choice; closure capture matches the
@@ -621,9 +702,16 @@ Agent itself and are not part of the Agent's static tool set.
   - The tool function signature (model-facing):
     `SpawnAgent(agent_name: str, prompt: str, timeout_seconds: int = 300) -> ToolResult`
   - Internally: calls `await session.spawn(agent_name, prompt, timeout_seconds,
-    requester=<calling agent>)` and wraps the result in
-    `ToolResult(success=True, result=response)` or
-    `ToolResult(success=False, error=...)` on failure.
+    requester=<calling agent>)` which returns a `SpawnResult(agent_id, response)`
+    (7.8.2). Wraps this into a `ToolResult`:
+    - On success: `ToolResult(success=True, result=<rendered>)` where `<rendered>`
+      includes both the spawned agent's id and the response (e.g.
+      `"agent_id: researcher-2\n\n{response}"` — exact rendering is an
+      implementation detail; the contract is "the model can read the spawned
+      agent's id from the result").
+    - On failure (allowlist rejection, timeout, depth/capacity error, agent
+      exception): `ToolResult(success=False, error=<error string>)` — preserving
+      the current `agent` tool's "do not raise" contract.
   - The calling agent is passed as `requester` so the allowlist check (PR #43
     Clarification 3) fires — the tool must capture or receive the calling Agent
     (e.g. via `ctx` with the agent identity, or by capturing the agent at injection
@@ -639,12 +727,15 @@ Agent itself and are not part of the Agent's static tool set.
     (update manifest: `agent` tool becomes `SpawnAgent`)
   - **Acceptance:**
     - The `SpawnAgent` tool is registered on Agents by the Session, not by the Agent
-    - `SpawnAgent` has the same effective parameters as the old `agent` tool and
-      returns a string
+    - `SpawnAgent` has the same effective parameters as the old `agent` tool
+    - On success, the `ToolResult.result` contains **both** the spawned agent's
+      unique id and the response string (the model can read the spawned id)
+    - On failure, the `ToolResult` has `success=False` and an error string (no
+      exception raised)
     - Internally calls `session.spawn(...)` with `requester` set
     - Tool description lists only allowlisted agent names
     - `_create_subagent` and `_run_with_timeout` no longer exist in `builtin/agent.py`
-  - **Satisfies:** PR #43 Clarification 2 (SpawnAgent, Session-injected)
+  - **Satisfies:** PR #43 Clarifications 2 & 5 (SpawnAgent, Session-injected, returns id)
   - **Depends on:** 7.8.1, 7.8.2
 
 - [ ] **[MBI-007] 7.8.6 SendMessage tool (Session-injected)**
@@ -666,7 +757,9 @@ Agent itself and are not part of the Agent's static tool set.
   - Error handling: unknown target → `ToolResult(success=False, error=...)` (not
     an exception — preserves tool-call contract).
   - The tool description should explain that `to` must be an active agent name
-    discoverable via `ListAgents` (7.8.7).
+    — the caller knows its spawned children's ids from `SpawnAgent`'s return
+    value (PR #43 Clarification 5). (`ListAgents` is deferred per Clarification
+    6 and is not available in MBI-007.)
   - **Files:** `src/yoker/builtin/send_message.py` (new), `src/yoker/builtin/__init__.py`
     (extend manifest — `SendMessage` is Session-injected, not auto-registered)
   - **Acceptance:**
@@ -678,32 +771,29 @@ Agent itself and are not part of the Agent's static tool set.
   - **Satisfies:** PR #43 Clarification 4 (SendMessage, Session-injected)
   - **Depends on:** 7.4.2 (session.send), 7.8.1 (ToolContext.session, if used)
 
-- [ ] **[MBI-007] 7.8.7 ListAgents tool (Session-injected, recommended)**
-  - PR #43 Clarification 4 open question, recommended YES (see analysis §7.3):
-    agents need to discover other active agents to address `SendMessage` calls.
-    Without `ListAgents`, inter-agent messaging via tool calls is impractical.
-  - Create `make_list_agents_tool(session)` — Session captures itself in the
-    closure.
-  - Tool signature (model-facing): `ListAgents() -> ToolResult`
-  - Returns a list of `(name, status)` tuples for active agents in the Session:
-    - `name` is the unique session-assigned ID (Decision 2)
-    - `status` is one of `{idle, running, finished}` (exact enum finalized in
-      implementation)
-    - The list includes the calling agent itself (so it knows its own runtime name)
-    - Does *not* include cleaned-up / removed agents
-  - The result is rendered as a string for the model (e.g. "researcher (idle),
-    reviewer (running), coordinator (idle)").
-  - The tool description should make clear these are runtime instances, not
-    registry definitions — names returned here can be used with `SendMessage`.
-  - **Files:** `src/yoker/builtin/list_agents.py` (new), `src/yoker/builtin/__init__.py`
-    (extend manifest — `ListAgents` is Session-injected, not auto-registered)
-  - **Acceptance:**
-    - `ListAgents` tool is registered on Agents by the Session, not by the Agent
-    - `ListAgents()` returns the active agents with their statuses
-    - The calling agent appears in the returned list
-    - Returned names are valid targets for `SendMessage`
-  - **Satisfies:** PR #43 Clarification 4 (ListAgents, Session-injected, recommended)
-  - **Depends on:** 7.1.2, 7.1.3 (Session tracks agents + statuses)
+- [ ] ~~**[MBI-007] 7.8.7 ListAgents tool~~ — **DEFERRED to a follow-up MBI
+  (PR #43 Clarification 6)**
+  - PR #43 Clarification 6: `ListAgents` is **deferred** out of MBI-007. The
+    owner framed `ListAgents` as enabling a swarm/team-based discovery model
+    (any agent can find any other active agent), which is a separate use case
+    from MBI-007's tree-like hierarchy scope. A parent knows its children
+    directly via the id returned by `SpawnAgent` (PR #43 Clarification 5); no
+    discovery tool is needed for the tree-hierarchy case.
+  - The §7.3 Clarification 4 recommendation to include `ListAgents` in
+    MBI-007 is **superseded** by this clarification.
+  - **Not implemented in MBI-007.** No `ListAgents` tool is created; no
+    `src/yoker/builtin/list_agents.py` file is created; the Session does not
+    inject `ListAgents` onto Agents. Task 7.8.5, 7.8.2, and 7.9.6 do not
+    reference `ListAgents`.
+  - **Follow-up MBI scope (deferred):** `ListAgents` as a Session-injected
+    tool returning `(name, status)` for active agents; revisit agent status
+    semantics (the `{idle, running}` states from Clarification 7 are
+    sufficient for active agents — finished agents are removed, so
+    `ListAgents` would return only active agents). The follow-up MBI should
+    also revisit swarm discovery scope (visibility of agents the caller did
+    not spawn) and naming authority.
+  - **Satisfies:** PR #43 Clarification 6 (ListAgents deferred)
+  - **Depends on:** — (not part of MBI-007)
 
 - [ ] **[MBI-007] 7.8.4 Rename run_session() to run_repl()**
   - Rename `run_session` function to `run_repl` in `src/yoker/__main__.py` (D6)
@@ -724,8 +814,9 @@ Agent itself and are not part of the Agent's static tool set.
   - In `main()`: after config is loaded and bootstrap completes, construct a `Session`:
     `async with Session(config=agent.config) as session:`
   - Create the primary Agent within the session: `Agent(config=..., session=session, ...)`
-  - The Session injects `SpawnAgent`, `SendMessage`, `ListAgents` onto the primary
-    Agent (PR #43 Clarifications 2 & 4)
+  - The Session injects `SpawnAgent` and `SendMessage` onto the primary
+    Agent (PR #43 Clarifications 2 & 4; `ListAgents` is deferred per
+    Clarification 6)
   - Register `UIBridge` on Session: `session.add_event_handler(bridge)` (not on Agent)
   - Plugin loading targets Session for agent registry (7.2.4)
   - Call `run_repl(session, agent, ui, commands)` inside the `async with` block
@@ -734,10 +825,11 @@ Agent itself and are not part of the Agent's static tool set.
   - **Acceptance:**
     - `python -m yoker` interactive mode works unchanged for the user
     - Session is constructed in `main()`; UIBridge is registered on Session
-    - Primary Agent has `SpawnAgent`, `SendMessage`, `ListAgents` tools (Session-injected)
+    - Primary Agent has `SpawnAgent` and `SendMessage` tools (Session-injected);
+      no `ListAgents` tool (deferred)
     - Sub-agent activity is visible in the UI when `event_aggregation=True`
-  - **Satisfies:** D6, D5 (UIBridge on Session), PR #43 Clarifications 2 & 4
-  - **Depends on:** 7.1.2, 7.2.3, 7.2.4, 7.7.3, 7.8.2, 7.8.3, 7.8.4, 7.8.6, 7.8.7
+  - **Satisfies:** D6, D5 (UIBridge on Session), PR #43 Clarifications 2, 4 & 6
+  - **Depends on:** 7.1.2, 7.2.3, 7.2.4, 7.7.3, 7.8.2, 7.8.3, 7.8.4, 7.8.6
 
 ---
 
@@ -771,11 +863,17 @@ Agent itself and are not part of the Agent's static tool set.
   - **Depends on:** 7.8.2
 
 - [ ] **[MBI-007] 7.9.3 Event aggregation tests**
-  - Test events from spawned agents reach session-level handlers
-  - Test `agent_id` tagging on aggregated events
+  - Test events from spawned agents reach session-level handlers wrapped in
+    `SessionEvent` envelopes (PR #43 Clarification 9)
+  - Test the inner `Event` inside a `SessionEvent` is dispatched unchanged
+    (no modifications to existing event dataclasses)
+  - Test `agent_id` from the envelope is available to handlers
   - Test `AGENT_SPAWNED` / `AGENT_FINISHED` events emitted
+  - Test finished agents are **removed from `session._agents_map`** (no
+    `finished` state — PR #43 Clarification 7)
   - Test `event_aggregation=False` suppresses sub-agent events
-  - Test `EventRecorder` on Session captures full multi-agent trace
+  - Test `EventRecorder` on Session captures full multi-agent trace (with
+    `agent_id` from envelopes)
   - **Files:** `tests/test_session/test_events.py` (new)
   - **Acceptance:** All event aggregation tests pass
   - **Depends on:** 7.7
@@ -797,21 +895,23 @@ Agent itself and are not part of the Agent's static tool set.
   - **Acceptance:** All backend sharing tests pass
   - **Depends on:** 7.5
 
-- [ ] **[MBI-007] 7.9.6 Session-injected tools tests (SpawnAgent, SendMessage, ListAgents)**
-  - PR #43 Clarifications 2 & 4
+- [ ] **[MBI-007] 7.9.6 Session-injected tools tests (SpawnAgent, SendMessage)**
+  - PR #43 Clarifications 2, 4, 5 & 6 (`ListAgents` deferred — not tested here)
   - Test `SpawnAgent` tool is registered on Agents by the Session (not by Agent)
   - Test `SpawnAgent` calls `session.spawn(...)` with `requester` set and returns
-    a string `ToolResult`
+    a `ToolResult` whose `result` contains **both** the spawned agent's id and
+    the response string (PR #43 Clarification 5)
+  - Test `SpawnAgent` on failure returns `ToolResult(success=False, ...)` (no
+    exception raised)
   - Test `SpawnAgent` tool description lists only allowlisted agent names
   - Test `SendMessage` tool routes via `session.send(...)` and returns a `ToolResult`
     (success=True with response, or success=False on unknown target — no exception)
   - Test `SendMessage` sets `Message.from` to the calling agent's runtime name
-  - Test `ListAgents` tool returns `(name, status)` tuples for active agents
-  - Test `ListAgents` includes the calling agent in the returned list
-  - Test returned names are valid `SendMessage` targets
+  - Test that no `ListAgents` tool is registered on Agents (PR #43 Clarification 6
+    — deferred)
   - **Files:** `tests/test_session/test_session_tools.py` (new)
   - **Acceptance:** All Session-injected tool tests pass
-  - **Depends on:** 7.8.2, 7.8.3, 7.8.6, 7.8.7
+  - **Depends on:** 7.8.2, 7.8.3, 7.8.6
 
 - [ ] **[MBI-007] 7.9.7 Single-agent path and no-shim tests (PR #43 Clarification 1)**
   - Test single-agent `Agent()` without Session works as a chat loop
@@ -835,14 +935,17 @@ Agent itself and are not part of the Agent's static tool set.
   - Create `examples/session_demo.py` demonstrating:
     - Constructing a Session
     - Spawning multiple agents in one session
+    - **Reading the spawned agent's id from `SpawnResult`** and using it to
+      address the child via `SendMessage` (PR #43 Clarification 5 — the
+      tree-hierarchy pattern; no `ListAgents` needed)
     - Inter-agent messaging via `session.send()` (Python API)
     - Inter-agent messaging via `SendMessage` tool (tool-call path)
-    - Agent discovery via `ListAgents` tool
     - Event aggregation visibility
   - **Files:** `examples/session_demo.py` (new)
   - **Acceptance:**
     - Example runs successfully (with a configured backend)
-    - Demonstrates spawning, messaging (both paths), discovery, and event visibility
+    - Demonstrates spawning, the SpawnResult id, messaging (both paths), and
+      event visibility
   - **Depends on:** 7.1-7.8
 
 - [ ] **[MBI-007] 7.9.9 Documentation updates**
@@ -853,8 +956,9 @@ Agent itself and are not part of the Agent's static tool set.
   - Update `analysis/mbi-003-python-api-design.md` Layer 3 to reference the real
     `Session` construct (note: MBI-003 is on hold, but the doc cross-reference
     should be updated)
-  - Document the Session-injected tools (`SpawnAgent`, `SendMessage`,
-    `ListAgents`) and the agent allowlist enforcement
+  - Document the Session-injected tools (`SpawnAgent`, `SendMessage`) and
+    the agent allowlist enforcement. Note that `ListAgents` is deferred to a
+    follow-up MBI (PR #43 Clarification 6).
   - **Files:** `docs/rationale.md` (modify), `CLAUDE.md` (modify),
     `analysis/mbi-003-python-api-design.md` (modify)
   - **Acceptance:**
@@ -891,12 +995,13 @@ Agent itself and are not part of the Agent's static tool set.
    implementation order within a single merge, not about shipping an intermediate
    state. No proxy properties, no deprecation warnings, no ignored args.
 
-2. **`BaseUIHandler` does not exist:** CLAUDE.md references `ui/base.py` but the
-   file was removed during the UI separation migration. Task 7.7.4 recreates it
-   as a minimal mixin for the new optional `agent_spawned` / `agent_finished`
-   methods. `InteractiveUIHandler` and `BatchUIHandler` currently inherit directly
-   from the `UIHandler` Protocol; adding `BaseUIHandler` as an intermediate base
-   is a safe additive change.
+2. **`BaseUIHandler` is NOT recreated (PR #43 Clarification 8):** the owner
+   explicitly rejected recreating `BaseUIHandler`. Task 7.7.4 adds
+   `agent_spawned` / `agent_finished` **directly to the `UIHandler` protocol**
+   as optional methods; the `UIBridge` guards calls with `hasattr` /
+   `getattr`. No `src/yoker/ui/base.py` is created.
+   `InteractiveUIHandler` implements the methods; `BatchUIHandler` does not
+   (and is not broken).
 
 3. **Plugin loading is tightly coupled to Agent:** `load_configured_plugins(agent,
    config, cli_plugins)` populates `agent.tools`, `agent.skills`, and
@@ -904,8 +1009,9 @@ Agent itself and are not part of the Agent's static tool set.
    `session.agents` while tools/skills remain per-agent. Task 7.2.4 splits this
    call. The `yoker` builtin plugin manifest (`__YOKER_MANIFEST__`) loads agents
    from `agents_dir="agents"` — this must target Session's registry. The
-   `SpawnAgent`/`SendMessage`/`ListAgents` tools are **not** loaded via the plugin
-   manifest — they are Session-injected (PR #43 Clarifications 2 & 4).
+   `SpawnAgent`/`SendMessage` tools are **not** loaded via the plugin
+   manifest — they are Session-injected (PR #43 Clarifications 2 & 4;
+   `ListAgents` is deferred per Clarification 6).
 
 4. **`_resolve_agent_definition` uses `self.agents.resolve()`:** Agent's
    definition resolver (line 358 of `agent/__init__.py`) looks up agent
@@ -926,12 +1032,14 @@ Agent itself and are not part of the Agent's static tool set.
    the description won't reflect them. This matches current behaviour (names
    are baked at Agent init time) and is acceptable for MBI-007.
 
-7. **Event `agent_id` tagging approach:** The design says events should be
-   "tagged with `agent_id`". Two approaches: (a) add an optional `agent_id:
-   str | None` field to the base `Event` dataclass (breaks frozen events —
-   requires reconstruction), or (b) wrap events in a `SessionEvent` envelope
-   dataclass. Approach (b) is cleaner and avoids modifying every event
-   dataclass. The implementation should choose (b) unless the team prefers (a).
+7. **Event `agent_id` tagging approach (PR #43 Clarification 9):** the
+   `SessionEvent` envelope wrapper is the chosen approach — a frozen
+   `SessionEvent(agent_id, event)` dataclass wraps each agent event. **No
+   changes to existing frozen event dataclasses** and no changes to their
+   construction sites in `agent/_processing.py`. The `UIBridge` and
+   `EventRecorder` handle both `SessionEvent` (multi-agent) and bare `Event`
+   (single-agent) inputs. This supersedes the earlier "design choice"
+   formulation in task 7.7.2.
 
 8. **`Agent(_recursion_depth=...)` is a public constructor arg:** Removing it
    breaks any caller using it. Since it is `_`-prefixed (conventionally private)
@@ -939,12 +1047,13 @@ Agent itself and are not part of the Agent's static tool set.
    Task 7.2.2 removes it; the implementation raises `TypeError` (unexpected
    keyword) — no deprecation warning, no silent ignore.
 
-9. **Session-injected tools are per-Agent:** `SpawnAgent`, `SendMessage`, and
-   `ListAgents` need to know which Agent they were injected into (for the
-   `requester` / `from` fields and the allowlist-intersected description). The
-   factory functions should capture the Agent at injection time, producing a
-   distinct tool instance per Agent. This is a per-Agent injection, not a
-   single shared tool across the Session.
+9. **Session-injected tools are per-Agent:** `SpawnAgent` and `SendMessage`
+   need to know which Agent they were injected into (for the `requester` /
+   `from` fields and the allowlist-intersected description). The factory
+   functions should capture the Agent at injection time, producing a distinct
+   tool instance per Agent. This is a per-Agent injection, not a single shared
+   tool across the Session. (`ListAgents` is deferred per PR #43
+   Clarification 6.)
 
 ### Note: Config Factory (belongs to MBI-003, not MBI-007)
 

@@ -1,8 +1,8 @@
 # Session Concept — Deep Analysis
 
-Status: Finalized — owner-approved design (PR #42 decisions, PR #43 clarifications)
+Status: Finalized — owner-approved design (PR #42 decisions, PR #43 clarifications rounds 1 & 2)
 Author: Functional Analyst
-Date: 2026-07-03 (decisions finalized 2026-07-03; clarifications added 2026-07-04)
+Date: 2026-07-03 (decisions finalized 2026-07-03; round-1 clarifications 2026-07-04; round-2 clarifications 2026-07-04)
 
 This document analyses the proposed introduction of a `Session` construct to
 Yoker: a "team of agents" coordinator that takes over spawning, lifecycle, and
@@ -493,8 +493,15 @@ events** (Decision 5). Two layers:
 New event types: `SESSION_START`, `SESSION_END`, `AGENT_SPAWNED`,
 `AGENT_FINISHED`, `AGENT_MESSAGE` (inter-agent). These are additive to
 `EventType`. `UIHandler` gains optional `agent_spawned(name)` and
-`agent_finished(name)` methods with no-op defaults in `BaseUIHandler`.
-Existing handler methods receive events tagged with `agent_id`.
+`agent_finished(name)` methods **added directly to the protocol** (no
+`BaseUIHandler` mixin is recreated — PR #43 Clarification 8). The
+`UIBridge` calls them only if the handler implements them
+(`hasattr` / `getattr` guard). Existing handler methods receive events
+**wrapped in a `SessionEvent` envelope** carrying the source
+`agent_id` (PR #43 Clarification 9) — the inner `Event` is dispatched
+unchanged. Finished agents are **removed from the active list**; the
+visible agent states are `{idle, running}` only (PR #43 Clarification 7)
+— there is no `finished` state.
 
 ### 6.6 Backpressure and flow control
 
@@ -607,10 +614,14 @@ The Session fans out aggregated events to its handlers. Consequences:
 - `UIHandler` protocol gains **optional** methods:
   - `agent_spawned(name: str)`
   - `agent_finished(name: str)`
-- Existing `UIHandler` methods receive events **tagged with `agent_id`**
-  so the UI can distinguish which agent produced them.
-- `BaseUIHandler` provides no-op default implementations for the new
-  methods (so existing handlers do not break).
+- Existing `UIHandler` methods receive events **wrapped in a
+  `SessionEvent` envelope** carrying the source `agent_id` (PR #43
+  Clarification 9) so the UI can distinguish which agent produced them.
+  The inner `Event` is dispatched unchanged.
+- The new protocol methods are added **directly to `UIHandler`**; no
+  `BaseUIHandler` mixin is recreated (PR #43 Clarification 8). The
+  `UIBridge` guards calls with `hasattr` / `getattr` so handlers that
+  do not implement the methods are unaffected.
 
 ### Decision 6 — `run_session()` renamed to `run_repl`  [DECIDED]
 
@@ -752,9 +763,9 @@ formulation from Decision 8 — it is a tighter design:
   *for the SpawnAgent tool specifically*: since the Session captures
   itself in the closure, `SpawnAgent` does not need `ctx.session`.
   However, `ToolContext.session` is still added (Clarification 4 makes
-  it load-bearing for `SendMessage` and `ListAgents`), so Decision 8's
-  `ToolContext` change stands — it is just no longer the mechanism
-  SpawnAgent uses.
+  it load-bearing for `SendMessage`; `ListAgents` is deferred per
+  Clarification 6), so Decision 8's `ToolContext` change stands — it is
+  just no longer the mechanism SpawnAgent uses.
 
 ### Clarification 3 — Agent allowlist enforcement before spawn  [CLARIFIED]
 
@@ -840,6 +851,205 @@ choice is an implementation detail, not a design decision.
 
 ---
 
+## 7.4 Owner Clarifications Round 2 (PR #43)
+
+The repository owner (christophevg) provided four additional
+clarifications in a second round on PR #43. These resolve the open
+questions left after §7.3 and refine the design further. Each is marked
+**CLARIFIED**.
+
+### Clarification 5 — SpawnAgent returns the spawned agent's unique id  [CLARIFIED]
+
+> "When using the SpawnAgent tool, the spawning agent receives (or
+> should receive) the unique id of the agent it spawned."
+
+`SpawnAgent` (and `Session.spawn()`) must return the spawned agent's
+**unique session-assigned id** to the caller, in addition to the
+response string. The owner framed this as a *new requirement* arising
+from the ListAgents discussion: a parent agent that spawns a child
+should learn the child's runtime name so it can address it later via
+`SendMessage` without needing a discovery tool.
+
+**Consequence for the tool contract.** The `SpawnAgent` tool's
+`ToolResult` carries both:
+
+- the spawned agent's unique id (`result` field or a structured
+  payload), and
+- the response string (the child agent's final reply).
+
+`Session.spawn()` returns a small structured result (e.g. a
+`SpawnResult(agent_id: str, response: str)` dataclass, or a tuple
+`(agent_id, response)`) instead of a bare string. The `SpawnAgent` tool
+wraps this into a `ToolResult` whose `result` string contains both
+fields (e.g. `"agent_id: researcher-2\n\n{response}"`) so the model can
+read them. The exact rendering is an implementation detail; the
+contract is "the caller learns the spawned agent's id".
+
+This satisfies the tree-hierarchy need (a parent knows its children's
+ids) without requiring `ListAgents`.
+
+### Clarification 6 — ListAgents deferred to a follow-up MBI  [CLARIFIED]
+
+> "ListAgents would enable an agent to 'find' other agents. It would
+> enable a more team/swarm-based approach, instead of only a tree-like
+> hierarchy of known agents, only knowing the ones an agent spawned
+> themselves/directly."
+
+`ListAgents` is **deferred to a follow-up MBI** (e.g. MBI-007b or a
+later swarm-focused MBI). MBI-007's scope is the **tree-like hierarchy**:
+a parent knows the agents it spawned directly (via the id returned by
+`SpawnAgent`, Clarification 5). `ListAgents` enables a fundamentally
+different model — **swarm/team discovery** where any agent can find any
+other active agent — which is a separate use case with its own design
+implications (status semantics, visibility scope, naming authority).
+
+**Consequences:**
+
+- `ListAgents` is **removed from MBI-007**. Task 7.8.7 is marked
+  DEFERRED.
+- The Session-injected tool set for MBI-007 is **`SpawnAgent` and
+  `SendMessage`** only.
+- `SendMessage` remains useful in MBI-007: a parent can message a child
+  it just spawned because `SpawnAgent` returned the child's id
+  (Clarification 5). No discovery tool is needed for the tree-hierarchy
+  case.
+- The §7.3 Clarification 4 "open question" on `ListAgents` is now
+  **resolved**: defer. The recommendation in §7.3 to include `ListAgents`
+  in MBI-007 is **superseded** by this clarification.
+- The follow-up MBI that introduces `ListAgents` should also revisit
+  agent status semantics (see Clarification 7) and swarm discovery
+  scope.
+
+### Clarification 7 — `finished` state dropped; agents removed from active list  [CLARIFIED]
+
+> "I'm not sure if `finished` is an agent state. What's the difference
+> between a `finished` agent and one that's not listed (anymore, because
+> it's finished)?"
+
+`finished` is **not** a visible agent state. When an agent finishes, it
+is **removed from the Session's active list**. The visible agent states
+are **`{idle, running}`** only — and these apply exclusively to agents
+still in the active list.
+
+**Consequences:**
+
+- Agent status enum (referenced in §7.3 Clarification 4 and task 7.8.7)
+  is `{idle, running}` — no `finished` value.
+- On completion (or cancellation, or error), the agent is removed from
+  `session._agents_map`. Subsequent `session.get_agent(name)` lookups
+  return `None`.
+- `AGENT_FINISHED` events are still emitted (this is a lifecycle event,
+  not a state). The event signals "this agent finished"; the agent is
+  then removed. Consumers that need to know an agent finished subscribe
+  to the event, not to a status field.
+- If an agent needs to know whether another agent is still available, it
+  attempts `SendMessage` (or `session.send`); a removed target produces
+  a "no such agent" error. The parent can also retain the id from
+  `SpawnAgent` (Clarification 5) and `await` the spawn result if it
+  needs to know when the child completed.
+- This is simpler than maintaining a `finished` state and avoids the
+  semantic ambiguity the owner identified. It also means `ListAgents`
+  (when eventually added in a follow-up MBI) will return only active
+  agents — there is no "finished" subset to filter.
+
+### Clarification 8 — BaseUIHandler is NOT recreated  [CLARIFIED]
+
+> "don't: 'BaseUIHandler doesn't exist. Recreate as minimal mixin for
+> no-op defaults'"
+
+The design does **not** recreate `BaseUIHandler`. Earlier text in §6.5,
+Decision 5, and task 7.7.4 that references recreating `BaseUIHandler` as
+a minimal mixin is **superseded**.
+
+**Consequences:**
+
+- The `agent_spawned(name: str)` and `agent_finished(name: str)` methods
+  are added **directly to the `UIHandler` protocol** as optional methods
+  (documented, not enforced — Python `Protocol` structural typing). The
+  protocol already has optional methods; this is consistent.
+- `InteractiveUIHandler` and `BatchUIHandler` **do not** inherit from a
+  new `BaseUIHandler`. They continue to inherit directly from the
+  `UIHandler` protocol (as today). Each handler that wants to display
+  spawn/finish events overrides the methods; handlers that do not
+  implement them simply do not define them (the UIBridge checks for
+  their presence via `hasattr` before calling, or uses
+  `getattr(handler, 'agent_spawned', None)` and skips if `None`).
+- No new `src/yoker/ui/base.py` file is created.
+- This avoids introducing a class that was deliberately removed during
+  the UI separation migration, and keeps the UI layer's existing
+  structure intact.
+
+### Clarification 9 — SessionEvent envelope wrapper (agent_id tagging)  [CLARIFIED]
+
+> "Clarify: 'Event agent_id tagging - SessionEvent envelope wrapper (no
+> frozen dataclass changes)'"
+
+The "tag events with `agent_id`" requirement (Decision 5, §6.5) is
+implemented via a **lightweight envelope wrapper**, not by modifying the
+existing frozen event dataclasses.
+
+**Approach.** A new frozen dataclass wraps any existing `Event`:
+
+```python
+from dataclasses import dataclass
+from yoker.events import Event
+
+@dataclass(frozen=True)
+class SessionEvent:
+    agent_id: str          # the unique session-assigned id of the source agent
+    event: Event           # the original event, unchanged
+```
+
+The Session intercepts events from each agent it manages (via the
+internal forwarding handler registered in 7.7.2), wraps each in
+`SessionEvent(agent_id=<source agent's runtime name>, event=<original>)`,
+and forwards the wrapped event to `session._event_handlers`.
+
+The `UIBridge` (and `EventRecorder`) handle both wrapped
+(`SessionEvent`) and unwrapped (bare `Event`, from single-agent use
+without a Session) events:
+
+- If the incoming event is a `SessionEvent`, the bridge unpacks it:
+  - `agent_id` is used for tagging / display (e.g. "Researcher is
+    thinking…").
+  - `event` is dispatched to the existing `UIHandler` method
+    (`on_thinking_start`, `on_content_chunk`, etc.) unchanged.
+- If the incoming event is a bare `Event` (single-agent path), the
+  bridge dispatches as today with no `agent_id` tag.
+
+**Benefits.**
+
+- **No changes to existing frozen event dataclasses** (`TurnStartEvent`,
+  `ContentChunkEvent`, `ThinkingChunkEvent`, etc.). Their construction
+  sites in `agent/_processing.py` are untouched. Existing tests that
+  construct and assert on these events continue to pass.
+- **No changes to the `EventType` enum** for agent-id tagging (the
+  session-level event types from 7.7.1 are still added, but agent-id
+  tagging is separate from them).
+- **Clean separation of concerns.** The Session-level concern (which
+  agent produced this event) lives in the envelope; the event itself
+  remains a pure single-agent construct. `Agent` does not know it is
+  running inside a Session; the Session adds the context externally.
+- **Single-agent path unaffected.** Agents without a Session emit bare
+  events; the UIBridge handles them as before.
+
+**Alternative considered and rejected.** Adding an `agent_id: str |
+None = None` field to the base `Event` dataclass. This would require
+modifying ~10 frozen event dataclasses and every construction site in
+`agent/_processing.py`, breaking the "no changes to existing events"
+principle and forcing a re-evaluation of all event-equality tests. The
+envelope wrapper achieves the same tagging with zero changes to the
+event hierarchy.
+
+**Integration with session-level events.** The new session-level event
+types from 7.7.1 (`SessionStartEvent`, `AgentSpawnedEvent`, etc.) are
+emitted by the Session itself, not by individual agents, so they do not
+need wrapping — they already carry `agent_name` / `session_id` fields
+where relevant. Only events emitted *by agents* (turn, thinking,
+content, tool) are wrapped in `SessionEvent`.
+
+---
+
 ## 8. Impact Analysis
 
 | Component | Impact | Effort |
@@ -851,7 +1061,7 @@ choice is an implementation detail, not a design decision.
 | `src/yoker/context/` | No change to managers. Session id assignment moves to Session. | S |
 | `src/yoker/events/` | New session-level event types (`SESSION_START/END`, `AGENT_SPAWNED/FINISHED`, `AGENT_MESSAGE`). `EventRecorder` becomes session-scoped. | M |
 | `src/yoker/ui/bridge.py` | Registered on Session, not Agent. Optional new handler methods for sub-agent events. | M |
-| `src/yoker/ui/handler.py` | Optional new protocol methods (`agent_spawned`, `agent_finished`). Default implementations no-op. | S |
+| `src/yoker/ui/handler.py` | Optional new protocol methods (`agent_spawned`, `agent_finished`) added directly to the protocol (no `BaseUIHandler` — PR #43 Clarification 8). | S |
 | `src/yoker/__main__.py` | Construct Session in `main()`, rename `run_session` to `run_repl`, register UIBridge on Session. | M |
 | `src/yoker/config/` | Optional new `[session]` config section. Move `tools.agent.max_recursion_depth` semantics to session. | S |
 | `src/yoker/plugins/` | `load_configured_plugins` targets Session instead of Agent. Registration populates session-level registries. | M |
@@ -939,7 +1149,7 @@ its workflow layer on top of.
   claim becomes fully real (addressing, persistence, event visibility,
   shared resources).
 
-### Status: Ready — design finalized, all 10 decisions resolved (§7)
+### Status: Ready — design finalized, all 10 decisions resolved (§7) + 9 clarifications (§7.3, §7.4)
 
 ### Components
 
@@ -955,10 +1165,14 @@ its workflow layer on top of.
       `spawn()` (Decision 8).
 - [ ] DEV: Add session-level event types (`SESSION_START/END`,
       `AGENT_SPAWNED/FINISHED`, `AGENT_MESSAGE`); extend `EventRecorder`
-      to be session-scoped.
+      to be session-scoped. Add **`SessionEvent` envelope wrapper**
+      (`SessionEvent(agent_id, event)`) for agent-id tagging without
+      modifying existing frozen event dataclasses (PR #43 Clarification
+      9).
 - [ ] DEV: Wire `UIBridge` to Session (Decision 5); add optional
-      `UIHandler.agent_spawned(name)` / `agent_finished(name)` with no-op
-      defaults in `BaseUIHandler`; tag existing events with `agent_id`.
+      `UIHandler.agent_spawned(name)` / `agent_finished(name)` **directly
+      to the `UIHandler` protocol** (no `BaseUIHandler` recreation — PR
+      #43 Clarification 8); guard calls with `hasattr` / `getattr`.
 - [ ] DEV: Rework `__main__.py`: construct Session in `main()`, rename
       `run_session` to `run_repl`, register bridge on Session (Decision 6).
 - [ ] DEV: Add `[session]` config section (Decision 7):
@@ -990,27 +1204,37 @@ its workflow layer on top of.
       `max_recursion_depth`. Single-agent construction and `process()` work
       unchanged.
 - [ ] `Session.spawn(name, prompt, timeout=...)` creates a child agent,
-      runs it, and returns the response string. Recursion depth is
-      enforced by the Session (Decision 8).
+      runs it, and returns a **`SpawnResult(agent_id, response)`**
+      carrying both the spawned agent's unique id and the response
+      string (PR #43 Clarification 5). Recursion depth is enforced by
+      the Session (Decision 8).
 - [ ] The built-in `agent` tool is replaced by **`SpawnAgent`**, a
       Session-injected tool (the Session captures itself in the closure
       and registers the tool on Agents it owns). From the model's
-      perspective the tool is equivalent (same effective parameters,
-      same string return). `ToolContext` carries a `session` reference
+      perspective the tool is equivalent in spirit (same effective
+      parameters; the result string carries both the spawned agent's id
+      and the response). `ToolContext` carries a `session` reference
       (Decision 8, PR #43 Clarification 2).
 - [ ] `Session.spawn(name, prompt, *, requester=...)` enforces the
       requester's `AgentDefinition.agents` allowlist before spawning
       (PR #43 Clarification 3); top-level spawns bypass the check.
-- [ ] `SendMessage` and `ListAgents` are Session-injected tools
-      enabling inter-agent messaging and discovery via tool calls
-      (PR #43 Clarification 4). `ListAgents` returns `(name, status)`
-      tuples for active agents.
+- [ ] `SendMessage` is a Session-injected tool enabling inter-agent
+      messaging via tool calls (PR #43 Clarification 4). `ListAgents`
+      is **deferred to a follow-up MBI** (PR #43 Clarification 6) and is
+      **not** part of MBI-007.
 - [ ] Events emitted by spawned agents are visible to handlers registered
-      on the Session, tagged with source agent name/`agent_id`
-      (Decision 5).
+      on the Session, wrapped in a **`SessionEvent(agent_id, event)`
+      envelope** (PR #43 Clarification 9); the inner `Event` is
+      dispatched unchanged (Decision 5).
 - [ ] `UIHandler` has optional `agent_spawned(name)` and
-      `agent_finished(name)` methods; `BaseUIHandler` provides no-op
-      defaults so existing handlers do not break (Decision 5).
+      `agent_finished(name)` methods **added directly to the protocol**
+      (no `BaseUIHandler` mixin is recreated — PR #43 Clarification 8).
+      The `UIBridge` guards calls so handlers that do not implement the
+      methods are unaffected.
+- [ ] Agent visible states are **`{idle, running}`** only (PR #43
+      Clarification 7). Finished agents are **removed from the
+      Session's active list**; there is no `finished` state.
+      `AGENT_FINISHED` events are still emitted as lifecycle signals.
 - [ ] `run_session()` is renamed to `run_repl`; `main()` constructs the
       Session (Decision 6).
 - [ ] Config has a `[session]` section with `max_agents`,
@@ -1046,8 +1270,10 @@ its workflow layer on top of.
 
 ### Open design decisions needing owner input
 
-All ten design questions are **DECIDED** (see §7). No open design
-decisions remain. MBI-007 is ready for implementation planning.
+All ten design questions are **DECIDED** (see §7). All PR #43 round-1
+clarifications (§7.3) and round-2 clarifications (§7.4) are
+**CLARIFIED**. No open design decisions remain. MBI-007 is ready for
+implementation planning.
 
 The only remaining item — the Config factory for programmatic Config
 construction — belongs to MBI-003 (see §7.2), not MBI-007.
