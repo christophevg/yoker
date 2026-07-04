@@ -84,9 +84,14 @@ Limitations for the Python API target:
   prompt, and event handlers requires constructing a `Config` (frozen
   dataclass) or an `AgentDefinition` from Markdown — neither is convenient
   for programmatic use.
-- **No session primitive.** Multi-turn conversations require the developer
-  to keep the `Agent` instance alive themselves and call `process()` in a
-  loop. There is no `async with yoker.session() as session: ...` helper.
+- **No session primitive (now resolved by MBI-007).** Multi-turn
+  conversations used to require the developer to keep the `Agent` instance
+  alive themselves and call `process()` in a loop. MBI-007 introduced the
+  real :class:`yoker.session.Session` async context manager that owns a
+  team of agents. MBI-003's `yoker.session()` is now a **facade over the
+  real Session construct** (single-agent convenience: constructs a
+  Session, registers one primary Agent, exposes `ask()` /
+  `run_skill()` / `spawn()` / `on_event()` on top of it).
 - **No discoverable entry point for skills/agents as callables.** The
   PLAN.md goal mentions `from package.skills import skill_name;
   skill_name("prompt")` as a future possibility. Today, skills are Markdown
@@ -254,11 +259,19 @@ async with yoker.session(id="code-review-2026-07-03") as session:
 ```
 
 A `session` is an async context manager that:
+- Wraps the real :class:`yoker.session.Session` construct from MBI-007
+  (the team-of-agents coordinator). MBI-003's `yoker.session()` is a
+  **facade** that constructs a Session, registers one primary Agent, and
+  exposes single-agent convenience methods on top of it.
 - Creates an `Agent` with a `PersistenceContextManager` bound to the given
   session id (or an auto-generated one).
 - Exposes `ask(prompt)` as a thin alias for `agent.process(prompt)`.
 - Persists context on exit (if `persist_after_turn` is true in config).
 - Accepts the same builder kwargs as `yoker.agent(...)` for configuration.
+- Delegates `spawn(name, prompt, timeout_seconds=...)` to the underlying
+  `Session.spawn(...)` (the canonical sub-agent API, MBI-007 Decision 8).
+  This makes the same spawn machinery available to Python callers that the
+  SpawnAgent tool exposes to the model.
 
 #### 3b. Sub-agent spawning
 
@@ -274,12 +287,15 @@ parent = yoker.agent(tools=["read", "list"])
 result = await parent.spawn("researcher", "Analyze src/ for security issues.")
 ```
 
-`spawn(name, prompt, timeout_seconds=300)` is a new method on the `Agent`
-class (or on a thin wrapper) that exposes the existing sub-agent
-machinery (`_create_subagent` + `_run_with_timeout`) programmatically,
-without going through the model tool-call loop. This is what makes
+`spawn(name, prompt, timeout_seconds=300)` is a thin wrapper over the
+canonical :meth:`yoker.session.Session.spawn` API introduced in MBI-007
+(Decision 8). The Session owns the sub-agent machinery (registry
+resolution, recursion-depth and max_agents enforcement, backend
+factory, timeout, and event aggregation) — MBI-003's `yoker.session()`
+and `yoker.agent().spawn(...)` simply delegate to it. This is what makes
 "agentic workflows intermixed with Python code" actually work — Python
-code can drive sub-agents directly.
+code can drive sub-agents directly without going through the model
+tool-call loop.
 
 #### 3c. Event hooks
 
@@ -691,15 +707,19 @@ yoker.agent(...)
 yoker.session(...)
    │
    ├─ yoker.agent(...)                    (above)
-   ├─ PersistenceContextManager(session_id=id)
-   ├─ Agent(config=config, context_manager=cm)
-   └─ async context manager wraps the lifecycle
+   ├─ Session(config=config)              (MBI-007; real Session construct)
+   ├─ session.register_primary_agent(agent)
+   ├─ PersistenceContextManager(session_id=id) bound to the agent
+   └─ async context manager wraps the Session lifecycle (async with Session)
 
-Agent.spawn(name, prompt)
+Agent.spawn(name, prompt)  /  yoker.session().spawn(...)
    │
-   ├─ self.agents.resolve(name)           (existing)
-   ├─ _create_subagent(self, definition)  (existing, extracted from builtin/agent.py)
-   └─ _run_with_timeout(subagent, prompt) (existing)
+   ├─ session.spawn(name, prompt, ...)   (MBI-007 canonical API, Decision 8)
+   ├─ session.agents.resolve(name)       (registry on Session, D10)
+   ├─ allowlist enforcement               (requester.definition.agents, PR #43 Clarification 3)
+   ├─ recursion depth + max_agents checks (D1, D7)
+   ├─ session.get_backend(child_config)  (D9, shared or fresh)
+   └─ asyncio.wait_for(child.process(prompt), timeout) (D8)
 ```
 
 ### What changes in the existing code
@@ -707,10 +727,12 @@ Agent.spawn(name, prompt)
 - **Nothing breaks.** All existing imports, classes, and methods keep
   working.
 - **One small addition.** The `spawn` method and `on_event` alias are added.
-  `spawn` extracts the existing `_create_subagent` / `_run_with_timeout`
-  helpers from `builtin/agent.py` into a reusable location (e.g.
-  `yoker/agent/spawn.py`) so both the tool and the method share the same
-  code path.
+  `spawn` delegates to :meth:`yoker.session.Session.spawn` (introduced in
+  MBI-007). MBI-007 already extracted the sub-agent machinery from
+  `builtin/agent.py` into the Session (the `_create_subagent` /
+  `_run_with_timeout` helpers no longer exist; the canonical spawn lives
+  on :class:`yoker.session.Session`). MBI-003's `yoker.session()` is a
+  facade over the real Session construct.
 - **One new module.** `yoker/api/` contains only the facade. No
   behavior changes in `Agent`, `Config`, `ToolRegistry`, `SkillRegistry`,
   or the plugin system.

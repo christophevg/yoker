@@ -593,7 +593,7 @@ def _build_tool_context(agent: Any, tool_name: str) -> ToolContext:
   backends = getattr(agent, "_tool_backends", {})
 
   # MBI-007 Decision 8: thread the Session reference through ToolContext so
-  # session-aware tools (SendMessage, future session-injected tools) can
+  # session-aware tools (send_message, future session-injected tools) can
   # reach the owning Session. ``agent._session`` is None on the single-agent
   # path.
   session = getattr(agent, "_session", None)

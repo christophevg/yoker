@@ -1,22 +1,21 @@
-"""Session-injected tools: SpawnAgent and SendMessage (MBI-007 Phase 4).
+"""Session-injected tools: ``agent`` and ``send_message`` (MBI-007 Phase 4).
 
-PR #43 Clarifications 2 & 4: ``SpawnAgent`` and ``SendMessage`` are
+PR #43 Clarifications 2 & 4: ``agent`` and ``send_message`` are
 Session-injected tools — the :class:`yoker.session.Session` captures itself
 in the closure (back-reference) and registers the tools on Agents it owns.
 They are NOT registered by the Agent itself and are not part of the Agent's
 static tool set loaded from plugins.
 
-``SpawnAgent`` (7.8.3, PR #43 Clarifications 2 & 5):
-  - Replaces the built-in ``agent`` tool.
+``agent`` (7.8.3, PR #43 Clarifications 2 & 5):
   - Calls ``session.spawn(name, prompt, timeout, requester=<calling agent>)``.
   - Returns a ``ToolResult`` carrying both the spawned agent's unique id and
     its response string (so the model can address the child later via
-    ``SendMessage``).
+    ``send_message``).
   - Available agent names are baked into the tool description from the
     calling agent's ``AgentDefinition.agents`` allowlist (intersected with
     ``session.agents.names``) — only allowlisted names are shown.
 
-``SendMessage`` (7.8.6, PR #43 Clarification 4):
+``send_message`` (7.8.6, PR #43 Clarification 4):
   - Builds a :class:`yoker.session.Message` and calls ``session.send(...)``.
   - ``from_id`` is the calling agent's runtime name (captured at injection
     time).
@@ -65,7 +64,7 @@ def _render_spawn_result(result: SpawnResult) -> str:
 
 
 def make_spawn_agent_tool(session: "Session", requester: "Agent") -> Any:
-  """Build the Session-injected SpawnAgent tool for a specific agent.
+  """Build the Session-injected ``agent`` tool for a specific agent.
 
   PR #43 Clarification 2: the Session captures itself in the closure and
   registers the tool on Agents it owns. The requesting agent is also
@@ -79,7 +78,7 @@ def make_spawn_agent_tool(session: "Session", requester: "Agent") -> Any:
       ``requester.definition.agents`` is enforced.
 
   Returns:
-    The SpawnAgent tool callable (async function).
+    The ``agent`` tool callable (async function).
   """
   # Bake available agent names from the requester's allowlist intersected
   # with the session registry (only allowlisted names are shown to the model).
@@ -103,7 +102,7 @@ def make_spawn_agent_tool(session: "Session", requester: "Agent") -> Any:
     """Spawn a sub-agent to perform a specific task.
 
     Returns the spawned agent's unique id and its response so you can
-    address it later via SendMessage.
+    address it later via send_message.
     """
     if not agent_name:
       return ToolResult(success=False, error="Missing required parameter: agent_name")
@@ -138,14 +137,14 @@ def make_spawn_agent_tool(session: "Session", requester: "Agent") -> Any:
       return ToolResult(success=False, error=f"Sub-agent error: {e}")
 
   spawn_agent.__name__ = "spawn_agent"
-  spawn_agent.__yoker_name__ = "SpawnAgent"  # type: ignore[attr-defined]
+  spawn_agent.__yoker_name__ = "agent"  # type: ignore[attr-defined]
   return spawn_agent
 
 
 def make_send_message_tool(session: "Session", from_id: str) -> Any:
-  """Build the Session-injected SendMessage tool for a specific agent.
+  """Build the Session-injected ``send_message`` tool for a specific agent.
 
-  PR #43 Clarification 4: ``SendMessage`` enables inter-agent messaging via
+  PR #43 Clarification 4: ``send_message`` enables inter-agent messaging via
   tool calls. The Session captures itself in the closure; the calling
   agent's runtime name (``from_id``) is captured at injection time so the
   tool can build a :class:`Message` with the correct ``from_id``.
@@ -156,7 +155,7 @@ def make_send_message_tool(session: "Session", from_id: str) -> Any:
       Used as ``Message.from_id``.
 
   Returns:
-    The SendMessage tool callable (async function).
+    The ``send_message`` tool callable (async function).
   """
 
   async def send_message(
@@ -164,7 +163,7 @@ def make_send_message_tool(session: "Session", from_id: str) -> Any:
       str,
       Text(
         "Unique id of the target active agent. Use the agent_id returned by "
-        "SpawnAgent. The target must still be active in the session."
+        "the agent tool. The target must still be active in the session."
       ),
     ],
     message: Annotated[str, Text("Message content (the prompt for the target agent)")],
@@ -190,7 +189,7 @@ def make_send_message_tool(session: "Session", from_id: str) -> Any:
       return ToolResult(success=False, error=f"Send message error: {e}")
 
   send_message.__name__ = "send_message"
-  send_message.__yoker_name__ = "SendMessage"  # type: ignore[attr-defined]
+  send_message.__yoker_name__ = "send_message"  # type: ignore[attr-defined]
   return send_message
 
 

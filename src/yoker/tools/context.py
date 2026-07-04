@@ -4,11 +4,11 @@ Provides tools with their configuration, shared settings, and backends
 without exposing the full Agent or Config.
 
 MBI-007 (Decision 8 / PR #43 Clarification 4): ``ToolContext`` carries an
-optional ``session`` reference so session-aware tools (e.g. ``SendMessage``)
-can reach the :class:`yoker.session.Session` that owns the calling agent.
-``SpawnAgent`` uses closure capture instead (PR #43 Clarification 2), but
-``ToolContext.session`` is the canonical injection point for future
-session-aware tools.
+optional ``session`` reference so session-aware tools (e.g.
+``send_message``) can reach the :class:`yoker.session.Session` that owns
+the calling agent. The ``agent`` tool uses closure capture instead (PR #43
+Clarification 2), but ``ToolContext.session`` is the canonical injection
+point for future session-aware tools.
 """
 
 from dataclasses import dataclass

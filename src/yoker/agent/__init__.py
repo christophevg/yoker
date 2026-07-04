@@ -4,6 +4,7 @@ Asynchronous Agent implementation for Yoker.
 
 """
 
+import asyncio
 import inspect
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -121,8 +122,8 @@ class Agent:
     self._filter_tools_by_definition()
 
     # Skill tool: registered when skills are available and the tool is enabled.
-    # The agent (sub-agent spawning) tool is now Session-injected (SpawnAgent,
-    # Phase 4 / 7.8.3) — Agent no longer registers it itself.
+    # The agent (sub-agent spawning) tool is now Session-injected
+    # (Phase 4 / 7.8.3) — Agent no longer registers it itself.
     if self.config.tools.skill.enabled and len(self.skills):
       self.tools.register(make_skill_tool(self.skills), namespace="yoker")
 
@@ -168,6 +169,13 @@ class Agent:
     add_skill_discovery_block(self.config, self.skills, self.context)
 
     self._event_handlers: list[EventCallback] = []
+
+    # Per-agent process queue (PR #43 Clarification 7 / Comment 7):
+    # serializes concurrent ``process()`` calls so the backend never sees
+    # parallel ``chat_stream`` invocations on the same agent. Lazily
+    # initialized on the first ``process()`` call.
+    self._process_queue: asyncio.Queue[tuple[str, asyncio.Future[str]]] | None = None
+    self._process_task: asyncio.Task[None] | None = None
 
     logger.info("agent", agent=self)
     logger.debug("agent", skills=list(self.skills.keys()))
@@ -226,8 +234,65 @@ class Agent:
     return guardrail  # type: ignore
 
   async def process(self, message: str) -> str:
-    """Process a single message and return the response."""
-    return await process_message(self, message)
+    """Process a single message and return the response.
+
+    Concurrent ``process()`` calls on the same agent are serialized via an
+    internal ``asyncio.Queue`` (PR #43 Clarification 7 / Comment 7). When a
+    turn is in flight, additional calls wait in the queue and are
+    processed strictly one at a time — the backend never sees parallel
+    ``chat_stream`` invocations on the same agent. The public API is
+    unchanged: callers simply ``await agent.process(msg)`` and the
+    queueing is transparent.
+
+    Cancels the consumer task on cancellation, propagating
+    ``CancelledError`` to the awaiting caller.
+    """
+    if self._process_queue is None:
+      self._process_queue = asyncio.Queue()
+    loop = asyncio.get_running_loop()
+    future: asyncio.Future[str] = loop.create_future()
+    await self._process_queue.put((message, future))
+    if self._process_task is None or self._process_task.done():
+      self._process_task = asyncio.ensure_future(self._process_consumer())
+    try:
+      return await future
+    except asyncio.CancelledError:
+      # The caller cancelled. Drop the request if pending; the consumer
+      # handles in-flight cancellation via the future.
+      if not future.done():
+        future.cancel()
+      raise
+
+  async def _process_consumer(self) -> None:
+    """Background consumer that processes queued requests one at a time.
+
+    Loops indefinitely waiting on the queue; each (message, future) pair is
+    processed by :func:`process_message` and the result (or exception) is
+    set on the future so the awaiting ``process()`` caller sees it. The
+    consumer stays alive between requests (blocking on ``queue.get()``)
+    and is cleaned up via task cancellation when the agent is garbage
+    collected or the event loop closes.
+    """
+    assert self._process_queue is not None
+    while True:
+      try:
+        message, future = await self._process_queue.get()
+      except asyncio.CancelledError:
+        # Cancel any pending futures so their awaiters see cancellation.
+        while not self._process_queue.empty():
+          _, pending = self._process_queue.get_nowait()
+          if not pending.done():
+            pending.cancel()
+        raise
+      try:
+        result = await process_message(self, message)
+        if not future.done():
+          future.set_result(result)
+      except Exception as exc:
+        if not future.done():
+          future.set_exception(exc)
+      finally:
+        self._process_queue.task_done()
 
   def inject_skill_context(self, skill_name: str, args: str | None = None) -> None:
     """Inject skill context into the conversation."""

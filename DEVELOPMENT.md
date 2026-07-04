@@ -8,6 +8,131 @@ Yoker is a Python agent harness with configurable tools and guardrails. It provi
 
 ## Recent Changes
 
+### PR #43 Review Fixes (2026-07-04)
+
+Addressed four inline CHANGES_REQUESTED review comments on commit 7bf95a7.
+
+1. **Deleted `src/yoker/builtin/agent.py`** (Comment 4): removed the
+   empty placeholder module entirely. The `agent` tool now lives only in
+   `src/yoker/session/tools.py`. Updated `src/yoker/builtin/__init__.py`
+   docstring/comments, and replaced
+   `tests/test_session/test_backward_compat.py::test_make_agent_tool_removed_from_builtin`
+   with `test_builtin_agent_module_removed` asserting the module is gone.
+
+2. **Renamed `SpawnAgent` tool back to `agent`** (Comment 5):
+   `__yoker_name__ = "agent"`, registered as `name="agent"` (namespaced
+   `yoker:agent`). Updated docstrings and tests in
+   `tests/test_tools/test_agent.py` (renamed test classes to
+   `TestAgentTool*` and updated name assertions to `yoker:agent` /
+   `yoker__agent`).
+
+3. **Renamed `SendMessage` tool to `send_message`** (Comment 6):
+   `__yoker_name__ = "send_message"`, registered as
+   `name="send_message"` (namespaced `yoker:send_message`). Updated
+   docstrings and tests (`yoker:send_message` / `yoker__send_message`).
+
+4. **Per-Agent message queue** (Comment 7, architectural): the Agent now
+   serializes concurrent `process()` calls via an internal
+   `asyncio.Queue` and a lazily-started background consumer task. The
+   public `process()` API is unchanged — callers still
+   `await agent.process(msg)`. When `Session.send` injects a message
+   while the agent is mid-turn, the new request waits in the queue
+   instead of starting a parallel `chat_stream`. New tests in
+   `tests/test_agent/test_process_queue.py` (8 tests) verify
+   serialization, FIFO order, single-call transparency, exception
+   propagation to the correct caller, and consumer lifecycle.
+
+Comments referencing the old tool names were updated across
+`src/yoker/__main__.py`, `src/yoker/agent/__init__.py`,
+`src/yoker/agent/_processing.py`, `src/yoker/tools/context.py`,
+`src/yoker/session/{session,spawn_result,tools}.py`,
+`src/yoker/builtin/__init__.py`, `examples/session_demo.py`, and the
+test files.
+
+### MBI-007 Phase 5: Session Quality — Tests, Docs, Final Verification (2026-07-04)
+
+**Task**: Closed out MBI-007 with comprehensive coverage, a multi-agent
+demo example, and documentation updates. All acceptance criteria from
+PLAN.md verified.
+
+1. **7.9.1 — Coverage gap tests**: new
+   `tests/test_session/test_edge_cases.py` (14 tests) covers the
+   previously uncovered branches in `src/yoker/session/`:
+   - `Session.spawn` resolution failure paths (`ValueError` re-raise and
+     non-`ValueError` wrapping — session.py lines 286-289).
+   - `Session._derive_config` model-override branch (lines 511-520),
+     including provider preservation, parent-config immutability, and
+     end-to-end spawn with a fresh backend.
+   - `_render_spawn_result` with empty `agent_id` (tools.py line 64).
+   - `_clamp` bounds and the SpawnAgent tool's timeout clamping
+     integration (lines 52, 96).
+   Session module is now at 100% coverage; overall project coverage
+   rose from 80% to 81%.
+
+2. **7.9.2 — Lifecycle & backward-compat tests**: kept and verified the
+   interrupted-attempt files `tests/test_session/test_lifecycle.py`
+   (197 lines, 9 tests covering `__aexit__` on exception, handler
+   exception isolation, registry population edge cases, and
+   `register_primary_agent` behaviour) and
+   `tests/test_session/test_backward_compat.py` (152 lines, 11 tests
+   covering single-agent `Agent` without session, removed
+   `_recursion_depth`/`agents`/`recursion_depth`/`max_recursion_depth`
+   surfaces, `run_session` → `run_repl` rename, `make_agent_tool`
+   removal, and existing-examples import cleanly).
+
+3. **7.10.1 — `examples/session_demo.py`**: new runnable demo showing
+   `Session` construction, primary-agent registration, session-scoped
+   event handlers, programmatic `session.spawn(...)` (canonical API,
+   Decision 8), and inter-agent messaging via `session.send(Message)`.
+   Loads the existing `examples/agents/researcher.md` definition.
+   Imports cleanly; gracefully reports `NetworkError` when no backend
+   is running (mirroring `library_usage.py`).
+
+4. **7.11.1 — `docs/rationale.md` updated**: the "Recursive Composition:
+   True Sub-Agents" section now reflects the real `Session` construct —
+   the async context manager that owns the team of agents, lifecycle,
+   registry, recursion depth, event aggregation, and inter-agent
+   messaging. The differentiators summary table now reads "Full
+   instances, coordinated by a Session" rather than just "Full
+   instances".
+
+5. **7.11.4 — `analysis/mbi-003-python-api-design.md` updated**: the
+   MBI-003 Python API design (which was on hold pending MBI-007) is now
+   updated to note that `yoker.session()` will be a **facade over the
+   real Session construct**. The "No session primitive" problem
+   statement is marked resolved; the integration diagram and "What
+   changes" section now point to `Session.spawn` as the canonical
+   sub-agent API (no more `_create_subagent`/`_run_with_timeout` —
+   those were removed in Phase 2).
+
+6. **Bug fix in `Session._derive_config`**: the model-override branch
+   used `setattr(new_backend, provider, new_sub)` on a frozen
+   `BackendConfig`, which raised `FrozenInstanceError` whenever an agent
+   definition had a `model` override. Replaced with
+   `dataclasses.replace(parent_config.backend, **{provider: new_sub})`
+   (provider-agnostic, single-key dict). The new test
+   `test_derive_config_applies_model_override` reproduces the bug and
+   verifies the fix. Without the fix, any agent definition with
+   `model: <name>` in its frontmatter would have crashed on spawn.
+
+7. **7.12.1 — `make check` green**: 1574 tests pass (+36 new Phase 5
+   tests), ruff format/lint clean, mypy typecheck clean (106 source
+   files), 81% coverage. Session module at 100% coverage.
+
+8. **7.12.2 — Acceptance criteria verified**: all 15 PLAN.md criteria
+   for MBI-007 are met (see reporting/mbi-007-session/development-summary.md
+   for the per-criterion breakdown).
+
+**Files Created**: `examples/session_demo.py`,
+`tests/test_session/test_edge_cases.py`,
+`reporting/mbi-007-session/development-summary.md`.
+**Files Modified**: `src/yoker/session/session.py` (bug fix),
+`docs/rationale.md`, `analysis/mbi-003-python-api-design.md`,
+`tests/test_session/test_backward_compat.py` (lint fix).
+**Files Kept (interrupted-attempt)**:
+`tests/test_session/test_lifecycle.py`,
+`tests/test_session/test_backward_compat.py`.
+
 ### MBI-007 Phase 4: Session Integration — SpawnAgent, SendMessage, run_repl (2026-07-04)
 
 **Task**: Integrated the `Session` primitive into the application flow:
@@ -594,7 +719,10 @@ The multi-provider backend architecture is complete:
 
 - **Keyring integration** (TODO S.1): Store API keys in the OS keychain instead
   of config files, with fallback to config.
-- Multi-agent orchestration, tool timing metrics, token usage tracking, tool
-  result caching, and parallel tool execution.
+- **MBI-003 (Python API)** — now unblocked: builds a `yoker.session()`
+  facade over the real `Session` construct (see
+  `analysis/mbi-003-python-api-design.md`).
+- Tool timing metrics, token usage tracking, tool result caching, and
+  parallel tool execution.
 
 

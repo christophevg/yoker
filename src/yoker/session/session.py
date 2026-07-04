@@ -251,7 +251,7 @@ class Session:
     resolving/spawning, resolves the definition from ``session.agents``,
     checks recursion depth and ``max_agents`` limits, creates a child
     :class:`Agent` with a session-injected backend, injects the
-    Session-injected tools (``SpawnAgent`` and ``SendMessage``) on the
+    Session-injected tools (``agent`` and ``send_message``) on the
     child, runs it with a timeout, and returns a :class:`SpawnResult`
     carrying both the spawned agent's unique id and its response string.
 
@@ -334,8 +334,9 @@ class Session:
     self._recursion_depths[agent_id] = child_depth
 
     # Inject Session-injected tools (PR #43 Clarifications 2 & 4):
-    # SpawnAgent and SendMessage are registered on the child by the Session
-    # (closure capture). ListAgents is deferred (PR #43 Clarification 6).
+    # ``agent`` and ``send_message`` are registered on the child by the
+    # Session (closure capture). ListAgents is deferred (PR #43
+    # Clarification 6).
     self.inject_tools(child, agent_id)
 
     # Event aggregation (D5, PR #43 Clarification 9): register a forwarding
@@ -381,31 +382,31 @@ class Session:
   def inject_tools(self, agent: Agent, agent_id: str) -> None:
     """Inject Session-injected tools onto an agent (PR #43 Clarifications 2 & 4).
 
-    Registers ``SpawnAgent`` and ``SendMessage`` on the agent's tool
+    Registers ``agent`` and ``send_message`` on the agent's tool
     registry. The Session captures itself in the closure (back-reference)
     so the tools can call ``session.spawn`` / ``session.send`` at execution
     time. ``ListAgents`` is deferred (PR #43 Clarification 6) and is NOT
     injected.
 
-    ``SpawnAgent`` is gated by ``config.tools.agent.enabled`` (the existing
-    global kill-switch). ``SendMessage`` is always injected when an agent
+    ``agent`` is gated by ``config.tools.agent.enabled`` (the existing
+    global kill-switch). ``send_message`` is always injected when an agent
     is part of a session.
 
     Args:
       agent: The :class:`Agent` to inject tools onto.
       agent_id: The agent's session-assigned runtime id (used as
-        ``Message.from_id`` by ``SendMessage``).
+        ``Message.from_id`` by ``send_message``).
     """
     if self.config.tools.agent.enabled:
       agent.tools.register(
         make_spawn_agent_tool(self, agent),
         namespace="yoker",
-        name="SpawnAgent",
+        name="agent",
       )
     agent.tools.register(
       make_send_message_tool(self, agent_id),
       namespace="yoker",
-      name="SendMessage",
+      name="send_message",
     )
 
   def register_primary_agent(self, agent: Agent) -> str:
@@ -414,7 +415,7 @@ class Session:
     The primary agent is constructed by the caller (e.g. ``__main__.py``)
     rather than via ``spawn()``. This method assigns it a session-scoped
     id, adds it to the active map at recursion depth 0, and injects the
-    Session-injected tools (``SpawnAgent`` and ``SendMessage``) so the
+    Session-injected tools (``agent`` and ``send_message``) so the
     primary agent can spawn sub-agents and send inter-agent messages.
 
     Args:
@@ -511,12 +512,13 @@ class Session:
     sub_config = parent_config.backend.config
     new_sub = dataclasses.replace(sub_config, model=model)
     provider = parent_config.backend.provider
-    # ``dataclasses.replace`` accepts field keywords by name; passing the
-    # active provider's sub-config via a **{provider: ...} mapping confuses
-    # mypy (the union of provider types doesn't narrow to the named field).
-    # Setting the attribute on a replace-built copy keeps the call typed.
-    new_backend = dataclasses.replace(parent_config.backend)
-    setattr(new_backend, provider, new_sub)
+    # ``BackendConfig`` is a frozen dataclass; ``dataclasses.replace`` builds
+    # a new instance with the overridden provider sub-config. We pass the
+    # provider field via a single-key dict so the call stays provider-agnostic
+    # (MBI-006 task 6.7 pattern). The ``# type: ignore`` is needed because
+    # mypy can't narrow the union of provider sub-config types to the named
+    # field from a dynamic key.
+    new_backend = dataclasses.replace(parent_config.backend, **{provider: new_sub})  # type: ignore[arg-type]
     return dataclasses.replace(parent_config, backend=new_backend)
 
   # --- helpers -------------------------------------------------------------
