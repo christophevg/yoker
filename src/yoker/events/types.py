@@ -1,12 +1,24 @@
 """Event types for the Yoker event system."""
 
+from __future__ import annotations
+
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum, auto
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-EventCallback = Callable[["Event"], None] | Callable[["Event"], Coroutine[None, None, None]]
+if TYPE_CHECKING:
+  from yoker.events.session_event import SessionEvent
+
+# Handlers accept either a bare :class:`Event` (single-agent path) or a
+# :class:`SessionEvent` envelope wrapping an agent-emitted event
+# (MBI-007, PR #43 Clarification 9). The union is deferred to a string
+# forward reference to avoid a circular import with ``session_event``.
+EventCallback = (
+  Callable[["Event | SessionEvent"], None]
+  | Callable[["Event | SessionEvent"], Coroutine[None, None, None]]
+)
 
 
 class EventType(Enum):

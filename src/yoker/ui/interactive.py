@@ -373,6 +373,26 @@ class InteractiveUIHandler(UIHandler):
     if self.show_thinking and self._live:
       self._live.stop_spinner()
 
+  # === Multi-agent lifecycle (MBI-007 PR #43 Clarification 8) ===
+
+  def agent_spawned(self, name: str) -> None:
+    """Surface that a sub-agent has been spawned into the session.
+
+    Args:
+      name: The session-assigned id of the spawned agent.
+    """
+    self._exit_live()
+    self.console.print(f"[cyan]↳ Agent spawned:[/cyan] {name}")
+
+  def agent_finished(self, name: str) -> None:
+    """Surface that a sub-agent has finished and been removed.
+
+    Args:
+      name: The session-assigned id of the finished agent.
+    """
+    self._exit_live()
+    self.console.print(f"[dim]↳ Agent finished:[/dim] {name}")
+
   def output_thinking(self, text: str) -> None:
     """Output thinking text directly (non-streaming).
 

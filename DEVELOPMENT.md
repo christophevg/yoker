@@ -8,6 +8,105 @@ Yoker is a Python agent harness with configurable tools and guardrails. It provi
 
 ## Recent Changes
 
+### MBI-007 Phase 3: Session Communication & Event Aggregation (2026-07-04)
+
+**Task**: Implemented inter-agent messaging (7.4) and event aggregation
+(7.7) for the `Session` primitive. Agents can now address each other
+through `Session.send(Message)` and the Session fans out sub-agent
+events to session-level handlers wrapped in a `SessionEvent` envelope
+(agent_id tagging without modifying frozen event dataclasses — PR #43
+Clarification 9).
+
+1. **7.4.1 — Message dataclass finalized**: `Message(from_id, to_id,
+   content, metadata)` in `src/yoker/session/message.py` is frozen with
+   a per-instance `metadata` default. Exported via `yoker.session`.
+
+2. **7.4.2 — `Session.send(message: Message) -> str`**: routing method
+   on `Session`. Looks up the target by `message.to_id` in
+   `self._agents_map` (raises `ValueError` if absent), emits
+   `AgentMessageEvent`, calls `await target.process(message.content)`,
+   and returns the response string. Target exceptions are caught and
+   returned as an error string (no propagation — preserves the
+   `agent` tool's behaviour).
+
+3. **7.4.3 — `_generate_agent_name` verified**: the name disambiguation
+   helper from Phase 1 already produces `researcher`, `researcher-2`,
+   `researcher-3`, ... per Decision 2. No changes needed.
+
+4. **7.7.1 — Session event types verified**: `SessionStartEvent`,
+   `SessionEndEvent`, `AgentSpawnedEvent`, `AgentFinishedEvent`,
+   `AgentMessageEvent` already exist from Phase 1 and are exported from
+   `yoker.events`.
+
+5. **7.7.2 — `SessionEvent` envelope + aggregator**: new
+   `src/yoker/events/session_event.py` defines
+   `SessionEvent(agent_id: str, event: Event)` (frozen). `Session.spawn`
+   now registers an async forwarding handler on each child agent that
+   wraps every emitted `Event` in `SessionEvent(agent_id=<runtime
+   name>, event=<original>)` and forwards it to `session._event_handlers`.
+   The original event dataclasses and their construction sites in
+   `agent/_processing.py` are untouched. `AGENT_SPAWNED` is emitted
+   after the child is registered; `AGENT_FINISHED` is emitted in the
+   `finally` block before the agent is removed from `_agents_map`
+   (Clarification 7 — visible states `{idle, running}` only). When
+   `config.session.event_aggregation` is False, no forwarding handler
+   is registered (sub-agent events suppressed).
+
+6. **7.7.3 — `UIBridge` handles `SessionEvent` + lifecycle events**:
+   `UIBridge.__call__` accepts `Event | SessionEvent`. For envelopes it
+   unpacks the inner event, records `agent_id` on `self._current_agent_id`
+   for tagging, and dispatches the inner event unchanged. Bare events
+   (single-agent path) dispatch as before. New dispatch cases:
+   `AGENT_SPAWNED` → `ui.agent_spawned(name)` (guarded),
+   `AGENT_FINISHED` → `ui.agent_finished(name)` (guarded),
+   `SESSION_START` / `SESSION_END` / `AGENT_MESSAGE` → no-op.
+
+7. **7.7.4 — Optional `UIHandler` methods (no `BaseUIHandler`)**: per
+   PR #43 Clarification 8, `agent_spawned(name: str)` and
+   `agent_finished(name: str)` are documented on the `UIHandler` protocol
+   as optional methods (in a comment block, not as Protocol members —
+   this keeps mypy structural typing from requiring them on every
+   handler). `InteractiveUIHandler` implements them (Rich-styled
+   "Agent spawned" / "Agent finished" lines); `BatchUIHandler` does not
+   and is not broken. The bridge guards calls with
+   `getattr(handler, method, None)`. No `src/yoker/ui/base.py` is created.
+
+8. **7.7.5 — `EventRecorder` / `serialize_event` / `deserialize_event`
+   support `SessionEvent`**: serialization produces an envelope form
+   `{"session_event": True, "agent_id": ..., "event": <inner>}`;
+   deserialization reconstructs the `SessionEvent` when the marker is
+   present, and bare events roundtrip unchanged (backward compatible).
+   `EventReplayAgent` accepts `Event | SessionEvent` traces.
+
+**Type system**: `EventCallback` in `yoker.events.types` is now
+`Callable[[Event | SessionEvent], ...]` (referenced via a forward
+reference to avoid a circular import with `session_event.py`).
+`EventReplayAgent._emit` and `EventReplayAgent.events` accept the
+union. The `library_usage.py` example handler was updated to accept the
+union and unwrap envelopes for display.
+
+**Decisions applied**: D3 (inter-agent messaging is request-response
+through `Session.send`, plain-string content, no streaming), D5 (event
+aggregation with `SessionEvent` envelope), PR #43 Clarifications 7
+(`finished` state dropped — agents removed from active list on
+completion), 8 (no `BaseUIHandler` — optional protocol methods guarded
+by `getattr`), and 9 (`SessionEvent` envelope wrapper — no changes to
+existing frozen event dataclasses).
+
+**Files Created**: `src/yoker/events/session_event.py`,
+`tests/test_session/test_messaging.py`,
+`tests/test_session/test_events.py`,
+`tests/test_ui/test_bridge_session.py`.
+
+**Files Modified**: `src/yoker/events/__init__.py`,
+`src/yoker/events/recorder.py`, `src/yoker/events/replay.py`,
+`src/yoker/events/types.py`, `src/yoker/session/session.py`,
+`src/yoker/ui/bridge.py`, `src/yoker/ui/handler.py`,
+`src/yoker/ui/interactive.py`, `examples/library_usage.py`.
+
+**Verification**: `make check` green — 1534 tests pass (+33 new Phase 3
+tests), ruff format/lint clean, mypy typecheck clean, 80% coverage.
+
 ### MBI-007 Phase 2: Session Migration (2026-07-04)
 
 **Task**: Migrated orchestration responsibilities from `Agent` to `Session`
