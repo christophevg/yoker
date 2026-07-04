@@ -533,7 +533,7 @@ def _validate_tool_args(agent: Any, spec: ToolSpec, tool_args: dict[str, Any]) -
     if value is None:
       continue
 
-    guardrail: Guardrail | None = agent._guardrails[guard_type.value]
+    guardrail: Guardrail | None = agent._guardrails.get(guard_type.value)
     if not guardrail:
       continue
 
@@ -592,4 +592,15 @@ def _build_tool_context(agent: Any, tool_name: str) -> ToolContext:
   # Get backends dict (may be empty dict if backends not yet set up)
   backends = getattr(agent, "_tool_backends", {})
 
-  return ToolContext(config=tool_config, shared=shared_config, backends=backends)
+  # MBI-007 Decision 8: thread the Session reference through ToolContext so
+  # session-aware tools (SendMessage, future session-injected tools) can
+  # reach the owning Session. ``agent._session`` is None on the single-agent
+  # path.
+  session = getattr(agent, "_session", None)
+
+  return ToolContext(
+    config=tool_config,
+    shared=shared_config,
+    backends=backends,
+    session=session,
+  )

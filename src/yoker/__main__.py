@@ -118,14 +118,19 @@ def _create_ui(config: Config) -> UIHandler:
   return BatchUIHandler()
 
 
-async def run_session(agent: Agent, ui: UIHandler, commands: CommandRegistry) -> None:
-  """Run the interactive or batch session loop.
+async def run_repl(agent: Agent, ui: UIHandler, commands: CommandRegistry) -> None:
+  """Run the interactive or batch REPL loop.
 
   Handles user input, command dispatch, agent processing, and errors. All
   output is produced through the UI handler. The UI is always shut down.
 
+  MBI-007 Decision 6: this function was renamed from ``run_session`` to
+  ``run_repl``. The Session is constructed in :func:`main` /
+  :func:`_run_with_session`; this function drives the REPL loop for one
+  Agent within that Session.
+
   Args:
-    agent: The initialized Agent instance.
+    agent: The initialized primary Agent instance.
     ui: UI handler for input/output.
     commands: Command registry for slash-commands.
   """
@@ -253,11 +258,14 @@ async def _run_with_session(
 ) -> None:
   """Construct the Session and primary Agent, then run the REPL loop.
 
-  The Session owns the agent registry and backend factory (MBI-007). The
-  primary Agent is constructed within the session so plugin agent
-  definitions resolve through ``session.agents`` and the backend is shared.
-  The UIBridge stays attached to the agent (session-level event
-  aggregation lands in 7.7).
+  MBI-007 Decision 5/6: the :class:`Session` owns the agent registry and
+  backend factory. The primary Agent is constructed within the session so
+  plugin agent definitions resolve through ``session.agents`` and the
+  backend is shared. The :class:`UIBridge` is registered on the
+  :class:`Session` (not on the Agent) so sub-agent events aggregated by the
+  Session reach the UI (PR #43 Clarification 9). Session-injected tools
+  (``SpawnAgent`` and ``SendMessage``) are registered on the primary Agent
+  by ``session.register_primary_agent`` (PR #43 Clarifications 2 & 4).
   """
   console_logging = os.environ.get("YOKER_CONSOLE_LOGGING", "NO") != "NO"
   async with Session(config=config) as session:
@@ -267,8 +275,14 @@ async def _run_with_session(
       session=session,
       console_logging=console_logging,
     )
-    agent.add_event_handler(bridge)
-    await run_session(agent, ui, commands)
+    # Register the primary agent with the session so it gets a runtime id,
+    # is added to the active map (for SendMessage addressing), and receives
+    # the Session-injected tools (SpawnAgent, SendMessage).
+    session.register_primary_agent(agent)
+    # Decision 5: UIBridge registered on Session so aggregated sub-agent
+    # events (SessionEvent envelopes) reach the UI.
+    session.add_event_handler(bridge)
+    await run_repl(agent, ui, commands)
 
 
 if __name__ == "__main__":

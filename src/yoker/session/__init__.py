@@ -5,14 +5,17 @@ their lifecycle, registry, recursion depth tracking, event aggregation, and
 inter-agent messaging. See ``analysis/session-concept-analysis.md`` for the
 full design.
 
-Phase 1 exports the foundation primitives:
+Phase 4 exports:
 
-  - :class:`Session` — async context manager skeleton with lifecycle events,
-    event handler registration, name disambiguation, and agent lookup.
+  - :class:`Session` — async context manager owning the team of agents.
   - :class:`Message` — frozen inter-agent message dataclass.
+  - :class:`SpawnResult` — return value of :meth:`Session.spawn` carrying
+    both the spawned agent's unique id and its response (PR #43
+    Clarification 5).
 """
 
 from yoker.session.message import Message
 from yoker.session.session import Session
+from yoker.session.spawn_result import SpawnResult
 
-__all__ = ["Session", "Message"]
+__all__ = ["Session", "Message", "SpawnResult"]
