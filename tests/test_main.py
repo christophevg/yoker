@@ -115,40 +115,40 @@ class TestRunRepl:
 
   async def test_run_repl_calls_start_and_shutdown(self):
     """run_repl should start and shut down the UI."""
-    from yoker.__main__ import run_repl
+    from yoker.__main__ import _run_repl
 
     ui = self._make_ui([None])
     agent = self._make_agent()
     commands = MagicMock()
 
-    await run_repl(agent, ui, commands)
+    await _run_repl(agent, ui, commands)
 
     ui.start.assert_awaited_once()
     ui.shutdown.assert_awaited_once()
 
   async def test_run_repl_processes_user_input(self):
     """run_repl should call agent.process for regular input."""
-    from yoker.__main__ import run_repl
+    from yoker.__main__ import _run_repl
 
     ui = self._make_ui(["hello", None])
     agent = self._make_agent()
     commands = MagicMock()
 
-    await run_repl(agent, ui, commands)
+    await _run_repl(agent, ui, commands)
 
     agent.process.assert_awaited_once_with("hello")
     commands.dispatch.assert_not_called()
 
   async def test_run_repl_dispatches_slash_commands(self):
     """run_repl should dispatch slash commands via the registry."""
-    from yoker.__main__ import run_repl
+    from yoker.__main__ import _run_repl
 
     ui = self._make_ui(["/help", None])
     agent = self._make_agent()
     commands = MagicMock()
     commands.dispatch = AsyncMock(return_value="command result")
 
-    await run_repl(agent, ui, commands)
+    await _run_repl(agent, ui, commands)
 
     commands.dispatch.assert_awaited_once_with("/help", agent, ui)
     ui.output_command_result.assert_called_once_with("command result")
@@ -156,19 +156,19 @@ class TestRunRepl:
 
   async def test_run_repl_ignores_empty_input(self):
     """run_repl should ignore empty input lines."""
-    from yoker.__main__ import run_repl
+    from yoker.__main__ import _run_repl
 
     ui = self._make_ui(["", "hello", None])
     agent = self._make_agent()
     commands = MagicMock()
 
-    await run_repl(agent, ui, commands)
+    await _run_repl(agent, ui, commands)
 
     agent.process.assert_awaited_once_with("hello")
 
   async def test_run_repl_handles_recoverable_network_error(self):
     """Recoverable NetworkError should be displayed and allow retry."""
-    from yoker.__main__ import run_repl
+    from yoker.__main__ import _run_repl
 
     ui = self._make_ui(["hello", "again", None])
     agent = self._make_agent()
@@ -180,7 +180,7 @@ class TestRunRepl:
     )
     commands = MagicMock()
 
-    await run_repl(agent, ui, commands)
+    await _run_repl(agent, ui, commands)
 
     assert agent.process.await_count == 2
     ui.output_error.assert_called_once()
@@ -188,14 +188,14 @@ class TestRunRepl:
 
   async def test_run_repl_breaks_on_non_recoverable_network_error(self):
     """Non-recoverable NetworkError should end the session."""
-    from yoker.__main__ import run_repl
+    from yoker.__main__ import _run_repl
 
     ui = self._make_ui(["hello", "ignored", None])
     agent = self._make_agent()
     agent.process = AsyncMock(side_effect=NetworkError("fatal", recoverable=False))
     commands = MagicMock()
 
-    await run_repl(agent, ui, commands)
+    await _run_repl(agent, ui, commands)
 
     agent.process.assert_awaited_once_with("hello")
     ui.output_error.assert_called_once()
@@ -203,28 +203,28 @@ class TestRunRepl:
 
   async def test_run_repl_breaks_on_yoker_error(self):
     """YokerError should end the session."""
-    from yoker.__main__ import run_repl
+    from yoker.__main__ import _run_repl
 
     ui = self._make_ui(["hello", None])
     agent = self._make_agent()
     agent.process = AsyncMock(side_effect=YokerError("something failed"))
     commands = MagicMock()
 
-    await run_repl(agent, ui, commands)
+    await _run_repl(agent, ui, commands)
 
     ui.output_error.assert_called_once()
     ui.shutdown.assert_awaited_once()
 
   async def test_run_repl_breaks_on_keyboard_interrupt(self):
     """KeyboardInterrupt should end the session gracefully."""
-    from yoker.__main__ import run_repl
+    from yoker.__main__ import _run_repl
 
     ui = self._make_ui([])
     ui.get_input = AsyncMock(side_effect=KeyboardInterrupt)
     agent = self._make_agent()
     commands = MagicMock()
 
-    await run_repl(agent, ui, commands)
+    await _run_repl(agent, ui, commands)
 
     ui.shutdown.assert_awaited_once()
 
@@ -287,7 +287,7 @@ class TestMainIntegration:
         mock_agent_instance.config = Config(
           ui=UIConfig(mode="batch", show_thinking=False, show_tool_calls=False, show_stats=False),
         )
-        with patch("yoker.__main__.run_repl", new_callable=AsyncMock) as mock_run:
+        with patch("yoker.__main__._run_repl", new_callable=AsyncMock) as mock_run:
           from yoker.__main__ import main
 
           main()

@@ -1,8 +1,8 @@
 """
-yoker - A Python agent harness with configurable tools and guardrails.
+
+Yoker - A Python agent harness with configurable tools, guardrails, and multi-provider LLM backend integration.
 
 One who yokes - the agent noun from "yoke" (PIE *yeug-* meaning "to join").
-Pairs with "clitic" (both are joining tools).
 """
 
 from structlog import get_logger

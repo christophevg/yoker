@@ -81,8 +81,8 @@ class Agent:
     """
 
     # load env vars from .env files (we shouldn't have to do this, but hey 😇)
-    _ = load_dotenv(Path(".env"))
-    _ = load_dotenv(Path(".env.local"))
+    load_dotenv(Path(".env"))
+    load_dotenv(Path(".env.local"))
 
     # adopt config or load yoker configuration
     self.config: Config = config if config else get_yoker_config(cli=parse_cli_args)
