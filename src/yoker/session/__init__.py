@@ -10,8 +10,7 @@ Phase 4 exports:
   - :class:`Session` — async context manager owning the team of agents.
   - :class:`Message` — frozen inter-agent message dataclass.
   - :class:`SpawnResult` — return value of :meth:`Session.spawn` carrying
-    both the spawned agent's unique id and its response (PR #43
-    Clarification 5).
+    both the spawned agent's unique id and its response.
 """
 
 from yoker.session.message import Message

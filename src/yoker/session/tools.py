@@ -1,12 +1,12 @@
-"""Session-injected tools: ``agent`` and ``send_message`` (MBI-007 Phase 4).
+"""Session-injected tools: ``agent`` and ``send_message``
 
-PR #43 Clarifications 2 & 4: ``agent`` and ``send_message`` are
+``agent`` and ``send_message`` are
 Session-injected tools — the :class:`yoker.session.Session` captures itself
 in the closure (back-reference) and registers the tools on Agents it owns.
 They are NOT registered by the Agent itself and are not part of the Agent's
 static tool set loaded from plugins.
 
-``agent`` (7.8.3, PR #43 Clarifications 2 & 5):
+``agent``
   - Calls ``session.spawn(name, prompt, timeout, requester=<calling agent>)``.
   - Returns a ``ToolResult`` carrying both the spawned agent's unique id and
     its response string (so the model can address the child later via
@@ -15,16 +15,12 @@ static tool set loaded from plugins.
     calling agent's ``AgentDefinition.agents`` allowlist (intersected with
     ``session.agents.names``) — only allowlisted names are shown.
 
-``send_message`` (7.8.6, PR #43 Clarification 4):
+``send_message``
   - Builds a :class:`yoker.session.Message` and calls ``session.send(...)``.
   - ``from_id`` is the calling agent's runtime name (captured at injection
     time).
   - Returns the target agent's response string, or an error result when the
-    target is no longer active (PR #43 Clarification 7 — finished agents are
-    removed from the active map).
-
-``ListAgents`` is deferred to a follow-up MBI (PR #43 Clarification 6) and is
-NOT injected here.
+    target is no longer active
 """
 
 from typing import TYPE_CHECKING, Annotated, Any
@@ -54,7 +50,7 @@ def _clamp(value: int, minimum: int, maximum: int) -> int:
 def _render_spawn_result(result: SpawnResult) -> str:
   """Render a SpawnResult into a model-readable string.
 
-  The contract (PR #43 Clarification 5) is "the model can read the spawned
+  The contract is "the model can read the spawned
   agent's id from the result". Both fields are rendered so the model can
   extract the id and the response.
   """
@@ -68,8 +64,7 @@ def make_spawn_agent_tool(session: "Session", requester: "Agent") -> Any:
 
   PR #43 Clarification 2: the Session captures itself in the closure and
   registers the tool on Agents it owns. The requesting agent is also
-  captured so the allowlist check (PR #43 Clarification 3) fires inside
-  ``session.spawn``.
+  captured so the allowlist check fires inside ``session.spawn``.
 
   Args:
     session: The :class:`Session` that owns the agent (back-reference).
@@ -151,7 +146,7 @@ def make_send_message_tool(session: "Session", from_id: str) -> Any:
 
   Args:
     session: The :class:`Session` that owns the agent (back-reference).
-    from_id: The calling agent's session-assigned runtime id (Decision 2).
+    from_id: The calling agent's session-assigned runtime id.
       Used as ``Message.from_id``.
 
   Returns:
@@ -181,7 +176,6 @@ def make_send_message_tool(session: "Session", from_id: str) -> Any:
       return ToolResult(success=True, result=response)
     except ValueError as e:
       # Unknown target — finished agents are removed from the active map
-      # (PR #43 Clarification 7).
       logger.warning("send_message target not found", from_id=from_id, to_id=to, error=str(e))
       return ToolResult(success=False, error=str(e))
     except Exception as e:

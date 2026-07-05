@@ -1,29 +1,12 @@
-"""Session class — async context manager owning a team of agents (MBI-007).
+"""Session class — async context manager owning a team of agents.
 
 A :class:`Session` is the container+coordinator for a team of agents. It owns:
-
-  - the session id namespace (Decision 2, §6.3)
-  - the name→agent map (Decision 2)
-  - the :class:`yoker.agents.AgentRegistry` (Decision 10)
-  - recursion depth tracking (Decision 1)
-  - event aggregation handlers (Decision 5)
-  - shared backends (Decision 9; 7.5)
-
-Phase 1 (this module) implements the lifecycle skeleton: construction
-with a unique id, async context manager protocol emitting ``SESSION_START``
-and ``SESSION_END`` events, event handler registration, name disambiguation,
-and the ``get_agent`` lookup.
-
-Phase 2 (MBI-007) adds:
-  - AgentRegistry ownership and population from config + plugins (7.3.1, 7.3.2)
-  - Agent allowlist enforcement in :meth:`spawn` (7.3.3 / PR #43 Clarification 3)
-  - Backend factory + sharing via :meth:`get_backend` (7.5.1)
-  - :meth:`spawn` orchestrating sub-agent creation, depth/max_agents checks,
-    backend injection, and timeout enforcement (7.3.3, 7.5.2).
-
-The recursion depth limit is read from ``config.tools.agent.max_recursion_depth``
-(Decision 7 / task 7.6.3 — the field stays where it is; only the consumer
-changes from Agent to Session).
+  - the session id namespace
+  - the name→agent map
+  - the :class:`yoker.agents.AgentRegistry`
+  - recursion depth tracking
+  - event aggregation handlers
+  - shared backends
 """
 
 from __future__ import annotations
@@ -76,29 +59,26 @@ class Session:
     session_id: str | None = None,
   ) -> None:
     self.config: Config = config
-    self.id: str = session_id if session_id is not None else self._generate_session_id()
+    self.id: str = session_id if session_id is not None else uuid.uuid4().hex
 
-    # name → Agent instance (D2). Populated by spawn().
+    # name → Agent instance. Populated by spawn().
     self._agents_map: dict[str, Agent] = {}
-    # Shared agent definitions registry (D10). Populated from config
-    # directories in 7.3.1 and from plugins in 7.3.2.
+    # Shared agent definitions registry. Populated from config directories and plugins
     self.agents: AgentRegistry = AgentRegistry()
-    # agent name → current recursion depth (D1). Tracked in spawn().
+    # agent name → current recursion depth. Tracked in spawn().
     self._recursion_depths: dict[str, int] = {}
-    # Session-scoped event handlers (D5). Replaces agent.add_event_handler
+    # Session-scoped event handlers. Replaces agent.add_event_handler
     # for session-scoped consumers.
     self._event_handlers: list[EventCallback] = []
-    # Shared backends keyed by provider config signature (D9; 7.5).
+    # Shared backends keyed by provider config signature.
     self._backends: dict[str, ModelBackend] = {}
     # Outstanding spawned agent tasks, cancelled on __aexit__.
     self._tasks: set[asyncio.Task] = set()
-    # Tracks disambiguation suffix counters per definition name (D2).
+    # Tracks disambiguation suffix counters per definition name.
     self._name_counters: dict[str, int] = {}
 
-    # Load agent definitions from configured directories (7.3.1).
+    # Load agent definitions from configured directories.
     self._load_agents()
-
-  # --- lifecycle -----------------------------------------------------------
 
   async def __aenter__(self) -> Session:
     """Enter the session context; emit SESSION_START."""
@@ -124,13 +104,11 @@ class Session:
     self._tasks.clear()
     self._emit(SessionEndEvent(type=EventType.SESSION_END, session_id=self.id))
 
-  # --- event handlers ------------------------------------------------------
-
   def add_event_handler(self, handler: EventCallback) -> None:
     """Register a session-scoped event handler.
 
     Handlers receive events emitted by the Session (session-level events)
-    and, once event aggregation lands (7.7), agent events wrapped in a
+    and, once event aggregation lands, agent events wrapped in a
     ``SessionEvent`` envelope.
     """
     self._event_handlers.append(handler)
@@ -150,7 +128,6 @@ class Session:
     sync handlers are invoked directly. ``event`` may be a bare session
     event (``SessionStartEvent``, ``AgentSpawnedEvent``, ...) or a
     :class:`SessionEvent` envelope wrapping an agent-emitted event
-    (PR #43 Clarification 9).
     """
     for handler in list(self._event_handlers):
       try:
@@ -163,12 +140,10 @@ class Session:
       except Exception:
         logger.exception("session event handler raised")
 
-  # --- agent registry (7.3.1) ---------------------------------------------
-
   def _load_agents(self) -> None:
     """Load agent definitions from configured directories into the registry.
 
-    Relocated from ``Agent._load_agents`` (task 7.3.1). The Session loads
+    Relocated from ``Agent._load_agents``. The Session loads
     definitions before any Agent is constructed so agents can resolve their
     own definition through ``session.agents``.
     """
@@ -181,13 +156,11 @@ class Session:
       except Exception as e:
         logger.warning("loading agents failed", directory=directory, error=str(e))
 
-  # --- agent map -----------------------------------------------------------
-
   def get_agent(self, name: str) -> Agent | None:
     """Look up an active agent by its session-assigned name.
 
     Returns ``None`` when no active agent has the given name (including
-    when the agent has finished and been removed per Clarification 7).
+    when the agent has finished and been removed.
     """
     return self._agents_map.get(name)
 
@@ -195,7 +168,7 @@ class Session:
     """Disambiguate a definition name into a unique session agent name.
 
     The first spawn of ``definition_name`` returns the name unchanged.
-    Subsequent spawns are suffixed ``-2``, ``-3``, ... (Decision 2).
+    Subsequent spawns are suffixed ``-2``, ``-3``, ...
     """
     count = self._name_counters.get(definition_name, 0) + 1
     self._name_counters[definition_name] = count
@@ -203,12 +176,10 @@ class Session:
       return definition_name
     return f"{definition_name}-{count}"
 
-  # --- backend factory (7.5.1) --------------------------------------------
-
   def get_backend(self, config: Config) -> ModelBackend:
     """Return a shared or fresh backend for the given config.
 
-    Backends are cached by provider config signature (Decision 9). Agents
+    Backends are cached by provider config signature. Agents
     that share the same active provider config reuse the same backend
     instance. Per-agent model/provider overrides produce a different
     signature and therefore a fresh backend.
@@ -234,8 +205,6 @@ class Session:
       )
     )
 
-  # --- spawn (7.3.3, 7.5.2) ------------------------------------------------
-
   async def spawn(
     self,
     name: str,
@@ -246,8 +215,7 @@ class Session:
   ) -> SpawnResult:
     """Spawn a child agent by name and run it to completion.
 
-    Phase 4 implementation (PR #43 Clarifications 3 & 5): enforces the
-    requester's :attr:`AgentDefinition.agents` allowlist before
+    enforces the requester's :attr:`AgentDefinition.agents` allowlist before
     resolving/spawning, resolves the definition from ``session.agents``,
     checks recursion depth and ``max_agents`` limits, creates a child
     :class:`Agent` with a session-injected backend, injects the
@@ -272,7 +240,7 @@ class Session:
         (depth / max_agents) exceeded.
       TimeoutError: When the spawned agent does not finish in time.
     """
-    # Allowlist enforcement (PR #43 Clarification 3) — before any other check.
+    # Allowlist enforcement — before any other check.
     if requester is not None:
       allowed = requester.definition.agents
       if len(allowed) == 0:
@@ -280,7 +248,7 @@ class Session:
       if name not in allowed:
         raise ValueError(f"Agent '{name}' is not in '{requester.definition.name}' allowlist.")
 
-    # Resolve agent definition from the session registry (D10).
+    # Resolve agent definition from the session registry.
     try:
       agent_definition: AgentDefinition = self.agents.resolve(name)
     except ValueError:
@@ -288,7 +256,7 @@ class Session:
     except Exception as e:
       raise ValueError(f"Agent resolution failed for '{name}': {e}") from e
 
-    # Recursion depth check (D1). Top-level spawn (requester is None) starts
+    # Recursion depth check). Top-level spawn (requester is None) starts
     # at depth 1; nested spawns derive depth from the requester's tracked
     # depth in this session.
     parent_depth = 0
@@ -300,12 +268,12 @@ class Session:
         0,
       )
     child_depth = parent_depth + 1
-    if child_depth > self.max_recursion_depth:
+    if child_depth > self.config.tools.agent.max_recursion_depth:
       raise ValueError(
-        f"Maximum recursion depth ({self.max_recursion_depth}) exceeded. Cannot spawn sub-agent."
+        f"Maximum recursion depth ({self.config.tools.agent.max_recursion_depth}) exceeded. Cannot spawn sub-agent."
       )
 
-    # max_agents cap (Decision 7).
+    # max_agents cap
     if len(self._agents_map) >= self.config.session.max_agents:
       raise ValueError(f"Session max_agents limit ({self.config.session.max_agents}) reached.")
 
@@ -318,7 +286,7 @@ class Session:
     # Unique session-assigned agent name (D2).
     agent_id = self._generate_agent_name(agent_definition.simple_name or name)
 
-    # Construct the child Agent with a session reference (7.2.3, 7.5.2).
+    # Construct the child Agent with a session reference
     from yoker.agent import Agent as _Agent
 
     child = _Agent(
@@ -329,17 +297,15 @@ class Session:
       console_logging=False,
     )
 
-    # Register in the active map and track depth (D1, D2).
+    # Register in the active map and track depth.
     self._agents_map[agent_id] = child
     self._recursion_depths[agent_id] = child_depth
 
-    # Inject Session-injected tools (PR #43 Clarifications 2 & 4):
-    # ``agent`` and ``send_message`` are registered on the child by the
-    # Session (closure capture). ListAgents is deferred (PR #43
-    # Clarification 6).
+    # Inject Session tools ``agent`` and ``send_message`` are
+    # registered on the child by the Session (closure capture).
     self.inject_tools(child, agent_id)
 
-    # Event aggregation (D5, PR #43 Clarification 9): register a forwarding
+    # Event aggregation: register a forwarding
     # handler on the child so its events reach session-level handlers
     # wrapped in a SessionEvent envelope. Suppressed when the caller opts
     # out via ``config.session.event_aggregation``.
@@ -366,7 +332,7 @@ class Session:
     except asyncio.TimeoutError as e:
       raise TimeoutError(f"Sub-agent '{agent_id}' timed out after {timeout_seconds} seconds") from e
     finally:
-      # Clarification 7: AGENT_FINISHED is emitted as a lifecycle signal,
+      # AGENT_FINISHED is emitted as a lifecycle signal,
       # then the agent is removed from the active list. There is no
       # `finished` state — visible states are {idle, running} only.
       self._emit(
@@ -380,7 +346,7 @@ class Session:
       self._recursion_depths.pop(agent_id, None)
 
   def inject_tools(self, agent: Agent, agent_id: str) -> None:
-    """Inject Session-injected tools onto an agent (PR #43 Clarifications 2 & 4).
+    """Inject Session-injected tools onto an agent
 
     Registers ``agent`` and ``send_message`` on the agent's tool
     registry. The Session captures itself in the closure (back-reference)
@@ -422,7 +388,7 @@ class Session:
       agent: The primary :class:`Agent` constructed within this session.
 
     Returns:
-      The session-assigned agent id (Decision 2).
+      The session-assigned agent id.
     """
     definition_name = agent.definition.simple_name or "primary"
     agent_id = self._generate_agent_name(definition_name)
@@ -447,8 +413,6 @@ class Session:
 
     forward.__name__ = f"session_forward_{agent_id}"
     return forward
-
-  # --- inter-agent messaging (7.4.2, D3) ----------------------------------
 
   async def send(self, message: Message) -> str:
     """Route an inter-agent message to its target agent and return the reply.
@@ -503,8 +467,7 @@ class Session:
     When the definition has no ``model`` override the parent config is
     returned unchanged (so the backend is shared). When a model override
     exists, a derived config is produced via ``dataclasses.replace`` on the
-    active provider's sub-config (provider-agnostic, MBI-006 task 6.7
-    pattern).
+    active provider's sub-config.
     """
     model = agent_definition.model
     if model is None:
@@ -515,28 +478,11 @@ class Session:
     # ``BackendConfig`` is a frozen dataclass; ``dataclasses.replace`` builds
     # a new instance with the overridden provider sub-config. We pass the
     # provider field via a single-key dict so the call stays provider-agnostic
-    # (MBI-006 task 6.7 pattern). The ``# type: ignore`` is needed because
+    # The ``# type: ignore`` is needed because
     # mypy can't narrow the union of provider sub-config types to the named
     # field from a dynamic key.
     new_backend = dataclasses.replace(parent_config.backend, **{provider: new_sub})  # type: ignore[arg-type]
     return dataclasses.replace(parent_config, backend=new_backend)
-
-  # --- helpers -------------------------------------------------------------
-
-  @staticmethod
-  def _generate_session_id() -> str:
-    """Generate a UUID-based session id."""
-    return uuid.uuid4().hex
-
-  @property
-  def max_recursion_depth(self) -> int:
-    """Session-level recursion depth limit.
-
-    Reads ``config.tools.agent.max_recursion_depth`` (task 7.6.3 — the
-    field location is unchanged; only the consumer moves from Agent to
-    Session).
-    """
-    return self.config.tools.agent.max_recursion_depth
 
 
 __all__ = ["Session"]
