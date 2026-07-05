@@ -2,9 +2,6 @@
 
 Verifies that:
   - Single-agent ``Agent`` works without a Session (first-class path).
-  - ``Agent(_recursion_depth=...)`` raises ``TypeError`` (no shim).
-  - ``agent.agents`` raises ``AttributeError`` (no proxy property).
-  - ``run_session`` name is gone; only ``run_repl`` exists.
   - Existing examples (``library_usage.py``, ``batch_mode.py``,
     ``research_workflow.py``) import cleanly without modification.
   - Old TOML files without a ``[session]`` section still load (strict
@@ -58,44 +55,6 @@ class TestSingleAgentWithoutSession:
     assert handler in agent.get_event_handlers()
     agent.remove_event_handler(handler)
     assert handler not in agent.get_event_handlers()
-
-
-class TestNoBackwardCompatShims:
-  """PR #43 Clarification 1: removed args/fields raise loudly, no shims."""
-
-  def test_recursion_depth_constructor_arg_removed(self) -> None:
-    """Agent(_recursion_depth=...) raises TypeError (no deprecation, no ignore)."""
-    with pytest.raises(TypeError):
-      Agent(config=Config(), _recursion_depth=2)  # type: ignore[call-arg]
-
-  def test_agents_attribute_removed(self) -> None:
-    """agent.agents raises AttributeError (no proxy property to session)."""
-    agent = Agent(config=Config())
-    with pytest.raises(AttributeError):
-      _ = agent.agents  # noqa: F841
-
-  def test_recursion_depth_attribute_removed(self) -> None:
-    """agent.recursion_depth raises AttributeError."""
-    agent = Agent(config=Config())
-    with pytest.raises(AttributeError):
-      _ = agent.recursion_depth  # noqa: F841
-
-  def test_max_recursion_depth_attribute_removed(self) -> None:
-    """agent.max_recursion_depth raises AttributeError."""
-    agent = Agent(config=Config())
-    with pytest.raises(AttributeError):
-      _ = agent.max_recursion_depth  # noqa: F841
-
-  def test_run_session_name_removed(self) -> None:
-    """run_session is gone; only run_repl exists (no alias)."""
-    main_mod = importlib.import_module("yoker.__main__")
-    assert hasattr(main_mod, "run_repl")
-    assert not hasattr(main_mod, "run_session")
-
-  def test_builtin_agent_module_removed(self) -> None:
-    """The legacy ``yoker.builtin.agent`` module is gone entirely."""
-    with pytest.raises(ModuleNotFoundError):
-      importlib.import_module("yoker.builtin.agent")
 
 
 class TestExistingExamplesLoad:

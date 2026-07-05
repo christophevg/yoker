@@ -40,10 +40,11 @@ class SimpleContextManager(BasicContextManager):
     1. an environment reminder that provides basic information about the current agent/model and its "location".
     2. a system prompt to provide initial commands
     """
-    # TODO: the backwards example agent has problems doing as instructed in its system
-    #       prompt. Collapsing it in a single system message seemed to solve it, when
-    #       using the agent directly. But when called as a sub-agent, it seemed to not
-    #       adhere to its system prompt. To be investiged further.
+    # The backwards example agent has problems doing as instructed in its system
+    # prompt. Collapsing it in a single system message seemed to solve it, when
+    # using the agent directly. But when called as a sub-agent, it seemed to not
+    # adhere to its system prompt. To be investigated further when context management
+    # is in focus.
     self.add_message("system", self.environment_reminder + "\n" + self.system_prompt)
     # self.add_message("system", self.system_prompt)
 

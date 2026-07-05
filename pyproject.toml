@@ -156,3 +156,5 @@ base_python = ["python3.12"]
 [tool.uv.workspace]
 members = ["examples/plugins/demo"]
 
+[tool.pyright]
+reportUnusedCallResult = false
