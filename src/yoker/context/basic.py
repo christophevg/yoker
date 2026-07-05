@@ -8,33 +8,17 @@ conversation history in memory only.
 """
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
 
 from yoker.context.manager import ContextManager
 
-if TYPE_CHECKING:
-  from yoker import Agent
 
-
-class BasicContextManager(ContextManager):
-  """In-memory context manager.
-
-  Acts as a plain list of conversation messages. No persistence is performed. No context management is provided.
-  """
-
-
-class SimpleContextManager(BasicContextManager):
+class SimpleContextManager(ContextManager):
   """In-memory context manager.
 
   Acts as a plain list of conversation messages. No persistence is performed.
   """
 
-  def __init__(self, agent: "Agent", initial: list[dict[str, Any]] | None = None) -> None:
-    super().__init__(initial)
-    self._agent: Agent = agent
-    self._setup_simple_context()
-
-  def _setup_simple_context(self) -> None:
+  def setup_initial_context(self) -> None:
     """
     The most simple context consists of:
     1. an environment reminder that provides basic information about the current agent/model and its "location".
@@ -59,6 +43,8 @@ class SimpleContextManager(BasicContextManager):
     Returns:
       Formatted reminder paragraph for the system context.
     """
+    if not self._agent:
+      return ""
     harness = self._agent.config.harness
     harness_name = harness.name
     harness_version = f" v{harness.version}" if harness.version else ""
@@ -71,6 +57,8 @@ class SimpleContextManager(BasicContextManager):
 
   @property
   def system_prompt(self) -> str:
+    if not self._agent:
+      return ""
     prompt = f"""This is your definition, this is who you are, this is how you act/behave. Whatever you do, this is not to be changed or not applied:
   <agent-definition>
     {self._agent.definition.system_prompt}
@@ -79,4 +67,4 @@ class SimpleContextManager(BasicContextManager):
     return prompt
 
 
-__all__ = ["BasicContextManager", "SimpleContextManager"]
+__all__ = ["SimpleContextManager"]

@@ -13,10 +13,7 @@ from dotenv import load_dotenv
 from structlog import get_logger
 
 from yoker.agent._processing import process_message
-from yoker.agent._setup import (
-  add_skill_discovery_block,
-  create_web_guardrails,
-)
+from yoker.agent._setup import create_web_guardrails
 from yoker.agent.thinking import ThinkingMode
 from yoker.agents import (
   AgentDefinition,
@@ -91,13 +88,12 @@ class Agent:
     configure_logging(self.config.logging, console=console_logging)
     logger.info("agent config", source="provided" if config else "loaded")
 
-    # Session reference (7.2.3). When set, the agent uses session.agents to
+    # When session reference is set, the agent uses session.agents to
     # resolve definitions and session.get_backend() to share backends. When
     # unset, the agent is a single-agent primitive (no orchestration).
     self._session: Session | None = session
 
-    # set up registries for tools and skills. Agent registry is owned by the
-    # Session (Decision 10) — Agent no longer holds one.
+    # set up registries for tools and skills.
     self.tools: ToolRegistry = ToolRegistry()
     self.skills: SkillRegistry = SkillRegistry()
 
@@ -108,9 +104,8 @@ class Agent:
     # skills are loaded from directories specified in config (per-agent).
     self._load_skills()
 
-    # load tools and skills from plugins. Agent definitions from plugins are
-    # registered on the session (7.3.2); tools/skills remain per-agent.
-    load_configured_plugins(self, self.config, self._cli_plugins, session=self._session)
+    # load tools and skills from plugins.
+    load_configured_plugins(self, self.config, self._cli_plugins, self._session)
 
     # load own definition
     self.definition: AgentDefinition = self._resolve_agent_definition(agent_definition, agent_path)
@@ -122,8 +117,6 @@ class Agent:
     self._filter_tools_by_definition()
 
     # Skill tool: registered when skills are available and the tool is enabled.
-    # The agent (sub-agent spawning) tool is now Session-injected
-    # (Phase 4 / 7.8.3) — Agent no longer registers it itself.
     if self.config.tools.skill.enabled and len(self.skills):
       self.tools.register(make_skill_tool(self.skills), namespace="yoker")
 
@@ -132,8 +125,7 @@ class Agent:
     self.thinking_mode: ThinkingMode = thinking_mode
 
     # setup the backend for the model provider. When a session is present,
-    # use the session's shared/fresh backend (Decision 9, 7.5.2). Otherwise
-    # create one from config (single-agent path, unchanged).
+    # use the session's shared/fresh backend. Otherwise create one from config.
     if backend is not None:
       self._backend: ModelBackend | None = backend
     elif self._session is not None:
@@ -159,18 +151,17 @@ class Agent:
     # set up the context manager
     # Note: Use explicit None check because empty UserList is falsy
     if context_manager is not None:
-      # Use provided context manager - add system messages like SimpleContextManager does
       self.context: ContextManager = context_manager
-      self._setup_context()
     else:
-      # Create default SimpleContextManager which sets up context in __init__
-      self.context = SimpleContextManager(self)
+      self.context = SimpleContextManager()
 
-    add_skill_discovery_block(self.config, self.skills, self.context)
+    # provide back-reference to the context. this triggers creating the initial context
+    # and the setup of the skill discovery block
+    self.context.agent = self
 
     self._event_handlers: list[EventCallback] = []
 
-    # Per-agent process queue (PR #43 Clarification 7 / Comment 7):
+    # agent process queue:
     # serializes concurrent ``process()`` calls so the backend never sees
     # parallel ``chat_stream`` invocations on the same agent. Lazily
     # initialized on the first ``process()`` call.
@@ -183,22 +174,6 @@ class Agent:
 
   def __repr__(self) -> str:
     return f"Agent({self.definition.name},tools={len(self.tools)},skills={len(self.skills)})"
-
-  def _setup_context(self) -> None:
-    """Set up context with system messages (environment reminder and system prompt)."""
-    from pathlib import Path
-
-    harness = self.config.harness
-    harness_name = harness.name
-    harness_version = f" v{harness.version}" if harness.version else ""
-    harness_author = f" by {harness.author}" if harness.author else ""
-    harness_id = f"{harness_name}{harness_version}{harness_author}"
-    environment_reminder = (
-      f"You are running inside the Yoker agent harness ({harness_id}). "
-      f"Current working directory: {Path.cwd()}. Model in use: {self.model}."
-    )
-    self.context.add_message("system", environment_reminder)
-    self.context.add_message("system", self.definition.system_prompt)
 
   def add_event_handler(self, handler: EventCallback) -> None:
     """Register an event handler."""

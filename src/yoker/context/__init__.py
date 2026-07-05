@@ -20,7 +20,7 @@ Example:
     >>> pcm.add_message("user", "Hello")
 """
 
-from yoker.context.basic import BasicContextManager, SimpleContextManager
+from yoker.context.basic import SimpleContextManager
 from yoker.context.interface import ContextStatistics, SessionMetadata
 from yoker.context.manager import ContextManager
 from yoker.context.persistence import DEFAULT_STORAGE_PATH, PersistenceContextManager
@@ -30,7 +30,6 @@ __all__ = [
   "ContextManager",
   "ContextStatistics",
   "SessionMetadata",
-  "BasicContextManager",
   "SimpleContextManager",
   "PersistenceContextManager",
   "DEFAULT_STORAGE_PATH",

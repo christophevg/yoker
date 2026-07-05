@@ -96,7 +96,6 @@ def load_configured_plugins(
   agent: "Agent",
   config: "Config",
   extra_plugins: tuple[str, ...] = (),
-  *,
   session: "Session | None" = None,
 ) -> None:
   """Load configured and CLI-specified plugins into the agent's registries.
