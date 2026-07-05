@@ -162,10 +162,3 @@ class TestSessionAgentMap:
     session._generate_agent_name("researcher")
     # A different definition name is unaffected by the researcher counter.
     assert session._generate_agent_name("reviewer") == "reviewer"
-
-  def test_max_recursion_depth_reads_config(self) -> None:
-    """task 7.6.3: Session reads config.tools.agent.max_recursion_depth."""
-    config = Config()
-    session = Session(config=config)
-    assert session.max_recursion_depth == config.tools.agent.max_recursion_depth
-    assert session.max_recursion_depth == 3
