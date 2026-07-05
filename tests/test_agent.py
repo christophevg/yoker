@@ -431,9 +431,8 @@ class TestAgentContextManager:
 
     messages = core.context.get_messages()
     system_messages = [m for m in messages if m.get("role") == "system"]
-    assert len(system_messages) == 2
-    assert "Yoker agent harness" in system_messages[0].get("content", "")
-    assert system_messages[1].get("content", "") == "Custom system prompt for context test."
+    assert len(system_messages) == 1
+    assert system_messages[0].get("content", "") == "Custom system prompt for context test."
 
 
 class TestAgentBackendParameter:

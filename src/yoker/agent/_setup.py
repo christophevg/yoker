@@ -12,8 +12,7 @@ from yoker.tools.web import (
 )
 
 if TYPE_CHECKING:
-  from yoker.context import ContextManager
-  from yoker.skills import SkillRegistry
+  pass
 
 logger = get_logger(__name__)
 
@@ -58,15 +57,3 @@ def create_web_guardrails(
     url_guardrail = UrlWebGuardrail(config=url_config)
 
   return (query_guardrail, url_guardrail)
-
-
-def add_skill_discovery_block(
-  config: Config, skill_registry: "SkillRegistry", context: "ContextManager"
-) -> None:
-  """Add skill discovery user message if enabled and skills exist."""
-  if len(skill_registry) > 0 and config.skills.discovery:
-    from yoker.skills import format_discovery_block
-
-    skill_list = skill_registry.skills
-    context.add_message("user", format_discovery_block(skill_list))
-    logger.info("skill_discovery_added", skill_count=len(skill_list))

@@ -13,7 +13,6 @@ from yoker.agents import AgentDefinition, load_agent_definition
 from yoker.builtin import __YOKER_MANIFEST__
 from yoker.config import Config
 from yoker.context import (
-  BasicContextManager,
   ContextManager,
   ContextStatistics,
   PersistenceContextManager,
@@ -80,7 +79,6 @@ __all__ = [
   # Context
   "ContextManager",
   "ContextStatistics",
-  "BasicContextManager",
   "PersistenceContextManager",
   # Logging
   "EventRecorder",

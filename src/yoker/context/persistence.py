@@ -34,6 +34,9 @@ FILE_MODE = 0o600  # Owner-only for files
 DEFAULT_STORAGE_PATH = Path.home() / ".cache" / "yoker" / "sessions"
 
 
+# TODO: Turn PersistenceContextManager into  a ContextManager wrapper "Persisted"
+#       and use it like this: Persisted(SimpleContextManager)
+#       To do this, introduce a ContextManagerWrapper baseclass
 class PersistenceContextManager(ContextManager):
   """Context manager with JSONL persistence.
 

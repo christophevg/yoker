@@ -5,9 +5,16 @@ Subclasses can override :meth:`append` to add persistence or other side effects.
 """
 
 from collections import UserList
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+from structlog import get_logger
 
 from yoker.context.interface import ContextStatistics
+
+if TYPE_CHECKING:
+  from yoker.agent import Agent
+
+logger = get_logger(__name__)
 
 
 class ContextManager(UserList[dict[str, Any]]):
@@ -27,7 +34,35 @@ class ContextManager(UserList[dict[str, Any]]):
     Args:
       initial: Optional initial list of context items.
     """
+    self._agent: Agent | None = None
     super().__init__(initial)
+
+  @property
+  def agent(self) -> "Agent | None":
+    return self._agent
+
+  @agent.setter
+  def agent(self, new_agent: "Agent") -> None:
+    self._agent = new_agent
+    self.clear()
+    self.setup_initial_context()
+    self.add_skill_discovery_block()
+
+  def setup_initial_context(self) -> None:
+    """Add the system prompt."""
+    if self._agent:
+      self.add_message("system", self._agent.definition.system_prompt)
+
+  def add_skill_discovery_block(self) -> None:
+    """Add skill discovery user message if enabled and skills exist."""
+    if not self._agent:
+      return
+    if len(self._agent.skills) > 0 and self._agent.config.skills.discovery:
+      from yoker.skills import format_discovery_block
+
+      skill_list = self._agent.skills.skills
+      self.add_message("user", format_discovery_block(skill_list))
+      logger.info("skill_discovery_added", skill_count=len(skill_list))
 
   def add_message(
     self,
