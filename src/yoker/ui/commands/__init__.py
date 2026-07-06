@@ -7,7 +7,7 @@ processing. Output is always produced through the UIHandler.
 
 from structlog import get_logger
 
-from yoker.agent import Agent
+from yoker.core import Agent
 from yoker.ui import UIHandler
 from yoker.ui.commands import skill_invoke
 from yoker.ui.commands.agents import create_command as create_agents_command

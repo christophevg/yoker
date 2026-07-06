@@ -153,8 +153,8 @@ class TestContextManagerWrapperWithSimpleContextManager:
     """A ContextManagerWrapper(SimpleContextManager()) is a no-op pass-through;
     the env reminder is produced by the wrapped SimpleContextManager itself.
     """
-    from yoker.agent import Agent
     from yoker.agents import AgentDefinition
+    from yoker.core import Agent
 
     agent_def = AgentDefinition(
       simple_name="test",
@@ -177,8 +177,8 @@ class TestContextManagerWrapperWithSimpleContextManager:
     """A ContextManagerWrapper(BaseContextManager()) yields only the raw
     system prompt (no env reminder).
     """
-    from yoker.agent import Agent
     from yoker.agents import AgentDefinition
+    from yoker.core import Agent
 
     agent_def = AgentDefinition(
       simple_name="test",

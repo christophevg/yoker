@@ -1,4 +1,4 @@
-"""Example 1 & 2 — One-shot functions: ``yoker.ask`` and ``yoker.complete``.
+"""Example 1 & 2 — One-shot functions: ``yoker.process`` and ``yoker.run_sync``.
 
 Run with:
 
@@ -15,17 +15,17 @@ import yoker
 
 async def main() -> None:
   # The simplest entry point: one function call, one response string.
-  answer = await yoker.ask("What is 2+2?")
-  print(f"ask: {answer}")
+  answer = await yoker.process("What is 2+2?")
+  print(f"process: {answer}")
 
-  # Pure text completion — no tools, no skills, no system prompt. Useful
-  # inside Python pipelines where you just want the model's text output.
-  translation = await yoker.complete(
+  # Pure text completion — no tools, no system prompt. Useful inside Python
+  # pipelines where you just want the model's text output.
+  translation = await yoker.process(
     "Translate to French: 'Hello, how are you?'",
-    model="gpt-4o-mini",
-    provider="openai",
+    tools=[],
+    system_prompt="",
   )
-  print(f"complete: {translation}")
+  print(f"completion: {translation}")
 
 
 if __name__ == "__main__":

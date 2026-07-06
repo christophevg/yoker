@@ -34,8 +34,8 @@ from dataclasses import replace
 from pathlib import Path
 
 from yoker import __version__
-from yoker.agent import Agent
 from yoker.config import AgentsConfig, Config, get_yoker_config
+from yoker.core import Agent
 from yoker.events import (
   Event,
   SessionEvent,
@@ -97,14 +97,15 @@ async def run_session_demo() -> None:
     # PR #43 Clarification 9).
     session.add_event_handler(log_event)
 
-    # Construct the primary Agent within the session. The agent resolves
-    # its definition via session.agents and shares the session's backend
-    # (Decision 9). The primary agent has no allowlist by default — to
-    # spawn sub-agents programmatically we use session.spawn directly
-    # (the agent tool would be rejected with an empty allowlist).
+    # Construct the primary Agent. The Agent is Session-agnostic: the
+    # Session layer resolves the config-based agent definition (if any)
+    # and shares its backend with the Agent. The primary agent has no
+    # allowlist by default — to spawn sub-agents programmatically we use
+    # session.spawn directly (the agent tool would be rejected with an
+    # empty allowlist).
     agent = Agent(
       config=config,
-      session=session,
+      backend=session.get_backend(config),
       console_logging=False,
     )
     primary_id = session.register_primary_agent(agent)
@@ -112,38 +113,36 @@ async def run_session_demo() -> None:
     print(f"Primary agent tools: {', '.join(sorted(agent.tools.names))}")
     print()
 
-    # Programmatic sub-agent spawn (Decision 8): session.spawn is the
-    # canonical API. The agent tool exposed to the model is a thin
-    # wrapper around this call.
+    # Programmatic sub-agent spawn (Decision 8): session.spawn returns a
+    # reusable Agent (no prompt, no response). The caller drives the agent
+    # via agent.process(...). The agent stays in the active map until
+    # session._release(agent_id) is called (or the session exits).
     if "agents:researcher" in session.agents.names:
       print("Spawning 'researcher' sub-agent via session.spawn(...) ...")
       try:
-        result = await session.spawn(
-          "researcher",
-          "Summarize the README.md file in two sentences.",
-          timeout_seconds=120,
-        )
-        print(f"Spawned agent id: {result.agent_id}")
-        print(f"Response: {result.response}")
+        researcher = await session.spawn("researcher")
+        agent_id = researcher._agent_id  # type: ignore[attr-defined]
+        print(f"Spawned agent id: {agent_id}")
+        response = await researcher.process("Summarize the README.md file in two sentences.")
+        print(f"Response: {response}")
         print()
 
         # Inter-agent messaging (D3): send a follow-up message to the
-        # spawned agent. Note: the spawned agent is removed from the
-        # active map once it finishes (PR #43 Clarification 7), so this
-        # send is expected to raise ValueError when the spawn already
-        # completed above. We catch it to demonstrate the contract.
-        print(f"Sending follow-up message to {result.agent_id} ...")
+        # spawned agent while it is still active.
+        print(f"Sending follow-up message to {agent_id} ...")
         try:
           reply = await session.send(
             Message(
               from_id=primary_id,
-              to_id=result.agent_id,
+              to_id=agent_id,
               content="What was the most surprising finding?",
             )
           )
           print(f"Reply: {reply}")
         except ValueError as e:
           print(f"Expected (agent finished): {e}")
+        finally:
+          session._release(agent_id)
       except NetworkError as e:
         print(f"Network error: {e}")
       except TimeoutError as e:

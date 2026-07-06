@@ -1,12 +1,12 @@
-"""Example 3 — Agent builder: configure a reusable agent with ``yoker.build_agent``.
+"""Example 3 — Agent builder: configure a reusable agent with ``yoker.agent``.
 
 Run with:
 
     python examples/python_api/agent_builder.py
 
-Shows the fluent, declarative builder API. The returned object is a
+Shows the declarative builder API. The returned object is a
 :class:`yoker.Agent` — all existing methods (``process``, ``on_event``,
-``inject_skill_context``, ``spawn``) work as expected.
+``do``) work as expected.
 """
 
 import asyncio
@@ -17,7 +17,7 @@ from yoker.events import ToolCallEvent
 
 async def main() -> None:
   # Build a security-focused code reviewer with a specific tool whitelist.
-  reviewer = yoker.build_agent(
+  reviewer = yoker.agent(
     model="qwen3.5:cloud",
     system_prompt=(
       "You are a security-focused code reviewer. Always cite file:line for every finding."

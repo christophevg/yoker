@@ -55,7 +55,7 @@ class TestAgentDefinitionResolution:
     self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
   ) -> None:
     """Test that Agent loads agent definition from config."""
-    from yoker.agent import Agent
+    from yoker.core import Agent
 
     # Create agent definition file
     agents_dir = tmp_path / "agents"
@@ -104,7 +104,7 @@ definition = "{agent_file.as_posix()}"
     self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
   ) -> None:
     """Test that missing agent definition file raises an error."""
-    from yoker.agent import Agent
+    from yoker.core import Agent
 
     # Create config file with missing agent definition
     config_file = tmp_path / "yoker.toml"
@@ -130,22 +130,25 @@ definition = "./agents/missing.md"
         },
       )
 
-      # Name resolution requires a Session. With a Session,
-      # the registry raises ValueError("Agent not found: ...") for the
-      # missing-file reference. Without a Session, the error is the clearer
-      # "cannot be resolved without a Session" message.
+      # Name resolution requires a Session. With a Session, the registry
+      # resolves the name and raises ValueError("Agent not found: ...") for
+      # the missing-file reference. Without a Session, the Agent raises a
+      # "cannot be resolved by a standalone Agent" message.
       from yoker.session import Session
 
       session = Session(config=config)
       with pytest.raises(ValueError, match=r"Agent not found: \./agents/missing\.md"):
-        Agent(config=config, session=session)
+        # The Session-agnostic Agent cannot resolve names from a registry,
+        # so resolve via the session registry and pass the definition in.
+        resolved = session.agents.resolve("./agents/missing.md")
+        Agent(config=config, agent_definition=resolved)
 
   def test_agent_definition_explicit_overrides_config(
     self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
   ) -> None:
     """Test that explicit agent_definition parameter overrides config."""
-    from yoker.agent import Agent
     from yoker.agents import AgentDefinition
+    from yoker.core import Agent
 
     # Create config file with agent definition
     config_file = tmp_path / "yoker.toml"
@@ -187,7 +190,7 @@ definition = "./agents/researcher.md"
     self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
   ) -> None:
     """Test that explicit agent_path parameter overrides config."""
-    from yoker.agent import Agent
+    from yoker.core import Agent
 
     # Create agent definition files
     agents_dir = tmp_path / "agents"

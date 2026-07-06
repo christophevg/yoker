@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from yoker.agent import Agent
+from yoker.core import Agent
 from yoker.exceptions import SkillError
 from yoker.skills import Skill, SkillRegistry
 from yoker.ui import BatchUIHandler

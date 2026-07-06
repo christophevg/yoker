@@ -7,7 +7,7 @@ queries the agent's skill registry and outputs via the UIHandler.
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-  from yoker.agent import Agent
+  from yoker.core import Agent
   from yoker.ui import UIHandler
   from yoker.ui.commands.base import Command
 

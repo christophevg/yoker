@@ -6,7 +6,8 @@ import pytest
 
 from yoker.agents import AgentDefinition
 from yoker.config import Config
-from yoker.session import Session, SpawnResult
+from yoker.session import Session
+from yoker.session.spawn_result import SpawnResult
 
 
 def _config_with_max_recursion(max_depth: int) -> Config:
@@ -29,7 +30,6 @@ def _make_requester(allowlist=(), session=None):
     tools=("read",),
     agents=tuple(allowlist),
   )
-  agent._session = session
   return agent
 
 
@@ -47,12 +47,12 @@ class TestSpawnAllowlist:
     )
     async with Session(config=config) as session:
       session.agents.register(agent_def)
-      with patch("yoker.agent.Agent") as mock_agent_cls:
+      with patch("yoker.core.Agent") as mock_agent_cls:
         mock_child = MagicMock()
         mock_child.process = AsyncMock(return_value="ok")
         mock_child.tools = MagicMock()
         mock_agent_cls.return_value = mock_child
-        result = await session.spawn("researcher", "hi", requester=None)
+        result = await session._spawn_and_run("researcher", "hi", requester=None)
       assert isinstance(result, SpawnResult)
       assert result.agent_id == "researcher"
       assert result.response == "ok"
@@ -70,7 +70,7 @@ class TestSpawnAllowlist:
       session.agents.register(agent_def)
       requester = _make_requester(allowlist=(), session=session)
       with pytest.raises(ValueError, match="no allowed spawns"):
-        await session.spawn("researcher", "hi", requester=requester)
+        await session.spawn("researcher", requester=requester)
 
   @pytest.mark.asyncio
   async def test_name_not_in_allowlist_rejects(self) -> None:
@@ -85,7 +85,7 @@ class TestSpawnAllowlist:
       session.agents.register(agent_def)
       requester = _make_requester(allowlist=("writer",), session=session)
       with pytest.raises(ValueError, match="allowlist"):
-        await session.spawn("researcher", "hi", requester=requester)
+        await session.spawn("researcher", requester=requester)
 
   @pytest.mark.asyncio
   async def test_name_in_allowlist_proceeds(self) -> None:
@@ -99,12 +99,12 @@ class TestSpawnAllowlist:
     async with Session(config=config) as session:
       session.agents.register(agent_def)
       requester = _make_requester(allowlist=("researcher",), session=session)
-      with patch("yoker.agent.Agent") as mock_agent_cls:
+      with patch("yoker.core.Agent") as mock_agent_cls:
         mock_child = MagicMock()
         mock_child.process = AsyncMock(return_value="ok")
         mock_child.tools = MagicMock()
         mock_agent_cls.return_value = mock_child
-        result = await session.spawn("researcher", "hi", requester=requester)
+        result = await session._spawn_and_run("researcher", "hi", requester=requester)
       assert isinstance(result, SpawnResult)
       assert result.response == "ok"
 
@@ -130,7 +130,7 @@ class TestSpawnAllowlist:
         agents=("writer",),
       )
       with pytest.raises(ValueError, match="allowlist"):
-        await session.spawn("researcher", "hi", requester=requester)
+        await session.spawn("researcher", requester=requester)
 
 
 class TestSpawnRecursionDepth:
@@ -147,12 +147,12 @@ class TestSpawnRecursionDepth:
     )
     async with Session(config=config) as session:
       session.agents.register(agent_def)
-      with patch("yoker.agent.Agent") as mock_agent_cls:
+      with patch("yoker.core.Agent") as mock_agent_cls:
         mock_child = MagicMock()
         mock_child.process = AsyncMock(return_value="ok")
         mock_child.tools = MagicMock()
         mock_agent_cls.return_value = mock_child
-        await session.spawn("researcher", "hi")
+        await session._spawn_and_run("researcher", "hi")
       # Depth tracked during the run; removed in the finally block.
       assert "researcher" not in session._recursion_depths
 
@@ -172,7 +172,7 @@ class TestSpawnRecursionDepth:
       session._agents_map["parent"] = requester
       session._recursion_depths["parent"] = 1
       with pytest.raises(ValueError, match="Maximum recursion depth"):
-        await session.spawn("researcher", "hi", requester=requester)
+        await session.spawn("researcher", requester=requester)
 
 
 class TestSpawnMaxAgents:
@@ -195,7 +195,7 @@ class TestSpawnMaxAgents:
       # Fill the active map to the cap.
       session._agents_map["occupant"] = MagicMock()
       with pytest.raises(ValueError, match="max_agents"):
-        await session.spawn("researcher", "hi")
+        await session.spawn("researcher")
 
 
 class TestSpawnAgentMap:
@@ -212,12 +212,12 @@ class TestSpawnAgentMap:
     )
     async with Session(config=config) as session:
       session.agents.register(agent_def)
-      with patch("yoker.agent.Agent") as mock_agent_cls:
+      with patch("yoker.core.Agent") as mock_agent_cls:
         mock_child = MagicMock()
         mock_child.process = AsyncMock(return_value="ok")
         mock_child.tools = MagicMock()
         mock_agent_cls.return_value = mock_child
-        result = await session.spawn("researcher", "hi")
+        result = await session._spawn_and_run("researcher", "hi")
       # agent removed from active list after completion.
       assert session.get_agent("researcher") is None
       assert isinstance(result, SpawnResult)
@@ -234,13 +234,13 @@ class TestSpawnAgentMap:
     )
     async with Session(config=config) as session:
       session.agents.register(agent_def)
-      with patch("yoker.agent.Agent") as mock_agent_cls:
+      with patch("yoker.core.Agent") as mock_agent_cls:
         mock_child = MagicMock()
         mock_child.process = AsyncMock(return_value="ok")
         mock_child.tools = MagicMock()
         mock_agent_cls.return_value = mock_child
-        first = await session.spawn("researcher", "first")
-        second = await session.spawn("researcher", "second")
+        first = await session._spawn_and_run("researcher", "first")
+        second = await session._spawn_and_run("researcher", "second")
       # Both completed; counters reflect two spawns of "researcher".
       assert session._name_counters["researcher"] == 2
       assert first.agent_id == "researcher"

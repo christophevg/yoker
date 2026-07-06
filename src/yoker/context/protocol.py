@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 from yoker.context.interface import ContextStatistics
 
 if TYPE_CHECKING:
-  from yoker.agent import Agent
+  from yoker.core import Agent
 
 
 @runtime_checkable

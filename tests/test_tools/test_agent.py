@@ -169,7 +169,7 @@ class TestAgentToolDelegation:
       tools=("read",),
     )
     session = _make_session_with_registry(agent_def=agent_def)
-    session.spawn = AsyncMock(
+    session._spawn_and_run = AsyncMock(
       return_value=SpawnResult(agent_id="researcher", response="researcher response")
     )
     requester = _make_requester(allowlist=("researcher",))
@@ -181,15 +181,15 @@ class TestAgentToolDelegation:
     assert "researcher" in result.result
     assert "researcher response" in result.result
     assert "agent_id:" in result.result
-    session.spawn.assert_awaited_once()
-    call_kwargs = session.spawn.call_args.kwargs
+    session._spawn_and_run.assert_awaited_once()
+    call_kwargs = session._spawn_and_run.call_args.kwargs
     assert call_kwargs["requester"] is requester
 
   @pytest.mark.asyncio
   async def test_value_error_wrapped_as_failure(self) -> None:
     """ValueError from session.spawn (allowlist/depth/capacity) is wrapped."""
     session = _make_session_with_registry(resolve_error=ValueError("Agent not found: ghost"))
-    session.spawn = AsyncMock(side_effect=ValueError("not allowed"))
+    session._spawn_and_run = AsyncMock(side_effect=ValueError("not allowed"))
     requester = _make_requester(allowlist=("researcher",))
 
     spec = _spawn_agent_spec(session=session, requester=requester)
@@ -207,7 +207,7 @@ class TestAgentToolDelegation:
       tools=("read",),
     )
     session = _make_session_with_registry(agent_def=agent_def)
-    session.spawn = AsyncMock(side_effect=TimeoutError("timed out after 1s"))
+    session._spawn_and_run = AsyncMock(side_effect=TimeoutError("timed out after 1s"))
     requester = _make_requester(allowlist=("researcher",))
 
     spec = _spawn_agent_spec(session=session, requester=requester)
@@ -225,7 +225,7 @@ class TestAgentToolDelegation:
       tools=("read",),
     )
     session = _make_session_with_registry(agent_def=agent_def)
-    session.spawn = AsyncMock(side_effect=RuntimeError("boom"))
+    session._spawn_and_run = AsyncMock(side_effect=RuntimeError("boom"))
     requester = _make_requester(allowlist=("researcher",))
 
     spec = _spawn_agent_spec(session=session, requester=requester)
@@ -243,13 +243,15 @@ class TestAgentToolDelegation:
       tools=("read",),
     )
     session = _make_session_with_registry(agent_def=agent_def)
-    session.spawn = AsyncMock(return_value=SpawnResult(agent_id="researcher", response="ok"))
+    session._spawn_and_run = AsyncMock(
+      return_value=SpawnResult(agent_id="researcher", response="ok")
+    )
     requester = _make_requester(allowlist=("researcher",))
 
     spec = _spawn_agent_spec(session=session, requester=requester)
     await spec.execute(agent_name="researcher", prompt="hi")
 
-    call_kwargs = session.spawn.call_args.kwargs
+    call_kwargs = session._spawn_and_run.call_args.kwargs
     assert call_kwargs["timeout_seconds"] == DEFAULT_TIMEOUT_SECONDS
 
   @pytest.mark.asyncio
@@ -261,7 +263,7 @@ class TestAgentToolDelegation:
       tools=("read",),
     )
     session = _make_session_with_registry(agent_def=agent_def)
-    session.spawn = AsyncMock(
+    session._spawn_and_run = AsyncMock(
       return_value=SpawnResult(agent_id="researcher-2", response="found it")
     )
     requester = _make_requester(allowlist=("researcher",))

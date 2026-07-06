@@ -6,10 +6,10 @@ state directly and outputs the result via the UIHandler.
 
 from typing import TYPE_CHECKING
 
-from yoker.agent.thinking import ThinkingMode
+from yoker.core.thinking import ThinkingMode
 
 if TYPE_CHECKING:
-  from yoker.agent import Agent
+  from yoker.core import Agent
   from yoker.ui import UIHandler
   from yoker.ui.commands.base import Command
 

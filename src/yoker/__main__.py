@@ -22,10 +22,10 @@ from clevis import SecurityError
 from ollama import ResponseError
 from structlog import get_logger
 
-from yoker.agent import Agent
 from yoker.bootstrap import BootstrapResult, BootstrapWizard, config_provided
 from yoker.bootstrap.steps import DOCS_HOME_URL
 from yoker.config import Config, get_yoker_config
+from yoker.core import Agent
 from yoker.exceptions import NetworkError, YokerError
 from yoker.session import Session
 from yoker.ui import BatchUIHandler, InteractiveUIHandler, UIBridge, UIHandler
@@ -113,11 +113,31 @@ async def _run_with_session(
   commands: CommandRegistry,
   bridge: UIBridge,
 ) -> None:
-  async with Session(config=config) as session:
+  async with Session(config=config, extra_plugins=tuple(plugin_packages)) as session:
+    # Resolve the primary agent's definition. The Session-agnostic Agent
+    # cannot resolve names from a registry, so the Session layer resolves
+    # the config-based reference (if any) and passes the definition in.
+    from pathlib import Path
+
+    from yoker.agents import AgentDefinition, load_agent_definition
+
+    agent_definition: AgentDefinition | None = None
+    reference = config.agent or config.agents.definition or None
+    if reference:
+      file_path = Path(reference).expanduser()
+      if file_path.exists() and file_path.is_file():
+        agent_definition = load_agent_definition(reference)
+      else:
+        try:
+          agent_definition = session.agents.resolve(reference)
+        except ValueError:
+          logger.warning("primary agent definition not found", reference=reference)
+
     agent = Agent(
       config=config,
       plugins=plugin_packages if plugin_packages else None,
-      session=session,
+      agent_definition=agent_definition,
+      backend=session.get_backend(config),
       console_logging=os.environ.get("YOKER_CONSOLE_LOGGING", "NO") != "NO",
     )
     # Register the primary agent with the session so it gets a runtime id,

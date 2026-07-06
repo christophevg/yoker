@@ -9,8 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from yoker.agent import Agent
 from yoker.config import Config, PluginsConfig
+from yoker.core import Agent
 
 # Add examples directory to sys.path for plugin imports
 # Must be after imports to avoid E402 linting error

@@ -3,8 +3,8 @@
 import pytest
 
 import yoker
-from yoker.agent import Agent
-from yoker.agent.thinking import ThinkingMode
+from yoker.core import Agent
+from yoker.core.thinking import ThinkingMode
 from yoker.events import Event
 
 
@@ -13,7 +13,7 @@ class TestAgentBuilderReturnsAgent:
 
   def test_returns_agent_instance(self) -> None:
     """agent() returns a yoker.Agent."""
-    a = yoker.build_agent()
+    a = yoker.agent()
     assert isinstance(a, Agent)
 
   def test_reusable_across_calls(self, monkeypatch) -> None:
@@ -24,8 +24,8 @@ class TestAgentBuilderReturnsAgent:
       seen.append(message)
       return f"r:{message}"
 
-    monkeypatch.setattr("yoker.agent.process_message", handler)
-    a = yoker.build_agent()
+    monkeypatch.setattr("yoker.core.process_message", handler)
+    a = yoker.agent()
     import asyncio
 
     r1 = asyncio.run(a.process("first"))
@@ -40,12 +40,12 @@ class TestAgentBuilderModel:
 
   def test_model_override(self) -> None:
     """model= sets the agent's resolved model."""
-    a = yoker.build_agent(model="qwen3.5:cloud")
+    a = yoker.agent(model="qwen3.5:cloud")
     assert a.model == "qwen3.5:cloud"
 
   def test_provider_override_openai(self) -> None:
     """provider=openai builds a config that validates and sets the provider."""
-    a = yoker.build_agent(provider="openai", model="gpt-4o-mini")
+    a = yoker.agent(provider="openai", model="gpt-4o-mini")
     assert a.config.backend.provider == "openai"
     assert a.model == "gpt-4o-mini"
 
@@ -55,7 +55,7 @@ class TestAgentBuilderTools:
 
   def test_tools_whitelist(self) -> None:
     """tools=['read'] keeps only the read tool (and its yoker: alias)."""
-    a = yoker.build_agent(tools=["read"])
+    a = yoker.agent(tools=["read"])
     names = sorted(a.tools.names)
     assert any("read" in n for n in names)
     # Other builtins like write/search/git are filtered out.
@@ -64,12 +64,12 @@ class TestAgentBuilderTools:
 
   def test_tools_empty_disables_all(self) -> None:
     """tools=[] produces an agent with no tools."""
-    a = yoker.build_agent(tools=[])
+    a = yoker.agent(tools=[])
     assert list(a.tools.names) == []
 
   def test_tools_none_keeps_all(self) -> None:
     """tools=None (default) keeps all built-in tools."""
-    a = yoker.build_agent()
+    a = yoker.agent()
     assert len(a.tools.names) > 0
 
 
@@ -81,11 +81,11 @@ class TestAgentBuilderSkills:
     from yoker.exceptions import SkillError
 
     with pytest.raises(SkillError):
-      yoker.build_agent(skills=["does-not-exist"])
+      yoker.agent(skills=["does-not-exist"])
 
   def test_skills_empty_disables_all(self) -> None:
     """skills=[] clears the skill registry."""
-    a = yoker.build_agent(skills=[])
+    a = yoker.agent(skills=[])
     assert list(a.skills.names) == []
 
 
@@ -94,12 +94,12 @@ class TestAgentBuilderSystemPrompt:
 
   def test_system_prompt_override(self) -> None:
     """system_prompt= sets the definition's system_prompt."""
-    a = yoker.build_agent(system_prompt="You are a reviewer.")
+    a = yoker.agent(system_prompt="You are a reviewer.")
     assert a.definition.system_prompt == "You are a reviewer."
 
   def test_default_system_prompt(self) -> None:
     """Without system_prompt= the default agent prompt is used."""
-    a = yoker.build_agent()
+    a = yoker.agent()
     assert a.definition.system_prompt == "You are a helpful assistant."
 
 
@@ -116,13 +116,13 @@ class TestAgentBuilderThinking:
     ],
   )
   def test_thinking_mapping(self, value: str, expected: ThinkingMode) -> None:
-    a = yoker.build_agent(thinking=value)  # type: ignore[arg-type]
+    a = yoker.agent(thinking=value)  # type: ignore[arg-type]
     assert a.thinking_mode == expected
 
   def test_thinking_invalid_raises(self) -> None:
     """An unknown thinking value raises ValueError."""
     with pytest.raises(ValueError):
-      yoker.build_agent(thinking="bogus")  # type: ignore[arg-type]
+      yoker.agent(thinking="bogus")  # type: ignore[arg-type]
 
 
 class TestAgentBuilderEventHandler:
@@ -131,7 +131,7 @@ class TestAgentBuilderEventHandler:
   def test_event_handler_registered(self) -> None:
     """event_handler= is registered on construction."""
     received: list[Event] = []
-    a = yoker.build_agent(event_handler=lambda e: received.append(e))
+    a = yoker.agent(event_handler=lambda e: received.append(e))
     assert a.get_event_handlers()[-1] is not None
 
   def test_on_event_returns_handler(self) -> None:
@@ -140,54 +140,15 @@ class TestAgentBuilderEventHandler:
     def handler(_e: object) -> None:
       return None
 
-    returned = yoker.build_agent().on_event(handler)
+    returned = yoker.agent().on_event(handler)
     assert returned is handler
 
   def test_on_event_registers(self) -> None:
     """on_event adds the handler to the agent's handler list."""
-    a = yoker.build_agent()
+    a = yoker.agent()
 
     def handler(_e: object) -> None:
       return None
 
     a.on_event(handler)
     assert handler in a.get_event_handlers()
-
-
-class TestAgentBuilderSpawn:
-  """``Agent.spawn`` delegates to the owning Session."""
-
-  async def test_spawn_without_session_raises(self) -> None:
-    """An agent built without a session cannot spawn."""
-    a = yoker.build_agent()
-    with pytest.raises(RuntimeError, match="Session"):
-      await a.spawn("researcher", "do something")
-
-  async def test_spawn_with_session_delegates(self, monkeypatch) -> None:
-    """spawn delegates to session.spawn with the agent as requester."""
-    captured: dict[str, object] = {}
-
-    class FakeSpawnResult:
-      def __init__(self) -> None:
-        self.agent_id = "researcher"
-        self.response = "spawned-reply"
-
-    class FakeCoreSession:
-      id = "sess-1"
-
-      async def spawn(self, name, prompt, *, requester, timeout_seconds=300):
-        captured["name"] = name
-        captured["prompt"] = prompt
-        captured["requester"] = requester
-        captured["timeout"] = timeout_seconds
-        return FakeSpawnResult()
-
-    # Build an agent and inject a fake session.
-    a = yoker.build_agent()
-    a._session = FakeCoreSession()  # type: ignore[assignment]
-    result = await a.spawn("researcher", "analyze", timeout_seconds=42)
-    assert result == "spawned-reply"
-    assert captured["name"] == "researcher"
-    assert captured["prompt"] == "analyze"
-    assert captured["requester"] is a
-    assert captured["timeout"] == 42

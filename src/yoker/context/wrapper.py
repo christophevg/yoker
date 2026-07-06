@@ -11,7 +11,7 @@ from yoker.context.interface import ContextStatistics
 from yoker.context.protocol import ContextManager
 
 if TYPE_CHECKING:
-  from yoker.agent import Agent
+  from yoker.core import Agent
 
 
 class ContextManagerWrapper:

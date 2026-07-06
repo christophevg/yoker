@@ -592,14 +592,12 @@ def _build_tool_context(agent: Any, tool_name: str) -> ToolContext:
   # Get backends dict (may be empty dict if backends not yet set up)
   backends = getattr(agent, "_tool_backends", {})
 
-  # Thread the Session reference through ToolContext so session-aware
-  # tools (send_message, future session-injected tools) can reach the
-  # owning Session. ``agent._session`` is None on the single-agent path.
-  session = getattr(agent, "_session", None)
-
+  # The Agent is Session-agnostic and does not carry a Session reference.
+  # Session-aware tools (send_message, agent) capture the Session in their
+  # closures at injection time, so ToolContext.session is left as None.
   return ToolContext(
     config=tool_config,
     shared=shared_config,
     backends=backends,
-    session=session,
+    session=None,
   )

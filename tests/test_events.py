@@ -204,8 +204,8 @@ class TestAgentEventEmission:
 
   def test_agent_emits_events_during_process(self, mocker: MockerFixture) -> None:
     """Test that Agent emits events during process()."""
-    from yoker.agent import Agent
     from yoker.backends import ChatChunk, ChatChunkEvent, UsageStats
+    from yoker.core import Agent
 
     # Create ChatChunk events for the backend to return
     chunks = [
@@ -226,7 +226,7 @@ class TestAgentEventEmission:
     mock_backend = mocker.MagicMock()
     mock_backend.chat_stream = mocker.Mock(return_value=_aiter_chunks())
 
-    mocker.patch("yoker.agent.create_backend", return_value=mock_backend)
+    mocker.patch("yoker.core.create_backend", return_value=mock_backend)
 
     agent = Agent(config=Config())
     collector = TestEventCollector()
@@ -242,7 +242,7 @@ class TestAgentEventEmission:
 
   def test_agent_add_remove_handler(self) -> None:
     """Test adding and removing event handlers."""
-    from yoker.agent import Agent
+    from yoker.core import Agent
 
     agent = Agent(config=Config())
 

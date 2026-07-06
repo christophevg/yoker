@@ -11,19 +11,17 @@ import asyncio
 import dataclasses
 from collections.abc import Coroutine
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import Any, TypeVar
 
-from yoker.agent import Agent
-from yoker.agent.thinking import ThinkingMode
 from yoker.agents import AgentDefinition, load_agent_definition
+from yoker.backends import ModelBackend
 from yoker.config import Config, make_config
 from yoker.context import ContextManager
+from yoker.core import Agent
+from yoker.core.thinking import ThinkingMode
 from yoker.events import EventCallback
 from yoker.exceptions import SkillError
 from yoker.tools import ToolRegistry
-
-if TYPE_CHECKING:
-  pass
 
 _T = TypeVar("_T")
 
@@ -82,7 +80,7 @@ def run_sync(coro: Coroutine[Any, Any, _T]) -> _T:
     return asyncio.run(coro)
   raise RuntimeError(
     "Sync helper called from inside a running event loop. "
-    "Use the async variant (e.g. yoker.ask instead of yoker.ask_sync)."
+    "Use the async variant (e.g. await yoker.process(...)) instead of yoker.run_sync(...)."
   )
 
 
@@ -176,11 +174,15 @@ def build_agent(
   no_tools: bool = False,
   no_skills: bool = False,
   console_logging: bool = True,
+  backend: ModelBackend | None = None,
 ) -> Agent:
   """Construct a configured :class:`Agent` from the API kwargs.
 
-  Centralises the boilerplate shared by :func:`yoker.ask`,
-  :func:`yoker.run_skill`, :func:`yoker.complete`, and :func:`yoker.agent`.
+  Centralises the boilerplate shared by :func:`yoker.process` and
+  :func:`yoker.agent` (and the session facade). When ``backend`` is
+  provided (e.g. shared from a :class:`yoker.session.Session`) it is
+  passed to the :class:`Agent` constructor so the Agent stays
+  Session-agnostic.
   """
   # 1. Resolve the base config (programmatic defaults; no filesystem).
   base_config = config if config is not None else make_config()
@@ -223,6 +225,7 @@ def build_agent(
     context_manager=context_manager,
     plugins=plugins if plugins is not None else None,
     console_logging=console_logging,
+    backend=backend,
   )
 
   # 6. Filter skills to the requested subset (post-construction).

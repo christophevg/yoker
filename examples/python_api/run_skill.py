@@ -1,4 +1,4 @@
-"""Example — Run a skill by name with ``yoker.run_skill``.
+"""Example — Run a skill by name with ``Agent.do``.
 
 Run with:
 
@@ -15,9 +15,11 @@ import yoker
 
 
 async def main() -> None:
+  # Build a reusable agent, then invoke the skill as a command via do().
+  agent = yoker.agent()
   # Inject the skill's content into the agent's context and run a turn.
   # The skill is found by name across all configured skill directories.
-  result = await yoker.run_skill("commit", "stage and commit current changes")
+  result = await agent.do("commit", "stage and commit current changes")
   print(result)
 
 

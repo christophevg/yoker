@@ -7,22 +7,14 @@ One who yokes - the agent noun from "yoke" (PIE *yeug-* meaning "to join").
 
 from structlog import get_logger
 
-from yoker.agent import Agent
-from yoker.agent.thinking import ThinkingMode
 from yoker.agents import AgentDefinition, load_agent_definition
 from yoker.api import (
   Session as ApiSession,
 )
 from yoker.api import (
-  agent as build_agent,
-)
-from yoker.api import (
-  ask,
-  ask_sync,
-  complete,
-  complete_sync,
-  run_skill,
-  run_skill_sync,
+  agent,
+  process,
+  run_sync,
   session,
 )
 from yoker.builtin import __YOKER_MANIFEST__
@@ -35,6 +27,8 @@ from yoker.context import (
   Persisted,
   SimpleContextManager,
 )
+from yoker.core import Agent
+from yoker.core.thinking import ThinkingMode
 from yoker.events import (
   ContentChunkEvent,
   ContentEndEvent,
@@ -73,13 +67,9 @@ __all__ = [
   # Core classes
   "Agent",
   # Pythonic utility API (MBI-003)
-  "ask",
-  "ask_sync",
-  "complete",
-  "complete_sync",
-  "run_skill",
-  "run_skill_sync",
-  "build_agent",
+  "process",
+  "run_sync",
+  "agent",
   "session",
   "ApiSession",
   # Built-in plugin

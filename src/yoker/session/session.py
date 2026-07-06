@@ -37,7 +37,7 @@ from yoker.session.spawn_result import SpawnResult
 from yoker.session.tools import make_send_message_tool, make_spawn_agent_tool
 
 if TYPE_CHECKING:
-  from yoker.agent import Agent
+  from yoker.core import Agent
 
 logger = get_logger(__name__)
 
@@ -57,6 +57,7 @@ class Session:
     config: Config,
     *,
     session_id: str | None = None,
+    extra_plugins: tuple[str, ...] = (),
   ) -> None:
     self.config: Config = config
     self.id: str = session_id if session_id is not None else uuid.uuid4().hex
@@ -79,6 +80,12 @@ class Session:
 
     # Load agent definitions from configured directories.
     self._load_agents()
+    # Register plugin-discovered agent definitions (tools/skills are loaded
+    # by each Agent; agent defs are a Session concern since the Agent is
+    # Session-agnostic).
+    from yoker.plugins import register_configured_plugin_agents
+
+    register_configured_plugin_agents(self.agents, config, extra_plugins)
 
   async def __aenter__(self) -> Session:
     """Enter the session context; emit SESSION_START."""
@@ -208,37 +215,37 @@ class Session:
   async def spawn(
     self,
     name: str,
-    prompt: str,
     *,
     requester: Agent | None = None,
-    timeout_seconds: int = 300,
-  ) -> SpawnResult:
-    """Spawn a child agent by name and run it to completion.
+  ) -> Agent:
+    """Spawn a child agent by name and return it (no prompt is run).
 
-    enforces the requester's :attr:`AgentDefinition.agents` allowlist before
-    resolving/spawning, resolves the definition from ``session.agents``,
-    checks recursion depth and ``max_agents`` limits, creates a child
-    :class:`Agent` with a session-injected backend, injects the
-    Session-injected tools (``agent`` and ``send_message``) on the
-    child, runs it with a timeout, and returns a :class:`SpawnResult`
-    carrying both the spawned agent's unique id and its response string.
+    The canonical sub-agent API (MBI-003 Decision 8). Enforces the
+    requester's :attr:`AgentDefinition.agents` allowlist, resolves the
+    definition from ``session.agents``, checks recursion depth and
+    ``max_agents`` limits, creates a child :class:`Agent` with a
+    session-injected backend, injects the Session-injected tools
+    (``agent`` and ``send_message``) on the child, registers it in the
+    active map, and returns the Agent. The caller drives the agent
+    directly (e.g. ``await agent.process("...")``).
+
+    The agent stays registered in the session's active map until
+    :meth:`_release` is called (the ``agent`` tool calls
+    :meth:`_spawn_and_run` which releases after the run; standalone
+    callers may release explicitly or let the session exit clean up).
 
     Args:
       name: Agent definition name (bare or namespaced) to spawn.
-      prompt: The prompt to send to the spawned agent.
       requester: The requesting :class:`Agent` (for allowlist enforcement).
         When ``None`` (top-level spawn) the allowlist check is bypassed.
-      timeout_seconds: Maximum seconds the spawned agent may run.
 
     Returns:
-      A :class:`SpawnResult` with ``agent_id`` (the spawned agent's unique
-      session-assigned id) and ``response`` (the agent's reply string, or
-      an error message on timeout/exception).
+      The spawned :class:`Agent` instance, with its session-assigned id
+      available as ``agent._agent_id``.
 
     Raises:
       ValueError: On allowlist violation, unknown agent, or capacity
         (depth / max_agents) exceeded.
-      TimeoutError: When the spawned agent does not finish in time.
     """
     # Allowlist enforcement — before any other check.
     if requester is not None:
@@ -261,8 +268,6 @@ class Session:
     # depth in this session.
     parent_depth = 0
     if requester is not None:
-      # Look up the requester's depth by matching its session-assigned name.
-      # Fall back to 0 if the requester isn't tracked (e.g. primary agent).
       parent_depth = next(
         (d for n, d in self._recursion_depths.items() if self._agents_map.get(n) is requester),
         0,
@@ -286,16 +291,18 @@ class Session:
     # Unique session-assigned agent name.
     agent_id = self._generate_agent_name(agent_definition.simple_name or name)
 
-    # Construct the child Agent with a session reference
-    from yoker.agent import Agent as _Agent
+    # Construct the child Agent (Session-agnostic; backend injected).
+    from yoker.core import Agent as _Agent
 
     child = _Agent(
       config=child_config,
       agent_definition=agent_definition,
       backend=backend,
-      session=self,
       console_logging=False,
     )
+    # Tag the agent with its session-assigned id so callers (and the
+    # ``agent`` tool) can read it back for send_message addressing.
+    child._agent_id = agent_id  # type: ignore[attr-defined]
 
     # Register in the active map and track depth.
     self._agents_map[agent_id] = child
@@ -305,15 +312,12 @@ class Session:
     # registered on the child by the Session (closure capture).
     self.inject_tools(child, agent_id)
 
-    # Event aggregation: register a forwarding
-    # handler on the child so its events reach session-level handlers
-    # wrapped in a SessionEvent envelope. Suppressed when the caller opts
-    # out via ``config.session.event_aggregation``.
+    # Event aggregation: register a forwarding handler on the child so its
+    # events reach session-level handlers wrapped in a SessionEvent envelope.
     if self.config.session.event_aggregation:
       child.add_event_handler(self._make_forwarding_handler(agent_id))
 
-    # Lifecycle signal: AGENT_SPAWNED is emitted after registration so
-    # handlers observe the agent in the active map.
+    # Lifecycle signal: AGENT_SPAWNED is emitted after registration.
     self._emit(
       AgentSpawnedEvent(
         type=EventType.AGENT_SPAWNED,
@@ -322,7 +326,24 @@ class Session:
         definition_name=agent_definition.simple_name or name,
       )
     )
+    return child
 
+  async def _spawn_and_run(
+    self,
+    name: str,
+    prompt: str,
+    *,
+    requester: Agent | None = None,
+    timeout_seconds: int = 300,
+  ) -> SpawnResult:
+    """Spawn a child agent and run it to completion (internal).
+
+    Used by the Session-injected ``agent`` tool. Spawns via
+    :meth:`spawn`, runs the prompt with a timeout, releases the agent,
+    and returns a :class:`SpawnResult` carrying the agent id and response.
+    """
+    child = await self.spawn(name, requester=requester)
+    agent_id = child._agent_id  # type: ignore[attr-defined]
     try:
       response = await asyncio.wait_for(
         child.process(prompt),
@@ -332,18 +353,19 @@ class Session:
     except asyncio.TimeoutError as e:
       raise TimeoutError(f"Sub-agent '{agent_id}' timed out after {timeout_seconds} seconds") from e
     finally:
-      # AGENT_FINISHED is emitted as a lifecycle signal,
-      # then the agent is removed from the active list. There is no
-      # `finished` state — visible states are {idle, running} only.
-      self._emit(
-        AgentFinishedEvent(
-          type=EventType.AGENT_FINISHED,
-          session_id=self.id,
-          agent_id=agent_id,
-        )
+      self._release(agent_id)
+
+  def _release(self, agent_id: str) -> None:
+    """Release a spawned agent: emit AGENT_FINISHED and remove from active map."""
+    self._emit(
+      AgentFinishedEvent(
+        type=EventType.AGENT_FINISHED,
+        session_id=self.id,
+        agent_id=agent_id,
       )
-      self._agents_map.pop(agent_id, None)
-      self._recursion_depths.pop(agent_id, None)
+    )
+    self._agents_map.pop(agent_id, None)
+    self._recursion_depths.pop(agent_id, None)
 
   def inject_tools(self, agent: Agent, agent_id: str) -> None:
     """Inject Session-injected tools onto an agent
@@ -394,6 +416,8 @@ class Session:
     self._agents_map[agent_id] = agent
     self._recursion_depths[agent_id] = 0
     self.inject_tools(agent, agent_id)
+    # Tag the agent with its session-assigned id (mirrors spawn()).
+    agent._agent_id = agent_id  # type: ignore[attr-defined]
     return agent_id
 
   def _make_forwarding_handler(self, agent_id: str) -> EventCallback:

@@ -12,7 +12,7 @@ import asyncio
 from typing import Any
 
 from yoker import __version__
-from yoker.agent import Agent
+from yoker.core import Agent
 from yoker.events import (
   ContentChunkEvent,
   ContentEndEvent,

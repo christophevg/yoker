@@ -27,7 +27,7 @@ def handler(event: Any) -> None:
 
 
 async def main() -> None:
-  agent = yoker.build_agent(model="qwen3.5:cloud", event_handler=handler)
+  agent = yoker.agent(model="qwen3.5:cloud", event_handler=handler)
   await agent.process("List the files in the current directory and explain what each one does.")
 
 

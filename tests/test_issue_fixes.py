@@ -19,10 +19,10 @@ class TestIssue1AgentModelOverride:
 
   def test_agent_model_overrides_config(self) -> None:
     """Agent definition's model should override config's model."""
-    from yoker.agent import Agent
-    from yoker.agent.thinking import ThinkingMode
     from yoker.agents import AgentDefinition
     from yoker.config import Config
+    from yoker.core import Agent
+    from yoker.core.thinking import ThinkingMode
 
     config = Config()
     config_model = config.backend.ollama.model
@@ -44,10 +44,10 @@ class TestIssue1AgentModelOverride:
 
   def test_agent_without_model_uses_config(self) -> None:
     """Agent without model should use config's model."""
-    from yoker.agent import Agent
-    from yoker.agent.thinking import ThinkingMode
     from yoker.agents import AgentDefinition
     from yoker.config import Config
+    from yoker.core import Agent
+    from yoker.core.thinking import ThinkingMode
 
     config = Config()
 
@@ -70,10 +70,10 @@ class TestIssue3ToolAvailability:
 
   def test_yoker_namespace_resolves_to_builtin(self) -> None:
     """yoker:read should resolve to read in tool registry."""
-    from yoker.agent import Agent
-    from yoker.agent.thinking import ThinkingMode
     from yoker.agents import AgentDefinition
     from yoker.config import Config
+    from yoker.core import Agent
+    from yoker.core.thinking import ThinkingMode
 
     agent_def = AgentDefinition(
       simple_name="test",
@@ -92,10 +92,10 @@ class TestIssue3ToolAvailability:
 
   def test_mixed_namespaces_filter_correctly(self) -> None:
     """Agent with mixed tool namespaces should filter correctly."""
-    from yoker.agent import Agent
-    from yoker.agent.thinking import ThinkingMode
     from yoker.agents import AgentDefinition
     from yoker.config import Config
+    from yoker.core import Agent
+    from yoker.core.thinking import ThinkingMode
 
     agent_def = AgentDefinition(
       simple_name="test",
@@ -122,10 +122,10 @@ class TestEndToEndDemoPlugin:
     import asyncio
     from unittest.mock import Mock
 
-    from yoker.agent import Agent
-    from yoker.agent.thinking import ThinkingMode
     from yoker.agents import AgentDefinition
     from yoker.config import Config
+    from yoker.core import Agent
+    from yoker.core.thinking import ThinkingMode
     from yoker.ui.commands.tools import create_command as create_tools_command
 
     agent_def = AgentDefinition(

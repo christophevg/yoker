@@ -9,7 +9,7 @@ import pytest
 from rich.console import Console
 
 from yoker import __version__
-from yoker.agent.thinking import ThinkingMode
+from yoker.core.thinking import ThinkingMode
 from yoker.exceptions import NetworkError, ToolError
 from yoker.ui import InteractiveUIHandler
 from yoker.ui.spinner import LiveDisplay

@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 from yoker.ui.commands.base import Command
 
 if TYPE_CHECKING:
-  from yoker.agent import Agent
+  from yoker.core import Agent
   from yoker.ui import UIHandler
 
 

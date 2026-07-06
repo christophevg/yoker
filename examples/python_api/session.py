@@ -5,7 +5,8 @@ Run with:
     python examples/python_api/session.py
 
 Context persists across turns automatically. The session id makes the
-conversation resumable — re-opening the same id restores history.
+conversation resumable — re-opening the same id restores history. Access the
+primary agent via ``session.agent`` and call ``process()`` directly.
 """
 
 import asyncio
@@ -15,10 +16,12 @@ import yoker
 
 async def main() -> None:
   async with yoker.session(id="refactor-auth") as session:
-    await session.ask("Read src/auth.py and identify the main responsibilities.")
-    await session.ask("Suggest a refactor that splits authentication from session management.")
-    await session.ask("Apply the refactor. Write the new files.")
-    await session.ask("Update the tests to match the new structure.")
+    await session.agent.process("Read src/auth.py and identify the main responsibilities.")
+    await session.agent.process(
+      "Suggest a refactor that splits authentication from session management."
+    )
+    await session.agent.process("Apply the refactor. Write the new files.")
+    await session.agent.process("Update the tests to match the new structure.")
 
 
 if __name__ == "__main__":

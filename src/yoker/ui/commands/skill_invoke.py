@@ -9,7 +9,7 @@ receives.
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-  from yoker.agent import Agent
+  from yoker.core import Agent
   from yoker.ui import UIHandler
 
 
