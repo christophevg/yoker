@@ -45,7 +45,18 @@ src/yoker/
 │   ├── providers.py         # Provider configs (Ollama, OpenAI, Anthropic, Gemini, Generic)
 │   ├── validators.py        # Field validators
 │   └── writer.py            # TOML writer with chmod 600
-├── context/                 # Context managers
+├── context/                 # Context managers (Protocol-based)
+│   ├── __init__.py          # Exports: ContextManager, BaseContextManager, SimpleContextManager,
+│   │                        #   ContextManagerWrapper, Persisted, ContextStatistics, SessionMetadata,
+│   │                        #   DEFAULT_STORAGE_PATH, list_sessions, load_session_metadata
+│   ├── protocol.py          # ContextManager @runtime_checkable Protocol
+│   ├── manager.py           # BaseContextManager (in-memory base, self._messages)
+│   ├── basic.py             # SimpleContextManager (env reminder + system prompt)
+│   ├── wrapper.py           # ContextManagerWrapper (pure proxy, forwards to wrapped)
+│   ├── persisted.py         # Persisted (JSONL persistence via bulk-rewrite)
+│   ├── interface.py         # ContextStatistics, SessionMetadata dataclasses
+│   ├── session.py           # list_sessions, load_session_metadata (JSONL utilities)
+│   └── validator.py         # validate_session_id, validate_storage_path, is_safe_path
 ├── events/                  # Event types and serialization
 ├── exceptions.py            # Exception hierarchy (incl. NetworkError)
 ├── logging.py               # Structured logging

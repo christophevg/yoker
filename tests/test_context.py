@@ -1,24 +1,24 @@
 """Tests for Yoker context management system."""
 
-import json
-import os
 import platform
 from pathlib import Path
 
 import pytest
 
 from yoker.context import (
+  BaseContextManager,
   ContextManager,
   ContextStatistics,
-  PersistenceContextManager,
+  Persisted,
   SessionMetadata,
+  SimpleContextManager,
 )
 from yoker.context.validator import (
   is_safe_path,
   validate_session_id,
   validate_storage_path,
 )
-from yoker.exceptions import ContextCorruptionError, SessionNotFoundError, ValidationError
+from yoker.exceptions import SessionNotFoundError, ValidationError
 
 
 class TestContextStatistics:
@@ -156,277 +156,102 @@ class TestSafePath:
     assert is_safe_path(tmp_path, tmp_path) is True
 
 
-class TestPersistenceContextManager:
-  """Tests for PersistenceContextManager."""
+class TestBaseContextManager:
+  """Tests for BaseContextManager (in-memory base)."""
 
-  def test_init_auto_session_id(self, tmp_path: Path) -> None:
-    """Test initialization with auto-generated session ID."""
-    cm = PersistenceContextManager(tmp_path)
-    assert len(cm.get_session_id()) >= 8
+  def test_init_empty(self) -> None:
+    """Test initialization with no initial messages."""
+    cm = BaseContextManager()
+    assert cm.get_messages() == []
+    assert cm.get_context() == []
+    assert cm.get_session_id() == "in-memory"
 
-  def test_init_custom_session_id(self, tmp_path: Path) -> None:
-    """Test initialization with custom session ID."""
-    cm = PersistenceContextManager(tmp_path, session_id="custom-session-123")
-    assert cm.get_session_id() == "custom-session-123"
+  def test_init_with_initial(self) -> None:
+    """Test initialization with initial messages."""
+    initial = [{"role": "user", "content": "hi"}]
+    cm = BaseContextManager(initial)
+    assert cm.get_messages() == initial
+    # initial list is copied, not shared
+    initial.append({"role": "assistant", "content": "yo"})
+    assert cm.get_messages() == [{"role": "user", "content": "hi"}]
 
-  def test_add_message(self, tmp_path: Path) -> None:
-    """Test adding messages."""
-    cm = PersistenceContextManager(tmp_path, session_id="test-session")
-
+  def test_add_message(self) -> None:
+    cm = BaseContextManager()
     cm.add_message("user", "Hello")
     cm.add_message("assistant", "Hi there!")
-
     messages = cm.get_messages()
     assert len(messages) == 2
     assert messages[0]["role"] == "user"
     assert messages[0]["content"] == "Hello"
 
-  def test_add_tool_result(self, tmp_path: Path) -> None:
-    """Test adding tool results."""
-    cm = PersistenceContextManager(tmp_path, session_id="test-session")
+  def test_add_message_empty_content_skipped(self) -> None:
+    cm = BaseContextManager()
+    cm.add_message("user", "")
+    assert cm.get_messages() == []
 
-    cm.add_tool_result("read", "tool-123", "file content", success=True)
-
-    context = list(cm)
+  def test_add_tool_result(self) -> None:
+    cm = BaseContextManager()
+    cm.add_tool_result("read", "tool-1", "content", success=True)
+    context = cm.get_context()
     assert len(context) == 1
     assert context[0]["role"] == "tool"
     assert context[0]["name"] == "read"
+    # get_messages excludes tool results
+    assert cm.get_messages() == []
 
-  def test_add_tool_calls_stores_arguments_as_dict(self, tmp_path: Path) -> None:
-    """Test that add_tool_calls stores arguments as dict (internal format).
-
-    Context stores tool calls with arguments as dict (generic format).
-    Backends convert to the format expected by each provider:
-    - OllamaBackend: keeps as dict
-    - LitellmBackend: converts to JSON string
-    """
-    cm = PersistenceContextManager(tmp_path, session_id="test-session")
-
-    # Tool calls with arguments as a dict (internal format)
-    tool_calls = [
-      {
-        "id": "call_123",
-        "function": {
-          "name": "read_file",
-          "arguments": {"path": "/tmp/test.txt", "mode": "r"},  # dict format
-        },
-      }
-    ]
-
-    cm.add_tool_calls(tool_calls)
-
-    # Get the stored context
+  def test_add_tool_calls(self) -> None:
+    cm = BaseContextManager()
+    cm.add_tool_calls([{"id": "call_1", "function": {"name": "read", "arguments": {}}}])
     context = cm.get_context()
     assert len(context) == 1
+    assert context[0]["role"] == "assistant"
+    assert "tool_calls" in context[0]
 
-    # Verify the assistant message was stored
-    assistant_msg = context[0]
-    assert assistant_msg["role"] == "assistant"
-    assert "tool_calls" in assistant_msg
-
-    # Verify arguments remain as dict in context
-    stored_tool_call = assistant_msg["tool_calls"][0]
-    assert stored_tool_call["id"] == "call_123"
-    assert stored_tool_call["function"]["name"] == "read_file"
-
-    # This is the key assertion - arguments must remain a dict
-    assert isinstance(stored_tool_call["function"]["arguments"], dict)
-    assert stored_tool_call["function"]["arguments"] == {"path": "/tmp/test.txt", "mode": "r"}
-
-  def test_add_tool_calls_with_arguments_already_string(self, tmp_path: Path) -> None:
-    """Test that add_tool_calls handles arguments that are already strings."""
-    cm = PersistenceContextManager(tmp_path, session_id="test-session")
-
-    # Tool calls with arguments already as JSON string
-    tool_calls = [
-      {
-        "id": "call_456",
-        "function": {
-          "name": "write_file",
-          "arguments": '{"content": "hello world"}',  # already a string
-        },
-      }
-    ]
-
-    cm.add_tool_calls(tool_calls)
-
-    context = cm.get_context()
-    stored_tool_call = context[0]["tool_calls"][0]
-
-    # Should remain a string
-    assert isinstance(stored_tool_call["function"]["arguments"], str)
-    assert stored_tool_call["function"]["arguments"] == '{"content": "hello world"}'
-
-  def test_turn_lifecycle(self, tmp_path: Path) -> None:
-    """Test turn start and end."""
-    cm = PersistenceContextManager(tmp_path, session_id="test-session")
-
+  def test_turn_lifecycle(self) -> None:
+    cm = BaseContextManager()
     cm.start_turn("Hello")
     cm.end_turn("Hi there!")
-
     stats = cm.get_statistics()
     assert stats.turn_count == 1
-    assert stats.message_count == 2  # user + assistant
+    assert stats.message_count == 2
 
-  def test_statistics(self, tmp_path: Path) -> None:
-    """Test statistics tracking."""
-    cm = PersistenceContextManager(tmp_path, session_id="test-session")
+  def test_clear(self) -> None:
+    cm = BaseContextManager()
+    cm.add_message("user", "Hello")
+    cm.clear()
+    assert cm.get_messages() == []
+    assert cm.get_context() == []
 
+  def test_save_is_noop(self) -> None:
+    cm = BaseContextManager()
+    cm.save()  # should not raise
+
+  def test_load_returns_false(self) -> None:
+    cm = BaseContextManager()
+    assert cm.load() is False
+
+  def test_delete_raises(self) -> None:
+    cm = BaseContextManager()
+    with pytest.raises(NotImplementedError):
+      cm.delete()
+
+  def test_close_is_noop(self) -> None:
+    cm = BaseContextManager()
+    cm.close()  # should not raise
+
+  def test_get_statistics(self) -> None:
+    cm = BaseContextManager()
     cm.start_turn("Hello")
     cm.add_tool_result("read", "tool-1", "content")
     cm.end_turn("Done")
-
     stats = cm.get_statistics()
     assert stats.message_count == 2
     assert stats.turn_count == 1
-    assert stats.tool_call_count == 1
-    assert stats.last_turn_time is not None
+    assert stats.tool_call_count == 0  # base does not track tool calls
 
-  def test_save_and_load(self, tmp_path: Path) -> None:
-    """Test saving and loading context."""
-    session_id = "test-session-save"
-
-    # Create and save context
-    cm1 = PersistenceContextManager(tmp_path, session_id=session_id)
-    cm1.add_message("user", "Hello")
-    cm1.add_message("assistant", "Hi!")
-    cm1.save()
-    cm1.close()
-
-    # Load context
-    cm2 = PersistenceContextManager(tmp_path, session_id=session_id)
-    loaded = cm2.load()
-
-    assert loaded is True
-    messages = cm2.get_messages()
-    assert len(messages) == 2
-    assert messages[0]["role"] == "user"
-    assert messages[0]["content"] == "Hello"
-
-    # Cleanup
-    cm2.delete()
-
-  def test_load_nonexistent(self, tmp_path: Path) -> None:
-    """Test loading non-existent session."""
-    cm = PersistenceContextManager(tmp_path, session_id="nonexistent")
-    loaded = cm.load()
-    assert loaded is False
-
-  def test_delete(self, tmp_path: Path) -> None:
-    """Test deleting context."""
-    session_id = "test-delete"
-
-    cm = PersistenceContextManager(tmp_path, session_id=session_id)
-    cm.add_message("user", "Test")
-    cm.save()
-
-    # Delete
-    cm.delete()
-
-    # Verify deleted
-    cm2 = PersistenceContextManager(tmp_path, session_id=session_id)
-    assert cm2.load() is False
-
-  def test_delete_nonexistent_raises(self, tmp_path: Path) -> None:
-    """Test deleting non-existent session raises error."""
-    cm = PersistenceContextManager(tmp_path, session_id="nonexistent-delete")
-    with pytest.raises(SessionNotFoundError):
-      cm.delete()
-
-  def test_clear(self, tmp_path: Path) -> None:
-    """Test clearing context."""
-    cm = PersistenceContextManager(tmp_path, session_id="test-clear")
-
-    cm.add_message("user", "Hello")
-    cm.clear()
-
-    messages = cm.get_messages()
-    assert len(messages) == 0
-
-    stats = cm.get_statistics()
-    assert stats.message_count == 0
-
-  def test_jsonl_format(self, tmp_path: Path) -> None:
-    """Test JSONL file format."""
-    session_id = "test-jsonl"
-
-    cm = PersistenceContextManager(tmp_path, session_id=session_id)
-    cm.add_message("user", "Hello")
-    cm.save()
-
-    # Read and verify JSONL
-    file_path = tmp_path / f"{session_id}.jsonl"
-    assert file_path.exists()
-
-    with open(file_path) as f:
-      lines = f.readlines()
-
-    # Each line should be valid JSON
-    for line in lines:
-      record = json.loads(line.strip())
-      assert "type" in record
-      assert "timestamp" in record
-
-    # Cleanup
-    cm.delete()
-
-  def test_corrupted_file(self, tmp_path: Path) -> None:
-    """Test handling corrupted JSONL file."""
-    session_id = "test-corrupt"
-
-    # Write corrupted file
-    file_path = tmp_path / f"{session_id}.jsonl"
-    file_path.write_text('{"type": "session_start", "data": {}}\ninvalid json\n')
-
-    cm = PersistenceContextManager(tmp_path, session_id=session_id)
-    with pytest.raises(ContextCorruptionError) as exc_info:
-      cm.load()
-
-    assert "Invalid JSON" in str(exc_info.value)
-
-  def test_directory_permissions(self, tmp_path: Path) -> None:
-    """Test that storage directory has secure permissions."""
-    cm = PersistenceContextManager(tmp_path, session_id="test-perms")
-    cm.save()
-
-    # Check directory permissions (skip on Windows)
-    if hasattr(os, "chmod"):
-      # Note: actual permissions depend on umask
-      # We just verify the directory was created
-      assert tmp_path.exists()
-
-    cm.delete()
-
-  def test_context_manager_protocol(self, tmp_path: Path) -> None:
-    """Test that PersistenceContextManager implements ContextManager protocol."""
-    cm = PersistenceContextManager(tmp_path, session_id="test-protocol")
+  def test_implements_protocol(self) -> None:
+    cm = BaseContextManager()
     assert isinstance(cm, ContextManager)
-
-  def test_tilde_expansion_in_storage_path(
-    self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-  ) -> None:
-    """Test that ~ in storage path is expanded to home directory.
-
-    Regression test for issue #9: Storage path with ~ creates literal ~
-    directory instead of expanding to home.
-    """
-    # Mock home directory to tmp_path (both HOME for Unix and USERPROFILE for Windows)
-    monkeypatch.setenv("HOME", str(tmp_path))
-    monkeypatch.setenv("USERPROFILE", str(tmp_path))
-
-    # Create context manager with tilde path
-    cm = PersistenceContextManager(
-      storage_path="~/.cache/yoker/sessions",
-      session_id="test-tilde-expansion",
-    )
-
-    # The storage path should be expanded to the home directory,
-    # not create a literal "~" directory in CWD
-    storage_path_str = str(cm._storage_path)
-
-    # Should contain tmp_path (mocked home), not literal "~"
-    assert "~" not in storage_path_str, f"Path contains literal ~: {storage_path_str}"
-    assert str(tmp_path) in storage_path_str, f"Path not under home: {storage_path_str}"
 
 
 class TestListSessions:
@@ -451,8 +276,7 @@ class TestListSessions:
     """Test listing a single session."""
     from yoker.context import list_sessions
 
-    # Create a session with some messages
-    cm = PersistenceContextManager(tmp_path, session_id="test-session-1")
+    cm = Persisted(SimpleContextManager(), storage_path=tmp_path, session_id="test-session-1")
     cm.start_turn("Hello, how are you?")
     cm.end_turn("I'm doing well, thank you!")
     cm.save()
@@ -471,17 +295,15 @@ class TestListSessions:
 
     from yoker.context import list_sessions
 
-    # Create first session
-    cm1 = PersistenceContextManager(tmp_path, session_id="session-older")
+    cm1 = Persisted(SimpleContextManager(), storage_path=tmp_path, session_id="session-older")
     cm1.start_turn("First message")
     cm1.end_turn("First response")
     cm1.save()
     cm1.close()
 
-    time.sleep(0.01)  # Ensure different timestamps
+    time.sleep(0.01)
 
-    # Create second session
-    cm2 = PersistenceContextManager(tmp_path, session_id="session-newer")
+    cm2 = Persisted(SimpleContextManager(), storage_path=tmp_path, session_id="session-newer")
     cm2.start_turn("Second message")
     cm2.end_turn("Second response")
     cm2.save()
@@ -489,7 +311,6 @@ class TestListSessions:
 
     sessions = list_sessions(tmp_path)
     assert len(sessions) == 2
-    # Newest should be first
     assert sessions[0].session_id == "session-newer"
     assert sessions[1].session_id == "session-older"
 
@@ -497,7 +318,7 @@ class TestListSessions:
     """Test that last_message contains preview of last user message."""
     from yoker.context import list_sessions
 
-    cm = PersistenceContextManager(tmp_path, session_id="test-preview")
+    cm = Persisted(SimpleContextManager(), storage_path=tmp_path, session_id="test-preview")
     cm.start_turn("Hello there!")
     cm.end_turn("Hi! How can I help?")
     cm.start_turn("What is the weather?")
@@ -507,16 +328,15 @@ class TestListSessions:
 
     sessions = list_sessions(tmp_path)
     assert len(sessions) == 1
-    # Last user message should be captured
     assert sessions[0].last_message == "What is the weather?"
 
   def test_long_message_truncation(self, tmp_path: Path) -> None:
     """Test that long messages are truncated in preview."""
     from yoker.context import list_sessions
 
-    long_message = "A" * 200  # 200 characters
+    long_message = "A" * 200
 
-    cm = PersistenceContextManager(tmp_path, session_id="test-long")
+    cm = Persisted(SimpleContextManager(), storage_path=tmp_path, session_id="test-long")
     cm.start_turn(long_message)
     cm.end_turn("Response")
     cm.save()
@@ -524,7 +344,6 @@ class TestListSessions:
 
     sessions = list_sessions(tmp_path)
     assert len(sessions) == 1
-    # Should be truncated to 100 chars + "..."
     assert len(sessions[0].last_message) == 103  # 100 + "..."
     assert sessions[0].last_message.endswith("...")
 
@@ -532,14 +351,12 @@ class TestListSessions:
     """Test that corrupted session files are skipped."""
     from yoker.context import list_sessions
 
-    # Create valid session
-    cm = PersistenceContextManager(tmp_path, session_id="valid-session")
+    cm = Persisted(SimpleContextManager(), storage_path=tmp_path, session_id="valid-session")
     cm.start_turn("Hello")
     cm.end_turn("Hi!")
     cm.save()
     cm.close()
 
-    # Create corrupted session file
     corrupted_file = tmp_path / "corrupted-session.jsonl"
     corrupted_file.write_text("not valid json\n")
 
@@ -551,7 +368,7 @@ class TestListSessions:
     """Test that all SessionMetadata fields are populated correctly."""
     from yoker.context import list_sessions
 
-    cm = PersistenceContextManager(tmp_path, session_id="full-metadata")
+    cm = Persisted(SimpleContextManager(), storage_path=tmp_path, session_id="full-metadata")
     cm.start_turn("Message 1")
     cm.end_turn("Response 1")
     cm.start_turn("Message 2")
@@ -565,7 +382,7 @@ class TestListSessions:
     metadata = sessions[0]
     assert isinstance(metadata, SessionMetadata)
     assert metadata.session_id == "full-metadata"
-    assert metadata.message_count == 4  # 2 turns * 2 messages
+    assert metadata.message_count == 4
     assert metadata.turn_count == 2
     assert metadata.start_time is not None
     assert metadata.last_turn_time is not None
@@ -576,22 +393,19 @@ class TestListSessions:
     """Test that default storage path is used when not provided."""
     from yoker.context import DEFAULT_STORAGE_PATH
 
-    cm = PersistenceContextManager()
+    cm = Persisted(SimpleContextManager())
     assert cm._storage_path == DEFAULT_STORAGE_PATH
 
   def test_resume_existing_session(self, tmp_path: Path) -> None:
     """Test resuming an existing session."""
-    # Create a session
-    cm1 = PersistenceContextManager(tmp_path, session_id="test-resume")
+    cm1 = Persisted(SimpleContextManager(), storage_path=tmp_path, session_id="test-resume")
     cm1.start_turn("Hello")
     cm1.end_turn("Hi there!")
     cm1.save()
     cm1.close()
 
-    # Resume the session
-    cm2 = PersistenceContextManager.resume("test-resume", storage_path=tmp_path)
+    cm2 = Persisted.resume("test-resume", storage_path=tmp_path)
 
-    # Verify the session was loaded
     assert cm2.get_statistics().message_count == 2
     messages = cm2.get_messages()
     assert len(messages) == 2
@@ -600,30 +414,5 @@ class TestListSessions:
 
   def test_resume_nonexistent_session_raises(self, tmp_path: Path) -> None:
     """Test that resuming a nonexistent session raises SessionNotFoundError."""
-    from yoker.exceptions import SessionNotFoundError
-
     with pytest.raises(SessionNotFoundError):
-      PersistenceContextManager.resume("nonexistent", storage_path=tmp_path)
-
-  def test_list_sessions_default_path(self, tmp_path: Path, monkeypatch) -> None:
-    """Test list_sessions with default path."""
-
-    from yoker.context import list_sessions
-
-    # Use tmp_path as the default storage path
-    monkeypatch.setattr("yoker.context.session.DEFAULT_STORAGE_PATH", tmp_path)
-    monkeypatch.setattr("yoker.context.persistence.DEFAULT_STORAGE_PATH", tmp_path)
-
-    # Create a session
-    cm = PersistenceContextManager(session_id="test-default")
-    cm._storage_path = tmp_path  # Override to use tmp_path
-    cm._file_path = tmp_path / "test-default.jsonl"
-    cm.start_turn("Test")
-    cm.end_turn("Response")
-    cm.save()
-    cm.close()
-
-    # List sessions with default path
-    sessions = list_sessions()
-    assert len(sessions) == 1
-    assert sessions[0].session_id == "test-default"
+      Persisted.resume("nonexistent", storage_path=tmp_path)

@@ -1,36 +1,33 @@
-"""Basic in-memory context manager implementations.
+"""In-memory context manager with environment reminder.
 
-Provides:
-
-* SimpleContextManager, a simple list-like context manager that keeps
-  conversation history in memory only and provides an elementary context
-  setup with an environment reminder and system prompt.
+Provides SimpleContextManager, an in-memory context manager that adds a
+collapsed environment-reminder + system-prompt message as its initial
+context. No persistence is performed — wrap with Persisted for JSONL
+persistence.
 """
 
 from pathlib import Path
 
-from yoker.context.manager import ContextManager
+from yoker.context.manager import BaseContextManager
 
 
-class SimpleContextManager(ContextManager):
-  """In-memory context manager.
+class SimpleContextManager(BaseContextManager):
+  """In-memory context manager with environment reminder + system prompt.
 
-  Acts as a plain list of conversation messages. No persistence is performed.
+  No persistence is performed. Wrap with :class:`yoker.context.persisted.Persisted`
+  to add JSONL persistence while keeping the environment reminder.
   """
 
   def setup_initial_context(self) -> None:
+    """Add a collapsed env-reminder + system-prompt system message.
+
+    The backwards example agent has problems doing as instructed in its system
+    prompt. Collapsing it in a single system message seemed to solve it, when
+    using the agent directly. But when called as a sub-agent, it seemed to not
+    adhere to its system prompt. To be investigated further when context management
+    is in focus.
     """
-    The most simple context consists of:
-    1. an environment reminder that provides basic information about the current agent/model and its "location".
-    2. a system prompt to provide initial commands
-    """
-    # The backwards example agent has problems doing as instructed in its system
-    # prompt. Collapsing it in a single system message seemed to solve it, when
-    # using the agent directly. But when called as a sub-agent, it seemed to not
-    # adhere to its system prompt. To be investigated further when context management
-    # is in focus.
     self.add_message("system", self.environment_reminder + "\n" + self.system_prompt)
-    # self.add_message("system", self.system_prompt)
 
   @property
   def environment_reminder(self) -> str:
