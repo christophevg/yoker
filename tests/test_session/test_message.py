@@ -1,4 +1,4 @@
-"""Tests for the Message dataclass (MBI-007 7.1.1 / 7.4.1)."""
+"""Tests for the Message dataclass."""
 
 from dataclasses import FrozenInstanceError
 

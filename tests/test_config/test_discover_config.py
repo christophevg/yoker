@@ -130,7 +130,7 @@ definition = "./agents/missing.md"
         },
       )
 
-      # MBI-007 Phase 2: name resolution requires a Session. With a Session,
+      # Name resolution requires a Session. With a Session,
       # the registry raises ValueError("Agent not found: ...") for the
       # missing-file reference. Without a Session, the error is the clearer
       # "cannot be resolved without a Session" message.

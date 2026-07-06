@@ -1,4 +1,4 @@
-"""Tests for Session.spawn — allowlist, depth, max_agents, backend (MBI-007 7.3.3, 7.5, 7.8.2)."""
+"""Tests for Session.spawn — allowlist, depth, max_agents, backend."""
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -34,7 +34,7 @@ def _make_requester(allowlist=(), session=None):
 
 
 class TestSpawnAllowlist:
-  """Tests for AgentDefinition.agents allowlist enforcement (PR #43 Clarification 3)."""
+  """Tests for AgentDefinition.agents allowlist enforcement."""
 
   @pytest.mark.asyncio
   async def test_top_level_spawn_bypasses_allowlist(self) -> None:
@@ -176,7 +176,7 @@ class TestSpawnRecursionDepth:
 
 
 class TestSpawnMaxAgents:
-  """Tests for the session max_agents cap (Decision 7)."""
+  """Tests for the session max_agents cap."""
 
   @pytest.mark.asyncio
   async def test_spawn_rejected_when_max_agents_reached(self) -> None:
@@ -218,7 +218,7 @@ class TestSpawnAgentMap:
         mock_child.tools = MagicMock()
         mock_agent_cls.return_value = mock_child
         result = await session.spawn("researcher", "hi")
-      # Clarification 7: agent removed from active list after completion.
+      # agent removed from active list after completion.
       assert session.get_agent("researcher") is None
       assert isinstance(result, SpawnResult)
       assert result.agent_id == "researcher"
@@ -248,7 +248,7 @@ class TestSpawnAgentMap:
 
 
 class TestSessionBackendFactory:
-  """Tests for Session.get_backend — sharing and freshness (7.5.1, 7.5.2)."""
+  """Tests for Session.get_backend — sharing and freshness."""
 
   def test_same_config_returns_same_backend(self) -> None:
     """get_backend is idempotent for the same config (shared backend)."""
@@ -289,7 +289,7 @@ class TestSessionBackendFactory:
 
 
 class TestSessionRegistryPopulation:
-  """Tests for Session._load_agents (7.3.1)."""
+  """Tests for Session._load_agents."""
 
   def test_session_creates_empty_registry(self) -> None:
     """Session has an AgentRegistry instance."""

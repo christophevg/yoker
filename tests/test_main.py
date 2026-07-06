@@ -275,9 +275,9 @@ class TestMainIntegration:
   def test_main_creates_batch_ui_and_runs_session(self):
     """main() should create BatchUIHandler in batch mode and wire events.
 
-    MBI-007 Phase 2: main() now loads config via Clevis first, then constructs
-    a Session and Agent within it. The Agent receives the loaded config, the
-    session, plugin packages, and console_logging flag.
+    main() loads config via Clevis first, then constructs a Session and
+    Agent within it. The Agent receives the loaded config, the session,
+    plugin packages, and console_logging flag.
     """
     test_args = ["yoker", "--ui-mode", "batch"]
 

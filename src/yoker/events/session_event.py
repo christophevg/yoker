@@ -1,4 +1,4 @@
-"""SessionEvent envelope wrapper (MBI-007, PR #43 Clarification 9).
+"""SessionEvent envelope wrapper.
 
 A :class:`SessionEvent` is a lightweight frozen envelope that tags an
 :class:`yoker.events.Event` with the ``agent_id`` of the agent that produced it.

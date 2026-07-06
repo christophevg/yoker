@@ -16,8 +16,8 @@ class TestAgentsCommand:
     agent.definition = agent_def
     agent.agent_definition = agent_def
     agent.config.agents.directories = directories
-    # MBI-007 Phase 2: agent.agents is removed; the registry lives on the
-    # session (Decision 10). The command reads agent._session.agents.
+    # agent.agents is removed; the registry lives on the
+    # session. The command reads agent._session.agents.
     registry = AgentRegistry()
     for d in plugin_agents:
       registry.register(d)

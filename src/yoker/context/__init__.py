@@ -4,7 +4,7 @@ Provides pluggable, list-like context managers for conversation history.
 
 Example:
     >>> from yoker.context import (
-    ...     BasicContextManager,
+    ...     SimpleContextManager,
     ...     ContextManager,
     ...     PersistenceContextManager,
     ...     list_sessions,
@@ -12,7 +12,7 @@ Example:
     ... )
     >>>
     >>> # In-memory context
-    >>> cm = BasicContextManager()
+    >>> cm = SimpleContextManager()
     >>> cm.add_message("user", "Hello")
     >>>
     >>> # Persisted context

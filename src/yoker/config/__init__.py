@@ -678,8 +678,7 @@ class SessionConfig:
   """Session configuration.
 
   A :class:`Session` manages a team of agents: lifecycle, registry,
-  recursion depth, event aggregation, and inter-agent messaging
-  (see ``analysis/session-concept-analysis.md``, Decision 7).
+  recursion depth, event aggregation, and inter-agent messaging.
 
   Attributes:
     max_agents: Hard cap on concurrent agents in a session.

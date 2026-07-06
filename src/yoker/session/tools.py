@@ -62,9 +62,9 @@ def _render_spawn_result(result: SpawnResult) -> str:
 def make_spawn_agent_tool(session: "Session", requester: "Agent") -> Any:
   """Build the Session-injected ``agent`` tool for a specific agent.
 
-  PR #43 Clarification 2: the Session captures itself in the closure and
-  registers the tool on Agents it owns. The requesting agent is also
-  captured so the allowlist check fires inside ``session.spawn``.
+  The Session captures itself in the closure and registers the tool on
+  Agents it owns. The requesting agent is also captured so the allowlist
+  check fires inside ``session.spawn``.
 
   Args:
     session: The :class:`Session` that owns the agent (back-reference).
@@ -139,10 +139,10 @@ def make_spawn_agent_tool(session: "Session", requester: "Agent") -> Any:
 def make_send_message_tool(session: "Session", from_id: str) -> Any:
   """Build the Session-injected ``send_message`` tool for a specific agent.
 
-  PR #43 Clarification 4: ``send_message`` enables inter-agent messaging via
-  tool calls. The Session captures itself in the closure; the calling
-  agent's runtime name (``from_id``) is captured at injection time so the
-  tool can build a :class:`Message` with the correct ``from_id``.
+  ``send_message`` enables inter-agent messaging via tool calls. The
+  Session captures itself in the closure; the calling agent's runtime
+  name (``from_id``) is captured at injection time so the tool can build
+  a :class:`Message` with the correct ``from_id``.
 
   Args:
     session: The :class:`Session` that owns the agent (back-reference).

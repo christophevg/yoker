@@ -1,4 +1,4 @@
-"""Tests for Session event aggregation (MBI-007 7.7, PR #43 Clarifications 7 & 9)."""
+"""Tests for Session event aggregation."""
 
 import json
 from pathlib import Path
@@ -41,7 +41,7 @@ def _patch_agent_cls() -> tuple[MagicMock, MagicMock]:
 
 
 class TestSessionEventEnvelope:
-  """Tests for the SessionEvent frozen envelope wrapper (Clarification 9)."""
+  """Tests for the SessionEvent frozen envelope wrapper."""
 
   def test_session_event_is_frozen(self) -> None:
     """SessionEvent is a frozen dataclass."""
@@ -61,7 +61,7 @@ class TestSessionEventEnvelope:
 
 
 class TestEventAggregation:
-  """Tests for forwarding sub-agent events to session handlers (7.7.2)."""
+  """Tests for forwarding sub-agent events to session handlers."""
 
   @pytest.mark.asyncio
   async def test_spawned_agent_events_forwarded_in_envelope(self) -> None:
@@ -94,7 +94,7 @@ class TestEventAggregation:
 
   @pytest.mark.asyncio
   async def test_inner_event_dispatched_unchanged(self) -> None:
-    """The inner Event inside a SessionEvent is not modified (Clarification 9)."""
+    """The inner Event inside a SessionEvent is not modified."""
     async with Session(config=Config()) as session:
       _register_researcher(session)
       with patch("yoker.agent.Agent") as mock_cls:
@@ -151,7 +151,7 @@ class TestEventAggregation:
 
   @pytest.mark.asyncio
   async def test_agent_finished_event_emitted_and_agent_removed(self) -> None:
-    """AGENT_FINISHED is emitted and the agent is removed (Clarification 7)."""
+    """AGENT_FINISHED is emitted and the agent is removed."""
     async with Session(config=Config()) as session:
       _register_researcher(session)
       received: list = []
@@ -166,7 +166,7 @@ class TestEventAggregation:
       assert len(finished) == 1
       assert finished[0].agent_id == "researcher"
       assert finished[0].session_id == session.id
-      # Clarification 7: agent removed from the active list.
+      # agent removed from the active list.
       assert session.get_agent("researcher") is None
 
   @pytest.mark.asyncio
@@ -195,7 +195,7 @@ class TestEventAggregation:
 
 
 class TestEventRecorderOnSession:
-  """Tests for EventRecorder capturing SessionEvent envelopes (7.7.5)."""
+  """Tests for EventRecorder capturing SessionEvent envelopes."""
 
   def test_serialize_session_event_envelope(self) -> None:
     """serialize_event produces the session_event envelope form for SessionEvent."""

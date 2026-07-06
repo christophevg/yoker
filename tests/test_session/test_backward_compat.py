@@ -1,4 +1,4 @@
-"""Single-agent backward compatibility tests (MBI-007 7.9.7, PR #43 Clarification 1).
+"""Single-agent backward compatibility tests.
 
 Verifies that:
   - Single-agent ``Agent`` works without a Session (first-class path).
@@ -38,7 +38,7 @@ class TestSingleAgentWithoutSession:
 
     We don't actually call a model here — we just confirm ``process`` is
     a callable coroutine on a standalone Agent. The single-agent path is
-    a first-class primitive, not a compatibility shim (PR #43 Clarification 1).
+    a first-class primitive, not a compatibility shim.
     """
     agent = Agent(config=Config())
     assert callable(agent.process)
@@ -58,7 +58,7 @@ class TestSingleAgentWithoutSession:
 
 
 class TestExistingExamplesLoad:
-  """Existing examples must import without modification (7.9.7)."""
+  """Existing examples must import without modification."""
 
   def test_library_usage_imports(self) -> None:
     """examples/library_usage.py imports cleanly."""
@@ -94,7 +94,7 @@ class TestExistingExamplesLoad:
     assert hasattr(module, "main")
 
   def test_session_demo_imports(self) -> None:
-    """examples/session_demo.py (new in MBI-007) imports cleanly."""
+    """examples/session_demo.py imports cleanly."""
     spec = importlib.util.spec_from_file_location(
       "example_session_demo", EXAMPLES_DIR / "session_demo.py"
     )

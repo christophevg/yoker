@@ -2,9 +2,9 @@
 
 Provides:
 
-* BasicContextManager, a simple list-like context manager that keeps
-conversation history in memory only.
-* SimpleContextManager, a BasicContextManager that provides an elementary context setup.
+* SimpleContextManager, a simple list-like context manager that keeps
+  conversation history in memory only and provides an elementary context
+  setup with an environment reminder and system prompt.
 """
 
 from pathlib import Path

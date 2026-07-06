@@ -1,4 +1,4 @@
-"""Tests for multi-provider backend configuration (Phase 1 task 6.3)."""
+"""Tests for multi-provider backend configuration."""
 
 import pytest
 
@@ -33,7 +33,7 @@ class TestBackendConfigTaggedUnion:
     assert backend.anthropic is None
 
   def test_backend_config_accepts_openai(self) -> None:
-    """BackendConfig can be configured for OpenAI (Phase 2)."""
+    """BackendConfig can be configured for OpenAI."""
     backend = BackendConfig(
       provider="openai",
       openai=OpenAIConfig(api_key="sk-test", model="gpt-4o"),
@@ -47,7 +47,7 @@ class TestBackendConfigTaggedUnion:
     assert backend.anthropic is None
 
   def test_backend_config_accepts_anthropic(self) -> None:
-    """BackendConfig can be configured for Anthropic (Phase 3)."""
+    """BackendConfig can be configured for Anthropic."""
     backend = BackendConfig(
       provider="anthropic",
       anthropic=AnthropicConfig(api_key="sk-ant-test", model="claude-3-5-sonnet-20241022"),
@@ -82,7 +82,7 @@ class TestBackendConfigTaggedUnion:
 
   def test_backend_config_openai_none_allowed_when_provider_ollama(self) -> None:
     """BackendConfig accepts openai=None when provider='ollama'."""
-    # Phase 1 allows openai/anthropic to be None when provider is not openai/anthropic
+    # openai/anthropic may be None when provider is not openai/anthropic
     backend = BackendConfig(provider="ollama", ollama=OllamaConfig(), openai=None, anthropic=None)
     assert backend.provider == "ollama"
     assert backend.openai is None
@@ -90,7 +90,7 @@ class TestBackendConfigTaggedUnion:
 
 
 class TestOpenAIConfig:
-  """Tests for OpenAI backend configuration (Phase 2 forward declaration)."""
+  """Tests for OpenAI backend configuration."""
 
   def test_openai_config_defaults(self) -> None:
     """OpenAIConfig has sensible defaults."""
@@ -149,7 +149,7 @@ class TestOpenAIConfig:
 
 
 class TestAnthropicConfig:
-  """Tests for Anthropic backend configuration (Phase 3 forward declaration)."""
+  """Tests for Anthropic backend configuration."""
 
   def test_anthropic_config_defaults(self) -> None:
     """AnthropicConfig has sensible defaults."""

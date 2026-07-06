@@ -1,11 +1,10 @@
-"""Tests for the Session-injected ``agent`` and ``send_message`` tools (MBI-007 Phase 4).
+"""Tests for the Session-injected ``agent`` and ``send_message`` tools.
 
-PR #43 Clarifications 2, 4 & 5:
   - The ``agent`` tool is Session-injected (closure capture of the Session
     back-reference).
   - The ``send_message`` tool enables inter-agent messaging via tool calls.
   - ``agent`` returns both the spawned agent's unique id and its
-    response string (PR #43 Clarification 5).
+    response string.
 
 These tests verify the tool factories in :mod:`yoker.session.tools`:
 schema, parameter validation, delegation to ``session.spawn`` /
@@ -159,7 +158,7 @@ class TestAgentToolParameters:
 
 
 class TestAgentToolDelegation:
-  """Tests that the ``agent`` tool delegates to session.spawn (Phase 4)."""
+  """Tests that the ``agent`` tool delegates to session.spawn."""
 
   @pytest.mark.asyncio
   async def test_delegates_to_session_spawn(self) -> None:
@@ -255,7 +254,7 @@ class TestAgentToolDelegation:
 
   @pytest.mark.asyncio
   async def test_result_contains_agent_id(self) -> None:
-    """PR #43 Clarification 5: result contains the spawned agent's id."""
+    """Result contains the spawned agent's id."""
     agent_def = AgentDefinition(
       simple_name="researcher",
       description="Researcher",

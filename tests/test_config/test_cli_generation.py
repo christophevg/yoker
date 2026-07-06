@@ -65,7 +65,7 @@ class TestCliGeneration:
     assert anthropic_backend.provider == "anthropic"
 
   def test_backend_config_defaults_for_all_providers(self) -> None:
-    """BackendConfig() defaults work for all providers in Phase 1."""
+    """BackendConfig() defaults work for all providers."""
     from yoker.config import BackendConfig
 
     # Default backend is Ollama
@@ -75,7 +75,7 @@ class TestCliGeneration:
     assert backend.openai is None
     assert backend.anthropic is None
 
-    # openai and anthropic default to None (forward-declared for Phase 2/3)
+    # openai and anthropic default to None
     backend_with_openai = BackendConfig(
       provider="ollama", ollama=BackendConfig().ollama, openai=None
     )

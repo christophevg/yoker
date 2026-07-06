@@ -3,14 +3,13 @@
 This module provides the bridge between agent events and the UIHandler
 protocol, dispatching events to appropriate UI methods.
 
-MBI-007 (PR #43 Clarification 9): the bridge handles both wrapped
-(:class:`yoker.events.SessionEvent`) and unwrapped (bare :class:`Event`)
-events. When a ``SessionEvent`` envelope is received, the inner ``event``
-is dispatched unchanged and the envelope's ``agent_id`` is available for
-tagging/display. Session-level events (``AGENT_SPAWNED``, ``AGENT_FINISHED``)
-are dispatched to the optional ``UIHandler.agent_spawned`` /
-``agent_finished`` methods (PR #43 Clarification 8), guarded by ``hasattr``
-so handlers that do not implement them are unaffected.
+The bridge handles both wrapped (:class:`yoker.events.SessionEvent`) and
+unwrapped (bare :class:`Event`) events. When a ``SessionEvent`` envelope is
+received, the inner ``event`` is dispatched unchanged and the envelope's
+``agent_id`` is available for tagging/display. Session-level events
+(``AGENT_SPAWNED``, ``AGENT_FINISHED``) are dispatched to the optional
+``UIHandler.agent_spawned`` / ``agent_finished`` methods, guarded by
+``hasattr`` so handlers that do not implement them are unaffected.
 """
 
 from __future__ import annotations
@@ -137,10 +136,10 @@ class UIBridge:
   def _maybe_agent_lifecycle(self, event: Event, method: str) -> None:
     """Dispatch an agent lifecycle event to an optional UIHandler method.
 
-    PR #43 Clarification 8: ``agent_spawned`` / ``agent_finished`` are
-    optional protocol methods. Handlers that do not implement them
-    (e.g. ``BatchUIHandler``) are silently skipped — the call is guarded
-    by ``hasattr`` so no ``AttributeError`` is raised.
+    ``agent_spawned`` / ``agent_finished`` are optional protocol methods.
+    Handlers that do not implement them (e.g. ``BatchUIHandler``) are
+    silently skipped — the call is guarded by ``hasattr`` so no
+    ``AttributeError`` is raised.
 
     Args:
       event: The lifecycle event (``AgentSpawnedEvent`` / ``AgentFinishedEvent``).

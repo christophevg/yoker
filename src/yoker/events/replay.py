@@ -43,8 +43,8 @@ class EventReplayAgent:
       ValueError: If events file is invalid.
     """
     self.events_path = events_path
-    # A replay trace may contain bare events or SessionEvent envelopes
-    # (MBI-007, PR #43 Clarification 9). The list holds either form.
+    # A replay trace may contain bare events or SessionEvent envelopes.
+    # The list holds either form.
     self.events: list[Event | SessionEvent] = []
     self.index = 0
     self.thinking_enabled = True
@@ -141,7 +141,7 @@ class EventReplayAgent:
 
     Supports both sync and async handlers for backward compatibility.
     Accepts either a bare :class:`Event` or a :class:`SessionEvent`
-    envelope (MBI-007, PR #43 Clarification 9).
+    envelope.
 
     Args:
       event: The event to emit (bare or envelope-wrapped).

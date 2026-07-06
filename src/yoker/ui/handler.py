@@ -233,7 +233,7 @@ class UIHandler(Protocol):
     """
     ...
 
-  # === Multi-agent (optional, MBI-007 PR #43 Clarification 8) ===
+  # === Multi-agent (optional) ===
   #
   # ``agent_spawned(name: str) -> None`` and
   # ``agent_finished(name: str) -> None`` are **optional** protocol
@@ -243,7 +243,7 @@ class UIHandler(Protocol):
   # them (e.g. :class:`yoker.ui.batch.BatchUIHandler`) are not broken.
   # :class:`yoker.ui.interactive.InteractiveUIHandler` implements them to
   # surface sub-agent lifecycle to the user. No ``BaseUIHandler`` mixin
-  # is recreated (PR #43 Clarification 8).
+  # is recreated.
   #
   # When implemented:
   #   agent_spawned(name)  - called when a sub-agent is spawned into the

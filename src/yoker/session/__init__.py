@@ -1,11 +1,10 @@
-"""Session package — team-of-agents coordinator (MBI-007).
+"""Session package — team-of-agents coordinator.
 
 A :class:`Session` is an async context manager that owns a team of agents:
 their lifecycle, registry, recursion depth tracking, event aggregation, and
-inter-agent messaging. See ``analysis/session-concept-analysis.md`` for the
-full design.
+inter-agent messaging.
 
-Phase 4 exports:
+Exports:
 
   - :class:`Session` — async context manager owning the team of agents.
   - :class:`Message` — frozen inter-agent message dataclass.

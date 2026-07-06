@@ -1,7 +1,4 @@
-"""Tests for UIBridge handling of SessionEvent envelopes and session lifecycle events.
-
-MBI-007 Phase 3 (7.7.3, 7.7.4, PR #43 Clarifications 8 & 9).
-"""
+"""Tests for UIBridge handling of SessionEvent envelopes and session lifecycle events."""
 
 from pathlib import Path
 
@@ -71,7 +68,7 @@ class RecordingHandler:
 
 @pytest.mark.asyncio
 class TestUIBridgeSessionEvent:
-  """Tests for SessionEvent envelope handling (PR #43 Clarification 9)."""
+  """Tests for SessionEvent envelope handling."""
 
   async def test_bare_event_dispatched_unchanged(self) -> None:
     """A bare Event (single-agent path) is dispatched as today."""
@@ -128,7 +125,7 @@ class TestUIBridgeSessionEvent:
 
 @pytest.mark.asyncio
 class TestUIBridgeSessionLifecycle:
-  """Tests for AGENT_SPAWNED / AGENT_FINISHED / SESSION_* handling (7.7.3, 7.7.4)."""
+  """Tests for AGENT_SPAWNED / AGENT_FINISHED / SESSION_* handling."""
 
   async def test_agent_spawned_dispatches_to_handler(self) -> None:
     """AGENT_SPAWNED calls ui.agent_spawned(name) when implemented."""
@@ -158,7 +155,7 @@ class TestUIBridgeSessionLifecycle:
     assert ("agent_finished", "researcher") in handler.calls
 
   async def test_handler_without_lifecycle_methods_not_broken(self) -> None:
-    """A handler missing agent_spawned/agent_finished is not broken (Clarification 8).
+    """A handler missing agent_spawned/agent_finished is not broken.
 
     A structurally-typed handler that doesn't expose the optional methods
     is silently skipped by the bridge's ``getattr`` guard — no
@@ -263,10 +260,10 @@ class TestUIBridgeSessionLifecycle:
 
 
 class TestUIHandlerProtocolOptionalMethods:
-  """Tests for the UIHandler protocol optional lifecycle methods (7.7.4)."""
+  """Tests for the UIHandler protocol optional lifecycle methods."""
 
   def test_no_base_ui_handler_module_created(self) -> None:
-    """No src/yoker/ui/base.py exists (PR #43 Clarification 8)."""
+    """No src/yoker/ui/base.py exists."""
     base_path = (Path(__file__).parent.parent.parent / "src" / "yoker" / "ui" / "base.py").resolve()
     assert not base_path.exists(), f"BaseUIHandler module must not exist: {base_path}"
 
@@ -278,7 +275,7 @@ class TestUIHandlerProtocolOptionalMethods:
     assert hasattr(InteractiveUIHandler, "agent_finished")
 
   def test_batch_handler_does_not_implement_lifecycle(self) -> None:
-    """BatchUIHandler does not implement the optional methods (Clarification 8).
+    """BatchUIHandler does not implement the optional methods.
 
     The methods are documented on the protocol but not defined as Protocol
     members, so ``hasattr`` is False for handlers that don't implement

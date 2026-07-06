@@ -12,9 +12,9 @@ if TYPE_CHECKING:
   from yoker.events.session_event import SessionEvent
 
 # Handlers accept either a bare :class:`Event` (single-agent path) or a
-# :class:`SessionEvent` envelope wrapping an agent-emitted event
-# (MBI-007, PR #43 Clarification 9). The union is deferred to a string
-# forward reference to avoid a circular import with ``session_event``.
+# :class:`SessionEvent` envelope wrapping an agent-emitted event. The
+# union is deferred to a string forward reference to avoid a circular
+# import with ``session_event``.
 EventCallback = (
   Callable[["Event | SessionEvent"], None]
   | Callable[["Event | SessionEvent"], Coroutine[None, None, None]]
@@ -46,7 +46,7 @@ class EventType(Enum):
   # Command execution
   COMMAND = auto()
 
-  # Session lifecycle (MBI-007)
+  # Session lifecycle
   SESSION_START = auto()
   SESSION_END = auto()
   AGENT_SPAWNED = auto()
@@ -187,7 +187,7 @@ class CommandEvent(Event):
 
 @dataclass(frozen=True)
 class SessionStartEvent(Event):
-  """Emitted when a Session starts (MBI-007).
+  """Emitted when a Session starts.
 
   Attributes:
     session_id: The unique session identifier.
@@ -198,7 +198,7 @@ class SessionStartEvent(Event):
 
 @dataclass(frozen=True)
 class SessionEndEvent(Event):
-  """Emitted when a Session ends (MBI-007).
+  """Emitted when a Session ends.
 
   Attributes:
     session_id: The unique session identifier.
@@ -209,7 +209,7 @@ class SessionEndEvent(Event):
 
 @dataclass(frozen=True)
 class AgentSpawnedEvent(Event):
-  """Emitted when an agent is spawned into a Session (MBI-007).
+  """Emitted when an agent is spawned into a Session.
 
   Attributes:
     session_id: The session that owns the spawned agent.
@@ -224,10 +224,10 @@ class AgentSpawnedEvent(Event):
 
 @dataclass(frozen=True)
 class AgentFinishedEvent(Event):
-  """Emitted when an agent finishes in a Session (MBI-007).
+  """Emitted when an agent finishes in a Session.
 
   This is a lifecycle signal; the agent is removed from the Session's
-  active list after this event is emitted (PR #43 Clarification 7).
+  active list after this event is emitted.
 
   Attributes:
     session_id: The session that owned the agent.
@@ -240,7 +240,7 @@ class AgentFinishedEvent(Event):
 
 @dataclass(frozen=True)
 class AgentMessageEvent(Event):
-  """Emitted when an inter-agent message is routed through a Session (MBI-007).
+  """Emitted when an inter-agent message is routed through a Session.
 
   Attributes:
     session_id: The session routing the message.

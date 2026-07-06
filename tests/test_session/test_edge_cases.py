@@ -1,5 +1,5 @@
 """Edge-case tests for Session spawn resolution, config derivation, and tool
-rendering (MBI-007 7.9.1 — coverage gaps).
+rendering (coverage gaps).
 
 Targets the specific uncovered lines in ``src/yoker/session/``:
 
