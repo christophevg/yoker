@@ -77,33 +77,6 @@ The MBI currently being implemented. Only one Active MBI at a time.
 
 Future MBIs, ordered by priority (highest first).
 
-### ContextManager Refactor
-
-**Goal:** Refactor the `ContextManager` construct to clean up its responsibilities and align it with the Session-based multi-agent architecture landed in MBI-007. Reduce coupling, clarify ownership of context lifecycle, and prepare the primitive for the workflow layer that MBI-003 (Python API) builds on.
-
-**Value:** Removes accumulated complexity and dual-ownership patterns between `Agent` and `Session` around context management. Makes context handling a coherent single-responsibility primitive, consistent with the post-MBI-007 architecture where `Session` owns team-level concerns and `Agent` is a single-agent chat loop. Prerequisite-quality cleanup before MBI-003 exposes the API to external developers.
-
-**Status:** Backlog — design phase.
-
-**Design source of truth:** `analysis/context-manager-refactor-design.md` (initial design landed with MBI-007 merge; to be finalized and owner-approved before implementation).
-
-**Components (high-level — detailed tasks created at implementation time):**
-- [ ] RES: Finalize the design in `analysis/context-manager-refactor-design.md` with owner review
-- [ ] DEV: Refactor `ContextManager` per the finalized design
-- [ ] TEST: Context lifecycle, isolation policies, single-agent and multi-agent paths
-- [ ] DOCS: Update `CLAUDE.md` and `docs/rationale.md` to reflect the new context primitive
-
-**Acceptance Criteria:**
-- [ ] `ContextManager` has a single clear responsibility, owned at the correct layer (Session vs Agent)
-- [ ] `make check` green; single-agent and multi-agent paths unchanged for users
-- [ ] Design doc finalized and owner-approved before implementation begins
-
-**Dependencies:** MBI-007 (Session) — complete. The refactor builds on the Session primitive.
-
-**Out of scope (deferred):** To be defined during design finalization.
-
----
-
 ### MBI-003: Python API
 
 **Goal:** Python developers can easily integrate agentic (sub-)workflows in Python function calls, with a clean utility API wrapping the current class-oriented architecture. Example: `yoker.execute_skill("skill-name", "prompt")` or even `from package.skills import skill_name; skill_name("prompt")`.
@@ -194,6 +167,22 @@ Future MBIs, ordered by priority (highest first).
 ## Done
 
 Completed MBIs.
+
+### ContextManager Refactor (Completed: 2026-07-06)
+
+**Goal:** Refactor the `ContextManager` construct to clean up its responsibilities and align it with the Session-based multi-agent architecture landed in MBI-007. Reduce coupling, clarify ownership of context lifecycle, and prepare the primitive for the workflow layer that MBI-003 (Python API) builds on.
+
+**Value:** Removes accumulated complexity and dual-ownership patterns between `Agent` and `Session` around context management. Makes context handling a coherent single-responsibility primitive, consistent with the post-MBI-007 architecture where `Session` owns team-level concerns and `Agent` is a single-agent chat loop. Prerequisite-quality cleanup before MBI-003 exposes the API to external developers.
+
+**Status:** Done
+
+**Design source of truth:** `analysis/context-manager-refactor-design.md`.
+
+**Achieved:** Replaced the `UserList`-based `ContextManager` with a Protocol + Wrapper architecture. Introduced `ContextManager` Protocol, `BasicContextManager`, `PersistedContextManager`, and `ContextWrapper`. Cleaned up responsibilities and aligned context lifecycle ownership with the Session-based multi-agent architecture.
+
+**Merged via:** PR #44 (2026-07-06).
+
+---
 
 ### MBI-007: Session (Completed: 2026-07-06)
 
