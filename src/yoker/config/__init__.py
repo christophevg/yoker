@@ -38,9 +38,10 @@ CLI Arguments:
     --tools-read-enabled BOOL           Enable/disable read tool
 """
 
+import dataclasses
 import os
 from dataclasses import dataclass, field
-from typing import Literal, cast
+from typing import Any, Literal, cast
 
 from clevis import SecurityAction, SecurityConfig, get_config
 
@@ -96,6 +97,87 @@ def get_yoker_config(cli: bool = False) -> "Config":
     )
 
   return get_config(Config, name="yoker", cli=cli, security=security)
+
+
+def make_config(
+  *,
+  model: str | None = None,
+  provider: str | None = None,
+  plugins: list[str] | tuple[str, ...] | None = None,
+  skills_directories: tuple[str, ...] | None = None,
+  agents_directories: tuple[str, ...] | None = None,
+  **overrides: Any,
+) -> "Config":
+  """Construct a :class:`Config` programmatically without filesystem/CLI discovery.
+
+  This is the programmatic counterpart to :func:`get_yoker_config`. It builds
+  a :class:`Config` purely from dataclass defaults and the provided overrides,
+  bypassing TOML discovery (``~/.yoker.toml``, ``./yoker.toml``) and CLI
+  argument parsing. Use it when embedding Yoker in another application where
+  configuration must come from code rather than files.
+
+  Args:
+    model: Optional model override applied to the active provider's sub-config.
+    provider: Optional backend provider. When switching to a known provider
+      (``"openai"``, ``"anthropic"``, ``"gemini"``) whose sub-config is
+      ``None``, a default sub-config instance is injected so the
+      :class:`BackendConfig` validator passes.
+    plugins: Optional plugin package names to enable. When provided, sets
+      ``plugins.enabled=True`` and ``plugins.packages=tuple(plugins)`` so
+      the plugin loader picks them up.
+    skills_directories: Optional override for ``skills.directories``.
+    agents_directories: Optional override for ``agents.directories``.
+    **overrides: Additional fields passed to :func:`dataclasses.replace` on
+      the root :class:`Config`. Use this for advanced overrides not covered
+      by the named parameters above.
+
+  Returns:
+    A frozen :class:`Config` instance constructed without touching the
+    filesystem.
+  """
+  config = Config()
+
+  if provider is not None:
+    backend = config.backend
+    if provider in KNOWN_PROVIDERS and getattr(backend, provider) is None:
+      defaults: dict[str, type] = {
+        "openai": OpenAIConfig,
+        "anthropic": AnthropicConfig,
+        "gemini": GeminiConfig,
+      }
+      backend = dataclasses.replace(backend, **{provider: defaults[provider]()})
+    backend = dataclasses.replace(backend, provider=provider)
+    config = dataclasses.replace(config, backend=backend)
+
+  if model is not None:
+    sub = config.backend.config
+    new_sub = dataclasses.replace(sub, model=model)
+    active_provider = config.backend.provider
+    new_backend = dataclasses.replace(config.backend, **{active_provider: new_sub})  # type: ignore[arg-type]
+    config = dataclasses.replace(config, backend=new_backend)
+
+  if plugins is not None:
+    config = dataclasses.replace(
+      config,
+      plugins=dataclasses.replace(config.plugins, enabled=True, packages=tuple(plugins)),
+    )
+
+  if skills_directories is not None:
+    config = dataclasses.replace(
+      config,
+      skills=dataclasses.replace(config.skills, directories=tuple(skills_directories)),
+    )
+
+  if agents_directories is not None:
+    config = dataclasses.replace(
+      config,
+      agents=dataclasses.replace(config.agents, directories=tuple(agents_directories)),
+    )
+
+  if overrides:
+    config = dataclasses.replace(config, **overrides)
+
+  return config
 
 
 @dataclass(frozen=True)
@@ -783,4 +865,5 @@ __all__ = [
   "KNOWN_PROVIDERS",
   # Helper function
   "get_yoker_config",
+  "make_config",
 ]

@@ -1,6 +1,6 @@
 # MBI-003: Python API — Design Proposal
 
-Status: Draft for owner review
+Status: Approved — implementation in progress
 Author: Functional Analyst
 Date: 2026-07-03
 
@@ -263,8 +263,8 @@ A `session` is an async context manager that:
   (the team-of-agents coordinator). MBI-003's `yoker.session()` is a
   **facade** that constructs a Session, registers one primary Agent, and
   exposes single-agent convenience methods on top of it.
-- Creates an `Agent` with a `PersistenceContextManager` bound to the given
-  session id (or an auto-generated one).
+- Creates an `Agent` with a `Persisted(SimpleContextManager())` context
+  manager bound to the given session id (or an auto-generated one).
 - Exposes `ask(prompt)` as a thin alias for `agent.process(prompt)`.
 - Persists context on exit (if `persist_after_turn` is true in config).
 - Accepts the same builder kwargs as `yoker.agent(...)` for configuration.
@@ -709,7 +709,7 @@ yoker.session(...)
    ├─ yoker.agent(...)                    (above)
    ├─ Session(config=config)              (MBI-007; real Session construct)
    ├─ session.register_primary_agent(agent)
-   ├─ PersistenceContextManager(session_id=id) bound to the agent
+   ├─ Persisted(SimpleContextManager(), session_id=id) bound to the agent
    └─ async context manager wraps the Session lifecycle (async with Session)
 
 Agent.spawn(name, prompt)  /  yoker.session().spawn(...)
@@ -742,7 +742,8 @@ Agent.spawn(name, prompt)  /  yoker.session().spawn(...)
 The `model` and `provider` kwargs on `ask`, `agent`, and `session` are
 sugar for `dataclasses.replace(config.backend, ...)`. The frozen
 `Config` dataclass is respected — we construct a new copy, we do not
-mutate. This matches the existing pattern in `builtin/agent.py::_create_subagent`.
+mutate. This matches the existing pattern in `Session.spawn()` (the canonical
+spawn API from MBI-007).
 
 ---
 
@@ -772,6 +773,8 @@ print(await yoker.ask("Hello, how can you help me?"))
 ---
 
 ## 9. Open Questions
+
+All open questions were resolved during owner review (PR #42). Recommendations below were accepted unless noted otherwise in the implementation.
 
 These need owner input before implementation:
 
@@ -894,3 +897,24 @@ from the design above:
       showcase use case from section 5.
 - [ ] Type hints pass strict mypy; IDE autocompletion works for all
       public functions.
+
+---
+
+## 12. Implementation Notes (MBI-003)
+
+The implementation follows this design with three pragmatic deviations:
+
+1. **`yoker.build_agent()` instead of `yoker.agent()`** (Open Question 10).
+   Exporting a function named `agent` at the `yoker` top level shadows the
+   `yoker.agent` submodule, breaking `import yoker.agent` and
+   `monkeypatch.setattr("yoker.agent.process_message", ...)`. The factory
+   is therefore `yoker.build_agent(...)` at the top level; the underlying
+   function remains `yoker.api.agent(...)` in the api namespace.
+
+2. **`thinking` values**: Added `"silent"` alongside the design's `"on"` /
+   `"off"` / `"visible"` to map onto all three `ThinkingMode` enum values.
+
+3. **`run_skill` fuzzy name resolution**: Skills registered from directories
+   get namespaced keys (e.g. `skills:greet`). `run_skill("greet", ...)`
+   resolves a bare simple name across namespaces instead of requiring the
+   full key.

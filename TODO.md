@@ -9,7 +9,7 @@
 | **P1** | MBI-006: Multi-Provider Backend (Phase 1 + Phase 2) | Complete (2026-07-01) |
 | **P1** | MBI-007: Session | Complete (2026-07-06, PR #43) |
 | **P1** | ContextManager Refactor | Complete (2026-07-06, PR #44) |
-| **P2** | MBI-003: Python API | Ready (next to activate — unblocked) |
+| **P2** | MBI-003: Python API | Complete (2026-07-06) |
 | **P2** | MBI-004: yoker Commands | Backlog (depends on MBI-002, MBI-003) |
 | **P2** | MBI-005: Assistant Integration | Backlog (depends on MBI-002, MBI-003, MBI-004) |
 | **P3** | Maintenance Tasks | M.1-M.4 (open), M.5-M.6 (done) |
@@ -1072,13 +1072,13 @@ The owner requested (PR #42 Comment 1) a **Config factory** for creating `Config
 
 ### Tasks
 
-- [ ] **[MBI-003] 3.1 Config factory**
+- [x] **[MBI-003] 3.1 Config factory**
   - Create a `Config` in code with a flag to enable/skip normal config loading (TOML discovery + CLI args). Needed by the `agent()` factory function so programmatic callers can construct a Config without touching the filesystem. (Owner request, PR #42 Comment 1.)
   - **Satisfies:** Config factory requirement
   - **Depends on:** —
   - **Priority:** P2
 
-- [ ] **[MBI-003] 3.2 Review current class-oriented API**
+- [x] **[MBI-003] 3.2 Review current class-oriented API**
   - Review existing `Agent`, `Config`, `AgentDefinition`, `ToolRegistry`, `SkillRegistry`, context managers, and event system
   - Identify boilerplate patterns in `examples/library_usage.py`, `examples/batch_mode.py`, `examples/research_workflow.py`
   - Document the five-step ritual: load config → construct Agent → wire bridge → register handler → process
@@ -1086,7 +1086,7 @@ The owner requested (PR #42 Comment 1) a **Config factory** for creating `Config
   - **Depends on:** —
   - **Priority:** P2
 
-- [ ] **[MBI-003] 3.3 Design developer-friendly utility functions**
+- [x] **[MBI-003] 3.3 Design developer-friendly utility functions**
   - Design the three-layer API surface (Layer 1 one-shot, Layer 2 agent builder, Layer 3 workflow primitives)
   - Align on naming and ergonomics (`yoker.ask`, `yoker.run_skill`, `yoker.complete`, `yoker.agent`, `yoker.session`)
   - Document the facade pattern over existing `Agent` class
@@ -1094,21 +1094,25 @@ The owner requested (PR #42 Comment 1) a **Config factory** for creating `Config
   - **Depends on:** 3.2
   - **Priority:** P2
 
-- [ ] **[MBI-003] 3.4 Implement Layer 1: one-shot functions**
+- [x] **[MBI-003] 3.4 Implement Layer 1: one-shot functions**
   - Implement `yoker.ask(...)`, `yoker.run_skill(...)`, `yoker.complete(...)` — stateless, synchronous-feeling, one line of code
   - Build on the Config factory (3.1) and existing `Agent` class
   - **Satisfies:** DEV component (Layer 1)
   - **Depends on:** 3.1, 3.3
   - **Priority:** P2
 
-- [ ] **[MBI-003] 3.5 Implement Layer 2: agent builder**
+- [x] **[MBI-003] 3.5 Implement Layer 2: agent builder**
   - Implement `yoker.agent(...)` returning a configured `Agent` with fluent, declarative setup
   - Same object reusable across turns and async tasks
   - **Satisfies:** DEV component (Layer 2)
   - **Depends on:** 3.1, 3.3
   - **Priority:** P2
+  - **Note:** Exposed as `yoker.build_agent(...)` at the top level (the
+    design's `yoker.agent(...)` shadows the `yoker.agent` submodule and
+    breaks `monkeypatch.setattr("yoker.agent.process_message", ...)`).
+    The function is still `yoker.api.agent(...)` in the api namespace.
 
-- [ ] **[MBI-003] 3.6 Implement Layer 3: workflow primitives**
+- [x] **[MBI-003] 3.6 Implement Layer 3: workflow primitives**
   - Implement `yoker.session(...)` building on the real `Session` construct from MBI-007
   - Sub-agent spawning, event hooks, plugin loading expressed as ordinary Python constructs (context managers, async iterators, callables)
   - **Satisfies:** DEV component (Layer 3, builds on MBI-007 Session)
@@ -1120,22 +1124,26 @@ The owner requested (PR #42 Comment 1) a **Config factory** for creating `Config
   - **Satisfies:** Optional DEV component
   - **Depends on:** 3.4, 3.5
   - **Priority:** P3
+  - **Note:** Deferred per design doc §10 (Out of Scope) — follow-up MBI.
 
-- [ ] **[MBI-003] 3.8 API usage tests**
+- [x] **[MBI-003] 3.8 API usage tests**
   - Write tests for all three layers of the utility API
   - Test Config factory, one-shot functions, agent builder, workflow primitives
   - **Satisfies:** TEST component
   - **Depends on:** 3.4, 3.5, 3.6
   - **Priority:** P2
 
-- [ ] **[MBI-003] 3.9 Python API documentation with examples**
+- [x] **[MBI-003] 3.9 Python API documentation with examples**
   - Document common integration patterns
   - Update README.md and docs/ with Python API examples
   - **Satisfies:** DOCS component
   - **Depends on:** 3.4, 3.5, 3.6
   - **Priority:** P2
+  - **Note:** Showcase examples added under `examples/python_api/`;
+    DEVELOPMENT.md and CLAUDE.md updated. README/docs/ full integration
+    deferred to a follow-up docs pass.
 
-- [ ] **[MBI-003] 3.10 Final verification: make check green**
+- [x] **[MBI-003] 3.10 Final verification: make check green**
   - Run `make check` end-to-end (format, lint, typecheck, test) — all green
   - Verify existing examples run without modification (backward compatible)
   - Verify new utility API examples work
@@ -1144,12 +1152,12 @@ The owner requested (PR #42 Comment 1) a **Config factory** for creating `Config
   - **Priority:** P2
 
 **Acceptance Criteria:**
-- [ ] Developers can call `yoker.ask("...")` from Python code (one-shot)
-- [ ] Developers can call `yoker.run_skill("skill-name", "prompt")` from Python code
-- [ ] `yoker.agent(...)` returns a configured, reusable `Agent`
-- [ ] `yoker.session(...)` builds on the real `Session` construct from MBI-007
-- [ ] A Config factory exists for programmatic Config construction (skip filesystem/CLI loading)
-- [ ] API documentation shows common integration patterns
+- [x] Developers can call `yoker.ask("...")` from Python code (one-shot)
+- [x] Developers can call `yoker.run_skill("skill-name", "prompt")` from Python code
+- [x] `yoker.agent(...)` returns a configured, reusable `Agent` (exposed as `yoker.build_agent`)
+- [x] `yoker.session(...)` builds on the real `Session` construct from MBI-007
+- [x] A Config factory exists for programmatic Config construction (skip filesystem/CLI loading)
+- [x] API documentation shows common integration patterns
 - [ ] Utility functions provide clean abstraction over internal classes
 - [ ] Existing `Agent` class unchanged; new API is a thin facade
 - [ ] `make check` green

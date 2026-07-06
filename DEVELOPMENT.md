@@ -8,6 +8,58 @@ Yoker is a Python agent harness with configurable tools and guardrails. It provi
 
 ## Recent Changes
 
+### MBI-003: Python API (2026-07-06)
+
+Implemented the three-layer Pythonic utility API from
+`analysis/mbi-003-python-api-design.md` as a facade over the existing
+`Agent` / `Session` classes. No existing behavior changed; all existing
+imports and examples keep working.
+
+**New module: `src/yoker/api/`**
+- `_internal.py` — shared helpers: `build_agent()`, `run_sync()`,
+  `thinking_mode()` mapping, tool/skill filters, model/provider override.
+- `one_shot.py` — Layer 1: `ask`, `run_skill`, `complete` (+ `*_sync`
+  convenience wrappers via `asyncio.run`).
+- `builder.py` — Layer 2: `agent()` factory returning a configured
+  `yoker.Agent`.
+- `session.py` — Layer 3: `session()` async context manager — a facade
+  over the real `yoker.session.Session` (MBI-007) with single-agent
+  conveniences (`ask`, `run_skill`, `spawn`, `send`, `on_event`).
+- `__init__.py` — re-exports.
+
+**Config factory (`src/yoker/config/__init__.py`)**
+- `make_config(...)` builds a `Config` programmatically without TOML
+  discovery / CLI args (owner request, PR #42 Comment 1). Accepts
+  `model`, `provider`, `plugins`, `skills_directories`,
+  `agents_directories`, and `**overrides` for `dataclasses.replace`.
+
+**Agent additions (`src/yoker/agent/__init__.py`)**
+- `Agent.on_event(handler)` — Pythonic alias for `add_event_handler`,
+  returns the handler for chaining.
+- `Agent.spawn(name, prompt, *, timeout_seconds=300)` — thin wrapper
+  over `Session.spawn` (MBI-007 Decision 8); raises `RuntimeError` when
+  the agent is not part of a Session.
+
+**Top-level exports (`src/yoker/__init__.py`)**
+- `ask`, `ask_sync`, `complete`, `complete_sync`, `run_skill`,
+  `run_skill_sync`, `build_agent`, `session`, `ApiSession`.
+
+**Naming deviation from the design doc:** the design proposed
+`yoker.agent(...)` as the factory name (Open Question 10). In practice
+this shadows the `yoker.agent` submodule, breaking
+`monkeypatch.setattr("yoker.agent.process_message", ...)` and
+`import yoker.agent as x; x.something`. The factory is therefore exposed
+as `yoker.build_agent(...` at the top level; the underlying function is
+still `yoker.api.agent(...)` (no collision in the `api` namespace).
+
+**Tests:** `tests/test_api/` (63 new tests) covering config factory,
+one-shot functions, agent builder, and session facade. Full suite: 1680
+tests pass. `make check` green (format, lint, typecheck, test).
+
+**Examples:** `examples/python_api/` with six showcase examples
+(one_shot, run_skill, agent_builder, workflow, session,
+event_handling, sync_usage).
+
 ### PR #43 Review Fixes (2026-07-04)
 
 Addressed four inline CHANGES_REQUESTED review comments on commit 7bf95a7.

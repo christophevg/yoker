@@ -17,15 +17,21 @@ Also read:
 
 ```text
 src/yoker/
-├── __init__.py              # Public API exports
+├── __init__.py              # Public API exports (incl. ask, build_agent, session)
 ├── __main__.py              # CLI entry point and run_session()
 ├── agent/                   # Agent layer (no UI)
-│   ├── __init__.py          # Unified Agent class
+│   ├── __init__.py          # Unified Agent class (with on_event/spawn helpers)
 │   ├── _plugins.py          # Plugin loading helpers
 │   ├── _processing.py       # Message processing, streaming, tool loop
 │   ├── _setup.py            # Client, guardrail, registry setup
 │   ├── _tools.py            # Built-in tool filtering
 │   └── thinking.py          # Thinking mode enum
+├── api/                     # Pythonic utility API (MBI-003, 3-layer facade)
+│   ├── __init__.py          # Public re-exports
+│   ├── _internal.py         # build_agent(), run_sync(), thinking mapping
+│   ├── one_shot.py          # Layer 1: ask, run_skill, complete (+ *_sync)
+│   ├── builder.py           # Layer 2: agent() factory -> Agent
+│   └── session.py           # Layer 3: session() facade over real Session
 ├── agents/                  # Agent definition parsing
 ├── backends/                # Provider-neutral backend layer
 │   ├── protocol.py          # ModelBackend Protocol, ChatChunk, UsageStats
@@ -41,7 +47,7 @@ src/yoker/
 │   └── modellist.py         # Model list rendering
 ├── builtin/                 # Built-in tools (read, write, git, websearch, ...)
 ├── config/                  # Configuration system (Clevis)
-│   ├── __init__.py          # Config dataclasses, get_yoker_config()
+│   ├── __init__.py          # Config dataclasses, get_yoker_config(), make_config()
 │   ├── providers.py         # Provider configs (Ollama, OpenAI, Anthropic, Gemini, Generic)
 │   ├── validators.py        # Field validators
 │   └── writer.py            # TOML writer with chmod 600
