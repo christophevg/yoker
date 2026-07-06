@@ -4,12 +4,12 @@
 
 | Priority | MBI/Task | Status |
 |----------|----------|--------|
-| **P1** | MBI-007: Session | Ready (design finalized, owner-approved PR #42 + PR #43 clarifications rounds 1 & 2) |
+| **P1** | MBI-007: Session | Complete (2026-07-06) |
 | **P1** | MBI-006: Multi-Provider Backend (Phase 1) | Complete |
 | **P1** | MBI-006 Phase 2: LitellmBackend | Complete |
 | **P1** | MBI-002: Bootstrap | Complete |
 | **P1** | MBI-001 Validation | Complete (v0.6.0 released to PyPI) |
-| **P2** | MBI-003: Python API | On Hold — blocked on MBI-007 (Session) |
+| **P2** | MBI-003: Python API | Ready (unblocked — MBI-007 merged) |
 | **P2** | MBI-004: yoker Commands | Backlog (after Python API) |
 | **P2** | MBI-005: Assistant Integration | Backlog (showcase project) |
 | **P3** | Maintenance Tasks | M.1-M.4 |
@@ -18,7 +18,7 @@
 
 ---
 
-## Active: MBI-007: Session
+## Done: MBI-007: Session (2026-07-06)
 
 **Goal:** Introduce a `Session` construct that manages a team of agents: lifecycle, registry, recursion depth, event aggregation, inter-agent messaging, and backend sharing. Reduce `Agent` to a single-agent chat loop. Establish the primitive that MBI-003 (Python API) builds on.
 
