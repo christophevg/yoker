@@ -4,16 +4,15 @@
 
 | Priority | MBI/Task | Status |
 |----------|----------|--------|
-| **P1** | MBI-007: Session | Complete (2026-07-06) |
-| **P1** | MBI-006: Multi-Provider Backend (Phase 1) | Complete |
-| **P1** | MBI-006 Phase 2: LitellmBackend | Complete |
-| **P1** | MBI-002: Bootstrap | Complete |
-| **P1** | MBI-001 Validation | Complete (v0.6.0 released to PyPI) |
-| **P2** | MBI-003: Python API | Ready (unblocked — MBI-007 merged) |
-| **P2** | MBI-004: yoker Commands | Backlog (after Python API) |
-| **P2** | MBI-005: Assistant Integration | Backlog (showcase project) |
-| **P3** | Maintenance Tasks | M.1-M.4 |
-| **P3** | Maintenance Tasks | M.6 (done in MBI-006 Phase 1) |
+| **P1** | MBI-001: Package Plugin System | Complete (v0.6.0 released to PyPI, 2026-07-03) |
+| **P1** | MBI-002: Bootstrap | Complete (2026-07-01) |
+| **P1** | MBI-006: Multi-Provider Backend (Phase 1 + Phase 2) | Complete (2026-07-01) |
+| **P1** | MBI-007: Session | Complete (2026-07-06, PR #43) |
+| **P1** | ContextManager Refactor | Complete (2026-07-06, PR #44) |
+| **P2** | MBI-003: Python API | Ready (next to activate — unblocked) |
+| **P2** | MBI-004: yoker Commands | Backlog (depends on MBI-002, MBI-003) |
+| **P2** | MBI-005: Assistant Integration | Backlog (depends on MBI-002, MBI-003, MBI-004) |
+| **P3** | Maintenance Tasks | M.1-M.4 (open), M.5-M.6 (done) |
 | **P4+** | Launch Preparation, Architecture, Future Work | See sections below |
 
 ---
@@ -26,7 +25,7 @@
 
 **Milestone:** A real `Session` primitive lands in master; `Agent` is a single-agent chat loop; sub-agents are visible via event aggregation; MBI-003 unblocks.
 
-**Status:** Design finalized (incl. PR #43 round-1 & round-2 clarifications). Detailed implementation task breakdown below (40 sub-tasks; `ListAgents` deferred per Clarification 6).
+**Status:** Complete (merged 2026-07-06 via PR #43). All 40 sub-tasks implemented; `ListAgents` deferred per Clarification 6.
 
 **Key PR #43 round-1 clarifications (see analysis §7.3):**
 - **No backward-compat shims** — implement the final design only; no deprecation warnings, no proxy properties, no ignored args. Remove the old field/arg outright.
@@ -76,7 +75,7 @@
 **Satisfies:** D1, D2, D3, D4, D10 (foundation)
 **Depends on:** 7.6 (for SessionConfig defaults)
 
-- [ ] **[MBI-007] 7.1.1 Create session package skeleton + Message dataclass**
+- [x] **[MBI-007] 7.1.1 Create session package skeleton + Message dataclass**
   - Create `src/yoker/session/__init__.py` (exports: `Session`, `Message`)
   - Create `src/yoker/session/message.py` with `Message` frozen dataclass:
     `from: str`, `to: str`, `content: str`, `metadata: dict` (default `field(default_factory=dict)`)
@@ -89,7 +88,7 @@
   - **Satisfies:** D3
   - **Depends on:** —
 
-- [ ] **[MBI-007] 7.1.2 Session class: async context manager + lifecycle**
+- [x] **[MBI-007] 7.1.2 Session class: async context manager + lifecycle**
   - Create `src/yoker/session/session.py` with `Session` class
   - Constructor: `Session(config: Config, *, session_id: str | None = None)`
   - Implements `__aenter__` / `__aexit__` (D4) — emits `SESSION_START` on enter,
@@ -110,7 +109,7 @@
   - **Satisfies:** D1, D4
   - **Depends on:** 7.6.1 (SessionConfig exists in Config), 7.7.1 (session event types for START/END)
 
-- [ ] **[MBI-007] 7.1.3 Session ID management + name→agent map**
+- [x] **[MBI-007] 7.1.3 Session ID management + name→agent map**
   - Session generates a unique session ID (UUID-based or config-derived) on construction
   - Replaces ad-hoc `f"{parent_session}_{uuid[:8]}"` derivation in `_create_subagent`
   - `session.spawn()` (implemented in 7.8.2) assigns derived session IDs to child agents
@@ -138,7 +137,7 @@ constructor args. Remove the old fields/args outright; callers that pass them ge
 `TypeError` / `AttributeError`. This applies to `agent.agents`, `_recursion_depth`,
 `recursion_depth`, `max_recursion_depth`, and the `run_session` name.
 
-- [ ] **[MBI-007] 7.2.1 Remove `agents: AgentRegistry` from Agent**
+- [x] **[MBI-007] 7.2.1 Remove `agents: AgentRegistry` from Agent**
   - Remove `self.agents = AgentRegistry()` from `Agent.__init__` (line 94 of `agent/__init__.py`)
   - Remove `_load_agents()` method (lines 414-423) — relocated to Session in 7.3.1
   - Remove the agent-tool registration block (lines 123-125) — Session injects `SpawnAgent`
@@ -156,7 +155,7 @@ constructor args. Remove the old fields/args outright; callers that pass them ge
   - **Satisfies:** D10 (Agent loses registry), PR #43 Clarification 1
   - **Depends on:** 7.3.1 (Session owns registry), 7.3.4 (cleanup)
 
-- [ ] **[MBI-007] 7.2.2 Remove `recursion_depth` and `max_recursion_depth` from Agent**
+- [x] **[MBI-007] 7.2.2 Remove `recursion_depth` and `max_recursion_depth` from Agent**
   - Remove `self.recursion_depth` and `self.max_recursion_depth` from `Agent.__init__`
   - Remove `_recursion_depth` constructor parameter (no shim — removed, not ignored)
   - Remove `validate_recursion_depth` import and call from `agent/_setup.py`
@@ -171,7 +170,7 @@ constructor args. Remove the old fields/args outright; callers that pass them ge
   - **Satisfies:** D1 (depth tracking moves to Session), PR #43 Clarification 1
   - **Depends on:** 7.1.2 (Session tracks depth)
 
-- [ ] **[MBI-007] 7.2.3 Agent receives optional session reference**
+- [x] **[MBI-007] 7.2.3 Agent receives optional session reference**
   - Add `session: Session | None = None` constructor parameter to `Agent.__init__`
   - Store as `self._session` for use by tools (via ToolContext in 7.8.1) and by
     event routing (events go to session aggregator when session is present)
@@ -188,7 +187,7 @@ constructor args. Remove the old fields/args outright; callers that pass them ge
   - **Satisfies:** D1, D5 (event routing to session)
   - **Depends on:** 7.1.2, 7.7.2 (event aggregator)
 
-- [ ] **[MBI-007] 7.2.4 Adapt plugin loading for Session-aware Agent**
+- [x] **[MBI-007] 7.2.4 Adapt plugin loading for Session-aware Agent**
   - `load_configured_plugins(agent, config, cli_plugins)` currently populates
     `agent.tools`, `agent.skills`, `agent.agents` (in `plugins/loader.py`)
   - After 7.3 moves `agent.agents` to Session, plugin loading must split:
@@ -215,7 +214,7 @@ constructor args. Remove the old fields/args outright; callers that pass them ge
 **Satisfies:** D10
 **Depends on:** 7.1 (Session exists to receive the registry)
 
-- [ ] **[MBI-007] 7.3.1 Session owns and populates AgentRegistry**
+- [x] **[MBI-007] 7.3.1 Session owns and populates AgentRegistry**
   - `Session.__init__` creates `self.agents: AgentRegistry = AgentRegistry()`
   - Relocate `Agent._load_agents()` logic to Session: load from
     `config.agents.directories` using `load_agent_definitions(directory)`
@@ -228,7 +227,7 @@ constructor args. Remove the old fields/args outright; callers that pass them ge
   - **Satisfies:** D10
   - **Depends on:** 7.1.2
 
-- [ ] **[MBI-007] 7.3.2 Plugin agent registration targets Session**
+- [x] **[MBI-007] 7.3.2 Plugin agent registration targets Session**
   - In `load_configured_plugins`, the `register_agents(plugin.agents, agent.agents, ...)`
     call changes to target `session.agents`
   - The `yoker` builtin plugin's `agents_dir="agents"` loads built-in agent definitions
@@ -240,7 +239,7 @@ constructor args. Remove the old fields/args outright; callers that pass them ge
   - **Satisfies:** D10
   - **Depends on:** 7.3.1
 
-- [ ] **[MBI-007] 7.3.3 Agent allowlist enforcement (source: AgentDefinition.agents)**
+- [x] **[MBI-007] 7.3.3 Agent allowlist enforcement (source: AgentDefinition.agents)**
   - PR #43 Clarification 3: the Session checks the requesting agent's
     `AgentDefinition.agents` allowlist **before** spawning — the source of truth is
     the definition's allowlist, not a derived list on the Agent.
@@ -273,7 +272,7 @@ constructor args. Remove the old fields/args outright; callers that pass them ge
   - **Satisfies:** PR #43 Clarification 3 (Agent allowlist enforcement)
   - **Depends on:** 7.3.1, 7.3.2
 
-- [ ] **[MBI-007] 7.3.4 Remove `agent.agents` attribute entirely**
+- [x] **[MBI-007] 7.3.4 Remove `agent.agents` attribute entirely**
   - After all code paths are updated (7.2.1, 7.3.1-7.3.3), remove the `self.agents`
     field from Agent completely
   - Update `builtin/agent.py` (no longer reads `parent_agent.agents`)
@@ -293,7 +292,7 @@ constructor args. Remove the old fields/args outright; callers that pass them ge
 **Satisfies:** D3
 **Depends on:** 7.1 (Session + Message exist), 7.2 (Agent is single-responsibility)
 
-- [ ] **[MBI-007] 7.4.1 Finalize Message dataclass (created in 7.1.1)**
+- [x] **[MBI-007] 7.4.1 Finalize Message dataclass (created in 7.1.1)**
   - Verify `Message` in `src/yoker/session/message.py` matches the design:
     `@dataclass(frozen=True) class Message: from: str; to: str; content: str; metadata: dict`
   - `content` is a plain string (the prompt) — no streaming (D3, §6.6)
@@ -305,7 +304,7 @@ constructor args. Remove the old fields/args outright; callers that pass them ge
   - **Satisfies:** D3
   - **Depends on:** 7.1.1
 
-- [ ] **[MBI-007] 7.4.2 Session.send() routing method**
+- [x] **[MBI-007] 7.4.2 Session.send() routing method**
   - Implement `async def session.send(message: Message) -> str` on Session
   - Looks up target agent by `message.to` in `self._agents_map`
   - Calls `await target_agent.process(message.content)`
@@ -322,7 +321,7 @@ constructor args. Remove the old fields/args outright; callers that pass them ge
   - **Satisfies:** D3, D6.2 (routing through Session)
   - **Depends on:** 7.1.2, 7.1.3, 7.7.1 (AGENT_MESSAGE event type)
 
-- [ ] **[MBI-007] 7.4.3 Agent addressing: unique ID generation**
+- [x] **[MBI-007] 7.4.3 Agent addressing: unique ID generation**
   - `Session._generate_agent_name(definition_name: str) -> str` — checks
     `self._agents_map` for existing names; if taken, appends `-2`, `-3`, etc. (D2)
   - Called by `session.spawn()` (7.8.2) when registering a new agent
@@ -342,7 +341,7 @@ constructor args. Remove the old fields/args outright; callers that pass them ge
 **Satisfies:** D9
 **Depends on:** 7.1 (Session exists)
 
-- [ ] **[MBI-007] 7.5.1 Session backend factory**
+- [x] **[MBI-007] 7.5.1 Session backend factory**
   - Session owns `self._backends: dict[str, ModelBackend]` keyed by provider config hash
     (or `(provider, model, base_url, api_key)` tuple)
   - `session.get_backend(config: Config) -> ModelBackend`:
@@ -361,7 +360,7 @@ constructor args. Remove the old fields/args outright; callers that pass them ge
   - **Satisfies:** D9
   - **Depends on:** 7.1.2
 
-- [ ] **[MBI-007] 7.5.2 Agent receives backend from Session**
+- [x] **[MBI-007] 7.5.2 Agent receives backend from Session**
   - When an Agent is constructed via Session (spawn or primary agent), Session passes
     the shared/fresh backend via the existing `backend=` constructor parameter
   - Agent no longer calls `create_backend(self.config)` directly when a Session is
@@ -384,7 +383,7 @@ constructor args. Remove the old fields/args outright; callers that pass them ge
 **Satisfies:** D7
 **Depends on:** — (foundational, no dependencies)
 
-- [ ] **[MBI-007] 7.6.1 Add SessionConfig dataclass**
+- [x] **[MBI-007] 7.6.1 Add SessionConfig dataclass**
   - Add to `src/yoker/config/__init__.py`:
     ```python
     @dataclass(frozen=True)
@@ -405,7 +404,7 @@ constructor args. Remove the old fields/args outright; callers that pass them ge
   - **Satisfies:** D7
   - **Depends on:** —
 
-- [ ] **[MBI-007] 7.6.2 Add `session` field to Config + CLI args**
+- [x] **[MBI-007] 7.6.2 Add `session` field to Config + CLI args**
   - Add `session: SessionConfig = field(default_factory=SessionConfig)` to the `Config`
     dataclass (after `ui` field or in logical position)
   - Add `SessionConfig` to `__all__` exports
@@ -423,7 +422,7 @@ constructor args. Remove the old fields/args outright; callers that pass them ge
   - **Satisfies:** D7
   - **Depends on:** 7.6.1
 
-- [ ] **[MBI-007] 7.6.3 Relocate recursion depth config semantics**
+- [x] **[MBI-007] 7.6.3 Relocate recursion depth config semantics**
   - `config.tools.agent.max_recursion_depth` (currently on `AgentToolConfig`) remains
     in config but is now read by Session instead of Agent
   - Session reads `config.tools.agent.max_recursion_depth` as the session-level
@@ -447,7 +446,7 @@ constructor args. Remove the old fields/args outright; callers that pass them ge
 **Satisfies:** D5
 **Depends on:** 7.1 (Session exists)
 
-- [ ] **[MBI-007] 7.7.1 New session-level event types**
+- [x] **[MBI-007] 7.7.1 New session-level event types**
   - Add to `EventType` enum in `src/yoker/events/types.py`:
     `SESSION_START`, `SESSION_END`, `AGENT_SPAWNED`, `AGENT_FINISHED`, `AGENT_MESSAGE`
   - Create event dataclasses:
@@ -467,7 +466,7 @@ constructor args. Remove the old fields/args outright; callers that pass them ge
   - **Satisfies:** D5 (event infrastructure)
   - **Depends on:** 7.1.1 (Message dataclass for AgentMessageEvent)
 
-- [ ] **[MBI-007] 7.7.2 Session event aggregator (SessionEvent envelope, fan-out with agent_id tagging)**
+- [x] **[MBI-007] 7.7.2 Session event aggregator (SessionEvent envelope, fan-out with agent_id tagging)**
   - Session collects events from all agents it manages and re-emits them to
     session-level handlers, tagged with the source agent's name/ID (D5)
   - **PR #43 Clarification 9 — `SessionEvent` envelope wrapper:** tagging is
@@ -507,7 +506,7 @@ constructor args. Remove the old fields/args outright; callers that pass them ge
   - **Satisfies:** D5, PR #43 Clarifications 7 & 9
   - **Depends on:** 7.1.2, 7.7.1
 
-- [ ] **[MBI-007] 7.7.3 UIBridge registered on Session + handles new events + SessionEvent envelope**
+- [x] **[MBI-007] 7.7.3 UIBridge registered on Session + handles new events + SessionEvent envelope**
   - `UIBridge.__call__` handles both wrapped (`SessionEvent`) and unwrapped
     (bare `Event`) incoming events (PR #43 Clarification 9):
     - If the incoming event is a `SessionEvent`: unpack it — use `agent_id`
@@ -539,7 +538,7 @@ constructor args. Remove the old fields/args outright; callers that pass them ge
   - **Satisfies:** D5, PR #43 Clarifications 8 & 9
   - **Depends on:** 7.7.1, 7.7.2, 7.7.4
 
-- [ ] **[MBI-007] 7.7.4 UIHandler new optional methods (no BaseUIHandler recreation)**
+- [x] **[MBI-007] 7.7.4 UIHandler new optional methods (no BaseUIHandler recreation)**
   - **PR #43 Clarification 8 — do NOT recreate `BaseUIHandler`.** The
     `agent_spawned` / `agent_finished` methods are added **directly to the
     `UIHandler` protocol** as optional methods (documented, not enforced —
@@ -574,7 +573,7 @@ constructor args. Remove the old fields/args outright; callers that pass them ge
   - **Satisfies:** D5, PR #43 Clarification 8
   - **Depends on:** 7.7.3 (UIBridge guard)
 
-- [ ] **[MBI-007] 7.7.5 EventRecorder session-scoped**
+- [x] **[MBI-007] 7.7.5 EventRecorder session-scoped**
   - `EventRecorder` registered on Session (via `session.add_event_handler(recorder)`)
     instead of on individual agents
   - Captures all agents' events (wrapped in `SessionEvent` envelopes — PR #43
@@ -607,7 +606,7 @@ Session-injected. `ListAgents` is **deferred** to a follow-up MBI (PR #43
 Clarification 6) and is not part of MBI-007. Session-injected tools are **not**
 registered by the Agent itself and are not part of the Agent's static tool set.
 
-- [ ] **[MBI-007] 7.8.1 ToolContext gains session reference**
+- [x] **[MBI-007] 7.8.1 ToolContext gains session reference**
   - Add `session: Session | None = None` field to `ToolContext` dataclass in
     `src/yoker/tools/context.py` (D8)
   - Update `_build_tool_context()` in `agent/_processing.py` (line 573-595) to pass
@@ -625,7 +624,7 @@ registered by the Agent itself and are not part of the Agent's static tool set.
   - **Satisfies:** D8, PR #43 Clarification 4
   - **Depends on:** 7.2.3 (Agent has `_session`)
 
-- [ ] **[MBI-007] 7.8.2 Session.spawn() canonical API (returns SpawnResult)**
+- [x] **[MBI-007] 7.8.2 Session.spawn() canonical API (returns SpawnResult)**
   - Implement `async def session.spawn(name: str, prompt: str, timeout: int = 300,
     *, requester: Agent | None = None) -> SpawnResult` (D8, PR #43
     Clarifications 3 & 5)
@@ -688,7 +687,7 @@ registered by the Agent itself and are not part of the Agent's static tool set.
   - **Satisfies:** D8, D1 (Session as coordinator), PR #43 Clarifications 2, 3, 5, 6, 7
   - **Depends on:** 7.1.2, 7.1.3, 7.3.1, 7.3.3, 7.5.1, 7.7.2, 7.8.3, 7.8.6
 
-- [ ] **[MBI-007] 7.8.3 SpawnAgent tool (Session-injected, replaces `agent` tool, returns spawned id)**
+- [x] **[MBI-007] 7.8.3 SpawnAgent tool (Session-injected, replaces `agent` tool, returns spawned id)**
   - PR #43 Clarification 2: the `agent` built-in tool becomes `SpawnAgent`,
     Session-injected.
   - **PR #43 Clarification 5 — return the spawned agent's id to the caller.**
@@ -738,7 +737,7 @@ registered by the Agent itself and are not part of the Agent's static tool set.
   - **Satisfies:** PR #43 Clarifications 2 & 5 (SpawnAgent, Session-injected, returns id)
   - **Depends on:** 7.8.1, 7.8.2
 
-- [ ] **[MBI-007] 7.8.6 SendMessage tool (Session-injected)**
+- [x] **[MBI-007] 7.8.6 SendMessage tool (Session-injected)**
   - PR #43 Clarification 4: `SendMessage` is a tool available to agents when in a
     Session, injected by the Session (same injection mechanism as `SpawnAgent`).
     Enables inter-agent messaging via tool calls, not just via the
@@ -795,7 +794,7 @@ registered by the Agent itself and are not part of the Agent's static tool set.
   - **Satisfies:** PR #43 Clarification 6 (ListAgents deferred)
   - **Depends on:** — (not part of MBI-007)
 
-- [ ] **[MBI-007] 7.8.4 Rename run_session() to run_repl()**
+- [x] **[MBI-007] 7.8.4 Rename run_session() to run_repl()**
   - Rename `run_session` function to `run_repl` in `src/yoker/__main__.py` (D6)
   - PR #43 Clarification 1: no alias / no shim — the old name is removed, not kept
     as a deprecated alias.
@@ -810,7 +809,7 @@ registered by the Agent itself and are not part of the Agent's static tool set.
   - **Satisfies:** D6, PR #43 Clarification 1
   - **Depends on:** —
 
-- [ ] **[MBI-007] 7.8.5 Construct Session in main() + wire UIBridge on Session**
+- [x] **[MBI-007] 7.8.5 Construct Session in main() + wire UIBridge on Session**
   - In `main()`: after config is loaded and bootstrap completes, construct a `Session`:
     `async with Session(config=agent.config) as session:`
   - Create the primary Agent within the session: `Agent(config=..., session=session, ...)`
@@ -837,7 +836,7 @@ registered by the Agent itself and are not part of the Agent's static tool set.
 
 **Depends on:** 7.1-7.8
 
-- [ ] **[MBI-007] 7.9.1 Session lifecycle tests**
+- [x] **[MBI-007] 7.9.1 Session lifecycle tests**
   - Test `async with Session(config=...) as session:` enter/exit
   - Test cleanup on normal exit (outstanding tasks cancelled)
   - Test cleanup on exception exit
@@ -847,7 +846,7 @@ registered by the Agent itself and are not part of the Agent's static tool set.
   - **Acceptance:** All lifecycle tests pass
   - **Depends on:** 7.1, 7.6
 
-- [ ] **[MBI-007] 7.9.2 Spawn and recursion tests**
+- [x] **[MBI-007] 7.9.2 Spawn and recursion tests**
   - Test `session.spawn()` returns response string
   - Test recursion depth enforcement (spawn beyond limit returns error)
   - Test timeout enforcement
@@ -862,7 +861,7 @@ registered by the Agent itself and are not part of the Agent's static tool set.
   - **Acceptance:** All spawn tests pass
   - **Depends on:** 7.8.2
 
-- [ ] **[MBI-007] 7.9.3 Event aggregation tests**
+- [x] **[MBI-007] 7.9.3 Event aggregation tests**
   - Test events from spawned agents reach session-level handlers wrapped in
     `SessionEvent` envelopes (PR #43 Clarification 9)
   - Test the inner `Event` inside a `SessionEvent` is dispatched unchanged
@@ -878,7 +877,7 @@ registered by the Agent itself and are not part of the Agent's static tool set.
   - **Acceptance:** All event aggregation tests pass
   - **Depends on:** 7.7
 
-- [ ] **[MBI-007] 7.9.4 Inter-agent messaging tests**
+- [x] **[MBI-007] 7.9.4 Inter-agent messaging tests**
   - Test `session.send(Message(...))` routes to target agent
   - Test request-response pattern returns response string
   - Test `AGENT_MESSAGE` event emitted
@@ -887,7 +886,7 @@ registered by the Agent itself and are not part of the Agent's static tool set.
   - **Acceptance:** All messaging tests pass
   - **Depends on:** 7.4
 
-- [ ] **[MBI-007] 7.9.5 Backend sharing tests**
+- [x] **[MBI-007] 7.9.5 Backend sharing tests**
   - Test two agents with same provider config share the same `ModelBackend` instance
   - Test per-agent model override creates a fresh backend
   - Test `session.get_backend()` is idempotent for same config
@@ -895,7 +894,7 @@ registered by the Agent itself and are not part of the Agent's static tool set.
   - **Acceptance:** All backend sharing tests pass
   - **Depends on:** 7.5
 
-- [ ] **[MBI-007] 7.9.6 Session-injected tools tests (SpawnAgent, SendMessage)**
+- [x] **[MBI-007] 7.9.6 Session-injected tools tests (SpawnAgent, SendMessage)**
   - PR #43 Clarifications 2, 4, 5 & 6 (`ListAgents` deferred — not tested here)
   - Test `SpawnAgent` tool is registered on Agents by the Session (not by Agent)
   - Test `SpawnAgent` calls `session.spawn(...)` with `requester` set and returns
@@ -913,7 +912,7 @@ registered by the Agent itself and are not part of the Agent's static tool set.
   - **Acceptance:** All Session-injected tool tests pass
   - **Depends on:** 7.8.2, 7.8.3, 7.8.6
 
-- [ ] **[MBI-007] 7.9.7 Single-agent path and no-shim tests (PR #43 Clarification 1)**
+- [x] **[MBI-007] 7.9.7 Single-agent path and no-shim tests (PR #43 Clarification 1)**
   - Test single-agent `Agent()` without Session works as a chat loop
   - Test `Agent(config=...)` + `agent.process()` still works
   - Test existing examples (`library_usage.py`, `batch_mode.py`,
@@ -931,7 +930,7 @@ registered by the Agent itself and are not part of the Agent's static tool set.
     - Removed args/fields raise loudly (TypeError / AttributeError), no shims
   - **Depends on:** 7.1-7.8
 
-- [ ] **[MBI-007] 7.9.8 New session_demo.py example**
+- [x] **[MBI-007] 7.9.8 New session_demo.py example**
   - Create `examples/session_demo.py` demonstrating:
     - Constructing a Session
     - Spawning multiple agents in one session
@@ -948,7 +947,7 @@ registered by the Agent itself and are not part of the Agent's static tool set.
       event visibility
   - **Depends on:** 7.1-7.8
 
-- [ ] **[MBI-007] 7.9.9 Documentation updates**
+- [x] **[MBI-007] 7.9.9 Documentation updates**
   - Update `docs/rationale.md` "Recursive Composition: True Sub-Agents" section
     to reflect real multi-agent support (addressing, event visibility, shared
     backends, Session-injected tools)
@@ -968,7 +967,7 @@ registered by the Agent itself and are not part of the Agent's static tool set.
     - Session-injected tools and allowlist documented
   - **Depends on:** 7.1-7.8
 
-- [ ] **[MBI-007] 7.9.10 Final verification: make check green**
+- [x] **[MBI-007] 7.9.10 Final verification: make check green**
   - Run `make check` end-to-end (format, lint, typecheck, test) — all green
   - Verify no existing tests were modified to make the refactor pass
     (behaviour unchanged for single-agent path)
@@ -1061,7 +1060,103 @@ The owner requested (PR #42 Comment 1) a **Config factory** for creating `Config
 
 ---
 
-## Active: MBI-002: Bootstrap
+## Ready: MBI-003: Python API
+
+**Goal:** Python developers can easily integrate agentic (sub-)workflows in Python function calls, with a clean utility API wrapping the current class-oriented architecture. Three-layer API: one-shot functions, agent builder, workflow primitives built on the real `Session`.
+
+**Design source of truth:** `analysis/mbi-003-python-api-design.md` (three-layer utility API: Layer 1 one-shot functions, Layer 2 agent builder, Layer 3 `yoker.session()` workflow primitive built on the real `Session`).
+
+**Status:** Ready (unblocked — MBI-007 merged 2026-07-06, MBI-002 Bootstrap merged 2026-07-01). Next MBI to activate.
+
+**Milestone:** Developers can call `yoker.ask(...)`, `yoker.run_skill(...)`, `yoker.agent(...)`, and `yoker.session(...)` from Python code without understanding internal classes.
+
+### Tasks
+
+- [ ] **[MBI-003] 3.1 Config factory**
+  - Create a `Config` in code with a flag to enable/skip normal config loading (TOML discovery + CLI args). Needed by the `agent()` factory function so programmatic callers can construct a Config without touching the filesystem. (Owner request, PR #42 Comment 1.)
+  - **Satisfies:** Config factory requirement
+  - **Depends on:** —
+  - **Priority:** P2
+
+- [ ] **[MBI-003] 3.2 Review current class-oriented API**
+  - Review existing `Agent`, `Config`, `AgentDefinition`, `ToolRegistry`, `SkillRegistry`, context managers, and event system
+  - Identify boilerplate patterns in `examples/library_usage.py`, `examples/batch_mode.py`, `examples/research_workflow.py`
+  - Document the five-step ritual: load config → construct Agent → wire bridge → register handler → process
+  - **Satisfies:** RES component
+  - **Depends on:** —
+  - **Priority:** P2
+
+- [ ] **[MBI-003] 3.3 Design developer-friendly utility functions**
+  - Design the three-layer API surface (Layer 1 one-shot, Layer 2 agent builder, Layer 3 workflow primitives)
+  - Align on naming and ergonomics (`yoker.ask`, `yoker.run_skill`, `yoker.complete`, `yoker.agent`, `yoker.session`)
+  - Document the facade pattern over existing `Agent` class
+  - **Satisfies:** RES component
+  - **Depends on:** 3.2
+  - **Priority:** P2
+
+- [ ] **[MBI-003] 3.4 Implement Layer 1: one-shot functions**
+  - Implement `yoker.ask(...)`, `yoker.run_skill(...)`, `yoker.complete(...)` — stateless, synchronous-feeling, one line of code
+  - Build on the Config factory (3.1) and existing `Agent` class
+  - **Satisfies:** DEV component (Layer 1)
+  - **Depends on:** 3.1, 3.3
+  - **Priority:** P2
+
+- [ ] **[MBI-003] 3.5 Implement Layer 2: agent builder**
+  - Implement `yoker.agent(...)` returning a configured `Agent` with fluent, declarative setup
+  - Same object reusable across turns and async tasks
+  - **Satisfies:** DEV component (Layer 2)
+  - **Depends on:** 3.1, 3.3
+  - **Priority:** P2
+
+- [ ] **[MBI-003] 3.6 Implement Layer 3: workflow primitives**
+  - Implement `yoker.session(...)` building on the real `Session` construct from MBI-007
+  - Sub-agent spawning, event hooks, plugin loading expressed as ordinary Python constructs (context managers, async iterators, callables)
+  - **Satisfies:** DEV component (Layer 3, builds on MBI-007 Session)
+  - **Depends on:** 3.4, 3.5
+  - **Priority:** P2
+
+- [ ] **[MBI-003] 3.7 (Optional) Auto-generate functions for detected skills/agents**
+  - Auto-generate callable functions for detected skills/agents (e.g. `from package.skills import skill_name; skill_name("prompt")`)
+  - **Satisfies:** Optional DEV component
+  - **Depends on:** 3.4, 3.5
+  - **Priority:** P3
+
+- [ ] **[MBI-003] 3.8 API usage tests**
+  - Write tests for all three layers of the utility API
+  - Test Config factory, one-shot functions, agent builder, workflow primitives
+  - **Satisfies:** TEST component
+  - **Depends on:** 3.4, 3.5, 3.6
+  - **Priority:** P2
+
+- [ ] **[MBI-003] 3.9 Python API documentation with examples**
+  - Document common integration patterns
+  - Update README.md and docs/ with Python API examples
+  - **Satisfies:** DOCS component
+  - **Depends on:** 3.4, 3.5, 3.6
+  - **Priority:** P2
+
+- [ ] **[MBI-003] 3.10 Final verification: make check green**
+  - Run `make check` end-to-end (format, lint, typecheck, test) — all green
+  - Verify existing examples run without modification (backward compatible)
+  - Verify new utility API examples work
+  - **Satisfies:** Completion gate
+  - **Depends on:** 3.8, 3.9
+  - **Priority:** P2
+
+**Acceptance Criteria:**
+- [ ] Developers can call `yoker.ask("...")` from Python code (one-shot)
+- [ ] Developers can call `yoker.run_skill("skill-name", "prompt")` from Python code
+- [ ] `yoker.agent(...)` returns a configured, reusable `Agent`
+- [ ] `yoker.session(...)` builds on the real `Session` construct from MBI-007
+- [ ] A Config factory exists for programmatic Config construction (skip filesystem/CLI loading)
+- [ ] API documentation shows common integration patterns
+- [ ] Utility functions provide clean abstraction over internal classes
+- [ ] Existing `Agent` class unchanged; new API is a thin facade
+- [ ] `make check` green
+
+---
+
+## Done: MBI-002: Bootstrap (2026-07-01)
 
 **Goal:** Interactive guided setup for first-time users without configuration.
 
@@ -1210,7 +1305,7 @@ The owner requested (PR #42 Comment 1) a **Config factory** for creating `Config
 
 ---
 
-## Active: MBI-006: Multi-Provider Backend Support (Phase 1)
+## Done: MBI-006: Multi-Provider Backend Support (Phase 1) (2026-06-29)
 
 **Goal:** Introduce the `ModelBackend` async Protocol and provider-neutral `ChatChunk` stream type, reimplement the existing Ollama behaviour on top of them, widen the config schema to the tagged-union shape, make subagent spawn provider-agnostic, and add optional stats fields to `TurnEndEvent`. **Pure refactor — no behaviour change, no new provider, no wizard changes.**
 
@@ -1418,7 +1513,7 @@ Unsorted improvements and fixes.
 
 ---
 
-## Active: UI Separation Migration (Complete)
+## Done: UI Separation Migration (2026-06-15)
 
 **Status:** Completed 2026-06-15 via PR #27
 

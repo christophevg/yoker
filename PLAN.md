@@ -14,62 +14,7 @@ Quick captures for MBI ideas. These are raw requests that haven't been analyzed 
 
 The MBI currently being implemented. Only one Active MBI at a time.
 
-### MBI-006: Multi-Provider Backend Support
-
-**Goal:** Make Yoker provider-neutral at the model layer. A single `ModelBackend` Protocol abstracts chat streaming; the Agent talks to a backend instance, not to `ollama.AsyncClient` directly. Ollama, OpenAI, and Anthropic each ship as a backend implementation behind the same Protocol, delivered in three phases: Phase 1 introduces the Protocol and reimplements Ollama on it (pure refactor, no behaviour change); Phase 2 adds OpenAI; Phase 3 adds Anthropic. The config schema becomes a tagged-union shape that carries per-provider sub-configs and per-provider parameters. The bootstrap wizard's provider-selection step is deferred to a separate follow-up.
-
-**Value:** Removes vendor lock-in at the model layer. Users can choose Ollama (local/free), OpenAI, or Anthropic by switching a single config field, without changing their agentic workflows. Establishes the abstraction seam that lets future providers land without touching the Agent hot path. Phase 1 alone delivers no user-facing change but unlocks Phases 2 and 3.
-
-**Status:** In Progress
-
-**Design source of truth:** `analysis/multi-provider-backend-design.md` (finalized, owner-approved — all 20 decisions in §11 resolved). Functional counterpart: `analysis/functional-multi-provider-backend.md`.
-
-**Components (3 phases):**
-- [ ] DEV: Phase 1 — Protocol + Ollama Refactor (M-sized pure refactor; see TODO.md tasks 6.1-6.8)
-- [ ] DEV: Phase 2 — OpenAI Backend (M-sized; add `openai` SDK backend, per-provider curated model list)
-- [ ] DEV: Phase 3 — Anthropic Backend (L-sized; block-style stream translation, message-shape rewrite, tool-schema translation, SSE parsing, thinking config)
-
-**Acceptance Criteria (overall MBI):**
-- [ ] `ModelBackend` Protocol and `ChatChunk` neutral stream type introduced in `src/yoker/backends/`
-- [ ] Ollama behaviour unchanged through the new Protocol (Phase 1)
-- [ ] OpenAI backend works end-to-end including tool calls and reasoning-content thinking (Phase 2)
-- [ ] Anthropic backend works end-to-end including block-style streaming, system-message extraction, and tool-use round trips (Phase 3)
-- [ ] Config schema is a tagged union; old `~/.yoker.toml` files remain valid without migration
-- [ ] Subagent spawn is provider-agnostic regardless of active provider
-- [ ] `make check` green at each phase boundary; behaviour unchanged for Ollama path throughout
-
-**Dependencies:** PRE-1 (M.5 — populate `Agent._tool_backends` for Ollama) — DONE, merged. Bootstrap wizard provider selection is deferred to a separate follow-up MBI on top of the merged bootstrap PR.
-
-**Out of scope (deferred):** Bootstrap wizard provider selection; `build_bootstrap_overrides` provider-awareness; web tools (`web_search`/`web_fetch`) for non-Ollama providers; embeddings/image generation/model management; live API model discovery; dropping the native Ollama SDK.
-
----
-
-### MBI-002: Bootstrap
-
-**Goal:** Users run `yoker` for the first time and are guided through: backend selection, model selection, Ollama account creation (with free tier), and config file creation. After completing bootstrap, any package using yoker can run immediately.
-
-**Value:** Lowers barrier to entry. Users can try yoker with minimal friction, increasing adoption and reducing support questions. A few free cloud model cycles should be enough to test a small agentic workflow.
-
-**Status:** Ready
-
-**Components:**
-- [ ] DEV: Detect missing/incomplete configuration
-- [ ] DEV: Interactive backend selection wizard (Ollama local, ollama.com API, other)
-- [ ] DEV: Model selection wizard for chosen backend
-- [ ] DEV: Ollama account creation assistance (free tier guidance)
-- [ ] DEV: yoker.toml creation with user choices
-- [ ] TEST: Bootstrap flow tests
-- [ ] DOCS: Bootstrap documentation
-
-**Acceptance Criteria:**
-- [ ] Running `yoker` with no config triggers bootstrap wizard
-- [ ] User can choose between Ollama local, ollama.com API, and other backends
-- [ ] User can select from available models for chosen backend
-- [ ] User receives guidance to create Ollama account for free cloud model cycles
-- [ ] yoker.toml is created with user's choices, ready to use immediately
-- [ ] After bootstrap, any package using yoker can run
-
-**Dependencies:** None
+[None — see Backlog for the next MBI to activate (MBI-003: Python API).]
 
 ---
 
@@ -83,7 +28,9 @@ Future MBIs, ordered by priority (highest first).
 
 **Value:** Makes yoker developer-friendly, removing all hurdles to quick integration. Developers can use yoker without understanding internal classes.
 
-**Status:** Ready — unblocked (MBI-007 merged to master 2026-07-06).
+**Status:** Ready (unblocked — MBI-007 merged to master 2026-07-06; MBI-002 Bootstrap merged).
+
+**Design source of truth:** `analysis/mbi-003-python-api-design.md` (three-layer utility API: Layer 1 wrappers over existing classes, Layer 2 `execute_skill` one-shot, Layer 3 `yoker.session()` workflow primitive built on the real `Session`).
 
 **Components:**
 - [ ] RES: Review current class-oriented API
@@ -101,9 +48,9 @@ Future MBIs, ordered by priority (highest first).
 - [ ] Utility functions provide clean abstraction over internal classes
 - [ ] `yoker.session()` builds on the real `Session` construct from MBI-007
 
-**Dependencies:** MBI-002 (Bootstrap) for first-time users; **MBI-007 (Session) — hard blocker: MBI-007 must merge to master before MBI-003 resumes.** The `yoker.session()` workflow primitive in Layer 3 builds on the real Session construct. The Config factory (owner request, PR #42 Comment 1) is also part of MBI-003.
+**Dependencies:** MBI-002 (Bootstrap) — DONE (merged 2026-07-01); MBI-007 (Session) — DONE (merged 2026-07-06, PR #43). The `yoker.session()` workflow primitive in Layer 3 builds on the real `Session` construct. The Config factory (owner request, PR #42 Comment 1) is part of MBI-003.
 
-**Note:** The Config factory requirement was raised by the owner in PR #42 Comment 1 and is recorded in `analysis/session-concept-analysis.md` §7.2. It belongs to MBI-003, not MBI-007, and should be addressed when MBI-003 resumes after MBI-007.
+**Note:** The Config factory requirement was raised by the owner in PR #42 Comment 1 and is recorded in `analysis/session-concept-analysis.md` §7.2. It belongs to MBI-003 and is addressed as part of this MBI.
 
 ---
 
@@ -168,6 +115,36 @@ Future MBIs, ordered by priority (highest first).
 
 Completed MBIs.
 
+### MBI-006: Multi-Provider Backend Support (Completed: 2026-07-01)
+
+**Goal:** Make Yoker provider-neutral at the model layer. A single `ModelBackend` Protocol abstracts chat streaming; the Agent talks to a backend instance, not to `ollama.AsyncClient` directly. Ollama ships via a native SDK backend (`OllamaBackend`); all other providers (OpenAI, Anthropic, Gemini, and 100+ others) ship via a unified `LitellmBackend` wrapping the `litellm` library.
+
+**Value:** Removes vendor lock-in at the model layer. Users can choose Ollama (local/free), OpenAI, Anthropic, or any litellm-supported provider by switching a single config field, without changing their agentic workflows. Establishes the abstraction seam that lets future providers land without touching the Agent hot path.
+
+**Status:** Done
+
+**Design source of truth:** `analysis/multi-provider-backend-design.md` (Phase 1) and `analysis/dual-backend-architecture.md` (Phase 2). Functional counterpart: `analysis/functional-multi-provider-backend.md`.
+
+**Achieved:** Dual backend architecture landed in master. Phase 1 introduced `ModelBackend` Protocol, `ChatChunk` neutral stream type, `OllamaBackend` (native SDK adapter), `create_backend()` factory, and the `with_model()` helper (PR #36). Phase 2 added `LitellmBackend` wrapping the `litellm` library for OpenAI, Anthropic, and 100+ providers, with stream translation, `reasoning_content` mapping, provider-specific parameter mapping, and base_url trust boundary (PR #37). The original three-phase plan (separate OpenAI/Anthropic backends) was superseded by the unified dual-backend approach. Config schema is a tagged union; old `~/.yoker.toml` files remain valid without migration. Subagent spawn is provider-agnostic.
+
+**Merged via:** PR #36 (Phase 1, 2026-06-29) and PR #37 (Phase 2, 2026-07-01).
+
+---
+
+### MBI-002: Bootstrap (Completed: 2026-07-01)
+
+**Goal:** Users run `yoker` for the first time and are guided through: backend selection, model selection, Ollama account creation (with free tier), and config file creation. After completing bootstrap, any package using yoker can run immediately.
+
+**Value:** Lowers barrier to entry. Users can try yoker with minimal friction, increasing adoption and reducing support questions. A few free cloud model cycles should be enough to test a small agentic workflow.
+
+**Status:** Done
+
+**Achieved:** Bootstrap wizard landed in master (`src/yoker/bootstrap/`). `config_provided()` detection in `detect.py` triggers the wizard when no config source is present. Interactive `BootstrapWizard` walks users through backend intro, Ollama account creation guidance, connection-method selection (local app vs API key), and model selection (curated list + free text, no network call). Config writer in `src/yoker/config/writer.py` (annotation-driven, generic) writes `~/.yoker.toml` with `chmod 600`. Non-interactive mode prints stderr warning and exits non-zero. Library mode (`Agent(config=...)`) skips bootstrap. Default model changed to `gemini-3-flash-preview:cloud` (cloud, no download). Bootstrap continues into the normal session after writing config (no rerun needed). Documentation in `docs/guides/getting-started.md`.
+
+**Merged via:** PR #35 (2026-07-01).
+
+---
+
 ### ContextManager Refactor (Completed: 2026-07-06)
 
 **Goal:** Refactor the `ContextManager` construct to clean up its responsibilities and align it with the Session-based multi-agent architecture landed in MBI-007. Reduce coupling, clarify ownership of context lifecycle, and prepare the primitive for the workflow layer that MBI-003 (Python API) builds on.
@@ -209,8 +186,8 @@ Completed MBIs.
 **Status:** Done
 
 **Final Validation:**
-- [ ] Validate plugin system with pkgq project
-- [ ] Publish release to PyPI
+- [x] Validate plugin system with pkgq project
+- [x] Publish release to PyPI
 
-**Achieved:** All core components implemented (Skill Infrastructure, Slash Commands, Skill Tool, Package Plugin Discovery, CLI --with Argument, UI Separation, Error Handling, Documentation, Testing).
+**Achieved:** All core components implemented (Skill Infrastructure, Slash Commands, Skill Tool, Package Plugin Discovery, CLI --with Argument, UI Separation, Error Handling, Documentation, Testing). Validated with pkgq project; v0.6.0 released to PyPI (2026-07-03).
 
