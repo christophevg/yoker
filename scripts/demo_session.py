@@ -24,7 +24,7 @@ from rich.console import Console
 
 from yoker.agent import Agent
 from yoker.ui.commands import create_default_registry
-from yoker.context import PersistenceContextManager
+from yoker.context import Persisted, SimpleContextManager
 from yoker_demo import DemoScript, load_demo_script, load_demo_scripts
 from yoker.events import (
   CommandEvent,
@@ -253,7 +253,7 @@ async def run_demo_session(
   event_recorder: EventRecorder | None = None
 
   # Initialize context manager (used in real LLM mode)
-  context_manager: PersistenceContextManager | None = None
+  context_manager: Persisted | None = None
 
   if is_replay_mode:
     # Replay mode: use EventReplayAgent to replay events
@@ -271,7 +271,8 @@ async def run_demo_session(
     # Create context manager for persistence or resumption
     if persist or resume:
       session_id = resume if resume else "auto"
-      context_manager = PersistenceContextManager(
+      context_manager = Persisted(
+        SimpleContextManager(),
         storage_path=Path(config.context.storage_path),
         session_id=session_id,
       )

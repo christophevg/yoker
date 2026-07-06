@@ -1,10 +1,11 @@
 """Base context manager implementation.
 
-Provides ContextManager, a list-like base class for conversation history.
-Subclasses can override :meth:`append` to add persistence or other side effects.
+Provides BaseContextManager, the in-memory base for conversation history.
+Subclasses (SimpleContextManager) can override setup_initial_context to
+add richer initial context. Wrappers (ContextManagerWrapper, Persisted)
+forward to a wrapped instance instead.
 """
 
-from collections import UserList
 from typing import TYPE_CHECKING, Any
 
 from structlog import get_logger
@@ -17,15 +18,12 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
-class ContextManager(UserList[dict[str, Any]]):
-  """Base context manager - acts like a list.
+class BaseContextManager:
+  """In-memory base context manager.
 
-  The Agent interacts with context through normal list operations such as
-  :meth:`append`. Subclasses may override :meth:`append` to trigger
-  persistence, compaction, or other lifecycle side effects.
-
-  The internal list stores items in the format used by
-  :meth:`get_context` and :meth:`get_messages`.
+  Stores messages in an internal list. The list surface (UserList, append,
+  data, __getitem__, __len__, __iter__) is removed — callers use
+  get_messages() / get_context() / the adder methods.
   """
 
   def __init__(self, initial: list[dict[str, Any]] | None = None) -> None:
@@ -35,7 +33,7 @@ class ContextManager(UserList[dict[str, Any]]):
       initial: Optional initial list of context items.
     """
     self._agent: Agent | None = None
-    super().__init__(initial)
+    self._messages: list[dict[str, Any]] = list(initial) if initial else []
 
   @property
   def agent(self) -> "Agent | None":
@@ -49,7 +47,7 @@ class ContextManager(UserList[dict[str, Any]]):
     self.add_skill_discovery_block()
 
   def setup_initial_context(self) -> None:
-    """Add the system prompt."""
+    """Add the system prompt (base behavior)."""
     if self._agent:
       self.add_message("system", self._agent.definition.system_prompt)
 
@@ -89,7 +87,7 @@ class ContextManager(UserList[dict[str, Any]]):
       message["metadata"] = metadata
     if thinking:
       message["thinking"] = thinking
-    self.append(message)
+    self._messages.append(message)
 
   def add_tool_result(
     self,
@@ -99,7 +97,7 @@ class ContextManager(UserList[dict[str, Any]]):
     success: bool = True,
   ) -> None:
     """Add a tool execution result to the context."""
-    self.append(
+    self._messages.append(
       {
         "role": "tool",
         "name": tool_name,
@@ -129,7 +127,7 @@ class ContextManager(UserList[dict[str, Any]]):
     }
     if thinking:
       assistant_msg["thinking"] = thinking
-    self.append(assistant_msg)
+    self._messages.append(assistant_msg)
 
   def get_context(self) -> list[dict[str, Any]]:
     """Get the full context for backend submission.
@@ -137,7 +135,7 @@ class ContextManager(UserList[dict[str, Any]]):
     Returns:
       List of message dictionaries in Ollama format.
     """
-    return list(self.data)
+    return list(self._messages)
 
   def get_messages(self) -> list[dict[str, Any]]:
     """Get all recorded messages (excludes tool results).
@@ -145,7 +143,7 @@ class ContextManager(UserList[dict[str, Any]]):
     Returns:
       List of message dictionaries.
     """
-    return [item for item in self.data if item.get("role") != "tool"]
+    return [item for item in self._messages if item.get("role") != "tool"]
 
   def start_turn(self, user_message: str) -> None:
     """Start a new conversation turn."""
@@ -160,17 +158,18 @@ class ContextManager(UserList[dict[str, Any]]):
     """
     self.add_message("assistant", assistant_message, thinking=thinking)
 
-  def save(self) -> None:
-    """Persist context to storage.
+  def clear(self) -> None:
+    """Clear in-memory context (does not delete persisted state)."""
+    self._messages.clear()
 
-    Subclasses may override this method. The base implementation is a no-op.
-    """
+  def save(self) -> None:
+    """Persist context to storage. No-op in the base implementation."""
 
   def load(self) -> bool:
     """Load context from storage.
 
     Returns:
-      True if context was loaded, False if no stored context exists.
+      False — the base implementation has no storage.
     """
     return False
 
@@ -178,14 +177,14 @@ class ContextManager(UserList[dict[str, Any]]):
     """Delete stored context from disk.
 
     Raises:
-      NotImplementedError: By default; subclasses may override.
+      NotImplementedError: The base implementation has no storage.
     """
     raise NotImplementedError("delete() not supported by this context manager")
 
   def get_statistics(self) -> ContextStatistics:
     """Get statistics about context usage."""
-    message_count = sum(1 for item in self.data if item.get("role") != "tool")
-    turn_count = sum(1 for item in self.data if item.get("role") == "user")
+    message_count = sum(1 for item in self._messages if item.get("role") != "tool")
+    turn_count = sum(1 for item in self._messages if item.get("role") == "user")
 
     return ContextStatistics(
       message_count=message_count,
@@ -194,18 +193,15 @@ class ContextManager(UserList[dict[str, Any]]):
     )
 
   def close(self) -> None:
-    """Release resources and flush any pending writes.
-
-    The base implementation is a no-op.
-    """
+    """Release resources and flush any pending writes. No-op in the base."""
 
   def get_session_id(self) -> str:
     """Get the unique session identifier.
 
     Returns:
-      Session ID string. Base implementation returns a fixed in-memory id.
+      "in-memory" for the base implementation.
     """
     return "in-memory"
 
 
-__all__ = ["ContextManager"]
+__all__ = ["BaseContextManager"]

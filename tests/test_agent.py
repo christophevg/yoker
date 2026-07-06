@@ -401,9 +401,10 @@ class TestAgentContextManager:
 
   def test_context_manager_parameter(self) -> None:
     """Test that custom context manager is used."""
-    from yoker.context import PersistenceContextManager
+    from yoker.context import Persisted, SimpleContextManager
 
-    custom_context = PersistenceContextManager(
+    custom_context = Persisted(
+      SimpleContextManager(),
       storage_path="custom_storage",
       session_id="custom-session-123",
     )
@@ -415,7 +416,7 @@ class TestAgentContextManager:
   def test_context_manager_persists_system_prompt(self) -> None:
     """Test that custom context manager receives system prompt."""
     from yoker.agents import AgentDefinition
-    from yoker.context import PersistenceContextManager
+    from yoker.context import Persisted, SimpleContextManager
 
     agent_def = AgentDefinition(
       simple_name="test",
@@ -423,7 +424,8 @@ class TestAgentContextManager:
       tools=("read",),
       system_prompt="Custom system prompt for context test.",
     )
-    custom_context = PersistenceContextManager(
+    custom_context = Persisted(
+      SimpleContextManager(),
       storage_path="test_storage",
       session_id="test-session",
     )
@@ -431,8 +433,9 @@ class TestAgentContextManager:
 
     messages = core.context.get_messages()
     system_messages = [m for m in messages if m.get("role") == "system"]
+    # SimpleContextManager adds env reminder + system prompt collapsed into one message
     assert len(system_messages) == 1
-    assert system_messages[0].get("content", "") == "Custom system prompt for context test."
+    assert "Custom system prompt for context test." in system_messages[0].get("content", "")
 
 
 class TestAgentBackendParameter:
