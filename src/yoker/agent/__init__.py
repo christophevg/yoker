@@ -195,6 +195,66 @@ class Agent:
     """Return a copy of the registered event handlers."""
     return self._event_handlers.copy()
 
+  def on_event(self, handler: EventCallback) -> EventCallback:
+    """Register an event handler and return it for chaining.
+
+    Pythonic alias for :meth:`add_event_handler`. Accepts the same sync or
+    async callables and is the canonical way to attach handlers from the
+    :mod:`yoker.api` layer.
+
+    Args:
+      handler: A callable accepting an :class:`yoker.events.Event` (or a
+        :class:`yoker.events.SessionEvent` envelope when the agent is part
+        of a :class:`yoker.session.Session`). May be sync or async.
+
+    Returns:
+      The same ``handler`` callable, so callers can chain or inline the
+      registration (e.g. ``agent.on_event(print)``).
+    """
+    self.add_event_handler(handler)
+    return handler
+
+  async def spawn(
+    self,
+    agent_name: str,
+    prompt: str,
+    *,
+    timeout_seconds: int = 300,
+  ) -> str:
+    """Spawn a sub-agent by name through the owning :class:`Session`.
+
+    Thin wrapper over :meth:`yoker.session.Session.spawn` — the canonical
+    sub-agent API (MBI-007 Decision 8). The Session owns registry
+    resolution, allowlist enforcement, recursion-depth / max_agents checks,
+    backend sharing, timeout, and event aggregation.
+
+    Args:
+      agent_name: Agent definition name (bare or namespaced) to spawn.
+      prompt: The prompt to send to the spawned agent.
+      timeout_seconds: Maximum seconds the spawned agent may run.
+
+    Returns:
+      The spawned agent's response string.
+
+    Raises:
+      RuntimeError: If this agent is not part of a :class:`Session`.
+      ValueError: On allowlist violation, unknown agent, or capacity
+        (depth / max_agents) exceeded.
+      TimeoutError: When the spawned agent does not finish in time.
+    """
+    if self._session is None:
+      raise RuntimeError(
+        "Agent.spawn requires a Session. Construct the agent via "
+        "yoker.session(...) or pass session= to Agent."
+      )
+    result = await self._session.spawn(
+      agent_name,
+      prompt,
+      requester=self,
+      timeout_seconds=timeout_seconds,
+    )
+    return result.response
+
   @property
   def guardrail(self) -> PathGuardrail:
     """Return the path guardrail for file system operations.

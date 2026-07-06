@@ -10,6 +10,21 @@ from structlog import get_logger
 from yoker.agent import Agent
 from yoker.agent.thinking import ThinkingMode
 from yoker.agents import AgentDefinition, load_agent_definition
+from yoker.api import (
+  Session as ApiSession,
+)
+from yoker.api import (
+  agent as build_agent,
+)
+from yoker.api import (
+  ask,
+  ask_sync,
+  complete,
+  complete_sync,
+  run_skill,
+  run_skill_sync,
+  session,
+)
 from yoker.builtin import __YOKER_MANIFEST__
 from yoker.config import Config
 from yoker.context import (
@@ -57,6 +72,16 @@ __all__ = [
   "__author__",
   # Core classes
   "Agent",
+  # Pythonic utility API (MBI-003)
+  "ask",
+  "ask_sync",
+  "complete",
+  "complete_sync",
+  "run_skill",
+  "run_skill_sync",
+  "build_agent",
+  "session",
+  "ApiSession",
   # Built-in plugin
   "__YOKER_MANIFEST__",
   # Agents
