@@ -146,7 +146,7 @@ def parse_agent_definition(
   if model is not None:
     model = str(model)
 
-  # Extract optional agents allowlist (MBI-007 PR #43 Clarification 3):
+  # Extract optional agents allowlist:
   # the list of agent names this agent is permitted to spawn via the Session.
   agents_raw = frontmatter.get("agents")
   if agents_raw is None:

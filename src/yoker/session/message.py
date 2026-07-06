@@ -1,8 +1,7 @@
-"""Inter-agent message dataclass (MBI-007, Decision 3).
+"""Inter-agent message dataclass.
 
 A :class:`Message` is the unit of inter-agent communication routed through a
-:class:`yoker.session.Session`. Content is a plain string (the prompt) —
-streaming inter-agent messages are deferred (see analysis §6.6).
+:class:`yoker.session.Session`. Content is a plain string (the prompt).
 
 Field names match :class:`yoker.events.types.AgentMessageEvent` (``from_id``
 and ``to_id``) for consistency across the session and event layers.

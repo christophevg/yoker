@@ -1,8 +1,8 @@
 """Tests for Session lifecycle — async context manager, cleanup, handler edge cases.
 
-MBI-007 7.9.1. Extends ``test_session.py`` with cleanup-on-exception,
-handler exception isolation, registry population edge paths, and
-``register_primary_agent`` behaviour.
+Extends ``test_session.py`` with cleanup-on-exception, handler exception
+isolation, registry population edge paths, and ``register_primary_agent``
+behaviour.
 """
 
 import asyncio
@@ -138,7 +138,7 @@ class TestSessionRegistryPopulationEdge:
 
 
 class TestRegisterPrimaryAgent:
-  """Tests for Session.register_primary_agent (7.8.5)."""
+  """Tests for Session.register_primary_agent."""
 
   def test_register_primary_agent_assigns_id_and_injects_tools(self) -> None:
     """register_primary_agent assigns a runtime id and injects agent/send_message."""

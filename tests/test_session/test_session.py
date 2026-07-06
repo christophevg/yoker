@@ -1,4 +1,4 @@
-"""Tests for the Session class — async context manager + lifecycle (MBI-007 7.1.2, 7.1.3)."""
+"""Tests for the Session class — async context manager + lifecycle."""
 
 import asyncio
 from unittest.mock import MagicMock
@@ -11,7 +11,7 @@ from yoker.session import Session
 
 
 class TestSessionLifecycle:
-  """Tests for Session async context manager (task 7.1.2)."""
+  """Tests for Session async context manager."""
 
   def test_session_id_auto_generated(self) -> None:
     """Session generates a non-empty id when none is provided."""
@@ -25,7 +25,7 @@ class TestSessionLifecycle:
     assert session.id == "audit-2026-07-04"
 
   def test_session_ids_are_unique(self) -> None:
-    """Two sessions get different ids (task 7.1.3)."""
+    """Two sessions get different ids."""
     a = Session(config=Config())
     b = Session(config=Config())
     assert a.id != b.id
@@ -123,7 +123,7 @@ class TestSessionLifecycle:
 
 
 class TestSessionAgentMap:
-  """Tests for name→agent map and name disambiguation (task 7.1.3)."""
+  """Tests for name→agent map and name disambiguation."""
 
   def test_get_agent_returns_none_when_empty(self) -> None:
     """get_agent returns None when no agent with that name exists."""

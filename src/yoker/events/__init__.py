@@ -48,13 +48,13 @@ __all__ = [
   "ToolResultEvent",
   # Command
   "CommandEvent",
-  # Session lifecycle (MBI-007)
+  # Session lifecycle
   "SessionStartEvent",
   "SessionEndEvent",
   "AgentSpawnedEvent",
   "AgentFinishedEvent",
   "AgentMessageEvent",
-  # Session event envelope (MBI-007, PR #43 Clarification 9)
+  # Session event envelope
   "SessionEvent",
   # Recording and Replay
   "EventRecorder",

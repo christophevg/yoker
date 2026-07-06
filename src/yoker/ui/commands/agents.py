@@ -46,7 +46,7 @@ async def handle(args: str, agent: "Agent", ui: "UIHandler") -> str:
   lines.append("Known agents:")
   lines.append("")
 
-  # Agent registry is owned by the Session (Decision 10). The command layer
+  # Agent registry is owned by the Session. The command layer
   # still receives the agent; reach the session's registry through it. When
   # no session is set (single-agent standalone use), show "no agents".
   session = getattr(agent, "_session", None)

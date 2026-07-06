@@ -256,7 +256,7 @@ class Session:
     except Exception as e:
       raise ValueError(f"Agent resolution failed for '{name}': {e}") from e
 
-    # Recursion depth check). Top-level spawn (requester is None) starts
+    # Recursion depth check. Top-level spawn (requester is None) starts
     # at depth 1; nested spawns derive depth from the requester's tracked
     # depth in this session.
     parent_depth = 0
@@ -280,10 +280,10 @@ class Session:
     # Derive config with model override if the definition specifies one.
     child_config = self._derive_config(self.config, agent_definition)
 
-    # Backend: shared when same provider config, fresh when overridden (D9).
+    # Backend: shared when same provider config, fresh when overridden.
     backend = self.get_backend(child_config)
 
-    # Unique session-assigned agent name (D2).
+    # Unique session-assigned agent name.
     agent_id = self._generate_agent_name(agent_definition.simple_name or name)
 
     # Construct the child Agent with a session reference
@@ -351,8 +351,7 @@ class Session:
     Registers ``agent`` and ``send_message`` on the agent's tool
     registry. The Session captures itself in the closure (back-reference)
     so the tools can call ``session.spawn`` / ``session.send`` at execution
-    time. ``ListAgents`` is deferred (PR #43 Clarification 6) and is NOT
-    injected.
+    time. ``ListAgents`` is deferred and is NOT injected.
 
     ``agent`` is gated by ``config.tools.agent.enabled`` (the existing
     global kill-switch). ``send_message`` is always injected when an agent
@@ -402,8 +401,8 @@ class Session:
 
     The returned handler is async: it wraps each emitted :class:`Event` in
     a :class:`SessionEvent` envelope tagged with ``agent_id`` and forwards
-    it to ``session._event_handlers`` (PR #43 Clarification 9). Existing
-    event dataclasses and their construction sites are untouched.
+    it to ``session._event_handlers``. Existing event dataclasses and
+    their construction sites are untouched.
     """
 
     async def forward(event: Event | SessionEvent) -> None:
@@ -420,8 +419,8 @@ class Session:
     Looks up the target agent by ``message.to_id`` in the active map,
     emits an :class:`AgentMessageEvent` carrying the message, then calls
     ``await target_agent.process(message.content)``. Request-response only
-    — content is a plain string and the response is a plain string (D3,
-    §6.6; no streaming).
+    — content is a plain string and the response is a plain string
+    (no streaming).
 
     Args:
       message: The :class:`Message` to route. ``to_id`` must match an

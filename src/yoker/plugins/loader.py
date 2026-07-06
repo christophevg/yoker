@@ -103,9 +103,9 @@ def load_configured_plugins(
   Plugin tools and skills are registered into ``agent.tools`` and
   ``agent.skills`` respectively, namespaced by the plugin's package name.
   Plugin *agent definitions* are registered into ``session.agents`` (the
-  Session owns the :class:`AgentRegistry` — Decision 10 / task 7.3.2) when
-  a session is provided. When ``session`` is None, plugin agent definitions
-  are skipped (the agent has no registry to populate — single-agent path).
+  Session owns the :class:`AgentRegistry`) when a session is provided.
+  When ``session`` is None, plugin agent definitions are skipped (the
+  agent has no registry to populate — single-agent path).
 
   ``yoker`` itself is always included as a plugin.
 
@@ -115,7 +115,7 @@ def load_configured_plugins(
     extra_plugins: Additional plugin packages from the CLI beyond those
       declared in config.
     session: Optional :class:`Session` whose ``agents`` registry receives
-      plugin agent definitions (7.3.2).
+      plugin agent definitions.
   """
   plugins_enabled = check_plugins_enabled(config)
   if not plugins_enabled:

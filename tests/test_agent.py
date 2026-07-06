@@ -20,7 +20,7 @@ class TestAgentInitialization:
     assert core.thinking_mode == ThinkingMode.ON
     assert core.tools is not None
     assert core.context is not None
-    # MBI-007 Phase 2: recursion_depth/max_recursion_depth removed from Agent
+    # recursion_depth/max_recursion_depth removed from Agent
     # (moved to Session). Agent no longer holds an agents registry either.
     assert not hasattr(core, "recursion_depth")
     assert not hasattr(core, "max_recursion_depth")
@@ -47,12 +47,12 @@ class TestAgentInitialization:
     assert core_silent.thinking_mode == ThinkingMode.SILENT
 
   def test_agent_recursion_depth_arg_removed(self) -> None:
-    """PR #43 Clarification 1: _recursion_depth constructor arg is removed."""
+    """_recursion_depth constructor arg is removed."""
     with pytest.raises(TypeError):
       Agent(config=Config(), _recursion_depth=2)  # type: ignore[call-arg]
 
   def test_agent_agents_attribute_removed(self) -> None:
-    """PR #43 Clarification 1 / D10: agent.agents is removed (no shim)."""
+    """agent.agents is removed (no shim)."""
     core = Agent(config=Config())
     with pytest.raises(AttributeError):
       _ = core.agents  # noqa: F841

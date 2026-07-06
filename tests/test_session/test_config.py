@@ -1,4 +1,4 @@
-"""Tests for SessionConfig and the [session] config section (MBI-007 7.6)."""
+"""Tests for SessionConfig and the [session] config section."""
 
 import pytest
 
@@ -7,7 +7,7 @@ from yoker.exceptions import ValidationError
 
 
 class TestSessionConfig:
-  """Tests for SessionConfig dataclass (task 7.6.1)."""
+  """Tests for SessionConfig dataclass."""
 
   def test_defaults(self) -> None:
     """SessionConfig() yields the design defaults."""
@@ -49,7 +49,7 @@ class TestSessionConfig:
 
 
 class TestConfigSessionField:
-  """Tests for Config.session field (task 7.6.2)."""
+  """Tests for Config.session field."""
 
   def test_config_has_session_with_defaults(self) -> None:
     """Config().session is a SessionConfig with defaults."""
@@ -79,7 +79,7 @@ class TestConfigSessionField:
     assert config.session.max_agents == 10
 
   def test_recursion_depth_field_unchanged(self) -> None:
-    """task 7.6.3: config.tools.agent.max_recursion_depth stays in place."""
+    """config.tools.agent.max_recursion_depth stays in place."""
     config = Config()
     # The field location is unchanged; only the consumer changes (Session).
     assert config.tools.agent.max_recursion_depth == 3

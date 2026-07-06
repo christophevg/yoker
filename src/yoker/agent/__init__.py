@@ -66,12 +66,12 @@ class Agent:
       plugins: Optional plugin packages to load.
       backend: Optional ModelBackend instance. If not provided, one will be
         created from config (or shared from the session when ``session`` is
-        provided — Decision 9).
+        provided).
       session: Optional :class:`yoker.session.Session` that owns this agent.
         When set, the agent resolves its definition via ``session.agents`` and
-        receives a shared/fresh backend from the session (7.2.3, 7.5.2). When
-        unset, the agent is a standalone single-agent chat loop (first-class
-        path, not a compatibility shim — PR #43 Clarification 1).
+        receives a shared/fresh backend from the session. When unset, the
+        agent is a standalone single-agent chat loop (first-class path, not
+        a compatibility shim).
       parse_cli_args: Whether to parse CLI arguments
       console_logging: Whether to enable console logging. The CLI sets this to
         False so the UI layer owns all terminal output.
@@ -212,11 +212,11 @@ class Agent:
     """Process a single message and return the response.
 
     Concurrent ``process()`` calls on the same agent are serialized via an
-    internal ``asyncio.Queue`` (PR #43 Clarification 7 / Comment 7). When a
-    turn is in flight, additional calls wait in the queue and are
-    processed strictly one at a time — the backend never sees parallel
-    ``chat_stream`` invocations on the same agent. The public API is
-    unchanged: callers simply ``await agent.process(msg)`` and the
+    internal ``asyncio.Queue``. When a turn is in flight, additional calls
+    wait in the queue and are processed strictly one at a time — the
+    backend never sees parallel ``chat_stream`` invocations on the same
+    agent. The public API is unchanged: callers simply
+    ``await agent.process(msg)`` and the
     queueing is transparent.
 
     Cancels the consumer task on cancellation, propagating
@@ -402,8 +402,8 @@ class Agent:
 
     # Name -> registry lookup. A bare name matches a unique simple_name across
     # namespaces; a namespaced name matches exactly. Raises ValueError if not
-    # found or ambiguous. The registry is owned by the Session (Decision 10);
-    # when no session is set, fall back to an explicit definition/path only.
+    # found or ambiguous. The registry is owned by the Session; when no
+    # session is set, fall back to an explicit definition/path only.
     registry = self._session.agents if self._session is not None else None
     if registry is None:
       logger.warning(

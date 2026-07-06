@@ -67,8 +67,8 @@ def serialize_event(event: Event | SessionEvent) -> dict[str, Any]:
   are returned separately as part of the wrapper). The remaining dict is
   the event's data payload.
 
-  When the input is a :class:`SessionEvent` envelope (MBI-007, PR #43
-  Clarification 9), the wrapper is serialized alongside the inner event::
+  When the input is a :class:`SessionEvent` envelope, the wrapper is
+  serialized alongside the inner event::
 
       {
         "session_event": True,
@@ -107,7 +107,7 @@ def deserialize_event(entry: dict[str, Any]) -> Event | SessionEvent:
   directly from the stored data plus the envelope fields, avoiding per-type
   dispatch.
 
-  When the entry carries the ``session_event`` marker (MBI-007), the
+  When the entry carries the ``session_event`` marker, the
   :class:`SessionEvent` envelope is reconstructed around the deserialized
   inner event.
 

@@ -24,6 +24,7 @@ from structlog import get_logger
 
 from yoker.agent import Agent
 from yoker.bootstrap import BootstrapResult, BootstrapWizard, config_provided
+from yoker.bootstrap.steps import DOCS_HOME_URL
 from yoker.config import Config, get_yoker_config
 from yoker.exceptions import NetworkError, YokerError
 from yoker.session import Session
@@ -56,8 +57,8 @@ def main() -> None:
   if not config_provided():
     if not sys.stdin.isatty():
       _abort(
-        """No yoker configuration found at ~/.yoker.toml or ./yoker.toml.
-        Run `yoker` interactively to configure, or see f"{DOCS_HOME_URL}
+        f"""No yoker configuration found at ~/.yoker.toml or ./yoker.toml.
+        Run `yoker` interactively to configure, or see {DOCS_HOME_URL}
         Aborting (non-interactive mode).
         """,
         1,
@@ -84,7 +85,7 @@ def main() -> None:
   try:
     # Load config via Clevis (TOML + env + CLI args), then construct the
     # Session and primary Agent within it. The Session owns the AgentRegistry
-    # and backend factory (MBI-007); the Agent resolves its definition via
+    # and backend factory; the Agent resolves its definition via
     # session.agents and shares the session's backend.
     config = get_yoker_config(cli=True)
   except (ValueError, SecurityError) as e:
@@ -158,7 +159,13 @@ async def _run_repl(agent: Agent, ui: UIHandler, commands: CommandRegistry) -> N
         ui.output_error(e)
         if not e.recoverable:
           break
-      except (YokerError, ResponseError, Exception) as e:
+      except ResponseError as e:
+        ui.output_error(e)
+        continue
+      except YokerError as e:
+        ui.output_error(e)
+        break
+      except Exception as e:
         ui.output_error(e)
         break
       except KeyboardInterrupt:

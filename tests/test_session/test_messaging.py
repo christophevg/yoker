@@ -1,4 +1,4 @@
-"""Tests for Session.send inter-agent messaging (MBI-007 7.4.2, D3)."""
+"""Tests for Session.send inter-agent messaging."""
 
 from unittest.mock import AsyncMock, MagicMock
 
@@ -17,7 +17,7 @@ def _make_mock_agent(name: str, response: str = "ok") -> MagicMock:
 
 
 class TestSessionSend:
-  """Tests for Session.send routing (task 7.4.2)."""
+  """Tests for Session.send routing."""
 
   @pytest.mark.asyncio
   async def test_send_routes_to_target_agent(self) -> None:

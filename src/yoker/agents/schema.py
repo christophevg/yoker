@@ -29,8 +29,8 @@ class AgentDefinition(NameSpaced):
   color: str | None = None
   model: str | None = None
   # Allowlist of agent names this agent is permitted to spawn through the
-  # Session (MBI-007 PR #43 Clarification 3). Empty tuple means "no spawns
-  # allowed". The Session checks this before resolving/spawning.
+  # Session. Empty tuple means "no spawns allowed". The Session checks
+  # this before resolving/spawning.
   agents: tuple[str, ...] = ()
 
   @property

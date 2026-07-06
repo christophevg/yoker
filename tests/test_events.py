@@ -44,7 +44,7 @@ class TestEventTypes:
       "TOOL_RESULT",
       "TOOL_CONTENT",
       "COMMAND",
-      # Session lifecycle (MBI-007)
+      # Session lifecycle
       "SESSION_START",
       "SESSION_END",
       "AGENT_SPAWNED",

@@ -1,4 +1,4 @@
-"""Tests for the per-Agent process queue (PR #43 Clarification 7 / Comment 7).
+"""Tests for the per-Agent process queue.
 
 When ``Session.send`` injects a message directly into
 ``Agent.process`` while the agent is mid-turn, parallel ``chat_stream``

@@ -2,9 +2,9 @@
 
 Agent references are resolved by name through the :class:`yoker.session.Session`'s
 :class:`~yoker.agents.AgentRegistry` (populated from configured directories
-and loaded plugins — MBI-007 Decision 10). The historical ``plugin://``
-agent-reference scheme has been removed in favour of ``--with <pkg>`` (load
-plugin) + ``--agent <name>`` (registry lookup).
+and loaded plugins). The historical ``plugin://`` agent-reference scheme
+has been removed in favour of ``--with <pkg>`` (load plugin) + ``--agent <name>``
+(registry lookup).
 """
 
 import tempfile
@@ -22,8 +22,8 @@ class TestAgentDefinitionFileValidation:
   def test_invalid_file_path_raises_error(self):
     """Test that invalid file path raises ValueError.
 
-    MBI-007 Phase 2: name resolution (which a non-existent path becomes)
-    requires a Session. With a Session, the registry raises
+    Name resolution (which a non-existent path becomes) requires a
+    Session. With a Session, the registry raises
     ``ValueError("Agent not found: ...")``.
     """
     from yoker.config import Config
@@ -74,7 +74,7 @@ class TestAgentDefinitionFileValidation:
   def test_config_definition_invalid_file_raises_error(self):
     """Test that invalid config.agents.definition raises ValueError.
 
-    MBI-007 Phase 2: name resolution requires a Session. With a Session, the
+    Name resolution requires a Session. With a Session, the
     registry raises ``ValueError("Agent not found: ...")``.
     """
     from yoker.config import AgentsConfig, Config
@@ -96,8 +96,8 @@ class TestRegistryAgentResolution:
   namespaced name matches exactly; an ambiguous bare name raises
   ``ValueError``.
 
-  MBI-007 Phase 2: the AgentRegistry is owned by the Session (Decision 10),
-  so name resolution requires constructing the Agent within a Session.
+  The AgentRegistry is owned by the Session, so name resolution requires
+  constructing the Agent within a Session.
   """
 
   def _make_agents_dir(self, tmp_path: Path, agents: dict[str, str]) -> Path:

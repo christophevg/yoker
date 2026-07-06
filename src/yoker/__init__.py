@@ -16,6 +16,7 @@ from yoker.context import (
   ContextManager,
   ContextStatistics,
   PersistenceContextManager,
+  SimpleContextManager,
 )
 from yoker.events import (
   ContentChunkEvent,
@@ -80,6 +81,7 @@ __all__ = [
   "ContextManager",
   "ContextStatistics",
   "PersistenceContextManager",
+  "SimpleContextManager",
   # Logging
   "EventRecorder",
   "EventReplayAgent",

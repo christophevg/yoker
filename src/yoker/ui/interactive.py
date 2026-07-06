@@ -373,7 +373,7 @@ class InteractiveUIHandler(UIHandler):
     if self.show_thinking and self._live:
       self._live.stop_spinner()
 
-  # === Multi-agent lifecycle (MBI-007 PR #43 Clarification 8) ===
+  # === Multi-agent lifecycle ===
 
   def agent_spawned(self, name: str) -> None:
     """Surface that a sub-agent has been spawned into the session.

@@ -1,9 +1,9 @@
-"""SpawnResult dataclass — return value of :meth:`Session.spawn` (MBI-007 7.8.2).
+"""SpawnResult dataclass — return value of :meth:`Session.spawn`.
 
-PR #43 Clarification 5: ``Session.spawn()`` returns both the spawned agent's
-unique session-assigned id and the response string. The ``agent`` tool
-(7.8.3) renders both fields into its ``ToolResult`` so the model can read the
-spawned agent's id and address it later via ``send_message``.
+``Session.spawn()`` returns both the spawned agent's unique session-assigned
+id and the response string. The ``agent`` tool renders both fields into its
+``ToolResult`` so the model can read the spawned agent's id and address it
+later via ``send_message``.
 """
 
 from dataclasses import dataclass
