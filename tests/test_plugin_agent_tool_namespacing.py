@@ -21,10 +21,10 @@ class TestAgentModelOverride:
 
   def test_agent_model_overrides_config(self, tmp_path: Path) -> None:
     """Agent definition's model should override config's model."""
-    from yoker.agent import Agent
-    from yoker.agent.thinking import ThinkingMode
     from yoker.agents import AgentDefinition
     from yoker.config import Config
+    from yoker.core import Agent
+    from yoker.core.thinking import ThinkingMode
 
     # Create config with a specific model
     config = Config()
@@ -52,10 +52,10 @@ class TestAgentModelOverride:
 
   def test_agent_without_model_uses_config(self, tmp_path: Path) -> None:
     """Agent without model should use config's model."""
-    from yoker.agent import Agent
-    from yoker.agent.thinking import ThinkingMode
     from yoker.agents import AgentDefinition
     from yoker.config import Config
+    from yoker.core import Agent
+    from yoker.core.thinking import ThinkingMode
 
     config = Config()
     config_model = config.backend.ollama.model
@@ -170,10 +170,10 @@ class TestToolAvailability:
 
   def test_tool_availability_with_agent_definition(self) -> None:
     """Tools should only show as available if in agent's allowed tools."""
-    from yoker.agent import Agent
-    from yoker.agent.thinking import ThinkingMode
     from yoker.agents import AgentDefinition
     from yoker.config import Config
+    from yoker.core import Agent
+    from yoker.core.thinking import ThinkingMode
 
     agent_def = AgentDefinition(
       simple_name="test-agent",
@@ -202,9 +202,9 @@ class TestToolAvailability:
 
   def test_tool_availability_without_agent(self) -> None:
     """All tools should be available when no agent definition is loaded."""
-    from yoker.agent import Agent
-    from yoker.agent.thinking import ThinkingMode
     from yoker.config import Config
+    from yoker.core import Agent
+    from yoker.core.thinking import ThinkingMode
 
     core = Agent(
       config=Config(),

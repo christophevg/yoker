@@ -28,6 +28,7 @@ from yoker.plugins.loader import (
   load_configured_plugins,
   load_plugin,
   load_skills_from_package,
+  register_configured_plugin_agents,
 )
 from yoker.plugins.manifest import PluginManifest
 from yoker.plugins.registration import (
@@ -50,6 +51,7 @@ __all__ = [
   "PluginComponents",
   "load_plugin",
   "load_configured_plugins",
+  "register_configured_plugin_agents",
   "load_skills_from_package",
   "load_agents_from_package",
   # Registration

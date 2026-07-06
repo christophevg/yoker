@@ -8,12 +8,12 @@ Exports:
 
   - :class:`Session` — async context manager owning the team of agents.
   - :class:`Message` — frozen inter-agent message dataclass.
-  - :class:`SpawnResult` — return value of :meth:`Session.spawn` carrying
-    both the spawned agent's unique id and its response.
+
+:class:`SpawnResult` is retained as an internal detail used by the
+Session-injected ``agent`` tool; it is intentionally not re-exported here.
 """
 
 from yoker.session.message import Message
 from yoker.session.session import Session
-from yoker.session.spawn_result import SpawnResult
 
-__all__ = ["Session", "Message", "SpawnResult"]
+__all__ = ["Session", "Message"]

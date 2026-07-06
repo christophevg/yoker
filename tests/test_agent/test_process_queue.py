@@ -13,8 +13,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from yoker.agent import Agent
 from yoker.config import Config
+from yoker.core import Agent
 
 
 def _make_agent() -> Agent:
@@ -34,9 +34,9 @@ def _patch_process_message(monkeypatch: pytest.MonkeyPatch, handler: Any) -> Non
 
   ``handler`` receives ``(agent, message)`` and returns a string (sync) or
   an awaitable string (async). The patch targets the symbol imported into
-  ``yoker.agent.__init__`` so the consumer sees it.
+  ``yoker.core.__init__`` so the consumer sees it.
   """
-  monkeypatch.setattr("yoker.agent.process_message", handler)
+  monkeypatch.setattr("yoker.core.process_message", handler)
 
 
 class TestProcessQueueSerialization:

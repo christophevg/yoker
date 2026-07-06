@@ -4,8 +4,8 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from yoker.agent import Agent
 from yoker.config import Config, PluginsConfig
+from yoker.core import Agent
 from yoker.ui.commands import create_default_registry
 from yoker.ui.commands.tools import create_command as create_tools_command
 
@@ -142,9 +142,9 @@ class TestPluginSkillCommands:
   @pytest.mark.asyncio
   async def test_tools_command_case_insensitive_builtin_tools(self):
     """/tools marks built-in tools available even with uppercase names."""
-    from yoker.agent import Agent
     from yoker.agents import AgentDefinition
     from yoker.config import Config
+    from yoker.core import Agent
 
     agent_def = AgentDefinition(
       simple_name="test",

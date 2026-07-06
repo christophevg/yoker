@@ -14,8 +14,8 @@ Or pipe input from stdin:
 import asyncio
 import sys
 
-from yoker.agent import Agent
 from yoker.config import get_yoker_config
+from yoker.core import Agent
 from yoker.exceptions import NetworkError
 from yoker.ui import BatchUIHandler, UIBridge
 

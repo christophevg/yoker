@@ -22,7 +22,7 @@ from pathlib import Path
 
 from rich.console import Console
 
-from yoker.agent import Agent
+from yoker.core import Agent
 from yoker.ui.commands import create_default_registry
 from yoker.context import Persisted, SimpleContextManager
 from yoker_demo import DemoScript, load_demo_script, load_demo_scripts

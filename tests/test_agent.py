@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from yoker.agent import Agent
-from yoker.agent.thinking import ThinkingMode
 from yoker.config import BackendConfig, Config, OllamaConfig
+from yoker.core import Agent
+from yoker.core.thinking import ThinkingMode
 
 
 class TestAgentInitialization:
@@ -58,9 +58,9 @@ class TestAgentInitialization:
       _ = core.agents  # noqa: F841
 
   def test_agent_session_reference_defaults_none(self) -> None:
-    """Agent constructed without session has _session=None (single-agent path)."""
+    """Agent is Session-agnostic and has no _session attribute."""
     core = Agent(config=Config())
-    assert core._session is None
+    assert not hasattr(core, "_session")
 
 
 class TestAgentToolRegistry:
@@ -153,7 +153,7 @@ class TestAgentToolRegistry:
       tools=("read", "missing_tool", "yoker:also_missing"),
       system_prompt="Test prompt",
     )
-    with patch("yoker.agent.logger.warning") as mock_warning:
+    with patch("yoker.core.logger.warning") as mock_warning:
       Agent(config=Config(), agent_definition=agent_def)
 
     matching = [

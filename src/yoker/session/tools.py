@@ -33,7 +33,7 @@ from yoker.tools.annotations import Text
 from yoker.tools.schema import ToolResult
 
 if TYPE_CHECKING:
-  from yoker.agent import Agent
+  from yoker.core import Agent
   from yoker.session import Session
 
 logger = get_logger(__name__)
@@ -111,7 +111,7 @@ def make_spawn_agent_tool(session: "Session", requester: "Agent") -> Any:
       return ToolResult(success=False, error="Invalid numeric parameter: timeout_seconds")
 
     try:
-      result: SpawnResult = await session.spawn(
+      result: SpawnResult = await session._spawn_and_run(
         agent_name,
         prompt,
         requester=requester,

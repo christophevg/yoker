@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from yoker.agent import Agent
+from yoker.core import Agent
 from yoker.ui import BatchUIHandler
 from yoker.ui.commands import CommandRegistry, create_default_registry
 from yoker.ui.commands.help import DESCRIPTION, create_command

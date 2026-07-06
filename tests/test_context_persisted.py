@@ -283,8 +283,8 @@ class TestPersistedComposition:
   """
 
   def test_persisted_simple_includes_env_reminder(self, tmp_path: Path) -> None:
-    from yoker.agent import Agent
     from yoker.config import Config
+    from yoker.core import Agent
 
     agent_def = AgentDefinition(
       simple_name="test",
@@ -318,8 +318,8 @@ class TestPersistedComposition:
     assert "Custom system prompt for context test." in loaded_content
 
   def test_persisted_base_no_env_reminder(self, tmp_path: Path) -> None:
-    from yoker.agent import Agent
     from yoker.config import Config
+    from yoker.core import Agent
 
     agent_def = AgentDefinition(
       simple_name="test",

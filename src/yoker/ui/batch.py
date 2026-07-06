@@ -9,7 +9,7 @@ from __future__ import annotations
 import sys
 from typing import Any, TextIO
 
-from yoker.agent import Agent
+from yoker.core import Agent
 from yoker.ui.handler import UIHandler
 
 

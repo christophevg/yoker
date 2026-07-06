@@ -16,7 +16,8 @@ import pytest
 
 from yoker.agents import AgentDefinition
 from yoker.config import Config
-from yoker.session import Session, SpawnResult
+from yoker.session import Session
+from yoker.session.spawn_result import SpawnResult
 from yoker.session.tools import (
   ABSOLUTE_MAX_TIMEOUT_SECONDS,
   _clamp,
@@ -38,7 +39,7 @@ class TestSpawnResolutionFailure:
       # Make the registry's resolve raise ValueError (unknown agent name).
       with patch.object(session.agents, "resolve", side_effect=ValueError("not found")):
         with pytest.raises(ValueError, match="not found"):
-          await session.spawn("ghost", "hi")
+          await session.spawn("ghost")
       # No agent was registered.
       assert session.get_agent("ghost") is None
 
@@ -57,7 +58,7 @@ class TestSpawnResolutionFailure:
         side_effect=RuntimeError("registry corrupted"),
       ):
         with pytest.raises(ValueError, match="Agent resolution failed"):
-          await session.spawn("researcher", "hi")
+          await session._spawn_and_run("researcher", "hi")
       assert session.get_agent("researcher") is None
 
 
@@ -129,7 +130,7 @@ class TestDeriveConfigModelOverride:
     async with Session(config=config) as session:
       session.agents.register(agent_def)
       # Patch Agent so spawn doesn't construct a real one.
-      with patch("yoker.agent.Agent") as mock_agent_cls:
+      with patch("yoker.core.Agent") as mock_agent_cls:
         mock_child = MagicMock()
         mock_child.process = AsyncMock(return_value="ok")
         mock_child.tools = MagicMock()
@@ -139,7 +140,7 @@ class TestDeriveConfigModelOverride:
         with patch("yoker.session.session.create_backend") as mock_create:
           mock_backend = MagicMock()
           mock_create.return_value = mock_backend
-          await session.spawn("researcher", "hi")
+          await session._spawn_and_run("researcher", "hi")
         # A fresh backend was created (not cached from the parent config).
         mock_create.assert_called_once()
 
@@ -207,7 +208,7 @@ class TestSpawnTimeoutDefaultClamping:
     session = MagicMock()
     session.agents = MagicMock()
     session.agents.names = []
-    session.spawn = AsyncMock(
+    session._spawn_and_run = AsyncMock(
       return_value=SpawnResult(agent_id="r", response="ok"),
     )
     requester = MagicMock()
@@ -219,7 +220,7 @@ class TestSpawnTimeoutDefaultClamping:
     )
     tool = make_spawn_agent_tool(session, requester)
     await tool(agent_name="researcher", prompt="hi", timeout_seconds=-5)
-    call_kwargs = session.spawn.call_args.kwargs
+    call_kwargs = session._spawn_and_run.call_args.kwargs
     assert call_kwargs["timeout_seconds"] == 1
 
   @pytest.mark.asyncio
@@ -230,7 +231,7 @@ class TestSpawnTimeoutDefaultClamping:
     session = MagicMock()
     session.agents = MagicMock()
     session.agents.names = []
-    session.spawn = AsyncMock(
+    session._spawn_and_run = AsyncMock(
       return_value=SpawnResult(agent_id="r", response="ok"),
     )
     requester = MagicMock()
@@ -242,7 +243,7 @@ class TestSpawnTimeoutDefaultClamping:
     )
     tool = make_spawn_agent_tool(session, requester)
     await tool(agent_name="researcher", prompt="hi", timeout_seconds=99_999)
-    call_kwargs = session.spawn.call_args.kwargs
+    call_kwargs = session._spawn_and_run.call_args.kwargs
     assert call_kwargs["timeout_seconds"] == ABSOLUTE_MAX_TIMEOUT_SECONDS
 
 

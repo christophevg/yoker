@@ -32,7 +32,7 @@ def _register_researcher(session: Session) -> AgentDefinition:
 
 
 def _patch_agent_cls() -> tuple[MagicMock, MagicMock]:
-  """Patch yoker.agent.Agent and return (mock_cls, mock_child)."""
+  """Patch yoker.core.Agent and return (mock_cls, mock_child)."""
   mock_child = MagicMock()
   mock_child.process = AsyncMock(return_value="ok")
   mock_child.add_event_handler = MagicMock()
@@ -68,13 +68,13 @@ class TestEventAggregation:
     """Events from a spawned agent reach session handlers wrapped in SessionEvent."""
     async with Session(config=Config()) as session:
       _register_researcher(session)
-      with patch("yoker.agent.Agent") as mock_cls:
+      with patch("yoker.core.Agent") as mock_cls:
         mock_child = MagicMock()
         mock_child.process = AsyncMock(return_value="ok")
         # Capture the forwarding handler registered on the child.
         mock_child.add_event_handler = MagicMock()
         mock_cls.return_value = mock_child
-        await session.spawn("researcher", "hi")
+        await session._spawn_and_run("researcher", "hi")
 
       # The Session registered a forwarding handler on the child agent.
       mock_child.add_event_handler.assert_called_once()
@@ -97,12 +97,12 @@ class TestEventAggregation:
     """The inner Event inside a SessionEvent is not modified."""
     async with Session(config=Config()) as session:
       _register_researcher(session)
-      with patch("yoker.agent.Agent") as mock_cls:
+      with patch("yoker.core.Agent") as mock_cls:
         mock_child = MagicMock()
         mock_child.process = AsyncMock(return_value="ok")
         mock_child.add_event_handler = MagicMock()
         mock_cls.return_value = mock_child
-        await session.spawn("researcher", "hi")
+        await session._spawn_and_run("researcher", "hi")
       forward_handler = mock_child.add_event_handler.call_args[0][0]
 
       received: list = []
@@ -122,12 +122,12 @@ class TestEventAggregation:
     config = Config(session=SessionConfig(event_aggregation=False))
     async with Session(config=config) as session:
       _register_researcher(session)
-      with patch("yoker.agent.Agent") as mock_cls:
+      with patch("yoker.core.Agent") as mock_cls:
         mock_child = MagicMock()
         mock_child.process = AsyncMock(return_value="ok")
         mock_child.add_event_handler = MagicMock()
         mock_cls.return_value = mock_child
-        await session.spawn("researcher", "hi")
+        await session._spawn_and_run("researcher", "hi")
       mock_child.add_event_handler.assert_not_called()
 
   @pytest.mark.asyncio
@@ -137,12 +137,12 @@ class TestEventAggregation:
       _register_researcher(session)
       received: list = []
       session.add_event_handler(lambda e: received.append(e))
-      with patch("yoker.agent.Agent") as mock_cls:
+      with patch("yoker.core.Agent") as mock_cls:
         mock_child = MagicMock()
         mock_child.process = AsyncMock(return_value="ok")
         mock_child.add_event_handler = MagicMock()
         mock_cls.return_value = mock_child
-        await session.spawn("researcher", "hi")
+        await session._spawn_and_run("researcher", "hi")
       spawned = [e for e in received if isinstance(e, AgentSpawnedEvent)]
       assert len(spawned) == 1
       assert spawned[0].agent_id == "researcher"
@@ -156,12 +156,12 @@ class TestEventAggregation:
       _register_researcher(session)
       received: list = []
       session.add_event_handler(lambda e: received.append(e))
-      with patch("yoker.agent.Agent") as mock_cls:
+      with patch("yoker.core.Agent") as mock_cls:
         mock_child = MagicMock()
         mock_child.process = AsyncMock(return_value="ok")
         mock_child.add_event_handler = MagicMock()
         mock_cls.return_value = mock_child
-        await session.spawn("researcher", "hi")
+        await session._spawn_and_run("researcher", "hi")
       finished = [e for e in received if isinstance(e, AgentFinishedEvent)]
       assert len(finished) == 1
       assert finished[0].agent_id == "researcher"
@@ -182,13 +182,13 @@ class TestEventAggregation:
       _register_researcher(session)
       received: list = []
       session.add_event_handler(lambda e: received.append(e))
-      with patch("yoker.agent.Agent") as mock_cls:
+      with patch("yoker.core.Agent") as mock_cls:
         mock_child = MagicMock()
         mock_child.process = AsyncMock(side_effect=slow_process)
         mock_child.add_event_handler = MagicMock()
         mock_cls.return_value = mock_child
         with pytest.raises(TimeoutError):
-          await session.spawn("researcher", "hi", timeout_seconds=0.05)
+          await session._spawn_and_run("researcher", "hi", timeout_seconds=0.05)
       finished = [e for e in received if isinstance(e, AgentFinishedEvent)]
       assert len(finished) == 1
       assert session.get_agent("researcher") is None

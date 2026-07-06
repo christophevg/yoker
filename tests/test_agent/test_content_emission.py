@@ -10,9 +10,9 @@ from unittest.mock import MagicMock
 
 from pytest_mock import MockerFixture
 
-from yoker.agent import Agent
 from yoker.backends import ChatChunk, ChatChunkEvent, ToolCallDelta, UsageStats
 from yoker.config import Config, ContentDisplayConfig, PermissionsConfig, ToolsSharedConfig
+from yoker.core import Agent
 from yoker.events import EventType, ToolContentEvent
 from yoker.events.types import Event
 
@@ -208,7 +208,7 @@ class TestAgentContentEventEmission:
       ]
     )
 
-    mocker.patch("yoker.agent.create_backend", return_value=mock_backend)
+    mocker.patch("yoker.core.create_backend", return_value=mock_backend)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
@@ -247,7 +247,7 @@ class TestAgentContentEventEmission:
       ]
     )
 
-    mocker.patch("yoker.agent.create_backend", return_value=mock_backend)
+    mocker.patch("yoker.core.create_backend", return_value=mock_backend)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
@@ -282,7 +282,7 @@ class TestAgentContentEventEmission:
       ]
     )
 
-    mocker.patch("yoker.agent.create_backend", return_value=mock_backend)
+    mocker.patch("yoker.core.create_backend", return_value=mock_backend)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
@@ -324,7 +324,7 @@ class TestAgentContentEventEmission:
       ]
     )
 
-    mocker.patch("yoker.agent.create_backend", return_value=mock_backend)
+    mocker.patch("yoker.core.create_backend", return_value=mock_backend)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
@@ -361,7 +361,7 @@ class TestAgentContentEventEmission:
       ]
     )
 
-    mocker.patch("yoker.agent.create_backend", return_value=mock_backend)
+    mocker.patch("yoker.core.create_backend", return_value=mock_backend)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
@@ -407,7 +407,7 @@ class TestAgentContentEventEmission:
       ]
     )
 
-    mocker.patch("yoker.agent.create_backend", return_value=mock_backend)
+    mocker.patch("yoker.core.create_backend", return_value=mock_backend)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
@@ -511,7 +511,7 @@ class TestAgentContentEventEmissionOrder:
       ]
     )
 
-    mocker.patch("yoker.agent.create_backend", return_value=mock_backend)
+    mocker.patch("yoker.core.create_backend", return_value=mock_backend)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
@@ -564,7 +564,7 @@ class TestAgentContentEventEmissionOrder:
       ]
     )
 
-    mocker.patch("yoker.agent.create_backend", return_value=mock_backend)
+    mocker.patch("yoker.core.create_backend", return_value=mock_backend)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
@@ -604,7 +604,7 @@ class TestAgentContentEventEmissionOrder:
       ]
     )
 
-    mocker.patch("yoker.agent.create_backend", return_value=mock_backend)
+    mocker.patch("yoker.core.create_backend", return_value=mock_backend)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
@@ -650,7 +650,7 @@ class TestAgentContentEventWithMultipleTools:
       ]
     )
 
-    mocker.patch("yoker.agent.create_backend", return_value=mock_backend)
+    mocker.patch("yoker.core.create_backend", return_value=mock_backend)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
@@ -693,7 +693,7 @@ class TestAgentContentEventWithMultipleTools:
       ]
     )
 
-    mocker.patch("yoker.agent.create_backend", return_value=mock_backend)
+    mocker.patch("yoker.core.create_backend", return_value=mock_backend)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
@@ -735,7 +735,7 @@ class TestAgentContentEventErrorHandling:
       ]
     )
 
-    mocker.patch("yoker.agent.create_backend", return_value=mock_backend)
+    mocker.patch("yoker.core.create_backend", return_value=mock_backend)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
@@ -771,7 +771,7 @@ class TestAgentContentEventErrorHandling:
       ]
     )
 
-    mocker.patch("yoker.agent.create_backend", return_value=mock_backend)
+    mocker.patch("yoker.core.create_backend", return_value=mock_backend)
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
@@ -811,7 +811,7 @@ class TestAgentContentEventErrorHandling:
       ]
     )
 
-    mocker.patch("yoker.agent.create_backend", return_value=mock_backend)
+    mocker.patch("yoker.core.create_backend", return_value=mock_backend)
 
     agent = create_agent_with_permissions(tmp_path)
 

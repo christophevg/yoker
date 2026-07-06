@@ -13,7 +13,7 @@ from structlog import get_logger
 from yoker.context.interface import ContextStatistics
 
 if TYPE_CHECKING:
-  from yoker.agent import Agent
+  from yoker.core import Agent
 
 logger = get_logger(__name__)
 

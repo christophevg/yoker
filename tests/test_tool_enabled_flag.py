@@ -1,6 +1,5 @@
 """Tests for tool enabled flag enforcement."""
 
-from yoker.agent import Agent
 from yoker.config import (
   BackendConfig,
   Config,
@@ -17,6 +16,7 @@ from yoker.config import (
   WebSearchToolConfig,
   WriteToolConfig,
 )
+from yoker.core import Agent
 
 
 class TestToolEnabledFlag:

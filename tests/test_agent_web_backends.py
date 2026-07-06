@@ -12,10 +12,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from yoker.agent import Agent
-from yoker.agent._processing import _build_tool_context
 from yoker.backends.ollama import OllamaBackend
 from yoker.config import BackendConfig, Config, OllamaConfig
+from yoker.core import Agent
+from yoker.core._processing import _build_tool_context
 from yoker.tools.web.backend import OllamaWebFetchBackend, OllamaWebSearchBackend
 
 

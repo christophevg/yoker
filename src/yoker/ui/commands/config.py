@@ -6,7 +6,7 @@ Shows the current config.
 import json
 from dataclasses import asdict
 
-from yoker.agent import Agent
+from yoker.core import Agent
 from yoker.ui import UIHandler
 from yoker.ui.commands.base import Command
 

@@ -7,14 +7,11 @@ Asynchronous Agent implementation for Yoker.
 import asyncio
 import inspect
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from dotenv import load_dotenv
 from structlog import get_logger
 
-from yoker.agent._processing import process_message
-from yoker.agent._setup import create_web_guardrails
-from yoker.agent.thinking import ThinkingMode
 from yoker.agents import (
   AgentDefinition,
   load_agent_definition,
@@ -24,6 +21,9 @@ from yoker.builtin import make_skill_tool
 from yoker.config import Config, get_yoker_config
 from yoker.context import ContextManager
 from yoker.context.basic import SimpleContextManager
+from yoker.core._processing import process_message
+from yoker.core._setup import create_web_guardrails
+from yoker.core.thinking import ThinkingMode
 from yoker.events import EventCallback
 from yoker.logging import configure_logging
 from yoker.plugins import load_configured_plugins
@@ -31,9 +31,6 @@ from yoker.skills import SkillRegistry, load_skills
 from yoker.tools import ToolRegistry
 from yoker.tools.guardrails import Guardrail
 from yoker.tools.guardrails.path import PathGuardrail
-
-if TYPE_CHECKING:
-  from yoker.session import Session
 
 logger = get_logger(__name__)
 
@@ -50,28 +47,29 @@ class Agent:
     context_manager: "ContextManager | None" = None,
     plugins: list[str] | None = None,
     backend: "ModelBackend | None" = None,
-    session: "Session | None" = None,
     parse_cli_args: bool = False,
     console_logging: bool = True,
   ) -> None:
     """Initialize the async agent.
 
+    The Agent is fully Session-agnostic. It does not hold a reference to a
+    :class:`yoker.session.Session`. Backend sharing, agent-definition
+    resolution from registries, and plugin agent-definition registration are
+    concerns of the Session layer, which constructs the Agent with an explicit
+    ``backend=`` and/or ``agent_definition=`` when needed.
+
     Args:
       config: Optional explicit config. If omitted, config is discovered via
         Clevis after loading .env / .env.local files.
       thinking_mode: Thinking mode for the model.
-      agent_definition: Optional explicit agent definition.
-      agent_path: Optional path to an agent definition.
+      agent_definition: Optional explicit agent definition. When provided,
+        takes precedence over ``agent_path`` and config-based discovery.
+      agent_path: Optional path to an agent definition file.
       context_manager: Optional context manager.
-      plugins: Optional plugin packages to load.
-      backend: Optional ModelBackend instance. If not provided, one will be
-        created from config (or shared from the session when ``session`` is
-        provided).
-      session: Optional :class:`yoker.session.Session` that owns this agent.
-        When set, the agent resolves its definition via ``session.agents`` and
-        receives a shared/fresh backend from the session. When unset, the
-        agent is a standalone single-agent chat loop (first-class path, not
-        a compatibility shim).
+      plugins: Optional plugin packages to load (tools/skills only; plugin
+        agent definitions are registered by the Session layer).
+      backend: Optional ModelBackend instance. If not provided, one is
+        created from ``config``.
       parse_cli_args: Whether to parse CLI arguments
       console_logging: Whether to enable console logging. The CLI sets this to
         False so the UI layer owns all terminal output.
@@ -88,11 +86,6 @@ class Agent:
     configure_logging(self.config.logging, console=console_logging)
     logger.info("agent config", source="provided" if config else "loaded")
 
-    # When session reference is set, the agent uses session.agents to
-    # resolve definitions and session.get_backend() to share backends. When
-    # unset, the agent is a single-agent primitive (no orchestration).
-    self._session: Session | None = session
-
     # set up registries for tools and skills.
     self.tools: ToolRegistry = ToolRegistry()
     self.skills: SkillRegistry = SkillRegistry()
@@ -104,8 +97,9 @@ class Agent:
     # skills are loaded from directories specified in config (per-agent).
     self._load_skills()
 
-    # load tools and skills from plugins.
-    load_configured_plugins(self, self.config, self._cli_plugins, self._session)
+    # load tools and skills from plugins. Plugin agent definitions are
+    # skipped here (no session registry); the Session layer registers them.
+    load_configured_plugins(self, self.config, self._cli_plugins, session=None)
 
     # load own definition
     self.definition: AgentDefinition = self._resolve_agent_definition(agent_definition, agent_path)
@@ -124,12 +118,10 @@ class Agent:
     self.model: str = self._resolve_model()
     self.thinking_mode: ThinkingMode = thinking_mode
 
-    # setup the backend for the model provider. When a session is present,
-    # use the session's shared/fresh backend. Otherwise create one from config.
+    # setup the backend for the model provider. When a backend is provided
+    # (e.g. shared from a Session), use it; otherwise create one from config.
     if backend is not None:
       self._backend: ModelBackend | None = backend
-    elif self._session is not None:
-      self._backend = self._session.get_backend(self.config)
     else:
       self._backend = create_backend(self.config)
 
@@ -214,46 +206,57 @@ class Agent:
     self.add_event_handler(handler)
     return handler
 
-  async def spawn(
+  async def do(
     self,
-    agent_name: str,
+    skill_name: str,
     prompt: str,
-    *,
-    timeout_seconds: int = 300,
+    args: str = "",
   ) -> str:
-    """Spawn a sub-agent by name through the owning :class:`Session`.
+    """Invoke a skill as a command on this agent and return the response.
 
-    Thin wrapper over :meth:`yoker.session.Session.spawn` — the canonical
-    sub-agent API (MBI-007 Decision 8). The Session owns registry
-    resolution, allowlist enforcement, recursion-depth / max_agents checks,
-    backend sharing, timeout, and event aggregation.
+    Loads the skill's context into the conversation (via
+    :meth:`inject_skill_context`) and then runs a single
+    :meth:`process` turn. The skill must be discoverable in the agent's
+    skill registry (loaded from configured directories or plugins).
 
     Args:
-      agent_name: Agent definition name (bare or namespaced) to spawn.
-      prompt: The prompt to send to the spawned agent.
-      timeout_seconds: Maximum seconds the spawned agent may run.
+      skill_name: Name of the skill to invoke (bare or namespaced).
+      prompt: The user's task. Sent as the user message after the skill
+        context is injected. May be empty when the skill content alone is
+        enough to drive the turn.
+      args: Optional arguments forwarded to the skill's invocation block.
 
     Returns:
-      The spawned agent's response string.
-
-    Raises:
-      RuntimeError: If this agent is not part of a :class:`Session`.
-      ValueError: On allowlist violation, unknown agent, or capacity
-        (depth / max_agents) exceeded.
-      TimeoutError: When the spawned agent does not finish in time.
+      The assistant's response string for the turn.
     """
-    if self._session is None:
-      raise RuntimeError(
-        "Agent.spawn requires a Session. Construct the agent via "
-        "yoker.session(...) or pass session= to Agent."
-      )
-    result = await self._session.spawn(
-      agent_name,
-      prompt,
-      requester=self,
-      timeout_seconds=timeout_seconds,
+    resolved = self._resolve_skill_name(skill_name)
+    self.inject_skill_context(resolved, args or None)
+    return await self.process(prompt)
+
+  def _resolve_skill_name(self, skill_name: str) -> str:
+    """Resolve a skill name to its registry key.
+
+    Accepts either the full registry key (``"ns:skill"``) or a bare simple
+    name (``"skill"``). When a bare name matches exactly one registered skill
+    (across any namespace) that key is used; when it matches multiple, the
+    first one (alphabetically) is used. Raises :class:`SkillError` if no
+    match is found.
+    """
+    from yoker.exceptions import SkillError
+
+    if skill_name in self.skills.data:
+      return skill_name
+    # Bare-name match across namespaces.
+    matches = [
+      key for key, skill in self.skills.data.items() if (skill.simple_name or "") == skill_name
+    ]
+    if matches:
+      return sorted(matches)[0]
+    available = ", ".join(sorted(self.skills.names))
+    raise SkillError(
+      skill_name,
+      f"Unknown skill. Available skills: {available}" if available else "Unknown skill",
     )
-    return result.response
 
   @property
   def guardrail(self) -> PathGuardrail:
@@ -431,7 +434,14 @@ class Agent:
   def _resolve_agent_definition(
     self, definition: "AgentDefinition | None", path: Path | str | None
   ) -> AgentDefinition:
-    """Resolve the agent definition from explicit value, path, config or default."""
+    """Resolve the agent definition from explicit value, path, config or default.
+
+    The Agent is Session-agnostic: it resolves definitions only from an
+    explicit ``definition``/``path`` argument or from ``config.agent`` /
+    ``config.agents.definition`` when they point at a filesystem path.
+    Name-based registry resolution (through ``session.agents``) is handled by
+    the Session layer, which passes the resolved ``agent_definition`` here.
+    """
     if definition is not None:
       logger.info("agent definition provided", name=definition.name)
       return definition
@@ -447,9 +457,9 @@ class Agent:
       # not provided, not in config
       return AgentDefinition()
 
-    # An existing filesystem path is loaded directly. Otherwise the reference
-    # is a name resolved through the AgentRegistry, already populated from
-    # configured directories and loaded plugins (--with <pkg> + --agent <name>).
+    # An existing filesystem path is loaded directly. A non-path reference is
+    # a name that must be resolved by the Session layer before constructing
+    # the Agent (the Agent has no registry of its own).
     file_path = Path(reference).expanduser()
     if file_path.exists() and file_path.is_file():
       try:
@@ -460,28 +470,16 @@ class Agent:
         logger.warning("agent definition not found", definition=reference)
         raise
 
-    # Name -> registry lookup. A bare name matches a unique simple_name across
-    # namespaces; a namespaced name matches exactly. Raises ValueError if not
-    # found or ambiguous. The registry is owned by the Session; when no
-    # session is set, fall back to an explicit definition/path only.
-    registry = self._session.agents if self._session is not None else None
-    if registry is None:
-      logger.warning(
-        "agent definition not resolvable",
-        definition=reference,
-        reason="no session registry available",
-      )
-      raise ValueError(
-        f"Agent definition '{reference}' cannot be resolved without a Session. "
-        "Pass an explicit agent_definition or construct the Agent within a Session."
-      )
-    try:
-      definition = registry.resolve(reference)
-    except ValueError:
-      logger.warning("agent definition not found", definition=reference)
-      raise
-    logger.info("agent definition loaded", reference=reference, name=definition.name)
-    return definition
+    logger.warning(
+      "agent definition not resolvable",
+      definition=reference,
+      reason="no registry available on a Session-agnostic Agent",
+    )
+    raise ValueError(
+      f"Agent definition '{reference}' cannot be resolved by a standalone Agent. "
+      "Pass an explicit agent_definition=, an agent_path= to a file, or construct "
+      "the Agent within a Session so the Session can resolve the name."
+    )
 
   def _resolve_model(self) -> str:
     """Determine the model to use from agent definition or config."""

@@ -2,9 +2,9 @@
 
 Agent references are resolved by name through the :class:`yoker.session.Session`'s
 :class:`~yoker.agents.AgentRegistry` (populated from configured directories
-and loaded plugins). The historical ``plugin://`` agent-reference scheme
-has been removed in favour of ``--with <pkg>`` (load plugin) + ``--agent <name>``
-(registry lookup).
+and loaded plugins). The Agent is Session-agnostic: name resolution is
+performed by the Session layer, which passes the resolved
+:class:`AgentDefinition` to the :class:`Agent` constructor.
 """
 
 import tempfile
@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from yoker.agent import Agent
+from yoker.core import Agent
 from yoker.session import Session
 
 
@@ -22,19 +22,17 @@ class TestAgentDefinitionFileValidation:
   def test_invalid_file_path_raises_error(self):
     """Test that invalid file path raises ValueError.
 
-    Name resolution (which a non-existent path becomes) requires a
-    Session. With a Session, the registry raises
-    ``ValueError("Agent not found: ...")``.
+    A non-existent path is loaded directly by the Agent (no Session
+    needed); the loader raises ``ValueError``.
     """
     from yoker.config import Config
 
-    session = Session(config=Config())
-    with pytest.raises(ValueError, match="Agent not found: /nonexistent/path/to/agent.md"):
-      Agent(config=Config(), agent_path="/nonexistent/path/to/agent.md", session=session)
+    with pytest.raises(ValueError):
+      Agent(config=Config(), agent_path="/nonexistent/path/to/agent.md")
 
   def test_invalid_file_path_without_session_raises(self):
-    """Without a Session, an unresolvable reference raises a clear ValueError."""
-    with pytest.raises(ValueError, match="cannot be resolved without a Session"):
+    """Without a Session, an unresolvable name reference raises a clear ValueError."""
+    with pytest.raises(ValueError, match="cannot be resolved by a standalone Agent"):
       Agent(agent_path="/nonexistent/path/to/agent.md")
 
   def test_valid_file_path_loads_successfully(self):
@@ -72,32 +70,26 @@ class TestAgentDefinitionFileValidation:
       Path(temp_path).unlink()
 
   def test_config_definition_invalid_file_raises_error(self):
-    """Test that invalid config.agents.definition raises ValueError.
+    """Test that an invalid config.agents.definition (non-file name) raises.
 
-    Name resolution requires a Session. With a Session, the
-    registry raises ``ValueError("Agent not found: ...")``.
+    A non-existent path that is not a file is treated as a name reference.
+    Without a Session, the Agent raises "cannot be resolved by a standalone
+    Agent".
     """
     from yoker.config import AgentsConfig, Config
 
     config = Config(agents=AgentsConfig(definition="/nonexistent/agent.md"))
-    session = Session(config=config)
-
-    with pytest.raises(ValueError, match=r"Agent not found: /nonexistent/agent\.md"):
-      Agent(config=config, session=session)
+    with pytest.raises(ValueError, match="cannot be resolved by a standalone Agent"):
+      Agent(config=config)
 
 
 class TestRegistryAgentResolution:
   """Test resolving agents by name through the Session's AgentRegistry.
 
-  Replaces the former ``plugin://`` agent-reference tests. An agent reference
-  that is not an existing file path is resolved by name through the Session's
-  registry (populated from ``config.agents.directories`` and loaded plugins):
-  a bare name matches a unique ``simple_name`` across namespaces; a
-  namespaced name matches exactly; an ambiguous bare name raises
-  ``ValueError``.
-
-  The AgentRegistry is owned by the Session, so name resolution requires
-  constructing the Agent within a Session.
+  The AgentRegistry is owned by the Session. The Session-agnostic Agent
+  cannot resolve names from a registry, so the Session layer resolves the
+  reference and passes the resolved :class:`AgentDefinition` to the Agent
+  via the ``agent_definition=`` constructor parameter.
   """
 
   def _make_agents_dir(self, tmp_path: Path, agents: dict[str, str]) -> Path:
@@ -107,6 +99,10 @@ class TestRegistryAgentResolution:
     for filename, body in agents.items():
       (agents_dir / filename).write_text(body, encoding="utf-8")
     return agents_dir
+
+  def _resolve(self, session: Session, name: str):
+    """Resolve an agent name via the session registry."""
+    return session.agents.resolve(name)
 
   def test_bare_name_resolves_unique(self, tmp_path):
     """A bare name resolves when exactly one agent has that simple_name."""
@@ -120,7 +116,8 @@ class TestRegistryAgentResolution:
     )
     config = Config(agents=AgentsConfig(directories=(str(agents_dir),)))
     session = Session(config=config)
-    agent = Agent(config=config, agent_path="writer", session=session)
+    resolved = self._resolve(session, "writer")
+    agent = Agent(config=config, agent_definition=resolved)
     assert agent.definition is not None
     assert agent.definition.simple_name == "writer"
 
@@ -138,7 +135,8 @@ class TestRegistryAgentResolution:
     # The directory name becomes the namespace.
     ns = agents_dir.name
     session = Session(config=config)
-    agent = Agent(config=config, agent_path=f"{ns}:writer", session=session)
+    resolved = self._resolve(session, f"{ns}:writer")
+    agent = Agent(config=config, agent_definition=resolved)
     assert agent.definition is not None
     assert agent.definition.name == f"{ns}:writer"
 
@@ -163,7 +161,7 @@ class TestRegistryAgentResolution:
     config = Config(agents=AgentsConfig(directories=(str(agents_dir), str(other_dir))))
     session = Session(config=config)
     with pytest.raises(ValueError, match="ambiguous"):
-      Agent(config=config, agent_path="writer", session=session)
+      self._resolve(session, "writer")
 
   def test_unknown_agent_name_raises_error(self, tmp_path):
     """An unknown agent name raises ValueError."""
@@ -178,7 +176,7 @@ class TestRegistryAgentResolution:
     config = Config(agents=AgentsConfig(directories=(str(agents_dir),)))
     session = Session(config=config)
     with pytest.raises(ValueError, match="Agent not found: nope"):
-      Agent(config=config, agent_path="nope", session=session)
+      self._resolve(session, "nope")
 
   def test_resolution_without_session_raises(self, tmp_path):
     """Resolving a name without a Session raises a clear ValueError."""
@@ -191,7 +189,7 @@ class TestRegistryAgentResolution:
       },
     )
     config = Config(agents=AgentsConfig(directories=(str(agents_dir),)))
-    with pytest.raises(ValueError, match="cannot be resolved without a Session"):
+    with pytest.raises(ValueError, match="cannot be resolved by a standalone Agent"):
       Agent(config=config, agent_path="writer")
 
 

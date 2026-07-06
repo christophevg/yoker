@@ -8,57 +8,138 @@ Yoker is a Python agent harness with configurable tools and guardrails. It provi
 
 ## Recent Changes
 
-### MBI-003: Python API (2026-07-06)
+### MBI-003: Python API Redesign (2026-07-06)
+
+Redesigned the Pythonic utility API into a three-layer facade
+(`process` / `agent` / `session`) and made `Agent` fully Session-agnostic
+per the owner-approved design decisions. This is a breaking redesign of
+the MBI-003 v1 surface; the prior `ask` / `complete` / `run_skill` /
+`build_agent` exports were removed.
+
+**Renamed `src/yoker/agent/` -> `src/yoker/core/`** (Decision 1) so the
+`yoker.agent` name is free for the factory function in `yoker.api`.
+`Agent` is now a Session-agnostic primitive (Decision 4): no `session`
+constructor param, no `self._session` attribute, no `Agent.spawn()`.
+Backend/definition/plugin-loading moves to the Session layer.
+`Agent.on_event()` is retained; `Agent.process()` is retained
+(Decision 6); new `Agent.do(skill_name, prompt, args="")` invokes skills
+(Decisions 7, 9 — no `process(prompt, skill=...)` parameter).
+
+**New public API surface (`src/yoker/__init__.py`)**: `process`, `run_sync`,
+`agent`, `session`, `Agent`, `Session`, `ApiSession`, `ThinkingLiteral`.
+Removed: `ask`, `ask_sync`, `complete`, `complete_sync`, `run_skill`,
+`run_skill_sync`, `build_agent`.
+
+**Three layers (`src/yoker/api/`)**:
+- `_internal.py` — shared helpers: `build_agent()` (now accepts
+  `backend: ModelBackend | None`), `run_sync()`, `thinking_mode()` mapping,
+  tool/skill filters, model/provider override. Dead `if TYPE_CHECKING:
+  pass` removed.
+- `one_shot.py` — Layer 1: `process(prompt, **kwargs)` (Decision 2; no
+  tools -> `tools=[]`, no system prompt -> `system_prompt=""`). Dropped
+  `ask`, `complete`, `run_skill`, and all `*_sync` variants.
+- `__init__.py` — inlined the `agent()` factory (Decision 5;
+  `builder.py` deleted). Signature:
+  `agent(*, model=None, provider=None, system_prompt=None, tools=None,
+  skills=None, plugins=None, agent_path=None, agent_definition=None,
+  thinking="on", event_handler=None, config=None,
+  context_manager=None) -> Agent`.
+- `session.py` — Layer 3 facade: `session(id=...) -> ApiSession`. Uses
+  `session.agent` explicitly (Decision 3 — no tuple unpacking). Removed
+  `ask()`, `run_skill()`, and spawn-with-prompt; `Session.spawn(name)`
+  returns an Agent (no prompt, no response, no tuple, no SpawnResult —
+  Decision 8).
+
+**Single sync helper (Decision 5)**: `yoker.run_sync(coro)` wraps
+`asyncio.run` and raises a clear error if called inside a running loop.
+Dropped per-function `ask_sync` / `run_skill_sync` / `complete_sync`.
+
+**Session changes (`src/yoker/session/`)**:
+- `Session.spawn(name, *, requester=None) -> Agent` — public, returns a
+  reusable Agent (no prompt, no SpawnResult in the public API; Decision 8).
+  Sets `child._agent_id` before returning.
+- `Session._spawn_and_run(name, prompt, *, requester=None,
+  timeout_seconds=300) -> SpawnResult` — internal, used by the `agent`
+  tool for run-to-completion semantics.
+- `Session._release(agent_id)` — emits `AGENT_FINISHED` and cleans up the
+  active map / recursion depth entries.
+- `Session.__init__` accepts `extra_plugins: tuple[str, ...] = ()` and
+  calls `register_configured_plugin_agents(self.agents, config,
+  extra_plugins)` to populate the registry.
+- `register_primary_agent` now sets `agent._agent_id = agent_id`.
+- `Session.get_backend(config)` is used by `__main__.py` and
+  `examples/session_demo.py` to share the backend with the primary Agent.
+- `SpawnResult` is no longer in `yoker.session`'s `__all__`; tests import
+  it from `yoker.session.spawn_result`.
+
+**Plugin agent-definition loading split (Decision 4)**:
+- Standalone `Agent` calls `load_configured_plugins(self, self.config,
+  self._cli_plugins, session=None)` — skips agent-definition registration
+  with a warning.
+- `Session` calls the new `register_configured_plugin_agents(registry,
+  config, extra_plugins)` in `yoker.plugins.loader` (exported via
+  `yoker.plugins`) to populate the registry.
+
+**Config factory (`src/yoker/config/__init__.py`)** — unchanged from the
+prior MBI-003 v1: `make_config(...)` builds a `Config` programmatically
+without TOML discovery / CLI args.
+
+**`__main__.py`**: `_run_with_session` now constructs
+`async with Session(config=config, extra_plugins=tuple(plugin_packages))
+as session:`, resolves `agent_definition` via
+`session.agents.resolve(reference)` or `load_agent_definition(reference)`,
+and constructs `Agent(config=config, plugins=..., agent_definition=...,
+backend=session.get_backend(config), console_logging=...)` (no
+`session=` kwarg).
+
+**Examples updated** (`examples/python_api/*.py` and
+`examples/session_demo.py`):
+- `one_shot.py` uses `yoker.process` / `yoker.run_sync`.
+- `agent_builder.py`, `event_handling.py` use `yoker.agent`.
+- `session.py` uses `session.agent.process(...)`.
+- `sync_usage.py` uses `yoker.run_sync`.
+- `run_skill.py` uses `agent.do(...)`.
+- `workflow.py` uses robust JSON parsing with `cast(list[Any], ...)`
+  typing and one retry.
+- `session_demo.py` uses `session.spawn(name)` -> Agent, then
+  `agent.process(...)`, then `session._release(agent_id)`.
+
+**Tests**: `tests/test_api/{test_one_shot,test_builder,test_session}.py`,
+`tests/test_session/{test_spawn,test_events,test_edge_cases,
+test_backward_compat}.py`, `tests/test_tools/test_agent.py`,
+`tests/test_config/test_discover_config.py`, `tests/test_main.py`,
+`tests/test_agent.py`, `tests/test_agent_loading.py` — all updated to the
+new API: `yoker.build_agent` -> `yoker.agent`; `yoker.ask` ->
+`yoker.process`; `sess.ask()` -> `sess.agent.process()`; rejection-path
+tests use `session.spawn(name, requester=...)` (no prompt);
+run-to-completion tests use `session._spawn_and_run(...)`; `_session`
+assertions removed; `session=` removed from `Agent(...)` calls and the
+agent definition resolved via `session.agents.resolve()` +
+`agent_definition=...`. `SpawnResult` imports moved to
+`yoker.session.spawn_result`.
+
+**Verification**: `make check` green — 1672 tests pass, ruff format/lint
+clean, mypy typecheck clean (118 source files), 81% coverage.
+
+### MBI-003 v1: Python API (2026-07-06, superseded by the redesign above)
 
 Implemented the three-layer Pythonic utility API from
 `analysis/mbi-003-python-api-design.md` as a facade over the existing
-`Agent` / `Session` classes. No existing behavior changed; all existing
-imports and examples keep working.
+`Agent` / `Session` classes. This v1 surface (`ask` / `complete` /
+`run_skill` / `build_agent` / `Agent.spawn` / `Agent.session`) was
+replaced by the MBI-003 redesign above. See the redesign entry for the
+current public API.
 
-**New module: `src/yoker/api/`**
-- `_internal.py` — shared helpers: `build_agent()`, `run_sync()`,
-  `thinking_mode()` mapping, tool/skill filters, model/provider override.
-- `one_shot.py` — Layer 1: `ask`, `run_skill`, `complete` (+ `*_sync`
-  convenience wrappers via `asyncio.run`).
-- `builder.py` — Layer 2: `agent()` factory returning a configured
-  `yoker.Agent`.
-- `session.py` — Layer 3: `session()` async context manager — a facade
-  over the real `yoker.session.Session` (MBI-007) with single-agent
-  conveniences (`ask`, `run_skill`, `spawn`, `send`, `on_event`).
-- `__init__.py` — re-exports.
-
-**Config factory (`src/yoker/config/__init__.py`)**
-- `make_config(...)` builds a `Config` programmatically without TOML
-  discovery / CLI args (owner request, PR #42 Comment 1). Accepts
-  `model`, `provider`, `plugins`, `skills_directories`,
-  `agents_directories`, and `**overrides` for `dataclasses.replace`.
-
-**Agent additions (`src/yoker/agent/__init__.py`)**
-- `Agent.on_event(handler)` — Pythonic alias for `add_event_handler`,
-  returns the handler for chaining.
-- `Agent.spawn(name, prompt, *, timeout_seconds=300)` — thin wrapper
-  over `Session.spawn` (MBI-007 Decision 8); raises `RuntimeError` when
-  the agent is not part of a Session.
-
-**Top-level exports (`src/yoker/__init__.py`)**
-- `ask`, `ask_sync`, `complete`, `complete_sync`, `run_skill`,
-  `run_skill_sync`, `build_agent`, `session`, `ApiSession`.
-
-**Naming deviation from the design doc:** the design proposed
-`yoker.agent(...)` as the factory name (Open Question 10). In practice
-this shadows the `yoker.agent` submodule, breaking
-`monkeypatch.setattr("yoker.agent.process_message", ...)` and
-`import yoker.agent as x; x.something`. The factory is therefore exposed
-as `yoker.build_agent(...` at the top level; the underlying function is
-still `yoker.api.agent(...)` (no collision in the `api` namespace).
-
-**Tests:** `tests/test_api/` (63 new tests) covering config factory,
-one-shot functions, agent builder, and session facade. Full suite: 1680
-tests pass. `make check` green (format, lint, typecheck, test).
-
-**Examples:** `examples/python_api/` with six showcase examples
-(one_shot, run_skill, agent_builder, workflow, session,
-event_handling, sync_usage).
+**v1 surface (removed in the redesign)**:
+- New module `src/yoker/api/` with `_internal.py`, `one_shot.py`,
+  `builder.py`, `session.py`, `__init__.py`.
+- `make_config(...)` builds a `Config` programmatically (retained).
+- `Agent.on_event(handler)` (retained) and `Agent.spawn(name, prompt, *)`
+  (removed — Session-agnostic Agent).
+- Top-level exports: `ask`, `ask_sync`, `complete`, `complete_sync`,
+  `run_skill`, `run_skill_sync`, `build_agent`, `session`, `ApiSession`
+  (replaced by `process`, `run_sync`, `agent`, `session`, `ApiSession`).
+- 63 tests in `tests/test_api/` (rewritten for the redesign).
 
 ### PR #43 Review Fixes (2026-07-04)
 

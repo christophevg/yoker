@@ -4,8 +4,8 @@ from unittest.mock import patch
 
 import pytest
 
-from yoker.agent import Agent
 from yoker.config import Config, LoggingConfig
+from yoker.core import Agent
 
 
 class TestLoggingConfiguredFlag:
@@ -41,7 +41,7 @@ class TestAgentAppliesLoggingConfig:
     """Agent should call configure_logging using the loaded config's settings."""
     config = Config(logging=LoggingConfig(level="ERROR", format="json"))
 
-    with patch("yoker.agent.configure_logging") as mock_configure:
+    with patch("yoker.core.configure_logging") as mock_configure:
       Agent(config=config)
 
       mock_configure.assert_called_once_with(
@@ -53,7 +53,7 @@ class TestAgentAppliesLoggingConfig:
     """Agent should pass the configured log file path to configure_logging."""
     config = Config(logging=LoggingConfig(level="DEBUG", file="/tmp/yoker.log"))
 
-    with patch("yoker.agent.configure_logging") as mock_configure:
+    with patch("yoker.core.configure_logging") as mock_configure:
       Agent(config=config)
 
       mock_configure.assert_called_once_with(
@@ -67,11 +67,11 @@ class TestMainLoggingSetup:
 
   def test_agent_disables_console_logging_from_cli(self):
     """CLI-launched Agent should configure logging with console disabled."""
-    from yoker.agent import Agent
+    from yoker.core import Agent
 
     config = Config(logging=LoggingConfig(level="DEBUG", format="json", file="/tmp/yoker.log"))
 
-    with patch("yoker.agent.configure_logging") as mock_configure:
+    with patch("yoker.core.configure_logging") as mock_configure:
       Agent(config=config, console_logging=False)
 
       mock_configure.assert_called_once_with(
@@ -81,11 +81,11 @@ class TestMainLoggingSetup:
 
   def test_agent_disables_console_logging_without_file(self):
     """CLI-launched Agent should pass None for log_file when not configured."""
-    from yoker.agent import Agent
+    from yoker.core import Agent
 
     config = Config(logging=LoggingConfig(level="WARNING"))
 
-    with patch("yoker.agent.configure_logging") as mock_configure:
+    with patch("yoker.core.configure_logging") as mock_configure:
       Agent(config=config, console_logging=False)
 
       mock_configure.assert_called_once_with(

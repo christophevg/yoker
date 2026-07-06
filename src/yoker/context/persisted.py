@@ -36,7 +36,7 @@ from yoker.context.wrapper import ContextManagerWrapper
 from yoker.exceptions import ContextCorruptionError, SessionNotFoundError
 
 if TYPE_CHECKING:
-  from yoker.agent import Agent
+  from yoker.core import Agent
 
 logger = get_logger(__name__)
 

@@ -15,8 +15,8 @@ from pathlib import Path
 
 import pytest
 
-from yoker.agent import Agent
 from yoker.config import Config
+from yoker.core import Agent
 
 EXAMPLES_DIR = Path(__file__).resolve().parent.parent.parent / "examples"
 
@@ -27,7 +27,6 @@ class TestSingleAgentWithoutSession:
   def test_agent_constructs_without_session(self) -> None:
     """Agent(config=...) works as a standalone single-agent chat loop."""
     agent = Agent(config=Config())
-    assert agent._session is None
     assert agent._backend is not None
     # Tool registry is populated (default tools loaded via plugins).
     assert agent.tools.get("yoker:read") is not None

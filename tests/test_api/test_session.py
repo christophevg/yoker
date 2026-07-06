@@ -3,8 +3,8 @@
 import pytest
 
 import yoker
-from yoker.agent import Agent
 from yoker.api.session import Session as ApiSession
+from yoker.core import Agent
 from yoker.session import Session as CoreSession
 
 
@@ -17,7 +17,7 @@ def patched_process(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     seen.append(message)
     return f"reply:{message}"
 
-  monkeypatch.setattr("yoker.agent.process_message", handler)
+  monkeypatch.setattr("yoker.core.process_message", handler)
   return seen
 
 
@@ -45,21 +45,21 @@ class TestSessionFacadeLifecycle:
       assert sess.core.id == "audit-2026-07-06"
 
 
-class TestSessionAsk:
-  """``session.ask`` runs a turn on the primary agent."""
+class TestSessionAgentProcess:
+  """``session.agent.process`` runs a turn on the primary agent."""
 
-  async def test_ask_returns_response(self, patched_process) -> None:
-    """ask() delegates to agent.process and returns the reply."""
+  async def test_process_returns_response(self, patched_process) -> None:
+    """agent.process() returns the reply."""
     async with yoker.session() as sess:
-      result = await sess.ask("hello")
+      result = await sess.agent.process("hello")
     assert result == "reply:hello"
     assert patched_process == ["hello"]
 
-  async def test_ask_multi_turn(self, patched_process) -> None:
-    """Multiple ask() calls reuse the same primary agent."""
+  async def test_process_multi_turn(self, patched_process) -> None:
+    """Multiple process() calls reuse the same primary agent."""
     async with yoker.session() as sess:
-      await sess.ask("first")
-      await sess.ask("second")
+      await sess.agent.process("first")
+      await sess.agent.process("second")
     assert patched_process == ["first", "second"]
 
 
@@ -86,7 +86,7 @@ class TestSessionSpawn:
     """Spawning an unknown agent raises ValueError."""
     async with yoker.session() as sess:
       with pytest.raises(ValueError):
-        await sess.spawn("nonexistent-agent", "do thing")
+        await sess.spawn("nonexistent-agent")
 
 
 class TestSessionFreshAndPersist:

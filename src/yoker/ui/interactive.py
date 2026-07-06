@@ -19,7 +19,7 @@ from rich.panel import Panel
 from rich.style import Style
 
 from yoker import __version__
-from yoker.agent import Agent
+from yoker.core import Agent
 from yoker.ui.handler import UIHandler
 from yoker.ui.spinner import LiveDisplay
 

@@ -7,9 +7,9 @@ from unittest.mock import patch
 import httpx
 import pytest
 
-from yoker.agent import Agent
 from yoker.backends import ChatChunk
 from yoker.config import Config
+from yoker.core import Agent
 from yoker.exceptions import NetworkError
 
 

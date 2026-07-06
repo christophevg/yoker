@@ -276,8 +276,8 @@ class TestMainIntegration:
     """main() should create BatchUIHandler in batch mode and wire events.
 
     main() loads config via Clevis first, then constructs a Session and
-    Agent within it. The Agent receives the loaded config, the session,
-    plugin packages, and console_logging flag.
+    Agent within it. The Agent receives the loaded config, a shared backend
+    from the Session, plugin packages, and console_logging flag.
     """
     test_args = ["yoker", "--ui-mode", "batch"]
 
@@ -297,7 +297,7 @@ class TestMainIntegration:
           assert call_kwargs["plugins"] is None
           assert call_kwargs["console_logging"] is False
           assert "config" in call_kwargs
-          assert "session" in call_kwargs
+          assert "backend" in call_kwargs
           mock_run.assert_awaited_once()
           args, _ = mock_run.call_args
           assert isinstance(args[1], BatchUIHandler)

@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-  from yoker.agent import Agent
+  from yoker.core import Agent
   from yoker.ui import UIHandler
 
 CommandHandler = Callable[[str, "Agent", "UIHandler"], Awaitable[str | None]]
