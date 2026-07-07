@@ -134,8 +134,9 @@ class Agent:
     self._tool_backends: dict[str, Any] = self._create_tool_backends()
 
     # set up the context manager (config-driven via factory when not provided)
-    self.context: ContextManager = context_manager or create_context_manager(
-      self.config, self.definition.name
+    self.context: ContextManager = (
+      context_manager if context_manager is not None
+      else create_context_manager(self.config, self.definition.name)
     )
 
     # back-reference triggers initial context + skill discovery block setup
