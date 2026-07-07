@@ -18,30 +18,55 @@ Also read:
 ```text
 src/yoker/
 ├── __init__.py              # Public API exports: process, run_sync, agent, session,
-│                           #   Agent, Session, ThinkingLiteral
+│                           #   Agent, Session, Config, do, ThinkingLiteral
 ├── __main__.py              # CLI entry point and run_session()
+├── api.py                   # Thin Pythonic API (MBI-003, single-module facade):
+│                           #   process(), do(), agent(), session(), run_sync(),
+│                           #   ThinkingLiteral (no private helpers)
+├── exceptions.py            # Exception hierarchy (incl. NetworkError, ValidationError)
+├── logging.py               # Structured logging (structlog)
+├── resources.py             # Resource location and reading for definition files
+│                           #   (skills, agents) across filesystem and package dirs
+├── schema.py                # NameSpaced base class for namespaced dataclasses
+├── py.typed                 # PEP 561 typed-package marker
 ├── core/                    # Agent layer (no UI, no Session coupling)
 │   ├── __init__.py          # Unified Agent class (Session-agnostic; on_event, do())
 │   ├── _processing.py       # Message processing, streaming, tool loop
 │   ├── _setup.py            # Client, guardrail, registry setup
 │   └── thinking.py          # Thinking mode enum
-├── api.py                  # Thin Pythonic API (MBI-003, single-module facade)
-│                           #   process(), do(), agent(), session(), run_sync(),
-│                           #   ThinkingLiteral (no private helpers)
-├── agents/                  # Agent definition parsing
+├── agents/                  # Agent definition parsing (schema, loader, registry)
+│   ├── __init__.py          # Exports: AgentDefinition, AgentRegistry, loaders, validators
+│   ├── schema.py            # AgentDefinition frozen dataclasses (from Markdown+frontmatter)
+│   ├── loader.py            # Parse Markdown+YAML frontmatter; load from dirs/packages
+│   ├── registry.py          # AgentRegistry (UserDict keyed by namespaced name)
+│   └── validator.py         # validate_agent_definition against config constraints
 ├── backends/                # Provider-neutral backend layer
+│   ├── __init__.py          # Backend exports + create_backend() dispatch
 │   ├── protocol.py          # ModelBackend Protocol, ChatChunk, UsageStats
-│   ├── factory.py           # create_backend() dispatch
+│   ├── factory.py           # create_backend() dispatch from Config
 │   ├── ollama.py            # OllamaBackend (native SDK)
 │   ├── litellm.py           # LitellmBackend (OpenAI, Anthropic, Gemini, 100+)
 │   └── trust.py             # Custom base URL trust validation
 ├── bootstrap/               # First-run bootstrap wizard
+│   ├── __init__.py          # Wizard package exports
 │   ├── wizard.py            # Wizard orchestration
 │   ├── steps.py             # Provider-specific setup steps
 │   ├── providers.py         # Curated model lists and provider metadata
-│   ├── detect.py            # Config detection
+│   ├── detect.py            # Existing-config detection
 │   └── modellist.py         # Model list rendering
-├── builtin/                 # Built-in tools (read, write, git, websearch, ...)
+├── builtin/                 # Built-in tools registered via the yoker plugin manifest
+│   ├── __init__.py          # __YOKER_MANIFEST__ declaring read, write, git, websearch, ...
+│   ├── read.py              # read: file contents
+│   ├── write.py             # write: file contents
+│   ├── update.py            # update: edit existing file contents
+│   ├── list.py              # list: directory contents
+│   ├── mkdir.py             # mkdir: create directories
+│   ├── existence.py         # existence: check files/folders exist
+│   ├── search.py            # search: file and content search
+│   ├── git.py               # git: Git operations
+│   ├── webfetch.py          # webfetch: fetch web content through a backend
+│   ├── websearch.py         # websearch: search the web through a backend
+│   └── skill.py             # make_skill_tool factory (skill invocation tool)
 ├── config/                  # Configuration system (Clevis)
 │   ├── __init__.py          # Config dataclasses, get_yoker_config()
 │   ├── providers.py         # Provider configs (Ollama, OpenAI, Anthropic, Gemini, Generic)
@@ -56,53 +81,69 @@ src/yoker/
 │   ├── basic.py             # SimpleContextManager (env reminder + system prompt)
 │   ├── wrapper.py           # ContextManagerWrapper (pure proxy, forwards to wrapped)
 │   ├── persisted.py         # Persisted (JSONL persistence via bulk-rewrite)
+│   ├── factory.py           # Context manager factory — agent-scoped construction from Config
 │   ├── interface.py         # ContextStatistics, SessionMetadata dataclasses
 │   ├── session.py           # list_sessions, load_session_metadata (JSONL utilities)
 │   └── validator.py         # validate_session_id, validate_storage_path, is_safe_path
 ├── events/                  # Event types and serialization
-├── exceptions.py            # Exception hierarchy (incl. NetworkError)
-├── logging.py               # Structured logging
-├── plugins/                 # Plugin system
-│   ├── __init__.py
-│   ├── agents.py            # Agent definition loading
-│   ├── builtin.py           # Built-in yoker plugin manifest
-│   ├── loader.py            # Plugin package discovery
-│   ├── manifest.py          # Plugin manifest dataclass
-│   ├── registration.py      # Component registration
-│   ├── resources.py         # Package resource helpers
-│   ├── security.py          # Plugin trust checks
-│   ├── skills.py            # Plugin skill discovery
-│   └── urls.py              # plugin:// URL parsing
-├── schema.py                # NameSpaced base class
+│   ├── __init__.py          # Exports: Event types, EventRecorder, serialize/deserialize_event
+│   ├── types.py             # Event dataclasses (Message, Tool, Error, Stats, ...)
+│   ├── session_event.py     # SessionEvent envelope tagging an Event with its agent_id
+│   └── recorder.py          # EventRecorder, serialize_event, deserialize_event (JSONL)
+├── plugins/                 # Plugin system (discover, manifest, trust)
+│   ├── __init__.py          # Plugin package exports
+│   ├── loader.py            # Plugin package discovery via __YOKER_MANIFEST__
+│   ├── manifest.py          # PluginManifest dataclass (tools, skills, agents declarations)
+│   └── security.py          # Plugin trust checks (global opt-in + per-plugin trust table)
 ├── skills/                  # Skill definitions and registry
+│   ├── __init__.py          # Exports: Skill, SkillRegistry, loaders, injection helpers
+│   ├── schema.py            # Skill dataclass (from Markdown+frontmatter)
+│   ├── loader.py            # Parse Markdown+YAML frontmatter into Skill objects
+│   ├── registry.py          # SkillRegistry: lookup skills by name
+│   └── injection.py         # Skill discovery + invocation context blocks
 ├── tools/                   # Tool framework
+│   ├── __init__.py          # Tool framework exports (registry, annotations, guardrails, ...)
 │   ├── annotations.py       # Path, Url, Query, Text markers + @tool decorator
-│   ├── schema.py            # ToolSpec, build_tool_spec()
-│   ├── registry.py          # ToolRegistry
-│   ├── guardrails/          # PathGuardrail, WebGuardrail
-│   └── web/                 # Web tool backends
+│   ├── schema.py            # ToolSpec, build_tool_spec() (function→tool introspection)
+│   ├── registry.py          # ToolRegistry (UserDict of ToolSpec)
+│   ├── context.py           # Tool execution context (config/backends without exposing Agent)
+│   ├── content_type.py      # Content type detection from file content and path extension
+│   ├── guardrails/          # Guardrail framework
+│   │   ├── __init__.py      # Guardrail abstract base class
+│   │   └── path.py          # PathGuardrail (traversal, size, extension checks)
+│   └── web/                 # Web tool backends and guardrails
+│       ├── __init__.py      # Web tool component exports
+│       ├── backend.py       # Web search/fetch backend protocol and implementations
+│       ├── guardrail.py     # Web guardrail (SSRF, domain allow/deny lists)
+│       └── types.py         # SearchResult dataclass, WebSearchError
 ├── session/                 # Session construct (MBI-007; team-of-agents coordinator)
-│   ├── __init__.py          # Exports Session
-│   ├── session.py           # Session: async context manager, lifecycle, name→agent map,
-│   │                        #   spawn() -> Agent (thin wrapper over _spawn_internal),
-│   │                        #   _spawn_internal() -> (Agent, agent_id) tuple (internal),
-│   │                        #   release(agent) by-identity cleanup (single path),
-│   │                        #   create_primary_agent() -> Agent (end-to-end primary agent),
-│   │                        #   agent read-only property (primary Agent),
+│   ├── __init__.py          # Session: async context manager owning a team of agents;
+│   │                        #   name→agent map, AgentRegistry, shared backends, event
+│   │                        #   aggregation; spawn()/_spawn_internal(), release(agent),
+│   │                        #   create_primary_agent() -> Agent, agent property,
 │   │                        #   send(to=, from_=, content=) accepting Agent instances,
-│   │                        #   _id_of(agent) reverse-lookup for event payload ids,
-│   │                        #   inject_tools(), get_backend();
+│   │                        #   _id_of(agent) reverse-lookup, inject_tools(), get_backend();
 │   │                        #   loads plugin agent defs via register_configured_plugin_agents()
-│   └── tools.py             # Session-injected tools: SpawnAgent, SendMessage factories
+│   └── tools.py             # Session-injected tools: agent + send_message factories
 │                            #   (agent tool folds _spawn_internal + child.process + release)
-└── ui/                      # UI layer
+└── ui/                      # UI layer (strictly separated from the Agent layer)
     ├── __init__.py          # Public UI exports
     ├── handler.py           # UIHandler protocol
-    ├── bridge.py            # UIBridge: events -> UIHandler
-    ├── interactive.py       # InteractiveUIHandler
-    ├── batch.py             # BatchUIHandler
-    ├── spinner.py           # LiveDisplay for streaming
+    ├── bridge.py            # UIBridge: events -> UIHandler method calls
+    ├── interactive.py       # InteractiveUIHandler (Rich + prompt_toolkit terminal UI)
+    ├── batch.py             # BatchUIHandler (stdin/stdout/stderr for pipelines)
+    ├── spinner.py           # LiveDisplay for streaming responses
     └── commands/            # Slash commands (UI layer)
+        ├── __init__.py      # Command registry and dispatch
+        ├── base.py          # Command base types (Agent + UIHandler received per command)
+        ├── help.py          # /help: list registered commands
+        ├── agents.py        # /agents: show loaded and known agents
+        ├── skills.py        # /skills: list loaded skills
+        ├── skill_invoke.py  # /<skill-name>: inject skill context and process follow-up
+        ├── tools.py         # /tools: list known tools with availability
+        ├── think.py         # /think: toggle or display thinking mode
+        ├── context.py       # /context: show session context (id, counts, recent messages)
+        └── config.py        # /config: show current config
 ```
 
 ## UI Layer Architecture
@@ -165,7 +206,7 @@ CLI arguments are auto-generated by Clevis from the `Config` dataclass. Common U
 - Slash commands moved to `yoker/ui/commands/`.
 - `Agent` is async-only and emits events; UI is fully external.
 - All output goes through `UIHandler`.
-- Built-in tools are registered via the plugin loader from `yoker.builtin.__YOKER_MANIFEST__` (in `src/yoker/builtin/__init__.py`), which declares all built-in tools (`read`, `write`, `git`, `websearch`, etc.). The loader always loads the yoker builtin plugin (trusted by default). The `agent` and `skill` tools are added separately via `make_agent_tool` / `make_skill_tool` factories because they need runtime dependencies.
+- Built-in tools are registered via the plugin loader from `yoker.builtin.__YOKER_MANIFEST__` (in `src/yoker/builtin/__init__.py`), which declares all built-in tools (`read`, `write`, `git`, `websearch`, etc.). The loader always loads the yoker builtin plugin (trusted by default). The `agent` (`make_spawn_agent_tool`) and `send_message` (`make_send_message_tool`) tools are session-injected via `yoker/session/tools.py`, and the `skill` tool is added via the `make_skill_tool` factory in `yoker/builtin/skill.py` — each needs runtime dependencies not available to the static manifest.
 - Tool framework redesigned: tools are plain functions or callable classes, guardrail metadata comes from `yoker.tools.annotations` markers (`Path`, `Url`, `Query`, `Text`), and `ToolRegistry` stores `ToolSpec` objects built via `yoker.tools.schema.build_tool_spec()`.
 - Multi-provider backend architecture: `OllamaBackend` (native SDK) and `LitellmBackend` (OpenAI, Anthropic, Gemini, 100+ providers) behind the `ModelBackend` Protocol.
 - Bootstrap wizard (`yoker/bootstrap/`) for interactive first-run setup with curated model lists.
