@@ -380,8 +380,11 @@ class Session:
       # option 3b: lookup in the registry
       try:
         return self.agents.resolve(reference)
-      except ValueError:
-        logger.warning("primary agent definition not found", reference=reference)
+      except ValueError as exc:
+        raise ValueError(
+          f"Agent definition '{reference}' could not be resolved: not a file path and not a registered agent. "
+          f"If it comes from a plugin, ensure plugins are enabled ([plugins] enabled = true) and the plugin package is listed in [plugins] packages."
+        ) from exc
 
     return definition
 
