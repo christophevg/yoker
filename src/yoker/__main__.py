@@ -15,6 +15,7 @@ Examples:
 """
 
 import asyncio
+import os
 import sys
 
 from clevis import SecurityError
@@ -26,6 +27,7 @@ from yoker.bootstrap.steps import DOCS_HOME_URL
 from yoker.config import Config, get_yoker_config
 from yoker.core import Agent
 from yoker.exceptions import NetworkError, YokerError
+from yoker.logging import configure_logging
 from yoker.session import Session
 from yoker.ui import BatchUIHandler, InteractiveUIHandler, UIBridge, UIHandler
 from yoker.ui.commands import CommandRegistry, create_default_registry
@@ -89,6 +91,10 @@ def main() -> None:
     config = get_yoker_config(cli=True)
   except (ValueError, SecurityError) as e:
     _abort(f"Error: {e}\n", 1)
+
+  # we now have a config
+  CONSOLE_LOGGING = os.environ.get("YOKER_CONSOLE_LOGGING", "NO") != "NO"
+  configure_logging(config.logging, console=CONSOLE_LOGGING)
 
   logger.info("config loaded")
 
