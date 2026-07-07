@@ -361,7 +361,7 @@ class Session:
 
   def _resolve_definition(
     self, definition: AgentDefinition | None = None, agent_path: str | Path | None = None
-  ):
+  ) -> AgentDefinition | None:
     # option 1: definition is provided
     if definition:
       return definition

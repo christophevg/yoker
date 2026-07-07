@@ -5,6 +5,7 @@ Discovers and loads plugins from Python packages that expose a
 """
 
 import importlib
+from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -33,7 +34,9 @@ class PluginComponents:
   source: str
 
 
-def load_plugins(config: "Config", extra_plugins: tuple[str, ...] = ()):
+def load_plugins(
+  config: "Config", extra_plugins: tuple[str, ...] = ()
+) -> Iterator[PluginComponents]:
   """Yield clean plugin components for configured and CLI-specified packages.
 
   Single plugin-loading entry point. Discovers plugins, applies the

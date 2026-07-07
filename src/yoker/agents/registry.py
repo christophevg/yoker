@@ -37,7 +37,7 @@ class AgentRegistry(UserDict[str, AgentDefinition]):
     self.data[definition.name] = definition
     logger.info("agent registered", name=definition.name)
 
-  def register_all(self, agents: list[AgentDefinition], namespace: str):
+  def register_all(self, agents: list[AgentDefinition], namespace: str) -> None:
     logger.info(
       "register_agents_started",
       namespace=namespace,
@@ -62,7 +62,7 @@ class AgentRegistry(UserDict[str, AgentDefinition]):
       except Exception as e:
         logger.warning("loading agents failed", directory=directory, error=str(e))
 
-  def load(self, config: Config, extra_plugins: tuple[str, ...] = ()):
+  def load(self, config: Config, extra_plugins: tuple[str, ...] = ()) -> None:
     self.register_config_agents(config)
     self.register_plugin_agents(config, extra_plugins)
 
