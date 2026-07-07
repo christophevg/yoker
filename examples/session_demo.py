@@ -96,15 +96,7 @@ async def run_session_demo() -> None:
     # PR #43 Clarification 9).
     session.on_event(log_event)
 
-    # Construct the primary Agent via the Session. create_primary_agent
-    # resolves the config-based agent definition (if any), shares the
-    # session's backend, and registers the agent. The primary agent is
-    # available via session.agent.
-    agent = await session.create_primary_agent(
-      config=config,
-      console_logging=False,
-    )
-    print(f"Primary agent tools: {', '.join(sorted(agent.tools.names))}")
+    print(f"Primary agent tools: {', '.join(sorted(session.agent.tools.names))}")
     print()
 
     # Programmatic sub-agent spawn (Decision 8): session.spawn returns a
@@ -126,7 +118,7 @@ async def run_session_demo() -> None:
         print("Sending follow-up message to researcher ...")
         try:
           reply = await session.send(
-            to=researcher, from_=agent, content="What was the most surprising finding?"
+            to=researcher, from_=session.agent, content="What was the most surprising finding?"
           )
           print(f"Reply: {reply}")
         except ValueError as e:

@@ -114,15 +114,8 @@ async def _run_with_session(
   bridge: UIBridge,
 ) -> None:
   async with Session(config=config, extra_plugins=tuple(plugin_packages)) as session:
-    agent = await session.create_primary_agent(
-      config=config,
-      plugins=plugin_packages if plugin_packages else None,
-      console_logging=os.environ.get("YOKER_CONSOLE_LOGGING", "NO") != "NO",
-    )
-    # UIBridge is registered on Session so aggregated sub-agent events
-    # (SessionEvent envelopes) reach the UI.
     session.on_event(bridge)
-    await _run_repl(agent, ui, commands)
+    await _run_repl(session.agent, ui, commands)
 
 
 async def _run_repl(agent: Agent, ui: UIHandler, commands: CommandRegistry) -> None:

@@ -12,14 +12,13 @@ from structlog import get_logger
 
 from yoker.agents.loader import load_agent_definitions
 from yoker.exceptions import PluginError
-from yoker.plugins.registration import register_agents, register_skills, register_tools
+from yoker.plugins.registration import register_skills, register_tools
 from yoker.plugins.security import check_plugin_allowed, check_plugins_enabled
 from yoker.resources import find_package_subdirectory
 from yoker.skills import load_skills
 from yoker.tools.schema import ToolSpec, build_tool_spec
 
 if TYPE_CHECKING:
-  from yoker.agents import AgentRegistry
   from yoker.config import Config
   from yoker.core import Agent
   from yoker.session import Session
@@ -36,6 +35,21 @@ class PluginComponents:
   agents: list[Any]
   source: str
 
+def load_plugins(config: "Config", extra_plugins: tuple[str, ...] = ()):
+  packages = ["yoker"] # always load yoker
+  if config.plugins.enabled:
+    packages.extend(config.plugins.packages)
+    packages.extend(extra_plugins)
+
+  for package_name in packages:
+    try:
+      plugin = load_plugin(package_name)
+    except PluginError as e:
+      logger.error("plugin_load_failed", package=e.package, error=str(e))
+      raise
+
+    if package_name == "yoker" or check_plugin_allowed(plugin, config):
+      yield plugin
 
 def load_plugin(package_name: str) -> PluginComponents:
   """Load plugin components from a package.
@@ -97,7 +111,6 @@ def load_configured_plugins(
   agent: "Agent",
   config: "Config",
   extra_plugins: tuple[str, ...] = (),
-  session: "Session | None" = None,
 ) -> None:
   """Load configured and CLI-specified plugins into the agent's registries.
 
@@ -141,7 +154,7 @@ def load_configured_plugins(
       raise
 
     # Skip security check for yoker builtin (always trusted)
-    if package_name != "yoker" and not check_plugin_allowed(plugin.source, config, plugin):
+    if package_name != "yoker" and not check_plugin_allowed(plugin, config):
       logger.warning("plugin_not_allowed", package=plugin.source)
       continue
 
@@ -155,59 +168,6 @@ def load_configured_plugins(
     if plugin.skills:
       register_skills(plugin.skills, agent.skills, namespace=source)
       logger.info("skills_registered", package=source, count=len(plugin.skills))
-
-    if plugin.agents:
-      if session is None:
-        logger.warning(
-          "plugin_agents_skipped_no_session",
-          package=source,
-          count=len(plugin.agents),
-        )
-        continue
-      register_agents(plugin.agents, session.agents, namespace=source)
-      logger.info("agents_registered", package=source, count=len(plugin.agents))
-
-
-def register_configured_plugin_agents(
-  registry: "AgentRegistry",
-  config: "Config",
-  extra_plugins: tuple[str, ...] = (),
-) -> None:
-  """Register plugin-discovered agent definitions into a Session's registry.
-
-  Standalone helper used by :class:`yoker.session.Session` to populate its
-  :class:`AgentRegistry` with plugin agent definitions. This complements
-  :func:`load_configured_plugins`, which registers tools/skills onto an
-  Agent but skips agent definitions when no session is provided (the
-  Session-agnostic Agent path).
-
-  Args:
-    registry: The :class:`AgentRegistry` to register definitions into.
-    config: Resolved configuration (supplies ``config.plugins.packages``).
-    extra_plugins: Additional plugin packages from the CLI beyond those
-      declared in config.
-  """
-  plugins_enabled = check_plugins_enabled(config)
-  if not plugins_enabled:
-    return
-
-  packages = ["yoker"]
-  packages.extend(config.plugins.packages)
-  packages.extend(extra_plugins)
-
-  for package_name in packages:
-    try:
-      plugin = load_plugin(package_name)
-    except PluginError as e:
-      logger.error("plugin_load_failed", package=e.package, error=str(e))
-      raise
-
-    if package_name != "yoker" and not check_plugin_allowed(plugin.source, config, plugin):
-      continue
-
-    if plugin.agents:
-      register_agents(plugin.agents, registry, namespace=plugin.source)
-      logger.info("agents_registered", package=plugin.source, count=len(plugin.agents))
 
 
 def load_skills_from_package(package_name: str, skills_dir: str) -> list[Any]:
@@ -244,7 +204,7 @@ def load_agents_from_package(package_name: str, agents_dir: str) -> list[Any]:
   """
   path = find_package_subdirectory(package_name, agents_dir)
   if path:
-    return list(load_agent_definitions(path, namespace=package_name).values())
+    return list(load_agent_definitions(path, namespace=package_name))
   return []
 
 

@@ -9,6 +9,7 @@ Agent *reference resolution by name* is handled by the spawning agent's
 and loaded plugins), not by this loader.
 """
 
+from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
@@ -211,7 +212,7 @@ def load_agent_definition(path: Path | str, namespace: str | None = None) -> Age
 
 def load_agent_definitions(
   directory: Any, namespace: str | None = None
-) -> dict[str, AgentDefinition]:
+) -> Generator[AgentDefinition]:
   """Load all agent definitions from a directory.
 
   Works for both filesystem paths (``pathlib.Path``) and package resource
@@ -261,7 +262,7 @@ def load_agent_definitions(
   if namespace is None:
     namespace = dir_path.name
 
-  definitions: dict[str, AgentDefinition] = {}
+  definitions : list[str] = []
 
   for md_file in iter_files(dir_path, suffix=".md"):
     try:
@@ -280,7 +281,8 @@ def load_agent_definitions(
           setting=f"agent.{definition.name}",
           message=f"Duplicate agent name '{definition.name}' in {md_file}",
         )
-      definitions[definition.name] = definition
+      definitions.append(definition.name)
+      yield definition
     except ConfigurationError:
       raise
     except Exception as e:
@@ -288,8 +290,6 @@ def load_agent_definitions(
         setting=str(md_file),
         message=f"Failed to load agent definition: {e}",
       ) from None
-
-  return definitions
 
 
 __all__ = [

@@ -71,7 +71,7 @@ python -c "import yoker_plugin_demo; print(yoker_plugin_demo.__YOKER_MANIFEST__)
 ```bash
 # Run yoker with demo plugin
 # (requires [plugins] enabled = true and [plugins.trusted] yoker_plugin_demo = true)
-uv run yoker --with yoker-plugin-demo --agent demo
+uv run yoker --with yoker_plugin_demo --agent demo
 
 # The agent can now use:
 # - echo tool (namespaced as "echo" when loaded via plugin)

@@ -419,7 +419,7 @@ async def session(
       f"Unknown thinking mode '{thinking}'. Expected one of: {', '.join(sorted(_thinking_map))}"
     )
 
-  primary = await core.create_primary_agent(
+  primary = core.create_primary_agent(
     config=base_config,
     agent_definition=resolved_definition,
     agent_path=agent_path if resolved_definition is None else None,
