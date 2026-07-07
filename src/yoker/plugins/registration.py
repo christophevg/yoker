@@ -120,8 +120,4 @@ def register_skills(
 #   return type(agent_def)(**field_values)
 
 
-__all__ = [
-  "register_tools",
-  "register_skills",
-  "register_agents",
-]
+__all__ = ["register_tools", "register_skills"]

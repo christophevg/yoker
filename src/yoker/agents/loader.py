@@ -206,7 +206,7 @@ def load_agent_definition(path: Path | str, namespace: str | None = None) -> Age
     namespace=namespace if namespace is not None else FILE_NAMESPACE,
     strict=True,
   )
-  assert agent_def is not None
+  assert agent_def is not None  # TODO I don't thing assert fails in production
   return agent_def
 
 
@@ -262,7 +262,7 @@ def load_agent_definitions(
   if namespace is None:
     namespace = dir_path.name
 
-  definitions : list[str] = []
+  definitions: list[str] = []
 
   for md_file in iter_files(dir_path, suffix=".md"):
     try:

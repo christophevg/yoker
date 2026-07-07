@@ -16,11 +16,11 @@ import dataclasses
 import os
 import uuid
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from structlog import get_logger
 
-from yoker.agents import AgentDefinition, AgentRegistry
+from yoker.agents import AgentDefinition, AgentRegistry, load_agent_definition
 from yoker.backends import ModelBackend, create_backend
 from yoker.config import Config
 from yoker.core import Agent
@@ -39,6 +39,8 @@ from yoker.events import (
 from yoker.session.tools import make_send_message_tool, make_spawn_agent_tool
 
 logger = get_logger(__name__)
+
+CONSOLE_LOGGING = os.environ.get("YOKER_CONSOLE_LOGGING", "NO") != "NO"
 
 
 class Session:
@@ -61,7 +63,7 @@ class Session:
     agent_path: str | Path | None = None,
     plugins: tuple[str, ...] | None = None,
     thinking_mode: ThinkingMode | None = None,
-    console_logging: bool | None = None,
+    console_logging: bool = CONSOLE_LOGGING,
   ) -> None:
     self.config: Config = config
     self.id: str = session_id if session_id is not None else uuid.uuid4().hex
@@ -85,46 +87,15 @@ class Session:
     # Load agent definitions from configured directories and plugins
     self.agents.load(config, extra_plugins)
 
-    # Resolve the primary agent definition via a best-effort cascade:
-    # explicit agent_definition → agent_path → name in registry (none here)
-    # → config reference (config.agent or config.agents.definition; a file
-    # path is loaded, a bare name is resolved against the registry). May
-    # resolve to None, in which case the Agent falls back to its default
-    # definition.
-    from yoker.agents import load_agent_definition
-
-    resolved_definition: AgentDefinition | None = agent_definition
-    if resolved_definition is None and agent_path is not None:
-      resolved_definition = load_agent_definition(agent_path)
-    if resolved_definition is None and agent_path is None:
-      reference = config.agent or config.agents.definition or None
-      if reference:
-        file_path = Path(reference).expanduser()
-        if file_path.exists() and file_path.is_file():
-          resolved_definition = load_agent_definition(reference)
-        else:
-          try:
-            resolved_definition = self.agents.resolve(reference)
-          except ValueError:
-            logger.warning("primary agent definition not found", reference=reference)
-
-    # Effective plugins: explicit plugins override extra_plugins when given.
-    effective_plugins: tuple[str, ...] = plugins if plugins is not None else extra_plugins
-    effective_console = (
-      console_logging
-      if console_logging is not None
-      else os.environ.get("YOKER_CONSOLE_LOGGING", "NO") != "NO"
-    )
-
     # construct the (primary) agent via the unified _create_agent flow.
     self.agent, _ = self._create_agent(
       requester=None,
       config=config,
-      agent_definition=resolved_definition,
+      agent_definition=self._resolve_definition(agent_definition, agent_path),
       agent_path=agent_path,
-      plugins=effective_plugins,
+      plugins=plugins if plugins is not None else extra_plugins,
       thinking_mode=thinking_mode,
-      console_logging=effective_console,
+      console_logging=console_logging,
     )
 
   async def __aenter__(self) -> Session:
@@ -422,6 +393,33 @@ class Session:
     if self.config.session.event_aggregation:
       agent.on_event(self._make_forwarding_handler(agent_id))
     return agent, agent_id
+
+  def _resolve_definition(
+    self, definition: AgentDefinition | None = None, agent_path: str | Path | None = None
+  ):
+    # option 1: definition is provided
+    if definition:
+      return definition
+
+    # option 2: a path is provided
+    if agent_path is not None:
+      return load_agent_definition(agent_path)
+
+    # option 3: configured agent or the default definition
+    reference = self.config.agent or self.config.agents.definition or None
+    if reference:
+      # option 3a: a file path
+      file_path = Path(reference).expanduser()
+      if file_path.exists() and file_path.is_file():
+        return load_agent_definition(reference)
+
+      # option 3b: lookup in the registry
+      try:
+        return self.agents.resolve(reference)
+      except ValueError:
+        logger.warning("primary agent definition not found", reference=reference)
+
+    return definition
 
   def release(self, agent: Agent) -> None:
     """Release a spawned agent: emit AGENT_FINISHED and remove from the active map.

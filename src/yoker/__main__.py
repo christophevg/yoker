@@ -15,7 +15,6 @@ Examples:
 """
 
 import asyncio
-import os
 import sys
 
 from clevis import SecurityError

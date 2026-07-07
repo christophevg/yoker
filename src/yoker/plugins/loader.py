@@ -21,7 +21,6 @@ from yoker.tools.schema import ToolSpec, build_tool_spec
 if TYPE_CHECKING:
   from yoker.config import Config
   from yoker.core import Agent
-  from yoker.session import Session
 
 logger = get_logger(__name__)
 
@@ -35,8 +34,9 @@ class PluginComponents:
   agents: list[Any]
   source: str
 
+
 def load_plugins(config: "Config", extra_plugins: tuple[str, ...] = ()):
-  packages = ["yoker"] # always load yoker
+  packages = ["yoker"]  # always load yoker
   if config.plugins.enabled:
     packages.extend(config.plugins.packages)
     packages.extend(extra_plugins)
@@ -50,6 +50,7 @@ def load_plugins(config: "Config", extra_plugins: tuple[str, ...] = ()):
 
     if package_name == "yoker" or check_plugin_allowed(plugin, config):
       yield plugin
+
 
 def load_plugin(package_name: str) -> PluginComponents:
   """Load plugin components from a package.
@@ -323,7 +324,6 @@ __all__ = [
   "PluginComponents",
   "load_plugin",
   "load_configured_plugins",
-  "register_configured_plugin_agents",
   "load_skills_from_package",
   "load_agents_from_package",
 ]
