@@ -245,13 +245,12 @@ class TestAgentSecurity:
     assert core1.context is not core2.context
     assert core1.tools is not core2.tools
 
-  def test_config_is_read_only(self) -> None:
-    """Test that config cannot be mutated through Agent (SEC-4)."""
+  def test_config_is_mutable(self) -> None:
+    """Config is mutable through Agent (Batch 1.8 unfroze config dataclasses)."""
     core = Agent(config=Config())
     config = core.config
-    # Config is a frozen dataclass, so mutation should raise
-    with pytest.raises(AttributeError):
-      config.backend.ollama.model = "mutated"  # type: ignore
+    config.backend.ollama.model = "mutated"
+    assert config.backend.ollama.model == "mutated"
 
 
 class TestAgentProperties:

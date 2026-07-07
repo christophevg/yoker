@@ -318,7 +318,7 @@ tools: Read, Search
 Research prompt.
 """)
 
-    definitions = load_agent_definitions(agents_dir)
+    definitions = {d.name: d for d in load_agent_definitions(agents_dir)}
     assert len(definitions) == 2
     # Directory name is used as namespace
     assert "agents:main" in definitions
@@ -332,13 +332,15 @@ Research prompt.
     agents_dir = tmp_path / "agents"
     agents_dir.mkdir()
 
-    definitions = load_agent_definitions(agents_dir)
+    definitions = {d.name: d for d in load_agent_definitions(agents_dir)}
     assert definitions == {}
 
   def test_load_missing_directory(self, tmp_path: Path) -> None:
     """Test loading from non-existent directory."""
+    # load_agent_definitions is a generator; the body (including the
+    # FileNotFoundError raise) only runs once iteration begins.
     with pytest.raises(FileNotFoundError) as exc_info:
-      load_agent_definitions(tmp_path / "nonexistent")
+      list(load_agent_definitions(tmp_path / "nonexistent"))
     assert "agents directory not found" in str(exc_info.value).lower()
 
   def test_load_file_not_directory(self, tmp_path: Path) -> None:
@@ -346,8 +348,10 @@ Research prompt.
     file_path = tmp_path / "notadir.md"
     file_path.write_text("content")
 
+    # load_agent_definitions is a generator; the body (including the
+    # ConfigurationError raise) only runs once iteration begins.
     with pytest.raises(ConfigurationError) as exc_info:
-      load_agent_definitions(file_path)
+      {d.name: d for d in load_agent_definitions(file_path)}
     assert "not a directory" in str(exc_info.value)
 
   def test_load_duplicate_names(self, tmp_path: Path) -> None:
@@ -374,8 +378,10 @@ tools: Search
 Second.
 """)
 
+    # load_agent_definitions is a generator; the duplicate-detection raise
+    # happens during iteration, so iterate inside pytest.raises.
     with pytest.raises(ConfigurationError) as exc_info:
-      load_agent_definitions(agents_dir)
+      {d.name: d for d in load_agent_definitions(agents_dir)}
     assert "Duplicate agent name" in str(exc_info.value)
 
   def test_load_ignores_non_markdown(self, tmp_path: Path) -> None:
@@ -395,7 +401,7 @@ Prompt.
     (agents_dir / "config.toml").write_text("name = 'ignored'")
     (agents_dir / "README.txt").write_text("This is ignored")
 
-    definitions = load_agent_definitions(agents_dir)
+    definitions = {d.name: d for d in load_agent_definitions(agents_dir)}
     assert len(definitions) == 1
     # Directory name is used as namespace
     assert "agents:main" in definitions
@@ -420,7 +426,7 @@ tools: Read
 ---
 """)
 
-    definitions = load_agent_definitions(agents_dir)
+    definitions = {d.name: d for d in load_agent_definitions(agents_dir)}
     names = list(definitions.keys())
     # Both should be loaded, order doesn't matter for dict
     # Directory name is used as namespace

@@ -79,11 +79,11 @@ class TestConfigSchema:
     assert ui.show_tool_calls is True
     assert ui.show_stats is True
 
-  def test_frozen_dataclass(self) -> None:
-    """Test that config classes are frozen (immutable)."""
+  def test_mutable_dataclass(self) -> None:
+    """Test that config classes are mutable (Batch 1.8 unfroze them)."""
     config = HarnessConfig(name="test")
-    with pytest.raises(AttributeError):
-      config.name = "changed"  # type: ignore
+    config.name = "changed"
+    assert config.name == "changed"
 
   def test_default_model_is_llama(self) -> None:
     """The default model is defined once.
