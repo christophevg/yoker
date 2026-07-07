@@ -158,7 +158,7 @@ def agent(
   system_prompt: str | None = None,
   tools: list[str] | None = None,
   skills: list[str] | None = None,
-  plugins: list[str] | None = None,
+  plugins: tuple[str, ...] | None = None,
   agent_path: str | Path | None = None,
   agent_definition: AgentDefinition | None = None,
   thinking: ThinkingLiteral = "on",
@@ -238,7 +238,7 @@ def agent(
     agent_definition=resolved_definition,
     agent_path=forwarded_path,
     context_manager=context_manager,
-    plugins=plugins,
+    plugins=plugins or (),
     console_logging=console_logging,
     backend=backend,
   )
