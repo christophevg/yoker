@@ -1,7 +1,19 @@
-"""Tests for plugin security system."""
+"""Tests for plugin security system.
+
+Covers the two-level security model:
+  1. Global opt-in: ``[plugins] enabled = true/false`` (default: false)
+  2. Per-plugin trust: ``[plugins.trusted]`` table
+
+The boolean ``check_plugins_enabled`` function was removed in Batch 2:
+the global gate is now an inline ``if not config.plugins.enabled:`` at
+the caller site (see ``Agent.__init__``), and the visible warning is
+emitted by the fire-and-forget ``warn_plugins_disabled()`` helper.
+These tests reframe the old gate tests to assert on
+``config.plugins.enabled`` directly and to verify ``warn_plugins_disabled``
+emits the structured ``plugins_disabled_globally`` warning.
+"""
 
 import sys
-from io import StringIO
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -10,10 +22,10 @@ from yoker.config import Config, PluginsConfig
 from yoker.plugins import PluginComponents
 from yoker.plugins.security import (
   check_plugin_allowed,
-  check_plugins_enabled,
   confirm_plugin,
   is_trusted,
   reset_session_trusted,
+  warn_plugins_disabled,
 )
 
 
@@ -165,30 +177,33 @@ class TestConfirmPlugin:
       assert result is False
 
 
-class TestCheckPluginsEnabled:
-  """Tests for check_plugins_enabled function."""
+class TestWarnPluginsDisabled:
+  """Tests for warn_plugins_disabled (replaces the deleted check_plugins_enabled).
 
-  def test_plugins_enabled_true(self) -> None:
-    """Test with plugins enabled."""
+  The global-enabled gate is now an inline ``if not config.plugins.enabled:``
+  at the caller site. ``warn_plugins_disabled()`` is the fire-and-forget
+  helper that emits the visible + structured warning. These tests verify:
+    - the config gate reflects enabled/disabled state
+    - ``warn_plugins_disabled`` emits the structured ``plugins_disabled_globally``
+      warning via the module logger
+  """
+
+  def test_plugins_enabled_gate_true(self) -> None:
+    """Config with plugins enabled passes the global gate."""
     config = Config(plugins=PluginsConfig(enabled=True))
-    result = check_plugins_enabled(config)
-    assert result is True
+    # The caller-side gate is `if not config.plugins.enabled:` — passes.
+    assert config.plugins.enabled is True
 
-  def test_plugins_enabled_false(self) -> None:
-    """Test with plugins disabled."""
-    config = Config(plugins=PluginsConfig(enabled=False))
-    with patch("sys.stdout", new_callable=StringIO) as mock_stdout:
-      result = check_plugins_enabled(config)
-      assert result is False
-      assert "Error: Plugins are disabled" in mock_stdout.getvalue()
+  def test_warn_plugins_disabled_emits_warning(self) -> None:
+    """warn_plugins_disabled emits the structured plugins_disabled_globally log."""
+    with patch("yoker.plugins.security.logger") as mock_logger:
+      warn_plugins_disabled()
+      mock_logger.warning.assert_called_once_with("plugins_disabled_globally")
 
-  def test_plugins_disabled_default(self) -> None:
-    """Test with default config (plugins disabled)."""
+  def test_plugins_disabled_default_gate(self) -> None:
+    """Default Config has plugins disabled (gate fails → warning would fire)."""
     config = Config()
-    with patch("sys.stdout", new_callable=StringIO) as mock_stdout:
-      result = check_plugins_enabled(config)
-      assert result is False
-      assert "Error: Plugins are disabled" in mock_stdout.getvalue()
+    assert config.plugins.enabled is False
 
 
 class TestCheckPluginAllowed:
@@ -209,7 +224,7 @@ class TestCheckPluginAllowed:
       source="trusted_plugin",
     )
 
-    result = check_plugin_allowed("trusted_plugin", config, plugin)
+    result = check_plugin_allowed(plugin, config)
     assert result is True
 
   def test_check_plugin_allowed_not_trusted(self) -> None:
@@ -229,7 +244,7 @@ class TestCheckPluginAllowed:
 
     # Mock non-interactive mode
     with patch.object(sys.stdin, "isatty", return_value=False):
-      result = check_plugin_allowed("untrusted_plugin", config, plugin)
+      result = check_plugin_allowed(plugin, config)
       assert result is False
 
   def test_check_plugin_allowed_session_confirmed(self) -> None:
@@ -253,19 +268,19 @@ class TestCheckPluginAllowed:
       patch("builtins.input", return_value="y"),
     ):
       # First call asks for confirmation
-      result1 = check_plugin_allowed("session_plugin", config, plugin)
+      result1 = check_plugin_allowed(plugin, config)
       assert result1 is True
 
       # Second call uses session trust
-      result2 = check_plugin_allowed("session_plugin", config, plugin)
+      result2 = check_plugin_allowed(plugin, config)
       assert result2 is True
 
 
 class TestIntegration:
-  """Integration tests for plugin security."""
+  """Integration tests for the two-level plugin security model."""
 
   def test_full_workflow_enabled_trusted(self) -> None:
-    """Test full workflow with enabled and trusted plugin."""
+    """Enabled + trusted plugin is allowed (both levels pass)."""
     config = Config(
       plugins=PluginsConfig(
         enabled=True,
@@ -273,28 +288,27 @@ class TestIntegration:
       )
     )
 
-    # Level 1: Check plugins enabled
-    assert check_plugins_enabled(config) is True
+    # Level 1: global gate passes
+    assert config.plugins.enabled is True
 
-    # Level 2: Check plugin allowed
+    # Level 2: per-plugin trust passes
     plugin = PluginComponents(
       tools=[],
       skills=[],
       agents=[],
       source="test_plugin",
     )
-    assert check_plugin_allowed("test_plugin", config, plugin) is True
+    assert check_plugin_allowed(plugin, config) is True
 
   def test_full_workflow_disabled(self) -> None:
-    """Test full workflow with plugins disabled."""
+    """Disabled plugins fail the global gate (warn_plugins_disabled would fire)."""
     config = Config(plugins=PluginsConfig(enabled=False))
 
-    # Level 1: Check plugins enabled (should fail)
-    with patch("sys.stdout", new_callable=StringIO):
-      assert check_plugins_enabled(config) is False
+    # Level 1: global gate fails
+    assert config.plugins.enabled is False
 
   def test_full_workflow_not_trusted(self) -> None:
-    """Test full workflow with untrusted plugin."""
+    """Enabled but untrusted plugin fails the per-plugin level."""
     config = Config(
       plugins=PluginsConfig(
         enabled=True,
@@ -309,12 +323,12 @@ class TestIntegration:
       source="untrusted_plugin",
     )
 
-    # Level 1: Check plugins enabled (should pass)
-    assert check_plugins_enabled(config) is True
+    # Level 1: global gate passes
+    assert config.plugins.enabled is True
 
-    # Level 2: Check plugin allowed (should fail in non-interactive mode)
+    # Level 2: per-plugin trust fails in non-interactive mode
     with patch.object(sys.stdin, "isatty", return_value=False):
-      assert check_plugin_allowed("untrusted_plugin", config, plugin) is False
+      assert check_plugin_allowed(plugin, config) is False
 
   def test_config_integration(self) -> None:
     """Test Config with PluginsConfig."""
