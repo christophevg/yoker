@@ -4,6 +4,88 @@ All notable changes to yoker are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## 0.7.0 (2026-07-07)
+
+### Added
+
+- **Python API Facade (MBI-003)**: New thin single-module public API in
+  `yoker.api` exposing `process`, `do`, `agent`, `session`, `run_sync`, and
+  `ThinkingLiteral`. `yoker.agent(**kwargs)` is the reusable factory
+  (builder → customised `Config` → `Agent`); `yoker.process` / `yoker.do`
+  are one-shot helpers built on it; `yoker.session(...)` is an async context
+  manager yielding the real `yoker.session.Session`.
+- **Session.send accepts Agent instances**: `Session.send(*, to, from_,
+  content)` resolves `Agent` instances back to ids via `_id_of()`; the
+  `agent` tool and `send_message` tool fold spawn/process/release inline.
+- **Session.create_primary_agent**: Single end-to-end path for creating the
+  primary agent, used by both `__main__.py` and `yoker.session()`.
+- **Python API examples**: New `examples/python_api/` covering builder,
+  one-shot, sync usage, sessions, event handling, skill invocation, and a
+  full workflow.
+- **Context Manager Factory**: `yoker.context.factory` constructs the
+  context manager agent-scoped from `Config`; `Session` owns the lifecycle
+  and passes the context manager into `Agent`.
+- **Structured Logging at CLI Startup**: CLI wires `structlog` configuration
+  at startup.
+
+### Changed
+
+- **Agent package relocated**: `yoker.agent` → `yoker.core` (unified `Agent`
+  class backed by `_setup.py` / `_processing.py`).
+- **Plugin loader merged**: `yoker.plugins.loader` consolidated;
+  registries (`ToolRegistry`, `SkillRegistry`, `AgentRegistry`) now own
+  their own plugin registration. `register_tools` / `register_skills` free
+  functions removed.
+- **API collapsed to a module**: `yoker.api` is now a single module
+  (`api.py`), not a package; `_internal`/`one_shot`/`session` submodules
+  removed.
+- **Config dataclasses unfrozen**: `Config` and provider configs are now
+  mutable, eliminating `replace()` workarounds.
+- **session() signature explicit**: `yoker.session(id=..., *, persist=True,
+  fresh=False, **kwargs)` uses explicit kwargs instead of a kwargs-pop block.
+- **Plugins-enabled sanity check**: Moved into `Config` validation;
+  `check_plugins_enabled` removed. The plugins-disabled warning is now
+  visible and covers CLI `--with` packages too.
+- **Clearer session error**: `Session` emits a clear error when a configured
+  agent cannot be resolved.
+
+### Removed
+
+- **Public API removals**: `ApiSession`, `make_config`, `Message`,
+  `SpawnResult`, `EventReplayAgent`, `ThinkingMode` (public re-export),
+  `add_event_handler` / `remove_event_handler` / `get_event_handlers`
+  (use `Agent.on_event(handler)`), `max_recursion_depth` config field,
+  `load_configured_plugins`, `check_plugins_enabled`,
+  `register_tools` / `register_skills` free functions,
+  `yoker.plugins.registration` module, `yoker.api` submodules
+  (`_internal` / `one_shot` / `session`), `yoker.events.replay`,
+  `yoker.session.message`, `yoker.session.spawn_result`.
+
+### Fixed
+
+- **5 code regressions from MBI-003 cleanup**:
+  - `Agent.__init__` coerces `plugins=None` to `()` so `load_plugins` never
+    receives a non-iterable `None`.
+  - `context/factory` sanitizes `agent_id` colons before filename
+    interpolation so namespaced ids like `file:researcher` pass
+    `validate_session_id`.
+  - `Session._derive_config` deep-copies `parent_config` before applying
+    model override, leaving the caller's sub-config untouched.
+  - `render_config_toml` deep-copies config before applying overrides so
+    `_set_dotted` no longer mutates the caller's `Config`.
+  - `agents/registry` drops a stray `raise` in `register_config_agents` so
+    invalid/malformed agent dirs are warned-and-skipped, not fatal.
+- **CLI logging wiring**: Structured logging configured at startup.
+- **Stale test mocks**: Fixed 6 stale `yoker.core.Agent` mock targets.
+
+### Documentation
+
+- Refreshed `CLAUDE.md` module structure to match the current tree.
+- Refreshed user-facing docs: `README.md`, `docs/quickstart.md`,
+  `docs/api/index.md`, `docs/rationale.md`.
+- Cleaned up `PLAN.md` and `TODO.md`; added `DEVELOPMENT.md`.
+- Updated `MBI-003 Python API` design doc.
+
 ## 0.6.0 (2026-07-03)
 
 ### Added
