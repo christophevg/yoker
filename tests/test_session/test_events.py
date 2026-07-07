@@ -74,7 +74,8 @@ class TestEventAggregation:
         # Capture the forwarding handler registered on the child.
         mock_child.add_event_handler = MagicMock()
         mock_cls.return_value = mock_child
-        await session._spawn_and_run("researcher", "hi")
+        child, _agent_id = await session._spawn_internal("researcher")
+        await child.process("hi")
 
       # The Session registered a forwarding handler on the child agent.
       mock_child.add_event_handler.assert_called_once()
@@ -102,7 +103,8 @@ class TestEventAggregation:
         mock_child.process = AsyncMock(return_value="ok")
         mock_child.add_event_handler = MagicMock()
         mock_cls.return_value = mock_child
-        await session._spawn_and_run("researcher", "hi")
+        child, _agent_id = await session._spawn_internal("researcher")
+        await child.process("hi")
       forward_handler = mock_child.add_event_handler.call_args[0][0]
 
       received: list = []
@@ -127,7 +129,8 @@ class TestEventAggregation:
         mock_child.process = AsyncMock(return_value="ok")
         mock_child.add_event_handler = MagicMock()
         mock_cls.return_value = mock_child
-        await session._spawn_and_run("researcher", "hi")
+        child, _agent_id = await session._spawn_internal("researcher")
+        await child.process("hi")
       mock_child.add_event_handler.assert_not_called()
 
   @pytest.mark.asyncio
@@ -142,7 +145,8 @@ class TestEventAggregation:
         mock_child.process = AsyncMock(return_value="ok")
         mock_child.add_event_handler = MagicMock()
         mock_cls.return_value = mock_child
-        await session._spawn_and_run("researcher", "hi")
+        child, _agent_id = await session._spawn_internal("researcher")
+        await child.process("hi")
       spawned = [e for e in received if isinstance(e, AgentSpawnedEvent)]
       assert len(spawned) == 1
       assert spawned[0].agent_id == "researcher"
@@ -151,7 +155,7 @@ class TestEventAggregation:
 
   @pytest.mark.asyncio
   async def test_agent_finished_event_emitted_and_agent_removed(self) -> None:
-    """AGENT_FINISHED is emitted and the agent is removed."""
+    """AGENT_FINISHED is emitted and the agent is removed on release."""
     async with Session(config=Config()) as session:
       _register_researcher(session)
       received: list = []
@@ -161,7 +165,9 @@ class TestEventAggregation:
         mock_child.process = AsyncMock(return_value="ok")
         mock_child.add_event_handler = MagicMock()
         mock_cls.return_value = mock_child
-        await session._spawn_and_run("researcher", "hi")
+        child, _agent_id = await session._spawn_internal("researcher")
+        await child.process("hi")
+        session.release(child)
       finished = [e for e in received if isinstance(e, AgentFinishedEvent)]
       assert len(finished) == 1
       assert finished[0].agent_id == "researcher"
@@ -171,7 +177,7 @@ class TestEventAggregation:
 
   @pytest.mark.asyncio
   async def test_agent_finished_emitted_even_on_timeout(self) -> None:
-    """AGENT_FINISHED is emitted in the finally block even when spawn times out."""
+    """AGENT_FINISHED is emitted in the finally block even when the run times out."""
     import asyncio as _asyncio
 
     async def slow_process(_msg: str) -> str:
@@ -187,8 +193,10 @@ class TestEventAggregation:
         mock_child.process = AsyncMock(side_effect=slow_process)
         mock_child.add_event_handler = MagicMock()
         mock_cls.return_value = mock_child
+        child, _agent_id = await session._spawn_internal("researcher")
         with pytest.raises(TimeoutError):
-          await session._spawn_and_run("researcher", "hi", timeout_seconds=0.05)
+          await _asyncio.wait_for(child.process("hi"), timeout=0.05)
+        session.release(child)
       finished = [e for e in received if isinstance(e, AgentFinishedEvent)]
       assert len(finished) == 1
       assert session.get_agent("researcher") is None

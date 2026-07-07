@@ -32,7 +32,7 @@ from typing import Any, Literal, TypeVar
 
 from yoker.agents import AgentDefinition, load_agent_definition
 from yoker.backends import ModelBackend
-from yoker.config import Config, make_config
+from yoker.config import Config
 from yoker.context import ContextManager, Persisted, SimpleContextManager
 from yoker.core import Agent
 from yoker.core.thinking import ThinkingMode
@@ -259,7 +259,7 @@ def agent(
     A fully constructed :class:`yoker.Agent` instance.
   """
   # 1. Resolve the base config (programmatic defaults; no filesystem).
-  base_config = config if config is not None else make_config()
+  base_config = config if config is not None else Config()
 
   # 2. Apply model / provider overrides on a derived frozen Config.
   if model is not None or provider is not None:
@@ -358,10 +358,11 @@ def _session_config(session_id: str | None) -> Config:
   resumes the right conversation.
   """
   if session_id is None:
-    return make_config()
+    return Config()
   base = Config()
-  return make_config(
-    context=dataclasses.replace(base.context, session_id=session_id, persist_after_turn=True)
+  return dataclasses.replace(
+    base,
+    context=dataclasses.replace(base.context, session_id=session_id, persist_after_turn=True),
   )
 
 
@@ -406,7 +407,7 @@ async def session(
   Builds on the real :class:`yoker.session.Session` (MBI-007). A primary
   :class:`Agent` is constructed with the given builder kwargs and
   registered with the session. The primary agent is available via
-  :attr:`Session.primary_agent`; sub-agents can be spawned via
+  :attr:`Session.agent`; sub-agents can be spawned via
   ``await session.spawn(name)``. Event handlers are registered via
   ``session.add_event_handler(...)``.
 

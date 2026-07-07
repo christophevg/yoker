@@ -51,7 +51,8 @@ class TestSpawnAllowlist:
         mock_child.process = AsyncMock(return_value="ok")
         mock_child.tools = MagicMock()
         mock_agent_cls.return_value = mock_child
-        agent_id, response = await session._spawn_and_run("researcher", "hi", requester=None)
+        child, agent_id = await session._spawn_internal("researcher", requester=None)
+        response = await child.process("hi")
       assert agent_id == "researcher"
       assert response == "ok"
 
@@ -102,7 +103,8 @@ class TestSpawnAllowlist:
         mock_child.process = AsyncMock(return_value="ok")
         mock_child.tools = MagicMock()
         mock_agent_cls.return_value = mock_child
-        agent_id, response = await session._spawn_and_run("researcher", "hi", requester=requester)
+        child, agent_id = await session._spawn_internal("researcher", requester=requester)
+        response = await child.process("hi")
       assert response == "ok"
 
   @pytest.mark.asyncio
@@ -149,8 +151,10 @@ class TestSpawnRecursionDepth:
         mock_child.process = AsyncMock(return_value="ok")
         mock_child.tools = MagicMock()
         mock_agent_cls.return_value = mock_child
-        await session._spawn_and_run("researcher", "hi")
-      # Depth tracked during the run; removed in the finally block.
+        child, _agent_id = await session._spawn_internal("researcher")
+        await child.process("hi")
+        session.release(child)
+      # Depth tracked during the run; removed on release.
       assert "researcher" not in session._recursion_depths
 
   @pytest.mark.asyncio
@@ -214,8 +218,10 @@ class TestSpawnAgentMap:
         mock_child.process = AsyncMock(return_value="ok")
         mock_child.tools = MagicMock()
         mock_agent_cls.return_value = mock_child
-        agent_id, response = await session._spawn_and_run("researcher", "hi")
-      # agent removed from active list after completion.
+        child, agent_id = await session._spawn_internal("researcher")
+        await child.process("hi")
+        session.release(child)
+      # agent removed from active list after release.
       assert session.get_agent("researcher") is None
       assert agent_id == "researcher"
 
@@ -235,12 +241,16 @@ class TestSpawnAgentMap:
         mock_child.process = AsyncMock(return_value="ok")
         mock_child.tools = MagicMock()
         mock_agent_cls.return_value = mock_child
-        first = await session._spawn_and_run("researcher", "first")
-        second = await session._spawn_and_run("researcher", "second")
+        first_child, first_id = await session._spawn_internal("researcher")
+        await first_child.process("first")
+        session.release(first_child)
+        second_child, second_id = await session._spawn_internal("researcher")
+        await second_child.process("second")
+        session.release(second_child)
       # Both completed; counters reflect two spawns of "researcher".
       assert session._name_counters["researcher"] == 2
-      assert first[0] == "researcher"
-      assert second[0] == "researcher-2"
+      assert first_id == "researcher"
+      assert second_id == "researcher-2"
 
 
 class TestSessionBackendFactory:

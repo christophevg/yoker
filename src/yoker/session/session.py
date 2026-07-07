@@ -32,7 +32,6 @@ from yoker.events import (
   SessionEvent,
   SessionStartEvent,
 )
-from yoker.session.message import Message
 from yoker.session.tools import make_send_message_tool, make_spawn_agent_tool
 
 if TYPE_CHECKING:
@@ -219,19 +218,12 @@ class Session:
   ) -> Agent:
     """Spawn a child agent by name and return it (no prompt is run).
 
-    The canonical sub-agent API (MBI-003 Decision 8). Enforces the
-    requester's :attr:`AgentDefinition.agents` allowlist, resolves the
-    definition from ``session.agents``, checks recursion depth and
-    ``max_agents`` limits, creates a child :class:`Agent` with a
-    session-injected backend, injects the Session-injected tools
-    (``agent`` and ``send_message``) on the child, registers it in the
-    active map, and returns the Agent. The caller drives the agent
-    directly (e.g. ``await agent.process("...")``).
-
-    The agent stays registered in the session's active map until
-    :meth:`_release` is called (the ``agent`` tool calls
-    :meth:`_spawn_and_run` which releases after the run; standalone
-    callers may release explicitly or let the session exit clean up).
+    The canonical sub-agent API (MBI-003 Decision 8). Thin wrapper over
+    :meth:`_spawn_internal` that returns only the constructed :class:`Agent`.
+    The caller drives the agent directly (e.g.
+    ``await agent.process("...")``). The agent stays registered in the
+    session's active map until :meth:`release` is called (or the session
+    exits and cleans up).
 
     Args:
       name: Agent definition name (bare or namespaced) to spawn.
@@ -239,12 +231,32 @@ class Session:
         When ``None`` (top-level spawn) the allowlist check is bypassed.
 
     Returns:
-      The spawned :class:`Agent` instance, with its session-assigned id
-      available via :meth:`_agent_id_for`.
+      The spawned :class:`Agent` instance.
 
     Raises:
       ValueError: On allowlist violation, unknown agent, or capacity
         (depth / max_agents) exceeded.
+    """
+    child, _agent_id = await self._spawn_internal(name, requester=requester)
+    return child
+
+  async def _spawn_internal(
+    self,
+    name: str,
+    *,
+    requester: Agent | None = None,
+  ) -> tuple[Agent, str]:
+    """Spawn a child agent and return ``(agent, agent_id)`` (internal).
+
+    Enforces the requester's :attr:`AgentDefinition.agents` allowlist,
+    resolves the definition from ``session.agents``, checks recursion
+    depth and ``max_agents`` limits, creates a child :class:`Agent` with
+    a session-injected backend, injects the Session-injected tools
+    (``agent`` and ``send_message``) on the child, registers it in the
+    active map, stamps the session-assigned id on the Agent as
+    ``agent._session_id`` (the bridge used by :meth:`send` for event
+    payloads), and emits ``AGENT_SPAWNED``. Used by the public
+    :meth:`spawn` and by the Session-injected ``agent`` tool.
     """
     # Allowlist enforcement — before any other check.
     if requester is not None:
@@ -300,6 +312,11 @@ class Session:
       console_logging=False,
     )
 
+    # Stamp the session-assigned id on the Agent. This is Session-managed
+    # metadata (not Agent business state) — the bridge used by send() to
+    # resolve Agent instances back to ids for event payloads.
+    child._session_id = agent_id
+
     # Register in the active map and track depth.
     self._agents_map[agent_id] = child
     self._recursion_depths[agent_id] = child_depth
@@ -322,54 +339,19 @@ class Session:
         definition_name=agent_definition.simple_name or name,
       )
     )
-    return child
-
-  async def _spawn_and_run(
-    self,
-    name: str,
-    prompt: str,
-    *,
-    requester: Agent | None = None,
-    timeout_seconds: int = 300,
-  ) -> tuple[str, str]:
-    """Spawn a child agent and run it to completion (internal).
-
-    Used by the Session-injected ``agent`` tool. Spawns via
-    :meth:`spawn`, runs the prompt with a timeout, releases the agent,
-    and returns a ``(agent_id, response)`` tuple.
-    """
-    child = await self.spawn(name, requester=requester)
-    agent_id = self._agent_id_for(child)
-    try:
-      response = await asyncio.wait_for(
-        child.process(prompt),
-        timeout=timeout_seconds,
-      )
-      return agent_id, response
-    except asyncio.TimeoutError as e:
-      raise TimeoutError(f"Sub-agent '{agent_id}' timed out after {timeout_seconds} seconds") from e
-    finally:
-      self._release(agent_id)
-
-  def _agent_id_for(self, agent: Agent) -> str:
-    """Return the session-assigned id for an active agent (registry lookup)."""
-    for aid, a in self._agents_map.items():
-      if a is agent:
-        return aid
-    raise KeyError(f"Agent not registered in session {self.id!r}.")
+    return child, agent_id
 
   def release(self, agent: Agent) -> None:
-    """Release a spawned agent (public thin wrapper over :meth:`_release`).
+    """Release a spawned agent: emit AGENT_FINISHED and remove from the active map.
 
-    Looks up the agent's session-assigned id via :meth:`_agent_id_for` and
-    calls :meth:`_release`. This is the public API for standalone callers
-    that drive a spawned agent directly (the ``agent`` tool calls
-    :meth:`_spawn_and_run` which releases after the run).
+    Removes the agent by identity. When the agent is not registered (already
+    released or never registered) this is a no-op. This is the single
+    cleanup path used by both the ``agent`` tool and standalone callers
+    that drive a spawned agent directly.
     """
-    self._release(self._agent_id_for(agent))
-
-  def _release(self, agent_id: str) -> None:
-    """Release a spawned agent: emit AGENT_FINISHED and remove from active map."""
+    agent_id = next((aid for aid, a in self._agents_map.items() if a is agent), None)
+    if agent_id is None:
+      return  # already released or never registered
     self._emit(
       AgentFinishedEvent(
         type=EventType.AGENT_FINISHED,
@@ -377,7 +359,7 @@ class Session:
         agent_id=agent_id,
       )
     )
-    self._agents_map.pop(agent_id, None)
+    self._agents_map = {aid: a for aid, a in self._agents_map.items() if a is not agent}
     self._recursion_depths.pop(agent_id, None)
 
   def inject_tools(self, agent: Agent, agent_id: str) -> None:
@@ -426,21 +408,26 @@ class Session:
     """
     definition_name = agent.definition.simple_name or "primary"
     agent_id = self._generate_agent_name(definition_name)
+    # Stamp the session-assigned id on the Agent (bridge for send() event
+    # payloads) and override its backend with the session-shared one so
+    # the primary agent shares the same backend as spawned sub-agents.
+    agent._session_id = agent_id
+    agent._backend = self.get_backend(agent.config)
     self._agents_map[agent_id] = agent
     self._recursion_depths[agent_id] = 0
     self.inject_tools(agent, agent_id)
-    self._primary: Agent = agent
+    self._agent: Agent = agent
     return agent_id
 
   @property
-  def primary_agent(self) -> Agent:
+  def agent(self) -> Agent:
     """The primary :class:`Agent` registered via :meth:`register_primary_agent`.
 
     Raises:
       RuntimeError: When no primary agent has been registered.
     """
     try:
-      return self._primary
+      return self._agent
     except AttributeError as e:
       raise RuntimeError("No primary agent registered with this session.") from e
 
@@ -461,51 +448,55 @@ class Session:
     forward.__name__ = f"session_forward_{agent_id}"
     return forward
 
-  async def send(self, message: Message) -> str:
-    """Route an inter-agent message to its target agent and return the reply.
+  async def send(self, *, to: Agent, from_: Agent, content: str) -> str:
+    """Send a message from one agent to another and return the target's reply.
 
-    Looks up the target agent by ``message.to_id`` in the active map,
-    emits an :class:`AgentMessageEvent` carrying the message, then calls
-    ``await target_agent.process(message.content)``. Request-response only
-    — content is a plain string and the response is a plain string
-    (no streaming).
+    The Python API accepts :class:`Agent` instances directly. The
+    session-assigned ids carried on ``to._session_id`` and
+    ``from_._session_id`` are used only for the :class:`AgentMessageEvent`
+    payload (the LLM-facing ``agent_id`` strings are mere references).
+    Emits the event, then calls ``await to.process(content)``.
+    Request-response only — content is a plain string and the response is
+    a plain string (no streaming).
 
     Args:
-      message: The :class:`Message` to route. ``to_id`` must match an
-        active agent's session-assigned id.
+      to: The target :class:`Agent` (must be active in this session).
+      from_: The sending :class:`Agent`.
+      content: Plain-string message content (the prompt).
 
     Returns:
       The target agent's response string. When the target agent raises,
       the exception is caught and an error string is returned (preserving
-        the ``agent`` tool's behaviour of not propagating exceptions).
+      the ``agent`` tool's behaviour of not propagating exceptions).
 
     Raises:
-      ValueError: When no active agent has the id ``message.to_id``.
+      ValueError: When the target agent is not registered in this session.
     """
-    target = self._agents_map.get(message.to_id)
-    if target is None:
-      raise ValueError(f"No active agent with id '{message.to_id}' in session '{self.id}'.")
+    to_id = getattr(to, "_session_id", None)
+    from_id = getattr(from_, "_session_id", None)
+    if to_id is None or to not in self._agents_map.values():
+      raise ValueError(f"Target agent is not active in session '{self.id}'.")
 
     self._emit(
       AgentMessageEvent(
         type=EventType.AGENT_MESSAGE,
         session_id=self.id,
-        from_id=message.from_id,
-        to_id=message.to_id,
-        content=message.content,
+        from_id=from_id or "",
+        to_id=to_id,
+        content=content,
       )
     )
 
     try:
-      return await target.process(message.content)
+      return await to.process(content)
     except Exception as e:
       logger.warning(
         "session_send_failed",
-        from_id=message.from_id,
-        to_id=message.to_id,
+        from_id=from_id,
+        to_id=to_id,
         error=str(e),
       )
-      return f"Error: agent '{message.to_id}' failed: {e}"
+      return f"Error: agent '{to_id}' failed: {e}"
 
   @staticmethod
   def _derive_config(parent_config: Config, agent_definition: AgentDefinition) -> Config:

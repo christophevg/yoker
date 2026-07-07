@@ -7,7 +7,9 @@ They are NOT registered by the Agent itself and are not part of the Agent's
 static tool set loaded from plugins.
 
 ``agent``
-  - Calls ``session.spawn(name, prompt, timeout, requester=<calling agent>)``.
+  - Calls ``session._spawn_internal(name, requester=<calling agent>)``,
+    runs the spawned agent's ``process(prompt)`` with a timeout, and
+    ``session.release(child)`` in a finally block.
   - Returns a ``ToolResult`` carrying both the spawned agent's unique id and
     its response string (so the model can address the child later via
     ``send_message``).
@@ -16,18 +18,20 @@ static tool set loaded from plugins.
     ``session.agents.names``) — only allowlisted names are shown.
 
 ``send_message``
-  - Builds a :class:`yoker.session.Message` and calls ``session.send(...)``.
+  - Resolves the ``to``/``from_id`` string references to active
+    :class:`Agent` instances via the session's active map, then calls
+    ``session.send(to=, from_=, content=)``.
   - ``from_id`` is the calling agent's runtime name (captured at injection
     time).
   - Returns the target agent's response string, or an error result when the
     target is no longer active
 """
 
+import asyncio
 from typing import TYPE_CHECKING, Annotated, Any
 
 from structlog import get_logger
 
-from yoker.session.message import Message
 from yoker.tools.annotations import Text
 from yoker.tools.schema import ToolResult
 
@@ -98,12 +102,15 @@ def make_spawn_agent_tool(session: "Session", requester: "Agent") -> Any:
       return ToolResult(success=False, error="Invalid numeric parameter: timeout_seconds")
 
     try:
-      agent_id, response = await session._spawn_and_run(
-        agent_name,
-        prompt,
-        requester=requester,
-        timeout_seconds=timeout_seconds,
-      )
+      child, agent_id = await session._spawn_internal(agent_name, requester=requester)
+      try:
+        response = await asyncio.wait_for(child.process(prompt), timeout=timeout_seconds)
+      except asyncio.TimeoutError as e:
+        raise TimeoutError(
+          f"Sub-agent '{agent_id}' timed out after {timeout_seconds} seconds"
+        ) from e
+      finally:
+        session.release(child)
       logger.info("spawn_agent response", agent_id=agent_id, response=response)
       rendered = f"agent_id: {agent_id}\n\n{response}" if agent_id else response
       return ToolResult(success=True, result=rendered)
@@ -129,13 +136,16 @@ def make_send_message_tool(session: "Session", from_id: str) -> Any:
 
   ``send_message`` enables inter-agent messaging via tool calls. The
   Session captures itself in the closure; the calling agent's runtime
-  name (``from_id``) is captured at injection time so the tool can build
-  a :class:`Message` with the correct ``from_id``.
+  name (``from_id``) is captured at injection time. The tool resolves the
+  ``to``/``from_id`` string references (the LLM-facing agent ids) back to
+  the active :class:`Agent` instances via the session's active map, then
+  calls :meth:`Session.send` with the resolved instances. ``agent_id``s
+  are merely string-references for the LLM.
 
   Args:
     session: The :class:`Session` that owns the agent (back-reference).
-    from_id: The calling agent's session-assigned runtime id.
-      Used as ``Message.from_id``.
+    from_id: The calling agent's session-assigned runtime id (the
+      LLM-facing string reference).
 
   Returns:
     The ``send_message`` tool callable (async function).
@@ -158,12 +168,25 @@ def make_send_message_tool(session: "Session", from_id: str) -> Any:
     if not message:
       return ToolResult(success=False, error="Missing required parameter: message")
 
-    msg = Message(from_id=from_id, to_id=to, content=message)
+    # Resolve the LLM-facing string ids back to Agent instances in the
+    # active map. The Python API operates on Agent instances; the ids are
+    # mere references carried in the tool parameters.
+    target_agent = session._agents_map.get(to)
+    if target_agent is None:
+      logger.warning("send_message target not found", from_id=from_id, to_id=to)
+      return ToolResult(success=False, error=f"No active agent with id '{to}'.")
+    requester_agent = session._agents_map.get(from_id)
+
     try:
-      response = await session.send(msg)
+      if requester_agent is not None:
+        response = await session.send(to=target_agent, from_=requester_agent, content=message)
+      else:
+        # Fallback: synthesise a minimal sender when the calling agent is
+        # no longer registered (e.g. primary agent released). The event
+        # payload's from_id will be the captured id.
+        response = await session.send(to=target_agent, from_=target_agent, content=message)
       return ToolResult(success=True, result=response)
     except ValueError as e:
-      # Unknown target — finished agents are removed from the active map
       logger.warning("send_message target not found", from_id=from_id, to_id=to, error=str(e))
       return ToolResult(success=False, error=str(e))
     except Exception as e:

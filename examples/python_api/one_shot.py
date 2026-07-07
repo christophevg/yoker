@@ -5,7 +5,7 @@ Run with:
     python examples/python_api/one_shot.py
 
 Requires a configured backend (e.g. Ollama on http://localhost:11434, or
-set ``YOKER_BACKEND_PROVIDER`` / model via a ``yoker.toml``).
+set the model/provider in a ``yoker.toml``).
 """
 
 import asyncio

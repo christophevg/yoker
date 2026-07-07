@@ -38,6 +38,13 @@ logger = get_logger(__name__)
 class Agent:
   """Asynchronous agent that chats with model backends and uses tools."""
 
+  # Session-managed metadata (not Agent business state). Stamped by the
+  # Session in ``_spawn_internal`` / ``register_primary_agent`` with the
+  # session-assigned id, and read by :meth:`yoker.session.Session.send` to
+  # resolve Agent instances back to ids for event payloads. ``None`` when
+  # the Agent is not part of a Session.
+  _session_id: str | None = None
+
   def __init__(
     self,
     config: "Config | None" = None,
