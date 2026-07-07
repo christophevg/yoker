@@ -121,7 +121,6 @@ async def run_session_demo() -> None:
       print("Spawning 'researcher' sub-agent via session.spawn(...) ...")
       try:
         researcher = await session.spawn("researcher")
-        print(f"Spawned agent id: {researcher._session_id}")
         response = await researcher.process("Summarize the README.md file in two sentences.")
         print(f"Response: {response}")
         print()

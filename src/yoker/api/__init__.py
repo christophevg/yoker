@@ -241,9 +241,9 @@ def agent(
     event_handler: Optional callback (sync or async) receiving every event
       emitted by the agent.
     config: Optional explicit :class:`Config`. When omitted a programmatic
-      config is built via :func:`yoker.config.make_config` (no filesystem
-      discovery). When provided, ``model`` / ``provider`` / ``plugins``
-      overrides are applied on top of it via :func:`dataclasses.replace`.
+      config is constructed via :class:`Config()` (no filesystem discovery).
+      When provided, ``model`` / ``provider`` / ``plugins`` overrides are
+      applied on top of it via :func:`dataclasses.replace`.
     context_manager: Optional :class:`ContextManager` for the agent. When
       omitted a :class:`SimpleContextManager` is used (in-memory, no
       persistence).
