@@ -82,7 +82,65 @@ Batch mode options:
 
 ### Library Usage
 
-Yoker is designed to be embedded as a library. The `Agent` class emits events; your application implements a `UIHandler` (or uses the built-in handlers) and wires events through `UIBridge`.
+Yoker is designed to be embedded as a library. The top-level `yoker` package
+exposes a thin Pythonic facade (MBI-003) as the recommended high-level API,
+plus a lower-level `Agent` + `UIBridge` path for full control.
+
+#### Python API (recommended)
+
+| Function | Use |
+|----------|-----|
+| `yoker.process(prompt, **kwargs)` | One-shot turn; returns the response string. |
+| `yoker.do(skill_name, prompt, args="", **kwargs)` | One-shot skill invocation. |
+| `yoker.agent(**kwargs) -> Agent` | Builder that returns a reusable `Agent`. |
+| `yoker.session(id=..., *, persist=True, fresh=False, **kwargs)` | Async context manager yielding a multi-turn `Session` with context persistence. |
+| `yoker.run_sync(coro)` | Wraps `asyncio.run` for synchronous callers (scripts, notebooks, REPLs). |
+
+```python
+import asyncio
+
+import yoker
+
+
+async def main():
+  # One-shot turn.
+  answer = await yoker.process("What is 2+2?")
+  print(answer)
+
+  # Reusable agent with a tool whitelist and event handler.
+  reviewer = yoker.agent(
+    model="qwen3.5:cloud",
+    system_prompt="You are a security-focused code reviewer. Cite file:line.",
+    tools=["read", "search", "list"],
+  )
+  report = await reviewer.process("Review src/yoker/plugins/security.py for vulnerabilities.")
+  print(report)
+
+  # Multi-turn conversation with automatic context persistence.
+  async with yoker.session(id="refactor-auth") as session:
+    await session.agent.process("Read src/auth.py and identify the main responsibilities.")
+    await session.agent.process("Suggest a refactor that splits authentication from session management.")
+
+
+asyncio.run(main())
+```
+
+Sync callers (scripts, notebooks):
+
+```python
+import yoker
+
+answer = yoker.run_sync(yoker.process("What files are in the current directory?"))
+print(answer)
+```
+
+See `examples/python_api/` for the full set of facade examples (`one_shot.py`,
+`agent_builder.py`, `session.py`, `run_skill.py`, `workflow.py`,
+`event_handling.py`, `sync_usage.py`) and the [Quick start](https://yoker.readthedocs.io/en/latest/quickstart.html) docs.
+
+#### Low-level event-driven API (advanced)
+
+The `Agent` class emits events; your application implements a `UIHandler` (or uses the built-in handlers) and wires events through `UIBridge`.
 
 ```python
 import asyncio
@@ -96,7 +154,7 @@ async def main():
 
   ui = BatchUIHandler(show_thinking=True, show_tool_calls=True)
   bridge = UIBridge(ui)
-  agent.add_event_handler(bridge)
+  agent.on_event(bridge)
 
   await ui.start(agent)
   try:
@@ -357,7 +415,7 @@ Yoker uses an **event-driven architecture** for library-first design. The Agent 
 
 ![Architecture Diagram](https://raw.githubusercontent.com/christophevg/yoker/master/media/architecture-diagram.svg)
 
-**Agent layer** (`yoker.agent`): Configuration, context management, tool execution, and event emission. It has no terminal or presentation logic.
+**Agent layer** (`yoker.core`): Configuration, context management, tool execution, and event emission. It has no terminal or presentation logic.
 
 **Backend layer** (`yoker.backends`): Provider-neutral streaming chat backend. `OllamaBackend` uses the native Ollama SDK; `LitellmBackend` unifies OpenAI, Anthropic, Gemini, and 100+ LiteLLM-supported providers. The `ModelBackend` Protocol normalizes streaming into provider-agnostic `ChatChunk` events.
 

@@ -4,10 +4,44 @@
 
 ## Current Modules
 
-### `yoker.agent`
+### `yoker.api`
+
+Thin Pythonic facade (MBI-003) over the real `Agent` and `Session` classes.
+Exposes the one-shot helpers `process` / `do`, the reusable-agent builder
+`agent`, the multi-turn `session` async context manager, and the `run_sync`
+sync wrapper. `yoker.agent` is the factory function re-exported from this
+module (not a module itself).
 
 ```{eval-rst}
-.. automodule:: yoker.agent
+.. automodule:: yoker.api
+   :members:
+   :undoc-members:
+   :show-inheritance:
+```
+
+### `yoker.core`
+
+Agent layer (no UI, no Session coupling). Provides the unified `Agent` class:
+async-only, emits `Event` objects, and exposes `on_event()` (the single
+event-handler registration method), `process()`, and `do()`.
+
+```{eval-rst}
+.. automodule:: yoker.core
+   :members:
+   :undoc-members:
+   :show-inheritance:
+```
+
+### `yoker.session`
+
+Multi-turn session construct (MBI-007): an async context manager owning a team
+of agents. The primary agent is available via `Session.agent`; sub-agents can be
+spawned via `Session.spawn()`. Inter-agent messaging uses
+`Session.send(*, to, from_, content)` with plain strings. Event handlers are
+registered via `Session.on_event(...)`.
+
+```{eval-rst}
+.. automodule:: yoker.session
    :members:
    :undoc-members:
    :show-inheritance:
@@ -41,7 +75,7 @@ Event system for library-first design. The Agent emits events that handlers can 
 | `ToolContentEvent` | Emitted when a tool produces display content |
 | `CommandEvent` | Emitted when a slash command is replayed |
 
-Handlers are plain callables that receive `Event` objects. Register them with `agent.add_event_handler()`.
+Handlers are plain callables that receive `Event` objects. Register them with `agent.on_event(...)` (or `session.on_event(...)` for session-scoped handlers).
 
 ### `yoker.ui`
 
