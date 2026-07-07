@@ -28,11 +28,9 @@ from yoker.plugins.loader import (
   load_configured_plugins,
   load_plugin,
   load_skills_from_package,
-  register_configured_plugin_agents,
 )
 from yoker.plugins.manifest import PluginManifest
 from yoker.plugins.registration import (
-  register_agents,
   register_skills,
   register_tools,
 )

@@ -170,6 +170,11 @@ def check_plugins_enabled(config: "Config") -> bool:
   Side effects:
     Prints styled error message if plugins are disabled.
   """
+  # TODO: this should be a sanity check that is simply performed once when starting, not
+  #       "on demand", probably even as part of construction/validation of Config
+  # TODO: all uses of this function must be replace with a simple inline
+  #       `if config.plugins.enabled`
+
   if not config.plugins.enabled:
     # Styled error message
     error_text = Text()
@@ -189,7 +194,7 @@ def check_plugins_enabled(config: "Config") -> bool:
   return True
 
 
-def check_plugin_allowed(plugin_name: str, config: "Config", plugin: "PluginComponents") -> bool:
+def check_plugin_allowed(plugin: "PluginComponents", config: "Config") -> bool:
   """Check if a plugin is allowed to load.
 
   Performs two-level security check:
@@ -208,12 +213,12 @@ def check_plugin_allowed(plugin_name: str, config: "Config", plugin: "PluginComp
     This function should be called after global plugins.enabled check.
   """
   # Check if plugin is trusted
-  if is_trusted(plugin_name, config):
-    logger.info("plugin_trusted", plugin=plugin_name)
+  if is_trusted(plugin.source, config):
+    logger.info("plugin_trusted", plugin=plugin.source)
     return True
 
   # Ask for confirmation
-  if confirm_plugin(plugin_name, plugin):
+  if confirm_plugin(plugin.source, plugin):
     return True
 
   return False

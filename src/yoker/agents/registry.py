@@ -9,7 +9,10 @@ from collections import UserDict
 
 from structlog import get_logger
 
+from yoker.agents import load_agent_definitions
 from yoker.agents.schema import AgentDefinition
+from yoker.config import Config
+from yoker.plugins.loader import load_plugins
 
 logger = get_logger(__name__)
 
@@ -21,19 +24,55 @@ class AgentRegistry(UserDict[str, AgentDefinition]):
   ``__contains__``, ``__getitem__``, ``__iter__`` and ``__len__``.
   """
 
-  def register(self, definition: AgentDefinition) -> None:
-    """Register an agent definition.
-
-    Args:
-      definition: AgentDefinition to register.
-
+  def register(self, definition: AgentDefinition, namespace: str | None = None) -> None:
+    """
     Raises:
       ValueError: If an agent with the same name is already registered.
     """
+    if namespace:
+      definition.namespace = namespace
     if definition.name in self.data:
+      logger.warning(
+        "agent_name_collision",
+        name=definition.name
+      )
       raise ValueError(f"Agent '{definition.name}' is already registered")
     self.data[definition.name] = definition
     logger.info("agent registered", name=definition.name)
+
+  def register_all(self, agents: list[AgentDefinition], namespace: str):
+    logger.info(
+      "register_agents_started",
+      namespace=namespace,
+      agents_count=len(agents),
+      agent_names=[a.name for a in agents],
+    )
+    for agent_def in agents:
+      self.register(agent_def, namespace=namespace)
+
+  def register_plugin_agents(
+    self,
+    config: "Config",
+    extra_plugins: tuple[str, ...] = ()
+  ) -> None:
+    for plugin in load_plugins(config, extra_plugins):
+      if plugin.agents:
+        logger.info("registering plugin agents", package=plugin.source)
+        self.register_all(plugin.agents, namespace=plugin.source)
+
+  def register_config_agents(self, config: Config) -> None:
+    for directory in config.agents.directories:
+      try:
+        logger.info("loading configured agents", source=directory)
+        for agent in load_agent_definitions(directory):
+          self.register(agent)
+      except Exception as e:
+        logger.warning("loading agents failed", directory=directory, error=str(e))
+        raise
+
+  def load(self, config: Config, extra_plugins: tuple[str, ...] = ()):
+    self.register_config_agents(config)
+    self.register_plugin_agents(config, extra_plugins)
 
   @property
   def agents(self) -> list[AgentDefinition]:

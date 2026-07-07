@@ -3,16 +3,11 @@
 Provides functions to register tools, skills, and agents with namespace prefixes.
 """
 
-from typing import TYPE_CHECKING
-
 from structlog import get_logger
 
+from yoker.skills import Skill, SkillRegistry
+from yoker.tools import ToolRegistry
 from yoker.tools.schema import ToolSpec
-
-if TYPE_CHECKING:
-  from yoker.agents import AgentDefinition, AgentRegistry
-  from yoker.skills import Skill, SkillRegistry
-  from yoker.tools import ToolRegistry
 
 logger = get_logger(__name__)
 
@@ -108,83 +103,21 @@ def register_skills(
   return registered
 
 
-def register_agents(
-  agents: list["AgentDefinition"],
-  registry: "AgentRegistry",
-  namespace: str,
-) -> list[str]:
-  """Register agents with namespace prefix into the AgentRegistry.
+# def _clone_agent_with_name(
+#   agent_def: "AgentDefinition",
+#   new_simple_name: str,
+# ) -> "AgentDefinition":
+#   """Create a copy of agent definition with a different simple name.
 
-  Agents are frozen dataclasses, so a namespaced copy is registered. Agents
-  loaded from a package's ``agents/`` directory already carry the package
-  namespace, so re-setting it is a no-op for them; manifest-declared agents
-  (constructed in code without a namespace) get the plugin namespace applied.
+#   ``name`` is a derived property (``namespace:simple_name``); the underlying
+#   field is ``simple_name``, so that is what gets replaced.
+#   """
+#   from dataclasses import fields as dataclass_fields
 
-  Args:
-    agents: List of AgentDefinition instances.
-    registry: AgentRegistry to register with.
-    namespace: Package namespace prefix (e.g., "pkgq", "yoker").
+#   field_values = {f.name: getattr(agent_def, f.name) for f in dataclass_fields(agent_def)}
+#   field_values["simple_name"] = new_simple_name
 
-  Returns:
-    List of registered agent names (with namespace).
-
-  Raises:
-    ValueError: If an agent name is already registered.
-  """
-  from dataclasses import fields as dataclass_fields
-
-  from yoker.agents import AgentDefinition
-
-  registered = []
-
-  logger.info(
-    "register_agents_started",
-    namespace=namespace,
-    agents_count=len(agents),
-    agent_names=[a.name for a in agents],
-  )
-
-  for agent_def in agents:
-    field_values = {f.name: getattr(agent_def, f.name) for f in dataclass_fields(agent_def)}
-    field_values["namespace"] = namespace
-    namespaced_agent = AgentDefinition(**field_values)
-
-    try:
-      registry.register(namespaced_agent)
-      registered.append(namespaced_agent.name)
-      logger.info(
-        "agent_registered",
-        original_name=agent_def.name,
-        namespaced_name=namespaced_agent.name,
-        namespace=namespace,
-      )
-    except ValueError as e:
-      logger.warning(
-        "agent_name_collision",
-        name=namespaced_agent.name,
-        namespace=namespace,
-        error=str(e),
-      )
-      raise
-
-  return registered
-
-
-def _clone_agent_with_name(
-  agent_def: "AgentDefinition",
-  new_simple_name: str,
-) -> "AgentDefinition":
-  """Create a copy of agent definition with a different simple name.
-
-  ``name`` is a derived property (``namespace:simple_name``); the underlying
-  field is ``simple_name``, so that is what gets replaced.
-  """
-  from dataclasses import fields as dataclass_fields
-
-  field_values = {f.name: getattr(agent_def, f.name) for f in dataclass_fields(agent_def)}
-  field_values["simple_name"] = new_simple_name
-
-  return type(agent_def)(**field_values)
+#   return type(agent_def)(**field_values)
 
 
 __all__ = [

@@ -45,7 +45,7 @@ class Agent:
     agent_definition: AgentDefinition | None = None,
     agent_path: Path | str | None = None,
     context_manager: "ContextManager | None" = None,
-    plugins: list[str] | None = None,
+    plugins: tuple[str, ...] = (),
     backend: "ModelBackend | None" = None,
     parse_cli_args: bool = False,
     console_logging: bool = True,
@@ -86,14 +86,14 @@ class Agent:
 
     # additional plugin packages requested on the CLI (--with). Config is
     # frozen, so these are threaded through to the plugin loader directly.
-    self._cli_plugins: tuple[str, ...] = tuple(plugins) if plugins else ()
+    self._cli_plugins: tuple[str, ...] = plugins
 
     # skills are loaded from directories specified in config (per-agent).
     self._load_skills()
 
     # load tools and skills from plugins. Plugin agent definitions are
     # skipped here (no session registry); the Session layer registers them.
-    load_configured_plugins(self, self.config, self._cli_plugins, session=None)
+    load_configured_plugins(self, self.config, self._cli_plugins)
 
     # load own definition
     self.definition: AgentDefinition = self._resolve_agent_definition(agent_definition, agent_path)
