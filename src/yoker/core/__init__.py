@@ -80,8 +80,8 @@ class Agent:
     configure_logging(self.config.logging, console=console_logging)
     logger.info("agent config", source="provided" if config else "loaded")
 
-    # config sanity: plugin packages listed but plugins disabled
-    if not self.config.plugins.enabled and self.config.plugins.packages:
+    # config sanity: plugin packages requested (config or CLI) but plugins disabled
+    if not self.config.plugins.enabled and (self.config.plugins.packages or plugins):
       warn_plugins_disabled()
 
     # set up registries for tools and skills.
