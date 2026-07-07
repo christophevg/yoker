@@ -46,7 +46,125 @@ python -m yoker --agents-definition examples/agents/researcher.md
 
 ### Library Usage (Headless)
 
-Yoker is designed to be embedded as a library. The example below uses the built-in
+Yoker is designed to be embedded as a library. The `yoker` package exposes a thin
+Pythonic facade (MBI-003) over the `Agent` and `Session` classes, plus a lower-level
+event-driven API for full control.
+
+#### Python API (recommended)
+
+The facade lives in `yoker.api` and is re-exported from the top-level `yoker` package.
+The primary entry points are:
+
+| Function | Use |
+|----------|-----|
+| `yoker.process(prompt, **kwargs)` | One-shot turn; returns the response string. |
+| `yoker.do(skill_name, prompt, args="", **kwargs)` | One-shot skill invocation. |
+| `yoker.agent(**kwargs) -> Agent` | Builder that returns a reusable `Agent`. |
+| `yoker.session(id=..., *, persist=True, fresh=False, **kwargs)` | Async context manager yielding a multi-turn `Session` with context persistence. |
+| `yoker.run_sync(coro)` | Wraps `asyncio.run` for synchronous callers (scripts, notebooks, REPLs). |
+
+All builder kwargs (`model`, `provider`, `system_prompt`, `tools`, `skills`,
+`plugins`, `thinking`, `event_handler`, `config`, ...) are accepted by `process`,
+`do`, `agent`, and `session`.
+
+One-shot, single response:
+
+```python
+import asyncio
+
+import yoker
+
+
+async def main():
+    answer = await yoker.process("What is 2+2?")
+    print(answer)
+
+
+asyncio.run(main())
+```
+
+Synchronous caller (scripts, notebooks):
+
+```python
+import yoker
+
+answer = yoker.run_sync(yoker.process("What files are in the current directory?"))
+print(answer)
+```
+
+A reusable, configured agent:
+
+```python
+import asyncio
+
+import yoker
+from yoker.events import ToolCallEvent
+
+
+async def main():
+    reviewer = yoker.agent(
+        model="qwen3.5:cloud",
+        system_prompt="You are a security-focused code reviewer. Cite file:line.",
+        tools=["read", "search", "list"],
+        thinking="visible",
+    )
+
+    def log_tools(event):
+        if isinstance(event, ToolCallEvent):
+            print(f"[tool] {event.tool_name}({event.arguments})")
+
+    reviewer.on_event(log_tools)
+
+    report = await reviewer.process("Review src/yoker/plugins/security.py for vulnerabilities.")
+    print(report)
+
+
+asyncio.run(main())
+```
+
+Multi-turn conversation with automatic context persistence — re-opening the same
+id restores history:
+
+```python
+import asyncio
+
+import yoker
+
+
+async def main():
+    async with yoker.session(id="refactor-auth") as session:
+        await session.agent.process("Read src/auth.py and identify the main responsibilities.")
+        await session.agent.process("Suggest a refactor that splits authentication from session management.")
+
+
+asyncio.run(main())
+```
+
+Invoke a skill by name as a one-shot command:
+
+```python
+import asyncio
+
+import yoker
+
+
+async def main():
+    result = await yoker.do("commit", "stage and commit current changes")
+    print(result)
+
+
+asyncio.run(main())
+```
+
+For the full set of examples, see `examples/python_api/` (`one_shot.py`,
+`agent_builder.py`, `session.py`, `run_skill.py`, `workflow.py`,
+`event_handling.py`, `sync_usage.py`).
+
+#### Low-level event-driven API (advanced)
+
+For full control — custom rendering, non-terminal surfaces, or when you need to
+drive the UI lifecycle yourself — use the `Agent` class directly with a
+`UIHandler` and `UIBridge`. The example below uses the built-in
 `BatchUIHandler` and `UIBridge` to render agent events without the CLI.
 
 ```python
@@ -69,7 +187,7 @@ async def main():
     # Create a UI handler and bridge agent events to it.
     ui = BatchUIHandler(show_thinking=True, show_tool_calls=True)
     bridge = UIBridge(ui)
-    agent.add_event_handler(bridge)
+    agent.on_event(bridge)
 
     # Start the UI, process a message, then shut down.
     await ui.start(agent)
@@ -113,7 +231,7 @@ class DatabaseHandler:
 
 async def main():
     agent = Agent()  # model resolved from config or agent definition
-    agent.add_event_handler(DatabaseHandler(db))
+    agent.on_event(DatabaseHandler(db))
     await agent.process("Hello")  # Handler runs in the same event loop
 ```
 
@@ -239,34 +357,52 @@ persist_after_turn = true
 When `persist_after_turn` is true, the session is saved after each turn. To resume a
 specific session, set `session_id` to the previously generated id.
 
-**Programmatic usage:**
+**Programmatic usage (recommended):** the `yoker.session` facade handles
+persistence for you — pass an `id` and leave `persist=True` (the default).
+Re-opening the same id restores the previous conversation history automatically.
 
 ```python
 import asyncio
-from pathlib import Path
+
+import yoker
+
+
+async def main():
+    # First run: start a conversation under a named id.
+    async with yoker.session(id="my-session") as session:
+        await session.agent.process("What is 2+2?")
+
+    # Later run: re-open the same id to resume history.
+    async with yoker.session(id="my-session") as session:
+        await session.agent.process("Now what is 4+4?")
+
+
+asyncio.run(main())
+```
+
+**Lower-level manual construction:** the `Persisted` context-manager wrapper
+(`yoker.context.Persisted`) wraps a base in-memory manager and persists turns to
+JSONL. The storage path comes from the `Config` (the `context.storage_path`
+field), not a constructor argument.
+
+```python
+import asyncio
 
 from yoker import Agent
 from yoker.config import get_yoker_config
-from yoker.context import PersistenceContextManager
+from yoker.context import Persisted, SimpleContextManager
 
 
 async def main():
     config = get_yoker_config(cli=False)
+    # storage_path is read from config.context.storage_path
+    context = Persisted(SimpleContextManager(), session_id="my-session")
 
-    # Create context manager for persistence
-    context = PersistenceContextManager(
-        storage_path=Path(".yoker/sessions"),
-        session_id="my-session",
-    )
-
-    # Create agent with context
     agent = Agent(config=config, context_manager=context)
-
-    # Use the agent (all methods are async)
     await agent.process("What is 2+2?")
 
-    # Later, create another PersistenceContextManager with the same
-    # session_id to load the previous conversation automatically.
+    # Later, construct another Persisted with the same session_id to
+    # load the previous conversation automatically.
 
 
 asyncio.run(main())
@@ -309,7 +445,6 @@ The researcher agent found 15 TODO items across the codebase...
 
 Key features:
 - **Isolated context**: Subagents start with fresh context
-- **Recursion limits**: Maximum depth of 3 by default
 - **Timeout**: 5-minute default execution limit
 - **Tool filtering**: Subagents use only their defined tools
 

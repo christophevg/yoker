@@ -54,7 +54,6 @@ persist_after_turn = true
 filesystem_paths = ["."]
 network_access = "none"
 max_file_size_kb = 500
-max_recursion_depth = 3
 
 [tools.list]
 enabled = true
@@ -95,7 +94,6 @@ timeout_ms = 10000
 
 [tools.agent]
 enabled = true
-max_recursion_depth = 3
 timeout_seconds = 300
 
 [tools.git]

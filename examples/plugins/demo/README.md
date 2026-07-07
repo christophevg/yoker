@@ -81,27 +81,41 @@ uv run yoker --with yoker_plugin_demo --agent demo
 
 ### Programmatic Loading
 
+Plugin components are discovered via the `load_plugins(config, extra_plugins=())`
+generator (in `yoker.plugins`) and registered through the `register_plugin_*`
+methods on each registry. `load_plugins` applies the global-enabled gate and
+per-plugin security checks, then yields `PluginComponents` (tools, skills,
+agents, source) for the registries to consume.
+
 ```python
-from yoker.plugins import load_plugin, load_skills_from_package, load_agents_from_package
-from yoker.plugins import register_tools, register_skills
+from yoker.config import Config
+from yoker.plugins import load_plugins
 from yoker.tools import ToolRegistry
 from yoker.skills import SkillRegistry
 
-# Load the plugin
-plugin = load_plugin("yoker_plugin_demo")
+config = Config()
+config.plugins.enabled = True
 
-# Register tools
+# Load the plugin (plus the always-loaded yoker builtin) and register
+# tools and skills. load_plugins yields PluginComponents — registries
+# apply namespacing via the register_plugin_* methods.
+plugins = list(load_plugins(config, extra_plugins=("yoker_plugin_demo",)))
+
 tool_registry = ToolRegistry()
-register_tools(plugin.tools, tool_registry, namespace="demo")
+tool_registry.register_plugin_tools(plugins, config)
 
-# Load and register skills
-skills = load_skills_from_package("yoker_plugin_demo", skills_dir="skills")
 skill_registry = SkillRegistry()
-register_skills(skills, skill_registry, namespace="demo")
+skill_registry.register_plugin_skills(plugins)
 
-# Load agents
-agents = load_agents_from_package("yoker_plugin_demo", agents_dir="agents")
+# Plugin agents are registered on the AgentRegistry via
+# register_configured_plugin_agents (used by Session); the PluginComponents
+# yielded above carry the loaded agent definitions in `.agents`.
 ```
+
+For direct single-package discovery, use `load_plugin(package_name)` to get a
+`PluginComponents` without the enabled/security gating, then register it
+manually with the registry `register_plugin_*` methods (or `register_all` with
+an explicit namespace).
 
 ## Testing
 
