@@ -26,7 +26,7 @@ from yoker.core.thinking import ThinkingMode
 from yoker.events import EventCallback
 from yoker.exceptions import SkillError
 from yoker.logging import configure_logging
-from yoker.plugins import load_configured_plugins
+from yoker.plugins import load_plugins
 from yoker.skills import SkillRegistry, load_skills
 from yoker.tools import ToolRegistry
 from yoker.tools.guardrails import Guardrail
@@ -92,7 +92,9 @@ class Agent:
 
     # load tools and skills from plugins. Plugin agent definitions are
     # skipped here (no session registry); the Session layer registers them.
-    load_configured_plugins(self, self.config, self._cli_plugins)
+    loaded_plugins = list(load_plugins(self.config, self._cli_plugins))
+    self.tools.register_plugin_tools(loaded_plugins, self.config)
+    self.skills.register_plugin_skills(loaded_plugins)
 
     # load own definition
     self.definition: AgentDefinition = self._resolve_agent_definition(agent_definition, agent_path)
@@ -135,7 +137,8 @@ class Agent:
 
     # set up the context manager (config-driven via factory when not provided)
     self.context: ContextManager = (
-      context_manager if context_manager is not None
+      context_manager
+      if context_manager is not None
       else create_context_manager(self.config, self.definition.name)
     )
 

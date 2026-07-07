@@ -7,33 +7,24 @@ Key Components:
   - PluginManifest: Dataclass for declaring plugin components
   - PluginComponents: Container for loaded plugin components
   - load_plugin(): Load plugin from Python package
-  - load_configured_plugins(): Load plugins configured in config + CLI --with
-  - register_tools(): Register tools with namespace prefix
-  - register_skills(): Register skills with namespace prefix
-  - register_agents(): Register agents with namespace prefix
+  - load_plugins(): Single entry point — yields clean PluginComponents
+    after global-enabled and per-plugin security gating. Registries
+    consume the output via their ``register_plugin_*`` methods.
 
-Example:
-  # Load a plugin
-  from yoker.plugins import load_plugin
-
-  plugin = load_plugin("pkgq")
-  if plugin:
-      register_tools(plugin.tools, tool_registry, namespace=plugin.source)
-      register_skills(plugin.skills, skill_registry, namespace=plugin.source)
+Registries own registration:
+  - ToolRegistry.register_plugin_tools(plugins, config)
+  - SkillRegistry.register_plugin_skills(plugins)
+  - AgentRegistry.register_plugin_agents(config, extra_plugins)
 """
 
 from yoker.plugins.loader import (
   PluginComponents,
   load_agents_from_package,
-  load_configured_plugins,
   load_plugin,
+  load_plugins,
   load_skills_from_package,
 )
 from yoker.plugins.manifest import PluginManifest
-from yoker.plugins.registration import (
-  register_skills,
-  register_tools,
-)
 from yoker.plugins.security import (
   check_plugin_allowed,
   check_plugins_enabled,
@@ -48,14 +39,9 @@ __all__ = [
   # Loader
   "PluginComponents",
   "load_plugin",
-  "load_configured_plugins",
-  "register_configured_plugin_agents",
+  "load_plugins",
   "load_skills_from_package",
   "load_agents_from_package",
-  # Registration
-  "register_tools",
-  "register_skills",
-  "register_agents",
   # Security
   "is_trusted",
   "confirm_plugin",
