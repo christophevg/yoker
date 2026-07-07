@@ -25,6 +25,7 @@ from yoker.core._processing import process_message
 from yoker.core._setup import create_web_guardrails
 from yoker.core.thinking import ThinkingMode
 from yoker.events import EventCallback
+from yoker.exceptions import SkillError
 from yoker.logging import configure_logging
 from yoker.plugins import load_configured_plugins
 from yoker.skills import SkillRegistry, load_skills
@@ -223,8 +224,6 @@ class Agent:
     first one (alphabetically) is used. Raises :class:`SkillError` if no
     match is found.
     """
-    from yoker.exceptions import SkillError
-
     if skill_name in self.skills.data:
       return skill_name
     # Bare-name match across namespaces.
@@ -238,6 +237,33 @@ class Agent:
       skill_name,
       f"Unknown skill. Available skills: {available}" if available else "Unknown skill",
     )
+
+  @staticmethod
+  def filter_skills(registry: SkillRegistry, requested: list[str]) -> None:
+    """Keep only ``requested`` skills in ``registry``; raise on unknown names.
+
+    Mutates ``registry`` in place. Bare names try the ``yoker:`` namespace as
+    a fallback; namespaced names must match exactly.
+    """
+    available = {name.lower(): name for name in registry.data.keys()}
+    keep: set[str] = set()
+    for name in requested:
+      normalized = name.lower()
+      actual = (
+        available.get(normalized)
+        if ":" in normalized
+        else available.get(normalized) or available.get(f"yoker:{normalized}")
+      )
+      if actual is None:
+        raise SkillError(
+          name,
+          f"Unknown skill. Available skills: {', '.join(sorted(registry.names))}"
+          if registry.names
+          else "Unknown skill (no skills loaded).",
+        )
+      keep.add(actual)
+    for key in [k for k in list(registry.data.keys()) if k not in keep]:
+      del registry.data[key]
 
   @property
   def guardrail(self) -> PathGuardrail:
@@ -315,7 +341,6 @@ class Agent:
 
   def inject_skill_context(self, skill_name: str, args: str | None = None) -> None:
     """Inject skill context into the conversation."""
-    from yoker.exceptions import SkillError
     from yoker.skills import format_invocation_block
 
     skill = self.skills.get(skill_name)
