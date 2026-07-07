@@ -22,26 +22,22 @@ import os
 from pathlib import Path
 from typing import Any
 
-from yoker.config import Config
+from yoker.config import KNOWN_PROVIDERS, Config
 
 
 def _set_dotted(config: Any, dotted: str, value: Any) -> Any:
-  """Return a copy of ``config`` with ``dotted`` path set to ``value``.
+  """Set ``dotted`` path on ``config`` to ``value`` in place.
 
-  Works on frozen dataclasses via :func:`dataclasses.replace`, rebuilding each
-  ancestor along the path. ``dotted`` uses dots as section separators, e.g.
+  Walks the dataclass tree via attribute access and sets the leaf via
+  ``setattr``. ``dotted`` uses dots as section separators, e.g.
   ``"backend.ollama.model"``.
   """
   parts = dotted.split(".")
-
-  def _rebuild(obj: Any, idx: int) -> Any:
-    if idx == len(parts) - 1:
-      return dataclasses.replace(obj, **{parts[idx]: value})
-    child = getattr(obj, parts[idx])
-    new_child = _rebuild(child, idx + 1)
-    return dataclasses.replace(obj, **{parts[idx]: new_child})
-
-  return _rebuild(config, 0)
+  obj = config
+  for part in parts[:-1]:
+    obj = getattr(obj, part)
+  setattr(obj, parts[-1], value)
+  return config
 
 
 def _apply_backend_provider_overrides(
@@ -70,33 +66,22 @@ def _apply_backend_provider_overrides(
 
   provider_config_key = f"backend.{provider}"
 
-  # Check if this is a known provider that needs config initialization
-  from yoker.config import KNOWN_PROVIDERS
-
+  # Unknown providers (handled by litellm) need no config initialization.
   if provider not in KNOWN_PROVIDERS:
-    # Unknown provider - no special handling needed
     return config, applied_keys
 
   # Track that we're applying the provider config key
   if provider_config_key in overrides:
     applied_keys.add(provider_config_key)
 
-  # Collect all backend overrides to apply together
-  backend_overrides = {}
-
-  # Always include the provider
-  backend_overrides["provider"] = provider
-
-  # Include the provider config if present in overrides
+  # Apply provider + provider config together, then validate the cross-field
+  # invariant (known provider ⇒ corresponding config set).
+  config.backend.provider = provider
   if provider_config_key in overrides:
-    backend_overrides[provider] = overrides[provider_config_key]
+    setattr(config.backend, provider, overrides[provider_config_key])
+  config.backend.validate()
 
-  # Apply all backend overrides in a single replace operation
-  # This ensures __post_init__ sees both provider and config together
-  new_backend = dataclasses.replace(config.backend, **backend_overrides)
-  result = dataclasses.replace(config, backend=new_backend)
-
-  return result, applied_keys
+  return config, applied_keys
 
 
 def _format_scalar(value: Any) -> str | None:

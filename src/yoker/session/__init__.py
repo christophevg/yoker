@@ -11,7 +11,6 @@ A :class:`Session` is the container+coordinator for a team of agents. It owns:
 from __future__ import annotations
 
 import asyncio
-import dataclasses
 import os
 import uuid
 from pathlib import Path
@@ -67,9 +66,8 @@ class Session:
   ) -> None:
     self.id: str = session_id if session_id is not None else uuid.uuid4().hex
     # stamp the session id onto the context config — single source of truth
-    self.config: Config = dataclasses.replace(
-      config, context=dataclasses.replace(config.context, session_id=self.id)
-    )
+    config.context.session_id = self.id
+    self.config: Config = config
 
     # name → Agent instance. Populated by spawn().
     self._agents_map: dict[str, Agent] = {}
@@ -513,23 +511,15 @@ class Session:
 
     When the definition has no ``model`` override the parent config is
     returned unchanged (so the backend is shared). When a model override
-    exists, a derived config is produced via ``dataclasses.replace`` on the
-    active provider's sub-config.
+    exists, the active provider's sub-config is mutated in place and the
+    backend's cross-field invariant is re-validated.
     """
     model = agent_definition.model
     if model is None:
       return parent_config
-    sub_config = parent_config.backend.config
-    new_sub = dataclasses.replace(sub_config, model=model)
-    provider = parent_config.backend.provider
-    # ``BackendConfig`` is a frozen dataclass; ``dataclasses.replace`` builds
-    # a new instance with the overridden provider sub-config. We pass the
-    # provider field via a single-key dict so the call stays provider-agnostic
-    # The ``# type: ignore`` is needed because
-    # mypy can't narrow the union of provider sub-config types to the named
-    # field from a dynamic key.
-    new_backend = dataclasses.replace(parent_config.backend, **{provider: new_sub})  # type: ignore[arg-type]
-    return dataclasses.replace(parent_config, backend=new_backend)
+    parent_config.backend.config.model = model
+    parent_config.backend.validate()
+    return parent_config
 
 
 __all__ = ["Session"]

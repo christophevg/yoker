@@ -37,7 +37,7 @@ ProviderConfig = Union[
 ]
 
 
-@dataclass(frozen=True)
+@dataclass
 class OllamaParameters:
   """Ollama model parameters.
 
@@ -89,7 +89,7 @@ class OllamaParameters:
       )
 
 
-@dataclass(frozen=True)
+@dataclass
 class OllamaConfig:
   """Ollama backend configuration.
 
@@ -125,7 +125,7 @@ class OllamaConfig:
     validate_positive_int(self.timeout_seconds, "backend.ollama.timeout_seconds")
 
 
-@dataclass(frozen=True)
+@dataclass
 class OpenAIParameters:
   """OpenAI model parameters.
 
@@ -191,7 +191,7 @@ class OpenAIParameters:
       )
 
 
-@dataclass(frozen=True)
+@dataclass
 class OpenAIConfig:
   """OpenAI backend configuration.
 
@@ -219,7 +219,7 @@ class OpenAIConfig:
       validate_url(self.base_url, "backend.openai.base_url")
 
 
-@dataclass(frozen=True)
+@dataclass
 class AnthropicParameters:
   """Anthropic model parameters.
 
@@ -263,7 +263,7 @@ class AnthropicParameters:
       validate_positive_int(self.budget_tokens, "backend.anthropic.parameters.budget_tokens")
 
 
-@dataclass(frozen=True)
+@dataclass
 class AnthropicConfig:
   """Anthropic backend configuration.
 
@@ -291,7 +291,7 @@ class AnthropicConfig:
       validate_url(self.base_url, "backend.anthropic.base_url")
 
 
-@dataclass(frozen=True)
+@dataclass
 class GeminiParameters:
   """Gemini model parameters.
 
@@ -334,7 +334,7 @@ class GeminiParameters:
       validate_positive_int(self.max_tokens, "backend.gemini.parameters.max_tokens")
 
 
-@dataclass(frozen=True)
+@dataclass
 class GeminiConfig:
   """Gemini backend configuration.
 
@@ -362,7 +362,7 @@ class GeminiConfig:
       validate_url(self.base_url, "backend.gemini.base_url")
 
 
-@dataclass(frozen=True)
+@dataclass
 class GenericParameters:
   """Generic provider parameters for unknown providers.
 
@@ -393,7 +393,7 @@ class GenericParameters:
       validate_positive_int(self.max_tokens, "backend.generic.parameters.max_tokens")
 
 
-@dataclass(frozen=True)
+@dataclass
 class GenericConfig:
   """Generic provider configuration for unknown providers.
 

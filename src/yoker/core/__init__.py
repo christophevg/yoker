@@ -85,8 +85,7 @@ class Agent:
     self.tools: ToolRegistry = ToolRegistry()
     self.skills: SkillRegistry = SkillRegistry()
 
-    # additional plugin packages requested on the CLI (--with). Config is
-    # frozen, so these are threaded through to the plugin loader directly.
+    # CLI-supplied plugin packages (--with), kept separate from config.plugins.packages.
     self._cli_plugins: tuple[str, ...] = plugins
 
     # skills are loaded from directories specified in config (per-agent).
