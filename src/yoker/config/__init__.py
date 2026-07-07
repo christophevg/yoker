@@ -197,6 +197,8 @@ class ContextConfig:
   storage_path: str = "./context"
   session_id: str = "auto"
   persist_after_turn: bool = True
+  filename: str = "{session_id}-{agent_id}"
+  fresh: bool = False
 
   def __post_init__(self) -> None:
     """Validate context configuration."""

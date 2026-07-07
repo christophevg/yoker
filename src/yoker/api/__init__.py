@@ -35,7 +35,7 @@ from yoker.config import (
   GeminiConfig,
   OpenAIConfig,
 )
-from yoker.context import ContextManager, Persisted, SimpleContextManager
+from yoker.context import ContextManager
 from yoker.core import Agent
 from yoker.core.thinking import ThinkingMode
 from yoker.events import EventCallback
@@ -354,11 +354,16 @@ async def session(
   )
   assert base is not None  # require_config=True guarantees a non-None base
 
-  # stamp the session id onto the context config
-  if id is not None:
-    base = dataclasses.replace(
-      base, context=dataclasses.replace(base.context, session_id=id, persist_after_turn=True),
-    )
+  # fold id/persist/fresh into context config — Session owns the lifecycle
+  base = dataclasses.replace(
+    base,
+    context=dataclasses.replace(
+      base.context,
+      session_id=id if id is not None else base.context.session_id,
+      persist_after_turn=persist,
+      fresh=fresh,
+    ),
+  )
 
   # Session.__init__ owns plugin loading, backend, and primary-agent creation
   core = Session(
@@ -367,26 +372,13 @@ async def session(
     extra_plugins=tuple(plugins) if plugins is not None else (),
   )
 
-  # wire the persisted context manager onto the primary agent
-  context_manager: ContextManager | None = None
-  if persist:
-    context_manager = Persisted(SimpleContextManager(), session_id=core.id)
-    if fresh:
-      context_manager.delete()
-    context_manager.agent = core.agent
-    core.agent.context = context_manager
-
   if skills is not None:
     Agent.filter_skills(core.agent.skills, skills)
   if event_handler is not None:
     core.on_event(event_handler)
 
-  try:
-    async with core:
-      yield core
-  finally:
-    if context_manager is not None:
-      context_manager.close()
+  async with core:
+    yield core
 
 
 __all__ = [
