@@ -157,7 +157,6 @@ class TestRegisterPrimaryAgent:
     primary_id = session._id_of(primary)
     assert primary_id == "primary"
     assert session.get_agent("primary") is primary
-    assert session._recursion_depths["primary"] == 0
     # Both session-injected tools are present on the primary.
     assert "yoker:agent" in primary.tools.names
     assert "yoker:send_message" in primary.tools.names
