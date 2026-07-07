@@ -306,7 +306,17 @@ async def session(
   *,
   persist: bool = True,
   fresh: bool = False,
-  **common_kwargs: Any,
+  model: str | None = None,
+  provider: str | None = None,
+  system_prompt: str | None = None,
+  tools: list[str] | None = None,
+  skills: list[str] | None = None,
+  plugins: list[str] | None = None,
+  agent_path: str | Path | None = None,
+  agent_definition: AgentDefinition | None = None,
+  thinking: ThinkingLiteral = "on",
+  event_handler: EventCallback | None = None,
+  config: Config | None = None,
 ) -> AsyncIterator[Session]:
   """Open a multi-turn session with automatic context persistence.
 
@@ -326,28 +336,30 @@ async def session(
       sessions with the same id. Set to False for an in-memory session.
     fresh: When True, ignore any persisted state for the given id and
       start with an empty context.
-    **common_kwargs: Same builder kwargs as :func:`yoker.agent`
-      (``model``, ``provider``, ``system_prompt``, ``tools``, ``skills``,
-      ``plugins``, ``agent_path``, ``agent_definition``, ``thinking``,
-      ``event_handler``, ``config``).
+    model: Optional model override applied to the active provider config.
+    provider: Optional backend provider (``"ollama"``, ``"openai"``, ...).
+    system_prompt: Optional override for the agent's system prompt.
+    tools: Optional whitelist of tool names. ``None`` keeps all configured
+      tools; ``[]`` disables all; ``["read"]`` keeps only ``read``.
+    skills: Optional whitelist of skill names. ``None`` keeps all loaded
+      skills; ``[]`` disables all; ``["commit"]`` keeps only ``commit``.
+    plugins: Optional plugin packages to load (e.g. ``["pkgq"]``).
+    agent_path: Optional path to an agent definition Markdown file.
+    agent_definition: Optional explicit :class:`AgentDefinition`. Takes
+      precedence over ``agent_path``.
+    thinking: Thinking mode for the model.
+    event_handler: Optional callback (sync or async) receiving every event
+      emitted by the agent.
+    config: Optional explicit :class:`Config`. When omitted and no model /
+      provider / plugins overrides are given, the Agent constructor
+      discovers the config from the filesystem via :func:`get_yoker_config`.
+      When provided (or when overrides need applying), a programmatic
+      :class:`Config` is used as the base.
 
   Yields:
     The real :class:`yoker.session.Session` with a registered primary
     agent.
   """
-  # extract kwargs consumed here (not forwarded to Session.__init__)
-  config: Config | None = common_kwargs.pop("config", None)
-  agent_path: str | Path | None = common_kwargs.pop("agent_path", None)
-  agent_definition: AgentDefinition | None = common_kwargs.pop("agent_definition", None)
-  event_handler: EventCallback | None = common_kwargs.pop("event_handler", None)
-  plugins: list[str] | None = common_kwargs.pop("plugins", None)
-  model: str | None = common_kwargs.pop("model", None)
-  provider: str | None = common_kwargs.pop("provider", None)
-  thinking: str = common_kwargs.pop("thinking", "on")
-  system_prompt: str | None = common_kwargs.pop("system_prompt", None)
-  tools: list[str] | None = common_kwargs.pop("tools", None)
-  skills: list[str] | None = common_kwargs.pop("skills", None)
-
   base, resolved_definition, forwarded_path, thinking_mode = _build_config_and_definition(
     config=config,
     model=model,
