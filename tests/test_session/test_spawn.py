@@ -35,7 +35,8 @@ class TestSpawnAllowlist:
     )
     async with Session(config=config) as session:
       session.agents.register(agent_def)
-      with patch("yoker.core.Agent") as mock_agent_cls:
+      # Patch yoker.session.Agent — the reference Session._create_agent calls.
+      with patch("yoker.session.Agent") as mock_agent_cls:
         mock_child = MagicMock()
         mock_child.process = AsyncMock(return_value="ok")
         mock_child.tools = MagicMock()
@@ -87,7 +88,7 @@ class TestSpawnAllowlist:
     async with Session(config=config) as session:
       session.agents.register(agent_def)
       requester = _make_requester(allowlist=("researcher",), session=session)
-      with patch("yoker.core.Agent") as mock_agent_cls:
+      with patch("yoker.session.Agent") as mock_agent_cls:
         mock_child = MagicMock()
         mock_child.process = AsyncMock(return_value="ok")
         mock_child.tools = MagicMock()
@@ -203,7 +204,12 @@ class TestSessionBackendFactory:
     """get_backend is idempotent for the same config (shared backend)."""
     config = Config()
     session = Session(config=config)
-    with patch("yoker.session.session.create_backend") as mock_create:
+    # Session.__init__ already cached a backend for the primary agent; clear
+    # the cache to test get_backend in isolation against the patched factory.
+    session._backends.clear()
+    # yoker/session/session.py was collapsed into yoker/session/__init__.py,
+    # so create_backend now lives on yoker.session directly.
+    with patch("yoker.session.create_backend") as mock_create:
       mock_backend = MagicMock()
       mock_create.return_value = mock_backend
       b1 = session.get_backend(config)
@@ -219,7 +225,10 @@ class TestSessionBackendFactory:
     config_a = Config(backend=BackendConfig(ollama=OllamaConfig(model="a")))
     config_b = Config(backend=BackendConfig(ollama=OllamaConfig(model="b")))
     session = Session(config=config_a)
-    with patch("yoker.session.session.create_backend") as mock_create:
+    # Clear the cache populated by Session.__init__ so get_backend calls the
+    # patched create_backend.
+    session._backends.clear()
+    with patch("yoker.session.create_backend") as mock_create:
       b_a = MagicMock()
       b_b = MagicMock()
       mock_create.side_effect = [b_a, b_b]

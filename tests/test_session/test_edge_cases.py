@@ -127,15 +127,18 @@ class TestDeriveConfigModelOverride:
     )
     async with Session(config=config) as session:
       session.agents.register(agent_def)
-      # Patch Agent so spawn doesn't construct a real one.
-      with patch("yoker.core.Agent") as mock_agent_cls:
+      # Patch yoker.session.Agent — the reference Session._create_agent calls
+      # (yoker.session binds Agent at module import time from yoker.core).
+      with patch("yoker.session.Agent") as mock_agent_cls:
         mock_child = MagicMock()
         mock_child.process = AsyncMock(return_value="ok")
         mock_child.tools = MagicMock()
         mock_agent_cls.return_value = mock_child
         # Patch create_backend to verify a fresh backend is created for the
         # new provider signature (model override → different cache key).
-        with patch("yoker.session.session.create_backend") as mock_create:
+        # yoker/session/session.py was collapsed into yoker/session/__init__.py,
+        # so create_backend now lives on yoker.session directly.
+        with patch("yoker.session.create_backend") as mock_create:
           mock_backend = MagicMock()
           mock_create.return_value = mock_backend
           await session._spawn_internal("researcher")

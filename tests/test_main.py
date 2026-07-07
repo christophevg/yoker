@@ -281,7 +281,13 @@ class TestMainIntegration:
     test_args = ["yoker", "--ui-mode", "batch"]
 
     with patch.object(sys, "argv", test_args):
-      with patch("yoker.core.Agent") as mock_agent_cls:
+      # main() constructs the primary Agent through Session._create_agent,
+      # which uses the yoker.session.Agent reference (bound at module import
+      # time from yoker.core.Agent). Patching yoker.core.Agent rebinds the
+      # attribute on yoker.core but yoker.session keeps its own already-bound
+      # reference, so the mock would be bypassed. Patch yoker.session.Agent
+      # instead — that is the reference the code under test actually calls.
+      with patch("yoker.session.Agent") as mock_agent_cls:
         mock_agent_instance = mock_agent_cls.return_value
         mock_agent_instance.config = Config(
           ui=UIConfig(mode="batch", show_thinking=False, show_tool_calls=False, show_stats=False),
@@ -293,7 +299,9 @@ class TestMainIntegration:
 
           mock_agent_cls.assert_called_once()
           call_kwargs = mock_agent_cls.call_args.kwargs
-          assert call_kwargs["plugins"] is None
+          # Session.__init__ passes plugins=extra_plugins (empty tuple) when
+          # no explicit plugins were provided, not None.
+          assert call_kwargs["plugins"] == ()
           assert call_kwargs["console_logging"] is False
           assert "config" in call_kwargs
           assert "backend" in call_kwargs
