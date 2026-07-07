@@ -57,6 +57,11 @@ class Session:
     *,
     session_id: str | None = None,
     extra_plugins: tuple[str, ...] = (),
+    agent_definition: AgentDefinition | None = None,
+    agent_path: str | Path | None = None,
+    plugins: tuple[str, ...] | None = None,
+    thinking_mode: ThinkingMode | None = None,
+    console_logging: bool | None = None,
   ) -> None:
     self.config: Config = config
     self.id: str = session_id if session_id is not None else uuid.uuid4().hex
@@ -80,11 +85,46 @@ class Session:
     # Load agent definitions from configured directories and plugins
     self.agents.load(config, extra_plugins)
 
-    # construct the (primary) agent
-    self.agent : Agent = self.create_primary_agent(
+    # Resolve the primary agent definition via a best-effort cascade:
+    # explicit agent_definition → agent_path → name in registry (none here)
+    # → config reference (config.agent or config.agents.definition; a file
+    # path is loaded, a bare name is resolved against the registry). May
+    # resolve to None, in which case the Agent falls back to its default
+    # definition.
+    from yoker.agents import load_agent_definition
+
+    resolved_definition: AgentDefinition | None = agent_definition
+    if resolved_definition is None and agent_path is not None:
+      resolved_definition = load_agent_definition(agent_path)
+    if resolved_definition is None and agent_path is None:
+      reference = config.agent or config.agents.definition or None
+      if reference:
+        file_path = Path(reference).expanduser()
+        if file_path.exists() and file_path.is_file():
+          resolved_definition = load_agent_definition(reference)
+        else:
+          try:
+            resolved_definition = self.agents.resolve(reference)
+          except ValueError:
+            logger.warning("primary agent definition not found", reference=reference)
+
+    # Effective plugins: explicit plugins override extra_plugins when given.
+    effective_plugins: tuple[str, ...] = plugins if plugins is not None else extra_plugins
+    effective_console = (
+      console_logging
+      if console_logging is not None
+      else os.environ.get("YOKER_CONSOLE_LOGGING", "NO") != "NO"
+    )
+
+    # construct the (primary) agent via the unified _create_agent flow.
+    self.agent, _ = self._create_agent(
+      requester=None,
       config=config,
-      plugins=extra_plugins if extra_plugins else None,
-      console_logging=os.environ.get("YOKER_CONSOLE_LOGGING", "NO") != "NO",
+      agent_definition=resolved_definition,
+      agent_path=agent_path,
+      plugins=effective_plugins,
+      thinking_mode=thinking_mode,
+      console_logging=effective_console,
     )
 
   async def __aenter__(self) -> Session:
@@ -228,11 +268,10 @@ class Session:
     """Spawn a child agent and return ``(agent, agent_id)`` (internal).
 
     Enforces the requester's :attr:`AgentDefinition.agents` allowlist,
-    resolves the definition from ``session.agents``, checks recursion
-    depth and ``max_agents`` limits, creates a child :class:`Agent` with
-    a session-injected backend, injects the Session-injected tools
-    (``agent`` and ``send_message``) on the child, registers it in the
-    active map, and emits ``AGENT_SPAWNED``. Used by the public
+    resolves the definition from ``session.agents`` (required — raises on
+    failure), checks recursion depth and ``max_agents`` limits, then
+    delegates to :meth:`_create_agent` for the unified construction flow.
+    Emits ``AGENT_SPAWNED`` after registration. Used by the public
     :meth:`spawn` and by the Session-injected ``agent`` tool.
     """
     # Allowlist enforcement — before any other check.
@@ -243,7 +282,7 @@ class Session:
       if name not in allowed:
         raise ValueError(f"Agent '{name}' is not in '{requester.definition.name}' allowlist.")
 
-    # Resolve agent definition from the session registry.
+    # Resolve agent definition from the session registry (required).
     try:
       agent_definition: AgentDefinition = self.agents.resolve(name)
     except ValueError:
@@ -270,34 +309,11 @@ class Session:
     if len(self._agents_map) >= self.config.session.max_agents:
       raise ValueError(f"Session max_agents limit ({self.config.session.max_agents}) reached.")
 
-    # Derive config with model override if the definition specifies one.
-    child_config = self._derive_config(self.config, agent_definition)
-
-    # Backend: shared when same provider config, fresh when overridden.
-    backend = self.get_backend(child_config)
-
-    # Unique session-assigned agent name.
-    agent_id = self._generate_agent_name(agent_definition.simple_name or name)
-
-    child = Agent(
-      config=child_config,
+    agent, agent_id = self._create_agent(
+      name=name,
+      requester=requester,
       agent_definition=agent_definition,
-      backend=backend,
-      console_logging=False,
     )
-
-    # Register in the active map and track depth.
-    self._agents_map[agent_id] = child
-    self._recursion_depths[agent_id] = child_depth
-
-    # Inject Session tools ``agent`` and ``send_message`` are
-    # registered on the child by the Session (closure capture).
-    self.inject_tools(child, agent_id)
-
-    # Event aggregation: register a forwarding handler on the child so its
-    # events reach session-level handlers wrapped in a SessionEvent envelope.
-    if self.config.session.event_aggregation:
-      child.on_event(self._make_forwarding_handler(agent_id))
 
     # Lifecycle signal: AGENT_SPAWNED is emitted after registration.
     self._emit(
@@ -305,10 +321,107 @@ class Session:
         type=EventType.AGENT_SPAWNED,
         session_id=self.id,
         agent_id=agent_id,
-        definition_name=agent_definition.simple_name or name,
+        definition_name=agent.definition.simple_name or name,
       )
     )
-    return child, agent_id
+    return agent, agent_id
+
+  def _create_agent(
+    self,
+    *,
+    name: str | None = None,
+    requester: Agent | None = None,
+    config: Config | None = None,
+    agent_definition: AgentDefinition | None = None,
+    agent_path: str | Path | None = None,
+    plugins: tuple[str, ...] = (),
+    thinking_mode: ThinkingMode | None = None,
+    console_logging: bool = True,
+  ) -> tuple[Agent, str]:
+    """Construct an :class:`Agent` and register it in this session.
+
+    Unified flow used by both the primary-agent construction in
+    :meth:`Session.__init__` and child spawning in :meth:`_spawn_internal`.
+    No ``AGENT_SPAWNED`` is emitted here — callers emit it when
+    appropriate.
+
+    When ``requester is not None`` the allowlist and recursion/capacity
+    checks are enforced; when ``requester is None`` (primary path) those
+    checks are skipped and depth defaults to 0. When
+    ``agent_definition is not None`` the config is derived via
+    :meth:`_derive_config` so definition-level model overrides apply on
+    both paths (fixes the latent primary-path model-override bug).
+
+    Args:
+      name: Definition name (used for allowlist + agent_id fallback).
+      requester: The requesting agent (for allowlist enforcement) or
+        ``None`` for the primary path.
+      config: Base config; defaults to ``self.config``.
+      agent_definition: Optional resolved :class:`AgentDefinition`.
+      agent_path: Optional path to a definition file (used only when
+        ``agent_definition is None``).
+      plugins: Optional plugin packages to load on the agent.
+      thinking_mode: Optional thinking mode override.
+      console_logging: Whether to enable console logging on the agent.
+
+    Returns:
+      ``(agent, agent_id)`` — the constructed :class:`Agent` and its
+      session-assigned runtime id.
+    """
+    # Allowlist check — only for spawned children.
+    if requester is not None and name is not None:
+      allowed = requester.definition.agents
+      if len(allowed) == 0:
+        raise ValueError(f"Agent '{requester.definition.name}' has no allowed spawns.")
+      if name not in allowed:
+        raise ValueError(f"Agent '{name}' is not in '{requester.definition.name}' allowlist.")
+
+    # Depth + capacity — only for spawned children. Primary path uses
+    # depth 0 and bypasses the caps (the primary is the first agent).
+    if requester is not None:
+      parent_depth = next(
+        (d for n, d in self._recursion_depths.items() if self._agents_map.get(n) is requester),
+        0,
+      )
+      depth = parent_depth + 1
+      if depth > self.config.tools.agent.max_recursion_depth:
+        raise ValueError(
+          f"Maximum recursion depth ({self.config.tools.agent.max_recursion_depth}) exceeded. Cannot spawn sub-agent."
+        )
+      if len(self._agents_map) >= self.config.session.max_agents:
+        raise ValueError(f"Session max_agents limit ({self.config.session.max_agents}) reached.")
+    else:
+      depth = 0
+
+    # Config derivation — apply definition model override on both paths.
+    base_config = config if config is not None else self.config
+    if agent_definition is not None:
+      derived_config = self._derive_config(base_config, agent_definition)
+    else:
+      derived_config = base_config
+
+    backend = self.get_backend(derived_config)
+
+    # Agent construction.
+    kwargs: dict[str, Any] = {
+      "config": derived_config,
+      "plugins": plugins,
+      "agent_definition": agent_definition,
+      "agent_path": agent_path if agent_definition is None else None,
+      "backend": backend,
+      "console_logging": console_logging,
+    }
+    if thinking_mode is not None:
+      kwargs["thinking_mode"] = thinking_mode
+    agent = Agent(**kwargs)
+
+    agent_id = self._generate_agent_name(agent.definition.simple_name or name or "primary")
+    self._agents_map[agent_id] = agent
+    self._recursion_depths[agent_id] = depth
+    self.inject_tools(agent, agent_id)
+    if self.config.session.event_aggregation:
+      agent.on_event(self._make_forwarding_handler(agent_id))
+    return agent, agent_id
 
   def release(self, agent: Agent) -> None:
     """Release a spawned agent: emit AGENT_FINISHED and remove from the active map.
@@ -359,62 +472,6 @@ class Session:
       namespace="yoker",
       name="send_message",
     )
-
-  def create_primary_agent(
-    self,
-    name: str | None = None,
-    *,
-    config: Config | None = None,
-    agent_definition: AgentDefinition | None = None,
-    agent_path: str | Path | None = None,
-    plugins: tuple[str, ...] = (),
-    thinking_mode: ThinkingMode | None = None,
-    console_logging: bool = True,
-  ) -> Agent:
-    from yoker.agents import load_agent_definition
-
-    base_config = config if config is not None else self.config
-
-    resolved_definition: AgentDefinition | None = agent_definition
-    if resolved_definition is None and agent_path is not None:
-      resolved_definition = load_agent_definition(agent_path)
-    if resolved_definition is None and name is not None:
-      try:
-        resolved_definition = self.agents.resolve(name)
-      except ValueError:
-        pass
-    if resolved_definition is None and agent_path is None and name is None:
-      reference = base_config.agent or base_config.agents.definition or None
-      if reference:
-        file_path = Path(reference).expanduser()
-        if file_path.exists() and file_path.is_file():
-          resolved_definition = load_agent_definition(reference)
-        else:
-          try:
-            resolved_definition = self.agents.resolve(reference)
-          except ValueError:
-            logger.warning("primary agent definition not found", reference=reference)
-
-    kwargs: dict[str, Any] = {
-      "config": base_config,
-      "plugins": plugins,
-      "agent_definition": resolved_definition,
-      "agent_path": agent_path if resolved_definition is None else None,
-      "backend": self.get_backend(base_config),
-      "console_logging": console_logging,
-    }
-    if thinking_mode is not None:
-      kwargs["thinking_mode"] = thinking_mode
-    agent = Agent(**kwargs)
-    definition_name = agent.definition.simple_name or "primary"
-    agent_id = self._generate_agent_name(definition_name)
-    self._agents_map[agent_id] = agent
-    self._recursion_depths[agent_id] = 0
-    self.inject_tools(agent, agent_id)
-    # ensure that we, the session, receive all events
-    if self.config.session.event_aggregation:
-      agent.on_event(self._make_forwarding_handler(agent_id))
-    return agent
 
   def _make_forwarding_handler(self, agent_id: str) -> EventCallback:
     """Build a handler that wraps agent events in :class:`SessionEvent`."""
