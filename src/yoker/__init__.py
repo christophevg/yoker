@@ -9,10 +9,8 @@ from structlog import get_logger
 
 from yoker.agents import AgentDefinition, load_agent_definition
 from yoker.api import (
-  Session as ApiSession,
-)
-from yoker.api import (
   agent,
+  do,
   process,
   run_sync,
   session,
@@ -56,6 +54,7 @@ from yoker.exceptions import (
   YokerError,
 )
 from yoker.logging import LoggingContext, configure_logging, log_timing
+from yoker.session import Session
 
 __version__ = "0.6.0"
 __author__ = "Christophe VG"
@@ -66,12 +65,13 @@ __all__ = [
   "__author__",
   # Core classes
   "Agent",
+  "Session",
   # Pythonic utility API (MBI-003)
   "process",
+  "do",
   "run_sync",
   "agent",
   "session",
-  "ApiSession",
   # Built-in plugin
   "__YOKER_MANIFEST__",
   # Agents

@@ -7,7 +7,6 @@ import pytest
 from yoker.agents import AgentDefinition
 from yoker.config import Config
 from yoker.session import Session
-from yoker.session.spawn_result import SpawnResult
 
 
 def _config_with_max_recursion(max_depth: int) -> Config:
@@ -52,10 +51,9 @@ class TestSpawnAllowlist:
         mock_child.process = AsyncMock(return_value="ok")
         mock_child.tools = MagicMock()
         mock_agent_cls.return_value = mock_child
-        result = await session._spawn_and_run("researcher", "hi", requester=None)
-      assert isinstance(result, SpawnResult)
-      assert result.agent_id == "researcher"
-      assert result.response == "ok"
+        agent_id, response = await session._spawn_and_run("researcher", "hi", requester=None)
+      assert agent_id == "researcher"
+      assert response == "ok"
 
   @pytest.mark.asyncio
   async def test_empty_allowlist_rejects_spawn(self) -> None:
@@ -104,9 +102,8 @@ class TestSpawnAllowlist:
         mock_child.process = AsyncMock(return_value="ok")
         mock_child.tools = MagicMock()
         mock_agent_cls.return_value = mock_child
-        result = await session._spawn_and_run("researcher", "hi", requester=requester)
-      assert isinstance(result, SpawnResult)
-      assert result.response == "ok"
+        agent_id, response = await session._spawn_and_run("researcher", "hi", requester=requester)
+      assert response == "ok"
 
   @pytest.mark.asyncio
   async def test_allowlist_check_precedes_depth_check(self) -> None:
@@ -217,11 +214,10 @@ class TestSpawnAgentMap:
         mock_child.process = AsyncMock(return_value="ok")
         mock_child.tools = MagicMock()
         mock_agent_cls.return_value = mock_child
-        result = await session._spawn_and_run("researcher", "hi")
+        agent_id, response = await session._spawn_and_run("researcher", "hi")
       # agent removed from active list after completion.
       assert session.get_agent("researcher") is None
-      assert isinstance(result, SpawnResult)
-      assert result.agent_id == "researcher"
+      assert agent_id == "researcher"
 
   @pytest.mark.asyncio
   async def test_duplicate_spawns_get_disambiguated(self) -> None:
@@ -243,8 +239,8 @@ class TestSpawnAgentMap:
         second = await session._spawn_and_run("researcher", "second")
       # Both completed; counters reflect two spawns of "researcher".
       assert session._name_counters["researcher"] == 2
-      assert first.agent_id == "researcher"
-      assert second.agent_id == "researcher-2"
+      assert first[0] == "researcher"
+      assert second[0] == "researcher-2"
 
 
 class TestSessionBackendFactory:

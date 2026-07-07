@@ -116,12 +116,12 @@ async def run_session_demo() -> None:
     # Programmatic sub-agent spawn (Decision 8): session.spawn returns a
     # reusable Agent (no prompt, no response). The caller drives the agent
     # via agent.process(...). The agent stays in the active map until
-    # session._release(agent_id) is called (or the session exits).
+    # session.release(agent) is called (or the session exits).
     if "agents:researcher" in session.agents.names:
       print("Spawning 'researcher' sub-agent via session.spawn(...) ...")
       try:
         researcher = await session.spawn("researcher")
-        agent_id = researcher._agent_id  # type: ignore[attr-defined]
+        agent_id = session._agent_id_for(researcher)
         print(f"Spawned agent id: {agent_id}")
         response = await researcher.process("Summarize the README.md file in two sentences.")
         print(f"Response: {response}")
@@ -142,7 +142,7 @@ async def run_session_demo() -> None:
         except ValueError as e:
           print(f"Expected (agent finished): {e}")
         finally:
-          session._release(agent_id)
+          session.release(researcher)
       except NetworkError as e:
         print(f"Network error: {e}")
       except TimeoutError as e:

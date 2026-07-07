@@ -28,7 +28,6 @@ from typing import TYPE_CHECKING, Annotated, Any
 from structlog import get_logger
 
 from yoker.session.message import Message
-from yoker.session.spawn_result import SpawnResult
 from yoker.tools.annotations import Text
 from yoker.tools.schema import ToolResult
 
@@ -45,18 +44,6 @@ ABSOLUTE_MAX_TIMEOUT_SECONDS: int = 3600
 def _clamp(value: int, minimum: int, maximum: int) -> int:
   """Clamp a value to a range."""
   return max(minimum, min(value, maximum))
-
-
-def _render_spawn_result(result: SpawnResult) -> str:
-  """Render a SpawnResult into a model-readable string.
-
-  The contract is "the model can read the spawned
-  agent's id from the result". Both fields are rendered so the model can
-  extract the id and the response.
-  """
-  if result.agent_id:
-    return f"agent_id: {result.agent_id}\n\n{result.response}"
-  return result.response
 
 
 def make_spawn_agent_tool(session: "Session", requester: "Agent") -> Any:
@@ -111,14 +98,15 @@ def make_spawn_agent_tool(session: "Session", requester: "Agent") -> Any:
       return ToolResult(success=False, error="Invalid numeric parameter: timeout_seconds")
 
     try:
-      result: SpawnResult = await session._spawn_and_run(
+      agent_id, response = await session._spawn_and_run(
         agent_name,
         prompt,
         requester=requester,
         timeout_seconds=timeout_seconds,
       )
-      logger.info("spawn_agent response", agent_id=result.agent_id, response=result.response)
-      return ToolResult(success=True, result=_render_spawn_result(result))
+      logger.info("spawn_agent response", agent_id=agent_id, response=response)
+      rendered = f"agent_id: {agent_id}\n\n{response}" if agent_id else response
+      return ToolResult(success=True, result=rendered)
     except TimeoutError as e:
       logger.warning("spawn_agent timeout", agent_name=agent_name, timeout_seconds=timeout_seconds)
       return ToolResult(success=False, error=str(e))
