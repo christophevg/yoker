@@ -157,7 +157,7 @@ class TestSpawnAgentMap:
     )
     async with Session(config=config) as session:
       session.agents.register(agent_def)
-      with patch("yoker.core.Agent") as mock_agent_cls:
+      with patch("yoker.session.Agent") as mock_agent_cls:
         mock_child = MagicMock()
         mock_child.process = AsyncMock(return_value="ok")
         mock_child.tools = MagicMock()
@@ -165,6 +165,10 @@ class TestSpawnAgentMap:
         child, agent_id = await session._spawn_internal("researcher")
         await child.process("hi")
         session.release(child)
+      # Hardening: confirm the mock class was actually constructed. A stale
+      # patch target would let a real Agent reach localhost:11434 and mask the
+      # bug behind a local Ollama daemon.
+      mock_agent_cls.assert_called_once()
       # agent removed from active list after release.
       assert session.get_agent("researcher") is None
       assert agent_id == "researcher"
@@ -180,7 +184,7 @@ class TestSpawnAgentMap:
     )
     async with Session(config=config) as session:
       session.agents.register(agent_def)
-      with patch("yoker.core.Agent") as mock_agent_cls:
+      with patch("yoker.session.Agent") as mock_agent_cls:
         mock_child = MagicMock()
         mock_child.process = AsyncMock(return_value="ok")
         mock_child.tools = MagicMock()
@@ -191,6 +195,10 @@ class TestSpawnAgentMap:
         second_child, second_id = await session._spawn_internal("researcher")
         await second_child.process("second")
         session.release(second_child)
+      # Hardening: confirm the mock class was actually constructed (twice, once
+      # per spawn). A stale patch target would let a real Agent reach
+      # localhost:11434 and mask the bug behind a local Ollama daemon.
+      assert mock_agent_cls.call_count == 2
       # Both completed; counters reflect two spawns of "researcher".
       assert session._name_counters["researcher"] == 2
       assert first_id == "researcher"
