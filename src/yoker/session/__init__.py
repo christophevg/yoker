@@ -22,6 +22,7 @@ from structlog import get_logger
 from yoker.agents import AgentDefinition, AgentRegistry, load_agent_definition
 from yoker.backends import ModelBackend, create_backend
 from yoker.config import Config
+from yoker.context import create_context_manager
 from yoker.core import Agent
 from yoker.core.thinking import ThinkingMode
 from yoker.events import (
@@ -64,8 +65,11 @@ class Session:
     thinking_mode: ThinkingMode | None = None,
     console_logging: bool = CONSOLE_LOGGING,
   ) -> None:
-    self.config: Config = config
     self.id: str = session_id if session_id is not None else uuid.uuid4().hex
+    # stamp the session id onto the context config — single source of truth
+    self.config: Config = dataclasses.replace(
+      config, context=dataclasses.replace(config.context, session_id=self.id)
+    )
 
     # name → Agent instance. Populated by spawn().
     self._agents_map: dict[str, Agent] = {}
@@ -117,6 +121,8 @@ class Session:
       await asyncio.gather(*self._tasks, return_exceptions=True)
     self._tasks.clear()
     self._emit(SessionEndEvent(type=EventType.SESSION_END, session_id=self.id))
+    for agent in self._agents_map.values():
+      agent.context.close()
 
   def on_event(self, handler: EventCallback) -> EventCallback:
     """Register a session-scoped event handler and return it for chaining.
@@ -344,6 +350,9 @@ class Session:
     agent_id = self._generate_agent_name(agent.definition.simple_name or name or "primary")
     self._agents_map[agent_id] = agent
     self.inject_tools(agent, agent_id)
+    # per-agent context manager — Session owns the lifecycle, factory hides construction
+    agent.context = create_context_manager(self.config, agent_id)
+    agent.context.agent = agent
     if self.config.session.event_aggregation:
       agent.on_event(self._make_forwarding_handler(agent_id))
     return agent, agent_id

@@ -26,6 +26,7 @@ Example:
 """
 
 from yoker.context.basic import SimpleContextManager
+from yoker.context.factory import create_context_manager
 from yoker.context.interface import ContextStatistics, SessionMetadata
 from yoker.context.manager import BaseContextManager
 from yoker.context.persisted import DEFAULT_STORAGE_PATH, Persisted
@@ -42,6 +43,7 @@ __all__ = [
   "ContextStatistics",
   "SessionMetadata",
   "DEFAULT_STORAGE_PATH",
+  "create_context_manager",
   "list_sessions",
   "load_session_metadata",
 ]
