@@ -30,9 +30,14 @@ def create_context_manager(config: Config, agent_id: str) -> ContextManager:
     return SimpleContextManager()
 
   # option 2: per-agent JSONL file
+  # Sanitize agent_id: namespaced ids (e.g. "file:researcher") contain colons
+  # that validate_session_id rejects. Replace with a safe separator.
+  safe_agent_id = agent_id.replace(":", "-")
   # standalone agent: no session_id
-  filename = agent_id if ctx.session_id is None else ctx.filename.format(
-    session_id=ctx.session_id, agent_id=agent_id
+  filename = (
+    safe_agent_id
+    if ctx.session_id is None
+    else ctx.filename.format(session_id=ctx.session_id, agent_id=safe_agent_id)
   )
   storage_path = Path(ctx.storage_path).expanduser()
   persisted = Persisted(SimpleContextManager(), storage_path=storage_path, session_id=filename)

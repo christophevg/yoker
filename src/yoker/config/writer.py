@@ -17,6 +17,7 @@ Security:
 
 from __future__ import annotations
 
+import copy
 import dataclasses
 import os
 from pathlib import Path
@@ -228,7 +229,10 @@ def render_config_toml(config: Config, overrides: dict[str, Any] | None = None) 
     ``metadata["help"]`` annotation. ``None`` values and empty collections are
     omitted. The string always ends with a newline.
   """
-  rendered = config
+  # Deep-copy so override application via _set_dotted does not mutate the
+  # caller's Config. The no-override path also copies for a stable contract;
+  # callers can rely on their input never being modified by rendering.
+  rendered = copy.deepcopy(config)
   if overrides:
     # Apply backend.provider and backend.<provider> together atomically
     # to avoid validation errors in BackendConfig.__post_init__

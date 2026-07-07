@@ -89,7 +89,9 @@ class Agent:
     self.skills: SkillRegistry = SkillRegistry()
 
     # CLI-supplied plugin packages (--with), kept separate from config.plugins.packages.
-    self._cli_plugins: tuple[str, ...] = plugins
+    # Coerce None → () so downstream iterables always have something to extend.
+    # Use `is not None` (not `or`): an empty tuple is falsy but a valid value.
+    self._cli_plugins: tuple[str, ...] = plugins if plugins is not None else ()
 
     # skills are loaded from directories specified in config (per-agent).
     self._load_skills()

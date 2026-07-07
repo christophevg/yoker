@@ -61,7 +61,6 @@ class AgentRegistry(UserDict[str, AgentDefinition]):
           self.register(agent)
       except Exception as e:
         logger.warning("loading agents failed", directory=directory, error=str(e))
-        raise
 
   def load(self, config: Config, extra_plugins: tuple[str, ...] = ()):
     self.register_config_agents(config)
