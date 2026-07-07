@@ -32,10 +32,7 @@ class AgentRegistry(UserDict[str, AgentDefinition]):
     if namespace:
       definition.namespace = namespace
     if definition.name in self.data:
-      logger.warning(
-        "agent_name_collision",
-        name=definition.name
-      )
+      logger.warning("agent_name_collision", name=definition.name)
       raise ValueError(f"Agent '{definition.name}' is already registered")
     self.data[definition.name] = definition
     logger.info("agent registered", name=definition.name)
@@ -50,11 +47,7 @@ class AgentRegistry(UserDict[str, AgentDefinition]):
     for agent_def in agents:
       self.register(agent_def, namespace=namespace)
 
-  def register_plugin_agents(
-    self,
-    config: "Config",
-    extra_plugins: tuple[str, ...] = ()
-  ) -> None:
+  def register_plugin_agents(self, config: "Config", extra_plugins: tuple[str, ...] = ()) -> None:
     for plugin in load_plugins(config, extra_plugins):
       if plugin.agents:
         logger.info("registering plugin agents", package=plugin.source)
