@@ -15,10 +15,6 @@ A minimal facade over the real :class:`yoker.session.Session` and
 :func:`run_sync` wraps :func:`asyncio.run` for synchronous callers (scripts,
 notebooks, REPLs). It is the only sync entry point — there are no per-call
 ``*_sync`` variants.
-
-The facade constructs and drives the existing :class:`Agent` /
-:class:`Session` classes — it adds no behaviour of its own. Existing
-imports and classes keep working unchanged.
 """
 
 from __future__ import annotations
@@ -43,31 +39,6 @@ from yoker.session import Session
 _T = TypeVar("_T")
 
 ThinkingLiteral = Literal["on", "off", "visible", "silent"]
-
-# Map the public ``thinking`` string enum to :class:`ThinkingMode`.
-# ``"on"`` is the default and matches the Agent's default (visible reasoning).
-# ``"visible"`` is a semantic alias for ``"on"``. ``"silent"`` requests
-# thinking without displaying it (background reasoning).
-_THINKING_MAP: dict[str, ThinkingMode] = {
-  "on": ThinkingMode.ON,
-  "visible": ThinkingMode.ON,
-  "off": ThinkingMode.OFF,
-  "silent": ThinkingMode.SILENT,
-}
-
-
-def _thinking_mode(value: str) -> ThinkingMode:
-  """Map a public ``thinking`` string to :class:`ThinkingMode`.
-
-  Raises:
-    ValueError: If ``value`` is not a recognised thinking mode.
-  """
-  mode = _THINKING_MAP.get(value)
-  if mode is None:
-    raise ValueError(
-      f"Unknown thinking mode '{value}'. Expected one of: {', '.join(sorted(_THINKING_MAP))}"
-    )
-  return mode
 
 
 def run_sync(coro: Coroutine[Any, Any, _T]) -> _T:
@@ -95,105 +66,6 @@ def run_sync(coro: Coroutine[Any, Any, _T]) -> _T:
     "Sync helper called from inside a running event loop. "
     "Use the async variant (e.g. await yoker.process(...)) instead of yoker.run_sync(...)."
   )
-
-
-def _apply_model_provider(config: Config, *, model: str | None, provider: str | None) -> Config:
-  """Return a derived :class:`Config` with model / provider overrides applied."""
-  from yoker.config import KNOWN_PROVIDERS, AnthropicConfig, GeminiConfig, OpenAIConfig
-
-  backend = config.backend
-
-  if provider is not None:
-    if provider in KNOWN_PROVIDERS and getattr(backend, provider) is None:
-      defaults: dict[str, type] = {
-        "openai": OpenAIConfig,
-        "anthropic": AnthropicConfig,
-        "gemini": GeminiConfig,
-      }
-      backend = dataclasses.replace(backend, **{provider: defaults[provider]()})
-    backend = dataclasses.replace(backend, provider=provider)
-
-  if model is not None:
-    sub = backend.config
-    new_sub = dataclasses.replace(sub, model=model)
-    active = backend.provider
-    backend = dataclasses.replace(backend, **{active: new_sub})  # type: ignore[arg-type]
-
-  return dataclasses.replace(config, backend=backend)
-
-
-def _build_agent_definition(
-  system_prompt: str | None,
-  tools: list[str] | None,
-) -> AgentDefinition | None:
-  """Build an :class:`AgentDefinition` for the custom-config case.
-
-  Returns ``None`` when no customisation is needed (caller gets the default
-  agent definition and the existing tool-filter logic is skipped). The
-  pure-text path is expressed via ``tools=[]`` (an empty whitelist clears
-  all tools); no separate ``no_tools`` branch is needed.
-  """
-  if system_prompt is None and tools is None:
-    return None
-
-  # Setting simple_name to a non-None value engages Agent._filter_tools_by_definition.
-  # When tools is None but a system_prompt is given, we keep simple_name=None so the
-  # default "keep all tools" behaviour applies.
-  simple_name: str | None = None
-  tools_tuple: tuple[str, ...] = ()
-  if tools is not None:
-    simple_name = "custom"
-    tools_tuple = tuple(tools)
-
-  prompt = system_prompt if system_prompt is not None else "You are a helpful assistant."
-  return AgentDefinition(simple_name=simple_name, system_prompt=prompt, tools=tools_tuple)
-
-
-def _filter_tools(agent: Agent, tools: list[str]) -> None:
-  """Restrict ``agent.tools`` to the requested names (case-insensitive).
-
-  Namespaced names (``pkg:tool``) are matched exactly. Bare names match both
-  the bare key and the ``yoker:``-prefixed built-in key.
-  """
-  requested: set[str] = set()
-  for name in tools:
-    normalized = name.lower()
-    if ":" in normalized:
-      requested.add(normalized)
-    else:
-      requested.add(normalized)
-      requested.add(f"yoker:{normalized}")
-
-  to_remove = [key for key in list(agent.tools.data.keys()) if key.lower() not in requested]
-  for key in to_remove:
-    del agent.tools.data[key]
-
-
-def _filter_skills(agent: Agent, skills: list[str]) -> None:
-  """Restrict ``agent.skills`` to the requested names.
-
-  Raises :class:`SkillError` if any requested skill is not in the registry.
-  """
-  available = {name.lower(): name for name in agent.skills.data.keys()}
-  keep: set[str] = set()
-  for requested in skills:
-    normalized = requested.lower()
-    if ":" in normalized:
-      actual = available.get(normalized)
-    else:
-      actual = available.get(normalized) or available.get(f"yoker:{normalized}")
-    if actual is None:
-      raise SkillError(
-        requested,
-        f"Unknown skill. Available skills: {', '.join(sorted(agent.skills.names))}"
-        if agent.skills.names
-        else "Unknown skill (no skills loaded).",
-      )
-    keep.add(actual)
-
-  to_remove = [key for key in list(agent.skills.data.keys()) if key not in keep]
-  for key in to_remove:
-    del agent.skills.data[key]
 
 
 def agent(
@@ -240,10 +112,11 @@ def agent(
     thinking: Thinking mode for the model.
     event_handler: Optional callback (sync or async) receiving every event
       emitted by the agent.
-    config: Optional explicit :class:`Config`. When omitted a programmatic
-      config is constructed via :class:`Config()` (no filesystem discovery).
-      When provided, ``model`` / ``provider`` / ``plugins`` overrides are
-      applied on top of it via :func:`dataclasses.replace`.
+    config: Optional explicit :class:`Config`. When omitted and no model /
+      provider / plugins overrides are given, the Agent constructor
+      discovers the config from the filesystem via :func:`get_yoker_config`.
+      When provided (or when overrides need applying), a programmatic
+      :class:`Config` is used as the base.
     context_manager: Optional :class:`ContextManager` for the agent. When
       omitted a :class:`SimpleContextManager` is used (in-memory, no
       persistence).
@@ -258,30 +131,83 @@ def agent(
   Returns:
     A fully constructed :class:`yoker.Agent` instance.
   """
-  # 1. Resolve the base config (programmatic defaults; no filesystem).
-  base_config = config if config is not None else Config()
+  # Determine whether we need a programmatic Config base. When the caller
+  # passes an explicit config we start from it; when overrides (model /
+  # provider / plugins) need applying we build a Config() base; otherwise
+  # we pass None so the Agent constructor runs get_yoker_config() (filesystem
+  # discovery), honouring the user's yoker.toml.
+  needs_overrides = model is not None or provider is not None or plugins is not None
+  if config is not None:
+    base_config: Config | None = config
+  elif needs_overrides:
+    base_config = Config()
+  else:
+    base_config = None
 
-  # 2. Apply model / provider overrides on a derived frozen Config.
+  # Apply model / provider overrides on a derived frozen Config. This block
+  # only runs when needs_overrides is True, so base_config is not None here.
   if model is not None or provider is not None:
-    base_config = _apply_model_provider(base_config, model=model, provider=provider)
+    from yoker.config import KNOWN_PROVIDERS, AnthropicConfig, GeminiConfig, OpenAIConfig
 
-  # 3. Enable plugin loading when plugins are explicitly requested.
-  if plugins is not None:
+    assert base_config is not None
+    backend_cfg = base_config.backend
+    if provider is not None:
+      if provider in KNOWN_PROVIDERS and getattr(backend_cfg, provider) is None:
+        defaults: dict[str, type] = {
+          "openai": OpenAIConfig,
+          "anthropic": AnthropicConfig,
+          "gemini": GeminiConfig,
+        }
+        backend_cfg = dataclasses.replace(backend_cfg, **{provider: defaults[provider]()})
+      backend_cfg = dataclasses.replace(backend_cfg, provider=provider)
+    if model is not None:
+      sub = backend_cfg.config
+      new_sub = dataclasses.replace(sub, model=model)
+      active = backend_cfg.provider
+      backend_cfg = dataclasses.replace(backend_cfg, **{active: new_sub})  # type: ignore[arg-type]
+    base_config = dataclasses.replace(base_config, backend=backend_cfg)
+
+  # Enable plugin loading when plugins are explicitly requested.
+  if plugins is not None and base_config is not None:
     base_config = dataclasses.replace(
       base_config,
       plugins=dataclasses.replace(base_config.plugins, enabled=True, packages=tuple(plugins)),
     )
 
-  # 4. Resolve the agent definition: explicit > path > built-from-kwargs.
+  # Resolve the agent definition: explicit > path > built-from-kwargs.
   resolved_definition: AgentDefinition | None = agent_definition
   if resolved_definition is None and agent_path is not None:
     resolved_definition = load_agent_definition(agent_path)
   if resolved_definition is None and agent_path is None:
-    resolved_definition = _build_agent_definition(system_prompt, tools)
+    # Build an AgentDefinition for the custom-config case. Returns None
+    # when no customisation is needed. The pure-text path is expressed via
+    # tools=[] (an empty whitelist clears all tools).
+    if system_prompt is not None or tools is not None:
+      simple_name: str | None = None
+      tools_tuple: tuple[str, ...] = ()
+      if tools is not None:
+        simple_name = "custom"
+        tools_tuple = tuple(tools)
+      prompt = system_prompt if system_prompt is not None else "You are a helpful assistant."
+      resolved_definition = AgentDefinition(
+        simple_name=simple_name, system_prompt=prompt, tools=tools_tuple
+      )
+
+  _thinking_map = {
+    "on": ThinkingMode.ON,
+    "visible": ThinkingMode.ON,
+    "off": ThinkingMode.OFF,
+    "silent": ThinkingMode.SILENT,
+  }
+  thinking_mode = _thinking_map.get(thinking)
+  if thinking_mode is None:
+    raise ValueError(
+      f"Unknown thinking mode '{thinking}'. Expected one of: {', '.join(sorted(_thinking_map))}"
+    )
 
   built = Agent(
     config=base_config,
-    thinking_mode=_thinking_mode(thinking),
+    thinking_mode=thinking_mode,
     agent_definition=resolved_definition,
     agent_path=agent_path if resolved_definition is None else None,
     context_manager=context_manager,
@@ -290,11 +216,29 @@ def agent(
     backend=backend,
   )
 
-  # 5. Filter skills to the requested subset (post-construction).
+  # Filter skills to the requested subset (post-construction).
   if skills is not None:
-    _filter_skills(built, skills)
+    available = {name.lower(): name for name in built.skills.data.keys()}
+    keep: set[str] = set()
+    for requested in skills:
+      normalized = requested.lower()
+      if ":" in normalized:
+        actual = available.get(normalized)
+      else:
+        actual = available.get(normalized) or available.get(f"yoker:{normalized}")
+      if actual is None:
+        raise SkillError(
+          requested,
+          f"Unknown skill. Available skills: {', '.join(sorted(built.skills.names))}"
+          if built.skills.names
+          else "Unknown skill (no skills loaded).",
+        )
+      keep.add(actual)
+    to_remove = [key for key in list(built.skills.data.keys()) if key not in keep]
+    for key in to_remove:
+      del built.skills.data[key]
 
-  # 6. Register the optional event handler.
+  # Register the optional event handler.
   if event_handler is not None:
     built.on_event(event_handler)
 
@@ -307,10 +251,10 @@ async def process(
 ) -> str:
   """Ask the configured model a single question and return the response.
 
-  Loads a programmatic :class:`Config`, constructs an :class:`Agent`, runs
-  one turn, and returns the assistant's reply. The agent is discarded
-  (stateless one-shot). For multi-turn conversations use
-  :func:`yoker.session`; for a reusable agent use :func:`yoker.agent`.
+  Loads a :class:`Config`, constructs an :class:`Agent`, runs one turn, and
+  returns the assistant's reply. The agent is discarded (stateless one-shot).
+  For multi-turn conversations use :func:`yoker.session`; for a reusable
+  agent use :func:`yoker.agent`.
 
   Args:
     prompt: The user's question or instruction.
@@ -351,49 +295,6 @@ async def do(
   return await built.do(skill_name, prompt, args)
 
 
-def _session_config(session_id: str | None) -> Config:
-  """Build a base :class:`Config` for a session.
-
-  Ensures the context session_id is honoured when provided so persistence
-  resumes the right conversation.
-  """
-  if session_id is None:
-    return Config()
-  base = Config()
-  return dataclasses.replace(
-    base,
-    context=dataclasses.replace(base.context, session_id=session_id, persist_after_turn=True),
-  )
-
-
-def _resolve_primary_definition(
-  core: Session,
-  base_config: Config,
-  agent_definition: AgentDefinition | None,
-  agent_path: str | Path | None,
-) -> AgentDefinition | None:
-  """Resolve the primary agent's definition for a session.
-
-  The Session-agnostic Agent cannot resolve names from a registry, so the
-  Session layer resolves the config/path/name reference and passes the
-  definition in.
-  """
-  if agent_definition is not None:
-    return agent_definition
-  if agent_path is not None:
-    return load_agent_definition(agent_path)
-  reference = base_config.agent or base_config.agents.definition or None
-  if reference:
-    file_path = Path(reference).expanduser()
-    if file_path.exists() and file_path.is_file():
-      return load_agent_definition(reference)
-    try:
-      return core.agents.resolve(reference)
-    except ValueError:
-      return None
-  return None
-
-
 @asynccontextmanager
 async def session(
   id: str | None = None,
@@ -405,11 +306,11 @@ async def session(
   """Open a multi-turn session with automatic context persistence.
 
   Builds on the real :class:`yoker.session.Session` (MBI-007). A primary
-  :class:`Agent` is constructed with the given builder kwargs and
-  registered with the session. The primary agent is available via
+  :class:`Agent` is constructed via :meth:`Session.create_primary_agent`
+  with the given builder kwargs. The primary agent is available via
   :attr:`Session.agent`; sub-agents can be spawned via
   ``await session.spawn(name)``. Event handlers are registered via
-  ``session.add_event_handler(...)``.
+  ``session.on_event(...)``.
 
   Args:
     id: Optional session id. When the id matches an existing persisted
@@ -429,18 +330,52 @@ async def session(
     The real :class:`yoker.session.Session` with a registered primary
     agent.
   """
-  # Pull the config / agent_path / agent_definition / event_handler kwargs
-  # out of common_kwargs (they are consumed here, not forwarded as-is).
+  # Extract kwargs consumed here (not forwarded to create_primary_agent).
   config: Config | None = common_kwargs.pop("config", None)
   agent_path: str | Path | None = common_kwargs.pop("agent_path", None)
   agent_definition: AgentDefinition | None = common_kwargs.pop("agent_definition", None)
   event_handler: EventCallback | None = common_kwargs.pop("event_handler", None)
   plugins: list[str] | None = common_kwargs.pop("plugins", None)
+  model: str | None = common_kwargs.pop("model", None)
+  provider: str | None = common_kwargs.pop("provider", None)
+  thinking: str = common_kwargs.pop("thinking", "on")
+  system_prompt: str | None = common_kwargs.pop("system_prompt", None)
+  tools: list[str] | None = common_kwargs.pop("tools", None)
+  skills: list[str] | None = common_kwargs.pop("skills", None)
 
-  base_config = config if config is not None else _session_config(id)
+  # Build the base config. When an id is given (or persist requested),
+  # override context.session_id so persistence resumes the right session.
+  base_config = config if config is not None else Config()
+  if id is not None:
+    base_config = dataclasses.replace(
+      base_config,
+      context=dataclasses.replace(base_config.context, session_id=id, persist_after_turn=True),
+    )
+
+  # Apply model / provider overrides on the base config.
+  if model is not None or provider is not None:
+    from yoker.config import KNOWN_PROVIDERS, AnthropicConfig, GeminiConfig, OpenAIConfig
+
+    backend_cfg = base_config.backend
+    if provider is not None:
+      if provider in KNOWN_PROVIDERS and getattr(backend_cfg, provider) is None:
+        defaults: dict[str, type] = {
+          "openai": OpenAIConfig,
+          "anthropic": AnthropicConfig,
+          "gemini": GeminiConfig,
+        }
+        backend_cfg = dataclasses.replace(backend_cfg, **{provider: defaults[provider]()})
+      backend_cfg = dataclasses.replace(backend_cfg, provider=provider)
+    if model is not None:
+      sub = backend_cfg.config
+      new_sub = dataclasses.replace(sub, model=model)
+      active = backend_cfg.provider
+      backend_cfg = dataclasses.replace(backend_cfg, **{active: new_sub})  # type: ignore[arg-type]
+    base_config = dataclasses.replace(base_config, backend=backend_cfg)
+
   extra_plugins = tuple(plugins) if plugins is not None else ()
 
-  # Build the underlying core Session first (owns registry, backends, ...).
+  # Build the underlying core Session (owns registry, backends, ...).
   core = Session(config=base_config, session_id=id, extra_plugins=extra_plugins)
 
   # Build the context manager: Persisted wraps SimpleContextManager when
@@ -452,23 +387,76 @@ async def session(
     if fresh:
       context_manager.delete()
 
-  resolved_definition = _resolve_primary_definition(core, base_config, agent_definition, agent_path)
-  backend = core.get_backend(base_config)
+  # Pre-build the agent definition from system_prompt/tools when no
+  # explicit definition/path was given (mirrors agent()).
+  resolved_definition: AgentDefinition | None = agent_definition
+  if resolved_definition is None and agent_path is not None:
+    resolved_definition = load_agent_definition(agent_path)
+  if (
+    resolved_definition is None
+    and agent_path is None
+    and (system_prompt is not None or tools is not None)
+  ):
+    simple_name: str | None = None
+    tools_tuple: tuple[str, ...] = ()
+    if tools is not None:
+      simple_name = "custom"
+      tools_tuple = tuple(tools)
+    prompt = system_prompt if system_prompt is not None else "You are a helpful assistant."
+    resolved_definition = AgentDefinition(
+      simple_name=simple_name, system_prompt=prompt, tools=tools_tuple
+    )
 
-  primary = agent(
+  _thinking_map = {
+    "on": ThinkingMode.ON,
+    "visible": ThinkingMode.ON,
+    "off": ThinkingMode.OFF,
+    "silent": ThinkingMode.SILENT,
+  }
+  thinking_mode = _thinking_map.get(thinking)
+  if thinking_mode is None:
+    raise ValueError(
+      f"Unknown thinking mode '{thinking}'. Expected one of: {', '.join(sorted(_thinking_map))}"
+    )
+
+  primary = await core.create_primary_agent(
     config=base_config,
     agent_definition=resolved_definition,
     agent_path=agent_path if resolved_definition is None else None,
-    context_manager=context_manager,
-    backend=backend,
     plugins=plugins,
+    thinking_mode=thinking_mode,
     console_logging=False,
-    **common_kwargs,
   )
-  core.register_primary_agent(primary)
+
+  # Override the primary agent's context manager with the persisted one.
+  if context_manager is not None:
+    primary.context = context_manager
+    context_manager.agent = primary
+
+  # Filter skills to the requested subset (post-construction).
+  if skills is not None:
+    available = {name.lower(): name for name in primary.skills.data.keys()}
+    keep: set[str] = set()
+    for requested in skills:
+      normalized = requested.lower()
+      if ":" in normalized:
+        actual = available.get(normalized)
+      else:
+        actual = available.get(normalized) or available.get(f"yoker:{normalized}")
+      if actual is None:
+        raise SkillError(
+          requested,
+          f"Unknown skill. Available skills: {', '.join(sorted(primary.skills.names))}"
+          if primary.skills.names
+          else "Unknown skill (no skills loaded).",
+        )
+      keep.add(actual)
+    to_remove = [key for key in list(primary.skills.data.keys()) if key not in keep]
+    for key in to_remove:
+      del primary.skills.data[key]
 
   if event_handler is not None:
-    core.add_event_handler(event_handler)
+    core.on_event(event_handler)
 
   async with core:
     yield core

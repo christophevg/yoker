@@ -5,6 +5,7 @@ import asyncio
 import pytest
 
 import yoker
+from yoker.config import Config
 from yoker.core import Agent
 from yoker.events import Event, EventType
 
@@ -100,7 +101,7 @@ class TestProcess:
       return "ok"
 
     monkeypatch.setattr("yoker.core.process_message", handler)
-    await yoker.process("hi", tools=[])
+    await yoker.process("hi", tools=[], config=Config())
     assert captured["tools"] == []
 
   async def test_process_event_handler_receives_events(self, monkeypatch) -> None:

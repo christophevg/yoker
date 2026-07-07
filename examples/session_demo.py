@@ -7,9 +7,9 @@ recursion depth tracking, event aggregation, and inter-agent messaging.
 It shows:
 
   - Constructing a :class:`Session` from a :class:`Config`.
-  - Registering a primary :class:`Agent` with the session
-    (``session.register_primary_agent``) so it gets a runtime id and the
-    Session-injected tools (``agent`` and ``send_message``).
+  - Creating a primary :class:`Agent` via ``session.create_primary_agent``
+    so it gets a runtime id and the Session-injected tools (``agent`` and
+    ``send_message``).
   - Registering session-scoped event handlers that observe both
     session-level events (``SESSION_START``/``SESSION_END``,
     ``AGENT_SPAWNED``/``AGENT_FINISHED``) and aggregated sub-agent events
@@ -35,7 +35,6 @@ from pathlib import Path
 
 from yoker import __version__
 from yoker.config import AgentsConfig, Config, get_yoker_config
-from yoker.core import Agent
 from yoker.events import (
   Event,
   SessionEvent,
@@ -95,21 +94,16 @@ async def run_session_demo() -> None:
     # (SESSION_START, AGENT_SPAWNED, ...) reach this handler directly;
     # sub-agent events reach it wrapped in a SessionEvent envelope (D5,
     # PR #43 Clarification 9).
-    session.add_event_handler(log_event)
+    session.on_event(log_event)
 
-    # Construct the primary Agent. The Agent is Session-agnostic: the
-    # Session layer resolves the config-based agent definition (if any)
-    # and shares its backend with the Agent (register_primary_agent
-    # overrides the agent's backend with the session-shared one). The
-    # primary agent has no allowlist by default — to spawn sub-agents
-    # programmatically we use session.spawn directly (the agent tool
-    # would be rejected with an empty allowlist).
-    agent = Agent(
+    # Construct the primary Agent via the Session. create_primary_agent
+    # resolves the config-based agent definition (if any), shares the
+    # session's backend, and registers the agent. The primary agent is
+    # available via session.agent.
+    agent = await session.create_primary_agent(
       config=config,
       console_logging=False,
     )
-    primary_id = session.register_primary_agent(agent)
-    print(f"Primary agent registered with id: {primary_id}")
     print(f"Primary agent tools: {', '.join(sorted(agent.tools.names))}")
     print()
 

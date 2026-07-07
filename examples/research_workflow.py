@@ -39,7 +39,7 @@ async def run_research(prompt: str) -> None:
     show_stats=True,
   )
   bridge = UIBridge(ui)
-  agent.add_event_handler(bridge)
+  agent.on_event(bridge)
 
   await ui.start(agent)
 

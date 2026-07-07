@@ -14,13 +14,15 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import uuid
-from typing import TYPE_CHECKING
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 from structlog import get_logger
 
 from yoker.agents import AgentDefinition, AgentRegistry, load_agent_definitions
 from yoker.backends import ModelBackend, create_backend
 from yoker.config import Config
+from yoker.core.thinking import ThinkingMode
 from yoker.events import (
   AgentFinishedEvent,
   AgentMessageEvent,
@@ -66,8 +68,7 @@ class Session:
     self.agents: AgentRegistry = AgentRegistry()
     # agent name → current recursion depth. Tracked in spawn().
     self._recursion_depths: dict[str, int] = {}
-    # Session-scoped event handlers. Replaces agent.add_event_handler
-    # for session-scoped consumers.
+    # Session-scoped event handlers.
     self._event_handlers: list[EventCallback] = []
     # Shared backends keyed by provider config signature.
     self._backends: dict[str, ModelBackend] = {}
@@ -109,21 +110,14 @@ class Session:
     self._tasks.clear()
     self._emit(SessionEndEvent(type=EventType.SESSION_END, session_id=self.id))
 
-  def add_event_handler(self, handler: EventCallback) -> None:
-    """Register a session-scoped event handler.
+  def on_event(self, handler: EventCallback) -> EventCallback:
+    """Register a session-scoped event handler and return it for chaining.
 
     Handlers receive events emitted by the Session (session-level events)
-    and, once event aggregation lands, agent events wrapped in a
-    ``SessionEvent`` envelope.
+    and agent events wrapped in a :class:`SessionEvent` envelope.
     """
     self._event_handlers.append(handler)
-
-  def remove_event_handler(self, handler: EventCallback) -> None:
-    """Remove a previously registered event handler."""
-    try:
-      self._event_handlers.remove(handler)
-    except ValueError:
-      logger.warning("remove_event_handler: handler not registered")
+    return handler
 
   def _emit(self, event: Event | SessionEvent) -> None:
     """Fan an event out to all registered session handlers.
@@ -253,9 +247,7 @@ class Session:
     depth and ``max_agents`` limits, creates a child :class:`Agent` with
     a session-injected backend, injects the Session-injected tools
     (``agent`` and ``send_message``) on the child, registers it in the
-    active map, stamps the session-assigned id on the Agent as
-    ``agent._session_id`` (the bridge used by :meth:`send` for event
-    payloads), and emits ``AGENT_SPAWNED``. Used by the public
+    active map, and emits ``AGENT_SPAWNED``. Used by the public
     :meth:`spawn` and by the Session-injected ``agent`` tool.
     """
     # Allowlist enforcement — before any other check.
@@ -312,11 +304,6 @@ class Session:
       console_logging=False,
     )
 
-    # Stamp the session-assigned id on the Agent. This is Session-managed
-    # metadata (not Agent business state) — the bridge used by send() to
-    # resolve Agent instances back to ids for event payloads.
-    child._session_id = agent_id
-
     # Register in the active map and track depth.
     self._agents_map[agent_id] = child
     self._recursion_depths[agent_id] = child_depth
@@ -328,7 +315,7 @@ class Session:
     # Event aggregation: register a forwarding handler on the child so its
     # events reach session-level handlers wrapped in a SessionEvent envelope.
     if self.config.session.event_aggregation:
-      child.add_event_handler(self._make_forwarding_handler(agent_id))
+      child.on_event(self._make_forwarding_handler(agent_id))
 
     # Lifecycle signal: AGENT_SPAWNED is emitted after registration.
     self._emit(
@@ -391,28 +378,92 @@ class Session:
       name="send_message",
     )
 
-  def register_primary_agent(self, agent: Agent) -> str:
-    """Register the primary Agent with the session and inject Session tools.
+  async def create_primary_agent(
+    self,
+    name: str | None = None,
+    *,
+    config: Config | None = None,
+    agent_definition: AgentDefinition | None = None,
+    agent_path: str | Path | None = None,
+    plugins: list[str] | None = None,
+    thinking_mode: ThinkingMode | None = None,
+    console_logging: bool = True,
+  ) -> Agent:
+    """Resolve the primary agent definition, construct, register, and return it.
 
-    The primary agent is constructed by the caller (e.g. ``__main__.py``)
-    rather than via ``spawn()``. This method assigns it a session-scoped
-    id, adds it to the active map at recursion depth 0, and injects the
-    Session-injected tools (``agent`` and ``send_message``) so the
-    primary agent can spawn sub-agents and send inter-agent messages.
+    The primary agent's definition is resolved from: an explicit
+    ``agent_definition`` / ``agent_path`` argument, then ``name`` (looked
+    up in the session registry), then the config-based reference
+    (``config.agent`` / ``config.agents.definition``). When no definition
+    resolves, the :class:`Agent` default is used.
+
+    The constructed :class:`Agent` shares the session's backend, is
+    registered in the active map at recursion depth 0, receives the
+    Session-injected tools (``agent`` and ``send_message``), and is
+    exposed via :attr:`agent`.
 
     Args:
-      agent: The primary :class:`Agent` constructed within this session.
+      name: Optional agent definition name to resolve from the registry.
+      config: Optional config for the constructed Agent. Defaults to the
+        session's config.
+      agent_definition: Optional explicit :class:`AgentDefinition`.
+      agent_path: Optional path to an agent definition file.
+      plugins: Optional plugin packages to load on the Agent.
+      thinking_mode: Optional :class:`ThinkingMode` for the Agent.
+      console_logging: Whether to enable console logging on the Agent.
 
     Returns:
-      The session-assigned agent id.
+      The constructed and registered primary :class:`Agent`. After this
+      call, :attr:`agent` returns the same instance.
+    """
+    from yoker.agents import load_agent_definition
+    from yoker.core import Agent as _Agent
+
+    base_config = config if config is not None else self.config
+
+    resolved_definition: AgentDefinition | None = agent_definition
+    if resolved_definition is None and agent_path is not None:
+      resolved_definition = load_agent_definition(agent_path)
+    if resolved_definition is None and name is not None:
+      try:
+        resolved_definition = self.agents.resolve(name)
+      except ValueError:
+        pass
+    if resolved_definition is None and agent_path is None and name is None:
+      reference = base_config.agent or base_config.agents.definition or None
+      if reference:
+        file_path = Path(reference).expanduser()
+        if file_path.exists() and file_path.is_file():
+          resolved_definition = load_agent_definition(reference)
+        else:
+          try:
+            resolved_definition = self.agents.resolve(reference)
+          except ValueError:
+            logger.warning("primary agent definition not found", reference=reference)
+
+    kwargs: dict[str, Any] = {
+      "config": base_config,
+      "plugins": plugins if plugins is not None else None,
+      "agent_definition": resolved_definition,
+      "agent_path": agent_path if resolved_definition is None else None,
+      "backend": self.get_backend(base_config),
+      "console_logging": console_logging,
+    }
+    if thinking_mode is not None:
+      kwargs["thinking_mode"] = thinking_mode
+    agent_obj = _Agent(**kwargs)
+    self._register_primary(agent_obj)
+    return agent_obj
+
+  def _register_primary(self, agent: Agent) -> str:
+    """Register a constructed Agent as the session's primary agent.
+
+    Assigns a session-scoped id, adds it to the active map at recursion
+    depth 0, injects the Session-injected tools, and exposes it via
+    :attr:`agent`.
     """
     definition_name = agent.definition.simple_name or "primary"
     agent_id = self._generate_agent_name(definition_name)
-    # Stamp the session-assigned id on the Agent (bridge for send() event
-    # payloads) and override its backend with the session-shared one so
-    # the primary agent shares the same backend as spawned sub-agents.
-    agent._session_id = agent_id
-    agent._backend = self.get_backend(agent.config)
     self._agents_map[agent_id] = agent
     self._recursion_depths[agent_id] = 0
     self.inject_tools(agent, agent_id)
@@ -421,7 +472,7 @@ class Session:
 
   @property
   def agent(self) -> Agent:
-    """The primary :class:`Agent` registered via :meth:`register_primary_agent`.
+    """The primary :class:`Agent` registered via :meth:`create_primary_agent`.
 
     Raises:
       RuntimeError: When no primary agent has been registered.
@@ -432,13 +483,7 @@ class Session:
       raise RuntimeError("No primary agent registered with this session.") from e
 
   def _make_forwarding_handler(self, agent_id: str) -> EventCallback:
-    """Build a handler that wraps agent events in :class:`SessionEvent`.
-
-    The returned handler is async: it wraps each emitted :class:`Event` in
-    a :class:`SessionEvent` envelope tagged with ``agent_id`` and forwards
-    it to ``session._event_handlers``. Existing event dataclasses and
-    their construction sites are untouched.
-    """
+    """Build a handler that wraps agent events in :class:`SessionEvent`."""
 
     async def forward(event: Event | SessionEvent) -> None:
       # Agents emit bare events; envelopes do not reach agent handlers.
@@ -448,13 +493,22 @@ class Session:
     forward.__name__ = f"session_forward_{agent_id}"
     return forward
 
+  def _id_of(self, agent: Agent) -> str:
+    """Resolve an :class:`Agent` instance to its session-assigned id.
+
+    Reverse-lookup against the active map by identity.
+    """
+    for aid, a in self._agents_map.items():
+      if a is agent:
+        return aid
+    raise KeyError(f"Agent not registered in session {self.id!r}.")
+
   async def send(self, *, to: Agent, from_: Agent, content: str) -> str:
     """Send a message from one agent to another and return the target's reply.
 
     The Python API accepts :class:`Agent` instances directly. The
-    session-assigned ids carried on ``to._session_id`` and
-    ``from_._session_id`` are used only for the :class:`AgentMessageEvent`
-    payload (the LLM-facing ``agent_id`` strings are mere references).
+    session-assigned ids are resolved via reverse-lookup against the
+    active map and used only for the :class:`AgentMessageEvent` payload.
     Emits the event, then calls ``await to.process(content)``.
     Request-response only — content is a plain string and the response is
     a plain string (no streaming).
@@ -472,16 +526,20 @@ class Session:
     Raises:
       ValueError: When the target agent is not registered in this session.
     """
-    to_id = getattr(to, "_session_id", None)
-    from_id = getattr(from_, "_session_id", None)
-    if to_id is None or to not in self._agents_map.values():
-      raise ValueError(f"Target agent is not active in session '{self.id}'.")
+    try:
+      to_id = self._id_of(to)
+    except KeyError as exc:
+      raise ValueError(f"Target agent is not active in session '{self.id}'.") from exc
+    try:
+      from_id = self._id_of(from_)
+    except KeyError:
+      from_id = ""
 
     self._emit(
       AgentMessageEvent(
         type=EventType.AGENT_MESSAGE,
         session_id=self.id,
-        from_id=from_id or "",
+        from_id=from_id,
         to_id=to_id,
         content=content,
       )

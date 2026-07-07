@@ -43,17 +43,15 @@ class TestSingleAgentWithoutSession:
     assert callable(agent.process)
 
   def test_agent_event_handlers_work_without_session(self) -> None:
-    """add_event_handler / remove_event_handler work on a standalone Agent."""
+    """on_event works on a standalone Agent (no session needed)."""
     agent = Agent(config=Config())
     received: list = []
 
     def handler(event) -> None:
       received.append(event)
 
-    agent.add_event_handler(handler)
-    assert handler in agent.get_event_handlers()
-    agent.remove_event_handler(handler)
-    assert handler not in agent.get_event_handlers()
+    agent.on_event(handler)
+    assert handler in agent._event_handlers
 
 
 class TestExistingExamplesLoad:

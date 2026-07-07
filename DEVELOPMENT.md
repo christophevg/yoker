@@ -121,9 +121,10 @@ Backend/definition/plugin-loading moves to the Session layer.
 (Decisions 7, 9 — no `process(prompt, skill=...)` parameter).
 
 **New public API surface (`src/yoker/__init__.py`)**: `process`, `run_sync`,
-`agent`, `session`, `Agent`, `Session`, `ApiSession`, `ThinkingLiteral`.
+`agent`, `session`, `Agent`, `Session`, `ThinkingLiteral`.
 Removed: `ask`, `ask_sync`, `complete`, `complete_sync`, `run_skill`,
-`run_skill_sync`, `build_agent`.
+`run_skill_sync`, `build_agent`, `ApiSession`, `make_config`, `Message`,
+`EventReplayAgent`.
 
 **Three layers (`src/yoker/api/`)**:
 - `_internal.py` — shared helpers: `build_agent()` (now accepts

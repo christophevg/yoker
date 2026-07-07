@@ -3,6 +3,7 @@
 import pytest
 
 import yoker
+from yoker.config import Config
 from yoker.core import Agent
 from yoker.core.thinking import ThinkingMode
 from yoker.events import Event
@@ -64,7 +65,7 @@ class TestAgentBuilderTools:
 
   def test_tools_empty_disables_all(self) -> None:
     """tools=[] produces an agent with no tools."""
-    a = yoker.agent(tools=[])
+    a = yoker.agent(tools=[], config=Config())
     assert list(a.tools.names) == []
 
   def test_tools_none_keeps_all(self) -> None:
@@ -131,8 +132,9 @@ class TestAgentBuilderEventHandler:
   def test_event_handler_registered(self) -> None:
     """event_handler= is registered on construction."""
     received: list[Event] = []
-    a = yoker.agent(event_handler=lambda e: received.append(e))
-    assert a.get_event_handlers()[-1] is not None
+    handler = lambda e: received.append(e)  # noqa: E731
+    a = yoker.agent(event_handler=handler)
+    assert handler in a._event_handlers
 
   def test_on_event_returns_handler(self) -> None:
     """on_event returns the handler for chaining."""
@@ -151,4 +153,4 @@ class TestAgentBuilderEventHandler:
       return None
 
     a.on_event(handler)
-    assert handler in a.get_event_handlers()
+    assert handler in a._event_handlers

@@ -24,7 +24,7 @@ class TestSessionExceptionExit:
     """SESSION_END is emitted even when the body raises."""
     session = Session(config=Config())
     received: list = []
-    session.add_event_handler(lambda e: received.append(e))
+    session.on_event(lambda e: received.append(e))
     with pytest.raises(RuntimeError, match="boom"):
       async with session:
         raise RuntimeError("boom")
@@ -67,8 +67,8 @@ class TestSessionEventHandlerEdgeCases:
     def good_handler(event) -> None:
       received.append(event)
 
-    session.add_event_handler(bad_handler)
-    session.add_event_handler(good_handler)
+    session.on_event(bad_handler)
+    session.on_event(good_handler)
     async with session:
       pass
     # The good handler still received SESSION_START and SESSION_END.
@@ -92,7 +92,7 @@ class TestSessionEventHandlerEdgeCases:
     async def bad_async(_event) -> None:
       raise RuntimeError("async handler exploded")
 
-    session.add_event_handler(bad_async)
+    session.on_event(bad_async)
     # Should not raise out of __aenter__ — the handler exception is logged
     # by the Session's _emit, not propagated.
     async with session:
@@ -138,10 +138,10 @@ class TestSessionRegistryPopulationEdge:
 
 
 class TestRegisterPrimaryAgent:
-  """Tests for Session.register_primary_agent."""
+  """Tests for Session._register_primary (internal helper used by create_primary_agent)."""
 
-  def test_register_primary_agent_assigns_id_and_injects_tools(self) -> None:
-    """register_primary_agent assigns a runtime id and injects agent/send_message."""
+  def test_register_primary_assigns_id_and_injects_tools(self) -> None:
+    """_register_primary assigns a runtime id and injects agent/send_message."""
     config = Config()
     session = Session(config=config)
     fake_agent = MagicMock()
@@ -152,12 +152,12 @@ class TestRegisterPrimaryAgent:
       tools=("read",),
     )
     fake_agent.tools = MagicMock()
-    agent_id = session.register_primary_agent(fake_agent)
+    agent_id = session._register_primary(fake_agent)
     assert agent_id == "primary"
     assert session.get_agent("primary") is fake_agent
     assert session._recursion_depths["primary"] == 0
-    # The session-assigned id is stamped on the Agent for send()'s event payload.
-    assert fake_agent._session_id == "primary"
+    # The session resolves the agent back to its id via reverse-lookup.
+    assert session._id_of(fake_agent) == "primary"
     # The ``agent`` tool (gated by config.tools.agent.enabled, default True)
     # and ``send_message`` are both injected by the Session.
     registered_names = [
@@ -166,7 +166,7 @@ class TestRegisterPrimaryAgent:
     assert "agent" in registered_names
     assert "send_message" in registered_names
 
-  def test_register_primary_agent_skips_spawnagent_when_disabled(self) -> None:
+  def test_register_primary_skips_spawnagent_when_disabled(self) -> None:
     """The ``agent`` tool is NOT injected when config.tools.agent.enabled is False."""
     from dataclasses import replace
 
@@ -183,7 +183,7 @@ class TestRegisterPrimaryAgent:
       tools=("read",),
     )
     fake_agent.tools = MagicMock()
-    session.register_primary_agent(fake_agent)
+    session._register_primary(fake_agent)
     registered_names = [
       call.kwargs.get("name") for call in fake_agent.tools.register.call_args_list
     ]
@@ -191,7 +191,7 @@ class TestRegisterPrimaryAgent:
     # send_message is always injected when an agent is part of a session.
     assert "send_message" in registered_names
 
-  def test_register_primary_agent_disambiguates(self) -> None:
+  def test_register_primary_disambiguates(self) -> None:
     """A second primary-agent registration with the same name gets a -2 suffix."""
     config = Config()
     session = Session(config=config)
@@ -203,7 +203,7 @@ class TestRegisterPrimaryAgent:
     b.config = config
     b.definition = AgentDefinition(simple_name="primary", description="Primary", tools=("read",))
     b.tools = MagicMock()
-    first = session.register_primary_agent(a)
-    second = session.register_primary_agent(b)
+    first = session._register_primary(a)
+    second = session._register_primary(b)
     assert first == "primary"
     assert second == "primary-2"

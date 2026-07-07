@@ -114,39 +114,14 @@ async def _run_with_session(
   bridge: UIBridge,
 ) -> None:
   async with Session(config=config, extra_plugins=tuple(plugin_packages)) as session:
-    # Resolve the primary agent's definition. The Session-agnostic Agent
-    # cannot resolve names from a registry, so the Session layer resolves
-    # the config-based reference (if any) and passes the definition in.
-    from pathlib import Path
-
-    from yoker.agents import AgentDefinition, load_agent_definition
-
-    agent_definition: AgentDefinition | None = None
-    reference = config.agent or config.agents.definition or None
-    if reference:
-      file_path = Path(reference).expanduser()
-      if file_path.exists() and file_path.is_file():
-        agent_definition = load_agent_definition(reference)
-      else:
-        try:
-          agent_definition = session.agents.resolve(reference)
-        except ValueError:
-          logger.warning("primary agent definition not found", reference=reference)
-
-    agent = Agent(
+    agent = await session.create_primary_agent(
       config=config,
       plugins=plugin_packages if plugin_packages else None,
-      agent_definition=agent_definition,
-      backend=session.get_backend(config),
       console_logging=os.environ.get("YOKER_CONSOLE_LOGGING", "NO") != "NO",
     )
-    # Register the primary agent with the session so it gets a runtime id,
-    # is added to the active map (for send_message addressing), and receives
-    # the Session-injected tools (agent, send_message).
-    session.register_primary_agent(agent)
     # UIBridge is registered on Session so aggregated sub-agent events
     # (SessionEvent envelopes) reach the UI.
-    session.add_event_handler(bridge)
+    session.on_event(bridge)
     await _run_repl(agent, ui, commands)
 
 

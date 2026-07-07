@@ -48,7 +48,7 @@ async def main() -> None:
   print(f"Tools: {', '.join(sorted(agent.tools.names))}")
 
   # Register a custom event handler to observe the agent's activity.
-  agent.add_event_handler(log_events)
+  agent.on_event(log_events)
 
   # Process a single message. This will contact the configured backend.
   try:

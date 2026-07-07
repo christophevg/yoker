@@ -1,7 +1,6 @@
 """Event system for Yoker agents."""
 
 from yoker.events.recorder import EventRecorder, deserialize_event, serialize_event
-from yoker.events.replay import EventReplayAgent
 from yoker.events.session_event import SessionEvent
 from yoker.events.types import (
   AgentFinishedEvent,
@@ -58,7 +57,6 @@ __all__ = [
   "SessionEvent",
   # Recording and Replay
   "EventRecorder",
-  "EventReplayAgent",
   "serialize_event",
   "deserialize_event",
 ]

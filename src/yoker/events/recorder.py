@@ -150,7 +150,7 @@ class EventRecorder:
   Example:
     agent = Agent(config=config)
     recorder = EventRecorder(Path("session.jsonl"))
-    agent.add_event_handler(recorder)
+    agent.on_event(recorder)
     # ... run session ...
     recorder.close()
   """

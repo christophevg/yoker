@@ -38,13 +38,6 @@ logger = get_logger(__name__)
 class Agent:
   """Asynchronous agent that chats with model backends and uses tools."""
 
-  # Session-managed metadata (not Agent business state). Stamped by the
-  # Session in ``_spawn_internal`` / ``register_primary_agent`` with the
-  # session-assigned id, and read by :meth:`yoker.session.Session.send` to
-  # resolve Agent instances back to ids for event payloads. ``None`` when
-  # the Agent is not part of a Session.
-  _session_id: str | None = None
-
   def __init__(
     self,
     config: "Config | None" = None,
@@ -58,12 +51,6 @@ class Agent:
     console_logging: bool = True,
   ) -> None:
     """Initialize the async agent.
-
-    The Agent is fully Session-agnostic. It does not hold a reference to a
-    :class:`yoker.session.Session`. Backend sharing, agent-definition
-    resolution from registries, and plugin agent-definition registration are
-    concerns of the Session layer, which constructs the Agent with an explicit
-    ``backend=`` and/or ``agent_definition=`` when needed.
 
     Args:
       config: Optional explicit config. If omitted, config is discovered via
@@ -174,8 +161,21 @@ class Agent:
   def __repr__(self) -> str:
     return f"Agent({self.definition.name},tools={len(self.tools)},skills={len(self.skills)})"
 
-  def add_event_handler(self, handler: EventCallback) -> None:
-    """Register an event handler."""
+  def on_event(self, handler: EventCallback) -> EventCallback:
+    """Register an event handler and return it for chaining.
+
+    Accepts a sync or async callable accepting an :class:`yoker.events.Event`
+    (or a :class:`yoker.events.SessionEvent` envelope when the agent is part
+    of a :class:`yoker.session.Session`).
+
+    Args:
+      handler: A callable accepting an :class:`yoker.events.Event`. May be
+        sync or async.
+
+    Returns:
+      The same ``handler`` callable, so callers can chain or inline the
+      registration (e.g. ``agent.on_event(print)``).
+    """
     is_async = inspect.iscoroutinefunction(handler) or (
       callable(handler) and inspect.iscoroutinefunction(type(handler).__call__)
     )
@@ -185,32 +185,6 @@ class Agent:
       is_async=is_async,
     )
     self._event_handlers.append(handler)
-
-  def remove_event_handler(self, handler: EventCallback) -> None:
-    """Remove a registered event handler."""
-    self._event_handlers.remove(handler)
-
-  def get_event_handlers(self) -> list[EventCallback]:
-    """Return a copy of the registered event handlers."""
-    return self._event_handlers.copy()
-
-  def on_event(self, handler: EventCallback) -> EventCallback:
-    """Register an event handler and return it for chaining.
-
-    Pythonic alias for :meth:`add_event_handler`. Accepts the same sync or
-    async callables and is the canonical way to attach handlers from the
-    :mod:`yoker.api` layer.
-
-    Args:
-      handler: A callable accepting an :class:`yoker.events.Event` (or a
-        :class:`yoker.events.SessionEvent` envelope when the agent is part
-        of a :class:`yoker.session.Session`). May be sync or async.
-
-    Returns:
-      The same ``handler`` callable, so callers can chain or inline the
-      registration (e.g. ``agent.on_event(print)``).
-    """
-    self.add_event_handler(handler)
     return handler
 
   async def do(
