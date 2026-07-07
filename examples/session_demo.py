@@ -41,7 +41,7 @@ from yoker.events import (
   SessionEvent,
 )
 from yoker.exceptions import NetworkError
-from yoker.session import Message, Session
+from yoker.session import Session
 
 
 def log_event(event: Event | SessionEvent) -> None:
@@ -99,13 +99,13 @@ async def run_session_demo() -> None:
 
     # Construct the primary Agent. The Agent is Session-agnostic: the
     # Session layer resolves the config-based agent definition (if any)
-    # and shares its backend with the Agent. The primary agent has no
-    # allowlist by default — to spawn sub-agents programmatically we use
-    # session.spawn directly (the agent tool would be rejected with an
-    # empty allowlist).
+    # and shares its backend with the Agent (register_primary_agent
+    # overrides the agent's backend with the session-shared one). The
+    # primary agent has no allowlist by default — to spawn sub-agents
+    # programmatically we use session.spawn directly (the agent tool
+    # would be rejected with an empty allowlist).
     agent = Agent(
       config=config,
-      backend=session.get_backend(config),
       console_logging=False,
     )
     primary_id = session.register_primary_agent(agent)
@@ -121,22 +121,19 @@ async def run_session_demo() -> None:
       print("Spawning 'researcher' sub-agent via session.spawn(...) ...")
       try:
         researcher = await session.spawn("researcher")
-        agent_id = session._agent_id_for(researcher)
-        print(f"Spawned agent id: {agent_id}")
+        print(f"Spawned agent id: {researcher._session_id}")
         response = await researcher.process("Summarize the README.md file in two sentences.")
         print(f"Response: {response}")
         print()
 
         # Inter-agent messaging (D3): send a follow-up message to the
-        # spawned agent while it is still active.
-        print(f"Sending follow-up message to {agent_id} ...")
+        # spawned agent while it is still active. The Python API takes
+        # Agent instances directly (the session resolves the ids for the
+        # event payload internally).
+        print("Sending follow-up message to researcher ...")
         try:
           reply = await session.send(
-            Message(
-              from_id=primary_id,
-              to_id=agent_id,
-              content="What was the most surprising finding?",
-            )
+            to=researcher, from_=agent, content="What was the most surprising finding?"
           )
           print(f"Reply: {reply}")
         except ValueError as e:

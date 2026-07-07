@@ -145,6 +145,7 @@ class TestRegisterPrimaryAgent:
     config = Config()
     session = Session(config=config)
     fake_agent = MagicMock()
+    fake_agent.config = config
     fake_agent.definition = AgentDefinition(
       simple_name="primary",
       description="Primary",
@@ -155,6 +156,8 @@ class TestRegisterPrimaryAgent:
     assert agent_id == "primary"
     assert session.get_agent("primary") is fake_agent
     assert session._recursion_depths["primary"] == 0
+    # The session-assigned id is stamped on the Agent for send()'s event payload.
+    assert fake_agent._session_id == "primary"
     # The ``agent`` tool (gated by config.tools.agent.enabled, default True)
     # and ``send_message`` are both injected by the Session.
     registered_names = [
@@ -173,6 +176,7 @@ class TestRegisterPrimaryAgent:
     config = replace(config, tools=replace(config.tools, agent=AgentToolConfig(enabled=False)))
     session = Session(config=config)
     fake_agent = MagicMock()
+    fake_agent.config = config
     fake_agent.definition = AgentDefinition(
       simple_name="primary",
       description="Primary",
@@ -189,11 +193,14 @@ class TestRegisterPrimaryAgent:
 
   def test_register_primary_agent_disambiguates(self) -> None:
     """A second primary-agent registration with the same name gets a -2 suffix."""
-    session = Session(config=Config())
+    config = Config()
+    session = Session(config=config)
     a = MagicMock()
+    a.config = config
     a.definition = AgentDefinition(simple_name="primary", description="Primary", tools=("read",))
     a.tools = MagicMock()
     b = MagicMock()
+    b.config = config
     b.definition = AgentDefinition(simple_name="primary", description="Primary", tools=("read",))
     b.tools = MagicMock()
     first = session.register_primary_agent(a)

@@ -17,7 +17,6 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from yoker.agents import AgentDefinition
-from yoker.session.message import Message
 from yoker.session.tools import (
   DEFAULT_TIMEOUT_SECONDS,
   make_send_message_tool,
@@ -157,10 +156,10 @@ class TestAgentToolParameters:
 
 
 class TestAgentToolDelegation:
-  """Tests that the ``agent`` tool delegates to session.spawn."""
+  """Tests that the ``agent`` tool delegates to session._spawn_internal."""
 
   @pytest.mark.asyncio
-  async def test_delegates_to_session_spawn(self) -> None:
+  async def test_delegates_to_session_spawn_internal(self) -> None:
     """Successful spawn returns ToolResult with agent_id and response."""
     agent_def = AgentDefinition(
       simple_name="researcher",
@@ -168,7 +167,10 @@ class TestAgentToolDelegation:
       tools=("read",),
     )
     session = _make_session_with_registry(agent_def=agent_def)
-    session._spawn_and_run = AsyncMock(return_value=("researcher", "researcher response"))
+    mock_child = MagicMock()
+    mock_child.process = AsyncMock(return_value="researcher response")
+    session._spawn_internal = AsyncMock(return_value=(mock_child, "researcher"))
+    session.release = MagicMock()
     requester = _make_requester(allowlist=("researcher",))
 
     spec = _spawn_agent_spec(session=session, requester=requester)
@@ -178,15 +180,16 @@ class TestAgentToolDelegation:
     assert "researcher" in result.result
     assert "researcher response" in result.result
     assert "agent_id:" in result.result
-    session._spawn_and_run.assert_awaited_once()
-    call_kwargs = session._spawn_and_run.call_args.kwargs
+    session._spawn_internal.assert_awaited_once()
+    call_kwargs = session._spawn_internal.call_args.kwargs
     assert call_kwargs["requester"] is requester
+    session.release.assert_called_once_with(mock_child)
 
   @pytest.mark.asyncio
   async def test_value_error_wrapped_as_failure(self) -> None:
-    """ValueError from session.spawn (allowlist/depth/capacity) is wrapped."""
+    """ValueError from session._spawn_internal (allowlist/depth/capacity) is wrapped."""
     session = _make_session_with_registry(resolve_error=ValueError("Agent not found: ghost"))
-    session._spawn_and_run = AsyncMock(side_effect=ValueError("not allowed"))
+    session._spawn_internal = AsyncMock(side_effect=ValueError("not allowed"))
     requester = _make_requester(allowlist=("researcher",))
 
     spec = _spawn_agent_spec(session=session, requester=requester)
@@ -197,14 +200,17 @@ class TestAgentToolDelegation:
 
   @pytest.mark.asyncio
   async def test_timeout_error_wrapped_as_failure(self) -> None:
-    """TimeoutError from session.spawn is wrapped, not re-raised."""
+    """TimeoutError from the run is wrapped, not re-raised."""
     agent_def = AgentDefinition(
       simple_name="researcher",
       description="Researcher",
       tools=("read",),
     )
     session = _make_session_with_registry(agent_def=agent_def)
-    session._spawn_and_run = AsyncMock(side_effect=TimeoutError("timed out after 1s"))
+    mock_child = MagicMock()
+    mock_child.process = AsyncMock(side_effect=TimeoutError("timed out after 1s"))
+    session._spawn_internal = AsyncMock(return_value=(mock_child, "researcher"))
+    session.release = MagicMock()
     requester = _make_requester(allowlist=("researcher",))
 
     spec = _spawn_agent_spec(session=session, requester=requester)
@@ -222,7 +228,10 @@ class TestAgentToolDelegation:
       tools=("read",),
     )
     session = _make_session_with_registry(agent_def=agent_def)
-    session._spawn_and_run = AsyncMock(side_effect=RuntimeError("boom"))
+    mock_child = MagicMock()
+    mock_child.process = AsyncMock(side_effect=RuntimeError("boom"))
+    session._spawn_internal = AsyncMock(return_value=(mock_child, "researcher"))
+    session.release = MagicMock()
     requester = _make_requester(allowlist=("researcher",))
 
     spec = _spawn_agent_spec(session=session, requester=requester)
@@ -232,22 +241,35 @@ class TestAgentToolDelegation:
     assert "Sub-agent error" in result.error
 
   @pytest.mark.asyncio
-  async def test_default_timeout_passed_to_spawn(self) -> None:
-    """Default timeout is forwarded when not specified."""
+  async def test_default_timeout_passed_to_wait_for(self) -> None:
+    """Default timeout is applied to asyncio.wait_for around child.process."""
+    import asyncio
+
     agent_def = AgentDefinition(
       simple_name="researcher",
       description="Researcher",
       tools=("read",),
     )
     session = _make_session_with_registry(agent_def=agent_def)
-    session._spawn_and_run = AsyncMock(return_value=("researcher", "ok"))
+    mock_child = MagicMock()
+    mock_child.process = AsyncMock(return_value="ok")
+    session._spawn_internal = AsyncMock(return_value=(mock_child, "researcher"))
+    session.release = MagicMock()
     requester = _make_requester(allowlist=("researcher",))
 
     spec = _spawn_agent_spec(session=session, requester=requester)
-    await spec.execute(agent_name="researcher", prompt="hi")
+    captured: dict = {}
+    original_wait_for = asyncio.wait_for
 
-    call_kwargs = session._spawn_and_run.call_args.kwargs
-    assert call_kwargs["timeout_seconds"] == DEFAULT_TIMEOUT_SECONDS
+    async def fake_wait_for(coro, timeout):
+      captured["timeout"] = timeout
+      return await original_wait_for(coro, timeout=timeout)
+
+    from unittest.mock import patch
+
+    with patch("yoker.session.tools.asyncio.wait_for", side_effect=fake_wait_for):
+      await spec.execute(agent_name="researcher", prompt="hi")
+    assert captured["timeout"] == DEFAULT_TIMEOUT_SECONDS
 
   @pytest.mark.asyncio
   async def test_result_contains_agent_id(self) -> None:
@@ -258,7 +280,10 @@ class TestAgentToolDelegation:
       tools=("read",),
     )
     session = _make_session_with_registry(agent_def=agent_def)
-    session._spawn_and_run = AsyncMock(return_value=("researcher-2", "found it"))
+    mock_child = MagicMock()
+    mock_child.process = AsyncMock(return_value="found it")
+    session._spawn_internal = AsyncMock(return_value=(mock_child, "researcher-2"))
+    session.release = MagicMock()
     requester = _make_requester(allowlist=("researcher",))
 
     spec = _spawn_agent_spec(session=session, requester=requester)
@@ -332,7 +357,13 @@ class TestSendMessageToolDelegation:
   @pytest.mark.asyncio
   async def test_delegates_to_session_send(self) -> None:
     """Successful send returns ToolResult with the target's response."""
+    target_agent = MagicMock(name="researcher")
+    sender_agent = MagicMock(name="coordinator")
     session = MagicMock()
+    session._agents_map = {
+      "researcher": target_agent,
+      "coordinator": sender_agent,
+    }
     session.send = AsyncMock(return_value="the reply")
 
     spec = _send_message_spec(session=session, from_id="coordinator")
@@ -341,10 +372,10 @@ class TestSendMessageToolDelegation:
     assert result.success
     assert result.result == "the reply"
     session.send.assert_awaited_once()
-    sent_msg: Message = session.send.call_args.args[0]
-    assert sent_msg.from_id == "coordinator"
-    assert sent_msg.to_id == "researcher"
-    assert sent_msg.content == "hi"
+    sent_kwargs = session.send.call_args.kwargs
+    assert sent_kwargs["to"] is target_agent
+    assert sent_kwargs["from_"] is sender_agent
+    assert sent_kwargs["content"] == "hi"
 
   @pytest.mark.asyncio
   async def test_missing_to_returns_error(self) -> None:
@@ -366,9 +397,9 @@ class TestSendMessageToolDelegation:
 
   @pytest.mark.asyncio
   async def test_unknown_target_returns_failure(self) -> None:
-    """ValueError (unknown target) is wrapped as a failure result."""
+    """An unknown target id (not in the active map) returns a failure result."""
     session = MagicMock()
-    session.send = AsyncMock(side_effect=ValueError("No active agent with id 'ghost'"))
+    session._agents_map = {}
 
     spec = _send_message_spec(session=session, from_id="coordinator")
     result = await spec.execute(to="ghost", message="hi")
@@ -379,7 +410,13 @@ class TestSendMessageToolDelegation:
   @pytest.mark.asyncio
   async def test_generic_exception_wrapped_as_failure(self) -> None:
     """Unexpected exceptions are wrapped, not re-raised."""
+    target_agent = MagicMock(name="researcher")
+    sender_agent = MagicMock(name="coordinator")
     session = MagicMock()
+    session._agents_map = {
+      "researcher": target_agent,
+      "coordinator": sender_agent,
+    }
     session.send = AsyncMock(side_effect=RuntimeError("boom"))
 
     spec = _send_message_spec(session=session, from_id="coordinator")

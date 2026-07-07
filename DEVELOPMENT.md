@@ -8,6 +8,61 @@ Yoker is a Python agent harness with configurable tools and guardrails. It provi
 
 ## Recent Changes
 
+### MBI-003: API Refactor — owner review round 3 (2026-07-07)
+
+Follow-up to the 3rd CHANGES_REQUESTED review on PR #45. Removed the
+unapproved `Session.primary_agent` / `Session._agent_id_for` /
+`Session._spawn_and_run` additions introduced in the prior reduction
+commit, and aligned the Python API with the owner's direction: the Python
+API accepts `Agent` instances (not id strings); `agent_id`s are
+string-references for the LLM only and are mapped to instances inside the
+tool layer before calling the Python API.
+
+- **`Session.spawn` split**: body extracted into
+  `_spawn_internal(name, *, requester) -> tuple[Agent, str]` (returns
+  `(child, agent_id)`); public `spawn(name, *, requester=None) -> Agent`
+  is now a thin wrapper that returns only the Agent. The `agent` tool
+  calls `_spawn_internal` directly and runs `child.process(prompt)` +
+  `session.release(child)` inline (with `asyncio.wait_for` timeout) — the
+  `_spawn_and_run` method was deleted.
+- **`primary_agent` → `agent`**: the read-only property is now `Session.agent`
+  (backed by `_agent`, set in `register_primary_agent`). `Session.primary_agent`
+  was removed.
+- **`_agent_id_for` removed**: `Session.release(agent)` now removes the agent
+  by identity via a dict comprehension (single cleanup path; the private
+  `_release(agent_id)` was also deleted).
+- **`Session.send` accepts `Agent` instances**: new signature
+  `send(*, to, from_, content) -> str`. The session-assigned id is stamped
+  on the Agent as `agent._session_id` (Session-managed metadata, declared
+  on `Agent` as `_session_id: str | None = None`) in both `_spawn_internal`
+  and `register_primary_agent` — the bridge `send` uses to resolve ids
+  for the `AgentMessageEvent` payload.
+- **`send_message` tool**: resolves the LLM-facing `to`/`from_id` string
+  references to `Agent` instances via the active map, then calls
+  `session.send(to=, from_=, content=)`. No longer builds a `Message`.
+- **`register_primary_agent`**: now also overrides the agent's backend with
+  the session-shared one (`agent._backend = self.get_backend(agent.config)`)
+  so the primary agent shares the same backend as spawned sub-agents
+  without the caller passing `backend=` explicitly.
+- **`make_config()` no-arg calls inlined**: `yoker/api/__init__.py` now
+  uses `Config()` directly in `agent()` and `_session_config()`.
+  `make_config` is still defined/exported from `yoker.config` (tested,
+  may be used by external callers) but has zero production callers in
+  `yoker.api` — flagged for a later keep/delete decision.
+- **`examples/session_demo.py`**: drops `backend=session.get_backend(...)`
+  from the primary `Agent(...)` construction; uses
+  `session.send(to=researcher, from_=agent, content=...)` with `Agent`
+  instances; removes the `_agent_id_for` lookup.
+- **`examples/python_api/run_skill.py`**: now uses `yoker.do("commit", ...)`
+  (one-shot) instead of `yoker.agent()` + `agent.do(...)`.
+- **`examples/python_api/one_shot.py`**: env-var phrasing fixed (drops the
+  non-existent `YOKER_BACKEND_PROVIDER` reference).
+- **`examples/python_api/session.py`**: `session.primary_agent.process(...)`
+  → `session.agent.process(...)`.
+- **Tests updated** to match: `test_spawn.py`, `test_edge_cases.py`,
+  `test_events.py`, `test_messaging.py`, `test_lifecycle.py`,
+  `test_api/test_session.py`, `test_tools/test_agent.py`.
+
 ### MBI-003: API Reduction (2026-07-07)
 
 Reduced the MBI-003 Python API to a minimal surface per the owner-approved

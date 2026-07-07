@@ -31,12 +31,12 @@ class TestSessionLifecycle:
     # Exiting should not raise.
 
   async def test_session_has_primary_agent(self, patched_process) -> None:
-    """The yielded Session exposes the primary Agent via primary_agent."""
+    """The yielded Session exposes the primary Agent via ``agent``."""
     async with yoker.session() as sess:
       assert isinstance(sess, CoreSession)
-      assert isinstance(sess.primary_agent, Agent)
+      assert isinstance(sess.agent, Agent)
       # The primary agent is registered in the active map.
-      assert sess._agent_id_for(sess.primary_agent) in sess._agents_map
+      assert sess.agent in sess._agents_map.values()
 
   async def test_session_explicit_id(self, patched_process) -> None:
     """id= is honoured on the underlying session."""
@@ -45,20 +45,20 @@ class TestSessionLifecycle:
 
 
 class TestSessionAgentProcess:
-  """``session.primary_agent.process`` runs a turn on the primary agent."""
+  """``session.agent.process`` runs a turn on the primary agent."""
 
   async def test_process_returns_response(self, patched_process) -> None:
-    """primary_agent.process() returns the reply."""
+    """agent.process() returns the reply."""
     async with yoker.session() as sess:
-      result = await sess.primary_agent.process("hello")
+      result = await sess.agent.process("hello")
     assert result == "reply:hello"
     assert patched_process == ["hello"]
 
   async def test_process_multi_turn(self, patched_process) -> None:
     """Multiple process() calls reuse the same primary agent."""
     async with yoker.session() as sess:
-      await sess.primary_agent.process("first")
-      await sess.primary_agent.process("second")
+      await sess.agent.process("first")
+      await sess.agent.process("second")
     assert patched_process == ["first", "second"]
 
 
@@ -97,11 +97,11 @@ class TestSessionFreshAndPersist:
     async with yoker.session(persist=False) as sess:
       from yoker.context.basic import SimpleContextManager as SC
 
-      assert isinstance(sess.primary_agent.context, SC)
+      assert isinstance(sess.agent.context, SC)
 
   async def test_persist_true_wraps_with_persisted(self, patched_process) -> None:
     """persist=True (default) wraps the context with Persisted."""
     from yoker.context import Persisted
 
     async with yoker.session(persist=True) as sess:
-      assert isinstance(sess.primary_agent.context, Persisted)
+      assert isinstance(sess.agent.context, Persisted)

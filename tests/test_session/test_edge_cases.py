@@ -9,6 +9,7 @@ Targets the specific uncovered lines in ``src/yoker/session/``:
   - ``tools.py`` line 52: ``_clamp`` bounds.
 """
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -55,7 +56,7 @@ class TestSpawnResolutionFailure:
         side_effect=RuntimeError("registry corrupted"),
       ):
         with pytest.raises(ValueError, match="Agent resolution failed"):
-          await session._spawn_and_run("researcher", "hi")
+          await session._spawn_internal("researcher")
       assert session.get_agent("researcher") is None
 
 
@@ -137,7 +138,7 @@ class TestDeriveConfigModelOverride:
         with patch("yoker.session.session.create_backend") as mock_create:
           mock_backend = MagicMock()
           mock_create.return_value = mock_backend
-          await session._spawn_and_run("researcher", "hi")
+          await session._spawn_internal("researcher")
         # A fresh backend was created (not cached from the parent config).
         mock_create.assert_called_once()
 
@@ -179,12 +180,17 @@ class TestSpawnTimeoutDefaultClamping:
   @pytest.mark.asyncio
   async def test_timeout_below_minimum_clamped_to_one(self) -> None:
     """A timeout below 1 is clamped to 1 second before being forwarded."""
+    from unittest.mock import patch as _patch
+
     from yoker.session.tools import make_spawn_agent_tool
 
     session = MagicMock()
     session.agents = MagicMock()
     session.agents.names = []
-    session._spawn_and_run = AsyncMock(return_value=("r", "ok"))
+    mock_child = MagicMock()
+    mock_child.process = AsyncMock(return_value="ok")
+    session._spawn_internal = AsyncMock(return_value=(mock_child, "r"))
+    session.release = MagicMock()
     requester = MagicMock()
     requester.definition = AgentDefinition(
       simple_name="parent",
@@ -193,19 +199,31 @@ class TestSpawnTimeoutDefaultClamping:
       agents=("researcher",),
     )
     tool = make_spawn_agent_tool(session, requester)
-    await tool(agent_name="researcher", prompt="hi", timeout_seconds=-5)
-    call_kwargs = session._spawn_and_run.call_args.kwargs
-    assert call_kwargs["timeout_seconds"] == 1
+    captured: dict = {}
+    original_wait_for = asyncio.wait_for
+
+    async def fake_wait_for(coro, timeout):
+      captured["timeout"] = timeout
+      return await original_wait_for(coro, timeout=timeout)
+
+    with _patch("yoker.session.tools.asyncio.wait_for", side_effect=fake_wait_for):
+      await tool(agent_name="researcher", prompt="hi", timeout_seconds=-5)
+    assert captured["timeout"] == 1
 
   @pytest.mark.asyncio
   async def test_timeout_above_max_clamped_to_absolute_max(self) -> None:
     """A timeout above ABSOLUTE_MAX_TIMEOUT_SECONDS is clamped down."""
+    from unittest.mock import patch as _patch
+
     from yoker.session.tools import make_spawn_agent_tool
 
     session = MagicMock()
     session.agents = MagicMock()
     session.agents.names = []
-    session._spawn_and_run = AsyncMock(return_value=("r", "ok"))
+    mock_child = MagicMock()
+    mock_child.process = AsyncMock(return_value="ok")
+    session._spawn_internal = AsyncMock(return_value=(mock_child, "r"))
+    session.release = MagicMock()
     requester = MagicMock()
     requester.definition = AgentDefinition(
       simple_name="parent",
@@ -214,9 +232,16 @@ class TestSpawnTimeoutDefaultClamping:
       agents=("researcher",),
     )
     tool = make_spawn_agent_tool(session, requester)
-    await tool(agent_name="researcher", prompt="hi", timeout_seconds=99_999)
-    call_kwargs = session._spawn_and_run.call_args.kwargs
-    assert call_kwargs["timeout_seconds"] == ABSOLUTE_MAX_TIMEOUT_SECONDS
+    captured: dict = {}
+    original_wait_for = asyncio.wait_for
+
+    async def fake_wait_for(coro, timeout):
+      captured["timeout"] = timeout
+      return await original_wait_for(coro, timeout=timeout)
+
+    with _patch("yoker.session.tools.asyncio.wait_for", side_effect=fake_wait_for):
+      await tool(agent_name="researcher", prompt="hi", timeout_seconds=99_999)
+    assert captured["timeout"] == ABSOLUTE_MAX_TIMEOUT_SECONDS
 
 
 __all__ = [
