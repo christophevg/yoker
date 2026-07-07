@@ -9,17 +9,6 @@ from yoker.config import Config
 from yoker.session import Session
 
 
-def _config_with_max_recursion(max_depth: int) -> Config:
-  """Build a Config with a specific recursion depth limit."""
-  from dataclasses import replace
-
-  from yoker.config import AgentToolConfig
-
-  cfg = Config()
-  new_tools = replace(cfg.tools, agent=AgentToolConfig(max_recursion_depth=max_depth))
-  return replace(cfg, tools=new_tools)
-
-
 def _make_requester(allowlist=(), session=None):
   """Build a mock requester Agent with a definition allowlist."""
   agent = MagicMock()
@@ -110,7 +99,7 @@ class TestSpawnAllowlist:
   @pytest.mark.asyncio
   async def test_allowlist_check_precedes_depth_check(self) -> None:
     """Allowlist rejection takes precedence over depth/capacity errors."""
-    config = _config_with_max_recursion(1)
+    config = Config()
     agent_def = AgentDefinition(
       simple_name="researcher",
       description="Researcher",
@@ -118,8 +107,7 @@ class TestSpawnAllowlist:
     )
     async with Session(config=config) as session:
       session.agents.register(agent_def)
-      # requester at depth 1 would exceed max_recursion_depth=1 on the next
-      # spawn, but the allowlist violation should fire first.
+      # allowlist violation should fire before any depth/capacity check.
       requester = _make_requester(allowlist=("writer",), session=session)
       requester.definition = AgentDefinition(
         simple_name="parent",

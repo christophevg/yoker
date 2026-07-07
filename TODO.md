@@ -436,6 +436,10 @@ constructor args. Remove the old fields/args outright; callers that pass them ge
   - **Acceptance:**
     - Session reads `config.tools.agent.max_recursion_depth` for depth enforcement
     - Old TOML files with `[tools.agent] max_recursion_depth = 3` still work
+  - **Note (Batch 2.3):** `max_recursion_depth` was later removed from both
+    `AgentToolConfig` and `PermissionsConfig` — the field had no production
+    reader (Session enforces only `session.max_agents`). The acceptance
+    criteria above are superseded.
   - **Satisfies:** D7
   - **Depends on:** 7.6.2
 

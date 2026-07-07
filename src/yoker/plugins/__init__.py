@@ -30,6 +30,7 @@ from yoker.plugins.security import (
   confirm_plugin,
   is_trusted,
   reset_session_trusted,
+  warn_plugins_disabled,
 )
 
 __all__ = [
@@ -46,4 +47,5 @@ __all__ = [
   "confirm_plugin",
   "check_plugin_allowed",
   "reset_session_trusted",
+  "warn_plugins_disabled",
 ]

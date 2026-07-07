@@ -43,7 +43,6 @@ from dataclasses import dataclass, field
 from typing import Literal, cast
 
 from clevis import SecurityAction, SecurityConfig, get_config
-from structlog import get_logger
 
 from yoker.config.providers import (
   AnthropicConfig,
@@ -63,13 +62,10 @@ from yoker.config.validators import (
   validate_directory_exists,
   validate_log_level,
   validate_non_empty_string,
-  validate_non_negative_int,
   validate_positive_int,
   validate_regex_patterns,
 )
 from yoker.exceptions import ValidationError
-
-logger = get_logger(__name__)
 
 
 def get_yoker_config(cli: bool = False) -> "Config":
@@ -238,21 +234,18 @@ class PermissionsConfig:
     filesystem_paths: Allowed filesystem paths.
     network_access: Network access level ('none', 'local', 'all').
     max_file_size_kb: Maximum file size in KB.
-    max_recursion_depth: Maximum subagent recursion depth.
     handlers: Permission handler configurations.
   """
 
   filesystem_paths: tuple[str, ...] = (".",)
   network_access: str = "none"
   max_file_size_kb: int = 500
-  max_recursion_depth: int = 3
   handlers: dict[str, HandlerConfig] = field(default_factory=dict)
 
   def __post_init__(self) -> None:
     """Validate permissions configuration."""
     validate_choice(self.network_access, "permissions.network_access", ("none", "local", "all"))
     validate_positive_int(self.max_file_size_kb, "permissions.max_file_size_kb")
-    validate_non_negative_int(self.max_recursion_depth, "permissions.max_recursion_depth")
     if not self.filesystem_paths:
       raise ValidationError(
         "permissions.filesystem_paths",
@@ -414,16 +407,13 @@ class AgentToolConfig(ToolConfig):
   """Agent tool configuration.
 
   Attributes:
-    max_recursion_depth: Maximum subagent recursion depth.
     timeout_seconds: Subagent timeout in seconds.
   """
 
-  max_recursion_depth: int = 3
   timeout_seconds: int = 300
 
   def __post_init__(self) -> None:
     """Validate agent tool configuration."""
-    validate_positive_int(self.max_recursion_depth, "tools.agent.max_recursion_depth")
     validate_positive_int(self.timeout_seconds, "tools.agent.timeout_seconds")
 
 
@@ -745,15 +735,6 @@ class Config:
   logging: LoggingConfig = field(default_factory=LoggingConfig)
   ui: UIConfig = field(default_factory=UIConfig)
   session: SessionConfig = field(default_factory=SessionConfig)
-
-  def __post_init__(self) -> None:
-    """Run sanity checks on the assembled configuration."""
-    # misconfiguration: plugin packages listed but plugins disabled
-    if not self.plugins.enabled and self.plugins.packages:
-      logger.warning(
-        "plugins_disabled_with_packages_configured",
-        packages=list(self.plugins.packages),
-      )
 
 
 __all__ = [

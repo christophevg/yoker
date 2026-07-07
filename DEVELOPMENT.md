@@ -687,6 +687,10 @@ the module skeleton, and the lifecycle primitives.
      unchanged, only the consumer moves from Agent to Session). Internal
      state (`_agents_map`, `_agent_registry`, `_recursion_depths`,
      `_backends`, `_tasks`) is in place for Phases 2-5.
+     **Update (Batch 2.3):** `max_recursion_depth` was removed from both
+     `AgentToolConfig` and `PermissionsConfig` — the field had no production
+     reader (Session enforces only `session.max_agents`); the
+     `max_recursion_depth` property no longer exists.
    - `__init__.py`: exports `Session`, `Message`.
 4. `tests/test_session/` — new test package: `test_config.py` (10 tests),
    `test_message.py` (7 tests), `test_session.py` (18 tests).
