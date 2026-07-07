@@ -18,7 +18,6 @@ import pytest
 
 from yoker.agents import AgentDefinition
 from yoker.session.message import Message
-from yoker.session.spawn_result import SpawnResult
 from yoker.session.tools import (
   DEFAULT_TIMEOUT_SECONDS,
   make_send_message_tool,
@@ -169,9 +168,7 @@ class TestAgentToolDelegation:
       tools=("read",),
     )
     session = _make_session_with_registry(agent_def=agent_def)
-    session._spawn_and_run = AsyncMock(
-      return_value=SpawnResult(agent_id="researcher", response="researcher response")
-    )
+    session._spawn_and_run = AsyncMock(return_value=("researcher", "researcher response"))
     requester = _make_requester(allowlist=("researcher",))
 
     spec = _spawn_agent_spec(session=session, requester=requester)
@@ -243,9 +240,7 @@ class TestAgentToolDelegation:
       tools=("read",),
     )
     session = _make_session_with_registry(agent_def=agent_def)
-    session._spawn_and_run = AsyncMock(
-      return_value=SpawnResult(agent_id="researcher", response="ok")
-    )
+    session._spawn_and_run = AsyncMock(return_value=("researcher", "ok"))
     requester = _make_requester(allowlist=("researcher",))
 
     spec = _spawn_agent_spec(session=session, requester=requester)
@@ -263,9 +258,7 @@ class TestAgentToolDelegation:
       tools=("read",),
     )
     session = _make_session_with_registry(agent_def=agent_def)
-    session._spawn_and_run = AsyncMock(
-      return_value=SpawnResult(agent_id="researcher-2", response="found it")
-    )
+    session._spawn_and_run = AsyncMock(return_value=("researcher-2", "found it"))
     requester = _make_requester(allowlist=("researcher",))
 
     spec = _spawn_agent_spec(session=session, requester=requester)

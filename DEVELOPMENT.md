@@ -8,6 +8,46 @@ Yoker is a Python agent harness with configurable tools and guardrails. It provi
 
 ## Recent Changes
 
+### MBI-003: API Reduction (2026-07-07)
+
+Reduced the MBI-003 Python API to a minimal surface per the owner-approved
+plan (PR #45, commit 4902976419). The three-module `yoker/api/` package
+collapsed to a single thin module; the `ApiSession` facade class and the
+`SpawnResult` dataclass were removed entirely; `Agent` no longer carries a
+session-assigned id.
+
+- **Public API surface** (`yoker/__init__.py` `__all__`): `Agent`, `Session`,
+  `Config`, `process`, `do`, `agent`, `session`, `run_sync`. Removed:
+  `ApiSession`, `SpawnResult`, `build_agent`, and the per-function `*_sync`
+  wrappers.
+- **`yoker/api/__init__.py`** is now the only module in the package:
+  `agent(**kwargs) -> Agent` is the builder; `process(prompt, **kwargs)` and
+  `do(skill_name, prompt, args="", **kwargs)` are one-shot helpers built on
+  `agent()`; `session(id=..., *, persist=True, fresh=False, **kwargs)` is an
+  async context manager that yields the **real** `yoker.session.Session`
+  (no facade). Private helpers: `_thinking_mode`, `_apply_model_provider`,
+  `_build_agent_definition`, `_filter_tools`, `_filter_skills`,
+  `_session_config`, `_resolve_primary_definition`. Deleted:
+  `_internal.py`, `one_shot.py`, `session.py`.
+- **`SpawnResult` removed**: `Session._spawn_and_run` now returns a
+  `(agent_id: str, response: str)` tuple. The `agent` tool renders
+  `agent_id: <id>\n\n<response>` inline at the call site; the
+  `_render_spawn_result` helper was deleted. `src/yoker/session/spawn_result.py`
+  was deleted.
+- **`Agent._agent_id` removed**: the Session owns the registry key. New
+  `Session._agent_id_for(agent) -> str` does the registry lookup (used by
+  `_spawn_and_run`); new `Session.release(agent) -> None` is the public
+  cleanup wrapper over `_release(agent_id)`; new `Session.primary_agent`
+  read-only property (backed by `register_primary_agent()`). The three
+  `agent._agent_id = agent_id` assignments in `spawn()`,
+  `register_primary_agent()`, and `_spawn_and_run()` were deleted.
+- **`do` added to the public API**: `yoker.do(skill_name, prompt, args="")`
+  one-shot skill invocation, mirroring `yoker.process`. Tests in
+  `tests/test_api/test_do.py`.
+- `examples/session_demo.py` and `examples/python_api/session.py` updated
+  to the new API (`session._agent_id_for(...)`, `session.release(...)`,
+  `session.primary_agent.process(...)`).
+
 ### MBI-003: Python API Redesign (2026-07-06)
 
 Redesigned the Pythonic utility API into a three-layer facade

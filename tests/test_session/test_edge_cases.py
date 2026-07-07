@@ -6,7 +6,6 @@ Targets the specific uncovered lines in ``src/yoker/session/``:
   - ``session.py`` lines 286-289: ``spawn`` resolution failure paths
     (``ValueError`` re-raise and generic-``Exception`` wrapping).
   - ``session.py`` lines 511-520: ``_derive_config`` model-override branch.
-  - ``tools.py`` line 64: ``_render_spawn_result`` with empty ``agent_id``.
   - ``tools.py`` line 52: ``_clamp`` bounds.
 """
 
@@ -17,11 +16,9 @@ import pytest
 from yoker.agents import AgentDefinition
 from yoker.config import Config
 from yoker.session import Session
-from yoker.session.spawn_result import SpawnResult
 from yoker.session.tools import (
   ABSOLUTE_MAX_TIMEOUT_SECONDS,
   _clamp,
-  _render_spawn_result,
 )
 
 
@@ -160,27 +157,6 @@ class TestDeriveConfigModelOverride:
     assert config.backend.config.model == "a"
 
 
-class TestRenderSpawnResult:
-  """Tests for _render_spawn_result edge cases (tools.py line 64)."""
-
-  def test_render_with_agent_id_includes_both_fields(self) -> None:
-    """A non-empty agent_id renders both the id and the response."""
-    result = SpawnResult(agent_id="researcher-2", response="found it")
-    rendered = _render_spawn_result(result)
-    assert "agent_id: researcher-2" in rendered
-    assert "found it" in rendered
-
-  def test_render_with_empty_agent_id_returns_response_only(self) -> None:
-    """An empty agent_id renders only the response (no agent_id prefix).
-
-    Covers tools.py line 64: the ``return result.response`` branch.
-    """
-    result = SpawnResult(agent_id="", response="just a response")
-    rendered = _render_spawn_result(result)
-    assert rendered == "just a response"
-    assert "agent_id" not in rendered
-
-
 class TestClamp:
   """Tests for _clamp bounds (tools.py line 52)."""
 
@@ -208,9 +184,7 @@ class TestSpawnTimeoutDefaultClamping:
     session = MagicMock()
     session.agents = MagicMock()
     session.agents.names = []
-    session._spawn_and_run = AsyncMock(
-      return_value=SpawnResult(agent_id="r", response="ok"),
-    )
+    session._spawn_and_run = AsyncMock(return_value=("r", "ok"))
     requester = MagicMock()
     requester.definition = AgentDefinition(
       simple_name="parent",
@@ -231,9 +205,7 @@ class TestSpawnTimeoutDefaultClamping:
     session = MagicMock()
     session.agents = MagicMock()
     session.agents.names = []
-    session._spawn_and_run = AsyncMock(
-      return_value=SpawnResult(agent_id="r", response="ok"),
-    )
+    session._spawn_and_run = AsyncMock(return_value=("r", "ok"))
     requester = MagicMock()
     requester.definition = AgentDefinition(
       simple_name="parent",
@@ -250,7 +222,6 @@ class TestSpawnTimeoutDefaultClamping:
 __all__ = [
   "TestSpawnResolutionFailure",
   "TestDeriveConfigModelOverride",
-  "TestRenderSpawnResult",
   "TestClamp",
   "TestSpawnTimeoutDefaultClamping",
 ]

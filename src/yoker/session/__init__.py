@@ -8,9 +8,6 @@ Exports:
 
   - :class:`Session` — async context manager owning the team of agents.
   - :class:`Message` — frozen inter-agent message dataclass.
-
-:class:`SpawnResult` is retained as an internal detail used by the
-Session-injected ``agent`` tool; it is intentionally not re-exported here.
 """
 
 from yoker.session.message import Message

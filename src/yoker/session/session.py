@@ -33,7 +33,6 @@ from yoker.events import (
   SessionStartEvent,
 )
 from yoker.session.message import Message
-from yoker.session.spawn_result import SpawnResult
 from yoker.session.tools import make_send_message_tool, make_spawn_agent_tool
 
 if TYPE_CHECKING:
@@ -241,7 +240,7 @@ class Session:
 
     Returns:
       The spawned :class:`Agent` instance, with its session-assigned id
-      available as ``agent._agent_id``.
+      available via :meth:`_agent_id_for`.
 
     Raises:
       ValueError: On allowlist violation, unknown agent, or capacity
@@ -300,9 +299,6 @@ class Session:
       backend=backend,
       console_logging=False,
     )
-    # Tag the agent with its session-assigned id so callers (and the
-    # ``agent`` tool) can read it back for send_message addressing.
-    child._agent_id = agent_id  # type: ignore[attr-defined]
 
     # Register in the active map and track depth.
     self._agents_map[agent_id] = child
@@ -335,25 +331,42 @@ class Session:
     *,
     requester: Agent | None = None,
     timeout_seconds: int = 300,
-  ) -> SpawnResult:
+  ) -> tuple[str, str]:
     """Spawn a child agent and run it to completion (internal).
 
     Used by the Session-injected ``agent`` tool. Spawns via
     :meth:`spawn`, runs the prompt with a timeout, releases the agent,
-    and returns a :class:`SpawnResult` carrying the agent id and response.
+    and returns a ``(agent_id, response)`` tuple.
     """
     child = await self.spawn(name, requester=requester)
-    agent_id = child._agent_id  # type: ignore[attr-defined]
+    agent_id = self._agent_id_for(child)
     try:
       response = await asyncio.wait_for(
         child.process(prompt),
         timeout=timeout_seconds,
       )
-      return SpawnResult(agent_id=agent_id, response=response)
+      return agent_id, response
     except asyncio.TimeoutError as e:
       raise TimeoutError(f"Sub-agent '{agent_id}' timed out after {timeout_seconds} seconds") from e
     finally:
       self._release(agent_id)
+
+  def _agent_id_for(self, agent: Agent) -> str:
+    """Return the session-assigned id for an active agent (registry lookup)."""
+    for aid, a in self._agents_map.items():
+      if a is agent:
+        return aid
+    raise KeyError(f"Agent not registered in session {self.id!r}.")
+
+  def release(self, agent: Agent) -> None:
+    """Release a spawned agent (public thin wrapper over :meth:`_release`).
+
+    Looks up the agent's session-assigned id via :meth:`_agent_id_for` and
+    calls :meth:`_release`. This is the public API for standalone callers
+    that drive a spawned agent directly (the ``agent`` tool calls
+    :meth:`_spawn_and_run` which releases after the run).
+    """
+    self._release(self._agent_id_for(agent))
 
   def _release(self, agent_id: str) -> None:
     """Release a spawned agent: emit AGENT_FINISHED and remove from active map."""
@@ -416,9 +429,20 @@ class Session:
     self._agents_map[agent_id] = agent
     self._recursion_depths[agent_id] = 0
     self.inject_tools(agent, agent_id)
-    # Tag the agent with its session-assigned id (mirrors spawn()).
-    agent._agent_id = agent_id  # type: ignore[attr-defined]
+    self._primary: Agent = agent
     return agent_id
+
+  @property
+  def primary_agent(self) -> Agent:
+    """The primary :class:`Agent` registered via :meth:`register_primary_agent`.
+
+    Raises:
+      RuntimeError: When no primary agent has been registered.
+    """
+    try:
+      return self._primary
+    except AttributeError as e:
+      raise RuntimeError("No primary agent registered with this session.") from e
 
   def _make_forwarding_handler(self, agent_id: str) -> EventCallback:
     """Build a handler that wraps agent events in :class:`SessionEvent`.
