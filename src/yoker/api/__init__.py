@@ -80,6 +80,79 @@ def run_sync(coro: Coroutine[Any, Any, _T]) -> _T:
   )
 
 
+def _build_config_and_definition(
+  *,
+  config: Config | None,
+  model: str | None,
+  provider: str | None,
+  system_prompt: str | None,
+  tools: list[str] | None,
+  agent_path: str | Path | None,
+  agent_definition: AgentDefinition | None,
+  thinking: str,
+  require_config: bool,
+  load_path_inline: bool,
+) -> tuple[Config | None, AgentDefinition | None, str | Path | None, ThinkingMode]:
+  """Build the base Config, AgentDefinition, and thinking mode shared by agent()/session().
+
+  Owns: base-config determination (explicit > Config() when overrides needed >
+  None for filesystem discovery), model/provider overrides, agent-definition
+  resolution (explicit > path-loaded-inline > built-from-kwargs), and thinking
+  mapping. Does NOT own plugins-to-config application (agent()-only), skill
+  filtering, context-manager construction, or Session/Agent wiring.
+  """
+  # base config: explicit > Config() when overrides needed > None (filesystem discovery)
+  needs_overrides = model is not None or provider is not None
+  if config is not None:
+    base: Config | None = config
+  elif require_config or needs_overrides:
+    base = Config()
+  else:
+    base = None
+
+  # apply model / provider overrides
+  if (model is not None or provider is not None) and base is not None:
+    backend_cfg = base.backend
+    if provider is not None:
+      if provider in KNOWN_PROVIDERS and getattr(backend_cfg, provider) is None:
+        defaults: dict[str, type] = {
+          "openai": OpenAIConfig,
+          "anthropic": AnthropicConfig,
+          "gemini": GeminiConfig,
+        }
+        backend_cfg = dataclasses.replace(backend_cfg, **{provider: defaults[provider]()})
+      backend_cfg = dataclasses.replace(backend_cfg, provider=provider)
+    if model is not None:
+      sub = backend_cfg.config
+      backend_cfg = dataclasses.replace(
+        backend_cfg, **{backend_cfg.provider: dataclasses.replace(sub, model=model)}  # type: ignore[arg-type]
+      )
+    base = dataclasses.replace(base, backend=backend_cfg)
+
+  # resolve agent definition: explicit > path (inline) > built-from-kwargs
+  resolved_definition: AgentDefinition | None = agent_definition
+  if resolved_definition is None and agent_path is not None and load_path_inline:
+    resolved_definition = load_agent_definition(agent_path)
+  if resolved_definition is None and agent_path is None:
+    # tools=[] clears all tools; system_prompt alone needs a default prompt
+    if system_prompt is not None or tools is not None:
+      resolved_definition = AgentDefinition(
+        simple_name="custom" if tools is not None else None,
+        system_prompt=system_prompt if system_prompt is not None else "You are a helpful assistant.",
+        tools=tuple(tools) if tools is not None else (),
+      )
+
+  thinking_mode = _THINKING_MAP.get(thinking)
+  if thinking_mode is None:
+    raise ValueError(
+      f"Unknown thinking mode '{thinking}'. Expected one of: {', '.join(sorted(_THINKING_MAP))}"
+    )
+
+  # forward agent_path only when no definition resolved inline (else caller would re-resolve)
+  forwarded_path = agent_path if (not load_path_inline or resolved_definition is None) else None
+  return base, resolved_definition, forwarded_path, thinking_mode
+
+
 def agent(
   *,
   model: str | None = None,
@@ -143,91 +216,35 @@ def agent(
   Returns:
     A fully constructed :class:`yoker.Agent` instance.
   """
-  # Determine whether we need a programmatic Config base. When the caller
-  # passes an explicit config we start from it; when overrides (model /
-  # provider / plugins) need applying we build a Config() base; otherwise
-  # we pass None so the Agent constructor runs get_yoker_config() (filesystem
-  # discovery), honouring the user's yoker.toml.
-  needs_overrides = model is not None or provider is not None or plugins is not None
-  if config is not None:
-    base_config: Config | None = config
-  elif needs_overrides:
-    base_config = Config()
-  else:
-    base_config = None
+  base, resolved_definition, forwarded_path, thinking_mode = _build_config_and_definition(
+    config=config, model=model, provider=provider,
+    system_prompt=system_prompt, tools=tools,
+    agent_path=agent_path, agent_definition=agent_definition,
+    thinking=thinking, require_config=False, load_path_inline=True,
+  )
 
-  # Apply model / provider overrides on a derived frozen Config. This block
-  # only runs when needs_overrides is True, so base_config is not None here.
-  if model is not None or provider is not None:
-    assert base_config is not None
-    backend_cfg = base_config.backend
-    if provider is not None:
-      if provider in KNOWN_PROVIDERS and getattr(backend_cfg, provider) is None:
-        defaults: dict[str, type] = {
-          "openai": OpenAIConfig,
-          "anthropic": AnthropicConfig,
-          "gemini": GeminiConfig,
-        }
-        backend_cfg = dataclasses.replace(backend_cfg, **{provider: defaults[provider]()})
-      backend_cfg = dataclasses.replace(backend_cfg, provider=provider)
-    if model is not None:
-      sub = backend_cfg.config
-      new_sub = dataclasses.replace(sub, model=model)
-      active = backend_cfg.provider
-      backend_cfg = dataclasses.replace(backend_cfg, **{active: new_sub})  # type: ignore[arg-type]
-    base_config = dataclasses.replace(base_config, backend=backend_cfg)
-
-  # Enable plugin loading when plugins are explicitly requested.
-  if plugins is not None and base_config is not None:
-    base_config = dataclasses.replace(
-      base_config,
-      plugins=dataclasses.replace(base_config.plugins, enabled=True, packages=tuple(plugins)),
-    )
-
-  # Resolve the agent definition: explicit > path > built-from-kwargs.
-  resolved_definition: AgentDefinition | None = agent_definition
-  if resolved_definition is None and agent_path is not None:
-    resolved_definition = load_agent_definition(agent_path)
-  if resolved_definition is None and agent_path is None:
-    # Build an AgentDefinition for the custom-config case. Returns None
-    # when no customisation is needed. The pure-text path is expressed via
-    # tools=[] (an empty whitelist clears all tools).
-    if system_prompt is not None or tools is not None:
-      simple_name: str | None = None
-      tools_tuple: tuple[str, ...] = ()
-      if tools is not None:
-        simple_name = "custom"
-        tools_tuple = tuple(tools)
-      prompt = system_prompt if system_prompt is not None else "You are a helpful assistant."
-      resolved_definition = AgentDefinition(
-        simple_name=simple_name, system_prompt=prompt, tools=tools_tuple
-      )
-
-  thinking_mode = _THINKING_MAP.get(thinking)
-  if thinking_mode is None:
-    raise ValueError(
-      f"Unknown thinking mode '{thinking}'. Expected one of: {', '.join(sorted(_THINKING_MAP))}"
+  # enable plugin loading when plugins explicitly requested
+  if plugins is not None and base is not None:
+    base = dataclasses.replace(
+      base,
+      plugins=dataclasses.replace(base.plugins, enabled=True, packages=tuple(plugins)),
     )
 
   built = Agent(
-    config=base_config,
+    config=base,
     thinking_mode=thinking_mode,
     agent_definition=resolved_definition,
-    agent_path=agent_path if resolved_definition is None else None,
+    agent_path=forwarded_path,
     context_manager=context_manager,
-    plugins=plugins if plugins is not None else None,
+    plugins=plugins,
     console_logging=console_logging,
     backend=backend,
   )
 
-  # Filter skills to the requested subset (post-construction).
   if skills is not None:
     Agent.filter_skills(built.skills, skills)
-
-  # Register the optional event handler.
   if event_handler is not None:
     built.on_event(event_handler)
-
   return built
 
 
@@ -316,7 +333,7 @@ async def session(
     The real :class:`yoker.session.Session` with a registered primary
     agent.
   """
-  # Extract kwargs consumed here (not forwarded to Session.__init__).
+  # extract kwargs consumed here (not forwarded to Session.__init__)
   config: Config | None = common_kwargs.pop("config", None)
   agent_path: str | Path | None = common_kwargs.pop("agent_path", None)
   agent_definition: AgentDefinition | None = common_kwargs.pop("agent_definition", None)
@@ -329,60 +346,25 @@ async def session(
   tools: list[str] | None = common_kwargs.pop("tools", None)
   skills: list[str] | None = common_kwargs.pop("skills", None)
 
-  # config construction
-  base_config = config if config is not None else Config()
+  base, resolved_definition, forwarded_path, thinking_mode = _build_config_and_definition(
+    config=config, model=model, provider=provider,
+    system_prompt=system_prompt, tools=tools,
+    agent_path=agent_path, agent_definition=agent_definition,
+    thinking=thinking, require_config=True, load_path_inline=False,
+  )
+  assert base is not None  # require_config=True guarantees a non-None base
+
+  # stamp the session id onto the context config
   if id is not None:
-    base_config = dataclasses.replace(
-      base_config,
-      context=dataclasses.replace(base_config.context, session_id=id, persist_after_turn=True),
-    )
-  if model is not None or provider is not None:
-    backend_cfg = base_config.backend
-    if provider is not None:
-      if provider in KNOWN_PROVIDERS and getattr(backend_cfg, provider) is None:
-        defaults: dict[str, type] = {
-          "openai": OpenAIConfig,
-          "anthropic": AnthropicConfig,
-          "gemini": GeminiConfig,
-        }
-        backend_cfg = dataclasses.replace(backend_cfg, **{provider: defaults[provider]()})
-      backend_cfg = dataclasses.replace(backend_cfg, provider=provider)
-    if model is not None:
-      sub = backend_cfg.config
-      backend_cfg = dataclasses.replace(
-        backend_cfg, **{backend_cfg.provider: dataclasses.replace(sub, model=model)}  # type: ignore[arg-type]
-      )
-    base_config = dataclasses.replace(base_config, backend=backend_cfg)
-
-  # synthesize a definition from system_prompt/tools when no explicit one given;
-  # agent_path-only resolution is delegated to Session._resolve_definition.
-  resolved_definition: AgentDefinition | None = agent_definition
-  if (
-    resolved_definition is None
-    and agent_path is None
-    and (system_prompt is not None or tools is not None)
-  ):
-    resolved_definition = AgentDefinition(
-      simple_name="custom" if tools is not None else None,
-      system_prompt=system_prompt if system_prompt is not None else "You are a helpful assistant.",
-      tools=tuple(tools) if tools is not None else (),
+    base = dataclasses.replace(
+      base, context=dataclasses.replace(base.context, session_id=id, persist_after_turn=True),
     )
 
-  thinking_mode = _THINKING_MAP.get(thinking)
-  if thinking_mode is None:
-    raise ValueError(
-      f"Unknown thinking mode '{thinking}'. Expected one of: {', '.join(sorted(_THINKING_MAP))}"
-    )
-
-  # Session.__init__ owns plugin loading, backend, and primary-agent creation.
+  # Session.__init__ owns plugin loading, backend, and primary-agent creation
   core = Session(
-    config=base_config,
-    session_id=id,
+    config=base, session_id=id, thinking_mode=thinking_mode, console_logging=False,
+    agent_definition=resolved_definition, agent_path=forwarded_path,
     extra_plugins=tuple(plugins) if plugins is not None else (),
-    agent_definition=resolved_definition,
-    agent_path=agent_path,
-    thinking_mode=thinking_mode,
-    console_logging=False,
   )
 
   # wire the persisted context manager onto the primary agent
