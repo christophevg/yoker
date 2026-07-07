@@ -18,7 +18,7 @@ class TestMainErrorHandling:
 
     with patch.object(sys, "argv", test_args):
       with patch("sys.stderr", new_callable=StringIO) as mock_stderr:
-        with patch("yoker.__main__.Agent") as mock_agent_cls:
+        with patch("yoker.core.Agent") as mock_agent_cls:
           mock_agent_cls.side_effect = ValueError("Agent definition file not found")
           with pytest.raises(SystemExit) as exc_info:
             from yoker.__main__ import main
@@ -45,7 +45,7 @@ class TestMainErrorHandling:
     with patch.object(sys, "argv", test_args):
       with patch("sys.stderr", new_callable=StringIO) as mock_stderr:
         with patch("yoker.__main__.config_provided", return_value=True):
-          with patch("yoker.__main__.Agent") as mock_agent_cls:
+          with patch("yoker.core.Agent") as mock_agent_cls:
             error_msg = (
               "Configuration file /path/to/yoker.toml is readable by group/other "
               "(mode 0o644). Use 'chmod 600 /path/to/yoker.toml' to fix."

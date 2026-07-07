@@ -276,13 +276,12 @@ class TestMainIntegration:
     """main() should create BatchUIHandler in batch mode and wire events.
 
     main() loads config via Clevis first, then constructs a Session and
-    Agent within it. The Agent receives the loaded config, a shared backend
-    from the Session, plugin packages, and console_logging flag.
+    creates the primary Agent via session.create_primary_agent().
     """
     test_args = ["yoker", "--ui-mode", "batch"]
 
     with patch.object(sys, "argv", test_args):
-      with patch("yoker.__main__.Agent") as mock_agent_cls:
+      with patch("yoker.core.Agent") as mock_agent_cls:
         mock_agent_instance = mock_agent_cls.return_value
         mock_agent_instance.config = Config(
           ui=UIConfig(mode="batch", show_thinking=False, show_tool_calls=False, show_stats=False),

@@ -63,17 +63,17 @@ class TestSessionAgentProcess:
 
 
 class TestSessionOnEvent:
-  """``session.add_event_handler`` registers a session-scoped handler."""
+  """``session.on_event`` registers a session-scoped handler."""
 
   async def test_on_event_receives_session_start(self, patched_process) -> None:
-    """add_event_handler handlers receive events from the core Session."""
+    """on_event handlers receive events from the core Session."""
     from yoker.events import SessionStartEvent
 
     received: list = []
     async with yoker.session(event_handler=lambda e: received.append(e)) as sess:
       # The handler is registered after SESSION_START is emitted by
       # __aenter__ — register explicitly to observe SESSION_END too.
-      sess.add_event_handler(lambda e: received.append(e))
+      sess.on_event(lambda e: received.append(e))
     # SESSION_END should reach the handler registered inside the body.
     assert any(isinstance(e, SessionStartEvent) or hasattr(e, "type") for e in received)
 

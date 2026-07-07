@@ -39,7 +39,7 @@ async def run_batch(messages: list[str] | None = None) -> None:
     ui.set_input_messages(messages)
 
   bridge = UIBridge(ui)
-  agent.add_event_handler(bridge)
+  agent.on_event(bridge)
 
   await ui.start(agent)
 

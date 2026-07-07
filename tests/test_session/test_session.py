@@ -42,7 +42,7 @@ class TestSessionLifecycle:
     """SESSION_START is emitted on __aenter__."""
     session = Session(config=Config())
     received: list = []
-    session.add_event_handler(lambda e: received.append(e))
+    session.on_event(lambda e: received.append(e))
     async with session:
       pass
     start_events = [e for e in received if isinstance(e, SessionStartEvent)]
@@ -54,27 +54,12 @@ class TestSessionLifecycle:
     """SESSION_END is emitted on __aexit__."""
     session = Session(config=Config())
     received: list = []
-    session.add_event_handler(lambda e: received.append(e))
+    session.on_event(lambda e: received.append(e))
     async with session:
       pass
     end_events = [e for e in received if isinstance(e, SessionEndEvent)]
     assert len(end_events) == 1
     assert end_events[0].session_id == session.id
-
-  @pytest.mark.asyncio
-  async def test_event_handler_can_be_removed(self) -> None:
-    """remove_event_handler detaches a previously registered handler."""
-    session = Session(config=Config())
-    received: list = []
-
-    def handler(event) -> None:
-      received.append(event)
-
-    session.add_event_handler(handler)
-    session.remove_event_handler(handler)
-    async with session:
-      pass
-    assert received == []
 
   @pytest.mark.asyncio
   async def test_outstanding_tasks_cancelled_on_exit(self) -> None:
@@ -96,8 +81,8 @@ class TestSessionLifecycle:
     # After exit, the task must be cancelled.
     assert task.cancelled() or task.done()
 
-  def test_add_event_handler_stores_handler(self) -> None:
-    """add_event_handler appends to the internal handler list."""
+  def test_on_event_stores_handler(self) -> None:
+    """on_event appends to the internal handler list."""
 
     def h1(event) -> None:
       pass
@@ -106,20 +91,10 @@ class TestSessionLifecycle:
       pass
 
     session = Session(config=Config())
-    session.add_event_handler(h1)
-    session.add_event_handler(h2)
+    session.on_event(h1)
+    session.on_event(h2)
     assert h1 in session._event_handlers
     assert h2 in session._event_handlers
-
-  def test_remove_event_handler_missing_is_warning(self) -> None:
-    """Removing a handler that was never registered is a no-op (logged)."""
-
-    def handler(event) -> None:
-      pass
-
-    session = Session(config=Config())
-    # Should not raise.
-    session.remove_event_handler(handler)
 
 
 class TestSessionAgentMap:

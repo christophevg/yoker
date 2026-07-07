@@ -230,7 +230,7 @@ class TestAgentEventEmission:
 
     agent = Agent(config=Config())
     collector = TestEventCollector()
-    agent.add_event_handler(collector)
+    agent.on_event(collector)
 
     asyncio.run(agent.process("Hi"))
 
@@ -240,8 +240,8 @@ class TestAgentEventEmission:
     assert EventType.TURN_START in event_types
     assert EventType.TURN_END in event_types
 
-  def test_agent_add_remove_handler(self) -> None:
-    """Test adding and removing event handlers."""
+  def test_agent_on_event_handler(self) -> None:
+    """Test that on_event registers a handler."""
     from yoker.core import Agent
 
     agent = Agent(config=Config())
@@ -249,8 +249,5 @@ class TestAgentEventEmission:
     def handler(event: Event) -> None:
       pass
 
-    agent.add_event_handler(handler)
+    agent.on_event(handler)
     assert handler in agent._event_handlers
-
-    agent.remove_event_handler(handler)
-    assert handler not in agent._event_handlers

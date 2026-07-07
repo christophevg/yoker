@@ -10,10 +10,9 @@ from yoker.session import Session
 
 
 def _make_mock_agent(name: str, response: str = "ok") -> MagicMock:
-  """Build a mock agent with an AsyncMock process method and a session id."""
+  """Build a mock agent with an AsyncMock process method, registered in the session map."""
   agent = MagicMock(name=name)
   agent.process = AsyncMock(return_value=response)
-  agent._session_id = name
   return agent
 
 
@@ -37,7 +36,7 @@ class TestSessionSend:
     """AGENT_MESSAGE is emitted before processing the message."""
     async with Session(config=Config()) as session:
       received: list = []
-      session.add_event_handler(lambda e: received.append(e))
+      session.on_event(lambda e: received.append(e))
       target = _make_mock_agent("researcher", response="ok")
       sender = _make_mock_agent("coordinator")
       session._agents_map["researcher"] = target
@@ -55,8 +54,8 @@ class TestSessionSend:
     """Sending to an agent not in the session raises ValueError."""
     async with Session(config=Config()) as session:
       sender = _make_mock_agent("coordinator")
+      session._agents_map["coordinator"] = sender
       ghost = _make_mock_agent("ghost")
-      ghost._session_id = "ghost"
       with pytest.raises(ValueError, match="not active"):
         await session.send(to=ghost, from_=sender, content="hi")
 
@@ -66,7 +65,6 @@ class TestSessionSend:
     async with Session(config=Config()) as session:
       target = MagicMock()
       target.process = AsyncMock(side_effect=RuntimeError("boom"))
-      target._session_id = "researcher"
       sender = _make_mock_agent("coordinator")
       session._agents_map["researcher"] = target
       session._agents_map["coordinator"] = sender

@@ -164,25 +164,17 @@ tracking, event aggregation, and inter-agent messaging.
 ```python
 # Multi-agent session in yoker
 async with Session(config=config) as session:
-    # The primary agent is registered with the session and receives the
+    # The primary agent is created by the session and receives the
     # Session-injected SpawnAgent and SendMessage tools.
-    agent = Agent(config=config, session=session)
-    session.register_primary_agent(agent)
+    agent = await session.create_primary_agent(config=config)
 
     # Programmatic sub-agent spawn (canonical API, Decision 8). The
     # SpawnAgent tool exposed to the model is a thin wrapper around this.
-    result = await session.spawn(
-        "researcher",                      # agent definition name
-        "Summarize README.md",             # prompt for the sub-agent
-        timeout_seconds=120,
-    )
-    # result.agent_id  -> "researcher" (unique session-assigned id)
-    # result.response   -> the sub-agent's reply string
+    researcher = await session.spawn("researcher")
+    response = await researcher.process("Summarize README.md")
 
     # Inter-agent messaging (Decision 3): plain-string request/response.
-    reply = await session.send(
-        Message(from_id=agent_id, to_id=result.agent_id, content="Follow up?")
-    )
+    reply = await session.send(to=researcher, from_=agent, content="Follow up?")
 ```
 
 The `Session` owns the team: every spawned agent is a full
@@ -198,7 +190,7 @@ handlers — wrapped in a `SessionEvent` envelope tagged with the source
 - Configurable model (cheaper model for sub-tasks)
 - Scoped permissions (sub-agent can't access parent's files)
 - Own event stream (traceable operations, aggregated to the session)
-- Inter-agent messaging via plain-string `Message` (request/response)
+- Inter-agent messaging via plain-string request/response (`Session.send(to=, from_=, content=)`)
 - Allowlist enforcement: each agent definition declares which agents it
   may spawn through the Session
 

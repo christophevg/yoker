@@ -168,55 +168,16 @@ class TestAgentToolRegistry:
 class TestAgentEventHandlers:
   """Tests for Agent event handler management."""
 
-  def test_add_event_handler(self) -> None:
-    """Test adding an event handler."""
-    core = Agent(config=Config())
-
-    handler_called = []
-
-    def handler(event: object) -> None:
-      handler_called.append(event)
-
-    core.add_event_handler(handler)
-    assert len(core.get_event_handlers()) == 1
-
-  def test_remove_event_handler(self) -> None:
-    """Test removing an event handler."""
+  def test_on_event_registers_handler(self) -> None:
+    """on_event registers a handler and returns it for chaining."""
     core = Agent(config=Config())
 
     def handler(event: object) -> None:
       pass
 
-    core.add_event_handler(handler)
-    assert len(core.get_event_handlers()) == 1
-
-    core.remove_event_handler(handler)
-    assert len(core.get_event_handlers()) == 0
-
-  def test_get_event_handlers_returns_copy(self) -> None:
-    """Test that get_event_handlers returns a copy."""
-    core = Agent(config=Config())
-
-    def handler(event: object) -> None:
-      pass
-
-    core.add_event_handler(handler)
-    handlers = core.get_event_handlers()
-    assert len(handlers) == 1
-
-    # Modifying returned list should not affect internal state
-    handlers.clear()
-    assert len(core.get_event_handlers()) == 1
-
-  def test_remove_nonexistent_handler_raises(self) -> None:
-    """Test that removing a non-existent handler raises ValueError."""
-    core = Agent(config=Config())
-
-    def handler(event: object) -> None:
-      pass
-
-    with pytest.raises(ValueError):
-      core.remove_event_handler(handler)
+    returned = core.on_event(handler)
+    assert returned is handler
+    assert handler in core._event_handlers
 
 
 class TestAgentContext:

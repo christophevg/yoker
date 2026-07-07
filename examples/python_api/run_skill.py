@@ -5,8 +5,7 @@ Run with:
     python examples/python_api/run_skill.py
 
 The skill must be discoverable from the configured skill directories or
-loaded plugins. Configure ``skills.directories`` in your ``yoker.toml``
-or pass ``skills_directories=`` to :func:`yoker.config.make_config`.
+loaded plugins. Configure ``skills.directories`` in your ``yoker.toml``.
 """
 
 import asyncio

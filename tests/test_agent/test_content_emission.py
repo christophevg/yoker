@@ -212,7 +212,7 @@ class TestAgentContentEventEmission:
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
-    agent.add_event_handler(collector)
+    agent.on_event(collector)
 
     asyncio.run(agent.process("Write a file"))
 
@@ -251,7 +251,7 @@ class TestAgentContentEventEmission:
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
-    agent.add_event_handler(collector)
+    agent.on_event(collector)
 
     asyncio.run(agent.process("Read a file"))
 
@@ -286,7 +286,7 @@ class TestAgentContentEventEmission:
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
-    agent.add_event_handler(collector)
+    agent.on_event(collector)
 
     asyncio.run(agent.process("Write a file"))
 
@@ -328,7 +328,7 @@ class TestAgentContentEventEmission:
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
-    agent.add_event_handler(collector)
+    agent.on_event(collector)
 
     asyncio.run(agent.process("Write a file"))
 
@@ -365,7 +365,7 @@ class TestAgentContentEventEmission:
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
-    agent.add_event_handler(collector)
+    agent.on_event(collector)
 
     asyncio.run(agent.process("Write a file"))
 
@@ -411,7 +411,7 @@ class TestAgentContentEventEmission:
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
-    agent.add_event_handler(collector)
+    agent.on_event(collector)
 
     asyncio.run(agent.process("Update the file"))
 
@@ -515,7 +515,7 @@ class TestAgentContentEventEmissionOrder:
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
-    agent.add_event_handler(collector)
+    agent.on_event(collector)
 
     asyncio.run(agent.process("Write a file"))
 
@@ -568,7 +568,7 @@ class TestAgentContentEventEmissionOrder:
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
-    agent.add_event_handler(collector)
+    agent.on_event(collector)
 
     asyncio.run(agent.process("Update the file"))
 
@@ -608,7 +608,7 @@ class TestAgentContentEventEmissionOrder:
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
-    agent.add_event_handler(collector)
+    agent.on_event(collector)
 
     asyncio.run(agent.process("Read the file"))
 
@@ -654,7 +654,7 @@ class TestAgentContentEventWithMultipleTools:
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
-    agent.add_event_handler(collector)
+    agent.on_event(collector)
 
     asyncio.run(agent.process("Write two files"))
 
@@ -697,7 +697,7 @@ class TestAgentContentEventWithMultipleTools:
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
-    agent.add_event_handler(collector)
+    agent.on_event(collector)
 
     asyncio.run(agent.process("Write then read"))
 
@@ -739,7 +739,7 @@ class TestAgentContentEventErrorHandling:
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
-    agent.add_event_handler(collector)
+    agent.on_event(collector)
 
     asyncio.run(agent.process("Read nonexistent file"))
 
@@ -775,7 +775,7 @@ class TestAgentContentEventErrorHandling:
 
     agent = create_agent_with_permissions(tmp_path)
     collector = TestEventCollector()
-    agent.add_event_handler(collector)
+    agent.on_event(collector)
 
     asyncio.run(agent.process("Write a file"))
 
@@ -827,7 +827,7 @@ class TestAgentContentEventErrorHandling:
         self.events.append(event)
 
     handler = FailingHandler()
-    agent.add_event_handler(handler)
+    agent.on_event(handler)
 
     # Should not raise - errors are caught in emit()
     asyncio.run(agent.process("Write a file"))

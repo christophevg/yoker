@@ -4,9 +4,9 @@ Run with:
 
     python examples/python_api/event_handling.py
 
-The event system is unchanged. ``on_event`` is the Pythonic alias for
-``add_event_handler``. Typed events make filtering clean and
-static-analysis-friendly.
+The event system is unchanged. ``on_event`` registers a callback that
+receives every :class:`yoker.events.Event` emitted by the agent. Typed
+events make filtering clean and static-analysis-friendly.
 """
 
 import asyncio

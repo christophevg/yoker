@@ -5,35 +5,28 @@ Yoker - A Python agent harness with configurable tools, guardrails, and multi-pr
 One who yokes - the agent noun from "yoke" (PIE *yeug-* meaning "to join").
 """
 
-from structlog import get_logger
-
 from yoker.agents import AgentDefinition, load_agent_definition
 from yoker.api import (
+  ThinkingLiteral,
   agent,
   do,
   process,
   run_sync,
   session,
 )
-from yoker.builtin import __YOKER_MANIFEST__
+from yoker.builtin import __YOKER_MANIFEST__  # noqa: F401 — required by plugin loader
 from yoker.config import Config
 from yoker.context import (
-  BaseContextManager,
   ContextManager,
-  ContextManagerWrapper,
-  ContextStatistics,
   Persisted,
   SimpleContextManager,
 )
 from yoker.core import Agent
-from yoker.core.thinking import ThinkingMode
 from yoker.events import (
   ContentChunkEvent,
   ContentEndEvent,
   ContentStartEvent,
   Event,
-  EventRecorder,
-  EventReplayAgent,
   EventType,
   ThinkingChunkEvent,
   ThinkingEndEvent,
@@ -42,8 +35,6 @@ from yoker.events import (
   ToolResultEvent,
   TurnEndEvent,
   TurnStartEvent,
-  deserialize_event,
-  serialize_event,
 )
 from yoker.exceptions import (
   ConfigurationError,
@@ -53,7 +44,6 @@ from yoker.exceptions import (
   ValidationError,
   YokerError,
 )
-from yoker.logging import LoggingContext, configure_logging, log_timing
 from yoker.session import Session
 
 __version__ = "0.6.0"
@@ -72,13 +62,10 @@ __all__ = [
   "run_sync",
   "agent",
   "session",
-  # Built-in plugin
-  "__YOKER_MANIFEST__",
+  "ThinkingLiteral",
   # Agents
   "AgentDefinition",
   "load_agent_definition",
-  # Thinking
-  "ThinkingMode",
   # Configuration
   "Config",
   # Events
@@ -96,20 +83,8 @@ __all__ = [
   "ToolResultEvent",
   # Context
   "ContextManager",
-  "BaseContextManager",
-  "ContextManagerWrapper",
   "Persisted",
-  "ContextStatistics",
   "SimpleContextManager",
-  # Logging
-  "EventRecorder",
-  "EventReplayAgent",
-  "serialize_event",
-  "deserialize_event",
-  "LoggingContext",
-  "configure_logging",
-  "get_logger",
-  "log_timing",
   # Exceptions
   "YokerError",
   "ConfigurationError",

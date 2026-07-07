@@ -10,7 +10,6 @@ Usage:
     python scripts/demo_session.py --script demos/list-tool.md
     python scripts/demo_session.py --scripts-dir demos/
     python scripts/demo_session.py --script demos/session.md --log
-    python scripts/demo_session.py --script demos/session.md --replay
     python scripts/demo_session.py --output media/custom.svg
 """
 
@@ -29,7 +28,6 @@ from yoker_demo import DemoScript, load_demo_script, load_demo_scripts
 from yoker.events import (
   CommandEvent,
   EventRecorder,
-  EventReplayAgent,
   EventType,
 )
 from yoker.ui import InteractiveUIHandler, UIBridge
@@ -118,30 +116,6 @@ class PredefinedInput:
     return message
 
 
-class ReplayInput:
-  """Iterator that extracts user messages from events.jsonl."""
-
-  def __init__(self, events_path: Path) -> None:
-    self.messages: list[str] = []
-    # Load user messages from TURN_START events and CommandEvent events
-    with open(events_path) as f:
-      for line in f:
-        entry = json.loads(line)
-        if entry["type"] == "TURN_START":
-          self.messages.append(entry["data"]["message"])
-        elif entry["type"] == "COMMAND":
-          self.messages.append(entry["data"]["command"])
-    self.index = 0
-
-  def __call__(self, prompt: str) -> str:
-    """Return next user message from the log."""
-    if self.index >= len(self.messages):
-      raise EOFError()
-    message = self.messages[self.index]
-    self.index += 1
-    return message
-
-
 def _cleanup_temp_files() -> None:
   """Clean up temp files and directories created by demo scripts."""
   import shutil
@@ -169,7 +143,6 @@ def _cleanup_temp_files() -> None:
 async def run_demo_session(
   script: DemoScript,
   log: bool = False,
-  replay: Path | None = None,
   agent_path: Path | None = None,
   persist: bool = False,
   resume: str | None = None,
@@ -181,7 +154,6 @@ async def run_demo_session(
   Args:
     script: DemoScript with messages and output path.
     log: Whether to log events to the script's events file.
-    replay: Path to events.jsonl file to replay (overrides script.events).
     agent_path: Path to agent definition file (Markdown with frontmatter).
     persist: Whether to persist session for resumption.
     resume: Session ID to resume (if set, loads previous session).
@@ -235,16 +207,8 @@ async def run_demo_session(
       current_link.unlink()
     current_link.symlink_to(svg_path.name)
 
-  # Determine events path
-  # Only use replay mode if --replay flag is explicitly provided
-  is_replay_mode = replay is not None
-
-  # Set events_path based on mode
-  if is_replay_mode:
-    # Replay mode: use --replay path or fall back to script's events path
-    events_path = replay if replay else (Path(script.events) if script.events else None)
-  elif log and script.events:
-    # Log mode: use script's events path for recording
+  # Determine events path for logging mode
+  if log and script.events:
     events_path = Path(script.events)
   else:
     events_path = None
@@ -252,68 +216,60 @@ async def run_demo_session(
   # Event recorder for --log mode
   event_recorder: EventRecorder | None = None
 
-  # Initialize context manager (used in real LLM mode)
+  # Initialize context manager
   context_manager: Persisted | None = None
 
-  if is_replay_mode:
-    # Replay mode: use EventReplayAgent to replay events
-    agent = EventReplayAgent(events_path)
-    ui.show_thinking = agent.thinking_enabled
-    agent.add_event_handler(bridge)
-    get_input = ReplayInput(events_path)
-    messages = []  # Will be read from file
-  else:
-    # Real LLM mode
-    # Load configuration using Clevis (handles env vars, user config, project config)
-    from yoker.config import get_yoker_config
-    config = get_yoker_config(cli=False)
+  # Real LLM mode
+  # Load configuration using Clevis (handles env vars, user config, project config)
+  from yoker.config import get_yoker_config
+  config = get_yoker_config(cli=False)
 
-    # Create context manager for persistence or resumption
-    if persist or resume:
-      session_id = resume if resume else "auto"
-      context_manager = Persisted(
-        SimpleContextManager(),
-        storage_path=Path(config.context.storage_path),
-        session_id=session_id,
-      )
-      if resume:
-        loaded = context_manager.load()
-        if not loaded:
-          ui.console.print(f"[yellow]Warning: Session {resume} not found. Starting fresh.[/]\n")
-
-    # Create agent with event-driven architecture
-    agent = Agent(
-      config=config,
-      agent_path=agent_path,
-      context_manager=context_manager,
+  # Create context manager for persistence or resumption
+  if persist or resume:
+    session_id = resume if resume else "auto"
+    context_manager = Persisted(
+      SimpleContextManager(),
+      storage_path=Path(config.context.storage_path),
+      session_id=session_id,
     )
-    agent.add_event_handler(bridge)
+    if resume:
+      loaded = context_manager.load()
+      if not loaded:
+        ui.console.print(f"[yellow]Warning: Session {resume} not found. Starting fresh.[/]\n")
 
-    # Show agent info if loaded
-    ui.console.print(f"Loaded agent: {agent.definition.name}")
-    ui.console.print(f"  Description: {agent.definition.description}")
-    ui.console.print()
+  # Create agent with event-driven architecture
+  agent = Agent(
+    config=config,
+    agent_path=agent_path,
+    context_manager=context_manager,
+  )
+  agent.on_event(bridge)
 
-    # Show session info
-    if context_manager:
-      stats = context_manager.get_statistics()
-      ui.console.print(f"[dim]Session ID: {context_manager.get_session_id()}[/]")
-      if resume and stats.turn_count > 0:
-        ui.console.print(
-          f"[dim]Resumed: {stats.turn_count} turns, {stats.tool_call_count} tool calls[/]"
-        )
-      ui.console.print("")
+  # Show agent info if loaded
+  ui.console.print(f"Loaded agent: {agent.definition.name}")
+  ui.console.print(f"  Description: {agent.definition.description}")
+  ui.console.print()
 
-    # Add event recorder if requested
-    if log and script.events:
-      events_file = Path(script.events)
-      events_file.parent.mkdir(parents=True, exist_ok=True)
-      event_recorder = EventRecorder(events_file)
-      agent.add_event_handler(event_recorder)
+  # Show session info
+  if context_manager:
+    stats = context_manager.get_statistics()
+    ui.console.print(f"[dim]Session ID: {context_manager.get_session_id()}[/]")
+    if resume and stats.turn_count > 0:
+      ui.console.print(
+        f"[dim]Resumed: {stats.turn_count} turns, {stats.tool_call_count} tool calls[/]"
+      )
+    ui.console.print("")
 
-    # Create input function from script messages
-    messages = list(script.messages)
-    get_input = PredefinedInput(messages)
+  # Add event recorder if requested
+  if log and script.events:
+    events_file = Path(script.events)
+    events_file.parent.mkdir(parents=True, exist_ok=True)
+    event_recorder = EventRecorder(events_file)
+    agent.on_event(event_recorder)
+
+  # Create input function from script messages
+  messages = list(script.messages)
+  get_input = PredefinedInput(messages)
 
   # Feed predefined messages to the UI handler so it does not read from terminal
   ui.set_input_messages(get_input.messages)
@@ -322,11 +278,7 @@ async def run_demo_session(
   command_registry = create_default_registry()
 
   # Print mode-specific info
-  if is_replay_mode:
-    ui.console.print(f"[bold cyan]Yoker v0.1.0[/] - Using model: [green]{agent.model}[/]")
-    ui.console.print("[dim]Replay mode - using logged events[/]")
-    ui.console.print("")
-  elif log:
+  if log:
     ui.console.print(f"[dim]Logging events to {script.events}[/]")
 
   # Process each message
@@ -337,29 +289,23 @@ async def run_demo_session(
 
     # Check if this is a command
     if message.startswith("/"):
-      if is_replay_mode:
-        # Replay mode: emit CommandEvent from event log
-        await agent.replay_command(message)  # type: ignore
-      else:
-        # Real LLM mode: dispatch via the UI-layer command registry.
-        # Skill commands are invoked dynamically through the skill registry.
-        result = await command_registry.dispatch(message, agent, ui)
-        if result:
-          ui.output_command_result(result)
-          # Log command event if logging is enabled
-          if event_recorder is not None:
-            command_event = CommandEvent(
-              type=EventType.COMMAND,
-              command=message,
-              result=result,
-            )
-            event_recorder(command_event)
+      # Dispatch via the UI-layer command registry.
+      # Skill commands are invoked dynamically through the skill registry.
+      result = await command_registry.dispatch(message, agent, ui)
+      if result:
+        ui.output_command_result(result)
+        # Log command event if logging is enabled
+        if event_recorder is not None:
+          command_event = CommandEvent(
+            type=EventType.COMMAND,
+            command=message,
+            result=result,
+          )
+          event_recorder(command_event)
       continue
 
     await agent.process(message)
-    # In replay mode, events are emitted by EventReplayAgent
-    # In real LLM mode, events are emitted by Agent
-    # The UIBridge routes events to the UI handler, which renders to the console
+    # Events are emitted by Agent; the UIBridge routes them to the UI handler.
 
   # Print session footer
   ui.console.print("\n[bold cyan]Session complete.[/]")
@@ -435,14 +381,6 @@ def main() -> None:
     help="Log events to script's events file",
   )
   parser.add_argument(
-    "--replay",
-    type=Path,
-    nargs="?",
-    const=None,
-    default=None,
-    help="Replay events from JSONL file (default: script's events path)",
-  )
-  parser.add_argument(
     "--agent",
     "-a",
     type=Path,
@@ -486,7 +424,6 @@ def main() -> None:
         run_demo_session(
           script=script,
           log=args.log,
-          replay=args.replay,
           agent_path=args.agent,
           persist=args.persist,
           resume=args.resume,
@@ -501,7 +438,6 @@ def main() -> None:
       run_demo_session(
         script=script,
         log=args.log,
-        replay=args.replay,
         agent_path=args.agent,
         persist=args.persist,
         resume=args.resume,
