@@ -305,12 +305,12 @@ async def session(
 ) -> AsyncIterator[Session]:
   """Open a multi-turn session with automatic context persistence.
 
-  Builds on the real :class:`yoker.session.Session` (MBI-007). A primary
-  :class:`Agent` is constructed via :meth:`Session.create_primary_agent`
-  with the given builder kwargs. The primary agent is available via
-  :attr:`Session.agent`; sub-agents can be spawned via
-  ``await session.spawn(name)``. Event handlers are registered via
-  ``session.on_event(...)``.
+  Builds on the real :class:`yoker.session.Session` (MBI-007). The primary
+  :class:`Agent` is constructed inside :meth:`Session.__init__` via the
+  unified ``_create_agent`` flow with the given builder kwargs. The
+  primary agent is available via :attr:`Session.agent`; sub-agents can be
+  spawned via ``await session.spawn(name)``. Event handlers are
+  registered via ``session.on_event(...)``.
 
   Args:
     id: Optional session id. When the id matches an existing persisted
@@ -330,7 +330,7 @@ async def session(
     The real :class:`yoker.session.Session` with a registered primary
     agent.
   """
-  # Extract kwargs consumed here (not forwarded to create_primary_agent).
+  # Extract kwargs consumed here (not forwarded to Session.__init__).
   config: Config | None = common_kwargs.pop("config", None)
   agent_path: str | Path | None = common_kwargs.pop("agent_path", None)
   agent_definition: AgentDefinition | None = common_kwargs.pop("agent_definition", None)
@@ -375,18 +375,6 @@ async def session(
 
   extra_plugins = tuple(plugins) if plugins is not None else ()
 
-  # Build the underlying core Session (owns registry, backends, ...).
-  core = Session(config=base_config, session_id=id, extra_plugins=extra_plugins)
-
-  # Build the context manager: Persisted wraps SimpleContextManager when
-  # persistence is requested. ``fresh`` deletes any prior persisted state.
-  context_manager: ContextManager | None = None
-  if persist:
-    session_id = core.id
-    context_manager = Persisted(SimpleContextManager(), session_id=session_id)
-    if fresh:
-      context_manager.delete()
-
   # Pre-build the agent definition from system_prompt/tools when no
   # explicit definition/path was given (mirrors agent()).
   resolved_definition: AgentDefinition | None = agent_definition
@@ -419,23 +407,31 @@ async def session(
       f"Unknown thinking mode '{thinking}'. Expected one of: {', '.join(sorted(_thinking_map))}"
     )
 
-  primary = core.create_primary_agent(
+  # Build the underlying Session. The primary agent is constructed inside
+  # Session.__init__ via the unified _create_agent flow (no double creation).
+  core = Session(
     config=base_config,
+    session_id=id,
+    extra_plugins=extra_plugins,
     agent_definition=resolved_definition,
     agent_path=agent_path if resolved_definition is None else None,
-    plugins=plugins,
+    plugins=extra_plugins,
     thinking_mode=thinking_mode,
     console_logging=False,
   )
 
   # Override the primary agent's context manager with the persisted one.
-  if context_manager is not None:
-    primary.context = context_manager
-    context_manager.agent = primary
+  context_manager: ContextManager | None = None
+  if persist:
+    context_manager = Persisted(SimpleContextManager(), session_id=core.id)
+    if fresh:
+      context_manager.delete()
+    context_manager.agent = core.agent
+    core.agent.context = context_manager
 
   # Filter skills to the requested subset (post-construction).
   if skills is not None:
-    available = {name.lower(): name for name in primary.skills.data.keys()}
+    available = {name.lower(): name for name in core.agent.skills.data.keys()}
     keep: set[str] = set()
     for requested in skills:
       normalized = requested.lower()
@@ -446,14 +442,14 @@ async def session(
       if actual is None:
         raise SkillError(
           requested,
-          f"Unknown skill. Available skills: {', '.join(sorted(primary.skills.names))}"
-          if primary.skills.names
+          f"Unknown skill. Available skills: {', '.join(sorted(core.agent.skills.names))}"
+          if core.agent.skills.names
           else "Unknown skill (no skills loaded).",
         )
       keep.add(actual)
-    to_remove = [key for key in list(primary.skills.data.keys()) if key not in keep]
+    to_remove = [key for key in list(core.agent.skills.data.keys()) if key not in keep]
     for key in to_remove:
-      del primary.skills.data[key]
+      del core.agent.skills.data[key]
 
   if event_handler is not None:
     core.on_event(event_handler)

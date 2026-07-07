@@ -6,11 +6,9 @@ behaviour.
 """
 
 import asyncio
-from unittest.mock import MagicMock
 
 import pytest
 
-from yoker.agents import AgentDefinition
 from yoker.config import Config
 from yoker.events import SessionEndEvent
 from yoker.session import Session
@@ -138,35 +136,33 @@ class TestSessionRegistryPopulationEdge:
 
 
 class TestRegisterPrimaryAgent:
-  """Tests for Session._register_primary (internal helper used by create_primary_agent)."""
+  """Tests for the primary-agent path through ``_create_agent`` (requester=None).
 
-  def test_register_primary_assigns_id_and_injects_tools(self) -> None:
-    """_register_primary assigns a runtime id and injects agent/send_message."""
+  ``Session.__init__`` constructs the primary agent via the unified
+  :meth:`Session._create_agent` flow with ``requester=None``. These tests
+  exercise that path directly (and via ``Session.__init__``) to verify
+  agent-id assignment, tool injection, and disambiguation.
+  """
+
+  def test_primary_path_assigns_id_and_injects_tools(self) -> None:
+    """_create_agent(requester=None) registers the agent and injects tools."""
     config = Config()
     session = Session(config=config)
-    fake_agent = MagicMock()
-    fake_agent.config = config
-    fake_agent.definition = AgentDefinition(
-      simple_name="primary",
-      description="Primary",
-      tools=("read",),
-    )
-    fake_agent.tools = MagicMock()
-    agent_id = session._register_primary(fake_agent)
-    assert agent_id == "primary"
-    assert session.get_agent("primary") is fake_agent
+    # The primary agent is constructed in __init__ and available as
+    # session.agent. It is registered in the active map under a runtime id
+    # and has the ``agent`` and ``send_message`` tools injected.
+    primary = session.agent
+    assert primary is not None
+    # Reverse-lookup resolves the primary back to its id.
+    primary_id = session._id_of(primary)
+    assert primary_id == "primary"
+    assert session.get_agent("primary") is primary
     assert session._recursion_depths["primary"] == 0
-    # The session resolves the agent back to its id via reverse-lookup.
-    assert session._id_of(fake_agent) == "primary"
-    # The ``agent`` tool (gated by config.tools.agent.enabled, default True)
-    # and ``send_message`` are both injected by the Session.
-    registered_names = [
-      call.kwargs.get("name") for call in fake_agent.tools.register.call_args_list
-    ]
-    assert "agent" in registered_names
-    assert "send_message" in registered_names
+    # Both session-injected tools are present on the primary.
+    assert "yoker:agent" in primary.tools.names
+    assert "yoker:send_message" in primary.tools.names
 
-  def test_register_primary_skips_spawnagent_when_disabled(self) -> None:
+  def test_primary_path_skips_spawnagent_when_disabled(self) -> None:
     """The ``agent`` tool is NOT injected when config.tools.agent.enabled is False."""
     from dataclasses import replace
 
@@ -175,35 +171,20 @@ class TestRegisterPrimaryAgent:
     config = Config()
     config = replace(config, tools=replace(config.tools, agent=AgentToolConfig(enabled=False)))
     session = Session(config=config)
-    fake_agent = MagicMock()
-    fake_agent.config = config
-    fake_agent.definition = AgentDefinition(
-      simple_name="primary",
-      description="Primary",
-      tools=("read",),
-    )
-    fake_agent.tools = MagicMock()
-    session._register_primary(fake_agent)
-    registered_names = [
-      call.kwargs.get("name") for call in fake_agent.tools.register.call_args_list
-    ]
-    assert "agent" not in registered_names
+    primary = session.agent
+    assert "yoker:agent" not in primary.tools.names
     # send_message is always injected when an agent is part of a session.
-    assert "send_message" in registered_names
+    assert "yoker:send_message" in primary.tools.names
 
-  def test_register_primary_disambiguates(self) -> None:
-    """A second primary-agent registration with the same name gets a -2 suffix."""
+  def test_create_agent_disambiguates_primary_names(self) -> None:
+    """A second _create_agent call with the same definition name gets a -2 suffix."""
     config = Config()
     session = Session(config=config)
-    a = MagicMock()
-    a.config = config
-    a.definition = AgentDefinition(simple_name="primary", description="Primary", tools=("read",))
-    a.tools = MagicMock()
-    b = MagicMock()
-    b.config = config
-    b.definition = AgentDefinition(simple_name="primary", description="Primary", tools=("read",))
-    b.tools = MagicMock()
-    first = session._register_primary(a)
-    second = session._register_primary(b)
-    assert first == "primary"
-    assert second == "primary-2"
+    # __init__ already registered the primary as "primary"; a second
+    # _create_agent call with the same default definition gets disambiguated.
+    first, first_id = session._create_agent(requester=None, config=config)
+    assert first_id == "primary-2"
+    second, second_id = session._create_agent(requester=None, config=config)
+    assert second_id == "primary-3"
+    assert session.get_agent("primary-2") is first
+    assert session.get_agent("primary-3") is second
