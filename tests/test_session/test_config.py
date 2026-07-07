@@ -16,11 +16,11 @@ class TestSessionConfig:
     assert cfg.default_isolation_policy == "fresh"
     assert cfg.event_aggregation is True
 
-  def test_frozen(self) -> None:
-    """SessionConfig is frozen."""
+  def test_mutable(self) -> None:
+    """SessionConfig is mutable (Batch 1.8 unfroze config dataclasses)."""
     cfg = SessionConfig()
-    with pytest.raises(AttributeError):
-      cfg.max_agents = 5  # type: ignore[misc]
+    cfg.max_agents = 5
+    assert cfg.max_agents == 5
 
   def test_invalid_max_agents_zero(self) -> None:
     """max_agents must be positive."""

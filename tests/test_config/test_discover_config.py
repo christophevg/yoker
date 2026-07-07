@@ -104,8 +104,6 @@ definition = "{agent_file.as_posix()}"
     self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
   ) -> None:
     """Test that missing agent definition file raises an error."""
-    from yoker.core import Agent
-
     # Create config file with missing agent definition
     config_file = tmp_path / "yoker.toml"
     config_file.write_text(
@@ -130,18 +128,14 @@ definition = "./agents/missing.md"
         },
       )
 
-      # Name resolution requires a Session. With a Session, the registry
-      # resolves the name and raises ValueError("Agent not found: ...") for
-      # the missing-file reference. Without a Session, the Agent raises a
-      # "cannot be resolved by a standalone Agent" message.
+      # Session.__init__ now eagerly resolves the primary agent definition via
+      # _resolve_definition, which raises a ValueError with a "could not be
+      # resolved" message when the configured reference is neither a file path
+      # nor a registered agent.
       from yoker.session import Session
 
-      session = Session(config=config)
-      with pytest.raises(ValueError, match=r"Agent not found: \./agents/missing\.md"):
-        # The Session-agnostic Agent cannot resolve names from a registry,
-        # so resolve via the session registry and pass the definition in.
-        resolved = session.agents.resolve("./agents/missing.md")
-        Agent(config=config, agent_definition=resolved)
+      with pytest.raises(ValueError, match=r"could not be resolved"):
+        Session(config=config)
 
   def test_agent_definition_explicit_overrides_config(
     self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
