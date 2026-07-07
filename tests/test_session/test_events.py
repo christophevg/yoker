@@ -32,7 +32,7 @@ def _register_researcher(session: Session) -> AgentDefinition:
 
 
 def _patch_agent_cls() -> tuple[MagicMock, MagicMock]:
-  """Patch yoker.core.Agent and return (mock_cls, mock_child)."""
+  """Patch yoker.session.Agent and return (mock_cls, mock_child)."""
   mock_child = MagicMock()
   mock_child.process = AsyncMock(return_value="ok")
   mock_child.on_event = MagicMock()
@@ -126,29 +126,41 @@ class TestEventAggregation:
     config = Config(session=SessionConfig(event_aggregation=False))
     async with Session(config=config) as session:
       _register_researcher(session)
-      with patch("yoker.core.Agent") as mock_cls:
+      with patch("yoker.session.Agent") as mock_cls:
         mock_child = MagicMock()
         mock_child.process = AsyncMock(return_value="ok")
         mock_child.on_event = MagicMock()
         mock_cls.return_value = mock_child
         child, _agent_id = await session._spawn_internal("researcher")
         await child.process("hi")
+      # Hardening: confirm the mock class was actually constructed. A stale
+      # patch target would let a real Agent reach localhost:11434 and mask the
+      # bug behind a local Ollama daemon.
+      mock_cls.assert_called_once()
       mock_child.on_event.assert_not_called()
 
   @pytest.mark.asyncio
   async def test_agent_spawned_event_emitted(self) -> None:
     """AGENT_SPAWNED is emitted when an agent is spawned."""
     async with Session(config=Config()) as session:
-      _register_researcher(session)
+      agent_def = _register_researcher(session)
       received: list = []
       session.on_event(lambda e: received.append(e))
-      with patch("yoker.core.Agent") as mock_cls:
+      with patch("yoker.session.Agent") as mock_cls:
         mock_child = MagicMock()
         mock_child.process = AsyncMock(return_value="ok")
         mock_child.on_event = MagicMock()
+        # _spawn_internal emits AGENT_SPAWNED with definition_name drawn from
+        # agent.definition.simple_name; configure it so the event assertion
+        # reflects the registered definition rather than a MagicMock default.
+        mock_child.definition = agent_def
         mock_cls.return_value = mock_child
         child, _agent_id = await session._spawn_internal("researcher")
         await child.process("hi")
+      # Hardening: confirm the mock class was actually constructed. A stale
+      # patch target would let a real Agent reach localhost:11434 and mask the
+      # bug behind a local Ollama daemon.
+      mock_cls.assert_called_once()
       spawned = [e for e in received if isinstance(e, AgentSpawnedEvent)]
       assert len(spawned) == 1
       assert spawned[0].agent_id == "researcher"
@@ -162,7 +174,7 @@ class TestEventAggregation:
       _register_researcher(session)
       received: list = []
       session.on_event(lambda e: received.append(e))
-      with patch("yoker.core.Agent") as mock_cls:
+      with patch("yoker.session.Agent") as mock_cls:
         mock_child = MagicMock()
         mock_child.process = AsyncMock(return_value="ok")
         mock_child.on_event = MagicMock()
@@ -170,6 +182,10 @@ class TestEventAggregation:
         child, _agent_id = await session._spawn_internal("researcher")
         await child.process("hi")
         session.release(child)
+      # Hardening: confirm the mock class was actually constructed. A stale
+      # patch target would let a real Agent reach localhost:11434 and mask the
+      # bug behind a local Ollama daemon.
+      mock_cls.assert_called_once()
       finished = [e for e in received if isinstance(e, AgentFinishedEvent)]
       assert len(finished) == 1
       assert finished[0].agent_id == "researcher"
@@ -190,7 +206,7 @@ class TestEventAggregation:
       _register_researcher(session)
       received: list = []
       session.on_event(lambda e: received.append(e))
-      with patch("yoker.core.Agent") as mock_cls:
+      with patch("yoker.session.Agent") as mock_cls:
         mock_child = MagicMock()
         mock_child.process = AsyncMock(side_effect=slow_process)
         mock_child.on_event = MagicMock()
@@ -199,6 +215,10 @@ class TestEventAggregation:
         with pytest.raises(TimeoutError):
           await _asyncio.wait_for(child.process("hi"), timeout=0.05)
         session.release(child)
+      # Hardening: confirm the mock class was actually constructed. A stale
+      # patch target would let a real Agent reach localhost:11434 and mask the
+      # bug behind a local Ollama daemon.
+      mock_cls.assert_called_once()
       finished = [e for e in received if isinstance(e, AgentFinishedEvent)]
       assert len(finished) == 1
       assert session.get_agent("researcher") is None
