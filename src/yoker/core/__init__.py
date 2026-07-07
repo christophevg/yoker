@@ -19,8 +19,7 @@ from yoker.agents import (
 from yoker.backends import ModelBackend, create_backend
 from yoker.builtin import make_skill_tool
 from yoker.config import Config, get_yoker_config
-from yoker.context import ContextManager
-from yoker.context.basic import SimpleContextManager
+from yoker.context import ContextManager, create_context_manager
 from yoker.core._processing import process_message
 from yoker.core._setup import create_web_guardrails
 from yoker.core.thinking import ThinkingMode
@@ -134,15 +133,12 @@ class Agent:
     # Note: We extract the Ollama client from the backend for web tools.
     self._tool_backends: dict[str, Any] = self._create_tool_backends()
 
-    # set up the context manager
-    # Note: Use explicit None check because empty UserList is falsy
-    if context_manager is not None:
-      self.context: ContextManager = context_manager
-    else:
-      self.context = SimpleContextManager()
+    # set up the context manager (config-driven via factory when not provided)
+    self.context: ContextManager = context_manager or create_context_manager(
+      self.config, self.definition.name
+    )
 
-    # provide back-reference to the context. this triggers creating the initial context
-    # and the setup of the skill discovery block
+    # back-reference triggers initial context + skill discovery block setup
     self.context.agent = self
 
     self._event_handlers: list[EventCallback] = []

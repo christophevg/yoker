@@ -332,6 +332,12 @@ class Session:
 
     backend = self.get_backend(derived_config)
 
+    agent_id = self._generate_agent_name(
+      (agent_definition.simple_name if agent_definition is not None else None) or name or "primary"
+    )
+    # per-agent context manager — Session owns the lifecycle, factory hides construction
+    cm = create_context_manager(self.config, agent_id)
+
     # Agent construction.
     kwargs: dict[str, Any] = {
       "config": derived_config,
@@ -339,18 +345,15 @@ class Session:
       "agent_definition": agent_definition,
       "agent_path": agent_path if agent_definition is None else None,
       "backend": backend,
+      "context_manager": cm,
       "console_logging": console_logging,
     }
     if thinking_mode is not None:
       kwargs["thinking_mode"] = thinking_mode
     agent = Agent(**kwargs)
 
-    agent_id = self._generate_agent_name(agent.definition.simple_name or name or "primary")
     self._agents_map[agent_id] = agent
     self.inject_tools(agent, agent_id)
-    # per-agent context manager — Session owns the lifecycle, factory hides construction
-    agent.context = create_context_manager(self.config, agent_id)
-    agent.context.agent = agent
     if self.config.session.event_aggregation:
       agent.on_event(self._make_forwarding_handler(agent_id))
     return agent, agent_id
