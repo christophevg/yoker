@@ -28,17 +28,29 @@ from typing import Any, Literal, TypeVar
 
 from yoker.agents import AgentDefinition, load_agent_definition
 from yoker.backends import ModelBackend
-from yoker.config import Config
+from yoker.config import (
+  KNOWN_PROVIDERS,
+  AnthropicConfig,
+  Config,
+  GeminiConfig,
+  OpenAIConfig,
+)
 from yoker.context import ContextManager, Persisted, SimpleContextManager
 from yoker.core import Agent
 from yoker.core.thinking import ThinkingMode
 from yoker.events import EventCallback
-from yoker.exceptions import SkillError
 from yoker.session import Session
 
 _T = TypeVar("_T")
 
 ThinkingLiteral = Literal["on", "off", "visible", "silent"]
+
+_THINKING_MAP: dict[str, ThinkingMode] = {
+  "on": ThinkingMode.ON,
+  "visible": ThinkingMode.ON,
+  "off": ThinkingMode.OFF,
+  "silent": ThinkingMode.SILENT,
+}
 
 
 def run_sync(coro: Coroutine[Any, Any, _T]) -> _T:
@@ -147,8 +159,6 @@ def agent(
   # Apply model / provider overrides on a derived frozen Config. This block
   # only runs when needs_overrides is True, so base_config is not None here.
   if model is not None or provider is not None:
-    from yoker.config import KNOWN_PROVIDERS, AnthropicConfig, GeminiConfig, OpenAIConfig
-
     assert base_config is not None
     backend_cfg = base_config.backend
     if provider is not None:
@@ -193,16 +203,10 @@ def agent(
         simple_name=simple_name, system_prompt=prompt, tools=tools_tuple
       )
 
-  _thinking_map = {
-    "on": ThinkingMode.ON,
-    "visible": ThinkingMode.ON,
-    "off": ThinkingMode.OFF,
-    "silent": ThinkingMode.SILENT,
-  }
-  thinking_mode = _thinking_map.get(thinking)
+  thinking_mode = _THINKING_MAP.get(thinking)
   if thinking_mode is None:
     raise ValueError(
-      f"Unknown thinking mode '{thinking}'. Expected one of: {', '.join(sorted(_thinking_map))}"
+      f"Unknown thinking mode '{thinking}'. Expected one of: {', '.join(sorted(_THINKING_MAP))}"
     )
 
   built = Agent(
@@ -218,25 +222,7 @@ def agent(
 
   # Filter skills to the requested subset (post-construction).
   if skills is not None:
-    available = {name.lower(): name for name in built.skills.data.keys()}
-    keep: set[str] = set()
-    for requested in skills:
-      normalized = requested.lower()
-      if ":" in normalized:
-        actual = available.get(normalized)
-      else:
-        actual = available.get(normalized) or available.get(f"yoker:{normalized}")
-      if actual is None:
-        raise SkillError(
-          requested,
-          f"Unknown skill. Available skills: {', '.join(sorted(built.skills.names))}"
-          if built.skills.names
-          else "Unknown skill (no skills loaded).",
-        )
-      keep.add(actual)
-    to_remove = [key for key in list(built.skills.data.keys()) if key not in keep]
-    for key in to_remove:
-      del built.skills.data[key]
+    Agent.filter_skills(built.skills, skills)
 
   # Register the optional event handler.
   if event_handler is not None:
@@ -343,19 +329,14 @@ async def session(
   tools: list[str] | None = common_kwargs.pop("tools", None)
   skills: list[str] | None = common_kwargs.pop("skills", None)
 
-  # Build the base config. When an id is given (or persist requested),
-  # override context.session_id so persistence resumes the right session.
+  # config construction
   base_config = config if config is not None else Config()
   if id is not None:
     base_config = dataclasses.replace(
       base_config,
       context=dataclasses.replace(base_config.context, session_id=id, persist_after_turn=True),
     )
-
-  # Apply model / provider overrides on the base config.
   if model is not None or provider is not None:
-    from yoker.config import KNOWN_PROVIDERS, AnthropicConfig, GeminiConfig, OpenAIConfig
-
     backend_cfg = base_config.backend
     if provider is not None:
       if provider in KNOWN_PROVIDERS and getattr(backend_cfg, provider) is None:
@@ -368,59 +349,43 @@ async def session(
       backend_cfg = dataclasses.replace(backend_cfg, provider=provider)
     if model is not None:
       sub = backend_cfg.config
-      new_sub = dataclasses.replace(sub, model=model)
-      active = backend_cfg.provider
-      backend_cfg = dataclasses.replace(backend_cfg, **{active: new_sub})  # type: ignore[arg-type]
+      backend_cfg = dataclasses.replace(
+        backend_cfg, **{backend_cfg.provider: dataclasses.replace(sub, model=model)}  # type: ignore[arg-type]
+      )
     base_config = dataclasses.replace(base_config, backend=backend_cfg)
 
-  extra_plugins = tuple(plugins) if plugins is not None else ()
-
-  # Pre-build the agent definition from system_prompt/tools when no
-  # explicit definition/path was given (mirrors agent()).
+  # synthesize a definition from system_prompt/tools when no explicit one given;
+  # agent_path-only resolution is delegated to Session._resolve_definition.
   resolved_definition: AgentDefinition | None = agent_definition
-  if resolved_definition is None and agent_path is not None:
-    resolved_definition = load_agent_definition(agent_path)
   if (
     resolved_definition is None
     and agent_path is None
     and (system_prompt is not None or tools is not None)
   ):
-    simple_name: str | None = None
-    tools_tuple: tuple[str, ...] = ()
-    if tools is not None:
-      simple_name = "custom"
-      tools_tuple = tuple(tools)
-    prompt = system_prompt if system_prompt is not None else "You are a helpful assistant."
     resolved_definition = AgentDefinition(
-      simple_name=simple_name, system_prompt=prompt, tools=tools_tuple
+      simple_name="custom" if tools is not None else None,
+      system_prompt=system_prompt if system_prompt is not None else "You are a helpful assistant.",
+      tools=tuple(tools) if tools is not None else (),
     )
 
-  _thinking_map = {
-    "on": ThinkingMode.ON,
-    "visible": ThinkingMode.ON,
-    "off": ThinkingMode.OFF,
-    "silent": ThinkingMode.SILENT,
-  }
-  thinking_mode = _thinking_map.get(thinking)
+  thinking_mode = _THINKING_MAP.get(thinking)
   if thinking_mode is None:
     raise ValueError(
-      f"Unknown thinking mode '{thinking}'. Expected one of: {', '.join(sorted(_thinking_map))}"
+      f"Unknown thinking mode '{thinking}'. Expected one of: {', '.join(sorted(_THINKING_MAP))}"
     )
 
-  # Build the underlying Session. The primary agent is constructed inside
-  # Session.__init__ via the unified _create_agent flow (no double creation).
+  # Session.__init__ owns plugin loading, backend, and primary-agent creation.
   core = Session(
     config=base_config,
     session_id=id,
-    extra_plugins=extra_plugins,
+    extra_plugins=tuple(plugins) if plugins is not None else (),
     agent_definition=resolved_definition,
-    agent_path=agent_path if resolved_definition is None else None,
-    plugins=extra_plugins,
+    agent_path=agent_path,
     thinking_mode=thinking_mode,
     console_logging=False,
   )
 
-  # Override the primary agent's context manager with the persisted one.
+  # wire the persisted context manager onto the primary agent
   context_manager: ContextManager | None = None
   if persist:
     context_manager = Persisted(SimpleContextManager(), session_id=core.id)
@@ -429,33 +394,17 @@ async def session(
     context_manager.agent = core.agent
     core.agent.context = context_manager
 
-  # Filter skills to the requested subset (post-construction).
   if skills is not None:
-    available = {name.lower(): name for name in core.agent.skills.data.keys()}
-    keep: set[str] = set()
-    for requested in skills:
-      normalized = requested.lower()
-      if ":" in normalized:
-        actual = available.get(normalized)
-      else:
-        actual = available.get(normalized) or available.get(f"yoker:{normalized}")
-      if actual is None:
-        raise SkillError(
-          requested,
-          f"Unknown skill. Available skills: {', '.join(sorted(core.agent.skills.names))}"
-          if core.agent.skills.names
-          else "Unknown skill (no skills loaded).",
-        )
-      keep.add(actual)
-    to_remove = [key for key in list(core.agent.skills.data.keys()) if key not in keep]
-    for key in to_remove:
-      del core.agent.skills.data[key]
-
+    Agent.filter_skills(core.agent.skills, skills)
   if event_handler is not None:
     core.on_event(event_handler)
 
-  async with core:
-    yield core
+  try:
+    async with core:
+      yield core
+  finally:
+    if context_manager is not None:
+      context_manager.close()
 
 
 __all__ = [
