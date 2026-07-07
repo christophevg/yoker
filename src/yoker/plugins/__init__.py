@@ -27,7 +27,6 @@ from yoker.plugins.loader import (
 from yoker.plugins.manifest import PluginManifest
 from yoker.plugins.security import (
   check_plugin_allowed,
-  check_plugins_enabled,
   confirm_plugin,
   is_trusted,
   reset_session_trusted,
@@ -45,7 +44,6 @@ __all__ = [
   # Security
   "is_trusted",
   "confirm_plugin",
-  "check_plugins_enabled",
   "check_plugin_allowed",
   "reset_session_trusted",
 ]

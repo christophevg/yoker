@@ -158,42 +158,6 @@ def confirm_plugin(plugin_name: str, plugin: "PluginComponents") -> bool:
     return False
 
 
-def check_plugins_enabled(config: "Config") -> bool:
-  """Check if plugins are enabled globally.
-
-  Args:
-    config: Configuration object.
-
-  Returns:
-    True if plugins are enabled, False otherwise.
-
-  Side effects:
-    Prints styled error message if plugins are disabled.
-  """
-  # TODO: this should be a sanity check that is simply performed once when starting, not
-  #       "on demand", probably even as part of construction/validation of Config
-  # TODO: all uses of this function must be replace with a simple inline
-  #       `if config.plugins.enabled`
-
-  if not config.plugins.enabled:
-    # Styled error message
-    error_text = Text()
-    error_text.append("Error: ", style="bold red")
-    error_text.append("Plugins are disabled. To enable, add to your config:\n")
-    console.print(error_text)
-
-    # Styled code snippet
-    code_text = Text()
-    code_text.append("  [plugins]\n", style="cyan")
-    code_text.append("  enabled = true", style="cyan")
-    console.print(code_text)
-
-    logger.warning("plugins_disabled_globally")
-    return False
-
-  return True
-
-
 def check_plugin_allowed(plugin: "PluginComponents", config: "Config") -> bool:
   """Check if a plugin is allowed to load.
 
@@ -232,7 +196,6 @@ def reset_session_trusted() -> None:
 __all__ = [
   "is_trusted",
   "confirm_plugin",
-  "check_plugins_enabled",
   "check_plugin_allowed",
   "reset_session_trusted",
 ]

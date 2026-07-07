@@ -43,6 +43,7 @@ from dataclasses import dataclass, field
 from typing import Literal, cast
 
 from clevis import SecurityAction, SecurityConfig, get_config
+from structlog import get_logger
 
 from yoker.config.providers import (
   AnthropicConfig,
@@ -67,6 +68,8 @@ from yoker.config.validators import (
   validate_regex_patterns,
 )
 from yoker.exceptions import ValidationError
+
+logger = get_logger(__name__)
 
 
 def get_yoker_config(cli: bool = False) -> "Config":
@@ -742,6 +745,15 @@ class Config:
   logging: LoggingConfig = field(default_factory=LoggingConfig)
   ui: UIConfig = field(default_factory=UIConfig)
   session: SessionConfig = field(default_factory=SessionConfig)
+
+  def __post_init__(self) -> None:
+    """Run sanity checks on the assembled configuration."""
+    # misconfiguration: plugin packages listed but plugins disabled
+    if not self.plugins.enabled and self.plugins.packages:
+      logger.warning(
+        "plugins_disabled_with_packages_configured",
+        packages=list(self.plugins.packages),
+      )
 
 
 __all__ = [
