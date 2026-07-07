@@ -4,7 +4,6 @@ A :class:`Session` is the container+coordinator for a team of agents. It owns:
   - the session id namespace
   - the name→agent map
   - the :class:`yoker.agents.AgentRegistry`
-  - recursion depth tracking
   - event aggregation handlers
   - shared backends
 """
@@ -72,9 +71,6 @@ class Session:
     self._agents_map: dict[str, Agent] = {}
     # Shared agent definitions registry. Populated from config directories and plugins
     self.agents: AgentRegistry = AgentRegistry()
-    # agent name → current recursion depth. Tracked in spawn().
-    # TODO: replace recursion depth limitation with max total agents in session
-    self._recursion_depths: dict[str, int] = {}
     # Session-scoped event handlers.
     self._event_handlers: list[EventCallback] = []
     # Shared backends keyed by provider config signature.
@@ -225,7 +221,7 @@ class Session:
 
     Raises:
       ValueError: On allowlist violation, unknown agent, or capacity
-        (depth / max_agents) exceeded.
+        (max_agents) exceeded.
     """
     child, _agent_id = await self._spawn_internal(name, requester=requester)
     return child
@@ -238,52 +234,24 @@ class Session:
   ) -> tuple[Agent, str]:
     """Spawn a child agent and return ``(agent, agent_id)`` (internal).
 
-    Enforces the requester's :attr:`AgentDefinition.agents` allowlist,
-    resolves the definition from ``session.agents`` (required — raises on
-    failure), checks recursion depth and ``max_agents`` limits, then
-    delegates to :meth:`_create_agent` for the unified construction flow.
-    Emits ``AGENT_SPAWNED`` after registration. Used by the public
-    :meth:`spawn` and by the Session-injected ``agent`` tool.
+    Enforces nothing — :meth:`_create_agent` is the single enforcement
+    point (allowlist + max_agents). Resolves the definition from
+    ``session.agents`` (required — raises on failure), delegates to
+    :meth:`_create_agent`, emits ``AGENT_SPAWNED`` after registration.
+    Used by the public :meth:`spawn` and by the Session-injected ``agent`` tool.
     """
-    # Allowlist enforcement — before any other check.
-    if requester is not None:
-      allowed = requester.definition.agents
-      if len(allowed) == 0:
-        raise ValueError(f"Agent '{requester.definition.name}' has no allowed spawns.")
-      if name not in allowed:
-        raise ValueError(f"Agent '{name}' is not in '{requester.definition.name}' allowlist.")
-
     # Resolve agent definition from the session registry (required).
     try:
-      agent_definition: AgentDefinition = self.agents.resolve(name)
+      resolved: AgentDefinition = self.agents.resolve(name)
     except ValueError:
       raise
     except Exception as e:
       raise ValueError(f"Agent resolution failed for '{name}': {e}") from e
 
-    # Recursion depth check. Top-level spawn (requester is None) starts
-    # at depth 1; nested spawns derive depth from the requester's tracked
-    # depth in this session.
-    parent_depth = 0
-    if requester is not None:
-      parent_depth = next(
-        (d for n, d in self._recursion_depths.items() if self._agents_map.get(n) is requester),
-        0,
-      )
-    child_depth = parent_depth + 1
-    if child_depth > self.config.tools.agent.max_recursion_depth:
-      raise ValueError(
-        f"Maximum recursion depth ({self.config.tools.agent.max_recursion_depth}) exceeded. Cannot spawn sub-agent."
-      )
-
-    # max_agents cap
-    if len(self._agents_map) >= self.config.session.max_agents:
-      raise ValueError(f"Session max_agents limit ({self.config.session.max_agents}) reached.")
-
     agent, agent_id = self._create_agent(
       name=name,
       requester=requester,
-      agent_definition=agent_definition,
+      agent_definition=resolved,
     )
 
     # Lifecycle signal: AGENT_SPAWNED is emitted after registration.
@@ -316,9 +284,8 @@ class Session:
     No ``AGENT_SPAWNED`` is emitted here — callers emit it when
     appropriate.
 
-    When ``requester is not None`` the allowlist and recursion/capacity
-    checks are enforced; when ``requester is None`` (primary path) those
-    checks are skipped and depth defaults to 0. When
+    When ``requester is not None`` the allowlist is enforced; the
+    ``max_agents`` cap is enforced on every path. When
     ``agent_definition is not None`` the config is derived via
     :meth:`_derive_config` so definition-level model overrides apply on
     both paths (fixes the latent primary-path model-override bug).
@@ -347,22 +314,10 @@ class Session:
       if name not in allowed:
         raise ValueError(f"Agent '{name}' is not in '{requester.definition.name}' allowlist.")
 
-    # Depth + capacity — only for spawned children. Primary path uses
-    # depth 0 and bypasses the caps (the primary is the first agent).
-    if requester is not None:
-      parent_depth = next(
-        (d for n, d in self._recursion_depths.items() if self._agents_map.get(n) is requester),
-        0,
-      )
-      depth = parent_depth + 1
-      if depth > self.config.tools.agent.max_recursion_depth:
-        raise ValueError(
-          f"Maximum recursion depth ({self.config.tools.agent.max_recursion_depth}) exceeded. Cannot spawn sub-agent."
-        )
-      if len(self._agents_map) >= self.config.session.max_agents:
-        raise ValueError(f"Session max_agents limit ({self.config.session.max_agents}) reached.")
-    else:
-      depth = 0
+    # max_agents cap — session-wide resource limit (primary is the first agent, so
+    # it never hits the cap in practice).
+    if len(self._agents_map) >= self.config.session.max_agents:
+      raise ValueError(f"Session max_agents limit ({self.config.session.max_agents}) reached.")
 
     # Config derivation — apply definition model override on both paths.
     base_config = config if config is not None else self.config
@@ -388,7 +343,6 @@ class Session:
 
     agent_id = self._generate_agent_name(agent.definition.simple_name or name or "primary")
     self._agents_map[agent_id] = agent
-    self._recursion_depths[agent_id] = depth
     self.inject_tools(agent, agent_id)
     if self.config.session.event_aggregation:
       agent.on_event(self._make_forwarding_handler(agent_id))
@@ -440,7 +394,6 @@ class Session:
       )
     )
     self._agents_map = {aid: a for aid, a in self._agents_map.items() if a is not agent}
-    self._recursion_depths.pop(agent_id, None)
 
   def inject_tools(self, agent: Agent, agent_id: str) -> None:
     """Inject Session-injected tools onto an agent

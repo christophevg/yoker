@@ -121,7 +121,6 @@ class TestSpawnAllowlist:
       # requester at depth 1 would exceed max_recursion_depth=1 on the next
       # spawn, but the allowlist violation should fire first.
       requester = _make_requester(allowlist=("writer",), session=session)
-      session._recursion_depths["parent"] = 1
       requester.definition = AgentDefinition(
         simple_name="parent",
         description="Parent",
@@ -129,50 +128,6 @@ class TestSpawnAllowlist:
         agents=("writer",),
       )
       with pytest.raises(ValueError, match="allowlist"):
-        await session.spawn("researcher", requester=requester)
-
-
-class TestSpawnRecursionDepth:
-  """Tests for recursion depth enforcement in Session.spawn."""
-
-  @pytest.mark.asyncio
-  async def test_top_level_spawn_depth_one(self) -> None:
-    """Top-level spawn (requester=None) runs at depth 1."""
-    config = _config_with_max_recursion(3)
-    agent_def = AgentDefinition(
-      simple_name="researcher",
-      description="Researcher",
-      tools=("read",),
-    )
-    async with Session(config=config) as session:
-      session.agents.register(agent_def)
-      with patch("yoker.core.Agent") as mock_agent_cls:
-        mock_child = MagicMock()
-        mock_child.process = AsyncMock(return_value="ok")
-        mock_child.tools = MagicMock()
-        mock_agent_cls.return_value = mock_child
-        child, _agent_id = await session._spawn_internal("researcher")
-        await child.process("hi")
-        session.release(child)
-      # Depth tracked during the run; removed on release.
-      assert "researcher" not in session._recursion_depths
-
-  @pytest.mark.asyncio
-  async def test_spawn_beyond_max_recursion_rejected(self) -> None:
-    """Spawning beyond max_recursion_depth raises ValueError."""
-    config = _config_with_max_recursion(1)
-    agent_def = AgentDefinition(
-      simple_name="researcher",
-      description="Researcher",
-      tools=("read",),
-    )
-    async with Session(config=config) as session:
-      session.agents.register(agent_def)
-      requester = _make_requester(allowlist=("researcher",), session=session)
-      # Simulate the requester already being at depth 1 (the max).
-      session._agents_map["parent"] = requester
-      session._recursion_depths["parent"] = 1
-      with pytest.raises(ValueError, match="Maximum recursion depth"):
         await session.spawn("researcher", requester=requester)
 
 
