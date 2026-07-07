@@ -149,31 +149,35 @@ class TestDemoPluginRegistration:
 
   def test_register_demo_tool_with_namespace(self) -> None:
     """Demo tool should be registerable with namespace prefix."""
-    from yoker.plugins import load_plugin, register_tools
+    from yoker.plugins import load_plugin
     from yoker.tools import ToolRegistry
 
     plugin = load_plugin("yoker_plugin_demo")
     assert plugin is not None
 
     registry = ToolRegistry()
-    registered = register_tools(plugin.tools, registry, namespace="yoker_plugin_demo")
+    # register_tools/register_skills free functions were removed (Batch 2);
+    # registration now lives on the registries via register_all.
+    registry.register_all(plugin.tools, namespace="yoker_plugin_demo")
 
-    assert len(registered) == 1
-    assert "yoker_plugin_demo:echo" in registered
+    assert len(registry) == 1
+    assert "yoker_plugin_demo:echo" in registry
     assert registry.get("yoker_plugin_demo:echo") is not None
 
   def test_register_demo_skill_with_namespace(self) -> None:
     """Demo skill should be registerable with namespace prefix."""
-    from yoker.plugins import load_skills_from_package, register_skills
+    from yoker.plugins import load_skills_from_package
     from yoker.skills import SkillRegistry
 
     skills = load_skills_from_package("yoker_plugin_demo", skills_dir="skills")
 
     registry = SkillRegistry()
-    registered = register_skills(skills, registry, namespace="yoker_plugin_demo")
+    # register_skills free function was removed (Batch 2); use the registry's
+    # register_all method instead.
+    registry.register_all(skills, namespace="yoker_plugin_demo")
 
-    assert len(registered) >= 1
-    assert "yoker_plugin_demo:greeting" in registered
+    assert len(registry) >= 1
+    assert "yoker_plugin_demo:greeting" in registry
     assert registry.get("yoker_plugin_demo:greeting") is not None
 
 

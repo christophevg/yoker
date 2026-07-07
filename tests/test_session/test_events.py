@@ -68,7 +68,9 @@ class TestEventAggregation:
     """Events from a spawned agent reach session handlers wrapped in SessionEvent."""
     async with Session(config=Config()) as session:
       _register_researcher(session)
-      with patch("yoker.core.Agent") as mock_cls:
+      # Patch yoker.session.Agent — that is the reference Session._create_agent
+      # actually calls (yoker.session binds Agent at module import time).
+      with patch("yoker.session.Agent") as mock_cls:
         mock_child = MagicMock()
         mock_child.process = AsyncMock(return_value="ok")
         # Capture the forwarding handler registered on the child.
@@ -98,7 +100,7 @@ class TestEventAggregation:
     """The inner Event inside a SessionEvent is not modified."""
     async with Session(config=Config()) as session:
       _register_researcher(session)
-      with patch("yoker.core.Agent") as mock_cls:
+      with patch("yoker.session.Agent") as mock_cls:
         mock_child = MagicMock()
         mock_child.process = AsyncMock(return_value="ok")
         mock_child.on_event = MagicMock()
