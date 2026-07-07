@@ -98,7 +98,7 @@ def get_yoker_config(cli: bool = False) -> "Config":
   return get_config(Config, name="yoker", cli=cli, security=security)
 
 
-@dataclass(frozen=True)
+@dataclass
 class HarnessConfig:
   """Harness metadata configuration.
 
@@ -121,7 +121,7 @@ class HarnessConfig:
 KNOWN_PROVIDERS = ("ollama", "openai", "anthropic", "gemini")
 
 
-@dataclass(frozen=True)
+@dataclass
 class BackendConfig:
   """Backend provider configuration (tagged union by `provider`).
 
@@ -150,10 +150,15 @@ class BackendConfig:
   gemini: GeminiConfig | None = None
 
   def __post_init__(self) -> None:
-    validate_non_empty_string(self.provider, "backend.provider")
+    self.validate()
 
-    # Known providers must have their config set
-    # Unknown providers (handled by litellm) will use GenericConfig
+  def validate(self) -> None:
+    """Validate cross-field invariants.
+
+    Known providers must have their corresponding config set; unknown
+    providers (handled by litellm) use a GenericConfig at call time.
+    """
+    validate_non_empty_string(self.provider, "backend.provider")
     if self.provider in KNOWN_PROVIDERS:
       config = getattr(self, self.provider, None)
       if config is None:
@@ -182,7 +187,7 @@ class BackendConfig:
     return GenericConfig(model="")
 
 
-@dataclass(frozen=True)
+@dataclass
 class ContextConfig:
   """Context management configuration.
 
@@ -209,7 +214,7 @@ class ContextConfig:
     )
 
 
-@dataclass(frozen=True)
+@dataclass
 class HandlerConfig:
   """Permission handler configuration.
 
@@ -222,7 +227,7 @@ class HandlerConfig:
   message: str | None = None
 
 
-@dataclass(frozen=True)
+@dataclass
 class PermissionsConfig:
   """Permission boundaries configuration.
 
@@ -253,7 +258,7 @@ class PermissionsConfig:
       )
 
 
-@dataclass(frozen=True)
+@dataclass
 class ToolConfig:
   """Base tool configuration.
 
@@ -264,7 +269,7 @@ class ToolConfig:
   enabled: bool = True
 
 
-@dataclass(frozen=True)
+@dataclass
 class ListToolConfig(ToolConfig):
   """List tool configuration.
 
@@ -282,7 +287,7 @@ class ListToolConfig(ToolConfig):
     validate_positive_int(self.max_entries, "tools.list.max_entries")
 
 
-@dataclass(frozen=True)
+@dataclass
 class ReadToolConfig(ToolConfig):
   """Read tool configuration.
 
@@ -325,7 +330,7 @@ class ReadToolConfig(ToolConfig):
     validate_regex_patterns(self.blocked_patterns, "tools.read.blocked_patterns")
 
 
-@dataclass(frozen=True)
+@dataclass
 class WriteToolConfig(ToolConfig):
   """Write tool configuration.
 
@@ -344,7 +349,7 @@ class WriteToolConfig(ToolConfig):
     validate_positive_int(self.max_size_kb, "tools.write.max_size_kb")
 
 
-@dataclass(frozen=True)
+@dataclass
 class UpdateToolConfig(ToolConfig):
   """Update tool configuration.
 
@@ -361,7 +366,7 @@ class UpdateToolConfig(ToolConfig):
     validate_positive_int(self.max_diff_size_kb, "tools.update.max_diff_size_kb")
 
 
-@dataclass(frozen=True)
+@dataclass
 class ContentDisplayConfig:
   """Configuration for displaying file content in tool operations.
 
@@ -381,7 +386,7 @@ class ContentDisplayConfig:
   max_diff_lines: int = 30
 
 
-@dataclass(frozen=True)
+@dataclass
 class SearchToolConfig(ToolConfig):
   """Search tool configuration.
 
@@ -401,7 +406,7 @@ class SearchToolConfig(ToolConfig):
     validate_positive_int(self.timeout_ms, "tools.search.timeout_ms")
 
 
-@dataclass(frozen=True)
+@dataclass
 class AgentToolConfig(ToolConfig):
   """Agent tool configuration.
 
@@ -419,7 +424,7 @@ class AgentToolConfig(ToolConfig):
     validate_positive_int(self.timeout_seconds, "tools.agent.timeout_seconds")
 
 
-@dataclass(frozen=True)
+@dataclass
 class GitToolConfig(ToolConfig):
   """Git tool configuration.
 
@@ -438,7 +443,7 @@ class GitToolConfig(ToolConfig):
   requires_permission: tuple[str, ...] = ("commit", "push")
 
 
-@dataclass(frozen=True)
+@dataclass
 class MkdirToolConfig(ToolConfig):
   """Mkdir tool configuration.
 
@@ -449,7 +454,7 @@ class MkdirToolConfig(ToolConfig):
   max_depth: int = 20
 
 
-@dataclass(frozen=True)
+@dataclass
 class ExistenceToolConfig(ToolConfig):
   """Existence tool configuration.
 
@@ -460,7 +465,7 @@ class ExistenceToolConfig(ToolConfig):
   pass  # Inherits enabled: bool = True from ToolConfig
 
 
-@dataclass(frozen=True)
+@dataclass
 class SkillToolConfig(ToolConfig):
   """Skill tool configuration.
 
@@ -471,7 +476,7 @@ class SkillToolConfig(ToolConfig):
   pass  # Inherits enabled: bool = True from ToolConfig
 
 
-@dataclass(frozen=True)
+@dataclass
 class WebSearchToolConfig(ToolConfig):
   """Web search tool configuration.
 
@@ -498,7 +503,7 @@ class WebSearchToolConfig(ToolConfig):
   block_private_cidrs: bool = True
 
 
-@dataclass(frozen=True)
+@dataclass
 class WebFetchToolConfig(ToolConfig):
   """Web fetch tool configuration.
 
@@ -531,7 +536,7 @@ class WebFetchToolConfig(ToolConfig):
   validate_redirects: bool = True
 
 
-@dataclass(frozen=True)
+@dataclass
 class ToolsConfig:
   """All tool configurations.
 
@@ -567,7 +572,7 @@ class ToolsConfig:
     return cast(ToolConfig, getattr(self, name))
 
 
-@dataclass(frozen=True)
+@dataclass
 class ToolsSharedConfig:
   """Shared tool configurations.
 
@@ -578,7 +583,7 @@ class ToolsSharedConfig:
   content_display: ContentDisplayConfig = field(default_factory=ContentDisplayConfig)
 
 
-@dataclass(frozen=True)
+@dataclass
 class AgentsConfig:
   """Agent definition settings.
 
@@ -596,7 +601,7 @@ class AgentsConfig:
       validate_directory_exists(directory, "agents.directories")
 
 
-@dataclass(frozen=True)
+@dataclass
 class SkillsConfig:
   """Skills configuration.
 
@@ -609,7 +614,7 @@ class SkillsConfig:
   discovery: bool = True
 
 
-@dataclass(frozen=True)
+@dataclass
 class PluginsConfig:
   """Plugin configuration.
 
@@ -626,7 +631,7 @@ class PluginsConfig:
   trusted: dict[str, bool] = field(default_factory=dict)
 
 
-@dataclass(frozen=True)
+@dataclass
 class LoggingConfig:
   """Logging configuration.
 
@@ -651,7 +656,7 @@ class LoggingConfig:
     validate_choice(self.format, "logging.format", ("json", "text"))
 
 
-@dataclass(frozen=True)
+@dataclass
 class UIConfig:
   """UI layer configuration.
 
@@ -675,7 +680,7 @@ class UIConfig:
     validate_choice(self.mode, "ui.mode", ("interactive", "batch"))
 
 
-@dataclass(frozen=True)
+@dataclass
 class SessionConfig:
   """Session configuration.
 
@@ -704,7 +709,7 @@ class SessionConfig:
     )
 
 
-@dataclass(frozen=True)
+@dataclass
 class Config:
   """Root configuration container.
 

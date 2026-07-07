@@ -20,7 +20,6 @@ notebooks, REPLs). It is the only sync entry point — there are no per-call
 from __future__ import annotations
 
 import asyncio
-import dataclasses
 from collections.abc import AsyncIterator, Coroutine
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -120,14 +119,11 @@ def _build_config_and_definition(
           "anthropic": AnthropicConfig,
           "gemini": GeminiConfig,
         }
-        backend_cfg = dataclasses.replace(backend_cfg, **{provider: defaults[provider]()})
-      backend_cfg = dataclasses.replace(backend_cfg, provider=provider)
+        setattr(backend_cfg, provider, defaults[provider]())
+      backend_cfg.provider = provider
     if model is not None:
-      sub = backend_cfg.config
-      backend_cfg = dataclasses.replace(
-        backend_cfg, **{backend_cfg.provider: dataclasses.replace(sub, model=model)}  # type: ignore[arg-type]
-      )
-    base = dataclasses.replace(base, backend=backend_cfg)
+      backend_cfg.config.model = model
+    backend_cfg.validate()
 
   # resolve agent definition: explicit > path (inline) > built-from-kwargs
   resolved_definition: AgentDefinition | None = agent_definition
@@ -138,7 +134,9 @@ def _build_config_and_definition(
     if system_prompt is not None or tools is not None:
       resolved_definition = AgentDefinition(
         simple_name="custom" if tools is not None else None,
-        system_prompt=system_prompt if system_prompt is not None else "You are a helpful assistant.",
+        system_prompt=system_prompt
+        if system_prompt is not None
+        else "You are a helpful assistant.",
         tools=tuple(tools) if tools is not None else (),
       )
 
@@ -217,18 +215,22 @@ def agent(
     A fully constructed :class:`yoker.Agent` instance.
   """
   base, resolved_definition, forwarded_path, thinking_mode = _build_config_and_definition(
-    config=config, model=model, provider=provider,
-    system_prompt=system_prompt, tools=tools,
-    agent_path=agent_path, agent_definition=agent_definition,
-    thinking=thinking, require_config=False, load_path_inline=True,
+    config=config,
+    model=model,
+    provider=provider,
+    system_prompt=system_prompt,
+    tools=tools,
+    agent_path=agent_path,
+    agent_definition=agent_definition,
+    thinking=thinking,
+    require_config=False,
+    load_path_inline=True,
   )
 
   # enable plugin loading when plugins explicitly requested
   if plugins is not None and base is not None:
-    base = dataclasses.replace(
-      base,
-      plugins=dataclasses.replace(base.plugins, enabled=True, packages=tuple(plugins)),
-    )
+    base.plugins.enabled = True
+    base.plugins.packages = tuple(plugins)
 
   built = Agent(
     config=base,
@@ -347,28 +349,33 @@ async def session(
   skills: list[str] | None = common_kwargs.pop("skills", None)
 
   base, resolved_definition, forwarded_path, thinking_mode = _build_config_and_definition(
-    config=config, model=model, provider=provider,
-    system_prompt=system_prompt, tools=tools,
-    agent_path=agent_path, agent_definition=agent_definition,
-    thinking=thinking, require_config=True, load_path_inline=False,
+    config=config,
+    model=model,
+    provider=provider,
+    system_prompt=system_prompt,
+    tools=tools,
+    agent_path=agent_path,
+    agent_definition=agent_definition,
+    thinking=thinking,
+    require_config=True,
+    load_path_inline=False,
   )
   assert base is not None  # require_config=True guarantees a non-None base
 
   # fold id/persist/fresh into context config — Session owns the lifecycle
-  base = dataclasses.replace(
-    base,
-    context=dataclasses.replace(
-      base.context,
-      session_id=id if id is not None else base.context.session_id,
-      persist_after_turn=persist,
-      fresh=fresh,
-    ),
-  )
+  if id is not None:
+    base.context.session_id = id
+  base.context.persist_after_turn = persist
+  base.context.fresh = fresh
 
   # Session.__init__ owns plugin loading, backend, and primary-agent creation
   core = Session(
-    config=base, session_id=id, thinking_mode=thinking_mode, console_logging=False,
-    agent_definition=resolved_definition, agent_path=forwarded_path,
+    config=base,
+    session_id=id,
+    thinking_mode=thinking_mode,
+    console_logging=False,
+    agent_definition=resolved_definition,
+    agent_path=forwarded_path,
     extra_plugins=tuple(plugins) if plugins is not None else (),
   )
 
