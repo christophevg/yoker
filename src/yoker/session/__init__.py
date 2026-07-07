@@ -11,6 +11,7 @@ A :class:`Session` is the container+coordinator for a team of agents. It owns:
 from __future__ import annotations
 
 import asyncio
+import copy
 import os
 import uuid
 from pathlib import Path
@@ -517,15 +518,17 @@ class Session:
 
     When the definition has no ``model`` override the parent config is
     returned unchanged (so the backend is shared). When a model override
-    exists, the active provider's sub-config is mutated in place and the
-    backend's cross-field invariant is re-validated.
+    exists, a deep copy is taken so the parent's sub-config is left untouched,
+    then the active provider's sub-config is updated and the backend's
+    cross-field invariant is re-validated.
     """
     model = agent_definition.model
     if model is None:
       return parent_config
-    parent_config.backend.config.model = model
-    parent_config.backend.validate()
-    return parent_config
+    derived = copy.deepcopy(parent_config)
+    derived.backend.config.model = model
+    derived.backend.validate()
+    return derived
 
 
 __all__ = ["Session"]
