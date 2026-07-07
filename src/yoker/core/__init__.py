@@ -26,7 +26,7 @@ from yoker.core.thinking import ThinkingMode
 from yoker.events import EventCallback
 from yoker.exceptions import SkillError
 from yoker.logging import configure_logging
-from yoker.plugins import load_plugins
+from yoker.plugins import load_plugins, warn_plugins_disabled
 from yoker.skills import SkillRegistry, load_skills
 from yoker.tools import ToolRegistry
 from yoker.tools.guardrails import Guardrail
@@ -79,6 +79,10 @@ class Agent:
     # with config available, configure logging (will be skipped if already done)
     configure_logging(self.config.logging, console=console_logging)
     logger.info("agent config", source="provided" if config else "loaded")
+
+    # config sanity: plugin packages listed but plugins disabled
+    if not self.config.plugins.enabled and self.config.plugins.packages:
+      warn_plugins_disabled()
 
     # set up registries for tools and skills.
     self.tools: ToolRegistry = ToolRegistry()

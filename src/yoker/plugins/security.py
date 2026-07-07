@@ -193,9 +193,29 @@ def reset_session_trusted() -> None:
   _session_trusted.clear()
 
 
+def warn_plugins_disabled() -> None:
+  """Emit the styled "Plugins are disabled" hint.
+
+  Visible report (Rich) plus a structured log warning. Caller gates the
+  invocation on the actual misconfiguration check.
+  """
+  error_text = Text()
+  error_text.append("Error: ", style="bold red")
+  error_text.append("Plugins are disabled. To enable, add to your config:\n")
+  console.print(error_text)
+
+  code_text = Text()
+  code_text.append("  [plugins]\n", style="cyan")
+  code_text.append("  enabled = true", style="cyan")
+  console.print(code_text)
+
+  logger.warning("plugins_disabled_globally")
+
+
 __all__ = [
   "is_trusted",
   "confirm_plugin",
   "check_plugin_allowed",
   "reset_session_trusted",
+  "warn_plugins_disabled",
 ]

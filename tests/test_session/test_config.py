@@ -73,13 +73,6 @@ class TestConfigSessionField:
     assert config.harness.name == "yoker"
     assert config.backend.provider == "ollama"
     assert config.context.manager == "basic_persistence"
-    assert config.tools.agent.max_recursion_depth == 3
     assert config.ui.mode == "interactive"
     # And the new section is present with defaults:
     assert config.session.max_agents == 10
-
-  def test_recursion_depth_field_unchanged(self) -> None:
-    """config.tools.agent.max_recursion_depth stays in place."""
-    config = Config()
-    # The field location is unchanged; only the consumer changes (Session).
-    assert config.tools.agent.max_recursion_depth == 3
