@@ -1,9 +1,8 @@
 """CLI subcommand configuration and dispatch.
 
 This package registers yoker's subcommands with Clevis via ``@configclass(cmd=...)``
-and provides shared helpers for config loading. The chat subcommand handler
-stays in ``src/yoker/__main__.py`` for now; later tasks (4.2+) move per-subcommand
-handlers into dedicated modules under this package.
+and provides shared helpers for config loading. Subcommand handlers live in
+dedicated modules: ``chat.py``, ``init.py``, ``config_cmd.py``, etc.
 """
 
 from yoker.cli.commands import (
@@ -15,7 +14,7 @@ from yoker.cli.commands import (
   LoopConfig,
   RunConfig,
 )
-from yoker.cli.shared import load_subcommand_config
+from yoker.cli.shared import abort, load_subcommand_config
 
 __all__ = [
   "ChatConfig",
@@ -25,5 +24,6 @@ __all__ = [
   "InspectConfig",
   "LoopConfig",
   "RunConfig",
+  "abort",
   "load_subcommand_config",
 ]

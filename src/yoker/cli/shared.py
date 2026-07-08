@@ -6,6 +6,7 @@ existing :func:`yoker.config.get_yoker_config` security policy.
 """
 
 import os
+import sys
 from typing import TypeVar
 
 from clevis import SecurityAction, SecurityConfig, get_config
@@ -39,4 +40,14 @@ def load_subcommand_config(config_class: type[T]) -> T:
   return get_config(config_class, name="yoker", cli=True, security=get_security_config())
 
 
-__all__ = ["get_security_config", "load_subcommand_config"]
+def abort(msg: str, code: int) -> None:
+  """Write ``msg`` to stderr and exit with ``code``.
+
+  Shared by :mod:`yoker.__main__` (plugin arg parsing) and subcommand handlers
+  (chat, init, config) for consistent error-exit behaviour.
+  """
+  sys.stderr.write(msg)
+  sys.exit(code)
+
+
+__all__ = ["abort", "get_security_config", "load_subcommand_config"]

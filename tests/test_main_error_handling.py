@@ -48,7 +48,7 @@ class TestMainErrorHandling:
 
     with patch.object(sys, "argv", test_args):
       with patch("sys.stderr", new_callable=StringIO) as mock_stderr:
-        with patch("yoker.__main__.config_provided", return_value=True):
+        with patch("yoker.cli.chat.config_provided", return_value=True):
           with patch("yoker.session.Agent") as mock_agent_cls:
             error_msg = (
               "Configuration file /path/to/yoker.toml is readable by group/other "
