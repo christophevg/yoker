@@ -44,6 +44,12 @@ class PluginManifest:
       If provided, yoker will pass configuration from yoker.toml to tools.
     skills_dir: Optional directory name for skill files (default: "skills").
     agents_dir: Optional directory name for agent files (default: "agents").
+    agent: Optional agent definition name to use for `yoker run`. Convenience
+      fallback for Python packages without an `agent.toml` (NOT a config override;
+      the manifest config-override layer is handled in
+      :mod:`yoker.plugins.file_manifest`).
+    prompt: Optional initial prompt for `yoker run`. Same convenience fallback
+      role as `agent`.
   """
 
   tools: list[Callable[..., Any]] = field(default_factory=list)
@@ -52,6 +58,9 @@ class PluginManifest:
   config_class: type | None = None
   skills_dir: str = "skills"
   agents_dir: str = "agents"
+  # Convenience fallbacks for `yoker run` when no agent.toml is present.
+  agent: str | None = None
+  prompt: str | None = None
 
 
 __all__ = ["PluginManifest"]
