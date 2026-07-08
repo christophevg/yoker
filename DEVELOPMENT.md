@@ -8,6 +8,36 @@ Yoker is a Python agent harness with configurable tools and guardrails. It provi
 
 ## Recent Changes
 
+### MBI-004: yoker Commands — Tasks 4.2, 4.3, 4.4 (2026-07-08)
+
+Implemented the `chat`, `init`, and `config` subcommand handlers under
+`src/yoker/cli/`. The chat handler was extracted from `__main__.py` into
+`cli/chat.py`; the init handler generates default config (interactive wizard
+or non-interactive defaults); the config handler displays the effective merged
+config as TOML or JSON with API key masking.
+
+- **`cli/chat.py`** (new): `run_chat()`, `create_ui()`, `_run_with_session()`,
+  `_run_repl()` — extracted from `__main__.py`. `__main__.py` now dispatches to
+  `run_chat()` for the `chat` subcommand.
+- **`cli/init.py`** (new): `run_init()` — interactive mode runs the
+  `BootstrapWizard`; `--no-interactive` writes default config via
+  `write_config(Config(), path)`. `--path` validates against forbidden system
+  prefixes via `validate_storage_path`. `--force` overwrites with interactive
+  confirmation when TTY.
+- **`cli/config_cmd.py`** (new): `run_config_cmd()` — displays effective config
+  as TOML (default) or JSON (`--json`). `--show-path` prints config file paths.
+  `--reveal` shows API keys unmasked; default masks them (`***...last4`).
+  Display flags (`json`, `show_path`, `reveal`) are projected out via
+  `_to_base_config()` before rendering.
+- **`cli/shared.py`**: added `abort()` helper (shared by `__main__.py` and
+  subcommand handlers).
+- **`__main__.py`**: refactored to dispatch `chat` → `run_chat()`, `init` →
+  `run_init()`, `config` → `run_config_cmd()`. Removed moved functions
+  (`_run_chat`, `_run_with_session`, `_run_repl`, `_create_ui`, `_abort`).
+- **Tests**: `tests/test_cli/test_chat.py`, `test_init.py`, `test_config_cmd.py`
+  (new). `tests/test_main.py` and `test_main_error_handling.py` updated to
+  import from `yoker.cli.chat` instead of `yoker.__main__`.
+
 ### MBI-003: API Refactor — owner review round 3 (2026-07-07)
 
 Follow-up to the 3rd CHANGES_REQUESTED review on PR #45. Removed the

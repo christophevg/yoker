@@ -1,4 +1,4 @@
-"""Tests for __main__.py helpers and session loop."""
+"""Tests for __main__.py and cli/chat.py helpers and session loop."""
 
 import sys
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -21,7 +21,7 @@ class TestCreateUI:
 
   def test_create_ui_returns_batch_for_batch_mode(self):
     """_create_ui should return BatchUIHandler when mode is batch."""
-    from yoker.__main__ import _create_ui
+    from yoker.cli.chat import create_ui as _create_ui
 
     config = Config(
       ui=UIConfig(mode="batch", show_thinking=True, show_tool_calls=True, show_stats=True)
@@ -36,7 +36,7 @@ class TestCreateUI:
   @skip_on_windows_no_console
   def test_create_ui_returns_interactive_on_tty(self):
     """_create_ui should return InteractiveUIHandler when stdin is a TTY."""
-    from yoker.__main__ import _create_ui
+    from yoker.cli.chat import create_ui as _create_ui
 
     config = Config(
       ui=UIConfig(mode="interactive", show_thinking=True, show_tool_calls=True, show_stats=True)
@@ -51,7 +51,7 @@ class TestCreateUI:
   @skip_on_windows_no_console
   def test_create_ui_defaults_to_interactive_on_tty(self):
     """_create_ui should default to interactive when stdin is a TTY."""
-    from yoker.__main__ import _create_ui
+    from yoker.cli.chat import create_ui as _create_ui
 
     config = Config(ui=UIConfig())
     with patch.object(sys.stdin, "isatty", return_value=True):
@@ -63,7 +63,7 @@ class TestCreateUI:
 
   def test_create_ui_defaults_to_batch_when_not_tty(self):
     """_create_ui should default to batch when stdin is not a TTY."""
-    from yoker.__main__ import _create_ui
+    from yoker.cli.chat import create_ui as _create_ui
 
     config = Config(ui=UIConfig())
     with patch.object(sys.stdin, "isatty", return_value=False):
@@ -75,7 +75,7 @@ class TestCreateUI:
 
   def test_explicit_batch_overrides_tty(self):
     """Explicit batch mode wins over TTY detection."""
-    from yoker.__main__ import _create_ui
+    from yoker.cli.chat import create_ui as _create_ui
 
     config = Config(ui=UIConfig(mode="batch"))
     with patch.object(sys.stdin, "isatty", return_value=True):
@@ -87,7 +87,7 @@ class TestCreateUI:
 
   def test_explicit_interactive_ignored_when_not_tty(self):
     """Default interactive value yields to TTY detection; non-TTY uses batch."""
-    from yoker.__main__ import _create_ui
+    from yoker.cli.chat import create_ui as _create_ui
 
     config = Config(ui=UIConfig(mode="interactive"))
     with patch.object(sys.stdin, "isatty", return_value=False):
@@ -115,7 +115,7 @@ class TestRunRepl:
 
   async def test_run_repl_calls_start_and_shutdown(self):
     """run_repl should start and shut down the UI."""
-    from yoker.__main__ import _run_repl
+    from yoker.cli.chat import _run_repl
 
     ui = self._make_ui([None])
     agent = self._make_agent()
@@ -128,7 +128,7 @@ class TestRunRepl:
 
   async def test_run_repl_processes_user_input(self):
     """run_repl should call agent.process for regular input."""
-    from yoker.__main__ import _run_repl
+    from yoker.cli.chat import _run_repl
 
     ui = self._make_ui(["hello", None])
     agent = self._make_agent()
@@ -141,7 +141,7 @@ class TestRunRepl:
 
   async def test_run_repl_dispatches_slash_commands(self):
     """run_repl should dispatch slash commands via the registry."""
-    from yoker.__main__ import _run_repl
+    from yoker.cli.chat import _run_repl
 
     ui = self._make_ui(["/help", None])
     agent = self._make_agent()
@@ -156,7 +156,7 @@ class TestRunRepl:
 
   async def test_run_repl_ignores_empty_input(self):
     """run_repl should ignore empty input lines."""
-    from yoker.__main__ import _run_repl
+    from yoker.cli.chat import _run_repl
 
     ui = self._make_ui(["", "hello", None])
     agent = self._make_agent()
@@ -168,7 +168,7 @@ class TestRunRepl:
 
   async def test_run_repl_handles_recoverable_network_error(self):
     """Recoverable NetworkError should be displayed and allow retry."""
-    from yoker.__main__ import _run_repl
+    from yoker.cli.chat import _run_repl
 
     ui = self._make_ui(["hello", "again", None])
     agent = self._make_agent()
@@ -188,7 +188,7 @@ class TestRunRepl:
 
   async def test_run_repl_breaks_on_non_recoverable_network_error(self):
     """Non-recoverable NetworkError should end the session."""
-    from yoker.__main__ import _run_repl
+    from yoker.cli.chat import _run_repl
 
     ui = self._make_ui(["hello", "ignored", None])
     agent = self._make_agent()
@@ -203,7 +203,7 @@ class TestRunRepl:
 
   async def test_run_repl_breaks_on_yoker_error(self):
     """YokerError should end the session."""
-    from yoker.__main__ import _run_repl
+    from yoker.cli.chat import _run_repl
 
     ui = self._make_ui(["hello", None])
     agent = self._make_agent()
@@ -217,7 +217,7 @@ class TestRunRepl:
 
   async def test_run_repl_breaks_on_keyboard_interrupt(self):
     """KeyboardInterrupt should end the session gracefully."""
-    from yoker.__main__ import _run_repl
+    from yoker.cli.chat import _run_repl
 
     ui = self._make_ui([])
     ui.get_input = AsyncMock(side_effect=KeyboardInterrupt)
@@ -292,7 +292,7 @@ class TestMainIntegration:
         mock_agent_instance.config = Config(
           ui=UIConfig(mode="batch", show_thinking=False, show_tool_calls=False, show_stats=False),
         )
-        with patch("yoker.__main__._run_repl", new_callable=AsyncMock) as mock_run:
+        with patch("yoker.cli.chat._run_repl", new_callable=AsyncMock) as mock_run:
           from yoker.__main__ import main
 
           main()

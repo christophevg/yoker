@@ -23,28 +23,15 @@ compatibility). Examples:
   python -m yoker --backend-ollama-model MODEL  # -> yoker chat --backend-ollama-model MODEL
 """
 
-import asyncio
-import os
 import sys
 
-from clevis import SecurityError, get_cmd
-from ollama import ResponseError
-from structlog import get_logger
+from clevis import get_cmd
 
-from yoker.bootstrap import BootstrapResult, BootstrapWizard, config_provided
-from yoker.bootstrap.steps import DOCS_HOME_URL
 from yoker.cli import commands as cli_commands  # noqa: F401 — registers @configclass(cmd=...)
-from yoker.cli.commands import ChatConfig
-from yoker.cli.shared import load_subcommand_config
-from yoker.config import Config
-from yoker.core import Agent
-from yoker.exceptions import NetworkError, YokerError
-from yoker.logging import configure_logging
-from yoker.session import Session
-from yoker.ui import BatchUIHandler, InteractiveUIHandler, UIBridge, UIHandler
-from yoker.ui.commands import CommandRegistry, create_default_registry
-
-logger = get_logger(__name__)
+from yoker.cli.chat import run_chat
+from yoker.cli.config_cmd import run_config_cmd
+from yoker.cli.init import run_init
+from yoker.cli.shared import abort
 
 # Subcommand names registered with Clevis. Used to detect whether the first
 # positional argument is a known subcommand (don't insert the default) or an
@@ -61,9 +48,10 @@ KNOWN_COMMANDS = frozenset(
   }
 )
 
-# Subcommands that are stubbed out (not yet implemented). chat is the only
-# working end-to-end subcommand in this task; the rest print a notice and exit.
-STUB_COMMANDS = frozenset({"run", "loop", "inspect", "init", "config", "container"})
+# Subcommands that are stubbed out (not yet implemented). chat, init, and config
+# are the working end-to-end subcommands in this task; the rest print a notice
+# and exit.
+STUB_COMMANDS = frozenset({"run", "loop", "inspect", "container"})
 
 
 def main() -> None:
@@ -71,8 +59,7 @@ def main() -> None:
 
   Strips ``--with`` plugin args, defaults to the ``chat`` subcommand when none
   is given (backward compatibility), then dispatches to the subcommand handler
-  via Clevis's ``get_cmd()``. The ``chat`` handler runs the interactive REPL;
-  all other subcommands are stubs until their dedicated tasks land.
+  via Clevis's ``get_cmd()``.
   """
   plugin_packages, sys.argv = _parse_plugin_args()
 
@@ -89,80 +76,18 @@ def main() -> None:
   cmd = get_cmd()
 
   if cmd == "chat":
-    _run_chat(plugin_packages)
+    run_chat(plugin_packages)
+  elif cmd == "init":
+    run_init()
+  elif cmd == "config":
+    run_config_cmd()
   elif cmd in STUB_COMMANDS:
     sys.stdout.write(f"yoker {cmd}: not yet implemented\n")
     sys.exit(0)
   else:
     # Should not happen: argparse rejects unknown subcommands with a
     # valid-choice list before get_cmd() returns. Guard anyway.
-    _abort(f"Error: unknown subcommand: {cmd}\n", 1)
-
-
-def _run_chat(plugin_packages: list[str]) -> None:
-  """Run the chat subcommand (the current default REPL behavior).
-
-  Runs the pre-flight bootstrap check when no config is provided, loads the
-  ChatConfig via Clevis, wires the UI handler to the Session via the event
-  bridge, and starts the REPL loop.
-  """
-  # Pre-flight: detect missing configuration and bootstrap when needed.
-  # When config_provided() is False there are no yoker CLI overrides (any
-  # --ui-mode batch flag would have made it True), so the UI mode is the
-  # default "interactive". The interactive/non-interactive gate therefore
-  # reduces to TTY detection here, mirroring _create_ui's selection.
-  if not config_provided():
-    if not sys.stdin.isatty():
-      _abort(
-        f"""No yoker configuration found at ~/.yoker.toml or ./yoker.toml.
-        Run `yoker` interactively to configure, or see {DOCS_HOME_URL}
-        Aborting (non-interactive mode).
-        """,
-        1,
-      )
-    # Interactive: drive the wizard through an interactive UI handler.
-    # IMPORTANT: Use history_file="none" to prevent bootstrap prompts (including
-    # API keys) from being persisted to ~/.yoker_history. Bootstrap is for
-    # one-time configuration, not conversation, and should never log secrets.
-    bootstrap_ui = InteractiveUIHandler(history_file="none")
-    try:
-      result = asyncio.run(BootstrapWizard(bootstrap_ui).run())
-      if result != BootstrapResult.WRITTEN:
-        # Manual setup or abort: no file was written. The wizard already
-        # emitted the appropriate message; exit cleanly.
-        sys.exit(0)
-    except KeyboardInterrupt:
-      # Ctrl+C that bypassed the wizard's inner handler (e.g. arrived at the
-      # event-loop level): treat as a clean abort, no file written.
-      _abort("Aborted. No configuration written.\n", 0)
-
-    # Config was written; fall through to normal Agent startup, which will
-    # load the freshly-written ~/.yoker.toml.
-
-  try:
-    # Load ChatConfig via Clevis (TOML + env + CLI args), then construct the
-    # Session and primary Agent within it. ChatConfig extends Config, so all
-    # existing CLI flags work under `yoker chat`.
-    config = load_subcommand_config(ChatConfig)
-  except (ValueError, SecurityError) as e:
-    _abort(f"Error: {e}\n", 1)
-
-  CONSOLE_LOGGING = os.environ.get("YOKER_CONSOLE_LOGGING", "NO") != "NO"
-  configure_logging(config.logging, console=CONSOLE_LOGGING)
-
-  logger.info("config loaded")
-
-  if plugin_packages:
-    logger.info("cli plugins specified", packages=plugin_packages)
-
-  ui = _create_ui(config)
-  bridge = UIBridge(ui)
-  commands = create_default_registry()
-
-  try:
-    asyncio.run(_run_with_session(config, plugin_packages, ui, commands, bridge))
-  except (ValueError, SecurityError) as e:
-    _abort(f"Error: {e}\n", 1)
+    abort(f"Error: unknown subcommand: {cmd}\n", 1)
 
 
 def _needs_default_chat(argv: list[str]) -> bool:
@@ -193,62 +118,6 @@ def _needs_default_chat(argv: list[str]) -> bool:
   return False
 
 
-async def _run_with_session(
-  config: Config,
-  plugin_packages: list[str],
-  ui: UIHandler,
-  commands: CommandRegistry,
-  bridge: UIBridge,
-) -> None:
-  async with Session(config=config, extra_plugins=tuple(plugin_packages)) as session:
-    session.on_event(bridge)
-    await _run_repl(session.agent, ui, commands)
-
-
-async def _run_repl(agent: Agent, ui: UIHandler, commands: CommandRegistry) -> None:
-  """Run the interactive or batch REPL loop.
-
-  Handles user input, command dispatch, agent processing, and errors. All
-  output is produced through the UI handler. The UI is always shut down.
-  """
-  await ui.start(agent)
-
-  try:
-    while True:
-      try:
-        user_input = await ui.get_input()
-        if user_input is None:
-          break
-
-        if not user_input.strip():
-          continue
-
-        if user_input.startswith("/"):
-          result = await commands.dispatch(user_input, agent, ui)
-          if result:
-            ui.output_command_result(result)
-        else:
-          await agent.process(user_input)
-
-      except NetworkError as e:
-        ui.output_error(e)
-        if not e.recoverable:
-          break
-      except ResponseError as e:
-        ui.output_error(e)
-        continue
-      except YokerError as e:
-        ui.output_error(e)
-        break
-      except Exception as e:
-        ui.output_error(e)
-        break
-      except KeyboardInterrupt:
-        break
-  finally:
-    await ui.shutdown("quit")
-
-
 def _parse_plugin_args(argv: list[str] | None = None) -> tuple[list[str], list[str]]:
   """Extract --with plugin arguments before standard parsing."""
   plugin_packages: list[str] = []
@@ -264,7 +133,7 @@ def _parse_plugin_args(argv: list[str] | None = None) -> tuple[list[str], list[s
         args_to_remove.extend([i, i + 1])
         i += 2
       else:
-        _abort("Error: --with requires a package name\n", 1)
+        abort("Error: --with requires a package name\n", 1)
     else:
       i += 1
 
@@ -273,21 +142,6 @@ def _parse_plugin_args(argv: list[str] | None = None) -> tuple[list[str], list[s
     cleaned.pop(idx)
 
   return plugin_packages, cleaned
-
-
-def _create_ui(config: Config) -> UIHandler:
-  if config.ui.mode != "batch" and sys.stdin.isatty():
-    return InteractiveUIHandler(
-      show_thinking=config.ui.show_thinking,
-      show_tool_calls=config.ui.show_tool_calls,
-      show_stats=config.ui.show_stats,
-    )
-  return BatchUIHandler()
-
-
-def _abort(msg: str, code: int) -> None:
-  sys.stderr.write(msg)
-  sys.exit(code)
 
 
 if __name__ == "__main__":
