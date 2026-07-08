@@ -10,10 +10,632 @@
 | **P1** | MBI-007: Session | Complete (2026-07-06, PR #43) |
 | **P1** | ContextManager Refactor | Complete (2026-07-06, PR #44) |
 | **P2** | MBI-003: Python API | Complete (2026-07-06) |
-| **P2** | MBI-004: yoker Commands | Backlog (depends on MBI-002, MBI-003) |
+| **P1** | MBI-004: yoker Commands | Active (dependencies met) |
 | **P2** | MBI-005: Assistant Integration | Backlog (depends on MBI-002, MBI-003, MBI-004) |
 | **P3** | Maintenance Tasks | M.1-M.4 (open), M.5-M.6 (done) |
 | **P4+** | Launch Preparation, Architecture, Future Work | See sections below |
+
+---
+
+## Active: MBI-004: yoker Commands
+
+**Goal:** Transform yoker from a single interactive command into a proper CLI with subcommands: `chat`, `run`, `loop`, `init`, `config`, `container`. The flagship capability is `yoker run`, which loads a source (module, GitHub URL, folder, zip) containing an extended yoker manifest (agent selection + initial prompt) and runs it as a "yoker-based agentic executable package."
+
+**Design source of truth:** `analysis/mbi-004-yoker-commands.md`
+
+**Milestone:** Users can run `yoker run pkgq` or `yoker run https://github.com/christophevg/pkgq` to execute an agentic package non-interactively. All current behavior is preserved as `yoker chat`.
+
+**Status:** Active (dependencies met — MBI-002 and MBI-003 complete).
+
+### Dependency Graph
+
+```
+4.1 (CLI dispatcher) ──► 4.2 (chat) ──► 4.3 (init)
+                   │
+                   ├──► 4.4 (config)
+                   │
+                   └──► 4.7 (run) ◄── 4.5 (extended manifest)
+                                  ◄── 4.6 (source resolution)
+                                       │
+                                       ▼
+                                    4.8 (loop)
+                                       │
+                                       ▼
+                                    4.9 (container)
+                                       │
+                                       ▼
+                              4.10 (tests)
+                                       │
+                                       ▼
+                              4.11 (docs)
+```
+
+### Detailed Task Breakdown
+
+---
+
+#### 4.1 CLI subcommand dispatcher — refactor __main__.py
+
+**Satisfies:** CLI infrastructure for all subcommands
+**Depends on:** —
+
+- [ ] **[MBI-004] 4.1.1 Create subcommand dispatcher framework**
+  - Refactor `src/yoker/__main__.py` to parse the first positional argument as
+    a subcommand: `chat`, `run`, `loop`, `init`, `config`, `container`
+  - When no subcommand is given, default to `chat` (backward compatibility)
+  - Each subcommand is a function in a new `src/yoker/cli/` package:
+    `src/yoker/cli/__init__.py`, `src/yoker/cli/chat.py`, `src/yoker/cli/run.py`,
+    `src/yoker/cli/loop.py`, `src/yoker/cli/init.py`, `src/yoker/cli/config.py`,
+    `src/yoker/cli/container.py`
+  - Each subcommand module exports an `async def run(args, config)` or
+    `def main(args, config)` function
+  - The dispatcher parses `--with` args (existing `_parse_plugin_args`) before
+    subcommand dispatch (shared across all subcommands)
+  - Shared setup (logging, config loading) happens in the dispatcher before
+    calling the subcommand function
+  - **Files:** `src/yoker/__main__.py` (modify), `src/yoker/cli/__init__.py`
+    (new), `src/yoker/cli/dispatcher.py` (new)
+  - **Acceptance:**
+    - `python -m yoker` with no args starts the chat REPL (backward compatible)
+    - `python -m yoker chat` starts the chat REPL
+    - `python -m yoker run --help` prints run usage
+    - `python -m yoker <unknown>` prints an error listing valid subcommands
+    - `--with` args work from any subcommand position
+  - **Satisfies:** CLI infrastructure
+  - **Depends on:** —
+
+- [ ] **[MBI-004] 4.1.2 Extract shared setup into dispatcher helpers**
+  - Extract config loading (`get_yoker_config`), logging setup, and bootstrap
+    detection into shared helper functions in `src/yoker/cli/dispatcher.py`
+  - Subcommands receive a loaded `Config` (or None for `init` which has its own
+    flow) rather than loading config themselves
+  - The bootstrap pre-flight check stays in the dispatcher for `chat` only;
+    `run`/`loop`/`container` skip bootstrap (they specify what to run)
+  - **Files:** `src/yoker/cli/dispatcher.py` (extend), `src/yoker/__main__.py`
+    (simplify)
+  - **Acceptance:**
+    - `yoker chat` triggers bootstrap when no config (existing behavior)
+    - `yoker run <source>` does not trigger bootstrap (uses config if
+      available, errors clearly if no backend configured)
+    - `yoker init` has its own flow (does not load config first)
+  - **Satisfies:** Shared setup
+  - **Depends on:** 4.1.1
+
+---
+
+#### 4.2 `yoker chat` — extract existing REPL
+
+**Satisfies:** Current interactive behavior as a named subcommand
+**Depends on:** 4.1
+
+- [ ] **[MBI-004] 4.2.1 Extract chat subcommand from __main__.py**
+  - Move the `_run_with_session` + `_run_repl` logic into
+    `src/yoker/cli/chat.py`
+  - The `chat` subcommand is the exact current behavior: load config, create
+    Session, create primary Agent, wire UIBridge, run REPL loop
+  - All existing CLI flags (`--ui-mode`, `--ui-show-thinking`, etc.) remain
+    available under `yoker chat`
+  - **Files:** `src/yoker/cli/chat.py` (new), `src/yoker/__main__.py` (remove
+    moved logic)
+  - **Acceptance:**
+    - `yoker chat` is functionally identical to the current `python -m yoker`
+    - `yoker` (no subcommand) defaults to `yoker chat`
+    - `yoker chat --ui-mode batch` works (batch mode)
+    - `yoker chat --with pkgq` works (plugin loading)
+  - **Satisfies:** chat subcommand
+  - **Depends on:** 4.1.1, 4.1.2
+
+---
+
+#### 4.3 `yoker init` — generate default config
+
+**Satisfies:** Explicit config generation command
+**Depends on:** 4.1
+
+- [ ] **[MBI-004] 4.3.1 Implement `yoker init` subcommand**
+  - Create `src/yoker/cli/init.py` with the init logic
+  - Interactive mode (default when TTY): runs the existing `BootstrapWizard`
+    from `yoker/bootstrap/`
+  - Non-interactive mode (`--no-interactive`): writes a default `~/.yoker.toml`
+    using the existing annotation-driven `render_config_toml` from
+    `yoker/config/writer.py` with all values at defaults
+  - `--path <path>`: write to a custom location instead of `~/.yoker.toml`
+  - `--force`: overwrite an existing config file (default: refuse to overwrite)
+  - After writing, print a confirmation message with the path
+  - **Files:** `src/yoker/cli/init.py` (new)
+  - **Acceptance:**
+    - `yoker init` triggers the bootstrap wizard (interactive)
+    - `yoker init --no-interactive` writes a default config file
+    - `yoker init --path ./my-config.toml` writes to the specified path
+    - `yoker init` refuses to overwrite an existing file without `--force`
+    - `yoker init --force` overwrites an existing file
+    - Written config file has `chmod 600` (existing writer behavior)
+  - **Security acceptance:**
+    - `--path` is rejected for forbidden path prefixes (e.g. `/etc`, `/usr`)
+    - `--force` requires interactive confirmation when overwriting an
+      existing file
+  - **Satisfies:** init subcommand
+  - **Depends on:** 4.1.1
+
+---
+
+#### 4.4 `yoker config` — display effective config
+
+**Satisfies:** Config inspection command
+**Depends on:** 4.1
+
+- [ ] **[MBI-004] 4.4.1 Implement `yoker config` subcommand**
+  - Create `src/yoker/cli/config_cmd.py` with the config display logic
+  - Loads config from TOML + CLI args (same as chat)
+  - Prints the resolved config as TOML to stdout
+  - `--json` flag: output as JSON instead of TOML
+  - `--path` flag: print the path(s) config was loaded from (user TOML,
+    project TOML, CLI overrides)
+  - **Files:** `src/yoker/cli/config_cmd.py` (new)
+  - **Acceptance:**
+    - `yoker config` prints the effective config as TOML
+    - `yoker config --json` prints the config as JSON
+    - `yoker config --path` prints the config file paths
+    - CLI overrides are reflected in the output (e.g. `--backend-ollama-model X`
+      shows in the output)
+  - **Security acceptance:**
+    - `api_key` values are masked (e.g. `sk-...XXXX`) unless `--reveal` is
+      passed
+  - **Satisfies:** config subcommand
+  - **Depends on:** 4.1.1, 4.1.2
+
+---
+
+#### 4.5 Extended manifest — agent selection + initial prompt + file-based manifest
+
+**Satisfies:** Foundation for `yoker run`
+**Depends on:** —
+
+- [ ] **[MBI-004] 4.5.1 Add `agent` and `prompt` fields to PluginManifest**
+  - Add `agent: str | None = None` and `prompt: str | None = None` fields to
+    `PluginManifest` in `src/yoker/plugins/manifest.py`
+  - `agent`: specifies which agent definition name to use for `yoker run`
+  - `prompt`: the initial prompt to inject when running via `yoker run`
+  - Both default to `None` (backward compatible — existing manifests are
+    unaffected)
+  - Update `PluginManifest` docstring with the new fields
+  - Write unit tests asserting the new fields exist and default to None
+  - **Files:** `src/yoker/plugins/manifest.py` (modify)
+  - **Acceptance:**
+    - `PluginManifest()` has `agent=None` and `prompt=None` by default
+    - `PluginManifest(agent="researcher", prompt="analyze")` sets both fields
+    - Existing manifests without the new fields still work (no breaking change)
+    - `make check` green
+  - **Satisfies:** Extended manifest fields
+  - **Depends on:** —
+
+- [ ] **[MBI-004] 4.5.2 Implement file-based manifest loading (`yoker.toml`)**
+  - Create `src/yoker/plugins/file_manifest.py` with
+    `load_file_manifest(path: Path) -> PluginManifest`
+  - Parses a `yoker.toml` file with a `[run]` section (`agent`, `prompt`) and
+    a `[plugin]` section (`skills_dir`, `agents_dir`, `tools_module`)
+  - Returns a `PluginManifest` with the run fields populated and the
+    plugin directory fields set
+  - The `tools_module` field (optional) specifies a Python module within the
+    source to import tools from
+  - If no `yoker.toml` exists, returns None (caller handles the error)
+  - Write unit tests for parsing, missing file, and missing sections
+  - **Files:** `src/yoker/plugins/file_manifest.py` (new)
+  - **Acceptance:**
+    - A `yoker.toml` with `[run] agent="x" prompt="y"` loads correctly
+    - A `yoker.toml` with `[plugin] skills_dir="s" agents_dir="a"` loads
+      correctly
+    - Missing `yoker.toml` returns None
+    - Malformed TOML raises a clear error
+  - **Satisfies:** File-based manifest
+  - **Depends on:** 4.5.1
+
+- [ ] **[MBI-004] 4.5.3 Load extended manifest fields in plugin loader**
+  - Update `load_plugin` in `src/yoker/plugins/loader.py` to read the
+    `agent` and `prompt` fields from the manifest and include them in
+    `PluginComponents` (or a new `ResolvedSource` dataclass)
+  - When loading from a file-based manifest, merge the file manifest's
+    fields with any Python `__YOKER_MANIFEST__` fields (Python manifest takes
+    precedence for tools/skills/agents; file manifest can supplement with
+    `agent`/`prompt`)
+  - **Files:** `src/yoker/plugins/loader.py` (modify),
+    `src/yoker/plugins/manifest.py` (verify field access)
+  - **Acceptance:**
+    - `load_plugin("pkgq")` returns components with `agent` and `prompt`
+      accessible when the manifest declares them
+    - A package with `__YOKER_MANIFEST__` and `agent="researcher"` populates
+      the field correctly
+    - `make check` green
+  - **Satisfies:** Manifest loading integration
+  - **Depends on:** 4.5.1, 4.5.2
+
+---
+
+#### 4.6 Source resolution — module, GitHub URL, folder, zip → loadable plugin
+
+**Satisfies:** Multi-source loading for `yoker run`
+**Depends on:** 4.5
+
+- [ ] **[MBI-004] 4.6.1 Create source resolution framework**
+  - Create `src/yoker/cli/sources.py` with `resolve_source(source: str) ->
+    ResolvedSource`
+  - `ResolvedSource` dataclass: `plugin_components: PluginComponents`,
+    `manifest: PluginManifest`, `cleanup: Callable | None`
+  - Source type detection:
+    - Starts with `http://` or `https://` → GitHub URL
+    - Ends with `.zip` → Zip file
+    - `Path(source).is_dir()` → Folder path
+    - Otherwise → Module name (existing `load_plugin` path)
+  - Module name resolution uses the existing `load_plugin(package_name)`
+    infrastructure
+  - **Files:** `src/yoker/cli/sources.py` (new)
+  - **Acceptance:**
+    - `resolve_source("pkgq")` resolves via `load_plugin` (module path)
+    - `resolve_source("./my-folder")` resolves via folder path (4.6.2)
+    - `resolve_source("https://github.com/x/y")` resolves via GitHub clone
+      (4.6.3)
+    - `resolve_source("./my.zip")` resolves via zip extraction (4.6.4)
+    - Unknown source raises a clear error
+  - **Security acceptance:**
+    - `resolve_source()` MUST NOT import `tools_module` or run `pip install`;
+      it returns metadata only. Loading (including imports) happens in a
+      separate `load_source()` call, invoked only after
+      `check_plugin_allowed()` returns True.
+  - **Satisfies:** Source resolution framework
+  - **Depends on:** 4.5.3
+
+- [ ] **[MBI-004] 4.6.2 Folder path source resolution**
+  - Implement folder path resolution: load `yoker.toml` from the folder root
+    (via `load_file_manifest`), load skills from `<folder>/<skills_dir>`,
+    load agent definitions from `<folder>/<agents_dir>`
+  - If `tools_module` is specified in the manifest, import that module and
+    extract tool callables from it
+  - If the folder contains a `pyproject.toml`, optionally install it as a
+    package (deferred — initially just load from folder structure)
+  - **Files:** `src/yoker/cli/sources.py` (extend)
+  - **Acceptance:**
+    - A folder with `yoker.toml`, `skills/`, and `agents/` loads correctly
+    - Skills and agent definitions are populated from the folder
+    - `tools_module` import works when specified
+    - Folder without `yoker.toml` raises a clear error for `yoker run`
+  - **Security acceptance:**
+    - `skills_dir`/`agents_dir`/`tools_module` paths validated via
+      `is_safe_path()`. Reject `..` and absolute paths that escape the
+      folder root.
+  - **Satisfies:** Folder path source
+  - **Depends on:** 4.6.1, 4.5.2
+
+- [ ] **[MBI-004] 4.6.3 GitHub URL source resolution**
+  - Implement GitHub URL resolution: `git clone` the repository to a
+    temporary directory, then resolve as a folder path (4.6.2)
+  - Use `tempfile.TemporaryDirectory` for cleanup
+  - `git clone --depth 1` for efficiency (shallow clone)
+  - Handle authentication via git's native credential helpers / SSH keys
+  - Handle clone failures (network, auth, not found) with clear error messages
+  - Cleanup: remove the temp directory on exit (via `ResolvedSource.cleanup`)
+  - **Files:** `src/yoker/cli/sources.py` (extend)
+  - **Acceptance:**
+    - `resolve_source("https://github.com/christophevg/pkgq")` clones and
+      resolves to a loadable source
+    - Temp directory is cleaned up after use
+    - Clone failure (nonexistent repo, no auth) raises a clear error
+    - `--depth 1` is used for efficiency
+  - **Security acceptance:**
+    - URL must be HTTPS only; HTTP URLs are rejected
+    - Embedded credentials in the URL (e.g. `https://user:pass@...`) are
+      rejected
+    - SSRF check (`_check_ssrf_for_host`) runs before clone; private IPs
+      and cloud metadata IP are blocked
+    - Resolved commit SHA is recorded (for audit/reproducibility)
+    - No auto-`pip install` of the cloned repo (deferred to explicit
+      `--install` flag)
+    - Temp directory uses `0o700` permissions
+  - **Satisfies:** GitHub URL source
+  - **Depends on:** 4.6.2
+
+- [ ] **[MBI-004] 4.6.4 Zip file source resolution**
+  - Implement zip file resolution: extract to a temporary directory using
+    safe extraction (prevent path traversal via `..` entries), then resolve
+    as a folder path (4.6.2)
+  - Validate the file is a zip (`zipfile.is_zipfile()`)
+  - Safe extraction: reject entries with `..` or absolute paths
+  - Cleanup: remove the temp directory on exit (via `ResolvedSource.cleanup`)
+  - **Files:** `src/yoker/cli/sources.py` (extend)
+  - **Acceptance:**
+    - A zip file with `yoker.toml`, `skills/`, and `agents/` extracts and
+      loads correctly
+    - Zip with path traversal entries (`../etc/passwd`) is rejected
+    - Non-zip file raises a clear error
+    - Temp directory is cleaned up after use
+  - **Security acceptance:**
+    - Reject symlink entries, absolute paths, and `..` entries during
+      extraction
+    - Enforce max total uncompressed size (100 MB), max entries (10,000),
+      and max compression ratio (100:1) to prevent zip bombs
+  - **Satisfies:** Zip file source
+  - **Depends on:** 4.6.2
+
+---
+
+#### 4.7 `yoker run <source>` — load source + extended manifest, run agent
+
+**Satisfies:** Flagship capability — agentic executable packages
+**Depends on:** 4.1, 4.5, 4.6
+
+- [ ] **[MBI-004] 4.7.1 Implement `yoker run` subcommand**
+  - Create `src/yoker/cli/run.py` with the run logic
+  - Resolve the source via `resolve_source(source)` (4.6)
+  - Read `agent` and `prompt` from the resolved manifest
+  - CLI overrides: `--agent <name>` overrides manifest's agent,
+    `--prompt <text>` overrides manifest's prompt
+  - Error if no agent is specified (neither manifest nor CLI)
+  - Error if no prompt is specified (neither manifest nor CLI)
+  - Load base config from TOML + CLI args (backend settings etc.)
+  - Construct a Session with the resolved plugin loaded as `extra_plugins`
+  - Resolve the agent definition from the plugin's agents (or built-in agents)
+  - Process the prompt through the agent
+  - Output the agent's response to stdout (batch-style or streaming if TTY)
+  - Exit after the agent completes
+  - Clean up temp files (GitHub clone / zip extraction) via
+    `ResolvedSource.cleanup`
+  - **Files:** `src/yoker/cli/run.py` (new)
+  - **Acceptance:**
+    - `yoker run pkgq` loads pkgq as a plugin, reads its manifest's
+      `agent` and `prompt`, and runs the agent non-interactively
+    - `yoker run pkgq --agent researcher --prompt "do X"` overrides the
+      manifest fields
+    - `yoker run ./my-folder` loads from a folder path
+    - `yoker run https://github.com/x/y` clones and runs
+    - `yoker run ./my.zip` extracts and runs
+    - Missing agent or prompt → clear error, exit non-zero
+    - Agent response is printed to stdout
+    - Process exits after the agent completes (non-interactive)
+  - **Security acceptance:**
+    - Source must pass `check_plugin_allowed()` before `load_source()` is
+      called
+    - Non-interactive mode rejects untrusted sources by default (no
+      auto-trust)
+    - `--dry-run` flag resolves and prints manifest + prompt without
+      executing
+    - Prompt length capped at 10 KB (reject oversized prompts)
+  - **Satisfies:** run subcommand
+  - **Depends on:** 4.1.1, 4.5.3, 4.6.1-4.6.4
+
+- [ ] **[MBI-004] 4.7.2 Add `--persist` and `--session-id` to `yoker run`**
+  - `--persist`: enable context persistence (session is saved to JSONL)
+  - `--session-id <id>`: specify a session ID for persistence
+  - Without `--persist`, the run is stateless (fresh context, no save)
+  - With `--persist`, the session is persisted and can be resumed later
+  - **Files:** `src/yoker/cli/run.py` (extend)
+  - **Acceptance:**
+    - `yoker run pkgq --persist --session-id my-run` persists the session
+    - Without `--persist`, no session files are written
+    - A persisted session can be resumed (future enhancement; for now just
+      verify the JSONL file is created)
+  - **Satisfies:** Run persistence
+  - **Depends on:** 4.7.1
+
+---
+
+#### 4.8 `yoker loop <source>` — interval execution
+
+**Satisfies:** Periodic agentic task execution
+**Depends on:** 4.7
+
+- [ ] **[MBI-004] 4.8.1 Implement `yoker loop` subcommand**
+  - Create `src/yoker/cli/loop.py` with the loop logic
+  - Reuses the `yoker run` execution path (calls the same run function)
+  - `--interval <seconds>`: time between runs (default: 300 = 5 minutes)
+  - `--max-iterations <n>`: stop after N iterations (default: unlimited)
+  - `--persist` + `--session-id`: reuse the same session across iterations
+    (agent retains context between runs when persistence is enabled)
+  - Without persistence, each iteration creates a fresh session
+  - Ctrl+C stops the loop cleanly (print summary of iterations completed)
+  - Print iteration number and timestamp before each run
+  - **Files:** `src/yoker/cli/loop.py` (new)
+  - **Acceptance:**
+    - `yoker loop pkgq --interval 60` runs every 60 seconds
+    - `yoker loop pkgq --interval 60 --max-iterations 3` stops after 3 runs
+    - `yoker loop pkgq --persist --session-id loop-1` reuses context
+    - Ctrl+C stops cleanly with a summary
+    - Each iteration prints its number and timestamp
+  - **Security acceptance:**
+    - Default `--max-iterations` is finite (100), not unlimited
+    - `--max-duration` flag is supported (stop after a time limit)
+    - Loop stops after 3 consecutive failures with backoff
+  - **Satisfies:** loop subcommand
+  - **Depends on:** 4.7.1
+
+---
+
+#### 4.9 `yoker container <source>` — generate container setup
+
+**Satisfies:** Container packaging for agentic executables
+**Depends on:** 4.6
+
+- [ ] **[MBI-004] 4.9.1 Implement `yoker container` subcommand**
+  - Create `src/yoker/cli/container.py` with the container generation logic
+  - Resolves the source via `resolve_source(source)` to determine source type
+  - Generates a `Dockerfile` (or `Containerfile` with `--engine podman`)
+  - Generates a `.containerignore` file
+  - `--engine {docker,podman}`: choose container engine (default: docker)
+  - `--output-dir <path>`: where to write files (default: current directory)
+  - The Dockerfile installs yoker, handles the source appropriately:
+    - Module: `pip install <module>`
+    - GitHub URL: `git clone` in the build step
+    - Folder: `COPY` the folder into the image
+    - Zip: `COPY` and extract in the build step
+  - Entrypoint: `yoker run <source>`
+  - **Files:** `src/yoker/cli/container.py` (new)
+  - **Acceptance:**
+    - `yoker container pkgq` generates a Dockerfile that installs pkgq and
+      runs `yoker run pkgq`
+    - `yoker container ./my-folder` generates a Dockerfile that COPYs the
+      folder and runs `yoker run`
+    - `yoker container https://github.com/x/y` generates a Dockerfile that
+      clones in the build step
+    - `--engine podman` generates a `Containerfile` instead of `Dockerfile`
+    - `--output-dir ./container/` writes files to the specified directory
+    - Generated Dockerfile is valid (can be built with `docker build`)
+  - **Security acceptance:**
+    - Dockerfile uses JSON-array form exclusively for `RUN`/`ENTRYPOINT`
+      (no shell-form injection risk)
+    - Generated Dockerfile includes a non-root `USER` directive
+    - No API keys or `~/.yoker.toml` are copied into the image
+    - `.containerignore` is generated (excludes secrets, `.git`, etc.)
+    - Yoker version is pinned in the Dockerfile (not `pip install yoker`
+      without a version)
+  - **Satisfies:** container subcommand
+  - **Depends on:** 4.6.1
+
+---
+
+#### 4.10 Command tests
+
+**Satisfies:** Test coverage for all subcommands
+**Depends on:** 4.1-4.9
+
+- [ ] **[MBI-004] 4.10.1 CLI dispatcher tests**
+  - Test subcommand dispatch (chat, run, loop, init, config, container)
+  - Test no-subcommand defaults to chat
+  - Test unknown subcommand error
+  - Test `--with` parsing works from any subcommand position
+  - **Files:** `tests/test_cli/test_dispatcher.py` (new)
+  - **Acceptance:** All dispatcher tests pass
+  - **Depends on:** 4.1.1, 4.1.2
+
+- [ ] **[MBI-004] 4.10.2 `yoker chat` tests**
+  - Test chat subcommand starts the REPL (mocked UI)
+  - Test chat with `--ui-mode batch` works
+  - Test chat with `--with pkgq` loads plugins
+  - Test backward compatibility: no subcommand = chat
+  - **Files:** `tests/test_cli/test_chat.py` (new)
+  - **Acceptance:** All chat tests pass
+  - **Depends on:** 4.2.1
+
+- [ ] **[MBI-004] 4.10.3 `yoker init` tests**
+  - Test `yoker init --no-interactive` writes a default config
+  - Test `yoker init --path <path>` writes to custom location
+  - Test `yoker init` refuses to overwrite without `--force`
+  - Test `yoker init --force` overwrites
+  - Test written config has `chmod 600`
+  - **Files:** `tests/test_cli/test_init.py` (new)
+  - **Acceptance:** All init tests pass
+  - **Depends on:** 4.3.1
+
+- [ ] **[MBI-004] 4.10.4 `yoker config` tests**
+  - Test `yoker config` prints TOML
+  - Test `yoker config --json` prints JSON
+  - Test `yoker config --path` prints config file paths
+  - Test CLI overrides reflected in output
+  - **Files:** `tests/test_cli/test_config_cmd.py` (new)
+  - **Acceptance:** All config command tests pass
+  - **Depends on:** 4.4.1
+
+- [ ] **[MBI-004] 4.10.5 Extended manifest tests**
+  - Test `PluginManifest` with `agent` and `prompt` fields
+  - Test file-based manifest parsing (`yoker.toml`)
+  - Test plugin loader reads extended fields
+  - Test backward compatibility (manifests without new fields)
+  - **Files:** `tests/test_plugins/test_extended_manifest.py` (new)
+  - **Acceptance:** All extended manifest tests pass
+  - **Depends on:** 4.5.1, 4.5.2, 4.5.3
+
+- [ ] **[MBI-004] 4.10.6 Source resolution tests**
+  - Test module name resolution (mocked `load_plugin`)
+  - Test folder path resolution (temp dir with `yoker.toml`, `skills/`,
+    `agents/`)
+  - Test GitHub URL resolution (mocked `git clone`)
+  - Test zip file resolution (temp zip with safe extraction)
+  - Test zip path traversal rejection
+  - Test cleanup functions are called
+  - **Files:** `tests/test_cli/test_sources.py` (new)
+  - **Acceptance:** All source resolution tests pass
+  - **Depends on:** 4.6.1-4.6.4
+
+- [ ] **[MBI-004] 4.10.7 `yoker run` tests**
+  - Test `yoker run <module>` with mocked agent processing
+  - Test `--agent` and `--prompt` CLI overrides
+  - Test error when no agent specified
+  - Test error when no prompt specified
+  - Test `--persist` creates session files
+  - Test source cleanup after run
+  - **Files:** `tests/test_cli/test_run.py` (new)
+  - **Acceptance:** All run tests pass
+  - **Depends on:** 4.7.1, 4.7.2
+
+- [ ] **[MBI-004] 4.10.8 `yoker loop` tests**
+  - Test loop runs N iterations with `--max-iterations`
+  - Test loop interval timing (mocked sleep)
+  - Test Ctrl+C stops cleanly
+  - Test persistence across iterations
+  - **Files:** `tests/test_cli/test_loop.py` (new)
+  - **Acceptance:** All loop tests pass
+  - **Depends on:** 4.8.1
+
+- [ ] **[MBI-004] 4.10.9 `yoker container` tests**
+  - Test Dockerfile generation for each source type
+  - Test `--engine podman` generates Containerfile
+  - Test `--output-dir` writes to specified location
+  - Test generated Dockerfile is syntactically valid
+  - **Files:** `tests/test_cli/test_container.py` (new)
+  - **Acceptance:** All container tests pass
+  - **Depends on:** 4.9.1
+
+- [ ] **[MBI-004] 4.10.10 Final verification: make check green**
+  - Run `make check` end-to-end (format, lint, typecheck, test) — all green
+  - Verify `python -m yoker` interactive mode works unchanged (backward
+    compatible)
+  - Verify `python -m yoker chat` works
+  - Verify `python -m yoker run --help` prints usage
+  - Verify existing examples run without modification
+  - **Acceptance:**
+    - `make check` green
+    - Zero behaviour change on the chat path (backward compatible)
+    - All new subcommand tests pass
+  - **Depends on:** 4.10.1-4.10.9
+
+---
+
+#### 4.11 CLI documentation
+
+**Satisfies:** User-facing documentation for all subcommands
+**Depends on:** 4.1-4.9
+
+- [ ] **[MBI-004] 4.11.1 Update README.md with CLI subcommands**
+  - Document all subcommands: `chat`, `run`, `loop`, `init`, `config`,
+    `container`
+  - Add examples for each command
+  - Show the `yoker run` agentic executable package workflow
+  - Update the "Quick Start" section to mention subcommands
+  - **Files:** `README.md` (modify)
+  - **Acceptance:**
+    - README documents all subcommands with examples
+    - `yoker run` workflow is clearly explained
+    - Backward compatibility (`yoker` = `yoker chat`) is documented
+  - **Depends on:** 4.1-4.9
+
+- [ ] **[MBI-004] 4.11.2 Document extended manifest format**
+  - Document the `agent` and `prompt` fields in `PluginManifest`
+  - Document the file-based manifest (`yoker.toml`) format
+  - Add examples of both Python-based and file-based manifests
+  - Document how to create a "yoker-based agentic executable package"
+  - **Files:** `docs/guides/creating-agentic-packages.md` (new),
+    `README.md` (cross-reference)
+  - **Acceptance:**
+    - Extended manifest fields documented with examples
+    - File-based manifest format documented
+    - Guide shows how to create a runnable agentic package
+  - **Depends on:** 4.5.1, 4.5.2
+
+- [ ] **[MBI-004] 4.11.3 Update CLAUDE.md module structure**
+  - Add `src/yoker/cli/` to the module structure documentation
+  - Document the CLI dispatcher and subcommand modules
+  - **Files:** `CLAUDE.md` (modify)
+  - **Acceptance:**
+    - CLAUDE.md includes `cli/` in the module structure
+    - CLI dispatcher pattern documented
+  - **Depends on:** 4.1.1
 
 ---
 
@@ -1162,9 +1784,9 @@ The owner requested (PR #42 Comment 1) a **Config factory** for creating `Config
 - [x] `yoker.session(...)` builds on the real `Session` construct from MBI-007
 - [x] A Config factory exists for programmatic Config construction (skip filesystem/CLI loading)
 - [x] API documentation shows common integration patterns
-- [ ] Utility functions provide clean abstraction over internal classes
-- [ ] Existing `Agent` class unchanged; new API is a thin facade
-- [ ] `make check` green
+- [x] Utility functions provide clean abstraction over internal classes
+- [x] Existing `Agent` class unchanged; new API is a thin facade
+- [x] `make check` green
 
 ---
 

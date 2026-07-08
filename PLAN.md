@@ -14,7 +14,44 @@ Quick captures for MBI ideas. These are raw requests that haven't been analyzed 
 
 The MBI currently being implemented. Only one Active MBI at a time.
 
-[None — see Backlog for the next MBI to activate (MBI-003: Python API).]
+### MBI-004: yoker Commands
+
+**Goal:** Users can use yoker from the command line with a complete CLI: `yoker chat`, `yoker run`, `yoker loop`, `yoker init`, `yoker config`, `yoker container`. The flagship capability is `yoker run`, which loads a source (module, GitHub URL, folder, zip) containing an extended yoker manifest (agent selection + initial prompt) and runs it as a "yoker-based agentic executable package."
+
+**Value:** Command-line interface is essential for developer workflows and automation. `yoker run` transforms yoker from an interactive tool into a runtime for agentic packages — any plugin can become an executable agent with a single command. Completes the yoker product for first release.
+
+**Status:** Active
+
+**Design source of truth:** `analysis/mbi-004-yoker-commands.md`
+
+**Components:**
+- [ ] DEV: CLI subcommand dispatcher (refactor `__main__.py`)
+- [ ] DEV: `yoker chat` — extract existing REPL into the `chat` subcommand
+- [ ] DEV: `yoker init` — generate default config / bootstrap
+- [ ] DEV: `yoker config` — display effective config
+- [ ] DEV: Extended manifest (agent selection + initial prompt fields, file-based manifest)
+- [ ] DEV: Source resolution (module, GitHub URL, folder, zip → loadable plugin)
+- [ ] DEV: `yoker run` — load source + extended manifest, run agent with initial prompt
+- [ ] DEV: `yoker loop` — interval execution reusing `yoker run`
+- [ ] DEV: `yoker container` — generate container setup
+- [ ] TEST: Command tests
+- [ ] DOCS: CLI documentation
+
+**Acceptance Criteria:**
+- [ ] `yoker` with no subcommand defaults to `yoker chat` (backward compatible)
+- [ ] `yoker chat` starts the interactive REPL (current behavior preserved)
+- [ ] `yoker init` generates a config file (interactive wizard or non-interactive defaults)
+- [ ] `yoker config` displays the effective configuration
+- [ ] `yoker run <source>` supports module names, GitHub URLs, folder paths, and zip files
+- [ ] `yoker run` reads extended manifest fields (`agent` + `prompt`) from the source
+- [ ] `yoker run --agent <name>` and `--prompt <text>` override manifest fields
+- [ ] `yoker loop <source> --interval <seconds>` runs at specified intervals
+- [ ] `yoker container <source>` generates valid Dockerfile/Containerfile
+- [ ] File-based manifest (`yoker.toml`) works for non-Python-package sources
+- [ ] All CLI commands work as documented
+- [ ] `make check` green
+
+**Dependencies:** MBI-002 (Bootstrap) — DONE; MBI-003 (Python API) — DONE
 
 ---
 
@@ -28,57 +65,30 @@ Future MBIs, ordered by priority (highest first).
 
 **Value:** Makes yoker developer-friendly, removing all hurdles to quick integration. Developers can use yoker without understanding internal classes.
 
-**Status:** Ready (unblocked — MBI-007 merged to master 2026-07-06; MBI-002 Bootstrap merged).
+**Status:** Done (merged 2026-07-06). Thin single-module facade (`yoker/api.py`): `process`, `do`, `agent`, `session`, `run_sync`. No private helpers remain.
 
 **Design source of truth:** `analysis/mbi-003-python-api-design.md` (three-layer utility API: Layer 1 wrappers over existing classes, Layer 2 `execute_skill` one-shot, Layer 3 `yoker.session()` workflow primitive built on the real `Session`).
 
 **Components:**
-- [ ] RES: Review current class-oriented API
-- [ ] RES: Design developer-friendly utility functions
-- [ ] DEV: **Config factory** — create a `Config` in code with a flag to enable/skip normal config loading (TOML discovery + CLI args). Needed by the `agent()` factory function so programmatic callers can construct a Config without touching the filesystem. (Owner request, PR #42 Comment 1.)
-- [ ] DEV: Implement utility wrapper functions (build on the real `Session` from MBI-007)
-- [ ] DEV: (Optional) Auto-generate functions for detected skills/agents
-- [ ] TEST: API usage tests
-- [ ] DOCS: Python API documentation with examples
+- [x] RES: Review current class-oriented API
+- [x] RES: Design developer-friendly utility functions
+- [x] DEV: **Config factory** — create a `Config` in code with a flag to enable/skip normal config loading (TOML discovery + CLI args). Needed by the `agent()` factory function so programmatic callers can construct a Config without touching the filesystem. (Owner request, PR #42 Comment 1.)
+- [x] DEV: Implement utility wrapper functions (build on the real `Session` from MBI-007)
+- [ ] DEV: (Optional) Auto-generate functions for detected skills/agents — deferred per design doc §10
+- [x] TEST: API usage tests
+- [x] DOCS: Python API documentation with examples
 
 **Acceptance Criteria:**
-- [ ] Developers can call `yoker.execute_skill("skill-name", "prompt")` from Python code
-- [ ] A Config factory exists for programmatic Config construction (skip filesystem/CLI loading)
-- [ ] API documentation shows common integration patterns
-- [ ] Utility functions provide clean abstraction over internal classes
-- [ ] `yoker.session()` builds on the real `Session` construct from MBI-007
+- [x] Developers can call `yoker.process("...")` from Python code (one-shot)
+- [x] Developers can call `yoker.do("skill-name", "prompt")` from Python code
+- [x] `yoker.agent(...)` returns a configured, reusable `Agent`
+- [x] `yoker.session(...)` builds on the real `Session` construct from MBI-007
+- [x] A Config factory exists for programmatic Config construction (skip filesystem/CLI loading)
+- [x] API documentation shows common integration patterns
 
-**Dependencies:** MBI-002 (Bootstrap) — DONE (merged 2026-07-01); MBI-007 (Session) — DONE (merged 2026-07-06, PR #43). The `yoker.session()` workflow primitive in Layer 3 builds on the real `Session` construct. The Config factory (owner request, PR #42 Comment 1) is part of MBI-003.
+**Dependencies:** MBI-002 (Bootstrap) — DONE (merged 2026-07-01); MBI-007 (Session) — DONE (merged 2026-07-06, PR #43).
 
-**Note:** The Config factory requirement was raised by the owner in PR #42 Comment 1 and is recorded in `analysis/session-concept-analysis.md` §7.2. It belongs to MBI-003 and is addressed as part of this MBI.
-
----
-
-### MBI-004: yoker Commands
-
-**Goal:** Users can use yoker from the command line with a complete CLI: `yoker chat`, `yoker run`, `yoker loop`, `yoker init`, `yoker config`, `yoker container`. This completes the initial yoker architecture.
-
-**Value:** Command-line interface is essential for developer workflows and automation. Completes the yoker product for first release.
-
-**Status:** Ready
-
-**Components:**
-- [ ] DEV: `yoker chat` — start in interactive environment
-- [ ] DEV: `yoker run` — run an agentic workflow from Python module, GitHub repo, local folder, or zip file
-- [ ] DEV: `yoker loop` — perform run at interval
-- [ ] DEV: `yoker init` — generate default config (optional with bootstrap questions)
-- [ ] DEV: `yoker config` — show config
-- [ ] DEV: `yoker container` — generate container setup (podman/docker/container)
-- [ ] TEST: Command tests
-- [ ] DOCS: CLI documentation
-
-**Acceptance Criteria:**
-- [ ] All CLI commands work as documented
-- [ ] `yoker run` supports multiple sources (module, repo, folder, zip)
-- [ ] `yoker loop` runs at specified intervals
-- [ ] `yoker container` generates valid container configuration
-
-**Dependencies:** MBI-002 (Bootstrap), MBI-003 (Python API)
+**Note:** MBI-003 is complete. The optional auto-generate feature (3.7) is deferred to a follow-up MBI.
 
 ---
 
