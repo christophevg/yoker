@@ -1,81 +1,104 @@
 # Consensus: MBI-004 yoker Commands — API Architect + Security Engineer
 
-**Date**: 2026-07-08
+**Date**: 2026-07-08 (revised 2026-07-08 per owner feedback on PR #46)
 **Participants**: API Architect Agent, Security Engineer Agent, Functional Analyst
 **Documents reviewed:**
-- `analysis/api-mbi-004-yoker-commands.md` (API Architect)
+- `analysis/api-mbi-004-yoker-commands.md` (API Architect, revised)
 - `analysis/security-mbi-004-yoker-commands.md` (Security Engineer)
-- `analysis/mbi-004-yoker-commands.md` (functional analysis, source of truth)
+- `analysis/mbi-004-yoker-commands.md` (functional analysis, source of truth, revised)
 
 ## Purpose
 
 This document consolidates the findings of the two domain reviews, records
 the design decisions both agree on, the security requirements that must be
-incorporated into the implementation, and the open questions that require
-owner resolution before implementation proceeds.
+incorporated into the implementation, and the open questions that have been
+resolved by the owner via PR #46 feedback.
 
 ---
 
-## 1. Key Design Decisions Agreed Upon
+## 1. Key Design Decisions (Updated per Owner Feedback PR #46)
 
-Both the API Architect and Security Engineer converge on the following
-architectural decisions:
+### 1.1 CLI subcommands via Clevis commands (owner-directed change)
 
-### 1.1 Manual dispatcher in front of Clevis
+The owner pushed back on the manual dispatcher: "Clevis has support for
+commands." The design now uses Clevis's built-in subcommand mechanism
+(`@configclass(cmd=...)`, `get_cmd()`) instead of a manual dispatcher.
+Each subcommand is a config class decorated with `@configclass(cmd="X")`,
+and Clevis auto-generates CLI args per subcommand. Backward compatibility
+is maintained by defaulting to `chat` when no subcommand is given.
 
-The CLI dispatcher is a lightweight manual layer that peels off the
-subcommand and `--with` args, then delegates to Clevis for `Config`-derived
-CLI args. `init` and `container` bypass Clevis entirely (they don't need a
-`Config`). This preserves the existing annotation-driven CLI generation
-pattern and avoids a rewrite of the config CLI surface.
+### 1.2 Manifest as a generic config-override layer (owner-directed change)
 
-### 1.2 `PluginManifest` extension is additive and backward compatible
+The owner redefined the manifest: "Can't we create a generic way to
+override the existing configuration? Just like the CLI arguments can
+override. We would have: 2 levels of TOML config -> Manifest overrides ->
+CLI overrides." The manifest is now a **generic config-override layer**,
+not additive fields on PluginManifest. Layering: base TOML -> manifest
+overrides (`agent.toml`) -> CLI overrides. The manifest can override ANY
+Config field.
+
+### 1.3 File-based manifest filename: `agent.toml` (owner-directed change)
+
+The owner said: "don't use yoker.toml, that is already used for our
+project-level configuration." The file-based manifest is named
+`agent.toml`, avoiding the collision with `yoker.toml`.
+
+### 1.4 `PluginManifest` extension is additive and backward compatible
 
 Adding `agent: str | None = None` and `prompt: str | None = None` to
-`PluginManifest` is a non-breaking change. All existing manifest call sites
-remain valid. The run-config fields are carried in a separate
-`ResolvedSource` dataclass, not overloading `PluginComponents`, preserving
-the single-responsibility boundary.
+`PluginManifest` is a non-breaking change. These are convenience fallback
+fields for Python packages without `agent.toml`. The run-config fields are
+carried in a separate `ResolvedSource` dataclass, preserving the
+single-responsibility boundary.
 
-### 1.3 File-based manifest deserializes into `PluginManifest`
+### 1.5 Source abstraction generalizes the loader
 
-`yoker.toml` deserializes into the same `PluginManifest` shape as the
-Python `__YOKER_MANIFEST__`, so the run path has one type to consume
-regardless of source type. The file manifest's `[run]` section is the
-authoritative run configuration; the Python manifest's `agent`/`prompt`
-fields are a convenience fallback for packages that want to be runnable
-without a separate `yoker.toml`.
-
-### 1.4 Source abstraction generalizes the loader
-
-Rather than threading folder/zip special cases through `load_plugin`, both
-reviews recommend a `Source` abstraction (`kind: Literal["package",
+Both reviews recommend a `Source` abstraction (`kind: Literal["package",
 "folder"]`) with a `load_plugin_from_source()` entry point. This keeps the
 trust gate (`check_plugin_allowed`) applied uniformly and avoids
 duplicating skill/agent loading logic.
 
-### 1.5 `ResolvedSource.cleanup` runs in a `finally` block
+### 1.6 Two-phase resolve/load (trust gate before imports)
 
-GitHub clones and zip extractions use `tempfile.TemporaryDirectory`. The
-`run` subcommand calls `resolved.cleanup()` in a `finally` block. For
-`loop`, the source is re-resolved each iteration (fresh clone) and cleanup
-runs at the end of each iteration.
+`resolve_source()` returns metadata only (no imports, no code execution).
+`load_source()` performs the actual imports and is called ONLY after
+`check_plugin_allowed()` returns True. This two-phase split ensures the
+trust gate fires before any code runs.
 
-### 1.6 Reuse the Python API in `run`
+### 1.7 Trust gate reuses existing guardrails (owner-directed)
 
-The `run` subcommand should delegate to the same config/agent construction
-path as `yoker.api.process` / `yoker.api.session` rather than
-reimplementing Session+Agent wiring. This prevents the CLI and Python API
-from diverging.
+The owner confirmed: "Currently when issuing `--with <pkg>` we don't
+consider this an explicit opt-in. So, I wouldn't change that behaviour.
+Let's keep these guardrails in place and reuse them, not creating parallel
+tracks." `yoker run <source>` goes through the same `check_plugin_allowed()`
+gate as `--with <source>`. No bypass for named sources.
 
-### 1.7 Existing security primitives are reusable
+### 1.8 Agent name resolution: source overrides built-in (owner-confirmed)
+
+The owner confirmed: "source-based named items 'override' existing ones
+(although given namespacing, I don't expect that to happen quickly)."
+
+### 1.9 `yoker inspect <source>` — new subcommand (owner-added)
+
+The owner added: "add an additional subcommand: `yoker inspect <source>`
+that dumps a report about the source, explaining what it contains, what it
+uses, what it does." Inspect is read-only, requires no trust gate, and does
+NOT import `tools_module` or execute any code.
+
+### 1.10 No auto-install of `pyproject.toml` (clarified)
+
+The owner asked for clarification on "defer auto-installing
+pyproject.toml." This means: when loading a folder source with
+`pyproject.toml`, do NOT automatically `pip install` it (build hooks =
+arbitrary code execution, CWE-494). Require an explicit `--install` flag,
+deferred to a future MBI.
+
+### 1.11 Existing security primitives are reusable
 
 The security engineer confirmed that `UrlWebGuardrail` (SSRF protection),
 `PathGuardrail` (symlink resolution + root containment), `is_safe_path`
 (path containment), and `validate_base_url_trust` (interactive trust prompt
-pattern) are all directly reusable for source resolution security. No new
-security primitives are needed — the existing ones need to be wired into
-the `yoker run` path.
+pattern) are all directly reusable for source resolution security.
 
 ---
 
@@ -85,37 +108,39 @@ The following security findings from the Security Engineer must be
 incorporated into the implementation. They have been added as security
 acceptance criteria to the corresponding TODO.md tasks.
 
-### 2.1 Critical: Trust gate must cover `yoker run` (C1 + M3)
+### 2.1 Critical: Trust gate must cover `yoker run` (C1 + M3) — RESOLVED
 
 **Requirement:** Every resolved source must pass
 `check_plugin_allowed()` before any code runs (including `tools_module`
 imports and `pip install`).
 
+**Owner decision:** Reuse existing `check_plugin_allowed()` — no bypass
+for named sources. Same guardrails as `--with`.
+
 **Implementation impact:**
-- `resolve_source()` must be split into two phases:
-  - `resolve_source()` — returns metadata only (source type, trust key,
-    manifest fields); no imports, no pip install
-  - `load_source()` — performs imports, called only after
-    `check_plugin_allowed()` returns True
+- `resolve_source()` returns metadata only (no imports, no pip install)
+- `load_source()` performs imports, called only after trust check passes
 - Non-interactive mode rejects untrusted sources by default
-- Interactive mode shows a confirmation dialog (source type, origin,
-  trust key, agent, full prompt, tools_module, tool allowlist)
+- Interactive mode shows a confirmation dialog
 - `--dry-run` flag resolves and prints manifest + prompt without executing
 
 **TODO.md tasks affected:** 4.6.1, 4.7.1
 
-### 2.2 Critical: `tools_module` is code, not config (C2)
+### 2.2 Critical: `tools_module` is code, not config (C2) — CORRECTED
 
-**Requirement:** `yoker.toml`'s `tools_module` field triggers
+**Requirement:** `agent.toml`'s `tools_module` field triggers
 `importlib.import_module()` of potentially attacker-supplied code. It must
 be treated as code, not configuration.
 
 **Implementation impact:**
-- The functional analysis's claim that "`yoker.toml` is a configuration
-  file, not code" (edge case #9, line 362-365 of the functional analysis)
-  is **incorrect** and must be corrected. See section 4 below.
+- The functional analysis's original claim that "`yoker.toml` is a
+  configuration file, not code" has been **corrected** in the revised
+  functional analysis. `agent.toml` with `tools_module` is a code
+  execution vector.
 - `tools_module` imports must not happen before the trust gate fires
 - Manifests without `tools_module` are config-only (lower trust tier)
+- Config override sections (outside `[run]` and `[plugin]`) are pure
+  configuration — they override Config fields but do not execute code
 
 **TODO.md tasks affected:** 4.6.1, 4.5.2
 
@@ -128,7 +153,7 @@ be treated as code, not configuration.
 - Embedded credentials rejected
 - SSRF check (`_check_ssrf_for_host`) runs before clone
 - Resolved commit SHA recorded for audit
-- No auto-`pip install` of the cloned repo
+- No auto-`pip install` of the cloned repo (owner-confirmed)
 - Temp directory uses `0o700` permissions
 
 **TODO.md tasks affected:** 4.6.3
@@ -148,8 +173,7 @@ symlink escapes.
 
 ### 2.5 High: Auto-run prompt and autonomous tool restriction (H2)
 
-**Requirement:** The auto-injected prompt runs with autonomous tool access
-(read/write/git/webfetch). This must be restricted.
+**Requirement:** The auto-injected prompt runs with autonomous tool access.
 
 **Implementation impact:**
 - Prompt length capped at 10 KB
@@ -210,179 +234,107 @@ sensitive data.
 
 ---
 
-## 3. Open Questions from the API Architect
+## 3. Resolved Open Questions (Owner Feedback PR #46)
 
-The API Architect raised three open questions that require owner
-resolution before implementation of 4.5/4.6 proceeds:
+All three open questions from the original review have been resolved:
 
-### 3.1 Trust gate for `yoker run <source>`
+### 3.1 Trust gate for `yoker run <source>` — RESOLVED
 
-**Question:** Should naming a source on the command line bypass
-`config.plugins.enabled` (recommended — explicit opt-in), or should the
-user also have to set `plugins.enabled = true`?
+**Original disagreement:** API Architect recommended bypassing
+`plugins.enabled` (explicit opt-in); Security Engineer required
+unconditional trust gate.
 
-**Security Engineer position:** `yoker run` must NOT bypass the trust
-gate. The source must pass `check_plugin_allowed()` regardless of whether
-the user typed it on the command line. The "explicit opt-in" framing
-underestimates the risk: a user who runs `yoker run
-https://github.com/colleague/useful-tool` may not realize they are
-executing arbitrary Python. The trust gate should fire for every source,
-with interactive confirmation as the mechanism (not a blanket bypass).
+**Owner decision:** "Currently when issuing `--with <pkg>` we don't
+consider this an explicit opt-in. So, I wouldn't change that behaviour.
+Let's keep these guardrails in place and reuse them, not creating parallel
+tracks."
 
-**Consensus:** The two reviews **disagree** on this point. The API
-Architect recommends bypassing `plugins.enabled` (the user opted in by
-typing the source); the Security Engineer requires the trust gate to
-fire unconditionally. **This needs owner resolution.** The security
-engineer's position is the safer default: route through
-`check_plugin_allowed()` with interactive confirmation, and allow
-pre-trusting via `[plugins.trusted]` or an env-var override for
-non-interactive use.
+**Resolution:** `yoker run <source>` goes through `check_plugin_allowed()`
+— same gate as `--with`. No bypass. The Security Engineer's position
+prevailed. This is the safer default and eliminates the parallel-track
+concern.
 
-### 3.2 Agent name resolution scope
+### 3.2 Agent name resolution scope — RESOLVED
 
-**Question:** Confirm that the manifest's `agent` name resolves against
-the source's own agent definitions first, then the built-in registry, with
-source winning on conflict.
+**Owner decision:** "source-based named items 'override' existing ones
+(although given namespacing, I don't expect that to happen quickly)."
 
-**Security Engineer position:** Agreed. Source's own agent definitions
-should take precedence. No security concern with this resolution order as
-long as the source itself has passed the trust gate.
+**Resolution:** Source's own agent definitions take precedence over
+built-in ones. Both reviews agreed on this; the owner confirmed.
 
-**Consensus:** Both reviews agree on the resolution order. No conflict.
+### 3.3 File-manifest filename — RESOLVED
 
-### 3.3 File-manifest filename
+**Original question:** `yoker.toml` vs `yoker-manifest.toml` — collision
+with project config.
 
-**Question:** `yoker.toml` collides with the user/project config filename
-(`./yoker.toml` is currently the project config). For a folder source,
-`yoker run ./my-folder` looks for `./my-folder/yoker.toml` — no collision
-because it's inside the source folder. But for a GitHub clone landing in
-the current directory, there's potential confusion. Is `yoker.toml`
-acceptable, or should it be `yoker-manifest.toml`?
+**Owner decision:** "don't use yoker.toml, that is already used for our
+project-level configuration - unless we can 'combine' the two - make them
+co-exist as one uber-config?"
 
-**Security Engineer position:** No strong security preference. The path
-scoping (`<source-root>/yoker.toml`) removes ambiguity. Recommends
-`yoker.toml` for simplicity, with clear documentation that this is the
-source manifest, not the user/project config.
-
-**Consensus:** Both reviews lean toward `yoker.toml` inside the source
-root. The API Architect recommends it with clear documentation. **Needs
-owner confirmation.**
+**Resolution:** Use `agent.toml` as the filename. This avoids the collision
+entirely and clearly indicates it's an agentic package manifest. The
+manifest lives in the source root, naturally separate from the user/project
+config.
 
 ---
 
-## 4. Conflicts and Tensions Between the Designs
+## 4. New Requirements from Owner Feedback
 
-### 4.1 "yoker.toml is a configuration file, not code" — INCORRECT
+### 4.1 Clevis commands (not manual dispatcher)
 
-**The conflict:** The functional analysis (edge case #9, lines 362-365 of
-`analysis/mbi-004-yoker-commands.md`) states:
+The owner pushed back on the manual dispatcher. The design now uses
+Clevis's `@configclass(cmd=...)` and `get_cmd()`. See section 1.1.
 
-> `yoker.toml` is trusted the same way `~/.yoker.toml` is trusted — it's
-> a configuration file, not code. The `tools_module` field imports Python
-> code, which is the same trust model as `--with <package>` (the user
-> explicitly chose to load it).
+### 4.2 Manifest as config-override layer
 
-**Security finding C2:** This framing is **incorrect and dangerous**.
-`yoker.toml`'s `tools_module` field triggers `importlib.import_module()` of
-attacker-supplied code. A file that can execute arbitrary Python at import
-time is not "a configuration file" — it is a code execution vector. The
-comparison to `--with <package>` is valid only if the same trust gate
-(`check_plugin_allowed()`) is applied; today the design does not wire the
-trust gate into the file-manifest path.
+The owner redefined the manifest as a generic config-override layer. See
+section 1.2.
 
-**Resolution:** The functional analysis must be corrected. The claim should
-be replaced with:
+### 4.3 `yoker inspect <source>`
 
-> `yoker.toml` is a manifest file that can declare a `tools_module` field.
-> When `tools_module` is specified, the manifest triggers
-> `importlib.import_module()` of a Python module within the source — this
-> is **code execution**, not pure configuration. It must pass the same
-> trust gate as `--with <package>` (`check_plugin_allowed()`) before the
-> import happens. Manifests without `tools_module` are config-only and
-> represent a lower trust tier.
+New subcommand added by the owner. See section 1.9. Added as task group
+4.12 in TODO.md.
 
-### 4.2 Trust gate bypass — explicit opt-in vs. mandatory gate
+### 4.4 "Defer auto-installing pyproject.toml" — clarified
 
-**The conflict:** The API Architect recommends that `yoker run <source>`
-bypass `config.plugins.enabled` because the user explicitly opted in by
-typing the source name (section 3.7.1 and section 4.4 of the API review).
-The Security Engineer requires the trust gate to fire unconditionally
-(finding C1).
-
-**Resolution:** This is the most significant tension. The Security
-Engineer's position is safer: `yoker run` naming a source is analogous to
-`--with` naming a package — both should pass the trust gate. The
-"explicit opt-in" argument underestimates the risk of social engineering
-(convincing a user to run a source). **Owner decision required.** The
-recommended compromise: `yoker run` does NOT require
-`config.plugins.enabled = true` globally (the user shouldn't have to
-enable plugins globally just to run one source), but it DOES require the
-specific source to pass `check_plugin_allowed()` — either via
-`[plugins.trusted]` entry, interactive confirmation, or env-var override.
-This satisfies both positions: no global gate, but per-source trust.
-
-### 4.3 Auto-install of `pyproject.toml` — defer vs. gate
-
-**The conflict:** The functional analysis mentions optionally installing a
-folder's `pyproject.toml` as a package. The API Architect recommends
-deferring this (no auto-install in MBI-004). The Security Engineer goes
-further: auto-install runs build hooks (CWE-494, finding M4) and must
-never happen without an explicit `--install` flag gated by trust.
-
-**Resolution:** Both reviews agree on deferral for MBI-004. The Security
-Engineer's stronger position (explicit `--install` flag, never auto-install)
-should be the documented policy. The functional analysis's "optionally
-install it as a package (deferred)" language should be corrected to "do
-NOT auto-install; require explicit `--install` flag, gated by the trust
-gate. Deferred to a future MBI."
-
-### 4.4 `yoker loop` default iterations — unlimited vs. finite
-
-**The conflict:** The functional analysis specifies `--max-iterations`
-default as "unlimited." The Security Engineer requires a finite default
-(100) to prevent resource exhaustion (finding M1).
-
-**Resolution:** The Security Engineer's position is safer. Default to 100
-iterations. Users who need unlimited can pass `--max-iterations 0` (or a
-very large number). This has been added as a security acceptance criterion
-to task 4.8.1 in TODO.md.
+The owner asked "what do you mean by this?" The clarification: auto-
+installing runs build hooks (arbitrary code execution, CWE-494). Do NOT
+auto-install by default; require explicit `--install` flag (future MBI).
+See section 1.10.
 
 ---
 
-## 5. Prioritized Implementation Order
-
-Combining the API Architect's dependency graph with the Security Engineer's
-prioritized fix order, the recommended implementation sequence is:
+## 5. Prioritized Implementation Order (Updated)
 
 1. **4.5.1** — Add `agent`/`prompt` to `PluginManifest` (additive, no
    security risk)
-2. **4.5.2** — File-based manifest loading (`yoker.toml` parsing, no
-   imports yet)
-3. **4.1** — CLI dispatcher (no security surface; infrastructure)
-4. **4.6.1** — Source resolution framework with **two-phase
-   resolve/load** (C1 + M3: trust gate before imports)
-5. **4.6.2** — Folder path resolution with **path validation** (H4)
-6. **4.6.3** — GitHub URL with **SSRF + HTTPS + SHA pinning** (C3)
-7. **4.6.4** — Zip extraction with **bomb/traversal protection** (H1)
-8. **4.7.1** — `yoker run` with **trust gate + dry-run + prompt cap** (C1,
-   H2)
-9. **4.8.1** — `yoker loop` with **finite default + backoff** (M1)
-10. **4.9.1** — `yoker container` with **Dockerfile hardening** (H3)
-11. **4.2, 4.3, 4.4** — `chat`, `init` (with path validation + force
-    confirmation), `config` (with API key masking)
-12. **4.10** — Tests (including security tests for all the above)
-13. **4.11** — Documentation (including corrected trust model)
+2. **4.5.2** — File-based manifest loading (`agent.toml` parsing, extract
+   `[run]`/`[plugin]`, return config overrides)
+3. **4.5.3** — Implement `get_yoker_config_with_manifest()` (config
+   loading with manifest as override layer)
+4. **4.1** — Clevis subcommand config classes (`@configclass(cmd=...)`)
+5. **4.6.1** — Source resolution framework with two-phase resolve/load
+6. **4.6.2** — Folder path resolution with path validation (H4)
+7. **4.6.3** — GitHub URL with SSRF + HTTPS + SHA pinning (C3)
+8. **4.6.4** — Zip extraction with bomb/traversal protection (H1)
+9. **4.7.1** — `yoker run` with trust gate + dry-run + prompt cap (C1, H2)
+10. **4.8.1** — `yoker loop` with finite default + backoff (M1)
+11. **4.9.1** — `yoker container` with Dockerfile hardening (H3)
+12. **4.12** — `yoker inspect` (read-only report, no trust gate)
+13. **4.2, 4.3, 4.4** — `chat`, `init`, `config`
+14. **4.10** — Tests (including security tests and inspect tests)
+15. **4.11** — Documentation (including `agent.toml` format and trust model)
 
 ---
 
 ## 6. Summary
 
-The two domain reviews are broadly complementary. The API Architect
-provides the structural design (dispatcher, manifest, source abstraction,
-loader generalization); the Security Engineer provides the protective
-layer (trust gate, path validation, SSRF, zip safety, container
-hardening). The primary tension is the trust gate question (bypass vs.
-mandatory), which requires owner resolution. The functional analysis's
-claim that `yoker.toml` is "a configuration file, not code" must be
-corrected per finding C2. All security acceptance criteria have been added
-to the corresponding TODO.md tasks.
+The two domain reviews are now fully aligned with the owner's feedback.
+The primary tension (trust gate bypass vs. mandatory gate) has been
+resolved in favor of the Security Engineer's position: reuse
+`check_plugin_allowed()` with no bypass. The CLI design has been updated
+to use Clevis's built-in command support instead of a manual dispatcher.
+The manifest has been redefined as a generic config-override layer using
+`agent.toml`. A new `yoker inspect` subcommand has been added. All
+security acceptance criteria remain in place and have been updated to
+reflect the resolved design decisions.

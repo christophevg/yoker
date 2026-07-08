@@ -146,7 +146,30 @@ the agent completes processing the initial prompt.
 **Use case**: Periodic agentic tasks — e.g. "check for new issues every 5
 minutes and summarize them."
 
-### 6. `yoker container <source>`
+### 6. `yoker inspect <source>`
+
+**Purpose**: Dump a report about a source, explaining what it contains, what
+it uses, and what it does — without executing anything.
+
+**Behavior**:
+- Resolves the source (same detection as `yoker run`: module, URL, folder, zip)
+- Reads the manifest (`agent.toml` or `__YOKER_MANIFEST__`) — metadata only, NO imports
+- Displays a human-readable report:
+  - **What it contains**: skills (names, descriptions), agent definitions (names, models), tools (names from `tools_module` — listed but NOT imported)
+  - **What it uses**: dependencies (from `pyproject.toml` if present), `tools_module` declaration, config overrides from the manifest
+  - **What it does**: the `agent` and `prompt` from `[run]`, any config overrides
+- No trust gate needed (read-only, no code execution)
+- `tools_module` is listed in the report but NOT imported — just shown as a declaration
+- For GitHub URLs: clones the repo (same as `run`), reads the manifest, cleans up
+- For zip files: extracts to temp dir, reads the manifest, cleans up
+
+**Output**: A formatted report to stdout. Exit after displaying.
+
+**Use case**: Understanding what a source contains before running it. A safe
+"what would this do?" preview. Essentially a read-only `--dry-run` that shows
+the source's contents without executing anything.
+
+### 7. `yoker container <source>`
 
 **Purpose**: Generate a container setup (Dockerfile, Containerfile) for
 running a yoker-based agentic package.
@@ -175,20 +198,64 @@ ENTRYPOINT ["yoker", "run", "<source>"]
 
 ## Extended Manifest Design
 
-### Current PluginManifest
+### Manifest as a Config-Override Layer (Owner Feedback PR #46)
 
-```python
-@dataclass
-class PluginManifest:
-  tools: list[Callable[..., Any]] = field(default_factory=list)
-  skills: list[Skill] = field(default_factory=list)
-  agents: list[AgentDefinition] = field(default_factory=list)
-  config_class: type | None = None
-  skills_dir: str = "skills"
-  agents_dir: str = "agents"
+The owner redefined the manifest from additive fields on `PluginManifest` to
+a **generic config-override layer**. The manifest can override ANY `Config`
+field, not just `agent` and `prompt`.
+
+**Layering (precedence low to high):**
+
+1. Dataclass defaults
+2. User-level TOML (`~/.yoker.toml`)
+3. Project-level TOML (`./yoker.toml`)
+4. **Manifest overrides** (`<source>/agent.toml`) — NEW layer
+5. CLI arguments (highest priority)
+
+### File-Based Manifest: `agent.toml`
+
+The manifest file is named `agent.toml` (not `yoker.toml`) to avoid collision
+with the project-level configuration file `yoker.toml`. The owner raised this
+explicitly: "for the file-based manifest: don't use yoker.toml, that is
+already used for our project-level configuration."
+
+```toml
+# agent.toml — source manifest for a yoker-based agentic package
+
+# Run configuration (source-specific)
+[run]
+agent = "researcher"       # Agent definition to use
+prompt = "Analyze the codebase and create a PACKAGE.md"  # Initial prompt
+
+# Plugin configuration (source-specific)
+[plugin]
+skills_dir = "skills"      # Directory containing skill definitions
+agents_dir = "agents"       # Directory containing agent definitions
+tools_module = "my_plugin.tools"  # Optional: import tools from this module
+
+# Config overrides (any Config field can be overridden)
+[backend.ollama]
+model = "llama3.2"         # Use a specific model for this source
+
+[tools.git]
+enabled = false            # Disable git tools for this source
+
+[ui]
+mode = "batch"             # Force batch mode for non-interactive execution
 ```
 
-### Extended PluginManifest
+**Parsing rules:**
+- `[run]` is optional. Contains `agent` (str) and `prompt` (str).
+- `[plugin]` is optional. Contains `skills_dir`, `agents_dir`, `tools_module`.
+- All other tables/keys are treated as **config overrides** — merged into the
+  base config dict between project TOML and CLI args.
+- If `agent.toml` doesn't exist, the source is treated as a plain plugin.
+
+### Python Manifest (`__YOKER_MANIFEST__`)
+
+The Python `__YOKER_MANIFEST__` object continues to declare tools, skills, and
+agents. For `yoker run`, the Python manifest's `agent` and `prompt` fields
+(optional, default `None`) serve as a fallback when no `agent.toml` exists:
 
 ```python
 @dataclass
@@ -201,43 +268,20 @@ class PluginManifest:
   skills_dir: str = "skills"
   agents_dir: str = "agents"
 
-  # New fields for yoker run
+  # New: convenience fields for yoker run (fallback when no agent.toml exists)
   agent: str | None = None        # Which agent definition to use
   prompt: str | None = None       # Initial prompt to inject
 ```
 
-**Rationale**: `agent` specifies which agent definition (from the plugin's
-own agents or the built-in agents) to use for this run. `prompt` is the
-initial prompt that gets processed immediately. Together they make a plugin
-into an "agentic executable package" — running `yoker run <package>` executes
-the agent with the prompt, no interactive input needed.
-
-### File-Based Manifest
-
-Currently, manifests are Python objects (`__YOKER_MANIFEST__` in a package's
-`__init__.py`). For folder/zip sources that aren't Python packages, we need
-a file-based manifest.
-
-**Format**: `yoker.toml` (or `yoker-manifest.toml`) in the source root.
-
-```toml
-# yoker.toml — file-based yoker manifest
-
-[run]
-agent = "researcher"       # Agent definition to use
-prompt = "Analyze the codebase and create a PACKAGE.md"  # Initial prompt
-
-[plugin]
-skills_dir = "skills"      # Directory containing skill definitions
-agents_dir = "agents"       # Directory containing agent definitions
-# tools are Python callables — file-based manifest cannot declare tools
-# directly; instead, a companion Python module can be specified:
-tools_module = "my_plugin.tools"  # Optional: import tools from this module
-```
+**Precedence for `agent`/`prompt`:**
+1. CLI override (`--agent`, `--prompt`) — highest
+2. `agent.toml` `[run]` section — if file manifest exists
+3. Python `__YOKER_MANIFEST__.agent`/`.prompt` — fallback for packages
+4. Error if none of the above provide both `agent` and `prompt`
 
 **Resolution order**: When loading a source, yoker checks:
-1. Python `__YOKER_MANIFEST__` (if the source is a Python package)
-2. `yoker.toml` file in the source root (if the source is a folder/zip)
+1. `agent.toml` file in the source root (if the source is a folder/zip)
+2. Python `__YOKER_MANIFEST__` (if the source is a Python package)
 3. If neither exists, the source is treated as a plain plugin (no run
    configuration — `yoker run` requires at least `prompt` to be set)
 
@@ -252,32 +296,72 @@ internal representation (a loaded plugin with components + manifest):
 - The package must be installed (via `uvx --with`, pip, or already available)
 - `__YOKER_MANIFEST__` is read from the package
 - This is the simplest case — identical to `--with <module>`
+- Goes through `check_plugin_allowed()` — same trust gate as `--with`
 
 ### 2. GitHub URL (e.g., `https://github.com/christophevg/pkgq`)
 
 - Clones the repository to a temporary directory
-- Looks for `yoker.toml` in the repo root
+- Looks for `agent.toml` in the repo root
+- If the repo has an `agent.toml`, loads from the folder path (see #3)
 - If the repo is a Python package (has `pyproject.toml` or `setup.py`),
-  installs it into a temporary virtualenv and loads it as a module
-- If the repo has a `yoker.toml` but no package structure, loads from the
-  folder path (see #3)
+  does NOT auto-install it (see "pyproject.toml auto-install" below)
 - Cleans up the temporary directory on exit
+- Goes through `check_plugin_allowed()` — same trust gate as `--with`
 
 ### 3. Folder Path (e.g., `./my-agent`)
 
-- Looks for `yoker.toml` in the folder root
+- Looks for `agent.toml` in the folder root
 - Loads skills from `<folder>/<skills_dir>` (default: `skills/`)
 - Loads agent definitions from `<folder>/<agents_dir>` (default: `agents/`)
 - If `tools_module` is specified in the manifest, imports that module and
-  loads tools from it
-- If the folder contains a Python package (`pyproject.toml`), installs it
-  and loads as a module
+  loads tools from it (ONLY after passing the trust gate)
+- Does NOT auto-install `pyproject.toml` if present (deferred to future MBI;
+  requires explicit `--install` flag)
+- Goes through `check_plugin_allowed()` — same trust gate as `--with`
 
 ### 4. Zip File (e.g., `./my-agent.zip`)
 
 - Extracts to a temporary directory
 - Proceeds as folder path (#3)
 - Cleans up on exit
+- Goes through `check_plugin_allowed()` — same trust gate as `--with`
+
+### Trust Gate (Owner Feedback PR #46)
+
+The owner confirmed: "Currently when issuing `--with <pkg>` we don't consider
+this an explicit opt-in. So, I wouldn't change that behaviour. Let's keep
+these guardrails in place and reuse them, not creating parallel tracks."
+
+`yoker run <source>` goes through the same `check_plugin_allowed()` trust
+gate as `--with <source>`. No bypass for named sources. The source must be
+either in `[plugins.trusted]`, confirmed interactively, or rejected in
+non-interactive mode.
+
+### `yoker inspect <source>` — No Trust Gate
+
+`yoker inspect` is read-only: it resolves the source, reads the manifest, and
+displays a report. It does NOT import `tools_module`, does NOT execute any
+code. Only the manifest metadata is read. No trust gate needed.
+
+### "Defer auto-installing pyproject.toml" — Clarified (Owner Feedback PR #46)
+
+The owner asked "what do you mean by this?" when the API architect recommended
+deferring auto-installation of a folder's `pyproject.toml`. Here is the
+clarification:
+
+When loading a folder source that contains a `pyproject.toml`, the question
+is whether to automatically `pip install` it. Auto-installing runs build
+hooks (setup.py, PEP 517 build backend) — this is **arbitrary code execution**
+(CWE-494). A malicious `pyproject.toml` could run arbitrary code during the
+build step, before any trust gate could intervene.
+
+The recommendation is to **NOT auto-install by default**. For MBI-004,
+folder/zip sources load via the file manifest (`agent.toml`) + `tools_module`
+import; full package installation requires an explicit `--install` flag
+(deferred to a future MBI). If a folder has a `pyproject.toml` but no
+`agent.toml`, yoker does not install it — it either loads from the folder
+structure directly or errors with a message explaining that `--install` is
+needed (future MBI).
 
 ### Resolution Function
 
@@ -301,11 +385,13 @@ def resolve_source(source: str) -> ResolvedSource:
 ## Dependency Graph
 
 ```
-4.1 (CLI dispatcher) ──► 4.2 (chat) ──► 4.3 (init)
+4.1 (CLI subcommands via Clevis) ──► 4.2 (chat) ──► 4.3 (init)
                    │
                    ├──► 4.4 (config)
                    │
-                   └──► 4.7 (run) ◄── 4.5 (extended manifest)
+                   ├──► 4.12 (inspect) ◄── 4.6 (source resolution)
+                   │
+                   └──► 4.7 (run) ◄── 4.5 (manifest as config-override)
                                   ◄── 4.6 (source resolution)
                                        │
                                        ▼
@@ -359,11 +445,31 @@ def resolve_source(source: str) -> ResolvedSource:
    - Folder: `COPY` the folder into the image
    - Zip: `COPY` and extract in the build step
 
-9. **File-based manifest security**: `yoker.toml` is trusted the same way
-   `~/.yoker.toml` is trusted — it's a configuration file, not code.
-   The `tools_module` field imports Python code, which is the same trust
-   model as `--with <package>` (the user explicitly chose to load it).
+9. **File-based manifest security**: `agent.toml` is a manifest file that
+   can declare a `tools_module` field. When `tools_module` is specified,
+   the manifest triggers `importlib.import_module()` of a Python module
+   within the source — this is **code execution**, not pure configuration.
+   It must pass the same trust gate as `--with <package>`
+   (`check_plugin_allowed()`) before the import happens. Manifests without
+   `tools_module` are config-only and represent a lower trust tier. The
+   config override sections of `agent.toml` (anything outside `[run]` and
+   `[plugin]`) are pure configuration — they override Config fields but do
+   not execute code.
 
-10. **Config precedence for `yoker run`**: The base config still loads from
-    `~/.yoker.toml` (for backend settings etc.), and the source's manifest
-    adds agent + prompt on top. CLI flags override both.
+10. **Config precedence for `yoker run`**: The base config loads from
+    `~/.yoker.toml` and `./yoker.toml` (for backend settings etc.). The
+    source's `agent.toml` provides config overrides on top of the base config.
+    CLI flags override both. Full layering: defaults -> user TOML -> project
+    TOML -> manifest overrides -> CLI args.
+
+11. **`yoker inspect` is safe without trust**: Inspect reads the manifest
+    metadata only. It does NOT import `tools_module`, does NOT execute any
+    code, and does NOT call `load_source()`. The `tools_module` is listed
+    in the report but NOT imported. This makes inspect safe to run on
+    untrusted sources — it's a "what would this do?" preview.
+
+12. **Agent name resolution (owner confirmed)**: source-based named items
+    override existing ones. The manifest's `agent` name resolves against
+    the source's own agent definitions first, then the built-in registry.
+    On conflict, source wins. (The owner noted: "given namespacing, I don't
+    expect that to happen quickly.")

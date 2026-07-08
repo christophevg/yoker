@@ -1,6 +1,6 @@
 # API Architecture Review: MBI-004 yoker Commands
 
-**Date**: 2026-07-08
+**Date**: 2026-07-08 (revised 2026-07-08 per owner feedback on PR #46)
 **Reviewer**: API Architect Agent
 **Task**: Review design for tasks 4.1 (CLI Subcommand Dispatcher) and 4.5 (Extended Manifest), with a brief outline for 4.6 (Source Resolution).
 **Design source of truth**: `analysis/mbi-004-yoker-commands.md`
@@ -8,13 +8,13 @@
 
 ## Summary
 
-The MBI-004 design is internally coherent and well-scoped. The functional analysis already resolves most of the hard product questions (six subcommands, backward-compat default to `chat`, source type detection, manifest extension fields). This review focuses on the architectural decisions that the functional analysis leaves open or underspecifies, and makes concrete recommendations for:
+The MBI-004 design is internally coherent and well-scoped. The functional analysis already resolves most of the hard product questions (seven subcommands including `inspect`, backward-compat default to `chat`, source type detection, manifest as config-override layer). This review focuses on the architectural decisions that the functional analysis leaves open or underspecifies, and makes concrete recommendations for:
 
-1. **4.1 CLI dispatcher** — a lightweight manual dispatcher sitting *in front of* Clevis, not replacing it. Clevis continues to generate the `Config`-derived CLI args for the subcommands that need a `Config` (`chat`, `run`, `loop`, `config`); subcommands that don't (`init`, `container`) bypass Clevis entirely. This preserves the existing annotation-driven CLI generation pattern and avoids a hard dependency on a new framework (click/typer).
-2. **4.5 Extended manifest** — extend `PluginManifest` with `agent` and `prompt` fields (additive, backward compatible). Introduce a parallel file-based manifest (`yoker.toml`) that deserializes into the same `PluginManifest` shape, with a clearly documented precedence rule (Python `__YOKER_MANIFEST__` wins for tools/skills/agents; the file manifest is the *only* way to declare `agent`/`prompt` for non-Package sources). Add a `ResolvedSource` carrier dataclass so the manifest travels with `PluginComponents` into the run path.
-3. **4.6 Source resolution** — a `resolve_source()` function returning a `ResolvedSource` with a `cleanup` hook, with security considerations for zip path traversal and GitHub clone hygiene.
+1. **4.1 CLI dispatcher** — use Clevis's built-in command/subcommand support (`@configclass(cmd=...)`, `get_cmd()`) instead of a manual dispatcher. Clevis generates subparsers from decorated dataclass config classes. Each subcommand gets its own auto-generated CLI args. Subcommands that don't need a `Config` (`init`, `container`, `inspect`) use minimal config classes or bypass config loading. Backward compatibility is maintained by defaulting to `chat` when no subcommand is given.
+2. **4.5 Extended manifest** — the manifest is a **generic config-override layer**, not additive fields on `PluginManifest`. Layering: base TOML config (`~/.yoker.toml`, `./yoker.toml`) → manifest overrides (`agent.toml` in the source root) → CLI overrides. The manifest can override any `Config` field, not just `agent`/`prompt`. Source-specific fields (`[run]`, `[plugin]`) are extracted separately. The file-based manifest uses the filename `agent.toml` to avoid collision with the project-level `yoker.toml`. A `ResolvedSource` carrier dataclass carries the run-config and plugin-config alongside `PluginComponents` into the run path.
+3. **4.6 Source resolution** — a `resolve_source()` function returning a `ResolvedSource` with a `cleanup` hook, with security considerations for zip path traversal and GitHub clone hygiene. Trust gates reuse the existing `check_plugin_allowed()` — no parallel tracks, no bypass for named sources.
 
-One key architectural concern: the functional analysis proposes merging Python-manifest and file-manifest fields with "Python manifest takes precedence for tools/skills/agents; file manifest can supplement with agent/prompt." This is sound, but the loader currently keys everything off `importlib.import_module(package_name)`, which cannot resolve a folder or zip. The source-resolution layer must produce something the existing `load_plugin` machinery can consume, or `load_plugin` must be generalized. The recommendation below is to **generalize the loader** with a `Source` abstraction rather than threading folder/zip special cases through `load_plugin`.
+One key architectural concern: the loader currently keys everything off `importlib.import_module(package_name)`, which cannot resolve a folder or zip. The source-resolution layer must produce something the existing `load_plugin` machinery can consume, or `load_plugin` must be generalized. The recommendation below is to **generalize the loader** with a `Source` abstraction rather than threading folder/zip special cases through `load_plugin`.
 
 ---
 
@@ -64,120 +64,328 @@ The loader is **package-name-oriented.** It cannot currently load from a folder 
 
 ---
 
-## 2. Recommended Design for 4.1 — CLI Subcommand Dispatcher
+## 2. Recommended Design for 4.1 — CLI Subcommands via Clevis Commands
 
-### 2.1 Alternatives considered
+### 2.1 Clevis command support (v0.3.3)
+
+Clevis has built-in subcommand support. The key mechanisms are:
+
+- **`@configclass(cmd="name", help="...", aliases=[...])`** — decorator that registers a dataclass as a subcommand. Clevis creates a subparser (via `argparse.add_subparsers(dest="cmd")`) and auto-generates CLI args from the dataclass fields, scoped to that subparser.
+- **`get_cmd(parser, args) -> str | None`** — returns the active subcommand name from parsed arguments.
+- **`Factory.cmd` / `Factory.config`** — the `cmd` field sets the subcommand name; the `config` field sets a TOML extraction key (defaults to `cmd` if not set). When a `[cmd]` section exists in TOML, Clevis extracts it; otherwise root-level TOML is used as-is (backward compatible).
+- **`get_sub_parser(parser)`** — creates or retrieves the subparser manager. Sets `required = True` by default; we set it to `False` for backward compatibility (no subcommand = default to `chat`).
+
+**TOML extraction behavior:** when `@configclass(cmd="chat")` is applied to a config class, `get_config()` looks for a `[chat]` section in the TOML. If found, it extracts it and clears root-level fields. If NOT found, root-level TOML fields are used as-is. This means existing `~/.yoker.toml` files with root-level fields continue to work — they are treated as the default (chat) config. Users can optionally organize config into `[chat]`, `[run]`, etc. sections.
+
+### 2.2 Alternatives considered
 
 | Option | Description | Verdict |
 |--------|-------------|---------|
-| **A. argparse subparsers for everything** | Replace Clevis with argparse; hand-port every `Config` field to an argparse argument. | Rejected — rewrites the entire config CLI surface, loses annotation-driven generation, enormous regression risk. |
-| **B. click / typer** | Adopt a third-party CLI framework; use it for subcommand dispatch and either drop Clevis or wrap it. | Rejected — introduces a new hard dependency for a thin dispatch layer; the project has no existing click/typer usage; the win over a manual dispatcher is small. The functional analysis does not request a framework swap. |
-| **C. Clevis-only (no subcommands)** | Keep Clevis as the sole parser; encode the subcommand as a `Config` field. | Rejected — `init` and `container` don't need a `Config` and shouldn't be forced to load one. Also makes the CLI surface (`--chat`, `--run`) read as flags rather than subcommands, which is UX-hostile. |
-| **D. Lightweight manual dispatcher in front of Clevis (recommended)** | A small dispatcher peels off the subcommand and `--with` args, then hands the remaining `argv` to Clevis for the subcommands that need a `Config`. Subcommands that don't need a `Config` never invoke Clevis. | **Recommended** — minimal change to existing patterns, preserves Clevis for `Config` args, lets `init`/`container` bypass config loading entirely. |
+| **A. Manual dispatcher in front of Clevis** | A custom dispatcher peels off the subcommand and routes to per-subcommand Clevis calls. | Rejected — the owner explicitly pushed back: "Clevis has support for commands." Building a parallel manual dispatcher when Clevis already has subcommand support is unnecessary complexity. |
+| **B. Clevis commands (`@configclass(cmd=...)`)** | Use Clevis's built-in subcommand mechanism. Each subcommand is a `@configclass(cmd="X")` dataclass with its own auto-generated CLI args. | **Recommended** — uses the framework's native capability, no parallel dispatcher, auto-generated help per subcommand, TOML extraction per subcommand. |
+| **C. click / typer** | Adopt a third-party CLI framework. | Rejected — introduces a new dependency; Clevis already provides what we need. |
+| **D. argparse subparsers for everything** | Replace Clevis with manual argparse. | Rejected — loses annotation-driven CLI generation. |
 
-### 2.2 Recommended design: manual dispatcher + Clevis per-subcommand
+### 2.3 Recommended design: Clevis subcommand config classes
 
 **Structure:**
 
 ```
 src/yoker/
-  __main__.py            # thin: calls cli.dispatch()
+  __main__.py            # thin: strips --with, defaults subcommand, calls get_cmd()
   cli/
     __init__.py           # exports dispatch()
-    dispatcher.py         # parse subcommand + --with, route to subcommand
+    commands.py           # subcommand config classes (@configclass(cmd=...))
     shared.py             # shared setup: load_config(), configure_logging, bootstrap gate
-    chat.py               # async def run(args, config, plugin_packages) -> None
-    run.py                # async def run(args, config, plugin_packages) -> None
+    chat.py               # async def run(config, plugin_packages) -> None
+    run.py                # async def run(config, run_config, plugin_packages) -> None
     loop.py
-    init.py               # def run(args) -> None  (no config)
-    config_cmd.py         # def run(args, config) -> None
-    container.py          # def run(args) -> None  (no config)
+    inspect.py            # def run(inspect_config, plugin_packages) -> None  (read-only)
+    init.py               # def run(init_config, plugin_packages) -> None  (no base config)
+    config_cmd.py         # def run(config) -> None
+    container.py          # def run(container_config, plugin_packages) -> None
     sources.py            # 4.6
 ```
 
-**Dispatch algorithm** (in `cli/dispatcher.py`):
+**Subcommand config classes** (in `cli/commands.py`):
+
+The existing `Config` class becomes the base config shared by config-backed subcommands. We use dataclass inheritance to create subcommand-specific config classes that add their own fields:
 
 ```python
-SUBCOMMANDS = {"chat", "run", "loop", "init", "config", "container"}
+from clevis import configclass
 
-def dispatch(argv: list[str] | None = None) -> None:
-  if argv is None:
-    argv = sys.argv
+# The existing Config class (no cmd) — loaded for all config-backed subcommands.
+# It remains the base config with backend, tools, ui, context, session, plugins, etc.
 
-  # 1. Strip --with <pkg> globally (shared across all subcommands).
-  plugin_packages, argv = _parse_plugin_args(argv)
+@configclass(cmd="chat", help="Start the interactive REPL")
+class ChatConfig(Config):
+  """Config for yoker chat. Same fields as Config; no additions needed."""
+  pass
 
-  # 2. Peel off the subcommand: first non-flag positional.
-  subcommand, subcommand_argv = _peel_subcommand(argv, SUBCOMMANDS)
+@configclass(cmd="run", help="Run an agentic package non-interactively")
+class RunConfig(Config):
+  """Config for yoker run. Extends Config with run-specific fields."""
+  source: str = ""                    # Source to run (module, URL, folder, zip)
+  # Note: agent and prompt are NOT here — they come from the manifest (agent.toml)
+  # CLI overrides: --agent and --prompt are handled as subcommand-specific args
+  # via a local argparse, not via Clevis (they are not Config fields).
+  persist: bool = False               # Enable context persistence
+  session_id: str | None = None       # Session ID for persistence
+  dry_run: bool = False               # Resolve and print without executing
 
-  # 3. Default to chat for backward compatibility (no subcommand given).
-  if subcommand is None:
-    subcommand = "chat"
-    subcommand_argv = argv  # all remaining args belong to chat
+@configclass(cmd="loop", help="Run an agentic package at intervals")
+class LoopConfig(RunConfig):
+  """Config for yoker loop. Extends RunConfig with loop fields."""
+  interval: int = 300                 # Seconds between runs
+  max_iterations: int = 100           # Default finite (not unlimited)
+  max_duration: int | None = None     # Max total duration in seconds
 
-  # 4. Route. Subcommands that need a Config go through shared.load_config(cli=True)
-  #    (which calls Clevis on subcommand_argv). Subcommands that don't bypass Clevis.
-  if subcommand in {"chat", "run", "loop", "config"}:
-    config = shared.load_config(subcommand_argv)  # Clevis parses Config args
-    shared.configure_logging(config)
-    if subcommand == "chat":
-      shared.maybe_bootstrap(config)  # pre-flight wizard, chat-only
-    _run_async(subcommand, config, plugin_packages, subcommand_argv)
-  else:  # init, container — no Config
-    _run_sync(subcommand, plugin_packages, subcommand_argv)
+@configclass(cmd="inspect", help="Dump a report about a source without executing it")
+class InspectConfig:
+  """Config for yoker inspect. No base Config needed — read-only."""
+  source: str = ""                    # Source to inspect
+
+@configclass(cmd="init", help="Generate a default configuration file")
+class InitConfig:
+  """Config for yoker init. No base Config needed."""
+  no_interactive: bool = False
+  path: str | None = None
+  force: bool = False
+
+@configclass(cmd="config", help="Display the effective configuration")
+class ConfigCmdConfig(Config):
+  """Config for yoker config. Same fields as Config; display only."""
+  json: bool = False                  # Output as JSON instead of TOML
+  show_path: bool = False             # Show config file paths
+  reveal: bool = False                # Reveal masked secrets
+
+@configclass(cmd="container", help="Generate container setup for an agentic package")
+class ContainerConfig:
+  """Config for yoker container. No base Config needed."""
+  source: str = ""
+  engine: str = "docker"              # docker or podman
+  output_dir: str = "."               # Where to write files
 ```
 
-**`_peel_subcommand`** scans `argv` for the first positional that is in `SUBCOMMANDS` and is not the value of a preceding flag. To keep this robust without re-implementing a parser, the simplest rule is: the first positional argument that is in `SUBCOMMANDS`. This matches user expectation (`yoker run pkgq`) and avoids ambiguity with Clevis flags (which are all `--`-prefixed). The `--with <pkg>` values are already stripped in step 1, so a package named `run` passed via `--with run` won't be misread as a subcommand.
+**Key design decisions:**
 
-**Backward compatibility:** `python -m yoker` (no args) → `subcommand is None` → defaults to `chat`. `python -m yoker --ui-mode batch` → no positional subcommand → defaults to `chat`, `--ui-mode batch` flows to Clevis. This is the exact current behavior.
+1. **`ChatConfig` extends `Config`** — this preserves all existing CLI args (`--backend-ollama-model`, `--ui-mode`, etc.) under the `chat` subcommand. Since `Config` has all fields with defaults, the subclass can be empty. The `@configclass(cmd="chat")` decorator applies `@dataclass` and registers with Clevis.
 
-**Unknown subcommand:** if the first positional is not in `SUBCOMMANDS` and is not a flag, print an error listing valid subcommands and exit non-zero. (Distinguish from "no subcommand" by checking whether any positional was present.)
+2. **`RunConfig` extends `Config`** — `run` needs backend settings, tool configs, etc. (same as chat) plus run-specific fields. The `source` field is a Clevis-generated CLI arg (`--source`). `agent` and `prompt` are NOT Config fields — they come from the manifest. CLI overrides for `--agent` and `--prompt` are handled by a local argparse in the `run` subcommand module (these are not part of the Config tree; they override manifest values).
 
-### 2.3 How `--with` interacts with subcommands
+3. **`InspectConfig`, `InitConfig`, `ContainerConfig` are standalone** — these subcommands don't need the full `Config` tree. They have only their own fields. This means `yoker init`, `yoker inspect`, and `yoker container` bypass config loading entirely — Clevis generates their args from their own minimal config classes.
 
-`--with <pkg>` is a **global** flag: it is stripped in step 1, before subcommand dispatch, and the resulting `plugin_packages` list is passed to every subcommand. This means:
+4. **`ConfigCmdConfig` extends `Config`** — `yoker config` needs to load and display the full config, so it extends `Config` and adds display-specific flags.
+
+**Important: dataclass inheritance constraint.** All fields in `Config` have defaults (either default values or `default_factory`). Python dataclasses require that fields with defaults in the base class are followed by fields with defaults in the subclass. Since all `Config` fields have defaults, the subclasses can add fields with defaults too. This is valid.
+
+### 2.4 Dispatch flow (in `__main__.py`)
+
+```python
+from clevis import get_cmd, get_config
+from clevis import _sub_parsers  # internal, but needed to set required=False
+
+# Register subcommand config classes (importing commands.py triggers @configclass)
+from yoker.cli import commands  # noqa: F401
+
+def main() -> None:
+  # 1. Strip --with <pkg> globally (before Clevis, same as today).
+  plugin_packages, sys.argv = _parse_plugin_args()
+
+  # 2. Set subparsers to not required (for backward compat: no subcommand = chat).
+  #    Clevis sets required=True by default in get_sub_parser().
+  #    We override after registration, before any get_cmd() or get_config() call.
+  for sub_parser in _sub_parsers.values():
+    sub_parser.required = False
+
+  # 3. Detect the subcommand via Clevis.
+  cmd = get_cmd()
+  if cmd is None:
+    cmd = "chat"  # backward compatibility: no subcommand = chat
+
+  # 4. Route to the appropriate subcommand.
+  #    Each config-backed subcommand calls get_config() with its own class.
+  #    Config-free subcommands parse their minimal config and skip base config loading.
+  if cmd == "chat":
+    config = get_yoker_config(cli=True)  # loads ChatConfig via Clevis
+    ...  # run chat
+  elif cmd == "run":
+    run_config = get_config(RunConfig, name="yoker", cli=True, security=...)
+    ...  # run with config
+  elif cmd == "inspect":
+    inspect_config = get_config(InspectConfig, name="yoker", cli=True, security=...)
+    ...  # inspect source (read-only, no base config)
+  elif cmd == "init":
+    init_config = get_config(InitConfig, name="yoker", cli=True, security=...)
+    ...  # init (no base config)
+  # etc.
+```
+
+**Backward compatibility:** `python -m yoker` (no args) → `get_cmd()` returns `None` → defaults to `"chat"` → `get_config(ChatConfig, ...)` → Clevis parses with the chat subparser. Since no `[chat]` section exists in existing `~/.yoker.toml`, root-level TOML is used as-is. All existing CLI args work under `chat`.
+
+**`yoker --backend-ollama-model X` (no subcommand):** This is the tricky case. With Clevis subparsers, `--backend-ollama-model` is a chat-subparser arg, not a top-level arg. Argparse would reject it at the top level. **Solution:** when no subcommand is detected, insert `"chat"` into `sys.argv` before Clevis parses. This is NOT a manual dispatcher — it's a one-line default-subcommand insertion, which is a common pattern for CLIs with a default command:
+
+```python
+# After stripping --with, before get_cmd():
+if not _has_subcommand(sys.argv):
+  sys.argv.insert(1, "chat")
+```
+
+Where `_has_subcommand` checks if any known subcommand name appears as the first positional arg. This preserves `yoker --backend-ollama-model X` → `yoker chat --backend-ollama-model X`.
+
+### 2.5 How `--with` interacts with subcommands
+
+`--with <pkg>` continues to be stripped before Clevis runs (same as the existing `_parse_plugin_args` pattern). Clevis doesn't know about `--with` — it's not a Config field. The stripped `plugin_packages` list is passed to every subcommand.
 
 - `yoker chat --with pkgq` → `chat` receives `plugin_packages=["pkgq"]`
 - `yoker run pkgq --with other` → `run` receives `source="pkgq"`, `plugin_packages=["other"]`
 - `yoker run --with other pkgq` → same as above (order-independent because `--with` is stripped first)
 
-The functional analysis says `--with` "still works across all subcommands." This design satisfies that. Note: for `yoker run <source>`, the `<source>` is *not* the same as `--with <pkg>` — `source` is the agentic package being run (with its extended manifest), while `--with` adds *additional* plugins. The dispatcher must treat `<source>` as a positional belonging to the `run`/`loop`/`container` subcommand, not as a global flag. This is handled by peeling the subcommand *before* parsing the subcommand's own positionals.
+For `yoker run <source>`, the `<source>` is *not* the same as `--with <pkg>` — `source` is the agentic package being run (with its manifest), while `--with` adds *additional* plugins. `source` is a Clevis-generated CLI arg (`--source`) on the `run` subparser, or a positional handled by the `run` subcommand's local argparse.
 
-### 2.4 Shared setup (`cli/shared.py`)
+### 2.6 Subcommand function contract
 
-Extract from the current `main()`:
+Each subcommand module exports a single entry point:
 
-- `load_config(argv) -> Config` — wraps `get_yoker_config(cli=True)`, passing `argv` so Clevis parses only the subcommand's args. (Clevis reads `sys.argv` by default; the dispatcher must either set `sys.argv = subcommand_argv` before calling Clevis, or pass `argv` through if Clevis supports it. Verify Clevis's `get_config` signature; if it only reads `sys.argv`, the dispatcher temporarily replaces `sys.argv` around the Clevis call. This mirrors the existing `_parse_plugin_args` pattern which already mutates `sys.argv`.)
-- `configure_logging(config)` — current logging setup.
-- `maybe_bootstrap(config)` — the pre-flight wizard gate, **chat-only.** `run`/`loop`/`container` skip it (they specify what to run; if no backend is configured they error clearly rather than launching a wizard). `init` has its own flow.
-- `_create_ui(config)` — current UI selection.
+- **Config-backed** (`chat`, `run`, `loop`, `config`): receives the loaded config (which is their specific config class instance, e.g. `RunConfig`). `async def run(config: RunConfig, plugin_packages: list[str]) -> None`.
+- **Config-free** (`init`, `container`, `inspect`): receives their minimal config (e.g. `InspectConfig`). `def run(config: InspectConfig, plugin_packages: list[str]) -> None`.
 
-### 2.5 Subcommand function contract
+Subcommand-specific args that are NOT part of `Config` (like `--agent`, `--prompt` for `run`) are parsed with a small local argparse in the subcommand module. These are not Config fields and don't go through Clevis.
 
-Each subcommand module exports a single entry point with a consistent signature. Two shapes:
+### 2.7 Architectural concerns for 4.1
 
-- **Config-backed** (`chat`, `run`, `loop`, `config`): `async def run(args: list[str], config: Config, plugin_packages: list[str]) -> None` (or `def run(...)` for `config`, which is synchronous).
-- **Config-free** (`init`, `container`): `def run(args: list[str], plugin_packages: list[str]) -> None`.
-
-`args` is the subcommand's remaining `argv` (after subcommand peel and `--with` strip), which the subcommand parses with a small local argparse for its own flags (`--agent`, `--prompt`, `--persist`, `--session-id`, `--no-interactive`, `--path`, `--force`, `--json`, `--engine`, `--output-dir`, `--interval`, `--max-iterations`). These are subcommand-specific and not part of `Config`, so they do not go through Clevis.
-
-### 2.6 Architectural concerns for 4.1
-
-1. **`sys.argv` mutation.** The existing code already mutates `sys.argv` (via `_parse_plugin_args` reassigning the return). The dispatcher must do this carefully and restore `sys.argv` if a subcommand needs to call Clevis (Clevis reads `sys.argv`). The cleanest approach: the dispatcher never calls Clevis itself; `shared.load_config(subcommand_argv)` sets `sys.argv = subcommand_argv` for the duration of the Clevis call. This is the established pattern in the file.
+1. **Clevis internal access.** Setting `sub_parsers.required = False` requires accessing Clevis's internal `_sub_parsers` dict. This is a mild coupling to Clevis internals. Alternative: after the first `get_cmd()` call (which triggers `_ensure_configured`), iterate `_sub_parsers.values()`. If Clevis adds a public API for this in the future, we switch to it. Document this coupling.
 
 2. **`yoker config` naming collision.** The subcommand is `config`, but `yoker.config` is the Python module. Name the subcommand module `cli/config_cmd.py` (as the TODO already specifies) to avoid an import shadow. The subcommand string remains `config` for the user.
 
-3. **Help text.** `yoker --help` should list subcommands. Since Clevis generates the top-level help for `Config` args, the dispatcher should intercept `--help`/`-h` *before* subcommand peel and print a combined help (subcommands + pointer to `yoker chat --help` for Config args). This is a small, self-contained help formatter in the dispatcher. Per-subcommand `--help` is handled by the subcommand's local argparse.
+3. **Dataclass inheritance and `@configclass`.** `@configclass` applies `@dataclass` to the class. When a subclass like `RunConfig(Config)` is decorated with `@configclass(cmd="run")`, Clevis re-applies `@dataclass`. Python dataclass re-decoration on a subclass is safe — it processes the subclass's own fields plus inherited fields. Verify that `Factory.list_fields()` correctly traverses inherited fields (it uses `fields(clz)` which includes inherited fields).
 
-4. **Don't over-abstract.** The dispatcher is ~50 lines. Resist adding a "subcommand registry" abstraction with decorators; a plain dict mapping name → function is enough and easier to read. Six subcommands do not justify a plugin system for the CLI itself.
+4. **Help text.** Clevis generates per-subcommand help via `yoker chat --help`, `yoker run --help`, etc. The top-level `yoker --help` shows the subcommand list (argparse's default behavior with subparsers). This is cleaner than the manual dispatcher's custom help formatter.
+
+5. **`get_yoker_config` adaptation.** The existing `get_yoker_config(cli=True)` calls `get_config(Config, name="yoker", cli=True)`. For subcommands, we need `get_config(ChatConfig, ...)` or `get_config(RunConfig, ...)`. Add a `get_yoker_config_for(cmd: str, cli: bool = True)` helper, or have each subcommand call `get_config()` directly with its config class. The security bypass logic (YOKER_DEV_MODE, PYTEST_CURRENT_TEST) should be factored into a shared helper.
 
 ---
 
-## 3. Recommended Design for 4.5 — Extended Manifest
+## 3. Recommended Design for 4.5 — Manifest as Config-Override Layer
 
-### 3.1 `PluginManifest` dataclass changes
+### 3.1 Owner's vision: generic config overrides
 
-Add two fields, both optional and defaulting to `None` (fully backward compatible — every existing `PluginManifest(...)` call site is unchanged):
+The owner's feedback redefines the manifest from "additive fields on PluginManifest" to a **generic config-override layer**. The key insight: the manifest should work just like CLI args override config values — the manifest can override ANY `Config` field, not just `agent` and `prompt`.
+
+**Layering (precedence low to high):**
+
+1. Dataclass defaults
+2. User-level TOML (`~/.yoker.toml`)
+3. Project-level TOML (`./yoker.toml`)
+4. **Manifest overrides** (`<source>/agent.toml`) — NEW layer
+5. CLI arguments (highest priority)
+
+This means a source's manifest can override the backend model, disable tools, change UI mode, set the agent, define the prompt, and more — all through the same TOML syntax that `~/.yoker.toml` uses. The manifest is not a separate schema; it's another config layer.
+
+### 3.2 File-based manifest: `agent.toml`
+
+The manifest file is named `agent.toml` (not `yoker.toml`) to avoid collision with the project-level configuration file `yoker.toml`. The owner raised this collision concern explicitly: "for the file-based manifest: don't use yoker.toml, that is already used for our project-level configuration."
+
+`agent.toml` lives in the **source root** (the package/folder/zip being run). Its location is naturally separate from the user's `~/.yoker.toml` and the project's `./yoker.toml`:
+
+```
+~/.yoker.toml                  # User config (backend, plugins, etc.)
+./yoker.toml                   # Project config (overrides user)
+./my-agent-package/            # The source being run
+  agent.toml                   # Source manifest (overrides project config when running this source)
+  skills/                      # Skills provided by the source
+  agents/                      # Agent definitions provided by the source
+```
+
+**Format:**
+
+```toml
+# agent.toml — source manifest for a yoker-based agentic package
+
+# Run configuration (source-specific, extracted before config merge)
+[run]
+agent = "researcher"                              # Agent definition name to use
+prompt = "Analyze the codebase and create a PACKAGE.md"  # Initial prompt
+
+# Plugin configuration (source-specific, extracted before config merge)
+[plugin]
+skills_dir = "skills"     # Directory containing skill definition files
+agents_dir = "agents"      # Directory containing agent definition files
+tools_module = "my_plugin.tools"  # Optional: Python module to import tools from
+
+# Config overrides (any Config field can be overridden here)
+# These are merged into the base Config between project TOML and CLI args.
+[backend.ollama]
+model = "llama3.2"         # Use a specific model for this source
+
+[tools.git]
+enabled = false            # Disable git tools for this source
+
+[ui]
+mode = "batch"             # Force batch mode for non-interactive execution
+```
+
+**Parsing rules:**
+- `[run]` is optional. Contains `agent` (str) and `prompt` (str). Both default to `None` if omitted.
+- `[plugin]` is optional. Contains `skills_dir` (str, default "skills"), `agents_dir` (str, default "agents"), `tools_module` (str, optional).
+- All other tables/keys are treated as **config overrides** — they are merged into the base config dict using the same `apply_to_dict` mechanism that Clevis uses for CLI args.
+- If neither `[run]` nor `[plugin]` is present and there are no config overrides, the file is effectively a no-op.
+- Malformed TOML raises a clear `PluginError` with the file path and parse error.
+- If `agent.toml` doesn't exist, the source is treated as a plain plugin (no run configuration — `yoker run` requires at least `prompt` to be set via CLI or manifest).
+
+### 3.3 Config loading with manifest overrides
+
+The config loading path is extended to accept a manifest:
+
+```python
+# src/yoker/config/__init__.py (extended)
+
+def get_yoker_config_with_manifest(
+  manifest_path: Path | None = None,
+  cli: bool = False,
+) -> tuple[Config, RunConfig, PluginManifestConfig]:
+  """Load config with manifest overrides.
+
+  Returns (config, run_config, plugin_manifest_config) where:
+  - config: the full Config with manifest overrides applied
+  - run_config: the [run] section from the manifest (agent, prompt)
+  - plugin_manifest_config: the [plugin] section (skills_dir, agents_dir, tools_module)
+  """
+  # 1. Load base config from TOML (same as Clevis does: ~/.yoker.toml, ./yoker.toml)
+  #    We use Clevis's get_config with cli=False to get the base config dict.
+  # 2. Load manifest TOML (if manifest_path and file exists)
+  # 3. Extract [run] and [plugin] sections from manifest
+  # 4. Remaining manifest keys are config overrides — deep-merge into base config dict
+  # 5. Apply CLI args (if cli=True) on top — Clevis's apply_to_dict
+  # 6. Convert to Config via dacite.from_dict
+```
+
+**Implementation approach:** Since Clevis's `get_config()` doesn't support an extra config layer, we implement the manifest merge in yoker's config module. We use Clevis's internal functions (`_load_toml`, `apply_to_dict`) and `dacite.from_dict` directly. This is a clean separation — we're not modifying Clevis, just adding a layer in yoker's config module that uses Clevis's building blocks.
+
+Alternatively, the manifest overrides can be written to a temporary TOML file and passed as a third Clevis config source. But the direct-merge approach is simpler and avoids temp file management.
+
+### 3.4 Python manifest (`__YOKER_MANIFEST__`)
+
+The Python `__YOKER_MANIFEST__` object in a package's `__init__.py` continues to declare tools, skills, and agents (the existing mechanism). For `yoker run`, the Python manifest's `agent` and `prompt` fields (if set) serve as a fallback when no `agent.toml` exists:
+
+```python
+# In a Python package's __init__.py
+__YOKER_MANIFEST__ = PluginManifest(
+  tools=[...],
+  skills=[...],
+  agents=[...],
+  agent="researcher",     # NEW: optional, fallback for yoker run
+  prompt="Analyze...",    # NEW: optional, fallback for yoker run
+)
+```
+
+**Precedence for `agent`/`prompt`:**
+1. CLI override (`--agent`, `--prompt`) — highest
+2. `agent.toml` `[run]` section — if file manifest exists
+3. Python `__YOKER_MANIFEST__.agent`/`.prompt` — fallback for packages without `agent.toml`
+4. Error if none of the above provide both `agent` and `prompt`
+
+**`PluginManifest` changes:** add `agent` and `prompt` fields (optional, default `None`). These are NOT config overrides — they are convenience fields for Python packages that want to be runnable without a separate `agent.toml`:
 
 ```python
 @dataclass
@@ -190,81 +398,36 @@ class PluginManifest:
   skills_dir: str = "skills"
   agents_dir: str = "agents"
 
-  # New: agentic-executable fields (MBI-004)
-  agent: str | None = None   # Which agent definition name to use for `yoker run`
-  prompt: str | None = None  # Initial prompt injected when running via `yoker run`
+  # New: convenience fields for yoker run (fallback when no agent.toml exists)
+  agent: str | None = None
+  prompt: str | None = None
 ```
 
-**Semantics:**
-- `agent` is a *name* (string), resolved against the union of the plugin's own agent definitions and the built-in agent registry at run time. It is not a path and not an `AgentDefinition` instance — keeping it a name lets the file-based manifest reference it and lets `--agent <name>` override it uniformly.
-- `prompt` is the literal initial user message. No template substitution in MBI-004 (defer to a future MBI; if needed later, document a `[run]` table extension).
-- Both default to `None`. `yoker run` requires both to be set (after CLI overrides) and errors clearly if either is missing.
-
-### 3.2 Carrying the manifest into the run path
-
-`PluginComponents` currently carries `tools`, `skills`, `agents`, `source`. Add the manifest's run fields to a new carrier rather than overloading `PluginComponents`:
+### 3.5 Carrying the manifest into the run path
 
 ```python
 @dataclass
 class ResolvedSource:
   """Result of resolving a `yoker run <source>` argument.
 
-  Carries the loaded plugin components plus the extended manifest's run
-  configuration (agent/prompt) and an optional cleanup hook for temp
-  resources (GitHub clones, zip extractions).
+  Carries the loaded plugin components, the run configuration (agent/prompt),
+  the plugin manifest config (skills_dir, agents_dir, tools_module), and an
+  optional cleanup hook for temp resources.
   """
   components: PluginComponents
-  agent: str | None = None
-  prompt: str | None = None
+  agent: str | None = None          # From agent.toml [run] or Python manifest
+  prompt: str | None = None         # From agent.toml [run] or Python manifest
+  skills_dir: str = "skills"        # From agent.toml [plugin]
+  agents_dir: str = "agents"        # From agent.toml [plugin]
+  tools_module: str | None = None   # From agent.toml [plugin]
   cleanup: Callable[[], None] | None = None
 ```
 
-**Why a new dataclass and not extending `PluginComponents`:** `PluginComponents` is consumed by `ToolRegistry.register_plugin_tools`, `SkillRegistry.register_plugin_skills`, `AgentRegistry.register_plugin_agents` — all of which should not need to know about `agent`/`prompt`/`cleanup`. Keeping the run-config fields in `ResolvedSource` preserves the single-responsibility boundary: `PluginComponents` is registry food; `ResolvedSource` is run-command food.
+**Why a new dataclass and not extending `PluginComponents`:** `PluginComponents` is consumed by `ToolRegistry.register_plugin_tools`, `SkillRegistry.register_plugin_skills`, `AgentRegistry.register_plugin_agents` — all of which should not need to know about run-config or cleanup. Keeping the run fields in `ResolvedSource` preserves the single-responsibility boundary.
 
-### 3.3 File-based manifest (`yoker.toml`)
+### 3.6 Loader integration
 
-Introduce `src/yoker/plugins/file_manifest.py` with `load_file_manifest(path: Path) -> PluginManifest | None`.
-
-**Format** — a `yoker.toml` at the source root with two optional tables:
-
-```toml
-# yoker.toml — file-based yoker manifest for a folder/zip source
-
-[run]
-agent = "researcher"                              # Agent definition name to use
-prompt = "Analyze the codebase and create a PACKAGE.md"  # Initial prompt
-
-[plugin]
-skills_dir = "skills"     # Directory containing skill definition files
-agents_dir = "agents"      # Directory containing agent definition files
-tools_module = "my_plugin.tools"  # Optional: Python module to import tools from
-```
-
-**Parsing rules:**
-- `[run]` is optional. If present, `agent` and `prompt` are strings; both default to `None` if omitted.
-- `[plugin]` is optional. `skills_dir`/`agents_dir` default to `"skills"`/`"agents"` (matching `PluginManifest` defaults). `tools_module` is optional.
-- If neither table is present, the file is effectively a no-op manifest (returns a `PluginManifest()` with all defaults) — but `load_file_manifest` should return `None` when the file doesn't exist, so the caller can distinguish "no manifest" from "empty manifest."
-- Malformed TOML raises a clear `PluginError` (reuse the existing exception) with the file path and parse error.
-
-**Why a `PluginManifest` return type (not a separate dataclass):** the file manifest deserializes into the *same shape* as the Python manifest. This means the run path has one type to consume (`PluginManifest` / `ResolvedSource`), regardless of whether the source was a Python package or a folder. The only difference is that a file-based manifest cannot inline tool callables (tools are Python functions); it declares `tools_module` instead, which the loader imports.
-
-### 3.4 Precedence and merging
-
-The functional analysis says: "Python manifest takes precedence for tools/skills/agents; file manifest can supplement with agent/prompt." This is the right call. Concretely, when a source provides *both* a `__YOKER_MANIFEST__` and a `yoker.toml` (rare, but possible for a Python package that also ships a file manifest):
-
-| Field | Source of truth |
-|-------|-----------------|
-| `tools` | Python `__YOKER_MANIFEST__` (file manifest's `tools_module` is ignored if Python manifest exists) |
-| `skills` | Python manifest (file manifest's `skills_dir` ignored if Python manifest exists) |
-| `agents` | Python manifest (file manifest's `agents_dir` ignored) |
-| `agent` | File manifest `[run].agent` wins; Python manifest's `agent` field is a fallback. Rationale: the file manifest is the "run configuration" surface; the Python manifest is the "component declaration" surface. |
-| `prompt` | File manifest `[run].prompt` wins; Python manifest's `prompt` is a fallback. |
-
-**Simpler rule for the common case:** if the source is a pure folder/zip (no Python package), only the file manifest applies — no merge needed. If the source is a Python package, the Python manifest is the primary; the file manifest's `[run]` section (if present) overrides `agent`/`prompt` only. Document this as: "the file manifest's `[run]` section is the authoritative run configuration; the Python manifest's `agent`/`prompt` fields are a convenience for packages that want to be runnable without a separate `yoker.toml`."
-
-### 3.5 Loader integration
-
-The current `load_plugin(package_name)` is hardwired to `importlib.import_module`. Generalize it with a `Source` abstraction rather than threading folder/zip special cases through:
+The current `load_plugin(package_name)` is hardwired to `importlib.import_module`. Generalize it with a `Source` abstraction:
 
 ```python
 # src/yoker/plugins/loader.py (extended)
@@ -275,34 +438,38 @@ class Source:
   kind: Literal["package", "folder"]
   package: str | None = None       # for kind="package"
   path: Path | None = None         # for kind="folder"
-  file_manifest: PluginManifest | None = None  # from yoker.toml, for kind="folder"
+  # File manifest data (from agent.toml, for kind="folder")
+  skills_dir: str = "skills"
+  agents_dir: str = "agents"
+  tools_module: str | None = None
 
 def load_plugin_from_source(source: Source) -> PluginComponents:
   if source.kind == "package":
     return load_plugin(source.package)  # existing path
   # folder path: load skills/agents from source.path / skills_dir / agents_dir,
-  # import tools from source.file_manifest.tools_module if set,
+  # import tools from source.tools_module if set,
   # return PluginComponents with source=<str(source.path)>
 ```
 
-`resolve_source(source_arg: str) -> ResolvedSource` (task 4.6) builds a `Source`, calls `load_plugin_from_source`, then reads `agent`/`prompt` from the file manifest (folder) or the Python manifest (package) and constructs a `ResolvedSource`.
+`resolve_source(source_arg: str) -> ResolvedSource` (task 4.6) builds a `Source`, calls `load_plugin_from_source`, reads `agent`/`prompt` from the file manifest or Python manifest, and constructs a `ResolvedSource`.
 
-**Why generalize rather than special-case:** the existing `load_plugin` has well-tested skill/agent loading via `find_package_subdirectory`. A folder source needs the *same* loading logic but from a filesystem path instead of a package resource. Factor the shared loading into a helper that accepts either a package name or a `Path`, and have both `load_plugin` and the folder path call it. This avoids duplicating skill/agent loading code and keeps the trust gate (`check_plugin_allowed`) applied uniformly.
+### 3.7 Backward compatibility
 
-### 3.6 Backward compatibility
-
-- Existing `PluginManifest(...)` call sites (notably `src/yoker/builtin/__init__.py`) are unchanged — the new fields default to `None`.
+- Existing `PluginManifest(...)` call sites (notably `src/yoker/builtin/__init__.py`) are unchanged — the new `agent`/`prompt` fields default to `None`.
 - Existing `load_plugin("yoker")` / `load_plugin("pkgq")` paths are unchanged — they still return `PluginComponents` without `agent`/`prompt`. The run fields are accessed only by `yoker run` via `ResolvedSource`, not by the chat/registry paths.
 - `load_plugins(config, extra_plugins)` (the generator consumed by registries) is unchanged. `ResolvedSource` is a *run-command* construct; the chat path never sees it.
+- Existing `~/.yoker.toml` and `./yoker.toml` files are unchanged — the manifest is an additional layer that only applies when running a source.
 - No existing tests should break from the dataclass change (additive fields with defaults).
 
-### 3.7 Architectural concerns for 4.5
+### 3.8 Architectural concerns for 4.5
 
-1. **`tools_module` imports arbitrary Python code.** The file manifest's `tools_module` field triggers `importlib.import_module` on a module inside the source. This is the same trust model as `--with <package>` (the user explicitly chose to run the source), but it should be documented as such. The trust gate (`check_plugin_allowed`) should apply to file-manifest-sourced plugins too — the `source` identifier for a folder source should be the folder path (or a stable name) so it can be allow-listed. Decide and document whether folder sources require `[plugins] enabled = true` + trust, or whether `yoker run <source>` is an explicit opt-in that bypasses the global plugin gate (recommended: `yoker run` is explicit, so it bypasses `plugins.enabled` but still logs a warning for untrusted sources). **This needs an explicit decision from the user** — see open question below.
+1. **`tools_module` imports arbitrary Python code.** The manifest's `tools_module` field triggers `importlib.import_module` on a module within the source. This is the same trust model as `--with <package>`. The trust gate (`check_plugin_allowed`) MUST apply — the source must pass the trust check before `tools_module` is imported. The `source` identifier for a folder source is the folder path (or a stable hash) so it can be allow-listed. Per the owner's feedback, `yoker run <source>` goes through the same trust gate as `--with <source>` — no bypass, no parallel tracks.
 
-2. **`agent` name resolution scope.** `agent = "researcher"` in a manifest — resolved against which registry? Recommendation: resolve against the union of (a) the source's own loaded agent definitions and (b) the built-in agent registry loaded via `config.agents.directories`. If the name is ambiguous (same name in source and built-in), source wins (the source is the agentic package being run). Document this.
+2. **`agent` name resolution scope.** `agent = "researcher"` in a manifest — resolved against the union of (a) the source's own loaded agent definitions and (b) the built-in agent registry loaded via `config.agents.directories`. If the name is ambiguous (same name in source and built-in), **source wins** (the source is the agentic package being run). The owner confirmed: "source-based named items 'override' existing ones (although given namespacing, I don't expect that to happen quickly)."
 
 3. **No `config_class` for file manifests.** The existing `config_class` field on `PluginManifest` lets a plugin declare a config section that Clevis wires into `Config`. File manifests cannot declare a `config_class` (they can't reference a Python type by name safely). This is an acceptable limitation for MBI-004; document that `config_class` is Python-manifest-only.
+
+4. **Manifest config overrides vs. plugin config_class.** If a Python plugin has a `config_class` (wired into Config via Clevis), and the source's `agent.toml` also overrides that same config section, the manifest override takes precedence (it's a higher layer). This is consistent with the layering rules.
 
 ---
 
@@ -328,11 +495,23 @@ def detect_kind(source: str) -> Literal["url", "zip", "folder", "module"]:
 ### 4.2 Resolution per kind
 
 - **module**: `Source(kind="package", package=source)` → `load_plugin_from_source` → read `agent`/`prompt` from the Python manifest. Cleanup: `None`.
-- **folder**: `Source(kind="folder", path=Path(source))` → load `yoker.toml` via `load_file_manifest` → `load_plugin_from_source`. Cleanup: `None`.
+- **folder**: `Source(kind="folder", path=Path(source))` → load `agent.toml` via `load_file_manifest` → `load_plugin_from_source`. Cleanup: `None`.
 - **url**: `git clone --depth 1 <url>` into `tempfile.TemporaryDirectory()` → resolve as folder. Cleanup: `tmpdir.cleanup()`.
 - **zip**: validate `zipfile.is_zipfile()`, extract with safe extraction (reject `..` and absolute paths) into a `tempfile.TemporaryDirectory()` → resolve as folder. Cleanup: `tmpdir.cleanup()`.
 
-### 4.3 `ResolvedSource` cleanup contract
+### 4.3 Two-phase resolve/load (trust gate)
+
+Per the owner's feedback, `yoker run <source>` goes through the **same trust gate** as `--with <source>`. No bypass, no parallel tracks. The existing `check_plugin_allowed()` is reused.
+
+`resolve_source()` is split into two phases:
+
+1. **`resolve_source(source: str) -> ResolvedSourceMetadata`** — resolves the source type, reads the manifest (agent.toml or `__YOKER_MANIFEST__`), returns metadata only. NO imports, NO `tools_module` execution, NO `pip install`. This is safe to call without trust.
+
+2. **`load_source(metadata: ResolvedSourceMetadata, config: Config) -> ResolvedSource`** — performs the actual imports (`importlib.import_module` for packages, `tools_module` import for folders), loads skills/agents, and returns the full `ResolvedSource`. This is called ONLY after `check_plugin_allowed()` returns True.
+
+For `yoker inspect <source>`, only phase 1 is needed — it reads the manifest and displays a report without executing any code. No trust gate needed for inspect (read-only, no code execution). `tools_module` is listed but NOT imported.
+
+### 4.4 `ResolvedSource` cleanup contract
 
 `ResolvedSource.cleanup` is an optional callable. The `run` subcommand calls it in a `finally` block:
 
@@ -347,12 +526,17 @@ finally:
 
 For `loop`, cleanup runs *between* iterations only if the source is re-resolved each iteration. Recommendation: re-resolve each iteration (GitHub sources may update between runs; a fresh clone is the correct semantics for a loop). Cleanup runs at the end of each iteration.
 
-### 4.4 Security considerations
+### 4.5 Security considerations
 
 1. **Zip path traversal.** Use a safe extraction helper that rejects any entry whose resolved path escapes the extraction root. Reject absolute paths and `..` components. There is prior art in Python's stdlib docs (`zipfile` extraction examples) — implement the documented safe pattern.
-2. **GitHub clone.** Use `git clone --depth 1` (shallow). Do not pass credentials through yoker; rely on git's native credential helpers / SSH keys. Clone into a temp dir with a predictable prefix (`yoker-source-*`) for debuggability. Do not execute any code from the repo during clone (code execution happens only when `tools_module` is imported, which is an explicit manifest opt-in).
-3. **No auto-install of `pyproject.toml`.** The functional analysis mentions optionally installing a folder's `pyproject.toml` as a package. Recommendation: **defer this.** For MBI-004, folder/zip sources load via the file manifest + `tools_module` import; full package installation is a larger surface (needs a venv, pip/uv invocation, security review). Document the deferral.
-4. **Trust gate.** As noted in 3.7, decide whether `yoker run <source>` bypasses `config.plugins.enabled`. Recommendation: `yoker run` is an explicit user action naming the source, so it should bypass the global `plugins.enabled` gate (the user opted in by typing the source), but it should still respect the per-plugin trust table for *additional* `--with` plugins. Log a warning for the run-source if it's not in the trust table.
+
+2. **GitHub clone.** Use `git clone --depth 1` (shallow). Do not pass credentials through yoker; rely on git's native credential helpers / SSH keys. Clone into a temp dir with a predictable prefix (`yoker-source-*`) for debuggability. Do not execute any code from the repo during clone (code execution happens only when `tools_module` is imported, which is gated by trust).
+
+3. **No auto-install of `pyproject.toml` — clarified.** When loading a folder source that contains a `pyproject.toml`, the question is whether to automatically `pip install` it. Auto-installing runs build hooks (setup.py, PEP 517 build backend) — this is **arbitrary code execution** (CWE-494). The recommendation is to **NOT auto-install by default**. For MBI-004, folder/zip sources load via the file manifest + `tools_module` import; full package installation requires an explicit `--install` flag (deferred to a future MBI). If a folder has a `pyproject.toml` but no `agent.toml`, yoker does not install it — it either loads from the folder structure directly or errors with a message explaining that `--install` is needed (future MBI).
+
+4. **Trust gate — reuses existing guardrails.** Per the owner's feedback: "Currently when issuing `--with <pkg>` we don't consider this an explicit opt-in. So, I wouldn't change that behaviour. Let's keep these guardrails in place and reuse them, not creating parallel tracks." `yoker run <source>` goes through `check_plugin_allowed()` — the same gate as `--with`. The source must be either in `[plugins.trusted]`, confirmed interactively, or rejected in non-interactive mode. No bypass for named sources.
+
+5. **`yoker inspect <source>` — no trust gate needed.** Inspect is read-only: it resolves the source, reads the manifest, and displays a report. It does NOT import `tools_module`, does NOT execute any code, and does NOT call `load_source()`. Only `resolve_source()` (phase 1, metadata only) is called. The `tools_module` field is listed in the report but NOT imported. This makes inspect safe without a trust gate.
 
 ---
 
@@ -360,34 +544,52 @@ For `loop`, cleanup runs *between* iterations only if the source is re-resolved 
 
 1. **Reuse the Python API in `run`.** The `run` subcommand should delegate to the same config/agent construction path as `yoker.api.process` / `yoker.api.session` rather than reimplementing Session+Agent wiring. Specifically, `yoker run <source>` is close to `yoker.process(prompt, plugins=(source,))` with the agent resolved from the manifest. Factor a shared helper (or call `yoker.api` internals) so the CLI and the Python API don't diverge.
 
-2. **Keep the dispatcher dumb.** The dispatcher's only job is: peel subcommand, strip `--with`, route. It should not know about `Config` fields, manifest fields, or source types. Each subcommand owns its own argument parsing (local argparse for subcommand-specific flags) and its own Clevis invocation (via `shared.load_config`).
+2. **Let Clevis handle command dispatch.** The `__main__.py` entry point strips `--with`, defaults the subcommand to `chat` when none is given, then calls `get_cmd()` and routes. Each subcommand owns its config class and calls `get_config()` with it. No manual dispatcher, no parallel routing — Clevis's `@configclass(cmd=...)` handles subparser creation and arg generation.
 
-3. **One async entry point per config-backed subcommand.** `chat`, `run`, `loop` are async; `init`, `config`, `container` are sync. The dispatcher calls `asyncio.run(...)` for the async ones. Don't make all subcommands async — `init` and `container` have no async work and shouldn't pay the event-loop overhead.
+3. **One async entry point per config-backed subcommand.** `chat`, `run`, `loop` are async; `init`, `config`, `container`, `inspect` are sync. `__main__.py` calls `asyncio.run(...)` for the async ones. Don't make all subcommands async — `init` and `container` have no async work and shouldn't pay the event-loop overhead.
 
-4. **Test the dispatcher with table-driven tests.** The dispatcher is pure argv routing; test it with a matrix of `(argv, expected_subcommand, expected_plugin_packages, expected_subcommand_argv)`. This is the highest-ROI test in MBI-004 and should land in 4.10.1.
+4. **Test Clevis command dispatch with table-driven tests.** Test that `get_cmd()` correctly detects each subcommand, that the default-to-chat logic works, and that `--with` is stripped before Clevis runs. Test that each subcommand's CLI args are generated correctly.
 
-5. **Document the manifest as a contract.** The extended `PluginManifest` (`agent`/`prompt`) is effectively the interface between an agentic package author and yoker. Document it as a versioned contract: fields, types, precedence, and what happens when fields are missing. This is the surface third-party package authors will rely on, and it deserves the same care as the Python API.
+5. **Document the manifest as a contract.** The `agent.toml` format is the interface between an agentic package author and yoker. Document it as a versioned contract: `[run]` and `[plugin]` sections, config override syntax, precedence rules, and what happens when fields are missing. This is the surface third-party package authors will rely on, and it deserves the same care as the Python API.
+
+6. **`yoker inspect` as a dry-run companion.** Inspect is essentially a safe, read-only `--dry-run` that shows the source's contents without executing anything. It's useful for understanding what a source contains before running it, and for debugging manifest issues. No trust gate needed because no code is executed.
 
 ---
 
-## 6. Open Questions for the User
+## 6. Resolved Questions (Owner Feedback on PR #46)
 
-1. **Trust gate for `yoker run <source>`:** should naming a source on the command line bypass `config.plugins.enabled` (recommended — explicit opt-in), or should the user also have to set `plugins.enabled = true`? This affects whether `yoker run pkgq` works out of the box on a fresh config.
+All three open questions from the original review have been resolved by the owner:
 
-2. **`agent` name resolution scope:** confirm that the manifest's `agent` name resolves against the source's own agent definitions first, then the built-in registry, with source winning on conflict (recommended).
+1. **Trust gate for `yoker run <source>`** — RESOLVED. The owner said: "Currently when issuing `--with <pkg>` we don't consider this an explicit opt-in. So, I wouldn't change that behaviour. Let's keep these guardrails in place and reuse them, not creating parallel tracks." `yoker run <source>` goes through `check_plugin_allowed()` — same gate as `--with`. No bypass.
 
-3. **File-manifest filename:** `yoker.toml` collides with the user/project config filename (`./yoker.toml` is currently the project config). For a folder source, `yoker run ./my-folder` would look for `./my-folder/yoker.toml` — no collision because it's inside the source folder. But for a GitHub clone landing in the current directory's `yoker.toml` location, there's potential confusion. Confirm `yoker.toml` is acceptable, or prefer `yoker-manifest.toml` to disambiguate. Recommendation: `yoker.toml` inside the source root is fine (the path scoping removes ambiguity), but document it clearly.
+2. **`agent` name resolution scope** — RESOLVED. The owner confirmed: "source-based named items 'override' existing ones (although given namespacing, I don't expect that to happen quickly)." Source agent definitions override built-in ones.
+
+3. **File-manifest filename** — RESOLVED. The owner said: "don't use yoker.toml, that is already used for our project-level configuration." We use `agent.toml` as the filename, which avoids the collision entirely.
+
+**New requirements from owner feedback:**
+
+4. **Clevis commands** — The owner pushed back on the manual dispatcher: "Clevis has support for commands." The design now uses `@configclass(cmd=...)` and `get_cmd()`.
+
+5. **Manifest as config-override layer** — The owner said: "Can't we create a generic way to override the existing configuration? Just like the CLI arguments can override. We would have: 2 levels of TOML config → Manifest overrides → CLI overrides." The manifest is now a generic config-override layer, not additive fields.
+
+6. **`yoker inspect <source>`** — New subcommand added by the owner: "add an additional subcommand: `yoker inspect <source>` that dumps a report about the source, explaining what it contains, what it uses, what it does."
+
+7. **"Defer auto-installing pyproject.toml"** — The owner asked for clarification. This means: when loading a folder source containing `pyproject.toml`, do NOT automatically `pip install` it (build hooks = arbitrary code execution). Require an explicit `--install` flag (deferred to a future MBI).
 
 ---
 
 ## 7. Action Items
 
-- [ ] Confirm the three open questions in section 6 with the user before implementing 4.5/4.6.
-- [ ] 4.1: implement the manual dispatcher + `cli/` package per section 2.2.
-- [ ] 4.1: verify Clevis's `get_config` argv-handling (does it accept an `argv` param, or only read `sys.argv`?) — this determines whether the dispatcher mutates `sys.argv` or passes `argv` through.
+- [x] Confirm the three open questions in section 6 with the user — all resolved via PR #46 feedback.
+- [ ] 4.1: implement Clevis subcommand config classes (`@configclass(cmd=...)`) per section 2.3.
+- [ ] 4.1: implement default-to-chat logic (insert "chat" when no subcommand detected) per section 2.4.
+- [ ] 4.1: set `_sub_parsers.required = False` for backward compatibility.
 - [ ] 4.5.1: add `agent`/`prompt` fields to `PluginManifest` (additive, default `None`).
-- [ ] 4.5.2: implement `load_file_manifest` returning `PluginManifest | None`.
-- [ ] 4.5.3: introduce `ResolvedSource` + `Source` abstraction; generalize `load_plugin` into `load_plugin_from_source`.
+- [ ] 4.5.2: implement `load_file_manifest` for `agent.toml` (parse, extract `[run]`/`[plugin]`, return config overrides + run config + plugin config).
+- [ ] 4.5.3: implement `get_yoker_config_with_manifest()` — config loading with manifest as override layer.
+- [ ] 4.5.4: introduce `ResolvedSource` + `Source` abstraction; generalize `load_plugin` into `load_plugin_from_source`.
+- [ ] 4.6: implement two-phase `resolve_source()` (metadata only) + `load_source()` (imports, gated by trust).
 - [ ] 4.6: implement `resolve_source` with the detection order in section 4.1 and safe zip/url handling.
-- [ ] 4.10: dispatcher tests (table-driven) + extended manifest tests + source resolution tests.
-- [ ] 4.11: document the extended manifest as a versioned contract for package authors.
+- [ ] 4.12: implement `yoker inspect <source>` — read-only report, no trust gate, no code execution.
+- [ ] 4.10: Clevis command dispatch tests + manifest tests + source resolution tests + inspect tests.
+- [ ] 4.11: document `agent.toml` as a versioned contract for package authors.
