@@ -1,30 +1,42 @@
 """Entry point for running Yoker as a module.
 
-Usage: python -m yoker [OPTIONS]
+Usage: python -m yoker [SUBCOMMAND] [OPTIONS]
+
+Subcommands (registered via Clevis ``@configclass(cmd=...)`` in
+:mod:`yoker.cli.commands`):
+
+  chat       Start the interactive REPL (default when no subcommand is given)
+  run        Run an agentic package non-interactively
+  loop       Run an agentic package at intervals
+  inspect    Dump a report about a source without executing it
+  init       Generate a default configuration file
+  config     Display the effective configuration
+  container  Generate container setup for an agentic package
 
 Configuration is loaded from TOML config files (~/.yoker.toml and ./yoker.toml).
-CLI arguments are automatically generated from the Config data classes.
-Examples:
-  --backend-ollama-model MODEL         Model to use when using Ollama as a backend
-  --context-session-id SESSION_ID      Session ID for context persistence
-  --tools-read-enabled BOOL            Enable/disable read tool
-  --ui-mode MODE                       UI mode (interactive or batch)
-  --ui-show-thinking BOOL              Show thinking output
-  --ui-show-tool-calls BOOL            Show tool call information
-  --ui-show-stats BOOL                 Show turn statistics
+CLI arguments are automatically generated from the Config data classes by Clevis.
+When no subcommand is given, ``chat`` is inserted as the default (backward
+compatibility). Examples:
+
+  python -m yoker                              # -> yoker chat
+  python -m yoker chat --ui-mode batch          # explicit chat subcommand
+  python -m yoker --backend-ollama-model MODEL  # -> yoker chat --backend-ollama-model MODEL
 """
 
 import asyncio
 import os
 import sys
 
-from clevis import SecurityError
+from clevis import SecurityError, get_cmd
 from ollama import ResponseError
 from structlog import get_logger
 
 from yoker.bootstrap import BootstrapResult, BootstrapWizard, config_provided
 from yoker.bootstrap.steps import DOCS_HOME_URL
-from yoker.config import Config, get_yoker_config
+from yoker.cli import commands as cli_commands  # noqa: F401 — registers @configclass(cmd=...)
+from yoker.cli.commands import ChatConfig
+from yoker.cli.shared import load_subcommand_config
+from yoker.config import Config
 from yoker.core import Agent
 from yoker.exceptions import NetworkError, YokerError
 from yoker.logging import configure_logging
@@ -34,22 +46,66 @@ from yoker.ui.commands import CommandRegistry, create_default_registry
 
 logger = get_logger(__name__)
 
+# Subcommand names registered with Clevis. Used to detect whether the first
+# positional argument is a known subcommand (don't insert the default) or an
+# unknown one (let argparse error with the valid-choice list).
+KNOWN_COMMANDS = frozenset(
+  {
+    "chat",
+    "run",
+    "loop",
+    "inspect",
+    "init",
+    "config",
+    "container",
+  }
+)
+
+# Subcommands that are stubbed out (not yet implemented). chat is the only
+# working end-to-end subcommand in this task; the rest print a notice and exit.
+STUB_COMMANDS = frozenset({"run", "loop", "inspect", "init", "config", "container"})
+
 
 def main() -> None:
   """Run Yoker.
 
-  Creates the Agent (which loads its own config and env files), wires the
-  UI handler to it via the event bridge, and starts the session loop.
-
-  Before constructing the Agent, a pre-flight check runs: when no user
-  configuration is provided, the interactive bootstrap wizard is invoked
-  (interactive mode only). In non-interactive mode a warning is printed to
-  stderr and the process exits non-zero. After the wizard writes
-  ``~/.yoker.toml`` it returns, and the normal Agent startup proceeds using
-  the freshly-written config (the wizard does not exit the process).
+  Strips ``--with`` plugin args, defaults to the ``chat`` subcommand when none
+  is given (backward compatibility), then dispatches to the subcommand handler
+  via Clevis's ``get_cmd()``. The ``chat`` handler runs the interactive REPL;
+  all other subcommands are stubs until their dedicated tasks land.
   """
   plugin_packages, sys.argv = _parse_plugin_args()
 
+  # Default to chat when no subcommand is given. We patch sys.argv to insert
+  # "chat" as the first positional so existing `yoker --backend-ollama-model X`
+  # invocations route to `yoker chat --backend-ollama-model X`.
+  #
+  # TODO: submit a feature request to Clevis for configurable subcommand
+  # defaults (e.g. a `default_cmd` on the subparser manager) so we can stop
+  # patching sys.argv manually.
+  if _needs_default_chat(sys.argv):
+    sys.argv.insert(1, "chat")
+
+  cmd = get_cmd()
+
+  if cmd == "chat":
+    _run_chat(plugin_packages)
+  elif cmd in STUB_COMMANDS:
+    sys.stdout.write(f"yoker {cmd}: not yet implemented\n")
+    sys.exit(0)
+  else:
+    # Should not happen: argparse rejects unknown subcommands with a
+    # valid-choice list before get_cmd() returns. Guard anyway.
+    _abort(f"Error: unknown subcommand: {cmd}\n", 1)
+
+
+def _run_chat(plugin_packages: list[str]) -> None:
+  """Run the chat subcommand (the current default REPL behavior).
+
+  Runs the pre-flight bootstrap check when no config is provided, loads the
+  ChatConfig via Clevis, wires the UI handler to the Session via the event
+  bridge, and starts the REPL loop.
+  """
   # Pre-flight: detect missing configuration and bootstrap when needed.
   # When config_provided() is False there are no yoker CLI overrides (any
   # --ui-mode batch flag would have made it True), so the UI mode is the
@@ -84,15 +140,13 @@ def main() -> None:
     # load the freshly-written ~/.yoker.toml.
 
   try:
-    # Load config via Clevis (TOML + env + CLI args), then construct the
-    # Session and primary Agent within it. The Session owns the AgentRegistry
-    # and backend factory; the Agent resolves its definition via
-    # session.agents and shares the session's backend.
-    config = get_yoker_config(cli=True)
+    # Load ChatConfig via Clevis (TOML + env + CLI args), then construct the
+    # Session and primary Agent within it. ChatConfig extends Config, so all
+    # existing CLI flags work under `yoker chat`.
+    config = load_subcommand_config(ChatConfig)
   except (ValueError, SecurityError) as e:
     _abort(f"Error: {e}\n", 1)
 
-  # we now have a config
   CONSOLE_LOGGING = os.environ.get("YOKER_CONSOLE_LOGGING", "NO") != "NO"
   configure_logging(config.logging, console=CONSOLE_LOGGING)
 
@@ -111,6 +165,34 @@ def main() -> None:
     _abort(f"Error: {e}\n", 1)
 
 
+def _needs_default_chat(argv: list[str]) -> bool:
+  """Return True if we should insert "chat" as the default subcommand.
+
+  We insert "chat" when:
+  - No args follow the program name (bare ``yoker``), or
+  - The first arg is a flag (e.g. ``yoker --backend-ollama-model X``), meaning
+    the user expects the default command with config overrides.
+
+  We leave argv untouched when:
+  - The first arg is ``--help`` / ``-h`` (let the top-level parser show the
+    subcommand list), or
+  - The first arg is a known subcommand (let it route), or
+  - The first arg is an unknown positional (let argparse reject it with the
+    valid-choice list — this is how ``yoker <unknown>`` reports valid
+    subcommands).
+  """
+  if len(argv) <= 1:
+    return True
+  first = argv[1]
+  if first in ("--help", "-h"):
+    return False
+  if first.startswith("-"):
+    return True
+  # First positional: only default when it is not a known subcommand name.
+  # For unknown positionals, let argparse error with the choice list.
+  return False
+
+
 async def _run_with_session(
   config: Config,
   plugin_packages: list[str],
@@ -127,7 +209,7 @@ async def _run_repl(agent: Agent, ui: UIHandler, commands: CommandRegistry) -> N
   """Run the interactive or batch REPL loop.
 
   Handles user input, command dispatch, agent processing, and errors. All
-  output is produced through the UI handler. The UI is always shut down
+  output is produced through the UI handler. The UI is always shut down.
   """
   await ui.start(agent)
 
