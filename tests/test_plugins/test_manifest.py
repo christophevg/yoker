@@ -73,3 +73,25 @@ class TestPluginManifest:
     manifest.tools.append(read)
 
     assert len(manifest.tools) == 1
+
+  def test_manifest_agent_prompt_default_none(self):
+    """The new agent/prompt fields default to None (backward compatible)."""
+    manifest = PluginManifest()
+
+    assert manifest.agent is None
+    assert manifest.prompt is None
+
+  def test_manifest_with_agent_prompt(self):
+    """Setting agent/prompt convenience fields works."""
+    manifest = PluginManifest(agent="researcher", prompt="Analyze the codebase")
+
+    assert manifest.agent == "researcher"
+    assert manifest.prompt == "Analyze the codebase"
+
+  def test_manifest_existing_call_sites_unaffected(self):
+    """Existing manifests (no agent/prompt) keep working — no breaking change."""
+    manifest = PluginManifest(tools=[read], skills_dir="skills", agents_dir="agents")
+
+    assert manifest.tools == [read]
+    assert manifest.agent is None
+    assert manifest.prompt is None

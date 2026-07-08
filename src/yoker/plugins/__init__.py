@@ -17,6 +17,12 @@ Registries own registration:
   - AgentRegistry.register_plugin_agents(config, extra_plugins)
 """
 
+from yoker.plugins.file_manifest import (
+  FileManifestResult,
+  PluginConfig,
+  RunConfig,
+  load_file_manifest,
+)
 from yoker.plugins.loader import (
   PluginComponents,
   load_agents_from_package,
@@ -36,6 +42,11 @@ from yoker.plugins.security import (
 __all__ = [
   # Manifest
   "PluginManifest",
+  # File-based manifest (agent.toml)
+  "FileManifestResult",
+  "PluginConfig",
+  "RunConfig",
+  "load_file_manifest",
   # Loader
   "PluginComponents",
   "load_plugin",
