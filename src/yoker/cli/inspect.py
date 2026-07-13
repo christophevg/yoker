@@ -16,12 +16,12 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Any
+from typing import TextIO
 
 from structlog import get_logger
 
 from yoker.cli.commands import InspectConfig
-from yoker.cli.shared import abort, load_subcommand_config
+from yoker.cli.shared import abort, load_subcommand_config, safe_cleanup
 from yoker.cli.sources import ResolvedSource, resolve_source
 from yoker.exceptions import YokerError
 
@@ -51,12 +51,12 @@ def run_inspect() -> None:
   try:
     _print_report(resolved)
   finally:
-    _safe_cleanup(resolved)
+    safe_cleanup(resolved)
 
 
 def _print_report(resolved: ResolvedSource) -> None:
   """Print the human-readable source report to stdout."""
-  out = sys.stdout
+  out: TextIO = sys.stdout
   out.write("Source Report\n")
   out.write("=============\n\n")
   out.write(f"Source:      {resolved.source_string}\n")
@@ -72,7 +72,7 @@ def _print_report(resolved: ResolvedSource) -> None:
   out.write("\n(inspect — read-only, no code executed)\n")
 
 
-def _print_contains(resolved: ResolvedSource, out: Any) -> None:
+def _print_contains(resolved: ResolvedSource, out: TextIO) -> None:
   """Print 'What it contains': skills, agents, tools (names only)."""
   out.write("What it contains\n")
   out.write("----------------\n")
@@ -103,7 +103,7 @@ def _print_contains(resolved: ResolvedSource, out: Any) -> None:
   out.write("\n")
 
 
-def _print_uses(resolved: ResolvedSource, out: Any) -> None:
+def _print_uses(resolved: ResolvedSource, out: TextIO) -> None:
   """Print 'What it uses': dependencies, tools_module declaration."""
   out.write("What it uses\n")
   out.write("------------\n")
@@ -118,7 +118,7 @@ def _print_uses(resolved: ResolvedSource, out: Any) -> None:
   out.write(f"Dependencies: {deps}\n\n")
 
 
-def _print_does(resolved: ResolvedSource, out: Any) -> None:
+def _print_does(resolved: ResolvedSource, out: TextIO) -> None:
   """Print 'What it does': agent and prompt from the manifest."""
   out.write("What it does\n")
   out.write("------------\n")
@@ -133,7 +133,7 @@ def _print_does(resolved: ResolvedSource, out: Any) -> None:
   out.write(f"Prompt: {prompt if prompt else '(not set)'}\n\n")
 
 
-def _print_overrides(resolved: ResolvedSource, out: Any) -> None:
+def _print_overrides(resolved: ResolvedSource, out: TextIO) -> None:
   """Print config overrides from the manifest (if any)."""
   overrides = resolved.manifest.config_overrides if resolved.manifest else {}
   if not overrides:
@@ -194,15 +194,6 @@ def _read_dependencies(resolved: ResolvedSource) -> str:
   except Exception as e:
     logger.warning("inspect_dependencies_failed", error=str(e))
     return f"(error reading pyproject.toml: {e})"
-
-
-def _safe_cleanup(resolved: ResolvedSource) -> None:
-  """Run the cleanup hook if present (removes temp dirs for github/zip)."""
-  if resolved.cleanup is not None:
-    try:
-      resolved.cleanup()
-    except Exception:
-      logger.warning("source_cleanup_failed", error="cleanup raised")
 
 
 __all__ = ["run_inspect"]

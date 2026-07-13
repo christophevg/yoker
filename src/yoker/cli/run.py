@@ -11,13 +11,13 @@ Security invariant (C1, M3, H2 remediation): the source MUST pass
 the user's own config (not the source's manifest overrides) so a source
 cannot influence its own trust decision.
 
-Flow::
+Config cascade (corrected)::
 
     resolve_source (phase 1 — metadata only)
       -> [dry-run: print + exit]
-      -> trust gate (check_source_allowed)
+      -> trust gate (check_source_allowed — user's OWN config, no manifest)
       -> load_source (phase 2 — imports, AFTER trust)
-      -> apply manifest config overrides
+      -> reload config WITH manifest overrides (CLI still wins over manifest)
       -> resolve agent + prompt (CLI > manifest)
       -> [prompt length cap: 10 KB]
       -> Session + Agent + process prompt
@@ -26,18 +26,24 @@ Flow::
 """
 
 import asyncio
-import dataclasses
 import os
 import sys
-from typing import Any
 
 from clevis import SecurityError
 from structlog import get_logger
 
 from yoker.cli.commands import RunConfig
-from yoker.cli.shared import abort, load_subcommand_config
+from yoker.cli.shared import (
+  MAX_PROMPT_BYTES,
+  abort,
+  load_subcommand_config,
+  load_subcommand_config_with_manifest,
+  parse_run_overrides,
+  register_source_agents,
+  resolve_agent_and_prompt,
+  safe_cleanup,
+)
 from yoker.cli.sources import LoadedSource, ResolvedSource, load_source, resolve_source
-from yoker.config import Config
 from yoker.exceptions import YokerError
 from yoker.logging import configure_logging
 from yoker.plugins.security import check_source_allowed
@@ -45,9 +51,6 @@ from yoker.session import Session
 from yoker.ui import BatchUIHandler, UIBridge
 
 logger = get_logger(__name__)
-
-# Prompt length cap (H2 remediation) — 10 KB.
-MAX_PROMPT_BYTES = 10 * 1024
 
 
 def run_run(plugin_packages: list[str]) -> None:
@@ -58,7 +61,7 @@ def run_run(plugin_packages: list[str]) -> None:
   """
   # Parse --agent and --prompt via local argparse (not Clevis — these are not
   # Config fields). Strip them from sys.argv before Clevis parses RunConfig.
-  cli_agent, cli_prompt, sys.argv = _parse_run_overrides(sys.argv)
+  cli_agent, cli_prompt, sys.argv = parse_run_overrides(sys.argv)
 
   try:
     config = load_subcommand_config(RunConfig)
@@ -80,7 +83,7 @@ def run_run(plugin_packages: list[str]) -> None:
   # --dry-run: print resolved info and exit without executing.
   if config.dry_run:
     _print_dry_run(resolved)
-    _safe_cleanup(resolved)
+    safe_cleanup(resolved)
     return
 
   # Trust gate (SECURITY INVARIANT — before load_source).
@@ -93,43 +96,27 @@ def run_run(plugin_packages: list[str]) -> None:
   try:
     loaded = load_source(resolved)
   except YokerError as e:
-    _safe_cleanup(resolved)
+    safe_cleanup(resolved)
     abort(f"Error: {e}\n", 1)
 
-  # Apply manifest config overrides (after trust — source is trusted).
+  # Apply manifest config overrides BEFORE CLI (CLI wins over manifest).
+  # The trust gate already passed on the user's own config; now that the
+  # source is trusted, its overrides are safe to apply. Reload the config
+  # with the manifest layer inserted between TOML and CLI.
   if resolved.manifest is not None and resolved.manifest.config_overrides:
-    _apply_config_overrides(config, resolved.manifest.config_overrides)
+    try:
+      config = load_subcommand_config_with_manifest(RunConfig, resolved.manifest.config_overrides)
+    except (ValueError, SecurityError) as e:
+      safe_cleanup(loaded)
+      abort(f"Error: {e}\n", 1)
 
-  # Resolve agent name: CLI --agent > manifest [run].agent > error.
-  agent_name = cli_agent
-  if agent_name is None:
-    agent_name = loaded.agent
-  if not agent_name:
-    _safe_cleanup(loaded)
-    abort(
-      "Error: no agent specified. Use --agent <name> or add [run] agent = "
-      '"<name>" to the source\'s agent.toml.\n',
-      1,
-    )
-  assert agent_name is not None  # abort exits, but mypy can't infer that
-
-  # Resolve prompt: CLI --prompt > manifest [run].prompt > error.
-  prompt = cli_prompt
-  if prompt is None:
-    prompt = loaded.prompt
-  if not prompt:
-    _safe_cleanup(loaded)
-    abort(
-      "Error: no prompt specified. Use --prompt <text> or add [run] prompt = "
-      '"<text>" to the source\'s agent.toml.\n',
-      1,
-    )
-  assert prompt is not None  # abort exits, but mypy can't infer that
+  # Resolve agent name + prompt: CLI > manifest > error.
+  agent_name, prompt = resolve_agent_and_prompt(cli_agent, cli_prompt, loaded)
 
   # Prompt length cap (H2).
   prompt_bytes = len(prompt.encode("utf-8"))
   if prompt_bytes > MAX_PROMPT_BYTES:
-    _safe_cleanup(loaded)
+    safe_cleanup(loaded)
     abort(
       f"Error: prompt exceeds {MAX_PROMPT_BYTES} bytes "
       f"({prompt_bytes} bytes). Reduce the prompt length.\n",
@@ -156,7 +143,7 @@ def run_run(plugin_packages: list[str]) -> None:
   except (ValueError, SecurityError) as e:
     abort(f"Error: {e}\n", 1)
   finally:
-    _safe_cleanup(loaded)
+    safe_cleanup(loaded)
 
 
 async def _run_source(
@@ -174,7 +161,7 @@ async def _run_source(
     session_id=session_id,
   ) as session:
     # Register source agent definitions (source wins on conflict — owner-confirmed).
-    _register_source_agents(session, loaded)
+    register_source_agents(session, loaded)
 
     # Register source tools and skills onto the primary agent.
     if loaded.components.tools:
@@ -201,54 +188,6 @@ async def _run_source(
       await ui.shutdown("done")
 
 
-def _register_source_agents(session: Session, loaded: LoadedSource) -> None:
-  """Register the source's agent definitions into the session registry.
-
-  Source wins on conflict: if a name collides with a built-in or configured
-  agent, the source's definition replaces it (owner-confirmed per task 4.7).
-  """
-  if not loaded.components.agents:
-    return
-  for agent_def in loaded.components.agents:
-    name = agent_def.name
-    if name in session.agents.data:
-      logger.info("source_agent_overrides_builtin", name=name)
-      del session.agents.data[name]
-    session.agents.register(agent_def, namespace=loaded.components.source)
-
-
-def _parse_run_overrides(
-  argv: list[str],
-) -> tuple[str | None, str | None, list[str]]:
-  """Extract ``--agent`` and ``--prompt`` from argv (local argparse, not Clevis).
-
-  Returns ``(agent, prompt, cleaned_argv)`` where ``cleaned_argv`` has the
-  ``--agent``/``--prompt`` flags and their values removed, so Clevis doesn't
-  choke on unknown args when parsing RunConfig.
-  """
-  agent: str | None = None
-  prompt: str | None = None
-  args_to_remove: list[int] = []
-  i = 1
-  while i < len(argv):
-    arg = argv[i]
-    if arg == "--agent" and i + 1 < len(argv):
-      agent = argv[i + 1]
-      args_to_remove.extend([i, i + 1])
-      i += 2
-    elif arg == "--prompt" and i + 1 < len(argv):
-      prompt = argv[i + 1]
-      args_to_remove.extend([i, i + 1])
-      i += 2
-    else:
-      i += 1
-
-  cleaned = list(argv)
-  for idx in sorted(args_to_remove, reverse=True):
-    cleaned.pop(idx)
-  return agent, prompt, cleaned
-
-
 def _print_dry_run(resolved: ResolvedSource) -> None:
   """Print resolved source info for ``--dry-run`` without executing."""
   out = sys.stdout
@@ -272,39 +211,6 @@ def _print_dry_run(resolved: ResolvedSource) -> None:
   else:
     out.write("\nNo agent.toml manifest found.\n")
   out.write("\n(dry-run — no code executed)\n")
-
-
-def _apply_config_overrides(config: Config, overrides: dict[str, Any]) -> None:
-  """Deep-merge manifest config overrides into the config dataclass.
-
-  The source is already trusted (trust gate passed), so its overrides are
-  from a trusted source. Nested dicts recurse into dataclass attributes;
-  non-dict values replace the field directly. Lists/tuples replace (matching
-  TOML array semantics for tuple-typed fields).
-  """
-  for key, value in overrides.items():
-    if not hasattr(config, key):
-      logger.warning("manifest_override_unknown_field", field=key)
-      continue
-    current = getattr(config, key)
-    if (
-      isinstance(value, dict)
-      and dataclasses.is_dataclass(current)
-      and not isinstance(current, type)
-    ):
-      _apply_config_overrides(current, value)  # type: ignore[arg-type]
-    else:
-      setattr(config, key, value)
-
-
-def _safe_cleanup(obj: ResolvedSource | LoadedSource) -> None:
-  """Run the cleanup hook if present (removes temp dirs for github/zip)."""
-  cleanup = getattr(obj, "cleanup", None)
-  if cleanup is not None:
-    try:
-      cleanup()
-    except Exception:
-      logger.warning("source_cleanup_failed", error="cleanup raised")
 
 
 __all__ = ["run_run"]

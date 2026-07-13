@@ -13,11 +13,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from yoker.cli.run import (
-  MAX_PROMPT_BYTES,
-  _apply_config_overrides,
-  _parse_run_overrides,
   run_run,
 )
+from yoker.cli.shared import MAX_PROMPT_BYTES, parse_run_overrides
 from yoker.config import Config
 from yoker.plugins.file_manifest import FileManifestResult, PluginConfig
 from yoker.plugins.file_manifest import RunConfig as ManifestRunConfig
@@ -83,7 +81,7 @@ class TestParseRunOverrides:
 
   def test_extracts_agent_and_prompt(self) -> None:
     argv = ["yoker", "run", "pkgq", "--agent", "coder", "--prompt", "do X"]
-    agent, prompt, cleaned = _parse_run_overrides(argv)
+    agent, prompt, cleaned = parse_run_overrides(argv)
     assert agent == "coder"
     assert prompt == "do X"
     assert "--agent" not in cleaned
@@ -92,28 +90,28 @@ class TestParseRunOverrides:
 
   def test_extracts_agent_only(self) -> None:
     argv = ["yoker", "run", "pkgq", "--agent", "coder"]
-    agent, prompt, cleaned = _parse_run_overrides(argv)
+    agent, prompt, cleaned = parse_run_overrides(argv)
     assert agent == "coder"
     assert prompt is None
     assert "--agent" not in cleaned
 
   def test_extracts_prompt_only(self) -> None:
     argv = ["yoker", "run", "pkgq", "--prompt", "do X"]
-    agent, prompt, cleaned = _parse_run_overrides(argv)
+    agent, prompt, cleaned = parse_run_overrides(argv)
     assert agent is None
     assert prompt == "do X"
     assert "--prompt" not in cleaned
 
   def test_no_overrides_returns_none(self) -> None:
     argv = ["yoker", "run", "pkgq"]
-    agent, prompt, cleaned = _parse_run_overrides(argv)
+    agent, prompt, cleaned = parse_run_overrides(argv)
     assert agent is None
     assert prompt is None
     assert cleaned == argv
 
   def test_preserves_other_flags(self) -> None:
     argv = ["yoker", "run", "pkgq", "--persist", "--agent", "x", "--dry-run"]
-    agent, prompt, cleaned = _parse_run_overrides(argv)
+    agent, prompt, cleaned = parse_run_overrides(argv)
     assert agent == "x"
     assert "--persist" in cleaned
     assert "--dry-run" in cleaned
@@ -387,32 +385,43 @@ class TestCleanup:
     cleanup.assert_called_once()
 
 
-class TestApplyConfigOverrides:
-  """Manifest config overrides deep-merge into the config dataclass."""
+class TestDeepMerge:
+  """Manifest config overrides deep-merge into the config dict (replaces setattr)."""
 
   def test_nested_dict_recurse(self) -> None:
-    config = Config()
+    from yoker.cli.shared import deep_merge
+
+    target = {"backend": {"provider": "ollama", "ollama": {"model": "x"}}}
     overrides = {"backend": {"provider": "openai"}}
-    _apply_config_overrides(config, overrides)
-    assert config.backend.provider == "openai"
+    deep_merge(target, overrides)
+    assert target["backend"]["provider"] == "openai"
+    # Other nested keys preserved (deep merge, not replace).
+    assert target["backend"]["ollama"]["model"] == "x"
 
   def test_non_dict_replaces(self) -> None:
-    config = Config()
-    overrides = {"agent": "coder"}
-    _apply_config_overrides(config, overrides)
-    assert config.agent == "coder"
+    from yoker.cli.shared import deep_merge
 
-  def test_unknown_field_skipped(self) -> None:
-    config = Config()
-    overrides = {"nonexistent_field": "x"}
-    _apply_config_overrides(config, overrides)
-    assert not hasattr(config, "nonexistent_field")
+    target = {"agent": None}
+    overrides = {"agent": "coder"}
+    deep_merge(target, overrides)
+    assert target["agent"] == "coder"
 
   def test_deep_nested_override(self) -> None:
-    config = Config()
+    from yoker.cli.shared import deep_merge
+
+    target = {"backend": {"ollama": {"model": "old", "base_url": "x"}}}
     overrides = {"backend": {"ollama": {"model": "llama3"}}}
-    _apply_config_overrides(config, overrides)
-    assert config.backend.ollama.model == "llama3"
+    deep_merge(target, overrides)
+    assert target["backend"]["ollama"]["model"] == "llama3"
+    assert target["backend"]["ollama"]["base_url"] == "x"
+
+  def test_list_replaces_not_merged(self) -> None:
+    from yoker.cli.shared import deep_merge
+
+    target = {"agents": {"directories": ["a", "b"]}}
+    overrides = {"agents": {"directories": ["c"]}}
+    deep_merge(target, overrides)
+    assert target["agents"]["directories"] == ["c"]
 
 
 class TestCheckSourceAllowed:

@@ -9,6 +9,8 @@ Security (H3 remediation):
   - Dockerfile uses JSON-array form exclusively for ``RUN``/``ENTRYPOINT`` —
     no shell-form with string interpolation.
   - The source string is validated against shell metacharacters.
+  - ``base_image`` is validated against whitespace/newlines (L3) to prevent
+    Dockerfile directive injection.
   - No ``~/.yoker.toml`` or API keys are copied into the image — secret
     management is documented in comments instead.
   - A non-root ``USER`` directive (``USER 1000``) is included.
@@ -23,13 +25,12 @@ from __future__ import annotations
 import re
 import sys
 from pathlib import Path
-from typing import Any
 
 from structlog import get_logger
 
 from yoker.cli.commands import ContainerConfig
-from yoker.cli.shared import abort, load_subcommand_config
-from yoker.cli.sources import resolve_source
+from yoker.cli.shared import abort, load_subcommand_config, safe_cleanup
+from yoker.cli.sources import ResolvedSource, resolve_source
 from yoker.exceptions import YokerError
 
 logger = get_logger(__name__)
@@ -78,6 +79,7 @@ def run_container() -> None:
     )
 
   _validate_source_string(config.source)
+  _validate_base_image(config.base_image)
 
   # Phase 1: resolve source to determine type and (for GitHub) commit SHA.
   try:
@@ -94,7 +96,7 @@ def run_container() -> None:
   try:
     output_dir.mkdir(parents=True, exist_ok=True)
   except OSError as e:
-    _safe_cleanup(resolved)
+    safe_cleanup(resolved)
     abort(f"Error: cannot create output directory {output_dir}: {e}\n", 1)
 
   try:
@@ -109,7 +111,7 @@ def run_container() -> None:
       compose=config.compose,
     )
   finally:
-    _safe_cleanup(resolved)
+    safe_cleanup(resolved)
 
   file_name = "Containerfile" if engine == "podman" else "Dockerfile"
   sys.stdout.write(
@@ -129,6 +131,19 @@ def _validate_source_string(source: str) -> None:
     )
 
 
+def _validate_base_image(base_image: str) -> None:
+  """Reject base_image values containing whitespace or newlines (L3).
+
+  A ``base_image`` with a newline could inject Dockerfile directives after
+  the ``FROM`` line. Only a single token (no spaces, tabs, newlines) is allowed.
+  """
+  if re.search(r"\s", base_image):
+    abort(
+      f"Error: --base-image must not contain whitespace or newlines (rejected for safety): {base_image!r}\n",
+      1,
+    )
+
+
 def _read_yoker_version() -> str:
   """Read the yoker version from ``yoker.__version__``."""
   from yoker import __version__
@@ -141,7 +156,7 @@ def _generate_files(
   engine: str,
   base_image: str,
   yoker_version: str,
-  resolved: Any,
+  resolved: ResolvedSource,
   source: str,
   *,
   compose: bool,
@@ -165,7 +180,7 @@ def _generate_files(
 def _build_dockerfile(
   base_image: str,
   yoker_version: str,
-  resolved: Any,
+  resolved: ResolvedSource,
   source: str,
 ) -> str:
   """Build the Dockerfile/Containerfile content (JSON-array form exclusively)."""
@@ -200,15 +215,17 @@ def _build_dockerfile(
 
 
 def _source_build_steps(
-  resolved: Any,
+  resolved: ResolvedSource,
   source: str,
 ) -> tuple[list[str], str]:
   """Return (build-step lines, entrypoint source arg) for the source type.
 
   Module: ``pip install <module>``; entrypoint uses the module name.
   GitHub: ``git clone`` + ``git checkout <sha>``; entrypoint uses the clone dir.
-  Folder: ``COPY`` the folder; entrypoint uses the in-image path.
-  Zip: ``COPY`` + extract; entrypoint uses the extraction dir.
+  Folder: ``COPY`` the folder (using its actual basename); entrypoint uses the
+  in-image path.
+  Zip: ``COPY`` + extract (using the actual zip filename); entrypoint uses the
+  extraction dir.
   """
   if resolved.kind == "module":
     return (
@@ -229,19 +246,23 @@ def _source_build_steps(
     return steps, "/app/source"
 
   if resolved.kind == "zip":
+    # Use the actual zip filename (Path(source).name) for the COPY source —
+    # the build context has the user's file, not a hardcoded "source.zip".
+    zip_name = Path(source).name
     return (
       [
-        f"COPY {'source.zip'} /app/source.zip",
+        f"COPY {zip_name} /app/source.zip",
         'RUN ["python", "-m", "zipfile", "-e", "/app/source.zip", "/app/source"]',
         "",
       ],
       "/app/source",
     )
 
-  # folder
+  # folder — use the actual folder basename for the COPY source.
+  folder_name = Path(source).name
   return (
     [
-      "COPY source/ /app/source/",
+      f"COPY {folder_name}/ /app/source/",
       "",
     ],
     "/app/source",
@@ -271,7 +292,7 @@ def _build_ignore_file() -> str:
   return "\n".join(_IGNORE_PATTERNS) + "\n"
 
 
-def _build_compose_file(dockerfile_name: str, resolved: Any, source: str) -> str:
+def _build_compose_file(dockerfile_name: str, resolved: ResolvedSource, source: str) -> str:
   """Build a minimal docker-compose.yml for the generated image."""
   service_name = "yoker-agent"
   return (
@@ -283,16 +304,6 @@ def _build_compose_file(dockerfile_name: str, resolved: Any, source: str) -> str
     f"    volumes:\n"
     f"      - ~/.yoker.toml:/home/yoker/.yoker.toml:ro\n"
   )
-
-
-def _safe_cleanup(resolved: Any) -> None:
-  """Run the cleanup hook if present (removes temp dirs for github/zip)."""
-  cleanup = getattr(resolved, "cleanup", None)
-  if cleanup is not None:
-    try:
-      cleanup()
-    except Exception:
-      logger.warning("source_cleanup_failed", error="cleanup raised")
 
 
 __all__ = ["run_container"]

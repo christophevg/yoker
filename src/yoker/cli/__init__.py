@@ -14,7 +14,17 @@ from yoker.cli.commands import (
   LoopConfig,
   RunConfig,
 )
-from yoker.cli.shared import abort, load_subcommand_config
+from yoker.cli.shared import (
+  MAX_PROMPT_BYTES,
+  abort,
+  deep_merge,
+  load_subcommand_config,
+  load_subcommand_config_with_manifest,
+  parse_run_overrides,
+  register_source_agents,
+  resolve_agent_and_prompt,
+  safe_cleanup,
+)
 from yoker.cli.sources import LoadedSource, ResolvedSource, load_source, resolve_source
 
 __all__ = [
@@ -25,8 +35,15 @@ __all__ = [
   "InspectConfig",
   "LoopConfig",
   "RunConfig",
+  "MAX_PROMPT_BYTES",
   "abort",
+  "deep_merge",
   "load_subcommand_config",
+  "load_subcommand_config_with_manifest",
+  "parse_run_overrides",
+  "register_source_agents",
+  "resolve_agent_and_prompt",
+  "safe_cleanup",
   "LoadedSource",
   "ResolvedSource",
   "load_source",
