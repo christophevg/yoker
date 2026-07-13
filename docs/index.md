@@ -39,10 +39,12 @@ python -m yoker
 
 installation
 quickstart
+cli
 guides/getting-started
 guides/getting-started-with-yoker
 guides/getting-started-with-ollama
 guides/getting-started-with-gemini
+guides/creating-agentic-packages
 models
 plugins
 rationale
@@ -52,6 +54,8 @@ api/index
 
 ## Current Features
 
+- [x] CLI subcommands - `chat`, `run`, `loop`, `inspect`, `init`, `config`, `container`
+- [x] Agentic packages - Run sources (module, GitHub, folder, zip) via `yoker run` with `agent.toml` manifest
 - [x] Chat loop - Interactive conversation with any configured provider
 - [x] Multi-provider backends - Ollama (native SDK), OpenAI, Anthropic, Google Gemini, and 100+ providers via LiteLLM
 - [x] Bootstrap wizard - Interactive first-run setup that writes `~/.yoker.toml` for you
