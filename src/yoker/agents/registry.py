@@ -37,6 +37,20 @@ class AgentRegistry(UserDict[str, AgentDefinition]):
     self.data[definition.name] = definition
     logger.info("agent registered", name=definition.name)
 
+  def override(self, definition: AgentDefinition, namespace: str | None = None) -> None:
+    """Register a definition, replacing any existing entry on collision.
+
+    Unlike :meth:`register`, a name collision logs the override and replaces
+    the existing definition instead of raising. Used by ``yoker run``/``loop``
+    so a source's agent definitions win over built-in/configured agents
+    (owner-confirmed per task 4.7).
+    """
+    if namespace:
+      definition.namespace = namespace
+    if definition.name in self.data:
+      logger.info("agent_overrides_existing", name=definition.name)
+    self.data[definition.name] = definition
+
   def register_all(self, agents: list[AgentDefinition], namespace: str) -> None:
     logger.info(
       "register_agents_started",

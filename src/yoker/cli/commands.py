@@ -18,13 +18,9 @@ default (chat) config. Users can optionally organize config into ``[chat]``,
 ``[run]``, etc. sections.
 """
 
-from typing import TypeVar
-
 from clevis import configclass
 
 from yoker.config import Config
-
-T = TypeVar("T")
 
 
 @configclass(cmd="chat", help="Start the interactive REPL (default subcommand)")  # type: ignore[arg-type]

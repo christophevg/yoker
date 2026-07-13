@@ -65,6 +65,41 @@ class TestValidateSourceString:
     assert exc.value.code == 1
 
 
+class TestValidateBaseImage:
+  """base_image validation against whitespace/newlines (L3 — Dockerfile injection)."""
+
+  def test_clean_image_accepted(self) -> None:
+    from yoker.cli.container import _validate_base_image
+
+    _validate_base_image("python:3.12-slim")  # should not raise
+
+  def test_clean_image_with_tag_accepted(self) -> None:
+    from yoker.cli.container import _validate_base_image
+
+    _validate_base_image("registry.example.com/my/img:latest")
+
+  def test_newline_rejected(self) -> None:
+    from yoker.cli.container import _validate_base_image
+
+    with pytest.raises(SystemExit) as exc:
+      _validate_base_image("python:3.12-slim\nUSER root")
+    assert exc.value.code == 1
+
+  def test_space_rejected(self) -> None:
+    from yoker.cli.container import _validate_base_image
+
+    with pytest.raises(SystemExit) as exc:
+      _validate_base_image("python 3.12")
+    assert exc.value.code == 1
+
+  def test_tab_rejected(self) -> None:
+    from yoker.cli.container import _validate_base_image
+
+    with pytest.raises(SystemExit) as exc:
+      _validate_base_image("python\t3.12")
+    assert exc.value.code == 1
+
+
 class TestSourceBuildSteps:
   """Source-type-specific Dockerfile build steps."""
 
@@ -92,6 +127,14 @@ class TestSourceBuildSteps:
     assert "/app/source/" in joined
     assert entrypoint == "/app/source"
 
+  def test_folder_build_steps_use_actual_basename(self) -> None:
+    """H1 fix: COPY source uses the actual folder basename, not a hardcoded 'source/'."""
+    resolved = _make_resolved(kind="folder", trust_key="folder:/abs")
+    steps, _ = _source_build_steps(resolved, "./my-package")
+    joined = "\n".join(steps)
+    assert "COPY my-package/ /app/source/" in joined
+    assert "COPY source/ /app/source/" not in joined
+
   def test_zip_build_steps_copy_and_extract(self) -> None:
     resolved = _make_resolved(kind="zip", trust_key="zip:abc123")
     steps, entrypoint = _source_build_steps(resolved, "./my.zip")
@@ -99,6 +142,14 @@ class TestSourceBuildSteps:
     assert "COPY" in joined
     assert "zipfile" in joined
     assert entrypoint == "/app/source"
+
+  def test_zip_build_steps_use_actual_filename(self) -> None:
+    """H1 fix: COPY source uses the actual zip filename, not a hardcoded 'source.zip'."""
+    resolved = _make_resolved(kind="zip", trust_key="zip:abc123")
+    steps, _ = _source_build_steps(resolved, "./my-package.zip")
+    joined = "\n".join(steps)
+    assert "COPY my-package.zip /app/source.zip" in joined
+    assert "COPY source.zip /app/source.zip" not in joined
 
 
 class TestBuildDockerfile:

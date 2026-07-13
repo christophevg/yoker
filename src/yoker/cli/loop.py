@@ -1,9 +1,9 @@
 """``yoker loop <source>`` subcommand handler — interval execution.
 
-Runs an agentic package at intervals, reusing the ``yoker run`` source
-resolution and execution path. The source is resolved ONCE, the trust gate
-fires ONCE, and the source is loaded ONCE; each iteration then sends the same
-prompt (from the manifest or ``--prompt``) through the agent.
+Runs an agentic package at intervals, reusing the shared source resolution
+and execution path. The source is resolved ONCE, the trust gate fires ONCE,
+and the source is loaded ONCE; each iteration then sends the same prompt
+(from the manifest or ``--prompt``) through the agent.
 
 Security (M1 remediation):
   - ``--max-iterations`` defaults to a finite cap (100), not unlimited.
@@ -12,12 +12,12 @@ Security (M1 remediation):
   - Per-iteration timeout reuses ``config.tools.agent.timeout_seconds``.
   - API cost warning is included in the docstring/help.
 
-Flow::
+Config cascade (corrected — same as run)::
 
     resolve_source (phase 1)
-      -> trust gate (check_source_allowed)
+      -> trust gate (check_source_allowed — user's OWN config, no manifest)
       -> load_source (phase 2 — AFTER trust)
-      -> apply manifest config overrides
+      -> reload config WITH manifest overrides (CLI still wins over manifest)
       -> resolve agent + prompt (CLI > manifest)
       -> [prompt length cap: 10 KB]
       -> loop:
@@ -42,9 +42,17 @@ from clevis import SecurityError
 from structlog import get_logger
 
 from yoker.cli.commands import LoopConfig
-from yoker.cli.run import MAX_PROMPT_BYTES, _apply_config_overrides, _parse_run_overrides
-from yoker.cli.shared import abort, load_subcommand_config
-from yoker.cli.sources import LoadedSource, ResolvedSource, load_source, resolve_source
+from yoker.cli.shared import (
+  MAX_PROMPT_BYTES,
+  abort,
+  load_subcommand_config,
+  load_subcommand_config_with_manifest,
+  parse_run_overrides,
+  register_source_agents,
+  resolve_agent_and_prompt,
+  safe_cleanup,
+)
+from yoker.cli.sources import LoadedSource, load_source, resolve_source
 from yoker.exceptions import YokerError
 from yoker.logging import configure_logging
 from yoker.plugins.security import check_source_allowed
@@ -63,9 +71,9 @@ def run_loop(plugin_packages: list[str]) -> None:
   """Run the ``yoker loop <source>`` subcommand.
 
   Args:
-    plugin_packages: Plugin packages from ``--with`` flags (shared with run).
+    plugin_packages: Plugin packages from ``--with`` flags (shared with chat).
   """
-  cli_agent, cli_prompt, sys.argv = _parse_run_overrides(sys.argv)
+  cli_agent, cli_prompt, sys.argv = parse_run_overrides(sys.argv)
 
   try:
     config = load_subcommand_config(LoopConfig)
@@ -84,52 +92,33 @@ def run_loop(plugin_packages: list[str]) -> None:
   except YokerError as e:
     abort(f"Error: {e}\n", 1)
 
-  # Trust gate ONCE (before load_source).
+  # Trust gate ONCE (before load_source — user's OWN config, no manifest).
   if not check_source_allowed(resolved.trust_key, config, resolved):
-    _safe_cleanup(resolved)
+    safe_cleanup(resolved)
     abort(f"Error: source '{resolved.trust_key}' is not trusted.\n", 1)
 
   # Phase 2: load source ONCE (imports — AFTER trust gate).
   try:
     loaded = load_source(resolved)
   except YokerError as e:
-    _safe_cleanup(resolved)
+    safe_cleanup(resolved)
     abort(f"Error: {e}\n", 1)
 
-  # Apply manifest config overrides (after trust — source is trusted).
+  # Apply manifest config overrides BEFORE CLI (CLI wins over manifest).
   if resolved.manifest is not None and resolved.manifest.config_overrides:
-    _apply_config_overrides(config, resolved.manifest.config_overrides)
+    try:
+      config = load_subcommand_config_with_manifest(LoopConfig, resolved.manifest.config_overrides)
+    except (ValueError, SecurityError) as e:
+      safe_cleanup(loaded)
+      abort(f"Error: {e}\n", 1)
 
-  # Resolve agent name: CLI --agent > manifest [run].agent > error.
-  agent_name = cli_agent
-  if agent_name is None:
-    agent_name = loaded.agent
-  if not agent_name:
-    _safe_cleanup(loaded)
-    abort(
-      "Error: no agent specified. Use --agent <name> or add [run] agent = "
-      '"<name>" to the source\'s agent.toml.\n',
-      1,
-    )
-  assert agent_name is not None
-
-  # Resolve prompt: CLI --prompt > manifest [run].prompt > error.
-  prompt = cli_prompt
-  if prompt is None:
-    prompt = loaded.prompt
-  if not prompt:
-    _safe_cleanup(loaded)
-    abort(
-      "Error: no prompt specified. Use --prompt <text> or add [run] prompt = "
-      '"<text>" to the source\'s agent.toml.\n',
-      1,
-    )
-  assert prompt is not None
+  # Resolve agent name + prompt: CLI > manifest > error.
+  agent_name, prompt = resolve_agent_and_prompt(cli_agent, cli_prompt, loaded)
 
   # Prompt length cap (H2).
   prompt_bytes = len(prompt.encode("utf-8"))
   if prompt_bytes > MAX_PROMPT_BYTES:
-    _safe_cleanup(loaded)
+    safe_cleanup(loaded)
     abort(
       f"Error: prompt exceeds {MAX_PROMPT_BYTES} bytes "
       f"({prompt_bytes} bytes). Reduce the prompt length.\n",
@@ -160,7 +149,7 @@ def run_loop(plugin_packages: list[str]) -> None:
   except (ValueError, SecurityError) as e:
     abort(f"Error: {e}\n", 1)
   finally:
-    _safe_cleanup(loaded)
+    safe_cleanup(loaded)
 
 
 async def _run_loop(
@@ -275,7 +264,7 @@ async def _run_iteration(
     extra_plugins=tuple(plugin_packages),
     session_id=session_id,
   ) as session:
-    _register_source_agents(session, loaded)
+    register_source_agents(session, loaded)
 
     if loaded.components.tools:
       session.agent.tools.register_plugin_tools([loaded.components], config)
@@ -300,37 +289,12 @@ async def _run_iteration(
       await ui.shutdown("done")
 
 
-def _register_source_agents(session: Session, loaded: LoadedSource) -> None:
-  """Register the source's agent definitions into the session registry.
-
-  Source wins on conflict (owner-confirmed per task 4.7). Mirrors run.py.
-  """
-  if not loaded.components.agents:
-    return
-  for agent_def in loaded.components.agents:
-    name = agent_def.name
-    if name in session.agents.data:
-      logger.info("source_agent_overrides_builtin", name=name)
-      del session.agents.data[name]
-    session.agents.register(agent_def, namespace=loaded.components.source)
-
-
 async def _interruptible_sleep(seconds: int, stop_flag: asyncio.Event) -> None:
   """Sleep for ``seconds`` but wake early if ``stop_flag`` is set."""
   try:
     await asyncio.wait_for(stop_flag.wait(), timeout=seconds)
   except asyncio.TimeoutError:
     pass  # normal — the full interval elapsed
-
-
-def _safe_cleanup(obj: ResolvedSource | LoadedSource) -> None:
-  """Run the cleanup hook if present (removes temp dirs for github/zip)."""
-  cleanup = getattr(obj, "cleanup", None)
-  if cleanup is not None:
-    try:
-      cleanup()
-    except Exception:
-      logger.warning("source_cleanup_failed", error="cleanup raised")
 
 
 __all__ = ["run_loop"]
