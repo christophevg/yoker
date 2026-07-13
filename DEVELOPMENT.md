@@ -8,6 +8,42 @@ Yoker is a Python agent harness with configurable tools and guardrails. It provi
 
 ## Recent Changes
 
+### MBI-004: yoker Commands — Task 4.7: `yoker run` (2026-07-13)
+
+Implemented the flagship `yoker run <source>` subcommand — loads an agentic
+package from a source (module, GitHub URL, folder, zip) and runs it
+non-interactively. The source's `agent.toml` manifest specifies which agent
+to use and what initial prompt to send; CLI `--agent` and `--prompt` override
+the manifest.
+
+- **`cli/run.py`** (new): `run_run()` — the run handler. Flow: resolve source
+  (phase 1) → `--dry-run` prints and exits → trust gate
+  (`check_source_allowed`) → load source (phase 2, AFTER trust) → apply
+  manifest config overrides → resolve agent + prompt (CLI > manifest) →
+  prompt length cap (10 KB) → Session + Agent + process prompt → cleanup.
+  `--persist`/`--session-id` control session persistence (stateless by
+  default). `--agent`/`--prompt` parsed via local argparse (stripped from
+  sys.argv before Clevis parses RunConfig).
+- **`plugins/security.py`**: added `check_source_allowed()` — the trust gate
+  for `yoker run`. Mirrors `check_plugin_allowed()` but operates on a
+  `trust_key` string (e.g. `"github:owner/repo@sha"`) BEFORE any code is
+  loaded. Decision cascade: pre-trusted via `[plugins.trusted]` →
+  `YOKER_TRUST_SOURCE=1` env var → interactive confirmation dialog (TTY) →
+  non-interactive rejection. Uses the user's config (NOT manifest-overridden)
+  so a source cannot influence its own trust decision.
+- **`__main__.py`**: `run` subcommand now routes to `run_run()` (replaced the
+  stub). Removed `run` from `STUB_COMMANDS`.
+- **Tests**: `tests/test_cli/test_run.py` (new) — 28 tests covering:
+  `--agent`/`--prompt` parsing, `--dry-run`, trust gate ordering (load_source
+  not called when untrusted), non-interactive rejection, env-var override,
+  pre-trusted, interactive accept/reject, prompt length cap, missing
+  agent/prompt errors, CLI overrides, cleanup on success/error, config
+  override deep-merge.
+- Security: trust gate is a SECURITY INVARIANT — `load_source()` is never
+  called before `check_source_allowed()` returns True. Non-interactive mode
+  rejects untrusted sources by default. `--dry-run` prints manifest + prompt
+  without executing. Prompt capped at 10 KB.
+
 ### MBI-004: yoker Commands — Tasks 4.2, 4.3, 4.4 (2026-07-08)
 
 Implemented the `chat`, `init`, and `config` subcommand handlers under

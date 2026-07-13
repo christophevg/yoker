@@ -31,6 +31,7 @@ from yoker.cli import commands as cli_commands  # noqa: F401 — registers @conf
 from yoker.cli.chat import run_chat
 from yoker.cli.config_cmd import run_config_cmd
 from yoker.cli.init import run_init
+from yoker.cli.run import run_run
 from yoker.cli.shared import abort
 
 # Subcommand names registered with Clevis. Used to detect whether the first
@@ -48,10 +49,10 @@ KNOWN_COMMANDS = frozenset(
   }
 )
 
-# Subcommands that are stubbed out (not yet implemented). chat, init, and config
-# are the working end-to-end subcommands in this task; the rest print a notice
-# and exit.
-STUB_COMMANDS = frozenset({"run", "loop", "inspect", "container"})
+# Subcommands that are stubbed out (not yet implemented). chat, init, config,
+# and run are the working end-to-end subcommands; the rest print a notice and
+# exit.
+STUB_COMMANDS = frozenset({"loop", "inspect", "container"})
 
 
 def main() -> None:
@@ -77,6 +78,8 @@ def main() -> None:
 
   if cmd == "chat":
     run_chat(plugin_packages)
+  elif cmd == "run":
+    run_run(plugin_packages)
   elif cmd == "init":
     run_init()
   elif cmd == "config":
