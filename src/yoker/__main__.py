@@ -30,7 +30,10 @@ from clevis import get_cmd
 from yoker.cli import commands as cli_commands  # noqa: F401 — registers @configclass(cmd=...)
 from yoker.cli.chat import run_chat
 from yoker.cli.config_cmd import run_config_cmd
+from yoker.cli.container import run_container
 from yoker.cli.init import run_init
+from yoker.cli.inspect import run_inspect
+from yoker.cli.loop import run_loop
 from yoker.cli.run import run_run
 from yoker.cli.shared import abort
 
@@ -48,11 +51,6 @@ KNOWN_COMMANDS = frozenset(
     "container",
   }
 )
-
-# Subcommands that are stubbed out (not yet implemented). chat, init, config,
-# and run are the working end-to-end subcommands; the rest print a notice and
-# exit.
-STUB_COMMANDS = frozenset({"loop", "inspect", "container"})
 
 
 def main() -> None:
@@ -80,13 +78,16 @@ def main() -> None:
     run_chat(plugin_packages)
   elif cmd == "run":
     run_run(plugin_packages)
+  elif cmd == "loop":
+    run_loop(plugin_packages)
+  elif cmd == "inspect":
+    run_inspect()
   elif cmd == "init":
     run_init()
   elif cmd == "config":
     run_config_cmd()
-  elif cmd in STUB_COMMANDS:
-    sys.stdout.write(f"yoker {cmd}: not yet implemented\n")
-    sys.exit(0)
+  elif cmd == "container":
+    run_container()
   else:
     # Should not happen: argparse rejects unknown subcommands with a
     # valid-choice list before get_cmd() returns. Guard anyway.

@@ -93,6 +93,8 @@ class ContainerConfig:
   source: str = ""
   engine: str = "docker"
   output_dir: str = "."
+  base_image: str = "python:3.12-slim"
+  compose: bool = False
 
 
 __all__ = [
