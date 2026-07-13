@@ -8,6 +8,55 @@ Yoker is a Python agent harness with configurable tools and guardrails. It provi
 
 ## Recent Changes
 
+### MBI-004: yoker Commands — Tasks 4.8, 4.9, 4.12 (2026-07-13)
+
+Implemented the remaining Phase 3 CLI subcommands: `yoker loop` (interval
+execution), `yoker container` (container setup generation), and `yoker inspect`
+(read-only source report). All three are wired into `__main__.py` (replacing
+the `STUB_COMMANDS` stubs).
+
+- **`cli/loop.py`** (new): `run_loop()` — interval execution reusing `yoker run`'s
+  source resolution and execution. Resolves the source ONCE, checks trust ONCE,
+  loads ONCE, then runs the agent at intervals. `--interval` (default 300s),
+  `--max-iterations` (default 100, finite per M1), `--max-duration` (wall-clock
+  timeout). Stops after 3 consecutive failures with exponential backoff
+  (`2**failures` seconds). Per-iteration timeout from
+  `config.tools.agent.timeout_seconds`. Graceful SIGINT shutdown via an
+  `asyncio.Event` stop flag + `_interruptible_sleep` that wakes early on stop.
+  Prints iteration number + timestamp before each run and a summary on exit.
+- **`cli/container.py`** (new): `run_container()` — generates Dockerfile (or
+  Containerfile for `--engine podman`) for running a yoker agentic package in a
+  container. Resolves the source via `resolve_source()` (phase 1) to determine
+  type and (for GitHub) the commit SHA for pinning. Security (H3): JSON-array
+  form exclusively for `RUN`/`ENTRYPOINT` (no shell-form injection), source
+  string validated against shell metacharacters, non-root `USER 1000`,
+  `~/.yoker.toml` NOT copied (secret management documented instead), yoker
+  version pinned (`yoker==<version>` from `yoker.__version__`), GitHub sources
+  pinned to resolved commit SHA via `git checkout`. Generates
+  `.dockerignore`/`.containerignore` excluding `.git`, `__pycache__`, `*.pyc`,
+  `.env`, `.yoker.toml`, `.ssh`, credentials, etc. Optional `--compose` flag
+  generates `docker-compose.yml`.
+- **`cli/inspect.py`** (new): `run_inspect()` — read-only source report. Uses
+  `resolve_source()` (phase 1 only — no trust gate, no code execution).
+  Displays: source type, trust key, what it contains (skills/agents names read
+  from disk via Markdown+YAML parsing, tools_module name NOT imported), what it
+  uses (dependencies from `pyproject.toml`, tools_module declaration), what it
+  does (agent + prompt from manifest), config overrides. For module sources,
+  notes "requires trust to inspect Python manifest" (can't import without trust).
+  `load_source` is NEVER called; `check_source_allowed` is NEVER called.
+- **`cli/commands.py`**: added `base_image` (default `python:3.12-slim`) and
+  `compose` (default `False`) fields to `ContainerConfig`.
+- **`__main__.py`**: `loop`, `container`, `inspect` subcommands now route to
+  `run_loop()`, `run_container()`, `run_inspect()` respectively. Removed
+  `STUB_COMMANDS` set entirely.
+- **Tests**: `tests/test_cli/test_loop.py` (12 tests), `test_container.py` (34
+  tests), `test_inspect.py` (9 tests) — 55 new tests covering: trust gate
+  ordering (loop), missing source/agent/prompt errors, max-iterations, max-duration,
+  3-failure stop with backoff, cleanup; shell metacharacter rejection, JSON-array
+  form, non-root USER, version pinning, SHA pinning, podman Containerfile, compose;
+  inspect read-only (no trust gate, no load_source), module trust notice, folder
+  skills/agents listing, config overrides display, cleanup.
+
 ### MBI-004: yoker Commands — Task 4.7: `yoker run` (2026-07-13)
 
 Implemented the flagship `yoker run <source>` subcommand — loads an agentic
