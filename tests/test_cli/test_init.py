@@ -2,6 +2,7 @@
 
 import os
 import stat
+import sys
 from unittest.mock import MagicMock
 
 import pytest
@@ -13,6 +14,9 @@ from yoker.cli.init import (
   _write_default_config,
   run_init,
 )
+
+# Windows lacks Unix path semantics (no /etc, /usr) and chmod permission bits.
+_SKIP_WINDOWS = sys.platform == "win32"
 
 
 class TestResolvePath:
@@ -30,12 +34,14 @@ class TestResolvePath:
     result = _resolve_path(str(custom))
     assert result == custom.resolve()
 
+  @pytest.mark.skipif(_SKIP_WINDOWS, reason="Unix path semantics — /etc not forbidden on Windows")
   def test_forbidden_path_prefix_rejected(self):
     """--path under /etc is rejected with a ValidationError exit."""
     with pytest.raises(SystemExit) as exc_info:
       _resolve_path("/etc/yoker.toml")
     assert exc_info.value.code == 1
 
+  @pytest.mark.skipif(_SKIP_WINDOWS, reason="Unix path semantics — /usr not forbidden on Windows")
   def test_forbidden_path_usr_rejected(self):
     """--path under /usr is rejected."""
     with pytest.raises(SystemExit) as exc_info:
@@ -60,7 +66,9 @@ class TestWriteDefaultConfig:
     target = tmp_path / "yoker.toml"
     _write_default_config(target, force=False)
     mode = stat.S_IMODE(os.stat(target).st_mode)
-    assert mode == 0o600
+    # Windows chmod doesn't honor Unix permission bits (files default to 0o666).
+    if not _SKIP_WINDOWS:
+      assert mode == 0o600
 
   def test_refuses_overwrite_without_force(self, tmp_path):
     """Existing file is not overwritten without --force."""
@@ -146,4 +154,6 @@ class TestRunInit:
     run_init()
     assert target.exists()
     mode = stat.S_IMODE(os.stat(target).st_mode)
-    assert mode == 0o600
+    # Windows chmod doesn't honor Unix permission bits (files default to 0o666).
+    if not _SKIP_WINDOWS:
+      assert mode == 0o600
