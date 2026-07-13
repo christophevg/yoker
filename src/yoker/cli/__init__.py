@@ -15,6 +15,7 @@ from yoker.cli.commands import (
   RunConfig,
 )
 from yoker.cli.shared import abort, load_subcommand_config
+from yoker.cli.sources import LoadedSource, ResolvedSource, load_source, resolve_source
 
 __all__ = [
   "ChatConfig",
@@ -26,4 +27,8 @@ __all__ = [
   "RunConfig",
   "abort",
   "load_subcommand_config",
+  "LoadedSource",
+  "ResolvedSource",
+  "load_source",
+  "resolve_source",
 ]

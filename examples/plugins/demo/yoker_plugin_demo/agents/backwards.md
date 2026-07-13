@@ -1,6 +1,6 @@
 ---
 name: backwards
-description: A demonstration agent for testing the plugin system that replies with reverse answers
+description: A demonstration agent for testing the plugin system that replies with reversed answers
 tools: []
 namespace: examples
 ---
