@@ -8,6 +8,7 @@ This ensures plugins can only be loaded when explicitly enabled
 and trusted by the user.
 """
 
+import os
 import sys
 from typing import TYPE_CHECKING
 
@@ -17,6 +18,7 @@ from rich.text import Text
 from structlog import get_logger
 
 if TYPE_CHECKING:
+  from yoker.cli.sources import ResolvedSource
   from yoker.config import Config
   from yoker.plugins import PluginComponents
 
@@ -27,6 +29,9 @@ console = Console()
 
 # Track plugins confirmed during this session (don't ask twice for same plugin)
 _session_trusted: set[str] = set()
+
+# Env var override for non-interactive source trust (mirrors YOKER_ALLOW_CUSTOM_BASE_URL).
+ENV_TRUST_SOURCE = "YOKER_TRUST_SOURCE"
 
 
 def is_trusted(plugin_name: str, config: "Config") -> bool:
@@ -188,6 +193,146 @@ def check_plugin_allowed(plugin: "PluginComponents", config: "Config") -> bool:
   return False
 
 
+def check_source_allowed(
+  trust_key: str,
+  config: "Config",
+  resolved: "ResolvedSource | None" = None,
+) -> bool:
+  """Trust gate for ``yoker run <source>`` (C1, M3 security remediation).
+
+  Mirrors :func:`check_plugin_allowed` but operates on a resolved source's
+  ``trust_key`` (stable identifier like ``"github:owner/repo@sha"``,
+  ``"folder:/abs/path"``, ``"zip:<sha256>"``, ``"module:pkgname"``) BEFORE
+  any code is loaded. This is a security invariant:
+  :func:`yoker.cli.sources.load_source` MUST NOT be called until this
+  returns ``True``.
+
+  Decision cascade:
+    1. Pre-trusted via ``[plugins.trusted]`` table or session confirmation.
+    2. ``YOKER_TRUST_SOURCE=1`` env var (non-interactive override).
+    3. Interactive confirmation dialog (TTY only).
+    4. Non-interactive and untrusted -> reject.
+
+  Args:
+    trust_key: Stable source identifier from :attr:`ResolvedSource.trust_key`.
+    config: The user's config (NOT manifest-overridden — the source's
+      manifest must not influence its own trust decision).
+    resolved: Optional :class:`ResolvedSource` for the confirmation dialog
+      (source type, origin, manifest details). When ``None``, a minimal
+      dialog is shown.
+
+  Returns:
+    True if the source is allowed to load, False otherwise.
+  """
+  # 1. Pre-trusted via config or session confirmation.
+  if trust_key in config.plugins.trusted or trust_key in _session_trusted:
+    logger.info("source_trusted", trust_key=trust_key)
+    return True
+
+  # 2. Env-var override (non-interactive opt-in).
+  if os.environ.get(ENV_TRUST_SOURCE) == "1":
+    _session_trusted.add(trust_key)
+    logger.info("source_trusted_via_env", trust_key=trust_key)
+    return True
+
+  # 3. Non-interactive -> reject (no auto-trust).
+  if not sys.stdin.isatty():
+    _print_source_untrusted_noninteractive(trust_key)
+    logger.warning("source_not_trusted_non_interactive", trust_key=trust_key)
+    return False
+
+  # 4. Interactive confirmation dialog.
+  if _confirm_source(trust_key, resolved):
+    _session_trusted.add(trust_key)
+    return True
+  logger.info("source_rejected_by_user", trust_key=trust_key)
+  return False
+
+
+def _print_source_untrusted_noninteractive(trust_key: str) -> None:
+  """Print the styled rejection message for non-interactive untrusted sources."""
+  error_text = Text()
+  error_text.append("Error: ", style="bold red")
+  error_text.append(f"Source '{trust_key}' is not trusted.\n")
+  error_text.append("Add to your yoker.toml:\n")
+  console.print(error_text)
+
+  code_text = Text()
+  code_text.append("  [plugins.trusted]\n", style="cyan")
+  code_text.append(f"  {trust_key} = true", style="cyan")
+  console.print(code_text)
+
+  hint = Text()
+  hint.append(
+    f"\nOr set {ENV_TRUST_SOURCE}=1 to trust for this session.\n",
+    style="yellow",
+  )
+  console.print(hint)
+
+
+def _confirm_source(trust_key: str, resolved: "ResolvedSource | None") -> bool:
+  """Show an interactive trust confirmation dialog for a resolved source.
+
+  Displays source type, origin, trust key, agent, full prompt, and
+  tools_module (per H2 remediation) so the user can make an informed
+  decision. Returns True on explicit ``y``/``yes`` confirmation.
+  """
+  kind = resolved.kind if resolved is not None else "unknown"
+  origin = resolved.source_string if resolved is not None else trust_key
+  agent = None
+  prompt = None
+  tools_module = None
+  if resolved is not None and resolved.manifest is not None:
+    agent = resolved.manifest.run_config.agent
+    prompt = resolved.manifest.run_config.prompt
+    tools_module = resolved.manifest.plugin_config.tools_module
+
+  content = Text()
+  content.append("Source type:  ", style="cyan")
+  content.append(f"{kind}\n")
+  content.append("Origin:       ", style="cyan")
+  content.append(f"{origin}\n")
+  content.append("Trust key:    ", style="cyan")
+  content.append(f"{trust_key}\n")
+  if agent is not None:
+    content.append("Agent:        ", style="cyan")
+    content.append(f"{agent}\n")
+  if tools_module is not None:
+    content.append("tools_module: ", style="cyan")
+    content.append(f"{tools_module}\n")
+  if prompt is not None:
+    content.append("\nPrompt:\n", style="cyan")
+    content.append(f"{prompt}\n")
+  content.append("\nRunning this source executes code on your system.\n", style="yellow")
+  content.append("Only run sources you trust.\n\n", style="yellow")
+  content.append("Run this source? [y/N]: ", style="bold")
+
+  panel = Panel(
+    content,
+    title=f"Source: {trust_key}",
+    border_style="blue",
+    padding=(0, 1),
+  )
+  console.print()
+  console.print(panel)
+  console.print()
+
+  try:
+    response = input().strip().lower()
+    if response in ("y", "yes"):
+      console.print("\nTo trust permanently, add to your yoker.toml:\n")
+      snippet = Text()
+      snippet.append("  [plugins.trusted]\n", style="cyan")
+      snippet.append(f"  {trust_key} = true", style="cyan")
+      console.print(snippet)
+      console.print()
+      return True
+    return False
+  except (EOFError, KeyboardInterrupt):
+    print()
+    return False
+
+
 def reset_session_trusted() -> None:
   """Reset the session-trusted set (for testing)."""
   _session_trusted.clear()
@@ -216,6 +361,8 @@ __all__ = [
   "is_trusted",
   "confirm_plugin",
   "check_plugin_allowed",
+  "check_source_allowed",
   "reset_session_trusted",
   "warn_plugins_disabled",
+  "ENV_TRUST_SOURCE",
 ]
