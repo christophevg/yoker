@@ -18,7 +18,7 @@ pip install yoker
 
 ## Quick Start
 
-Run Yoker interactively (default):
+Run Yoker interactively (default — equivalent to `yoker chat`):
 
 ```bash
 python -m yoker
@@ -30,9 +30,219 @@ Or with an agent definition:
 python -m yoker --agents-definition examples/agents/researcher.md
 ```
 
+Run an agentic package non-interactively:
+
+```bash
+python -m yoker run pkgq
+```
+
 Example session:
 
 ![Yoker Session](https://raw.githubusercontent.com/christophevg/yoker/master/media/session.svg)
+
+## CLI Commands
+
+Yoker provides seven subcommands. When no subcommand is given, `chat` is assumed
+for backward compatibility — `yoker --backend-ollama-model X` routes to
+`yoker chat --backend-ollama-model X`.
+
+| Command | Description |
+|---------|-------------|
+| `yoker chat` | Start the interactive REPL (default subcommand) |
+| `yoker run <source>` | Run an agentic package non-interactively |
+| `yoker loop <source>` | Run an agentic package at intervals |
+| `yoker inspect <source>` | Display a read-only report about a source |
+| `yoker init` | Generate a default configuration file |
+| `yoker config` | Display the effective configuration |
+| `yoker container <source>` | Generate container setup for an agentic package |
+
+```bash
+yoker --help            # list all subcommands
+yoker run --help        # show flags for a specific subcommand
+```
+
+### `yoker chat` — Interactive REPL
+
+The default subcommand. Provides a rich terminal UI with multiline input,
+command history, streaming output, and tool call display. Runs the bootstrap
+wizard on first use when no config file exists.
+
+```bash
+yoker                           # same as `yoker chat`
+yoker chat                      # explicit
+yoker chat --ui-mode batch       # batch mode (stdin/stdout)
+yoker chat --with pkgq           # load a plugin
+yoker chat --agents-definition examples/agents/researcher.md
+```
+
+Key flags (all Config flags are available — see `yoker chat --help`):
+
+| Flag | Effect |
+|------|--------|
+| `--ui-mode {interactive,batch}` | Select UI handler |
+| `--ui-show-thinking` | Show LLM reasoning trace |
+| `--ui-show-tool-calls` | Show tool call details |
+| `--ui-show-stats` | Show turn statistics |
+| `--with <package>` | Load a plugin package |
+| `--agents-definition <path>` | Load an agent definition file |
+
+### `yoker run <source>` — Run an Agentic Package
+
+The flagship capability. Loads a source (Python module, GitHub URL, folder, or
+zip file) containing an `agent.toml` manifest and runs it non-interactively.
+The manifest specifies which agent to use and what initial prompt to send.
+
+```bash
+yoker run pkgq                                       # Python module
+yoker run https://github.com/christophevg/pkgq        # GitHub URL
+yoker run ./my-folder                                 # local folder
+yoker run ./my-package.zip                            # zip file
+
+yoker run pkgq --agent researcher --prompt "analyze"  # override manifest
+yoker run pkgq --dry-run                             # preview without executing
+yoker run pkgq --persist --session-id my-run          # persist session
+```
+
+Key flags:
+
+| Flag | Effect |
+|------|--------|
+| `<source>` | Source to run (module, URL, folder, or zip) |
+| `--agent <name>` | Override the manifest's agent |
+| `--prompt <text>` | Override the manifest's prompt |
+| `--dry-run` | Resolve and print manifest info without executing |
+| `--persist` | Enable context persistence (saves session to JSONL) |
+| `--session-id <id>` | Session ID for persistence |
+
+**Trust model:** sources must pass the trust gate before any code is executed.
+The trust gate uses your own config (not the source's manifest overrides), so a
+source cannot influence its own trust decision. Trust a source by adding it to
+your `yoker.toml`:
+
+```toml
+[plugins]
+enabled = true
+
+[plugins.trusted]
+pkgq = true  # or "github:owner/repo@sha", "folder:/abs/path", "zip:<sha256>"
+```
+
+Use `yoker inspect <source>` to safely preview a source before trusting it.
+
+See [Creating Agentic Packages](docs/guides/creating-agentic-packages.md) for
+the `agent.toml` manifest format and how to create your own runnable packages.
+
+### `yoker loop <source>` — Interval Execution
+
+Runs an agentic package at intervals, reusing the `yoker run` execution path.
+The source is resolved, trusted, and loaded once; each iteration sends the same
+prompt through the agent.
+
+```bash
+yoker loop pkgq --interval 60                        # run every 60 seconds
+yoker loop pkgq --interval 60 --max-iterations 3    # stop after 3 runs
+yoker loop pkgq --persist --session-id loop-1       # reuse context across runs
+yoker loop pkgq --max-duration 3600                 # stop after 1 hour
+```
+
+Key flags (in addition to all `yoker run` flags):
+
+| Flag | Default | Effect |
+|------|---------|--------|
+| `--interval <seconds>` | 300 | Seconds between iterations |
+| `--max-iterations <n>` | 100 | Stop after N iterations |
+| `--max-duration <seconds>` | none | Stop after a wall-clock time limit |
+
+The loop stops on `--max-iterations`, `--max-duration`, 3 consecutive failures
+(with exponential backoff), or `Ctrl+C` (graceful shutdown with a summary).
+
+### `yoker inspect <source>` — Read-Only Source Report
+
+Displays a human-readable report about a source without executing any code. No
+trust gate is required — this is safe to run on untrusted sources. For module
+sources, the Python `__YOKER_MANIFEST__` cannot be discovered without importing
+the package, so the report notes that trust is required.
+
+```bash
+yoker inspect pkgq                    # inspect a Python module
+yoker inspect ./my-folder             # inspect a local folder
+yoker inspect https://github.com/x/y # clone and inspect (read-only)
+```
+
+The report shows:
+
+- **What it contains**: skills (names), agent definitions (names), tools (declared `tools_module` — listed but not imported)
+- **What it uses**: dependencies from `pyproject.toml`, `tools_module` declaration
+- **What it does**: the agent and prompt from the manifest's `[run]` section
+- **Config overrides**: any config fields the manifest overrides
+
+### `yoker init` — Generate Configuration
+
+Creates a `~/.yoker.toml` configuration file. Interactive mode (default) runs
+the bootstrap wizard for guided first-run setup. Non-interactive mode writes a
+default config with all values at defaults.
+
+```bash
+yoker init                          # interactive wizard (default)
+yoker init --no-interactive         # write defaults without prompting
+yoker init --path ./my-config.toml  # write to a custom location
+yoker init --force                  # overwrite an existing file
+```
+
+Key flags:
+
+| Flag | Effect |
+|------|--------|
+| `--no-interactive` | Write a default config without the wizard |
+| `--path <path>` | Write to a custom location instead of `~/.yoker.toml` |
+| `--force` | Overwrite an existing config file |
+
+Written files always have `chmod 600` permissions. The `--path` flag rejects
+forbidden system prefixes (e.g. `/etc`, `/usr`).
+
+### `yoker config` — Display Effective Configuration
+
+Loads the merged config (user TOML + project TOML + CLI args) and prints it.
+API keys are masked by default; use `--reveal` to show them in full.
+
+```bash
+yoker config              # print config as TOML
+yoker config --json       # print config as JSON
+yoker config --show-path  # print config file paths
+yoker config --reveal     # show API keys unmasked
+```
+
+Key flags:
+
+| Flag | Effect |
+|------|--------|
+| `--json` | Output as JSON instead of TOML |
+| `--show-path` | Print the config file paths that were found |
+| `--reveal` | Show API key values in full (masked by default) |
+
+### `yoker container <source>` — Generate Container Setup
+
+Generates a Dockerfile (or Containerfile for podman) and ignore file for
+running a yoker agentic package in a container. The generated Dockerfile uses
+JSON-array form exclusively, includes a non-root `USER` directive, pins the
+yoker version, and does not bake API keys into the image.
+
+```bash
+yoker container pkgq                          # generate Dockerfile
+yoker container pkgq --engine podman          # generate Containerfile
+yoker container pkgq --output-dir ./container/ # write to a custom directory
+yoker container pkgq --compose                # also generate docker-compose.yml
+```
+
+Key flags:
+
+| Flag | Default | Effect |
+|------|---------|--------|
+| `<source>` | — | Source to containerize (module, URL, folder, zip) |
+| `--engine {docker,podman}` | docker | Container engine |
+| `--output-dir <path>` | `.` | Where to write generated files |
+| `--base-image <image>` | `python:3.12-slim` | Base image for the Dockerfile |
+| `--compose` | off | Also generate a `docker-compose.yml` |
 
 ## Usage Modes
 
@@ -253,6 +463,8 @@ See [docs/rationale.md](docs/rationale.md) for the full rationale and comparison
 ## Features
 
 **Current Features:**
+- [x] CLI subcommands - `chat`, `run`, `loop`, `inspect`, `init`, `config`, `container`
+- [x] Agentic packages - Run sources (module, GitHub, folder, zip) via `yoker run` with `agent.toml` manifest
 - [x] Chat loop - Interactive conversation with any configured provider
 - [x] Multi-provider backends - Ollama (native SDK), OpenAI, Anthropic, Google Gemini, and 100+ providers via LiteLLM
 - [x] Bootstrap wizard - Interactive first-run setup that writes `~/.yoker.toml` for you
@@ -455,6 +667,8 @@ injected from environment variables using Clevis interpolation
 - [Full documentation](https://yoker.readthedocs.io/)
 - [Installation guide](https://yoker.readthedocs.io/en/latest/installation.html)
 - [Quick start](https://yoker.readthedocs.io/en/latest/quickstart.html)
+- [CLI reference](docs/cli.md) - Subcommands, flags, and examples
+- [Creating agentic packages](docs/guides/creating-agentic-packages.md) - `agent.toml` manifest format and trust model
 - [Model catalog](docs/models.md) - Curated models per provider
 - [Why Yoker?](docs/rationale.md) - Project rationale and comparison
 - [Architecture](https://github.com/christophevg/yoker/blob/master/analysis/architecture.md)
