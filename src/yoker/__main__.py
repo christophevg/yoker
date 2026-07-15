@@ -15,8 +15,8 @@ Subcommands (registered via Clevis ``@configclass(cmd=...)`` in
 
 Configuration is loaded from TOML config files (~/.yoker.toml and ./yoker.toml).
 CLI arguments are automatically generated from the Config data classes by Clevis.
-When no subcommand is given, ``chat`` is inserted as the default (backward
-compatibility). Examples:
+When no subcommand is given, ``chat`` runs as the default (via Clevis's
+``default_cmd=True`` on ``ChatConfig``). Examples:
 
   python -m yoker                              # -> yoker chat
   python -m yoker chat --ui-mode batch          # explicit chat subcommand
@@ -37,40 +37,15 @@ from yoker.cli.loop import run_loop
 from yoker.cli.run import run_run
 from yoker.cli.shared import abort
 
-# Subcommand names registered with Clevis. Used to detect whether the first
-# positional argument is a known subcommand (don't insert the default) or an
-# unknown one (let argparse error with the valid-choice list).
-KNOWN_COMMANDS = frozenset(
-  {
-    "chat",
-    "run",
-    "loop",
-    "inspect",
-    "init",
-    "config",
-    "container",
-  }
-)
-
 
 def main() -> None:
   """Run Yoker.
 
-  Strips ``--with`` plugin args, defaults to the ``chat`` subcommand when none
-  is given (backward compatibility), then dispatches to the subcommand handler
-  via Clevis's ``get_cmd()``.
+  Strips ``--with`` plugin args, then dispatches to the subcommand handler via
+  Clevis's ``get_cmd()``. When no subcommand is given, Clevis runs ``chat``
+  automatically (``default_cmd=True`` on ``ChatConfig``).
   """
   plugin_packages, sys.argv = _parse_plugin_args()
-
-  # Default to chat when no subcommand is given. We patch sys.argv to insert
-  # "chat" as the first positional so existing `yoker --backend-ollama-model X`
-  # invocations route to `yoker chat --backend-ollama-model X`.
-  #
-  # TODO: submit a feature request to Clevis for configurable subcommand
-  # defaults (e.g. a `default_cmd` on the subparser manager) so we can stop
-  # patching sys.argv manually.
-  if _needs_default_chat(sys.argv):
-    sys.argv.insert(1, "chat")
 
   cmd = get_cmd()
 
@@ -92,34 +67,6 @@ def main() -> None:
     # Should not happen: argparse rejects unknown subcommands with a
     # valid-choice list before get_cmd() returns. Guard anyway.
     abort(f"Error: unknown subcommand: {cmd}\n", 1)
-
-
-def _needs_default_chat(argv: list[str]) -> bool:
-  """Return True if we should insert "chat" as the default subcommand.
-
-  We insert "chat" when:
-  - No args follow the program name (bare ``yoker``), or
-  - The first arg is a flag (e.g. ``yoker --backend-ollama-model X``), meaning
-    the user expects the default command with config overrides.
-
-  We leave argv untouched when:
-  - The first arg is ``--help`` / ``-h`` (let the top-level parser show the
-    subcommand list), or
-  - The first arg is a known subcommand (let it route), or
-  - The first arg is an unknown positional (let argparse reject it with the
-    valid-choice list — this is how ``yoker <unknown>`` reports valid
-    subcommands).
-  """
-  if len(argv) <= 1:
-    return True
-  first = argv[1]
-  if first in ("--help", "-h"):
-    return False
-  if first.startswith("-"):
-    return True
-  # First positional: only default when it is not a known subcommand name.
-  # For unknown positionals, let argparse error with the choice list.
-  return False
 
 
 def _parse_plugin_args(argv: list[str] | None = None) -> tuple[list[str], list[str]]:

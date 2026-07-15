@@ -79,17 +79,17 @@ def load_subcommand_config_with_manifest(
   Returns:
     A fully merged and validated config instance.
   """
-  # TODO(clevis-feature-request): ask Clevis to accept an override dict in its
-  # configuration cascade so we stop reaching into internals here.
-  from clevis import Config as DaciteConfig  # type: ignore[attr-defined]
-  from clevis import (  # type: ignore[attr-defined]
-    _check_directory_permissions,
-    _check_file_permissions,
-    _load_toml_from_fd,
+  from clevis import (
+    ConfigError,
     apply_to_dict,
-    from_dict,
+    check_directory_permissions,
+    check_file_permissions,
+    deep_merge,
     get_factory,
+    load_toml_from_fd,
   )
+  from dacite import Config as DaciteConfig
+  from dacite import from_dict
 
   security = get_security_config()
   if security is None:
@@ -104,26 +104,24 @@ def load_subcommand_config_with_manifest(
   cfg: dict[str, Any] = {}
   user_config = Path.home() / ".yoker.toml"
   project_config = Path.cwd() / "yoker.toml"
-  _check_directory_permissions(user_config, dir_action)
-  _check_directory_permissions(project_config, dir_action)
-  _, user_fd = _check_file_permissions(user_config, file_action)
+  check_directory_permissions(user_config, dir_action)
+  check_directory_permissions(project_config, dir_action)
+  _, user_fd = check_file_permissions(user_config, file_action)
   if user_fd is not None:
-    cfg.update(_load_toml_from_fd(user_fd))
-  _, project_fd = _check_file_permissions(project_config, file_action)
+    cfg.update(load_toml_from_fd(user_fd))
+  _, project_fd = check_file_permissions(project_config, file_action)
   if project_fd is not None:
-    cfg.update(_load_toml_from_fd(project_fd))
+    cfg.update(load_toml_from_fd(project_fd))
 
   # 2. Extract subcommand section (e.g. [run]) — same logic as clevis.get_config.
   factory = get_factory(config_class)
-  toml_key = factory.config or factory.cmd  # type: ignore[attr-defined]
+  toml_key = factory.config or factory.cmd
   if toml_key and toml_key in cfg:
     cmd_cfg = cfg.pop(toml_key)
     if isinstance(cmd_cfg, dict):
       cfg.clear()
       cfg.update(cmd_cfg)
     else:
-      from clevis import ConfigError
-
       raise ConfigError(
         message=(
           f"Configuration section '{toml_key}' must be a table, got {type(cmd_cfg).__name__}"
@@ -134,32 +132,13 @@ def load_subcommand_config_with_manifest(
 
   # 3. Deep-merge manifest overrides (between TOML and CLI — CLI wins).
   if manifest_overrides:
-    deep_merge(cfg, manifest_overrides)
+    cfg = deep_merge(cfg, manifest_overrides)
 
   # 4. Apply CLI args on top (highest priority).
   apply_to_dict(factory.get_args(), cfg)
 
   # 5. Convert merged dict to config (runs __post_init__ validation).
-  from typing import cast
-
-  return cast(
-    T, from_dict(data_class=config_class, data=cfg, config=DaciteConfig(cast=[tuple, set]))
-  )
-
-
-def deep_merge(target: dict[str, Any], overrides: dict[str, Any]) -> None:
-  """Recursively merge ``overrides`` into ``target`` in place.
-
-  Nested dicts are merged key-by-key; non-dict values in ``overrides`` replace
-  the corresponding value in ``target``. TOML lists/arrays become Python lists
-  (not dicts), so they naturally replace — matching the intent of overriding
-  tuple-typed fields like ``agents.directories``.
-  """
-  for key, value in overrides.items():
-    if isinstance(value, dict) and isinstance(target.get(key), dict):
-      deep_merge(target[key], value)
-    else:
-      target[key] = value
+  return from_dict(data_class=config_class, data=cfg, config=DaciteConfig(cast=[tuple, set]))
 
 
 def abort(msg: str, code: int) -> None:
@@ -273,7 +252,6 @@ def resolve_agent_and_prompt(
 __all__ = [
   "MAX_PROMPT_BYTES",
   "abort",
-  "deep_merge",
   "get_security_config",
   "load_subcommand_config",
   "load_subcommand_config_with_manifest",

@@ -183,10 +183,10 @@ def _read_dependencies(resolved: ResolvedSource) -> str:
     return "(no pyproject.toml found)"
 
   try:
-    from clevis import _load_toml  # type: ignore[attr-defined]
+    from clevis import load
 
     with pyproject.open("rb") as fh:
-      data = dict(_load_toml(fh))
+      data = dict(load(fh))
     deps = data.get("project", {}).get("dependencies", [])
     if not deps:
       return "(none declared)"

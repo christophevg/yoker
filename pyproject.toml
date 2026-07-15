@@ -25,7 +25,8 @@ classifiers = [
 keywords = ["agent", "llm", "ollama", "ai", "harness"]
 
 dependencies = [
-  "clevis[tomlev]>=0.3.3",
+  "clevis[tomlev]>=0.7.0",
+  "dacite>=1.8.0",
   "httpx>=0.25.0",
   "litellm>=1.90.0",
   "ollama>=0.6.0",

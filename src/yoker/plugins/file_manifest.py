@@ -132,15 +132,13 @@ def load_file_manifest(path: Path) -> FileManifestResult | None:
 
 def _parse_toml(path: Path) -> dict[str, Any]:
   """Parse a TOML file, raising PluginError on parse failure."""
-  # Use clevis's selected parser so env-var interpolation (${VAR|default})
+  # Use clevis's public TOML loader so env-var interpolation (${VAR|default})
   # behaves the same as ~/.yoker.toml and ./yoker.toml.
-  # TODO(clevis-feature-request): ask Clevis to expose a public TOML loader
-  # and/or a config-override cascade API so we don't reach into internals.
-  from clevis import _load_toml  # type: ignore[attr-defined]
+  from clevis import load
 
   try:
     with path.open("rb") as fh:
-      return dict(_load_toml(fh))
+      return dict(load(fh))
   except Exception as e:  # TOML parse errors vary by parser
     raise PluginError(
       package=str(path),
@@ -202,7 +200,9 @@ def _build_plugin_config(data: dict[str, Any], path: Path) -> PluginConfig:
   if tools_module is not None and not isinstance(tools_module, str):
     raise PluginError(
       package=str(path),
-      message=f"[plugin].tools_module in {path} must be a string, got {type(tools_module).__name__}",
+      message=(
+        f"[plugin].tools_module in {path} must be a string, got {type(tools_module).__name__}"
+      ),
     )
   extra = set(data) - {"skills_dir", "agents_dir", "tools_module"}
   if extra:

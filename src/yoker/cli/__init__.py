@@ -17,7 +17,6 @@ from yoker.cli.commands import (
 from yoker.cli.shared import (
   MAX_PROMPT_BYTES,
   abort,
-  deep_merge,
   load_subcommand_config,
   load_subcommand_config_with_manifest,
   parse_run_overrides,
@@ -37,7 +36,6 @@ __all__ = [
   "RunConfig",
   "MAX_PROMPT_BYTES",
   "abort",
-  "deep_merge",
   "load_subcommand_config",
   "load_subcommand_config_with_manifest",
   "parse_run_overrides",

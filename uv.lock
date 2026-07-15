@@ -441,14 +441,14 @@ wheels = [
 
 [[package]]
 name = "clevis"
-version = "0.3.3"
+version = "0.7.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "dacite" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/a9/4d/805f055b9e4b8ae98bfbfdfa6f5d65a77a66cff40abd959a3685e3bb45c6/clevis-0.3.3.tar.gz", hash = "sha256:16ab57a729fffc55e6f9926572ea96697e300ab937ff84c4be3766f9d97ae5b9", size = 176063, upload-time = "2026-06-07T21:49:23.941Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/bf/dc/f249f731ac8ccf5bec66e1af19ca3ef6b18c90d7021cf2c9e897993314ca/clevis-0.7.0.tar.gz", hash = "sha256:f8c75e7812d63ac816eecd0dc0252ae54aa5bf1e90eeaca03301ba04744e0220", size = 281534, upload-time = "2026-07-15T12:11:12.282Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ee/01/c2a3e1bb3794a3ba7a47b9820c04e62fbcc0946e5ed716e6ff468326783f/clevis-0.3.3-py3-none-any.whl", hash = "sha256:a27f6d658da33f3a7a595ed6113ce7c934f2cf6f5758608f09d3a84fad374e51", size = 16871, upload-time = "2026-06-07T21:49:21.899Z" },
+    { url = "https://files.pythonhosted.org/packages/a8/5f/b56e6d221f14140b9310f61638f678e6694d7c5af3370851635f2da66dfd/clevis-0.7.0-py3-none-any.whl", hash = "sha256:99fc1364cc80e7d085a8a7b0319079c21696cb1ef1379d0b0b9115fc84f5f054", size = 35784, upload-time = "2026-07-15T12:11:10.61Z" },
 ]
 
 [package.optional-dependencies]
@@ -3580,6 +3580,7 @@ version = "0.7.0"
 source = { editable = "." }
 dependencies = [
     { name = "clevis", extra = ["tomlev"] },
+    { name = "dacite" },
     { name = "httpx" },
     { name = "litellm" },
     { name = "ollama" },
@@ -3622,8 +3623,9 @@ magic = [
 [package.metadata]
 requires-dist = [
     { name = "build", marker = "extra == 'dev'", specifier = ">=1.0.0" },
-    { name = "clevis", extras = ["tomlev"], specifier = ">=0.3.3" },
+    { name = "clevis", extras = ["tomlev"], specifier = ">=0.7.0" },
     { name = "coveralls", marker = "extra == 'dev'", specifier = ">=3.3.0" },
+    { name = "dacite", specifier = ">=1.8.0" },
     { name = "httpx", specifier = ">=0.25.0" },
     { name = "litellm", specifier = ">=1.90.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.13.0" },

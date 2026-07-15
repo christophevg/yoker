@@ -41,7 +41,7 @@ CLI Arguments:
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Literal, cast
 
 from clevis import SecurityAction, SecurityConfig, get_config
 
@@ -776,21 +776,7 @@ def get_yoker_config_with_manifest(
   Raises:
     PluginError: If the manifest exists but is malformed.
   """
-  # Local imports keep the module-level import block stable and avoid a
-  # hard dependency from config -> plugins at import time. Clevis re-exports
-  # Config/from_dict at runtime but omits them from its stub; the private
-  # _check_* / _load_toml_* helpers are used until a public override-cascade
-  # API exists.
-  # TODO(clevis-feature-request): replace these internals with a public API.
-  from clevis import Config as DaciteConfig  # type: ignore[attr-defined]
-  from clevis import (  # type: ignore[attr-defined]
-    _check_directory_permissions,
-    _check_file_permissions,
-    _load_toml_from_fd,
-    apply_to_dict,
-    from_dict,
-    get_factory,
-  )
+  from clevis import build_default_cascade, get_config
 
   from yoker.plugins.file_manifest import (
     PluginConfig,
@@ -798,35 +784,18 @@ def get_yoker_config_with_manifest(
     load_file_manifest,
   )
 
-  # Default security: mirror get_yoker_config's dev/test bypass.
+  # Security: mirror get_yoker_config's dev/test bypass.
   security: SecurityConfig | None = None
   if os.environ.get("YOKER_DEV_MODE") == "1" or os.environ.get("PYTEST_CURRENT_TEST"):
     security = SecurityConfig(
       file_permissions=SecurityAction.LOG,
       directory_permissions=SecurityAction.LOG,
     )
-  if security is None:
-    security = {
-      "file_permissions": SecurityAction.REJECT,
-      "directory_permissions": SecurityAction.REJECT,
-    }
-  file_action = security.get("file_permissions", SecurityAction.REJECT)
-  dir_action = security.get("directory_permissions", SecurityAction.REJECT)
 
-  # 1. Load base config dict from user + project TOML (mirrors clevis.get_config).
-  cfg: dict[str, Any] = {}
-  user_config = Path.home() / ".yoker.toml"
-  project_config = Path.cwd() / "yoker.toml"
-  _check_directory_permissions(user_config, dir_action)
-  _check_directory_permissions(project_config, dir_action)
-  _, user_fd = _check_file_permissions(user_config, file_action)
-  if user_fd is not None:
-    cfg.update(_load_toml_from_fd(user_fd))
-  _, project_fd = _check_file_permissions(project_config, file_action)
-  if project_fd is not None:
-    cfg.update(_load_toml_from_fd(project_fd))
+  # Build the cascade: user TOML → project TOML → manifest overrides.
+  # CLI args are applied by get_config on top (highest priority).
+  cascade = build_default_cascade("yoker", security)
 
-  # 2. Load manifest overrides; deep-merge into the base config dict.
   run_config = RunConfig()
   plugin_config = PluginConfig()
   if manifest_path is not None:
@@ -834,35 +803,11 @@ def get_yoker_config_with_manifest(
     if manifest is not None:
       run_config = manifest.run_config
       plugin_config = manifest.plugin_config
-      _deep_merge(cfg, manifest.config_overrides)
+      overrides = manifest.config_overrides
+      cascade = cascade + [lambda: overrides]
 
-  # 3. Apply CLI args on top (highest priority after manifest).
-  if cli:
-    # TODO(clevis-feature-request): ask Clevis to accept an override dict in
-    # its configuration cascade so we can stop reaching into internals here.
-    apply_to_dict(get_factory(Config).get_args(), cfg)
-
-  # 4. Convert merged dict to Config (same cast policy as clevis.get_config).
-  return (
-    from_dict(data_class=Config, data=cfg, config=DaciteConfig(cast=[tuple, set])),
-    run_config,
-    plugin_config,
-  )
-
-
-def _deep_merge(target: dict[str, Any], overrides: dict[str, Any]) -> None:
-  """Recursively merge ``overrides`` into ``target`` in place.
-
-  Nested dicts are merged key-by-key; non-dict values in ``overrides``
-  replace the corresponding value in ``target``. TOML lists/arrays become
-  Python lists (not dicts), so they naturally replace — this matches the
-  intent of overriding tuple-typed fields like ``agents.directories``.
-  """
-  for key, value in overrides.items():
-    if isinstance(value, dict) and isinstance(target.get(key), dict):
-      _deep_merge(target[key], value)
-    else:
-      target[key] = value
+  config = get_config(Config, name="yoker", cascade=cascade, cli=cli)
+  return config, run_config, plugin_config
 
 
 __all__ = [
