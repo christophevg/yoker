@@ -8,6 +8,87 @@ Yoker is a Python agent harness with configurable tools and guardrails. It provi
 
 ## Recent Changes
 
+### Clevis 0.7.0 Upgrade (2026-07-15)
+
+Upgraded the Clevis dependency from 0.3.3 to 0.7.0, replacing all Clevis
+internal API workarounds with native 0.7.0 functionality.
+
+- **`pyproject.toml`**: bumped `clevis[tomlev]>=0.3.3` to `>=0.7.0`; ran
+  `uv lock` + `uv sync` to update the lockfile and venv.
+- **Feature #32 (configurable subcommand default)**: added `default_cmd=True`
+  to `@configclass(cmd="chat", ...)` in `cli/commands.py`. Removed the
+  `_needs_default_chat()` helper, `KNOWN_COMMANDS` set, and `sys.argv`
+  patching block from `__main__.py`. Clevis now natively routes bare `yoker`
+  to the `chat` subcommand.
+- **Feature #33 (public TOML loader + config override cascade)**:
+  - `plugins/file_manifest.py`: replaced `from clevis import _load_toml`
+    (private) with `from clevis import load` (public). Removed
+    `TODO(clevis-feature-request)` comment.
+  - `cli/inspect.py`: same `_load_toml` → `load` replacement.
+  - `config/__init__.py`: rewrote `get_yoker_config_with_manifest()` to use
+    `build_default_cascade("yoker", security) + [manifest_provider]` and
+    `get_config(Config, cascade=cascade, cli=cli)`. Removed all Clevis
+    internals (`_load_toml_from_fd`, `_check_file_permissions`,
+    `_check_directory_permissions`, `apply_to_dict`, `from_dict`, `get_factory`,
+    `Config as DaciteConfig`) and the local `_deep_merge` helper. No
+    `# type: ignore[attr-defined]` or `TODO(clevis-feature-request)` remain.
+  - `cli/shared.py`: rewrote `load_subcommand_config_with_manifest()` to use
+    Clevis 0.7.0's public helpers (`check_file_permissions`,
+    `check_directory_permissions`, `load_toml_from_fd`, `deep_merge`,
+    `get_factory`) and `dacite.from_dict` directly (dacite is a typed
+    package). Removed all `# type: ignore[attr-defined]` and
+    `TODO(clevis-feature-request)` comments. Behavior preserved: manifest
+    overrides are still applied AFTER subcommand section extraction and
+    BEFORE CLI args.
+- **`cli/commands.py`**: updated `# type: ignore[arg-type]` to
+  `# type: ignore[arg-type]` on decorator lines + added
+  `# type: ignore[misc]` on class lines (Clevis 0.7.0's updated stubs
+  produce a second `[misc]` error on the class definition line).
+- **`tests/test_cli/test_dispatch.py`**: removed `TestNeedsDefaultChat`
+  class (tested the deleted `_needs_default_chat` helper), removed
+  `KNOWN_COMMANDS` import, removed `_needs_default_chat` mock from
+  `TestMainDispatch` and `TestWithStrippingFromSubcommands` fixtures.
+  `TestMainDefaultChat` now verifies that `get_cmd()` returns `"chat"` when
+  no subcommand is given (Clevis native default_cmd behavior).
+- **`CLAUDE.md`**: updated "Current State" to reflect `default_cmd=True`
+  replacing `sys.argv` patching, and public cascade API replacing Clevis
+  internals.
+
+**Verification**: `make check` green — 1841 tests pass, ruff format/lint
+clean, mypy typecheck clean (123 source files), 81% coverage.
+
+### Clevis 0.7.0 Review Fixes (2026-07-15)
+
+Addressed review feedback on the Clevis 0.7.0 upgrade.
+
+- **Fix 1 (test coverage)**: Added 6 direct tests for
+  `load_subcommand_config_with_manifest()` in
+  `tests/test_cli/test_shared_manifest.py` — manifest overrides base TOML,
+  CLI wins over manifest, subcommand section extraction, empty overrides
+  no-op, validation runs, manifest overrides user TOML. Tests use
+  `reload(yoker.cli.commands)` to re-register subcommand configs after
+  `_reset_factories()` (reload creates new class objects, so tests
+  reference `yoker.cli.commands.RunConfig` rather than a stale top-level
+  import).
+- **Fix 2 (integration test)**: Added `TestDefaultCmdIntegration` class in
+  `tests/test_cli/test_dispatch.py` with 3 tests exercising Clevis's real
+  `default_cmd=True` routing (no `get_cmd` mock): bare `yoker` routes to
+  chat, `yoker --help` shows top-level help (SystemExit 0, no chat), `yoker
+  run` routes to run.
+- **Fix 3 (dead code)**: Removed the module-level `deep_merge` from
+  `cli/shared.py` (in-place mutation variant, dead in production — the
+  function imports `clevis.deep_merge` which returns a new dict). Updated
+  `cli/__init__.py` exports and `cli/shared.py` `__all__`. Updated
+  `TestDeepMerge` in `test_run.py` to use `clevis.deep_merge` (returns new
+  dict, no mutation) and added a non-mutation test.
+- **Fix 4 (explicit dependency)**: Added `dacite>=1.8.0` to `pyproject.toml`
+  dependencies (was transitive via Clevis). Ran `uv lock` + `uv sync`.
+- **Fix 5 (line length)**: Broke a 101-char f-string in
+  `plugins/file_manifest.py` line 203 across two lines.
+
+**Verification**: `make check` green — 1851 tests pass (10 new), ruff
+format/lint clean, mypy typecheck clean (123 source files), 81% coverage.
+
 ### MBI-004: yoker Commands — Tasks 4.8, 4.9, 4.12 (2026-07-13)
 
 Implemented the remaining Phase 3 CLI subcommands: `yoker loop` (interval

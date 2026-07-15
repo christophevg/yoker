@@ -386,42 +386,59 @@ class TestCleanup:
 
 
 class TestDeepMerge:
-  """Manifest config overrides deep-merge into the config dict (replaces setattr)."""
+  """Manifest config overrides deep-merge into the config dict (replaces setattr).
+
+  Uses :func:`clevis.deep_merge` — the same function
+  :func:`yoker.cli.shared.load_subcommand_config_with_manifest` uses to merge
+  manifest overrides into the base config dict. Unlike the old module-level
+  helper, ``clevis.deep_merge`` returns a new dict and does not mutate inputs.
+  """
 
   def test_nested_dict_recurse(self) -> None:
-    from yoker.cli.shared import deep_merge
+    from clevis import deep_merge
 
     target = {"backend": {"provider": "ollama", "ollama": {"model": "x"}}}
     overrides = {"backend": {"provider": "openai"}}
-    deep_merge(target, overrides)
-    assert target["backend"]["provider"] == "openai"
+    result = deep_merge(target, overrides)
+    assert result["backend"]["provider"] == "openai"
     # Other nested keys preserved (deep merge, not replace).
-    assert target["backend"]["ollama"]["model"] == "x"
+    assert result["backend"]["ollama"]["model"] == "x"
 
   def test_non_dict_replaces(self) -> None:
-    from yoker.cli.shared import deep_merge
+    from clevis import deep_merge
 
     target = {"agent": None}
     overrides = {"agent": "coder"}
-    deep_merge(target, overrides)
-    assert target["agent"] == "coder"
+    result = deep_merge(target, overrides)
+    assert result["agent"] == "coder"
 
   def test_deep_nested_override(self) -> None:
-    from yoker.cli.shared import deep_merge
+    from clevis import deep_merge
 
     target = {"backend": {"ollama": {"model": "old", "base_url": "x"}}}
     overrides = {"backend": {"ollama": {"model": "llama3"}}}
-    deep_merge(target, overrides)
-    assert target["backend"]["ollama"]["model"] == "llama3"
-    assert target["backend"]["ollama"]["base_url"] == "x"
+    result = deep_merge(target, overrides)
+    assert result["backend"]["ollama"]["model"] == "llama3"
+    assert result["backend"]["ollama"]["base_url"] == "x"
 
   def test_list_replaces_not_merged(self) -> None:
-    from yoker.cli.shared import deep_merge
+    from clevis import deep_merge
 
     target = {"agents": {"directories": ["a", "b"]}}
     overrides = {"agents": {"directories": ["c"]}}
-    deep_merge(target, overrides)
-    assert target["agents"]["directories"] == ["c"]
+    result = deep_merge(target, overrides)
+    assert result["agents"]["directories"] == ["c"]
+
+  def test_inputs_not_mutated(self) -> None:
+    """clevis.deep_merge returns a new dict; inputs are not modified."""
+    from clevis import deep_merge
+
+    target = {"backend": {"model": "old"}}
+    overrides = {"backend": {"model": "new"}}
+    result = deep_merge(target, overrides)
+    assert result["backend"]["model"] == "new"
+    # Original target is untouched.
+    assert target["backend"]["model"] == "old"
 
 
 class TestCheckSourceAllowed:

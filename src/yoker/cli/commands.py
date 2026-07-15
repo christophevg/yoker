@@ -23,17 +23,18 @@ from clevis import configclass
 from yoker.config import Config
 
 
-@configclass(cmd="chat", help="Start the interactive REPL (default subcommand)")  # type: ignore[arg-type]
-class ChatConfig(Config):
+@configclass(cmd="chat", default_cmd=True, help="Start the interactive REPL (default subcommand)")  # type: ignore[arg-type]
+class ChatConfig(Config):  # type: ignore[misc]
   """Config for ``yoker chat``.
 
   Same fields as :class:`Config`; no additions needed. ``chat`` is the default
-  subcommand when no subcommand is given (handled in ``__main__.py``).
+  subcommand when no subcommand is given (handled natively by Clevis via
+  ``default_cmd=True``).
   """
 
 
 @configclass(cmd="run", help="Run an agentic package non-interactively")  # type: ignore[arg-type]
-class RunConfig(Config):
+class RunConfig(Config):  # type: ignore[misc]
   """Config for ``yoker run``.
 
   Extends :class:`Config` with run-specific fields. The source to run, agent,
@@ -49,7 +50,7 @@ class RunConfig(Config):
 
 
 @configclass(cmd="loop", help="Run an agentic package at intervals")  # type: ignore[arg-type]
-class LoopConfig(RunConfig):
+class LoopConfig(RunConfig):  # type: ignore[misc]
   """Config for ``yoker loop``. Extends :class:`RunConfig` with loop fields."""
 
   interval: int = 300
@@ -58,14 +59,14 @@ class LoopConfig(RunConfig):
 
 
 @configclass(cmd="inspect", help="Dump a report about a source without executing it")  # type: ignore[arg-type]
-class InspectConfig:
+class InspectConfig:  # type: ignore[misc]
   """Config for ``yoker inspect``. No base Config needed — read-only."""
 
   source: str = ""
 
 
 @configclass(cmd="init", help="Generate a default configuration file")  # type: ignore[arg-type]
-class InitConfig:
+class InitConfig:  # type: ignore[misc]
   """Config for ``yoker init``. No base Config needed."""
 
   no_interactive: bool = False
@@ -74,7 +75,7 @@ class InitConfig:
 
 
 @configclass(cmd="config", help="Display the effective configuration")  # type: ignore[arg-type]
-class ConfigCmdConfig(Config):
+class ConfigCmdConfig(Config):  # type: ignore[misc]
   """Config for ``yoker config``. Same fields as :class:`Config`; display only."""
 
   json: bool = False
@@ -83,7 +84,7 @@ class ConfigCmdConfig(Config):
 
 
 @configclass(cmd="container", help="Generate container setup for an agentic package")  # type: ignore[arg-type]
-class ContainerConfig:
+class ContainerConfig:  # type: ignore[misc]
   """Config for ``yoker container``. No base Config needed."""
 
   source: str = ""
