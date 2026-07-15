@@ -14,44 +14,7 @@ Quick captures for MBI ideas. These are raw requests that haven't been analyzed 
 
 The MBI currently being implemented. Only one Active MBI at a time.
 
-### MBI-004: yoker Commands
-
-**Goal:** Users can use yoker from the command line with a complete CLI: `yoker chat`, `yoker run`, `yoker loop`, `yoker init`, `yoker config`, `yoker container`. The flagship capability is `yoker run`, which loads a source (module, GitHub URL, folder, zip) containing an extended yoker manifest (agent selection + initial prompt) and runs it as a "yoker-based agentic executable package."
-
-**Value:** Command-line interface is essential for developer workflows and automation. `yoker run` transforms yoker from an interactive tool into a runtime for agentic packages — any plugin can become an executable agent with a single command. Completes the yoker product for first release.
-
-**Status:** Active
-
-**Design source of truth:** `analysis/mbi-004-yoker-commands.md`
-
-**Components:**
-- [ ] DEV: CLI subcommand dispatcher (refactor `__main__.py`)
-- [ ] DEV: `yoker chat` — extract existing REPL into the `chat` subcommand
-- [ ] DEV: `yoker init` — generate default config / bootstrap
-- [ ] DEV: `yoker config` — display effective config
-- [ ] DEV: Extended manifest (agent selection + initial prompt fields, file-based manifest)
-- [ ] DEV: Source resolution (module, GitHub URL, folder, zip → loadable plugin)
-- [ ] DEV: `yoker run` — load source + extended manifest, run agent with initial prompt
-- [ ] DEV: `yoker loop` — interval execution reusing `yoker run`
-- [ ] DEV: `yoker container` — generate container setup
-- [ ] TEST: Command tests
-- [ ] DOCS: CLI documentation
-
-**Acceptance Criteria:**
-- [ ] `yoker` with no subcommand defaults to `yoker chat` (backward compatible)
-- [ ] `yoker chat` starts the interactive REPL (current behavior preserved)
-- [ ] `yoker init` generates a config file (interactive wizard or non-interactive defaults)
-- [ ] `yoker config` displays the effective configuration
-- [ ] `yoker run <source>` supports module names, GitHub URLs, folder paths, and zip files
-- [ ] `yoker run` reads extended manifest fields (`agent` + `prompt`) from the source
-- [ ] `yoker run --agent <name>` and `--prompt <text>` override manifest fields
-- [ ] `yoker loop <source> --interval <seconds>` runs at specified intervals
-- [ ] `yoker container <source>` generates valid Dockerfile/Containerfile
-- [ ] File-based manifest (`yoker.toml`) works for non-Python-package sources
-- [ ] All CLI commands work as documented
-- [ ] `make check` green
-
-**Dependencies:** MBI-002 (Bootstrap) — DONE; MBI-003 (Python API) — DONE
+[None at this time — MBI-004 just completed.]
 
 ---
 
@@ -124,6 +87,22 @@ Future MBIs, ordered by priority (highest first).
 ## Done
 
 Completed MBIs.
+
+### MBI-004: yoker Commands (Completed: 2026-07-15)
+
+**Goal:** Users can use yoker from the command line with a complete CLI: `yoker chat`, `yoker run`, `yoker loop`, `yoker init`, `yoker config`, `yoker container`. The flagship capability is `yoker run`, which loads a source (module, GitHub URL, folder, zip) containing an extended yoker manifest (agent selection + initial prompt) and runs it as a "yoker-based agentic executable package."
+
+**Value:** Command-line interface is essential for developer workflows and automation. `yoker run` transforms yoker from an interactive tool into a runtime for agentic packages — any plugin can become an executable agent with a single command. Completes the yoker product for first release.
+
+**Status:** Done
+
+**Design source of truth:** `analysis/mbi-004-yoker-commands.md`
+
+**Achieved:** All subcommands implemented and working end-to-end. `chat` (default, backward compatible), `run` (flagship — loads source via two-phase resolution with trust gate, applies manifest config overrides, runs agent non-interactively), `init`, `config`, `loop`, `inspect`, `container`. Extended manifest supports both Python `__YOKER_MANIFEST__` and file-based `agent.toml` with `[run]`/`[plugin]` sections and config-override layering (base TOML → manifest → CLI). Source resolution supports module names, GitHub URLs (HTTPS-only, SSRF-checked), folder paths, and zip files (safe extraction with zip-bomb guards). Clevis 0.7.0 upgrade replaced internal-API workarounds with native public API.
+
+**Merged via:** PR #46 (2026-07-15).
+
+---
 
 ### MBI-006: Multi-Provider Backend Support (Completed: 2026-07-01)
 
