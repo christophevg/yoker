@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+import yoker
 from yoker.cli.container import (
   _build_dockerfile,
   _build_ignore_file,
@@ -277,7 +278,7 @@ class TestRunContainer:
 
     dockerfile = (tmp_path / "Dockerfile").read_text()
     assert "FROM python:3.12-slim" in dockerfile
-    assert "yoker==0.7.0" in dockerfile  # pinned version from yoker.__version__
+    assert f"yoker=={yoker.__version__}" in dockerfile  # pinned version from yoker.__version__
     assert "USER 1000" in dockerfile
     assert 'ENTRYPOINT ["yoker", "run", "pkgq"]' in dockerfile
 

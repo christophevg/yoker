@@ -4,6 +4,47 @@ All notable changes to yoker are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## 0.8.0 (2026-07-15)
+
+### Added
+
+- **CLI Subcommands (MBI-004)**: Seven subcommands registered with Clevis:
+  `chat` (default, interactive REPL), `run`, `init`, `config`, `loop`,
+  `inspect`, and `container`.
+- **Config-override manifest layer**: `agent.toml` support for agentic
+  packages, with deep-merge of nested table overrides and TOML array
+  replacement for tuple-typed fields.
+- **Two-phase source resolution**: `resolve_source()` then `load_source()`
+  supports module, folder, GitHub URL, and zip file sources.
+- **Security trust gate**: `check_source_allowed()` is a security invariant
+  — `load_source()` is never called before the trust gate returns True.
+  Non-interactive mode rejects untrusted sources by default
+  (`YOKER_TRUST_SOURCE=1` env var overrides).
+- **`yoker run <source>`**: Flagship command for running agentic packages,
+  with `--dry-run`, `--persist`, and `--session-id` options.
+- **`yoker inspect <source>`**: Read-only source report (no trust gate, no
+  code execution).
+- **`yoker loop <source>`**: Interval-based execution with graceful shutdown.
+- **`yoker container <source>`**: Dockerfile/Containerfile generation with
+  security hardening.
+- **`yoker init`**: Config generation with bootstrap wizard integration.
+- **`yoker config`**: Display effective configuration with API key masking.
+
+### Changed
+
+- **Clevis upgraded from 0.3.3 to 0.7.0**: Replaced `sys.argv` patching with
+  native Clevis `default_cmd=True`; replaced private Clevis internals with
+  the public 0.7.0 API (`clevis.load`, `build_default_cascade`,
+  `get_config(cascade=...)`); removed all `TODO(clevis-feature-request)`
+  workarounds and `type: ignore[attr-defined]` comments.
+- **`dacite` added as explicit dependency**: Was previously transitive
+  through Clevis.
+
+### Fixed
+
+- **Windows-specific test failures**: Path and permission assertions now
+  pass on Windows.
+
 ## 0.7.0 (2026-07-07)
 
 ### Added
