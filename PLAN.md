@@ -14,23 +14,48 @@ Quick captures for MBI ideas. These are raw requests that haven't been analyzed 
 
 The MBI currently being implemented. Only one Active MBI at a time.
 
-[None at this time — MBI-008 and MBI-009 prepared and ready for activation.]
+None — bare-minimum 1.0.0 scope defined, ready to implement.
+
+---
+
+## 1.0.0 Release Gate
+
+All items below must be complete before declaring 1.0.0. The full MBI-008 (Prompt Sets) and MBI-009 (Toolset Coverage) analyses are preserved as post-1.0.0 references at `analysis/mbi-prompt-sets.md` and `analysis/mbi-toolset-coverage.md`. Only the critical slices listed here are pulled forward into the minimal 1.0.0 scope.
+
+### 1.0.0 Scope (in implementation order)
+
+1. **M.2: Default Tools Behavior** — all tools available when no explicit config. Without this, agents have no tools.
+2. **`make` tool** — Makefile target execution. Agent can run `make check`, `make test`, etc. (from MBI-009 Tier 1)
+3. **`read` offset/limit** — read large files efficiently with offset and limit parameters. (from MBI-009 Tier 1)
+4. **`search` enhancements** — context lines, case-insensitive, file-type filter, count mode. (from MBI-009 Tier 1)
+5. **`github` tool** — structured GitHub operations with subcommand blocking. For PR workflow. (from MBI-009 Tier 2)
+6. **Context overflow management** (IP-12 from MBI-008) — framework-level message truncation when context fills up. Without this, long sessions crash.
+7. **`protected_files` guardrail** — when agent writes to a protected file (Makefile, pyproject.toml, tox.ini, etc.), show the user a diff and ask for permission. Only apply on approval. In non-interactive mode, block the change. This is a SOFT guardrail — it protects against powerful mistakes, not malicious agents. (from MBI-009 Tier 1)
+8. **MBI-005: Two Assistant Packages** — yoker-assistant + yoker-writing-assistant (based on c3:writing-assistant). Showcase capabilities.
+
+### Dogfooding Gate
+
+- [ ] Last Yoker development sessions must be doable with Yoker itself (not Claude Code)
 
 ---
 
 ## Backlog
 
-Future MBIs, ordered by priority (highest first).
+### Post-1.0.0
 
-### MBI-008: Prompt Sets
+Items deferred until after the 1.0.0 release.
+
+#### MBI-008: Prompt Sets (full)
 
 **Goal:** Extract all prompt generation from the codebase into external Jinja2 template files (prompt sets). Define 13 injection points (7 existing + 6 new). Ship a Yoker default set (minimal, byte-identical to current behavior) and a Claude Code demo set (mimics Claude Code's injection behavior). Prompt sets become the fourth plugin component type alongside tools, skills, and agents.
 
 **Value:** Makes prompts independent of the codebase (no code changes to modify prompts), swappable at configuration time, distributable as part of plugins/packages, and versionable/customizable per project. The Claude Code demo set demonstrates full compatibility with Claude Code's context injection behavior.
 
-**Status:** Ready
+**Status:** Ready (post-1.0.0)
 
 **Analysis source of truth:** `analysis/mbi-prompt-sets.md` (finalized — all 6 design decisions D1-D6 resolved, owner-approved)
+
+**Note:** Only IP-12 (context overflow management) is pulled into 1.0.0. The rest is post-1.0.0.
 
 **Scope:**
 - 13 injection points (IP-1 through IP-13): 7 existing (system prompt, skill discovery/invocation, tool descriptions, tool param descriptions, agent/send_message tool descriptions) + 6 new (session start, env info, file change, tool result, context overflow, context update)
@@ -39,14 +64,6 @@ Future MBIs, ordered by priority (highest first).
 - Jinja2 runtime dependency
 - `[prompts]` config section (`set`, `set_path`)
 - `prompt_sets` field on `PluginManifest`
-
-**Tasks:**
-- [ ] T1.1-T1.3: Infrastructure (Jinja2 dep, `[prompts]` config, default set skeleton)
-- [ ] T2.1-T2.5: Externalize IP-1 through IP-7 (byte-identical output verification)
-- [ ] T3.1-T3.6: New hooks IP-8 through IP-13 (framework call sites with no-op defaults)
-- [ ] T4.1-T4.7: Claude Code prompt set (all 13 hooks with CC-matching templates)
-- [ ] T5.1-T5.2: Plugin integration (`prompt_sets` on `PluginManifest`, loader discovery)
-- [ ] T6.1-T6.5: Testing and documentation
 
 **Acceptance Criteria:**
 - [ ] Jinja2 is a runtime dependency; prompt set loader and renderer work
@@ -64,70 +81,42 @@ Future MBIs, ordered by priority (highest first).
 
 ---
 
-### MBI-009: Toolset Coverage for 1.0.0
+#### MBI-009: Toolset Coverage (rest)
 
-**Goal:** Ensure Yoker's built-in toolset provides ~97% coverage of a typical agentic development workload, enabling a 1.0.0 release without missing-tool friction. 7 new tools + 4 enhancements + `protected_files` guardrail.
+**Goal:** Ensure Yoker's built-in toolset provides ~97% coverage of a typical agentic development workload. 7 new tools + 4 enhancements + `protected_files` guardrail.
 
-**Value:** Without a comprehensive toolset, agents stall on routine tasks (running tests, executing linters, managing files) and the user must intervene with manual shell commands. Research showed 39.7% of all tool calls in a real development session were shell commands — the single largest gap. Closing this gap moves Yoker from "interesting framework" to "usable agentic platform for real development work."
+**Value:** Without a comprehensive toolset, agents stall on routine tasks (running tests, executing linters, managing files) and the user must intervene with manual shell commands. Research showed 39.7% of all tool calls in a real development session were shell commands — the single largest gap.
 
-**Status:** Ready
+**Status:** Ready (post-1.0.0 for remaining items)
 
 **Analysis source of truth:** `analysis/mbi-toolset-coverage.md` (finalized — revision 5, all 11 open questions resolved, owner-approved)
 
-**Design principle:** Specialized, controllable tools with fixed operation enums — NOT a general-purpose shell. Each tool uses `subprocess.run` with list args (no `shell=True`). Consistent with Yoker's founding principle of structured, controllable tools.
+**Design principle:** Specialized, controllable tools with fixed operation enums — NOT a general-purpose shell. Each tool uses `subprocess.run` with list args (no `shell=True`).
 
-**Scope:**
-- 7 new tools: `make`, `pytest`, `file`, `askuserquestion`, `github`, `lint` (consolidated ruff+mypy), `uv`
-- 4 enhancements: `read` (offset/limit + `package://` URLs), `search` (context lines, case-insensitive, file-type filter, count mode), `git` (add + checkout), `webfetch` (prompt parameter)
-- 1 guardrail: `protected_files` denylist in `PermissionsConfig` (Makefile, pyproject.toml, etc.)
-- Tier 1 (Critical): make, read enhancement, search enhancement, protected_files
-- Tier 2 (High): pytest, file, askuserquestion, github, lint, uv
-- Tier 3 (Medium): git enhancement, webfetch prompt
-- Post-1.0 (deferred): python tool with exec, update replace_all, list/search pagination, file archive/stat
+**Pulled into 1.0.0:** `make` tool, `read` offset/limit, `search` enhancements, `github` tool, `protected_files` guardrail.
 
-**Tasks:**
-- [ ] T1.1-T1.3: `make` tool (Tier 1)
-- [ ] T2.1-T2.3: `read` enhancement — offset/limit + `package://` (Tier 1)
-- [ ] T3.1-T3.2: `search` enhancement — context lines, case-insensitive, file-type filter, count mode (Tier 1)
-- [ ] T4.1-T4.2: `pytest` tool (Tier 2)
-- [ ] T5.1-T5.2: `file` tool — delete, copy, move, chmod, symlink (Tier 2)
-- [ ] T6.1-T6.2: `askuserquestion` tool — static built-in, interactive (Tier 2)
-- [ ] T7.1-T7.2: `github` tool — structured GitHub ops with subcommand blocking (Tier 2)
-- [ ] T8.1-T8.2: `lint` tool — consolidated ruff + mypy (Tier 2)
-- [ ] T9.1: `uv` tool — package management (Tier 2)
-- [ ] T10.1: `git` enhancement — add + checkout (Tier 3)
-- [ ] T11.1: `webfetch` enhancement — prompt parameter (Tier 3)
-- [ ] T12.1: `protected_files` guardrail (Tier 1)
-
-**Acceptance Criteria:**
-- [ ] Agent can run `make check` using the `make` tool
-- [ ] Agent can inspect installed packages via `read("package://clevis")`
-- [ ] Agent can run specific tests via `pytest(test_filter="tests/test_foo.py")`
-- [ ] Agent can delete, copy, move files via `file` tool
-- [ ] Agent can ask user questions via `askuserquestion` in interactive mode
-- [ ] Agent can view GitHub PRs via `github` tool; subcommand blocking works
-- [ ] Agent can run ruff check/format and mypy via `lint` tool
-- [ ] Agent can run `uv sync/add/run` via `uv` tool
-- [ ] Agent can search with context lines and case-insensitive flag
-- [ ] Agent can read large files efficiently with offset/limit
-- [ ] Agent cannot write/update protected files (Makefile, pyproject.toml)
-- [ ] All command-execution tools use `subprocess.run` with list args (no `shell=True`)
-- [ ] Overall tool coverage reaches ~97% (up from ~62%)
-- [ ] `make check` green
+**Post-1.0.0 scope (rest):**
+- `pytest` tool (Tier 2)
+- `file` tool — delete, copy, move, chmod, symlink (Tier 2)
+- `askuserquestion` tool — static built-in, interactive (Tier 2)
+- `lint` tool — consolidated ruff + mypy (Tier 2)
+- `uv` tool — package management (Tier 2)
+- `git` enhancement — add + checkout (Tier 3)
+- `webfetch` enhancement — prompt parameter (Tier 3)
+- `read` `package://` URL support (Tier 1, deferred from 1.0.0 slice)
 
 **Dependencies:** — (no blocking MBIs)
 
 ---
 
-### Maintenance: M.1-M.4
+#### Maintenance: M.1, M.3, M.4
 
-**Goal:** Four maintenance tasks in scope for 1.0.0.
+**Goal:** Three maintenance tasks deferred to post-1.0.0.
 
-**Status:** Open
+**Status:** Open (post-1.0.0)
 
 **Tasks:**
 - [ ] M.1: Rename `yoker:` plugin tools namespace to `builtin:`; hide `builtin:` prefix in `/tools` listing
-- [ ] M.2: Default tools behavior — when agent has no explicit tools configuration, ALL tools should be available
 - [ ] M.3: Namespace from plugin/package, not frontmatter — allow namespace configuration derived from the plugin/package, not from skill/agent frontmatter
 - [ ] M.4: Clean up duplicate tests (e.g., `tests/test_tools/test_base.py` vs `tests/tools/test_base.py`)
 
@@ -135,63 +124,25 @@ Future MBIs, ordered by priority (highest first).
 
 ---
 
-### S.1: Secure API Key Storage with Keyring
+#### S.1: Secure API Key Storage with Keyring
 
 **Goal:** Use Python `keyring` library to securely store API keys instead of plain text in config files. During bootstrap wizard, use `keyring.set_password('yoker', '<provider>', api_key)` to store. On startup, retrieve with `keyring.get_password('yoker', '<provider>')`. Fallback to config file if keyring is unavailable or user opts out. Support all providers: Ollama, OpenAI, Anthropic, Gemini.
 
 **Value:** Eliminates API keys from plain-text config files, reducing the risk of accidental exposure via dotfile sharing, backup systems, or version control.
 
-**Status:** Open
-
-**Tasks:**
-- [ ] Update `BootstrapWizard` to use keyring for API key collection
-- [ ] Update config loading to check keyring first, then config file
-- [ ] Document the keyring integration in security docs
-- [ ] Write unit tests with mocked keyring backend
+**Status:** Open (post-1.0.0)
 
 **Dependencies:** —
 
 ---
 
-### MBI-005: Assistant Integration
-
-**Goal:** Showcase yoker's capabilities with TWO complete example projects: (1) yoker-assistant — a personal assistant demonstrating setup check, custom looping logic (mail account integration), custom context builders, agent triggering, git integration, and mail responses; (2) yoker-writing-assistant — based on the c3:writing-assistant skill, demonstrating skill-based agent specialization. Users can try `uvx yoker-assistant` and `uvx yoker-writing-assistant` and experience how low-friction yoker is.
-
-**Value:** Representative pet-projects that demonstrate yoker's capabilities. Shows users they are free from vendor lock-in. Includes extensive documentation and serves as reference implementations. The two packages showcase different aspects: yoker-assistant shows custom looping/context/messaging, yoker-writing-assistant shows skill-based agent specialization.
-
-**Status:** Ready
-
-**Components:**
-- [ ] DEV: Create yoker-assistant package project
-- [ ] DEV: Implement setup check with bootstrap trigger
-- [ ] DEV: Implement custom loop logic (mail account integration)
-- [ ] DEV: Implement custom context builder
-- [ ] DEV: Implement agent triggering and personalization
-- [ ] DEV: Implement git integration (commit/push)
-- [ ] DEV: Implement mail response handling
-- [ ] DEV: Create yoker-writing-assistant package based on c3:writing-assistant
-- [ ] DOCS: Comprehensive documentation for both packages
-- [ ] DOCS: Tutorial and examples for both packages
-
-**Acceptance Criteria:**
-- [ ] Users can run `uvx yoker-assistant` successfully
-- [ ] Users can run `uvx yoker-writing-assistant` successfully
-- [ ] yoker-assistant demonstrates all yoker capabilities (looping, context, messaging, git)
-- [ ] yoker-writing-assistant demonstrates skill-based agent specialization
-- [ ] Documentation explains architecture and patterns for both
-- [ ] Both projects serve as reference implementations
-
-**Dependencies:** MBI-002 (Bootstrap) — DONE, MBI-003 (Python API) — DONE, MBI-004 (yoker Commands) — DONE
-
----
-
-### 7.1-7.3: Plugin Config Registration
+#### 7.1-7.3: Plugin Config Registration
 
 **Goal:** Enable plugins to register configuration fields dynamically, allowing tool-specific settings without hardcoding in ToolsConfig. This unblocks the `WebGuardrailConfig` consolidation and enables plugin-provided tools to have their own config sections.
 
 **Value:** Plugins added via `--with` need to register their own configuration fields (e.g., `[tools.pkgq]` settings). Without this, plugin tools cannot be configured per-project. Also eliminates the `WebGuardrailConfig` duplication between `tools/web/guardrail.py` and `config/__init__.py`.
 
-**Status:** Backlog (late in 1.0.0 scope, but in scope)
+**Status:** Backlog (post-1.0.0)
 
 **Tasks:**
 - [ ] 7.1: Plugin Config Registration System Design (analyze Clevis `register_field`, design API, document flow)
@@ -202,26 +153,7 @@ Future MBIs, ordered by priority (highest first).
 
 ---
 
-## 1.0.0 Release Gate
-
-All items below must be complete before declaring 1.0.0.
-
-- [ ] MBI-008: Prompt Sets (13 injection points, 2 prompt sets, Jinja2 templates)
-- [ ] MBI-009: Toolset Coverage (7 new tools + 4 enhancements + protected_files guardrail)
-- [ ] M.1: Rename yoker: to builtin:
-- [ ] M.2: Default Tools Behavior
-- [ ] M.3: Namespace from Plugin/Package
-- [ ] M.4: Clean Up Duplicate Tests
-- [ ] S.1: Secure API Key Storage with Keyring
-- [ ] MBI-005: Two Assistant Packages (yoker-assistant + yoker-writing-assistant)
-- [ ] 7.1-7.3: Plugin Config Registration
-- [ ] Dogfooding Gate: Last Yoker sessions done using Yoker itself (not Claude Code)
-
----
-
-## Deferred to Post-1.0.0
-
-Items explicitly deferred until after the 1.0.0 release.
+#### Other Deferred Items
 
 - 3.4 Configurable Components Infrastructure (base classes, resolution strategy, directory structure)
 - 3.6 Skills Sets (skills/sets/default/, skills/sets/minimal/, SkillLoader with set support)
@@ -233,17 +165,12 @@ Items explicitly deferred until after the 1.0.0 release.
 - F.1 Multi-Agent Chat Room Demo (handled by ../yoker-chat)
 - MBI-007 7.8.7 ListAgents tool (Session-injected tool for agent discovery)
 - MBI-003 3.7 Auto-generate functions for detected skills/agents (deferred per design doc section 10)
-- 2.15-2.22 (all now covered by MBI-009 — see "Covered by MBI-009" notes in TODO.md)
-- 3.5 Prompt Sets (now covered by MBI-008 — see "Covered by MBI-008" notes in TODO.md)
-- 3.8 Context Reminders (partially covered by MBI-008 — see "Partially covered by MBI-008" notes in TODO.md)
 
----
-
-## On Hold
+### On Hold
 
 Items that start only when the owner signals implementation work is finalizing.
 
-### L.1-L.9: Launch Preparation
+#### L.1-L.9: Launch Preparation
 
 **Goal:** Prepare marketing materials and dedicated website for Yoker's public announcement.
 
