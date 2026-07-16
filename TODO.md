@@ -4,2212 +4,390 @@
 
 | Priority | MBI/Task | Status |
 |----------|----------|--------|
-| **P1** | MBI-001: Package Plugin System | Complete (v0.6.0 released to PyPI, 2026-07-03) |
-| **P1** | MBI-002: Bootstrap | Complete (2026-07-01) |
-| **P1** | MBI-006: Multi-Provider Backend (Phase 1 + Phase 2) | Complete (2026-07-01) |
-| **P1** | MBI-007: Session | Complete (2026-07-06, PR #43) |
-| **P1** | ContextManager Refactor | Complete (2026-07-06, PR #44) |
-| **P2** | MBI-003: Python API | Complete (2026-07-06) |
-| **P1** | MBI-004: yoker Commands | Complete (2026-07-15, PR #46) |
-| **P2** | MBI-005: Assistant Integration | Backlog (depends on MBI-002, MBI-003, MBI-004) |
-| **P3** | Maintenance Tasks | M.1-M.4 (open), M.5-M.6 (done) |
-| **P4+** | Launch Preparation, Architecture, Future Work | See sections below |
+| **P1** | MBI-008: Prompt Sets | Ready (analysis complete) |
+| **P1** | MBI-009: Toolset Coverage for 1.0.0 | Ready (analysis complete) |
+| **P1** | M.1 Rename yoker: to builtin: | Open |
+| **P1** | M.2 Default Tools Behavior | Open |
+| **P2** | MBI-005: Assistant Integration (2 packages) | Backlog (deps met) |
+| **P2** | M.3 Namespace from Plugin/Package | Open |
+| **P2** | S.1 Secure API Key Storage | Open |
+| **P2** | 7.1-7.3 Plugin Config Registration | Backlog |
+| **P3** | M.4 Clean Up Duplicate Tests | Open |
+| **HOLD** | L.1-L.9 Launch Preparation | On hold (wait for owner) |
+| **DEFER** | 3.4, 3.6, 3.7, 3.9, 2.13.x, R.1, F.1, deferred items | Post-1.0.0 |
+
+Completed work is recorded in git history. See `git log -- TODO.md` for prior task breakdowns.
 
 ---
 
-## Done: MBI-004: yoker Commands (2026-07-15)
+## 1.0.0 Release Gate
 
-**Goal:** Transform yoker from a single interactive command into a proper CLI with subcommands: `chat`, `run`, `loop`, `init`, `config`, `container`. The flagship capability is `yoker run`, which loads a source (module, GitHub URL, folder, zip) containing an extended yoker manifest (agent selection + initial prompt) and runs it as a "yoker-based agentic executable package."
+All items below must be complete before declaring 1.0.0.
 
-**Design source of truth:** `analysis/mbi-004-yoker-commands.md`
-
-**Milestone:** Users can run `yoker run pkgq` or `yoker run https://github.com/christophevg/pkgq` to execute an agentic package non-interactively. All current behavior is preserved as `yoker chat`.
-
-**Status:** Complete (merged 2026-07-15 via PR #46, including Clevis 0.7.0 upgrade replacing workarounds with native API).
-
-### Dependency Graph
-
-```
-4.1 (CLI subcommands via Clevis) ──► 4.2 (chat) ──► 4.3 (init)
-                   │
-                   ├──► 4.4 (config)
-                   │
-                   ├──► 4.12 (inspect) ◄── 4.6 (source resolution)
-                   │
-                   └──► 4.7 (run) ◄── 4.5 (manifest as config-override)
-                                  ◄── 4.6 (source resolution)
-                                       │
-                                       ▼
-                                    4.8 (loop)
-                                       │
-                                       ▼
-                                    4.9 (container)
-                                       │
-                                       ▼
-                              4.10 (tests)
-                                       │
-                                       ▼
-                              4.11 (docs)
-```
-
-### Detailed Task Breakdown
+- [ ] MBI-008: Prompt Sets (13 injection points, 2 prompt sets, Jinja2 templates)
+- [ ] MBI-009: Toolset Coverage (7 new tools + 4 enhancements + protected_files guardrail)
+- [ ] M.1: Rename yoker: to builtin:
+- [ ] M.2: Default Tools Behavior
+- [ ] M.3: Namespace from Plugin/Package
+- [ ] M.4: Clean Up Duplicate Tests
+- [ ] S.1: Secure API Key Storage with Keyring
+- [ ] MBI-005: Two Assistant Packages (yoker-assistant + yoker-writing-assistant)
+- [ ] 7.1-7.3: Plugin Config Registration
+- [ ] Dogfooding Gate: Last Yoker sessions done using Yoker itself (not Claude Code)
 
 ---
 
-#### 4.1 CLI subcommands via Clevis commands — refactor __main__.py
+## MBI-008: Prompt Sets
 
-**Satisfies:** CLI infrastructure for all subcommands
-**Depends on:** —
+**Goal:** Extract all prompt generation from the codebase into external Jinja2 template files (prompt sets). 13 injection points, 2 prompt sets (Yoker default + Claude Code demo), 6 implementation phases.
 
-- [x] **[MBI-004] 4.1.1 Create Clevis subcommand config classes**
-  - Create `src/yoker/cli/commands.py` with subcommand config classes
-    decorated with `@configclass(cmd="X")`:
-    - `ChatConfig(cmd="chat")` — extends `Config` (full config tree)
-    - `RunConfig(cmd="run")` — extends `Config` + `source`, `persist`,
-      `session_id`, `dry_run`
-    - `LoopConfig(cmd="loop")` — extends `RunConfig` + `interval`,
-      `max_iterations`, `max_duration`
-    - `InspectConfig(cmd="inspect")` — standalone: `source` only
-    - `InitConfig(cmd="init")` — standalone: `no_interactive`, `path`, `force`
-    - `ConfigCmdConfig(cmd="config")` — extends `Config` + `json`, `show_path`,
-      `reveal`
-    - `ContainerConfig(cmd="container")` — standalone: `source`, `engine`,
-      `output_dir`
-  - Each config-backed subcommand class extends `Config` (preserving all
-    existing CLI args). Config-free subcommands have their own minimal fields.
-  - Set `_sub_parsers.required = False` after registration so no subcommand
-    is required (for backward compat: no subcommand = chat)
-  - **Files:** `src/yoker/cli/__init__.py` (new), `src/yoker/cli/commands.py`
-    (new)
-  - **Acceptance:**
-    - `@configclass(cmd="chat")` creates a chat subparser with all Config args
-    - `@configclass(cmd="run")` creates a run subparser with Config + run args
-    - `yoker chat --help` lists Config-derived args
-    - `yoker run --help` lists Config-derived args + source, persist, etc.
-    - `yoker init --help` lists only init-specific args (no Config args)
-    - `make check` green
-  - **Satisfies:** Clevis subcommand infrastructure
-  - **Depends on:** —
+**Design source of truth:** `analysis/mbi-prompt-sets.md` (finalized — all 6 design decisions D1-D6 resolved, owner-approved)
 
-- [x] **[MBI-004] 4.1.2 Implement dispatch flow in __main__.py**
-  - Refactor `src/yoker/__main__.py` to use Clevis's `get_cmd()` for
-    subcommand detection
-  - Strip `--with` args before Clevis (existing `_parse_plugin_args` pattern)
-  - Default to `chat` when `get_cmd()` returns `None` (backward compatibility)
-  - Insert `"chat"` into `sys.argv` when no subcommand is detected, so
-    existing `yoker --backend-ollama-model X` continues to work
-  - Route to the appropriate subcommand based on `get_cmd()` result
-  - Each config-backed subcommand calls `get_config()` with its config class
-  - Config-free subcommands (`init`, `container`, `inspect`) skip base config
-    loading
-  - Bootstrap pre-flight check stays for `chat` only
-  - **Files:** `src/yoker/__main__.py` (modify), `src/yoker/cli/shared.py`
-    (new — shared setup helpers)
-  - **Acceptance:**
-    - `python -m yoker` with no args starts the chat REPL (backward compatible)
-    - `python -m yoker chat` starts the chat REPL
-    - `python -m yoker --backend-ollama-model X` works (backward compatible)
-    - `python -m yoker run --help` prints run usage
-    - `python -m yoker inspect --help` prints inspect usage
-    - `python -m yoker <unknown>` prints an error listing valid subcommands
-    - `--with` args work from any subcommand position
-    - `yoker chat` triggers bootstrap when no config (existing behavior)
-    - `yoker run <source>` does not trigger bootstrap
-    - `yoker init` has its own flow (does not load base config first)
-  - **Satisfies:** Dispatch flow
-  - **Depends on:** 4.1.1
+**Milestone:** All prompts are external Jinja2 templates; switching prompt sets changes injected context without code changes; Claude Code demo set demonstrates full CC compatibility.
+
+### Phase 1: Infrastructure
+
+- [ ] **[MBI-008] T1.1 Add Jinja2 dependency and prompt set module skeleton**
+  - Add `jinja2` to `pyproject.toml` dependencies
+  - Create `src/yoker/prompts/` module: `__init__.py`, `loader.py`, `schema.py`
+  - Define `PromptSet` dataclass (metadata + template map), `PromptSetLoader` class
+  - No behavior change yet — just the infrastructure
+  - **Satisfies:** R1, R2, R5
+
+- [ ] **[MBI-008] T1.2 Add `[prompts]` config section**
+  - Add `PromptsConfig` dataclass to `config/__init__.py` with `set` and `set_path` fields
+  - Add `prompts: PromptsConfig` to `Config`
+  - Wire into Clevis config schema
+  - **Satisfies:** R13, R14
+
+- [ ] **[MBI-008] T1.3 Create default prompt set directory**
+  - Create `src/yoker/prompts/sets/default/` with `manifest.toml`
+  - Add empty template files (filled in Phase 2)
+  - **Satisfies:** R19
+
+### Phase 2: Externalize Existing Injection Points
+
+- [ ] **[MBI-008] T2.1 Externalize IP-1 (system prompt)**
+  - Create `system_prompt.j2` in the default set, replicating `SimpleContextManager.system_prompt` and `environment_reminder` output
+  - Modify `SimpleContextManager.setup_initial_context()` to call the prompt set loader
+  - Verify byte-identical output
+  - **Satisfies:** R8
+
+- [ ] **[MBI-008] T2.2 Externalize IP-2 (skill discovery)**
+  - Create `skill_discovery.j2` replicating `format_discovery_block()` output
+  - Modify `BaseContextManager.add_skill_discovery_block()` to call the prompt set
+  - Verify byte-identical output
+  - **Satisfies:** R9
+
+- [ ] **[MBI-008] T2.3 Externalize IP-3 (skill invocation)**
+  - Create `skill_invocation.j2` replicating `format_invocation_block()` output
+  - Modify `Agent.inject_skill_context()` and `skill` tool to call the prompt set
+  - Verify byte-identical output
+  - **Satisfies:** R9
+
+- [ ] **[MBI-008] T2.4 Externalize IP-4, IP-5 (tool descriptions)**
+  - Create `tool_description.j2` (passthrough) and `tool_param_desc.j2` (passthrough) in default set
+  - Add enrichment step in `ToolRegistry.get_schemas()` that calls the prompt set
+  - Verify byte-identical output with default set
+  - **Satisfies:** R10
+
+- [ ] **[MBI-008] T2.5 Externalize IP-6, IP-7 (session tool descriptions)**
+  - Create `agent_tool_desc.j2` and `send_message_desc.j2` in default set
+  - Modify `make_spawn_agent_tool()` and `make_send_message_tool()` to call the prompt set
+  - Verify byte-identical output
+  - **Satisfies:** R11
+
+### Phase 3: New Injection Point Hooks
+
+- [ ] **[MBI-008] T3.1 Implement IP-8 (session start)**
+  - Add hook call site in Session or Agent first-turn
+  - Gather config_files, current_date, cwd, git_status variables
+  - No-op for default set; template exists for Claude Code set
+  - **Satisfies:** R12
+
+- [ ] **[MBI-008] T3.2 Implement IP-9 (env info)**
+  - Add hook call site for agents/skills listing injection
+  - Gather available_agents, available_skills variables
+  - No-op for default set
+  - **Satisfies:** R12
+
+- [ ] **[MBI-008] T3.3 Implement IP-10 (file change)**
+  - Add hook call site for file change events
+  - Gather file_path, change_type variables
+  - Default set: minimal one-line notification (D2 approved)
+  - Claude Code set: full file modification notice
+  - **Satisfies:** R12
+
+- [ ] **[MBI-008] T3.4 Implement IP-11 (tool result post-processing)**
+  - Add hook call site in `_execute_single_tool_call()` after tool result
+  - Gather tool_name, tool_result, is_truncated, total_lines variables
+  - No-op for default set
+  - **Satisfies:** R12
+
+- [ ] **[MBI-008] T3.5 Implement IP-12 (context overflow)**
+  - Add context size check before each request (framework mechanism: detection + triggering)
+  - Framework default: drop oldest non-system messages when over threshold (keeping first user message with config injections)
+  - If backend supports `context_management` API field (Anthropic), pass through thinking token clearing directive
+  - If backend does not support it, strip thinking blocks from message history programmatically
+  - Optional `on_context_overflow` hook for prompt sets that want custom truncation strategies
+  - **Satisfies:** R12, R12a
+
+- [ ] **[MBI-008] T3.6 Implement IP-13 (context update)**
+  - Add state change detection (config files, skills, agents)
+  - Add hook call site with changed_state, new_content
+  - No-op for default set
+  - **Satisfies:** R12
+
+### Phase 4: Claude Code Prompt Set
+
+- [ ] **[MBI-008] T4.1 Create Claude Code prompt set structure**
+  - Create `src/yoker/prompts/sets/claude-code/` with `manifest.toml`
+  - Reference all 13 template files
+  - **Satisfies:** R20
+
+- [ ] **[MBI-008] T4.2 Implement Claude Code system prompt template (IP-1)**
+  - Add git status, env block, model name, subagent permission/notes
+  - Use research branch output as reference
+  - **Satisfies:** R20
+
+- [ ] **[MBI-008] T4.3 Implement Claude Code skill templates (IP-2, IP-3)**
+  - Match CC skill listing format with triggers and usage hints
+  - Match CC skill invocation format
+  - **Satisfies:** R20
+
+- [ ] **[MBI-008] T4.4 Implement Claude Code tool description templates (IP-4, IP-5)**
+  - Enriched descriptions with behavioral guidance, safety rules
+  - Same descriptions for all agents (Yoker's equal-agents architecture — D4)
+  - **Satisfies:** R20, R12b
+
+- [ ] **[MBI-008] T4.5 Implement Claude Code session tool templates (IP-6, IP-7)**
+  - Add spawn guidance and communication patterns
+  - **Satisfies:** R20
+
+- [ ] **[MBI-008] T4.6 Implement Claude Code session start template (IP-8)**
+  - Config files + currentDate in `<system-reminder>` format
+  - Use research branch reference
+  - **Satisfies:** R20
+
+- [ ] **[MBI-008] T4.7 Implement Claude Code env_info, file_change, tool_result, context templates (IP-9 through IP-13)**
+  - Match CC formats from research branch output
+  - **Satisfies:** R20, R21
+
+### Phase 5: Plugin Integration
+
+- [ ] **[MBI-008] T5.1 Add prompt_sets to PluginManifest**
+  - Add `prompt_sets: list[PromptSet]` field to `PluginManifest`
+  - Update `plugins/loader.py` to discover prompt sets from manifests
+  - **Satisfies:** R16, R17
+
+- [ ] **[MBI-008] T5.2 Wire plugin prompt set registration**
+  - Plugin-provided prompt sets are registered in the loader
+  - Config can select a plugin-provided set by name
+  - **Satisfies:** R17, R18
+
+### Phase 6: Testing and Documentation
+
+- [ ] **[MBI-008] T6.1 Unit tests for prompt set loader and renderer**
+  - Test loading from filesystem and from package
+  - Test template rendering with mock variables
+  - Test missing template = no-op
+  - **Satisfies:** R27
+
+- [ ] **[MBI-008] T6.2 Byte-identical output tests for default set**
+  - Verify each externalized injection point produces identical output to the pre-migration hardcoded behavior
+  - **Satisfies:** R26
+
+- [ ] **[MBI-008] T6.3 Claude Code set tests**
+  - Verify each template renders with expected content
+  - Verify system prompt includes git status, env block, model name
+  - Verify tool descriptions are enriched
+  - **Satisfies:** R27
+
+- [ ] **[MBI-008] T6.4 Integration tests for prompt set switching**
+  - Start agent with default set, capture context
+  - Switch to Claude Code set, verify context changes
+  - Switch to custom path set, verify it works
+  - **Satisfies:** R27
+
+- [ ] **[MBI-008] T6.5 Documentation**
+  - Update CLAUDE.md module structure with `prompts/` module
+  - Update README.md with prompt set concept and configuration
+  - Create `docs/guides/prompt-sets.md` with how to create custom prompt sets
 
 ---
 
-#### 4.2 `yoker chat` — extract existing REPL
+## MBI-009: Toolset Coverage for 1.0.0
 
-**Satisfies:** Current interactive behavior as a named subcommand
-**Depends on:** 4.1
+**Goal:** 7 new tools + 4 enhancements + protected_files guardrail. ~97% coverage of a typical agentic development workload. Specialized, controllable tools — NOT a general-purpose shell.
 
-- [x] **[MBI-004] 4.2.1 Extract chat subcommand from __main__.py**
-  - Move the `_run_with_session` + `_run_repl` logic into
-    `src/yoker/cli/chat.py`
-  - The `chat` subcommand is the exact current behavior: load config, create
-    Session, create primary Agent, wire UIBridge, run REPL loop
-  - All existing CLI flags (`--ui-mode`, `--ui-show-thinking`, etc.) remain
-    available under `yoker chat`
-  - **Files:** `src/yoker/cli/chat.py` (new), `src/yoker/__main__.py` (remove
-    moved logic)
-  - **Acceptance:**
-    - `yoker chat` is functionally identical to the current `python -m yoker`
-    - `yoker` (no subcommand) defaults to `yoker chat`
-    - `yoker chat --ui-mode batch` works (batch mode)
-    - `yoker chat --with pkgq` works (plugin loading)
-  - **Satisfies:** chat subcommand
-  - **Depends on:** 4.1.1, 4.1.2
+**Design source of truth:** `analysis/mbi-toolset-coverage.md` (finalized — revision 5, all 11 open questions resolved, owner-approved)
 
----
+**Milestone:** An agent can run a full Yoker development session (make check, pytest, lint, file ops, GitHub ops, web fetch) without missing-tool friction.
 
-#### 4.3 `yoker init` — generate default config
+### Phase 1: Critical Tools (Tier 1)
 
-**Satisfies:** Explicit config generation command
-**Depends on:** 4.1
+- [ ] **[MBI-009] T1.1 Implement `make` tool in `src/yoker/builtin/make.py`**
+  - `make(target, ctx, cwd, timeout_ms) -> ToolResult`
+  - Target validation (reject shell metacharacters: `;`, `|`, `&`, `$`, backticks)
+  - PathGuardrail on `cwd`
+  - `subprocess.run(["make", target], ...)` — list args, no shell
+  - Output truncation (default 100KB), timeout enforcement (default 5 min)
+  - Return exit code, stdout, stderr separately
+  - **Files:** `src/yoker/builtin/make.py` (new), `src/yoker/builtin/__init__.py` (manifest update)
+  - **Acceptance:** `make(target="check")` executes; `make(target="rm -rf /")` rejected; timeout enforced; cwd guardrail works
 
-- [x] **[MBI-004] 4.3.1 Implement `yoker init` subcommand**
-  - Create `src/yoker/cli/init.py` with the init logic
-  - Interactive mode (default when TTY): runs the existing `BootstrapWizard`
-    from `yoker/bootstrap/`
-  - Non-interactive mode (`--no-interactive`): writes a default `~/.yoker.toml`
-    using the existing annotation-driven `render_config_toml` from
-    `yoker/config/writer.py` with all values at defaults
-  - `--path <path>`: write to a custom location instead of `~/.yoker.toml`
-  - `--force`: overwrite an existing config file (default: refuse to overwrite)
-  - After writing, print a confirmation message with the path
-  - **Files:** `src/yoker/cli/init.py` (new)
-  - **Acceptance:**
-    - `yoker init` triggers the bootstrap wizard (interactive)
-    - `yoker init --no-interactive` writes a default config file
-    - `yoker init --path ./my-config.toml` writes to the specified path
-    - `yoker init` refuses to overwrite an existing file without `--force`
-    - `yoker init --force` overwrites an existing file
-    - Written config file has `chmod 600` (existing writer behavior)
-  - **Security acceptance:**
-    - `--path` is rejected for forbidden path prefixes (e.g. `/etc`, `/usr`)
-    - `--force` requires interactive confirmation when overwriting an
-      existing file
-  - **Satisfies:** init subcommand
-  - **Depends on:** 4.1.1
-
----
-
-#### 4.4 `yoker config` — display effective config
-
-**Satisfies:** Config inspection command
-**Depends on:** 4.1
-
-- [x] **[MBI-004] 4.4.1 Implement `yoker config` subcommand**
-  - Create `src/yoker/cli/config_cmd.py` with the config display logic
-  - Loads config from TOML + CLI args (same as chat)
-  - Prints the resolved config as TOML to stdout
-  - `--json` flag: output as JSON instead of TOML
-  - `--path` flag: print the path(s) config was loaded from (user TOML,
-    project TOML, CLI overrides)
-  - **Files:** `src/yoker/cli/config_cmd.py` (new)
-  - **Acceptance:**
-    - `yoker config` prints the effective config as TOML
-    - `yoker config --json` prints the config as JSON
-    - `yoker config --path` prints the config file paths
-    - CLI overrides are reflected in the output (e.g. `--backend-ollama-model X`
-      shows in the output)
-  - **Security acceptance:**
-    - `api_key` values are masked (e.g. `sk-...XXXX`) unless `--reveal` is
-      passed
-  - **Satisfies:** config subcommand
-  - **Depends on:** 4.1.1, 4.1.2
-
----
-
-#### 4.5 Manifest as config-override layer — agent.toml + config overrides + PluginManifest fields
-
-**Satisfies:** Foundation for `yoker run`
-**Depends on:** —
-
-- [x] **[MBI-004] 4.5.1 Add `agent` and `prompt` fields to PluginManifest**
-  - Add `agent: str | None = None` and `prompt: str | None = None` fields to
-    `PluginManifest` in `src/yoker/plugins/manifest.py`
-  - These are convenience fallback fields for Python packages without
-    `agent.toml` (NOT config overrides — the manifest config-override layer
-    is handled separately in 4.5.3)
-  - Both default to `None` (backward compatible — existing manifests are
-    unaffected)
-  - Update `PluginManifest` docstring with the new fields
-  - Write unit tests asserting the new fields exist and default to None
-  - **Files:** `src/yoker/plugins/manifest.py` (modify)
-  - **Acceptance:**
-    - `PluginManifest()` has `agent=None` and `prompt=None` by default
-    - `PluginManifest(agent="researcher", prompt="analyze")` sets both fields
-    - Existing manifests without the new fields still work (no breaking change)
-    - `make check` green
-  - **Satisfies:** Extended manifest fields
-  - **Depends on:** —
-
-- [x] **[MBI-004] 4.5.2 Implement file-based manifest loading (`agent.toml`)**
-  - Create `src/yoker/plugins/file_manifest.py` with
-    `load_file_manifest(path: Path) -> FileManifestResult`
-  - Parses an `agent.toml` file with:
-    - `[run]` section: `agent`, `prompt` (source-specific run config)
-    - `[plugin]` section: `skills_dir`, `agents_dir`, `tools_module`
-      (source-specific plugin config)
-    - All other tables/keys: **config overrides** (any Config field can be
-      overridden — merged into base config between project TOML and CLI args)
-  - Returns a `FileManifestResult` containing `run_config`, `plugin_config`,
-    and `config_overrides` (the remaining keys after extracting `[run]` and
-    `[plugin]`)
-  - If no `agent.toml` exists, returns None (caller handles the error)
-  - **Note:** `agent.toml` (not `yoker.toml`) to avoid collision with the
-    project-level configuration file — owner-directed per PR #46 feedback
-  - Write unit tests for parsing, missing file, missing sections, and config
-    overrides
-  - **Files:** `src/yoker/plugins/file_manifest.py` (new)
-  - **Acceptance:**
-    - An `agent.toml` with `[run] agent="x" prompt="y"` loads correctly
-    - An `agent.toml` with `[plugin] skills_dir="s" agents_dir="a"` loads
-      correctly
-    - An `agent.toml` with `[backend.ollama] model="x"` extracts as a config
-      override
-    - Missing `agent.toml` returns None
-    - Malformed TOML raises a clear error
-  - **Satisfies:** File-based manifest (agent.toml)
-  - **Depends on:** 4.5.1
-
-- [x] **[MBI-004] 4.5.3 Implement config loading with manifest overrides**
-  - Add `get_yoker_config_with_manifest(manifest_path, cli)` to
-    `src/yoker/config/__init__.py`
-  - Layering: base TOML (user + project) -> manifest overrides -> CLI args
-  - Uses Clevis's internal functions (`_load_toml`, `apply_to_dict`) and
-    `dacite.from_dict` to implement the manifest merge layer
-  - Returns `(Config, run_config, plugin_config)` where:
-    - `Config` has manifest config overrides applied
-    - `run_config` contains `agent` and `prompt` from `[run]` section
-    - `plugin_config` contains `skills_dir`, `agents_dir`, `tools_module`
-  - Write unit tests for config loading with and without manifest
+- [ ] **[MBI-009] T1.2 Add `MakeToolConfig` to Config**
+  - `timeout_ms`: default timeout (5 minutes)
+  - `max_output_kb`: output truncation limit (100KB)
   - **Files:** `src/yoker/config/__init__.py` (modify)
-  - **Acceptance:**
-    - Config loads correctly without a manifest (same as today)
-    - Config loads with manifest overrides applied between project TOML and CLI
-    - `[run]` and `[plugin]` sections are extracted and returned separately
-    - CLI args override manifest overrides (highest priority)
-  - **Satisfies:** Manifest as config-override layer
-  - **Depends on:** 4.5.2
 
-- [x] **[MBI-004] 4.5.4 Introduce ResolvedSource + Source abstraction**
-  - Add `ResolvedSource` dataclass to `src/yoker/plugins/loader.py`:
-    `components: PluginComponents`, `agent`, `prompt`, `skills_dir`,
-    `agents_dir`, `tools_module`, `cleanup`
-  - Add `Source` dataclass: `kind: Literal["package", "folder"]`, `package`,
-    `path`, `skills_dir`, `agents_dir`, `tools_module`
-  - Implement `load_plugin_from_source(source: Source) -> PluginComponents`
-    generalizing `load_plugin` for both packages and folders
-  - When loading from a file-based manifest, merge: Python manifest is primary
-    for tools/skills/agents; `agent.toml` `[run]` overrides agent/prompt
-  - **Files:** `src/yoker/plugins/loader.py` (modify),
-    `src/yoker/plugins/manifest.py` (verify field access)
-  - **Acceptance:**
-    - `load_plugin("pkgq")` returns components with `agent` and `prompt`
-      accessible when the manifest declares them
-    - `load_plugin_from_source(Source(kind="folder", path=...))` loads
-      skills/agents from the folder
-    - `make check` green
-  - **Satisfies:** Manifest loading integration + Source abstraction
-  - **Depends on:** 4.5.1, 4.5.2, 4.5.3
+- [ ] **[MBI-009] T1.3 `make` tool tests**
+  - Test target execution, shell metacharacter rejection, output truncation, timeout, cwd guardrail
+  - **Files:** `tests/test_builtin/test_make.py` (new)
 
----
+- [ ] **[MBI-009] T2.1 Add `offset` and `limit` to `read` tool**
+  - Add `offset: int | None = None` and `limit: int | None = None` parameters
+  - If `offset` provided, skip to that line (1-indexed); if `limit` provided, return at most that many lines
+  - Return total line count in metadata; line numbers included when offset/limit used
+  - **Files:** `src/yoker/builtin/read.py` (modify)
 
-#### 4.6 Source resolution — module, GitHub URL, folder, zip → loadable plugin
+- [ ] **[MBI-009] T2.2 Add `package://` URL support to `read` tool**
+  - If `path` starts with `package://`, resolve to installed package source file
+  - `package://clevis` -> `clevis/__init__.py`; `package://clevis/get_config` -> module containing `get_config`
+  - Uses `importlib.util.find_spec()` to locate the package; read-only, no code execution
+  - **Files:** `src/yoker/builtin/read.py` (modify)
 
-**Satisfies:** Multi-source loading for `yoker run`
-**Depends on:** 4.5
+- [ ] **[MBI-009] T2.3 `read` enhancement tests**
+  - Test offset only, limit only, both, offset beyond file, limit exceeding file, total line count, `package://` resolution
+  - **Files:** `tests/test_builtin/test_read.py` (extend)
 
-- [x] **[MBI-004] 4.6.1 Create source resolution framework (two-phase)**
-  - Create `src/yoker/cli/sources.py` with two-phase resolution:
-    - `resolve_source(source: str) -> ResolvedSourceMetadata` — phase 1:
-      resolves source type, reads manifest (agent.toml or
-      `__YOKER_MANIFEST__`), returns metadata only. NO imports, NO code
-      execution.
-    - `load_source(metadata: ResolvedSourceMetadata, config: Config) ->
-      ResolvedSource` — phase 2: performs imports, loads skills/agents.
-      Called ONLY after `check_plugin_allowed()` returns True.
-  - `ResolvedSourceMetadata` dataclass: `source_type`, `source_path`,
-    `run_config` (agent, prompt), `plugin_config` (skills_dir, agents_dir,
-    tools_module), `config_overrides`, `cleanup`
-  - `ResolvedSource` dataclass: `components: PluginComponents`, `agent`,
-    `prompt`, `skills_dir`, `agents_dir`, `tools_module`, `cleanup`
-  - Source type detection:
-    - Starts with `http://` or `https://` -> GitHub URL
-    - Ends with `.zip` -> Zip file
-    - `Path(source).is_dir()` -> Folder path
-    - Otherwise -> Module name (existing `load_plugin` path)
-  - **Trust gate:** `yoker run <source>` goes through `check_plugin_allowed()`
-    — same gate as `--with <source>`. No bypass (owner-confirmed per PR #46).
-  - **Files:** `src/yoker/cli/sources.py` (new)
-  - **Acceptance:**
-    - `resolve_source("pkgq")` resolves via module path (metadata only)
-    - `resolve_source("./my-folder")` resolves via folder path (metadata only)
-    - `resolve_source("https://github.com/x/y")` resolves via GitHub clone
-    - `resolve_source("./my.zip")` resolves via zip extraction
-    - `resolve_source()` does NOT import `tools_module` or run pip install
-    - `load_source()` is called only after `check_plugin_allowed()` passes
-    - Unknown source raises a clear error
-  - **Security acceptance:**
-    - Two-phase split ensures trust gate fires before any code runs
-    - Non-interactive mode rejects untrusted sources by default
-    - `yoker inspect` uses only `resolve_source()` (phase 1) — no trust gate
-      needed (read-only, no code execution)
-  - **Satisfies:** Source resolution framework with trust gate
-  - **Depends on:** 4.5.4
+- [ ] **[MBI-009] T3.1 Add new parameters to `search` tool**
+  - `case_insensitive: bool = False`, `context_before: int = 0`, `context_after: int = 0`
+  - `include_pattern: str = ""`, `exclude_pattern: str = ""`, `count_only: bool = False`
+  - Cap context lines at 20 to prevent output flooding
+  - **Files:** `src/yoker/builtin/search.py` (modify)
 
-- [x] **[MBI-004] 4.6.2 Folder path source resolution**
-  - Implement folder path resolution: load `agent.toml` from the folder root
-    (via `load_file_manifest`), load skills from `<folder>/<skills_dir>`,
-    load agent definitions from `<folder>/<agents_dir>`
-  - If `tools_module` is specified in the manifest, import that module and
-    extract tool callables from it (ONLY after passing the trust gate in
-    `load_source()`)
-  - If the folder contains a `pyproject.toml`, do NOT auto-install it
-    (auto-install runs build hooks = arbitrary code execution, CWE-494).
-    Require an explicit `--install` flag (deferred to a future MBI).
-  - **Files:** `src/yoker/cli/sources.py` (extend)
-  - **Acceptance:**
-    - A folder with `agent.toml`, `skills/`, and `agents/` loads correctly
-    - Skills and agent definitions are populated from the folder
-    - `tools_module` import works when specified (after trust gate)
-    - Folder without `agent.toml` raises a clear error for `yoker run`
-    - Folder with `pyproject.toml` does NOT auto-install
-  - **Security acceptance:**
-    - `skills_dir`/`agents_dir`/`tools_module` paths validated via
-      `is_safe_path()`. Reject `..` and absolute paths that escape the
-      folder root.
-  - **Satisfies:** Folder path source
-  - **Depends on:** 4.6.1, 4.5.2
+- [ ] **[MBI-009] T3.2 `search` enhancement tests**
+  - Test case-insensitive, context lines, include/exclude patterns, count-only, context cap
+  - **Files:** `tests/test_builtin/test_search.py` (extend)
 
-- [x] **[MBI-004] 4.6.3 GitHub URL source resolution**
-  - Implement GitHub URL resolution: `git clone` the repository to a
-    temporary directory, then resolve as a folder path (4.6.2)
-  - Use `tempfile.TemporaryDirectory` for cleanup
-  - `git clone --depth 1` for efficiency (shallow clone)
-  - Handle authentication via git's native credential helpers / SSH keys
-  - Handle clone failures (network, auth, not found) with clear error messages
-  - Cleanup: remove the temp directory on exit (via `ResolvedSource.cleanup`)
-  - Look for `agent.toml` in the repo root (not `yoker.toml`)
-  - **Files:** `src/yoker/cli/sources.py` (extend)
-  - **Acceptance:**
-    - `resolve_source("https://github.com/christophevg/pkgq")` clones and
-      resolves to a loadable source
-    - Temp directory is cleaned up after use
-    - Clone failure (nonexistent repo, no auth) raises a clear error
-    - `--depth 1` is used for efficiency
-  - **Security acceptance:**
-    - URL must be HTTPS only; HTTP URLs are rejected
-    - Embedded credentials in the URL (e.g. `https://user:pass@...`) are
-      rejected
-    - SSRF check (`_check_ssrf_for_host`) runs before clone; private IPs
-      and cloud metadata IP are blocked
-    - Resolved commit SHA is recorded (for audit/reproducibility)
-    - No auto-`pip install` of the cloned repo (deferred to explicit
-      `--install` flag)
-    - Temp directory uses `0o700` permissions
-  - **Satisfies:** GitHub URL source
-  - **Depends on:** 4.6.2
+### Phase 2: High-Priority Tools (Tier 2)
 
-- [x] **[MBI-004] 4.6.4 Zip file source resolution**
-  - Implement zip file resolution: extract to a temporary directory using
-    safe extraction (prevent path traversal via `..` entries), then resolve
-    as a folder path (4.6.2)
-  - Validate the file is a zip (`zipfile.is_zipfile()`)
-  - Safe extraction: reject entries with `..` or absolute paths
-  - Cleanup: remove the temp directory on exit (via `ResolvedSource.cleanup`)
-  - **Files:** `src/yoker/cli/sources.py` (extend)
-  - **Acceptance:**
-    - A zip file with `agent.toml`, `skills/`, and `agents/` extracts and
-      loads correctly
-    - Zip with path traversal entries (`../etc/passwd`) is rejected
-    - Non-zip file raises a clear error
-    - Temp directory is cleaned up after use
-  - **Security acceptance:**
-    - Reject symlink entries, absolute paths, and `..` entries during
-      extraction
-    - Enforce max total uncompressed size (100 MB), max entries (10,000),
-      and max compression ratio (100:1) to prevent zip bombs
-  - **Satisfies:** Zip file source
-  - **Depends on:** 4.6.2
+- [ ] **[MBI-009] T4.1 Implement `pytest` tool in `src/yoker/builtin/pytest.py`**
+  - `pytest(ctx, test_filter, flags, cwd, timeout_ms) -> ToolResult`
+  - Build command list: `["pytest"]` + test_filter + flags; list args, no shell
+  - Flag validation: reject shell metacharacters; PathGuardrail on cwd and test_filter
+  - **Files:** `src/yoker/builtin/pytest.py` (new), `src/yoker/builtin/__init__.py` (manifest update)
+
+- [ ] **[MBI-009] T4.2 `pytest` tool tests**
+  - **Files:** `tests/test_builtin/test_pytest.py` (new)
+
+- [ ] **[MBI-009] T5.1 Implement `file` tool in `src/yoker/builtin/file.py`**
+  - Operations: `delete`, `copy`, `move`, `chmod`, `symlink`
+  - `delete` on directories requires `recursive: bool = False` (explicit opt-in)
+  - PathGuardrail on all paths; chmod validates mode; symlink target validated
+  - Protected files cannot be deleted/moved/overwritten
+  - **Files:** `src/yoker/builtin/file.py` (new), `src/yoker/builtin/__init__.py` (manifest update)
+
+- [ ] **[MBI-009] T5.2 `file` tool tests**
+  - **Files:** `tests/test_builtin/test_file.py` (new)
+
+- [ ] **[MBI-009] T6.1 Implement `askuserquestion` tool as a static built-in**
+  - Registered in `__YOKER_MANIFEST__` (not Session-injected)
+  - Interactive mode (TTY): present question via UI handler; choices -> selection menu
+  - Batch mode: read from stdin with timeout, or return default
+  - Non-interactive (`yoker run`): return default immediately
+  - Configurable: `tools.askuserquestion.enabled = false`
+  - **Files:** `src/yoker/builtin/askuserquestion.py` (new), `src/yoker/builtin/__init__.py` (manifest update)
+
+- [ ] **[MBI-009] T6.2 `askuserquestion` tests**
+  - **Files:** `tests/test_builtin/test_askuserquestion.py` (new)
+
+- [ ] **[MBI-009] T7.1 Implement `github` tool (per existing design)**
+  - Read-only MVP: repo_view, issue_list/view, pr_list/view, workflow_list/view, release_list/view
+  - `subprocess.run(["gh", ...], ...)` — list args, no shell
+  - Operation allowlist (fixed enum, configurable per-project); subcommand blocking is the whole point
+  - Timeout enforcement (default 30s); result count limits (max 100 for lists)
+  - **Files:** `src/yoker/builtin/github.py` (new), `src/yoker/builtin/__init__.py` (manifest update)
+  - **Design:** `analysis/api-github-tool.md` and `analysis/security-github-tool.md`
+
+- [ ] **[MBI-009] T7.2 `github` tool tests**
+  - **Files:** `tests/test_builtin/test_github.py` (new)
+
+- [ ] **[MBI-009] T8.1 Implement `lint` tool in `src/yoker/builtin/lint.py`**
+  - Operations: `check` (ruff check), `format` (ruff format), `format_check` (ruff format --check), `typecheck` (mypy)
+  - `subprocess.run(["ruff", ...])` or `subprocess.run(["mypy", ...])` — list args, no shell
+  - PathGuardrail on paths and cwd; `fix: bool = False` for auto-fix
+  - **Files:** `src/yoker/builtin/lint.py` (new), `src/yoker/builtin/__init__.py` (manifest update)
+
+- [ ] **[MBI-009] T8.2 `lint` tool tests**
+  - **Files:** `tests/test_builtin/test_lint.py` (new)
+
+- [ ] **[MBI-009] T9.1 Implement `uv` tool in `src/yoker/builtin/uv.py`**
+  - Operations: `sync`, `run`, `add`, `remove`, `lock`, `venv`
+  - `subprocess.run(["uv", ...], ...)` — list args, no shell
+  - Operation allowlist (fixed enum)
+  - **Files:** `src/yoker/builtin/uv.py` (new), `src/yoker/builtin/__init__.py` (manifest update)
+
+### Phase 3: Medium-Priority Enhancements (Tier 3)
+
+- [ ] **[MBI-009] T10.1 Add `add` and `checkout` to git tool**
+  - `add` operation with `pathspec` argument
+  - `checkout` operation with `branch` and `create` arguments
+  - **Files:** `src/yoker/builtin/git.py` (modify)
+
+- [ ] **[MBI-009] T11.1 Add `prompt` parameter to `webfetch` tool**
+  - If provided, use the agent's ModelBackend to extract/summarize content based on the prompt
+  - Configurable: `tools.webfetch.summarization_backend = "agent"` (default)
+  - **Files:** `src/yoker/builtin/webfetch.py` (modify)
+
+- [ ] **[MBI-009] T12.1 Add `protected_files` to `PermissionsConfig`**
+  - Denylist of files that cannot be written/updated by agents
+  - Default: Makefile, makefile, GNUmakefile, Justfile, justfile, Taskfile.yml, pyproject.toml, tox.ini, setup.py, setup.cfg
+  - Configurable per-project and per-user; empty list disables all protections
+  - Applied to `write` and `update` tools via PathGuardrail
+  - **Files:** `src/yoker/config/__init__.py` (modify), `src/yoker/tools/guardrails/path.py` (modify)
+  - **Acceptance:** `write(path="Makefile", ...)` rejected; `update(path="pyproject.toml", ...)` rejected; `write(path="src/main.py", ...)` allowed; configurable; empty list disables
 
 ---
 
-#### 4.7 `yoker run <source>` — load source + extended manifest, run agent
+## MBI-005: Assistant Integration
 
-**Satisfies:** Flagship capability — agentic executable packages
-**Depends on:** 4.1, 4.5, 4.6
+**Goal:** Showcase yoker's capabilities with TWO complete example projects: (1) yoker-assistant — a personal assistant demonstrating setup check, custom looping logic (mail account integration), custom context builders, agent triggering, git integration, and mail responses; (2) yoker-writing-assistant — based on the c3:writing-assistant skill, demonstrating skill-based agent specialization.
 
-- [x] **[MBI-004] 4.7.1 Implement `yoker run` subcommand**
-  - Create `src/yoker/cli/run.py` with the run logic
-  - Resolve the source via `resolve_source(source)` (phase 1, metadata only)
-  - Read `agent` and `prompt` from the resolved manifest (`agent.toml` [run]
-    section or Python `__YOKER_MANIFEST__` fallback)
-  - CLI overrides: `--agent <name>` overrides manifest's agent,
-    `--prompt <text>` overrides manifest's prompt (parsed via local argparse,
-    not Clevis — these are not Config fields)
-  - Error if no agent is specified (neither manifest nor CLI)
-  - Error if no prompt is specified (neither manifest nor CLI)
-  - Load config with manifest overrides via `get_yoker_config_with_manifest()`
-  - Pass `check_plugin_allowed()` trust gate before calling `load_source()`
-  - Construct a Session with the resolved plugin loaded as `extra_plugins`
-  - Resolve the agent definition from the source's own agents first, then
-    built-in agents (source wins on conflict — owner-confirmed)
-  - Process the prompt through the agent
-  - Output the agent's response to stdout (batch-style or streaming if TTY)
-  - Exit after the agent completes
-  - Clean up temp files (GitHub clone / zip extraction) via
-    `ResolvedSource.cleanup`
-  - **Files:** `src/yoker/cli/run.py` (new)
-  - **Acceptance:**
-    - `yoker run pkgq` loads pkgq as a plugin, reads its manifest's
-      `agent` and `prompt`, and runs the agent non-interactively
-    - `yoker run pkgq --agent researcher --prompt "do X"` overrides the
-      manifest fields
-    - `yoker run ./my-folder` loads from a folder path with `agent.toml`
-    - `yoker run https://github.com/x/y` clones and runs
-    - `yoker run ./my.zip` extracts and runs
-    - Missing agent or prompt -> clear error, exit non-zero
-    - Agent response is printed to stdout
-    - Process exits after the agent completes (non-interactive)
-  - **Security acceptance:**
-    - Source must pass `check_plugin_allowed()` before `load_source()` is
-      called (owner-confirmed: same gate as `--with`, no bypass)
-    - Non-interactive mode rejects untrusted sources by default (no
-      auto-trust)
-    - `--dry-run` flag resolves and prints manifest + prompt without
-      executing
-    - Prompt length capped at 10 KB (reject oversized prompts)
-  - **Satisfies:** run subcommand
-  - **Depends on:** 4.1.1, 4.5.3, 4.5.4, 4.6.1-4.6.4
+**Design source of truth:** PLAN.md MBI-005 entry
 
-- [x] **[MBI-004] 4.7.2 Add `--persist` and `--session-id` to `yoker run`**
-  - `--persist`: enable context persistence (session is saved to JSONL)
-  - `--session-id <id>`: specify a session ID for persistence
-  - Without `--persist`, the run is stateless (fresh context, no save)
-  - With `--persist`, the session is persisted and can be resumed later
-  - **Files:** `src/yoker/cli/run.py` (extend)
-  - **Acceptance:**
-    - `yoker run pkgq --persist --session-id my-run` persists the session
-    - Without `--persist`, no session files are written
-    - A persisted session can be resumed (future enhancement; for now just
-      verify the JSONL file is created)
-  - **Satisfies:** Run persistence
-  - **Depends on:** 4.7.1
+**Milestone:** Users can run `uvx yoker-assistant` and `uvx yoker-writing-assistant` and experience how low-friction yoker is.
 
----
-
-#### 4.8 `yoker loop <source>` — interval execution
-
-**Satisfies:** Periodic agentic task execution
-**Depends on:** 4.7
-
-- [x] **[MBI-004] 4.8.1 Implement `yoker loop` subcommand**
-  - Create `src/yoker/cli/loop.py` with the loop logic
-  - Reuses the `yoker run` execution path (calls the same run function)
-  - `--interval <seconds>`: time between runs (default: 300 = 5 minutes)
-  - `--max-iterations <n>`: stop after N iterations (default: unlimited)
-  - `--persist` + `--session-id`: reuse the same session across iterations
-    (agent retains context between runs when persistence is enabled)
-  - Without persistence, each iteration creates a fresh session
-  - Ctrl+C stops the loop cleanly (print summary of iterations completed)
-  - Print iteration number and timestamp before each run
-  - **Files:** `src/yoker/cli/loop.py` (new)
-  - **Acceptance:**
-    - `yoker loop pkgq --interval 60` runs every 60 seconds
-    - `yoker loop pkgq --interval 60 --max-iterations 3` stops after 3 runs
-    - `yoker loop pkgq --persist --session-id loop-1` reuses context
-    - Ctrl+C stops cleanly with a summary
-    - Each iteration prints its number and timestamp
-  - **Security acceptance:**
-    - Default `--max-iterations` is finite (100), not unlimited
-    - `--max-duration` flag is supported (stop after a time limit)
-    - Loop stops after 3 consecutive failures with backoff
-  - **Satisfies:** loop subcommand
-  - **Depends on:** 4.7.1
-
----
-
-#### 4.9 `yoker container <source>` — generate container setup
-
-**Satisfies:** Container packaging for agentic executables
-**Depends on:** 4.6
-
-- [x] **[MBI-004] 4.9.1 Implement `yoker container` subcommand**
-  - Create `src/yoker/cli/container.py` with the container generation logic
-  - Resolves the source via `resolve_source(source)` to determine source type
-  - Generates a `Dockerfile` (or `Containerfile` with `--engine podman`)
-  - Generates a `.containerignore` file
-  - `--engine {docker,podman}`: choose container engine (default: docker)
-  - `--output-dir <path>`: where to write files (default: current directory)
-  - The Dockerfile installs yoker, handles the source appropriately:
-    - Module: `pip install <module>`
-    - GitHub URL: `git clone` in the build step
-    - Folder: `COPY` the folder into the image
-    - Zip: `COPY` and extract in the build step
-  - Entrypoint: `yoker run <source>`
-  - **Files:** `src/yoker/cli/container.py` (new)
-  - **Acceptance:**
-    - `yoker container pkgq` generates a Dockerfile that installs pkgq and
-      runs `yoker run pkgq`
-    - `yoker container ./my-folder` generates a Dockerfile that COPYs the
-      folder and runs `yoker run`
-    - `yoker container https://github.com/x/y` generates a Dockerfile that
-      clones in the build step
-    - `--engine podman` generates a `Containerfile` instead of `Dockerfile`
-    - `--output-dir ./container/` writes files to the specified directory
-    - Generated Dockerfile is valid (can be built with `docker build`)
-  - **Security acceptance:**
-    - Dockerfile uses JSON-array form exclusively for `RUN`/`ENTRYPOINT`
-      (no shell-form injection risk)
-    - Generated Dockerfile includes a non-root `USER` directive
-    - No API keys or `~/.yoker.toml` are copied into the image
-    - `.containerignore` is generated (excludes secrets, `.git`, etc.)
-    - Yoker version is pinned in the Dockerfile (not `pip install yoker`
-      without a version)
-  - **Satisfies:** container subcommand
-  - **Depends on:** 4.6.1
-
----
-
-#### 4.12 `yoker inspect <source>` — dump source report (read-only)
-
-**Satisfies:** Safe source inspection without execution
-**Depends on:** 4.6.1
-
-- [x] **[MBI-004] 4.12.1 Implement `yoker inspect` subcommand**
-  - Create `src/yoker/cli/inspect.py` with the inspect logic
-  - Resolve the source via `resolve_source(source)` (phase 1 only — metadata,
-    no imports, no code execution)
-  - Display a human-readable report to stdout:
-    - **What it contains**: skills (names, descriptions), agent definitions
-      (names, models), tools (names from `tools_module` — listed but NOT
-      imported)
-    - **What it uses**: dependencies (from `pyproject.toml` if present),
-      `tools_module` declaration, config overrides from the manifest
-    - **What it does**: the `agent` and `prompt` from `[run]`, any config
-      overrides
-  - No trust gate needed (read-only, no code execution)
-  - `tools_module` is listed in the report but NOT imported — just shown as
-    a declaration
-  - For GitHub URLs: clones the repo, reads the manifest, cleans up
-  - For zip files: extracts to temp dir, reads the manifest, cleans up
-  - Exit after displaying the report
-  - **Files:** `src/yoker/cli/inspect.py` (new)
-  - **Acceptance:**
-    - `yoker inspect pkgq` displays a report about the pkgq package
-    - `yoker inspect ./my-folder` displays a report about the folder source
-    - `yoker inspect https://github.com/x/y` clones and displays a report
-    - Report includes skills, agents, tools_module (if declared), run config
-    - `tools_module` is NOT imported (no code execution)
-    - No trust gate is required (read-only)
-    - Process exits after displaying the report
-  - **Satisfies:** inspect subcommand
-  - **Depends on:** 4.6.1, 4.1.1
-
----
-
-#### 4.10 Command tests
-
-**Satisfies:** Test coverage for all subcommands
-**Depends on:** 4.1-4.9, 4.12
-
-- [x] **[MBI-004] 4.10.1 Clevis command dispatch tests**
-  - Test `get_cmd()` correctly detects each subcommand
-  - Test no-subcommand defaults to chat (backward compat)
-  - Test `yoker --backend-ollama-model X` (no subcommand) still works
-  - Test unknown subcommand error
-  - Test `--with` parsing works from any subcommand position
-  - Test each subcommand's CLI args are generated correctly by Clevis
-  - **Files:** `tests/test_cli/test_dispatch.py` (new)
-  - **Acceptance:** All dispatch tests pass
-  - **Depends on:** 4.1.1, 4.1.2
-
-- [x] **[MBI-004] 4.10.2 `yoker chat` tests**
-  - Test chat subcommand starts the REPL (mocked UI)
-  - Test chat with `--ui-mode batch` works
-  - Test chat with `--with pkgq` loads plugins
-  - Test backward compatibility: no subcommand = chat
-  - **Files:** `tests/test_cli/test_chat.py` (new)
-  - **Acceptance:** All chat tests pass
-  - **Depends on:** 4.2.1
-
-- [x] **[MBI-004] 4.10.3 `yoker init` tests**
-  - Test `yoker init --no-interactive` writes a default config
-  - Test `yoker init --path <path>` writes to custom location
-  - Test `yoker init` refuses to overwrite without `--force`
-  - Test `yoker init --force` overwrites
-  - Test written config has `chmod 600`
-  - **Files:** `tests/test_cli/test_init.py` (new)
-  - **Acceptance:** All init tests pass
-  - **Depends on:** 4.3.1
-
-- [x] **[MBI-004] 4.10.4 `yoker config` tests**
-  - Test `yoker config` prints TOML
-  - Test `yoker config --json` prints JSON
-  - Test `yoker config --path` prints config file paths
-  - Test CLI overrides reflected in output
-  - **Files:** `tests/test_cli/test_config_cmd.py` (new)
-  - **Acceptance:** All config command tests pass
-  - **Depends on:** 4.4.1
-
-- [x] **[MBI-004] 4.10.5 Manifest as config-override tests**
-  - Test `PluginManifest` with `agent` and `prompt` fields
-  - Test file-based manifest parsing (`agent.toml` with `[run]`, `[plugin]`,
-    and config override sections)
-  - Test `get_yoker_config_with_manifest()` applies overrides correctly
-  - Test config override layering: base TOML -> manifest -> CLI
-  - Test plugin loader reads extended fields
-  - Test backward compatibility (manifests without new fields)
-  - **Files:** `tests/test_plugins/test_manifest.py` (new),
-    `tests/test_config/test_manifest_overrides.py` (new)
-  - **Acceptance:** All manifest tests pass
-  - **Depends on:** 4.5.1, 4.5.2, 4.5.3, 4.5.4
-
-- [x] **[MBI-004] 4.10.6 Source resolution tests**
-  - Test module name resolution (mocked `load_plugin`)
-  - Test folder path resolution (temp dir with `agent.toml`, `skills/`,
-    `agents/`)
-  - Test GitHub URL resolution (mocked `git clone`)
-  - Test zip file resolution (temp zip with safe extraction)
-  - Test zip path traversal rejection
-  - Test cleanup functions are called
-  - Test two-phase resolve/load (metadata only in phase 1, imports in phase 2)
-  - Test trust gate fires before `load_source()`
-  - **Files:** `tests/test_cli/test_sources.py` (new)
-  - **Acceptance:** All source resolution tests pass
-  - **Depends on:** 4.6.1-4.6.4
-
-- [x] **[MBI-004] 4.10.7 `yoker run` tests**
-  - Test `yoker run <module>` with mocked agent processing
-  - Test `--agent` and `--prompt` CLI overrides
-  - Test error when no agent specified
-  - Test error when no prompt specified
-  - Test `--persist` creates session files
-  - Test source cleanup after run
-  - **Files:** `tests/test_cli/test_run.py` (new)
-  - **Acceptance:** All run tests pass
-  - **Depends on:** 4.7.1, 4.7.2
-
-- [x] **[MBI-004] 4.10.8 `yoker loop` tests**
-  - Test loop runs N iterations with `--max-iterations`
-  - Test loop interval timing (mocked sleep)
-  - Test Ctrl+C stops cleanly
-  - Test persistence across iterations
-  - **Files:** `tests/test_cli/test_loop.py` (new)
-  - **Acceptance:** All loop tests pass
-  - **Depends on:** 4.8.1
-
-- [x] **[MBI-004] 4.10.9 `yoker container` tests**
-  - Test Dockerfile generation for each source type
-  - Test `--engine podman` generates Containerfile
-  - Test `--output-dir` writes to specified location
-  - Test generated Dockerfile is syntactically valid
-  - **Files:** `tests/test_cli/test_container.py` (new)
-  - **Acceptance:** All container tests pass
-  - **Depends on:** 4.9.1
-
-- [x] **[MBI-004] 4.10.10 `yoker inspect` tests**
-  - Test `yoker inspect <module>` displays a report
-  - Test `yoker inspect ./my-folder` displays skills, agents, tools_module
-  - Test `yoker inspect` does NOT import `tools_module` (no code execution)
-  - Test `yoker inspect` works without a trust gate (read-only)
-  - Test `yoker inspect` on a source with config overrides shows them
-  - Test `yoker inspect` on a source with no manifest shows available
-    components only
-  - **Files:** `tests/test_cli/test_inspect.py` (new)
-  - **Acceptance:** All inspect tests pass
-  - **Depends on:** 4.12.1
-
-- [x] **[MBI-004] 4.10.11 Final verification: make check green**
-  - Run `make check` end-to-end (format, lint, typecheck, test) — all green
-  - Verify `python -m yoker` interactive mode works unchanged (backward
-    compatible)
-  - Verify `python -m yoker chat` works
-  - Verify `python -m yoker run --help` prints usage
-  - Verify `python -m yoker inspect --help` prints usage
-  - Verify existing examples run without modification
-  - **Acceptance:**
-    - `make check` green
-    - Zero behaviour change on the chat path (backward compatible)
-    - All new subcommand tests pass
-  - **Depends on:** 4.10.1-4.10.10
-
----
-
-#### 4.11 CLI documentation
-
-**Satisfies:** User-facing documentation for all subcommands
-**Depends on:** 4.1-4.9, 4.12
-
-- [x] **[MBI-004] 4.11.1 Update README.md with CLI subcommands**
-  - Document all subcommands: `chat`, `run`, `loop`, `init`, `config`,
-    `container`, `inspect`
-  - Add examples for each command
-  - Show the `yoker run` agentic executable package workflow
-  - Show `yoker inspect` as a safe way to preview a source
-  - Update the "Quick Start" section to mention subcommands
-  - **Files:** `README.md` (modify)
-  - **Acceptance:**
-    - README documents all subcommands with examples
-    - `yoker run` workflow is clearly explained
-    - `yoker inspect` is documented as a safe preview command
-    - Backward compatibility (`yoker` = `yoker chat`) is documented
-  - **Depends on:** 4.1-4.9, 4.12
-
-- [x] **[MBI-004] 4.11.2 Document manifest format (`agent.toml`)**
-  - Document the `agent` and `prompt` fields in `PluginManifest`
-  - Document the file-based manifest (`agent.toml`) format:
-    - `[run]` section: agent, prompt
-    - `[plugin]` section: skills_dir, agents_dir, tools_module
-    - Config override sections: any Config field can be overridden
-  - Document the config layering: base TOML -> manifest -> CLI
-  - Add examples of both Python-based and file-based manifests
-  - Document how to create a "yoker-based agentic executable package"
-  - **Files:** `docs/guides/creating-agentic-packages.md` (new),
-    `README.md` (cross-reference)
-  - **Acceptance:**
-    - `agent.toml` format documented with examples
-    - Config override layering documented
-    - Guide shows how to create a runnable agentic package
-  - **Depends on:** 4.5.1, 4.5.2, 4.5.3
-
-- [x] **[MBI-004] 4.11.3 Update CLAUDE.md module structure**
-  - Add `src/yoker/cli/` to the module structure documentation
-  - Document the CLI dispatcher and subcommand modules
-  - **Files:** `CLAUDE.md` (modify)
-  - **Acceptance:**
-    - CLAUDE.md includes `cli/` in the module structure
-    - CLI dispatcher pattern documented
-  - **Depends on:** 4.1.1
-
----
-
-## Done: MBI-007: Session (2026-07-06)
-
-**Goal:** Introduce a `Session` construct that manages a team of agents: lifecycle, registry, recursion depth, event aggregation, inter-agent messaging, and backend sharing. Reduce `Agent` to a single-agent chat loop. Establish the primitive that MBI-003 (Python API) builds on.
-
-**Design source of truth:** `analysis/session-concept-analysis.md` (finalized, owner-approved — all 10 decisions in §7 resolved via PR #42; 4 round-1 clarifications in §7.3 + 5 round-2 clarifications in §7.4 resolved via PR #43).
-
-**Milestone:** A real `Session` primitive lands in master; `Agent` is a single-agent chat loop; sub-agents are visible via event aggregation; MBI-003 unblocks.
-
-**Status:** Complete (merged 2026-07-06 via PR #43). All 40 sub-tasks implemented; `ListAgents` deferred per Clarification 6.
-
-**Key PR #43 round-1 clarifications (see analysis §7.3):**
-- **No backward-compat shims** — implement the final design only; no deprecation warnings, no proxy properties, no ignored args. Remove the old field/arg outright.
-- **SpawnAgent tool** — the `agent` built-in tool becomes `SpawnAgent`, injected by the Session (closure-captured back-reference to Session). Session-injected, not Agent-registered.
-- **Agent allowlist** — Session checks the requester's `AgentDefinition.agents` allowlist before spawning. Source of truth is the definition's allowlist, not a derived list.
-- **SendMessage tool** — Session-injected tool enabling inter-agent messaging via tool calls. (`ListAgents` was recommended in round 1 but is deferred per round-2 Clarification 6.)
-
-**Key PR #43 round-2 clarifications (see analysis §7.4):**
-- **SpawnAgent returns the spawned agent's unique id** to the caller (Clarification 5). `Session.spawn()` returns a `SpawnResult(agent_id, response)`; the `SpawnAgent` tool renders both into the `ToolResult` so the model can read the spawned agent's id.
-- **ListAgents deferred to a follow-up MBI** (Clarification 6). MBI-007 scope is the tree-like hierarchy (parent knows children via `SpawnAgent` return value). `ListAgents` enables swarm/team discovery, a separate use case. Task 7.8.7 is marked DEFERRED.
-- **`finished` state dropped** (Clarification 7). Visible agent states are `{idle, running}` only. Finished agents are removed from the Session's active list. `AGENT_FINISHED` events still emitted as lifecycle signals.
-- **BaseUIHandler NOT recreated** (Clarification 8). `agent_spawned` / `agent_finished` added directly to the `UIHandler` protocol as optional methods; the `UIBridge` guards calls with `hasattr` / `getattr`. No new `src/yoker/ui/base.py`.
-- **SessionEvent envelope wrapper** (Clarification 9). Agent-id tagging uses a `SessionEvent(agent_id, event)` frozen envelope; no changes to existing frozen event dataclasses or their construction sites.
-
-### Dependency Graph
-
-```
-7.6 (Config) ────────────────────────────┐
-                                         ▼
-7.1 (Session foundation) ──┬──► 7.3 (Registry migration) ──► 7.2 (Agent refactor)
-                           │                                      │
-                           ├──► 7.5 (Backend factory)            │
-                           │                                      │
-                           ├──► 7.7 (Event aggregation)          │
-                           │                                      │
-                           ├──► 7.4 (Inter-agent messaging) ◄───┘
-                           │
-                           └──► 7.8 (Integration) ◄── 7.2, 7.3, 7.4, 7.5, 7.7
-                                 ├── 7.8.1 ToolContext.session
-                                 ├── 7.8.2 Session.spawn() (returns SpawnResult)
-                                 ├── 7.8.3 SpawnAgent tool (Session-injected)
-                                 ├── 7.8.6 SendMessage tool (Session-injected)
-                                 ├── 7.8.7 ListAgents tool — DEFERRED (Clarification 6)
-                                 ├── 7.8.4 run_session → run_repl
-                                 └── 7.8.5 Construct Session in main()
-                                      │
-                                      ▼
-                                   7.9 (Tests/docs)
-```
-
-### Detailed Task Breakdown
-
----
-
-#### 7.1 Session module foundation — Session class, async context manager, lifecycle
-
-**Satisfies:** D1, D2, D3, D4, D10 (foundation)
-**Depends on:** 7.6 (for SessionConfig defaults)
-
-- [x] **[MBI-007] 7.1.1 Create session package skeleton + Message dataclass**
-  - Create `src/yoker/session/__init__.py` (exports: `Session`, `Message`)
-  - Create `src/yoker/session/message.py` with `Message` frozen dataclass:
-    `from: str`, `to: str`, `content: str`, `metadata: dict` (default `field(default_factory=dict)`)
-    — plain-string content, no streaming (D3)
-  - **Files:** `src/yoker/session/__init__.py` (new), `src/yoker/session/message.py` (new)
-  - **Acceptance:**
-    - `from yoker.session import Message` works
-    - `Message(from="a", to="b", content="hello")` is frozen; `metadata` defaults to `{}`
-    - Attempting to set an attribute on a Message instance raises `FrozenInstanceError`
-  - **Satisfies:** D3
-  - **Depends on:** —
-
-- [x] **[MBI-007] 7.1.2 Session class: async context manager + lifecycle**
-  - Create `src/yoker/session/session.py` with `Session` class
-  - Constructor: `Session(config: Config, *, session_id: str | None = None)`
-  - Implements `__aenter__` / `__aexit__` (D4) — emits `SESSION_START` on enter,
-    `SESSION_END` on exit; cancels outstanding agent tasks on exit
-  - Uses `asyncio.TaskGroup` (Python 3.11+) for spawned agent task management
-  - Stores: `self.config`, `self.id` (generated or from arg), `self._agents_map: dict[str, Agent]`
-    (name→instance, D2), `self._agent_registry: AgentRegistry` (D10),
-    `self._recursion_depths: dict[str, int]`, `self._event_handlers: list[EventCallback]`,
-    `self._backends: dict[str, ModelBackend]` (for 7.5)
-  - `add_event_handler(handler)` / `remove_event_handler(handler)` methods
-    (replaces `agent.add_event_handler` for session-scoped consumers)
-  - **Files:** `src/yoker/session/session.py` (new)
-  - **Acceptance:**
-    - `async with Session(config=Config()) as session:` enters and exits cleanly
-    - `session.id` is a non-empty string
-    - `session.add_event_handler` registers a handler that receives events
-    - On `__aexit__`, outstanding spawned tasks are cancelled
-  - **Satisfies:** D1, D4
-  - **Depends on:** 7.6.1 (SessionConfig exists in Config), 7.7.1 (session event types for START/END)
-
-- [x] **[MBI-007] 7.1.3 Session ID management + name→agent map**
-  - Session generates a unique session ID (UUID-based or config-derived) on construction
-  - Replaces ad-hoc `f"{parent_session}_{uuid[:8]}"` derivation in `_create_subagent`
-  - `session.spawn()` (implemented in 7.8.2) assigns derived session IDs to child agents
-  - Name disambiguation: if two agents with same definition name are spawned, suffix with
-    `-2`, `-3`, etc. (D2) — e.g. `researcher`, `researcher-2`
-  - `session.get_agent(name: str) -> Agent | None` lookup method
-  - **Files:** `src/yoker/session/session.py` (extend)
-  - **Acceptance:**
-    - `session.id` is unique per Session instance
-    - Name disambiguation produces `researcher`, `researcher-2` for duplicate spawns
-    - `session.get_agent("researcher")` returns the spawned agent instance
-  - **Satisfies:** D2
-  - **Depends on:** 7.1.2
-
----
-
-#### 7.2 Agent class refactoring — remove orchestration from Agent, keep only chat loop
-
-**Satisfies:** Agent becomes single-responsibility primitive
-**Depends on:** 7.1 (Session exists), 7.3 (registry already moved to Session)
-
-**PR #43 directive (Clarification 1 — no backward-compat shims):** implement the
-final design only. No deprecation warnings, no proxy properties, no silently-ignored
-constructor args. Remove the old fields/args outright; callers that pass them get
-`TypeError` / `AttributeError`. This applies to `agent.agents`, `_recursion_depth`,
-`recursion_depth`, `max_recursion_depth`, and the `run_session` name.
-
-- [x] **[MBI-007] 7.2.1 Remove `agents: AgentRegistry` from Agent**
-  - Remove `self.agents = AgentRegistry()` from `Agent.__init__` (line 94 of `agent/__init__.py`)
-  - Remove `_load_agents()` method (lines 414-423) — relocated to Session in 7.3.1
-  - Remove the agent-tool registration block (lines 123-125) — Session injects `SpawnAgent`
-    (7.8.3), Agent does not register it
-  - Update `_resolve_agent_definition`: when a name lookup is needed, use the Session's
-    registry (via `self._session.agents.resolve()`) or the explicit `agent_definition` /
-    `agent_path` constructor args (which remain)
-  - **No proxy property** — `agent.agents` raises `AttributeError` (no deprecation shim)
-  - **Files:** `src/yoker/agent/__init__.py` (modify)
-  - **Acceptance:**
-    - `Agent()` no longer creates an `AgentRegistry`; `hasattr(agent, 'agents')` is False
-    - Accessing `agent.agents` raises `AttributeError` (no compatibility shim)
-    - Agent with explicit `agent_definition` param still resolves correctly
-    - Agent constructed within a Session resolves definitions via `session.agents`
-  - **Satisfies:** D10 (Agent loses registry), PR #43 Clarification 1
-  - **Depends on:** 7.3.1 (Session owns registry), 7.3.4 (cleanup)
-
-- [x] **[MBI-007] 7.2.2 Remove `recursion_depth` and `max_recursion_depth` from Agent**
-  - Remove `self.recursion_depth` and `self.max_recursion_depth` from `Agent.__init__`
-  - Remove `_recursion_depth` constructor parameter (no shim — removed, not ignored)
-  - Remove `validate_recursion_depth` import and call from `agent/_setup.py`
-  - Move `validate_recursion_depth` logic to Session (or remove — Session tracks depth
-    internally via `_recursion_depths` map)
-  - **Files:** `src/yoker/agent/__init__.py` (modify), `src/yoker/agent/_setup.py` (modify)
-  - **Acceptance:**
-    - `Agent()` has no `recursion_depth` or `max_recursion_depth` attributes
-    - `Agent(_recursion_depth=1)` raises `TypeError` (unexpected keyword arg) —
-      no deprecation warning, no silent ignore (PR #43 Clarification 1)
-    - `validate_recursion_depth` is no longer called in Agent init
-  - **Satisfies:** D1 (depth tracking moves to Session), PR #43 Clarification 1
-  - **Depends on:** 7.1.2 (Session tracks depth)
-
-- [x] **[MBI-007] 7.2.3 Agent receives optional session reference**
-  - Add `session: Session | None = None` constructor parameter to `Agent.__init__`
-  - Store as `self._session` for use by tools (via ToolContext in 7.8.1) and by
-    event routing (events go to session aggregator when session is present)
-  - When `self._session` is set, `agent.add_event_handler()` routes to session's
-    aggregator instead of local handlers (or: session auto-registers as the agent's
-    sole handler and fans out)
-  - Single-agent use without Session: Agent maintains its own `_event_handlers` list
-    — this is a first-class path (single-agent primitive), not a compatibility shim
-  - **Files:** `src/yoker/agent/__init__.py` (modify)
-  - **Acceptance:**
-    - `Agent(session=session)` stores `self._session`
-    - `Agent()` without session still works as a single-agent chat loop
-    - Events emitted by Agent with session reach session's event handlers
-  - **Satisfies:** D1, D5 (event routing to session)
-  - **Depends on:** 7.1.2, 7.7.2 (event aggregator)
-
-- [x] **[MBI-007] 7.2.4 Adapt plugin loading for Session-aware Agent**
-  - `load_configured_plugins(agent, config, cli_plugins)` currently populates
-    `agent.tools`, `agent.skills`, `agent.agents` (in `plugins/loader.py`)
-  - After 7.3 moves `agent.agents` to Session, plugin loading must split:
-    - Agent definitions → `session.agents` (Session's AgentRegistry)
-    - Tools and skills → remain per-agent (or session-shared; design says registries
-      belong to the team for agents, but tools/skills are per-agent filtered by
-      definition)
-  - Refactor `load_configured_plugins` signature to accept a Session (for agent
-    registration) and an Agent (for tools/skills), or split into two functions
-  - Update `plugins/registration.py::register_agents` call site
-  - **Files:** `src/yoker/plugins/loader.py` (modify), `src/yoker/plugins/registration.py`
-    (modify if signature changes), `src/yoker/agent/__init__.py` (call site)
-  - **Acceptance:**
-    - Plugin agents appear in `session.agents`, not `agent.agents`
-    - Plugin tools/skills still populate `agent.tools` / `agent.skills`
-    - `--with <package>` CLI flag still works end-to-end
-  - **Satisfies:** D10 (registry on Session), plugin interaction (§6.8)
-  - **Depends on:** 7.3.1, 7.3.2
-
----
-
-#### 7.3 AgentRegistry migration — move from Agent to Session
-
-**Satisfies:** D10
-**Depends on:** 7.1 (Session exists to receive the registry)
-
-- [x] **[MBI-007] 7.3.1 Session owns and populates AgentRegistry**
-  - `Session.__init__` creates `self.agents: AgentRegistry = AgentRegistry()`
-  - Relocate `Agent._load_agents()` logic to Session: load from
-    `config.agents.directories` using `load_agent_definitions(directory)`
-  - Session loads agent definitions before any Agent is constructed
-  - **Files:** `src/yoker/session/session.py` (extend), `src/yoker/agent/__init__.py`
-    (remove `_load_agents`)
-  - **Acceptance:**
-    - `session.agents` is an `AgentRegistry` populated from `config.agents.directories`
-    - Agent no longer loads agents from directories
-  - **Satisfies:** D10
-  - **Depends on:** 7.1.2
-
-- [x] **[MBI-007] 7.3.2 Plugin agent registration targets Session**
-  - In `load_configured_plugins`, the `register_agents(plugin.agents, agent.agents, ...)`
-    call changes to target `session.agents`
-  - The `yoker` builtin plugin's `agents_dir="agents"` loads built-in agent definitions
-    into Session's registry
-  - **Files:** `src/yoker/plugins/loader.py` (modify)
-  - **Acceptance:**
-    - Plugin agents (including built-in `yoker` agents) appear in `session.agents`
-    - `session.agents.names` includes built-in agent names after plugin load
-  - **Satisfies:** D10
-  - **Depends on:** 7.3.1
-
-- [x] **[MBI-007] 7.3.3 Agent allowlist enforcement (source: AgentDefinition.agents)**
-  - PR #43 Clarification 3: the Session checks the requesting agent's
-    `AgentDefinition.agents` allowlist **before** spawning — the source of truth is
-    the definition's allowlist, not a derived list on the Agent.
-  - `AgentDefinition.agents` is the tuple of agent names this agent is allowed to
-    spawn (existing field). Empty tuple means "no spawns allowed" (conservative
-    default) — confirm and document the chosen semantic in implementation.
-  - `Session.spawn(name, prompt, *, requester: Agent | None = None)` checks
-    `requester.definition.agents` before resolving/spawning:
-    - If `requester` is None (top-level spawn, e.g. from `main()`), skip the
-      allowlist check — the top-level caller is trusted.
-    - If `requester.definition.agents` is empty → reject with a clear error
-      ("agent '{requester}' has no allowed spawns").
-    - If `name` not in `requester.definition.agents` → reject with a clear error
-      ("agent '{name}' not in '{requester}' allowlist").
-  - Allowlist check happens **before** recursion-depth / `max_agents` checks —
-    an allowlist violation is a permissions error, not a capacity error.
-  - The existing `config.tools.agent.enabled` flag remains the global kill-switch;
-    the per-agent allowlist is the finer-grained gate.
-  - The `SpawnAgent` tool (7.8.3) bakes available names from
-    `requester.definition.agents` (intersected with `session.agents.names`) into
-    the tool description so the model only sees names it is allowed to spawn.
-  - **Files:** `src/yoker/session/session.py` (extend `spawn()` signature and logic),
-    `src/yoker/builtin/agent.py` (tool description reads allowlist)
-  - **Acceptance:**
-    - `session.spawn("researcher", prompt, requester=agent)` rejects when
-      `"researcher"` is not in `agent.definition.agents`
-    - Allowlist rejection takes precedence over depth/capacity rejection
-    - Top-level spawn (no requester) bypasses the allowlist
-    - `SpawnAgent` tool description lists only allowlisted names
-  - **Satisfies:** PR #43 Clarification 3 (Agent allowlist enforcement)
-  - **Depends on:** 7.3.1, 7.3.2
-
-- [x] **[MBI-007] 7.3.4 Remove `agent.agents` attribute entirely**
-  - After all code paths are updated (7.2.1, 7.3.1-7.3.3), remove the `self.agents`
-    field from Agent completely
-  - Update `builtin/agent.py` (no longer reads `parent_agent.agents`)
-  - Update any tests that reference `agent.agents`
-  - **Files:** `src/yoker/agent/__init__.py` (final cleanup), `src/yoker/builtin/agent.py`
-    (updated in 7.8.3), tests
-  - **Acceptance:**
-    - `agent.agents` raises `AttributeError`
-    - No code in `src/` references `agent.agents` or `self.agents` on an Agent
-  - **Satisfies:** D10
-  - **Depends on:** 7.2.1, 7.3.1, 7.3.2, 7.8.3
-
----
-
-#### 7.4 Inter-agent messaging — Message dataclass, routing through Session
-
-**Satisfies:** D3
-**Depends on:** 7.1 (Session + Message exist), 7.2 (Agent is single-responsibility)
-
-- [x] **[MBI-007] 7.4.1 Finalize Message dataclass (created in 7.1.1)**
-  - Verify `Message` in `src/yoker/session/message.py` matches the design:
-    `@dataclass(frozen=True) class Message: from: str; to: str; content: str; metadata: dict`
-  - `content` is a plain string (the prompt) — no streaming (D3, §6.6)
-  - Add `__all__` export and update `session/__init__.py`
-  - **Files:** `src/yoker/session/message.py` (verify/finalize)
-  - **Acceptance:**
-    - `Message` is frozen, has exactly 4 fields, `metadata` defaults to `{}`
-    - `from yoker.session import Message` works
-  - **Satisfies:** D3
-  - **Depends on:** 7.1.1
-
-- [x] **[MBI-007] 7.4.2 Session.send() routing method**
-  - Implement `async def session.send(message: Message) -> str` on Session
-  - Looks up target agent by `message.to` in `self._agents_map`
-  - Calls `await target_agent.process(message.content)`
-  - Emits `AGENT_MESSAGE` event (from 7.7.1) with the Message before processing
-  - Request-response only: returns the target agent's response string (D3, §6.6)
-  - Error handling: if target agent not found, raises `ValueError`; if target agent
-    raises, catch and return error string (preserving current `agent` tool behaviour)
-  - **Files:** `src/yoker/session/session.py` (extend)
-  - **Acceptance:**
-    - `await session.send(Message(from="coordinator", to="researcher", content="find X"))`
-      calls `researcher.process("find X")` and returns the response
-    - `AGENT_MESSAGE` event is emitted to session handlers
-    - Sending to unknown name raises `ValueError`
-  - **Satisfies:** D3, D6.2 (routing through Session)
-  - **Depends on:** 7.1.2, 7.1.3, 7.7.1 (AGENT_MESSAGE event type)
-
-- [x] **[MBI-007] 7.4.3 Agent addressing: unique ID generation**
-  - `Session._generate_agent_name(definition_name: str) -> str` — checks
-    `self._agents_map` for existing names; if taken, appends `-2`, `-3`, etc. (D2)
-  - Called by `session.spawn()` (7.8.2) when registering a new agent
-  - The generated name is the agent's unique address within the session
-  - **Files:** `src/yoker/session/session.py` (extend)
-  - **Acceptance:**
-    - First spawn of "researcher" → name "researcher"
-    - Second spawn of "researcher" → name "researcher-2"
-    - Names are unique within a session
-  - **Satisfies:** D2
-  - **Depends on:** 7.1.3
-
----
-
-#### 7.5 Backend factory and sharing — Session owns backends, shares across same-provider agents
-
-**Satisfies:** D9
-**Depends on:** 7.1 (Session exists)
-
-- [x] **[MBI-007] 7.5.1 Session backend factory**
-  - Session owns `self._backends: dict[str, ModelBackend]` keyed by provider config hash
-    (or `(provider, model, base_url, api_key)` tuple)
-  - `session.get_backend(config: Config) -> ModelBackend`:
-    - Computes a cache key from the active provider config
-    - Returns existing backend if key matches (shared across same-provider agents — D9)
-    - Creates new backend via `create_backend(config)` if no match
-  - Per-agent model/provider override: when `agent_definition.model` differs, Session
-    uses `with_model()` helper (from MBI-006 Phase 1) to create a derived config and
-    a fresh backend for that agent
-  - **Files:** `src/yoker/session/session.py` (extend), `src/yoker/backends/factory.py`
-    (no change — `create_backend` already exists)
-  - **Acceptance:**
-    - Two agents with the same provider config share the same `ModelBackend` instance
-    - An agent with a model override gets a fresh backend instance
-    - `session.get_backend(config)` is idempotent for same config
-  - **Satisfies:** D9
-  - **Depends on:** 7.1.2
-
-- [x] **[MBI-007] 7.5.2 Agent receives backend from Session**
-  - When an Agent is constructed via Session (spawn or primary agent), Session passes
-    the shared/fresh backend via the existing `backend=` constructor parameter
-  - Agent no longer calls `create_backend(self.config)` directly when a Session is
-    present — it receives the backend from Session
-  - Single-agent use without Session: Agent still calls `create_backend(self.config)`
-    (backward compatible)
-  - **Files:** `src/yoker/agent/__init__.py` (modify — use session backend when available),
-    `src/yoker/session/session.py` (pass backend when spawning)
-  - **Acceptance:**
-    - Agent constructed via Session uses the Session-provided backend
-    - Agent constructed without Session creates its own backend (unchanged)
-    - `agent._backend` is set in both cases
-  - **Satisfies:** D9
-  - **Depends on:** 7.5.1, 7.2.3 (session reference on Agent)
-
----
-
-#### 7.6 Config `[session]` section — SessionConfig dataclass, validation
-
-**Satisfies:** D7
-**Depends on:** — (foundational, no dependencies)
-
-- [x] **[MBI-007] 7.6.1 Add SessionConfig dataclass**
-  - Add to `src/yoker/config/__init__.py`:
-    ```python
-    @dataclass(frozen=True)
-    class SessionConfig:
-      max_agents: int = 10
-      default_isolation_policy: str = "fresh"
-      event_aggregation: bool = True
-    ```
-  - Validation in `__post_init__`:
-    - `max_agents` must be positive (`validate_positive_int`)
-    - `default_isolation_policy` must be in `("fresh", "fork")` (`validate_choice`)
-  - **Files:** `src/yoker/config/__init__.py` (modify)
-  - **Acceptance:**
-    - `SessionConfig()` yields `max_agents=10`, `default_isolation_policy="fresh"`,
-      `event_aggregation=True`
-    - `SessionConfig(max_agents=0)` raises `ValidationError`
-    - `SessionConfig(default_isolation_policy="shared")` raises `ValidationError`
-  - **Satisfies:** D7
-  - **Depends on:** —
-
-- [x] **[MBI-007] 7.6.2 Add `session` field to Config + CLI args**
-  - Add `session: SessionConfig = field(default_factory=SessionConfig)` to the `Config`
-    dataclass (after `ui` field or in logical position)
-  - Add `SessionConfig` to `__all__` exports
-  - Verify Clevis auto-generates `--session-max-agents`, `--session-default-isolation-policy`,
-    `--session-event-aggregation` CLI args
-  - Verify old TOML files without `[session]` section still load (strict superset —
-    defaults fill in)
-  - Verify `render_config_toml` omits `[session]` when all values are defaults (or
-    includes it — consistent with existing writer behaviour)
-  - **Files:** `src/yoker/config/__init__.py` (modify)
-  - **Acceptance:**
-    - `Config().session` is a `SessionConfig` with defaults
-    - `--session-max-agents 5` CLI arg works
-    - Existing `~/.yoker.toml` files load unchanged (no migration needed)
-  - **Satisfies:** D7
-  - **Depends on:** 7.6.1
-
-- [x] **[MBI-007] 7.6.3 Relocate recursion depth config semantics**
-  - `config.tools.agent.max_recursion_depth` (currently on `AgentToolConfig`) remains
-    in config but is now read by Session instead of Agent
-  - Session reads `config.tools.agent.max_recursion_depth` as the session-level
-    recursion limit
-  - `config.tools.agent.timeout_seconds` remains on AgentToolConfig (used by the
-    agent tool wrapper in 7.8.3)
-  - Keep backward compatibility: the config field stays in the same location; only
-    the consumer changes (Agent → Session)
-  - **Files:** `src/yoker/config/__init__.py` (no change to field location),
-    `src/yoker/session/session.py` (read from config)
-  - **Acceptance:**
-    - Session reads `config.tools.agent.max_recursion_depth` for depth enforcement
-    - Old TOML files with `[tools.agent] max_recursion_depth = 3` still work
-  - **Note (Batch 2.3):** `max_recursion_depth` was later removed from both
-    `AgentToolConfig` and `PermissionsConfig` — the field had no production
-    reader (Session enforces only `session.max_agents`). The acceptance
-    criteria above are superseded.
-  - **Satisfies:** D7
-  - **Depends on:** 7.6.2
-
----
-
-#### 7.7 Event aggregation — Session-level event fan-out, UIBridge changes, UIHandler changes
-
-**Satisfies:** D5
-**Depends on:** 7.1 (Session exists)
-
-- [x] **[MBI-007] 7.7.1 New session-level event types**
-  - Add to `EventType` enum in `src/yoker/events/types.py`:
-    `SESSION_START`, `SESSION_END`, `AGENT_SPAWNED`, `AGENT_FINISHED`, `AGENT_MESSAGE`
-  - Create event dataclasses:
-    - `SessionStartEvent(type, timestamp, session_id: str)`
-    - `SessionEndEvent(type, timestamp, session_id: str)`
-    - `AgentSpawnedEvent(type, timestamp, agent_name: str, agent_id: str, parent_id: str | None)`
-    - `AgentFinishedEvent(type, timestamp, agent_name: str, agent_id: str)`
-    - `AgentMessageEvent(type, timestamp, message: Message)` (or from/to/content fields)
-  - Update `serialize_event` / `deserialize_event` in `events/recorder.py` for new types
-  - Update `events/__init__.py` exports
-  - **Files:** `src/yoker/events/types.py` (modify), `src/yoker/events/recorder.py`
-    (modify), `src/yoker/events/__init__.py` (modify)
-  - **Acceptance:**
-    - New EventType members exist
-    - New event dataclasses are frozen, serializable, and deserializable
-    - `from yoker.events import SessionStartEvent, AgentSpawnedEvent` works
-  - **Satisfies:** D5 (event infrastructure)
-  - **Depends on:** 7.1.1 (Message dataclass for AgentMessageEvent)
-
-- [x] **[MBI-007] 7.7.2 Session event aggregator (SessionEvent envelope, fan-out with agent_id tagging)**
-  - Session collects events from all agents it manages and re-emits them to
-    session-level handlers, tagged with the source agent's name/ID (D5)
-  - **PR #43 Clarification 9 — `SessionEvent` envelope wrapper:** tagging is
-    done by wrapping each agent event in a frozen
-    `SessionEvent(agent_id: str, event: Event)` dataclass. **No changes to
-    existing frozen event dataclasses** (`TurnStartEvent`,
-    `ContentChunkEvent`, etc.) and no changes to their construction sites in
-    `agent/_processing.py`.
-  - Create `SessionEvent` in `src/yoker/events/session_event.py` (or
-    `src/yoker/session/events.py`):
-    ```python
-    @dataclass(frozen=True)
-    class SessionEvent:
-        agent_id: str
-        event: Event
-    ```
-  - When Session spawns an agent (7.8.2), it registers an internal forwarding
-    handler on the agent that:
-    - Wraps each emitted `Event` in `SessionEvent(agent_id=<agent's runtime name>, event=<original>)`
-    - Forwards the wrapped `SessionEvent` to `session._event_handlers`
-  - Emits `AGENT_SPAWNED` when an agent is spawned, `AGENT_FINISHED` when it
-    completes. **PR #43 Clarification 7:** on `AGENT_FINISHED`, the agent is
-    **removed from `session._agents_map`** — there is no `finished` state;
-    visible agent states are `{idle, running}` only.
-  - When `config.session.event_aggregation` is False, sub-agent events are NOT
-    forwarded (preserves current quiet behaviour as opt-out)
-  - **Files:** `src/yoker/session/session.py` (extend), new
-    `SessionEvent` dataclass module (new)
-  - **Acceptance:**
-    - Events from spawned agents reach session-level handlers wrapped in
-      `SessionEvent` carrying the source `agent_id`
-    - The inner `Event` is dispatched unchanged (no modifications to existing
-      event dataclasses)
-    - `AGENT_SPAWNED` / `AGENT_FINISHED` events are emitted at lifecycle boundaries
-    - Finished agents are removed from `session._agents_map` (no `finished` state)
-    - When `event_aggregation=False`, sub-agent events do not reach session handlers
-  - **Satisfies:** D5, PR #43 Clarifications 7 & 9
-  - **Depends on:** 7.1.2, 7.7.1
-
-- [x] **[MBI-007] 7.7.3 UIBridge registered on Session + handles new events + SessionEvent envelope**
-  - `UIBridge.__call__` handles both wrapped (`SessionEvent`) and unwrapped
-    (bare `Event`) incoming events (PR #43 Clarification 9):
-    - If the incoming event is a `SessionEvent`: unpack it — use `agent_id`
-      for tagging/display, dispatch the inner `event` to the existing
-      `UIHandler` method unchanged.
-    - If the incoming event is a bare `Event` (single-agent path): dispatch
-      as today with no `agent_id` tag.
-  - `UIBridge.__call__` handles new session-level event types:
-    - `SESSION_START` / `SESSION_END` → no UI action (UI start/shutdown called directly)
-    - `AGENT_SPAWNED` → call `self.ui.agent_spawned(name)` if the handler
-      implements it (guard with `hasattr` / `getattr` — PR #43 Clarification 8)
-    - `AGENT_FINISHED` → call `self.ui.agent_finished(name)` if the handler
-      implements it (same guard)
-    - `AGENT_MESSAGE` → optional display (or no-op for now)
-  - Existing event methods receive the inner event; the `agent_id` from the
-    envelope is available for tagging in the UI display
-  - Registration moves from `agent.add_event_handler(bridge)` to
-    `session.add_event_handler(bridge)` in `__main__.py` (7.8.5)
-  - **Files:** `src/yoker/ui/bridge.py` (modify)
-  - **Acceptance:**
-    - UIBridge unpacks `SessionEvent` envelopes and dispatches the inner event
-    - UIBridge handles bare `Event` (single-agent path) unchanged
-    - UIBridge handles `AGENT_SPAWNED` by calling `ui.agent_spawned(name)` when
-      the method exists on the handler
-    - UIBridge handles `AGENT_FINISHED` by calling `ui.agent_finished(name)` when
-      the method exists on the handler
-    - Handlers that do not implement `agent_spawned` / `agent_finished` are not
-      broken (no `AttributeError`)
-  - **Satisfies:** D5, PR #43 Clarifications 8 & 9
-  - **Depends on:** 7.7.1, 7.7.2, 7.7.4
-
-- [x] **[MBI-007] 7.7.4 UIHandler new optional methods (no BaseUIHandler recreation)**
-  - **PR #43 Clarification 8 — do NOT recreate `BaseUIHandler`.** The
-    `agent_spawned` / `agent_finished` methods are added **directly to the
-    `UIHandler` protocol** as optional methods (documented, not enforced —
-    Python `Protocol` structural typing). No new `src/yoker/ui/base.py` file
-    is created; `InteractiveUIHandler` and `BatchUIHandler` do **not** inherit
-    from a new `BaseUIHandler`.
-  - Document `agent_spawned(name: str) -> None` and
-    `agent_finished(name: str) -> None` as optional protocol methods in
-    `src/yoker/ui/handler.py` (the protocol already has optional methods; this
-    is consistent).
-  - `InteractiveUIHandler` implements `agent_spawned(name)`: prints
-    "Agent spawned: {name}" (or a styled indicator).
-  - `InteractiveUIHandler` implements `agent_finished(name)`: prints
-    "Agent finished: {name}".
-  - `BatchUIHandler`: does **not** implement the methods (sub-agent activity
-    not shown in batch mode). The `UIBridge` guards calls with
-    `hasattr(handler, 'agent_spawned')` / `getattr(..., None)` before invoking,
-    so handlers that omit the methods are unaffected.
-  - The `UIBridge` is the sole caller of these methods; the guard lives in
-    task 7.7.3.
-  - **Files:** `src/yoker/ui/handler.py` (modify — document optional methods),
-    `src/yoker/ui/interactive.py` (modify — implement the methods),
-    `src/yoker/ui/batch.py` (no change — does not implement the optional methods)
-  - **Acceptance:**
-    - `UIHandler` protocol documents `agent_spawned` / `agent_finished` as
-      optional methods
-    - No `src/yoker/ui/base.py` file is created
-    - `InteractiveUIHandler` implements `agent_spawned` / `agent_finished`
-    - `BatchUIHandler` does not implement them and is not broken (the UIBridge
-      guards calls)
-    - No `BaseUIHandler` class is introduced anywhere in the codebase
-  - **Satisfies:** D5, PR #43 Clarification 8
-  - **Depends on:** 7.7.3 (UIBridge guard)
-
-- [x] **[MBI-007] 7.7.5 EventRecorder session-scoped**
-  - `EventRecorder` registered on Session (via `session.add_event_handler(recorder)`)
-    instead of on individual agents
-  - Captures all agents' events (wrapped in `SessionEvent` envelopes — PR #43
-    Clarification 9) in one coherent JSONL trace
-  - `serialize_event` handles `SessionEvent` envelopes: serializes the
-    `agent_id` alongside the inner event's serialized form
-  - Produces one replay file per session that captures the entire multi-agent trace
-  - **Files:** `src/yoker/events/recorder.py` (modify — SessionEvent-aware
-    serialize/deserialize), `src/yoker/session/session.py` (recorder
-    registration site)
-  - **Acceptance:**
-    - `EventRecorder` on Session captures sub-agent events (wrapped in
-      `SessionEvent`)
-    - Serialized events include `agent_id` from the envelope
-    - One JSONL file contains the full session trace
-  - **Satisfies:** D5, §6.9 (session persistence foundation), PR #43 Clarification 9
-  - **Depends on:** 7.7.2
-
----
-
-#### 7.8 Integration: __main__.py, Session-injected tools (SpawnAgent, SendMessage), ToolContext
-
-**Satisfies:** D6, D8, PR #43 Clarifications 2, 4, 5 & 6
-**Depends on:** 7.1-7.7 (all core work)
-
-**PR #43 note (Clarifications 2, 4 & 6):** the `agent` built-in tool becomes
-`SpawnAgent`, a **Session-injected** tool (the Session holds a back-reference to
-itself and registers the tool on Agents it owns). `SendMessage` is also
-Session-injected. `ListAgents` is **deferred** to a follow-up MBI (PR #43
-Clarification 6) and is not part of MBI-007. Session-injected tools are **not**
-registered by the Agent itself and are not part of the Agent's static tool set.
-
-- [x] **[MBI-007] 7.8.1 ToolContext gains session reference**
-  - Add `session: Session | None = None` field to `ToolContext` dataclass in
-    `src/yoker/tools/context.py` (D8)
-  - Update `_build_tool_context()` in `agent/_processing.py` (line 573-595) to pass
-    `session=agent._session` when building the context
-  - Load-bearing for `SendMessage` (PR #43 Clarification 4; `ListAgents` is
-    deferred per Clarification 6); `SpawnAgent` may use closure capture
-    instead (implementation choice)
-  - **Files:** `src/yoker/tools/context.py` (modify), `src/yoker/agent/_processing.py`
-    (modify)
-  - **Acceptance:**
-    - `ToolContext` has a `session` field (default `None`)
-    - Tools with `ctx: ToolContext` parameter receive `ctx.session` when running
-      within a Session
-    - Single-agent use without Session: `ctx.session` is `None`
-  - **Satisfies:** D8, PR #43 Clarification 4
-  - **Depends on:** 7.2.3 (Agent has `_session`)
-
-- [x] **[MBI-007] 7.8.2 Session.spawn() canonical API (returns SpawnResult)**
-  - Implement `async def session.spawn(name: str, prompt: str, timeout: int = 300,
-    *, requester: Agent | None = None) -> SpawnResult` (D8, PR #43
-    Clarifications 3 & 5)
-  - **PR #43 Clarification 5 — return both agent id and response.** Define a
-    frozen `SpawnResult(agent_id: str, response: str)` dataclass in
-    `src/yoker/session/spawn_result.py` (or in `session.py`). `Session.spawn()`
-    returns `SpawnResult` instead of a bare string. The `SpawnAgent` tool
-    (7.8.3) renders both fields into its `ToolResult` so the model can read
-    the spawned agent's id and the response.
-  - On error / timeout / allowlist rejection: return
-    `SpawnResult(agent_id="", response=<error string>)` (or raise —
-    implementation choice; the tool layer wraps either into a
-    `ToolResult(success=False, ...)`). Preserve the current `agent` tool's
-    "return error string, do not raise" behaviour at the tool boundary.
-  - Relocate `_create_subagent` logic from `src/yoker/builtin/agent.py` into Session:
-    - **Allowlist check (PR #43 Clarification 3):** if `requester` is not None, check
-      `name in requester.definition.agents` *before* resolving/spawning; reject with
-      a clear error if not allowed. Top-level spawn (`requester=None`) bypasses the
-      check.
-    - Resolve agent definition from `session.agents.resolve(name)`
-    - Generate unique agent ID via `_generate_agent_name()` (7.4.3)
-    - Create child `Agent` with: session reference, shared/fresh backend (7.5),
-      agent definition, derived config (model override via `with_model` if needed)
-    - Register agent in `self._agents_map` with unique ID (state `idle`)
-    - Track recursion depth (`self._recursion_depths[agent_id] = parent_depth + 1`)
-    - Enforce `max_recursion_depth` and `max_agents` limits (after allowlist check)
-    - **Inject Session tools** (PR #43 Clarifications 2 & 4): register `SpawnAgent`
-      and `SendMessage` on the child Agent (Session-injected, capture Session via
-      closure). **`ListAgents` is NOT injected** — deferred per PR #43
-      Clarification 6. The Agent does not register these itself.
-    - Register session's event aggregator on the child agent (7.7.2)
-    - Emit `AGENT_SPAWNED` event
-  - Relocate `_run_with_timeout` logic: `asyncio.wait_for(agent.process(prompt), timeout)`
-    wrapped in the Session's `TaskGroup`
-  - On completion: emit `AGENT_FINISHED`, **remove the agent from
-    `self._agents_map`** (PR #43 Clarification 7 — no `finished` state; the
-    agent is removed from the active list)
-  - On timeout: return error string in `SpawnResult` (preserving current agent
-    tool behaviour)
-  - On exception: catch, log, return error string in `SpawnResult` (preserving
-    current behaviour)
-  - Returns `SpawnResult(agent_id=<spawned id>, response=<response string>)`
-  - **Files:** `src/yoker/session/session.py` (extend),
-    `src/yoker/session/spawn_result.py` (new — `SpawnResult` dataclass),
-    `src/yoker/builtin/agent.py` (logic removed — `agent` tool replaced by
-    `SpawnAgent` in 7.8.3)
-  - **Acceptance:**
-    - `await session.spawn("researcher", "analyze this")` returns a
-      `SpawnResult` with `agent_id="researcher"` and the response string
-    - `session.spawn("researcher", prompt, requester=agent)` rejects when
-      `"researcher"` not in `agent.definition.agents` (allowlist first)
-    - `AGENT_SPAWNED` and `AGENT_FINISHED` events are emitted
-    - After completion, the spawned agent is removed from
-      `session._agents_map` (no `finished` state)
-    - Recursion depth is enforced (spawn beyond `max_recursion_depth` returns error)
-    - `max_agents` limit enforced (spawn beyond cap returns error)
-    - Timeout returns an error string in `SpawnResult`, not an exception
-    - Spawned Agent has `SpawnAgent` and `SendMessage` tools registered
-      (Session-injected); **no `ListAgents` tool** (deferred)
-  - **Satisfies:** D8, D1 (Session as coordinator), PR #43 Clarifications 2, 3, 5, 6, 7
-  - **Depends on:** 7.1.2, 7.1.3, 7.3.1, 7.3.3, 7.5.1, 7.7.2, 7.8.3, 7.8.6
-
-- [x] **[MBI-007] 7.8.3 SpawnAgent tool (Session-injected, replaces `agent` tool, returns spawned id)**
-  - PR #43 Clarification 2: the `agent` built-in tool becomes `SpawnAgent`,
-    Session-injected.
-  - **PR #43 Clarification 5 — return the spawned agent's id to the caller.**
-    The tool's `ToolResult` carries both the spawned agent's unique id and
-    the response string so the model can address the spawned agent later via
-    `SendMessage`.
-  - Create `make_spawn_agent_tool(session)` (replaces `make_agent_tool(parent_agent)`)
-    — the Session captures itself in the closure (back-reference), so the tool does
-    not need `ctx.session` (implementation choice; closure capture matches the
-    existing `parent_agent` pattern).
-  - The tool function signature (model-facing):
-    `SpawnAgent(agent_name: str, prompt: str, timeout_seconds: int = 300) -> ToolResult`
-  - Internally: calls `await session.spawn(agent_name, prompt, timeout_seconds,
-    requester=<calling agent>)` which returns a `SpawnResult(agent_id, response)`
-    (7.8.2). Wraps this into a `ToolResult`:
-    - On success: `ToolResult(success=True, result=<rendered>)` where `<rendered>`
-      includes both the spawned agent's id and the response (e.g.
-      `"agent_id: researcher-2\n\n{response}"` — exact rendering is an
-      implementation detail; the contract is "the model can read the spawned
-      agent's id from the result").
-    - On failure (allowlist rejection, timeout, depth/capacity error, agent
-      exception): `ToolResult(success=False, error=<error string>)` — preserving
-      the current `agent` tool's "do not raise" contract.
-  - The calling agent is passed as `requester` so the allowlist check (PR #43
-    Clarification 3) fires — the tool must capture or receive the calling Agent
-    (e.g. via `ctx` with the agent identity, or by capturing the agent at injection
-    time since Session-injected tools are per-Agent).
-  - Available agent names baked into the tool description come from
-    `requester.definition.agents` (intersected with `session.agents.names`) —
-    only allowlisted names are shown to the model.
-  - Remove `_create_subagent`, `_run_with_timeout`, `_clamp` from `builtin/agent.py`
-    (moved to Session in 7.8.2).
-  - Rename the tool module/file from `builtin/agent.py` to `builtin/spawn_agent.py`
-    (or keep filename, rename the tool factory + tool name) — implementation choice.
-  - **Files:** `src/yoker/builtin/agent.py` (rewrite/rename), `src/yoker/builtin/__init__.py`
-    (update manifest: `agent` tool becomes `SpawnAgent`)
-  - **Acceptance:**
-    - The `SpawnAgent` tool is registered on Agents by the Session, not by the Agent
-    - `SpawnAgent` has the same effective parameters as the old `agent` tool
-    - On success, the `ToolResult.result` contains **both** the spawned agent's
-      unique id and the response string (the model can read the spawned id)
-    - On failure, the `ToolResult` has `success=False` and an error string (no
-      exception raised)
-    - Internally calls `session.spawn(...)` with `requester` set
-    - Tool description lists only allowlisted agent names
-    - `_create_subagent` and `_run_with_timeout` no longer exist in `builtin/agent.py`
-  - **Satisfies:** PR #43 Clarifications 2 & 5 (SpawnAgent, Session-injected, returns id)
-  - **Depends on:** 7.8.1, 7.8.2
-
-- [x] **[MBI-007] 7.8.6 SendMessage tool (Session-injected)**
-  - PR #43 Clarification 4: `SendMessage` is a tool available to agents when in a
-    Session, injected by the Session (same injection mechanism as `SpawnAgent`).
-    Enables inter-agent messaging via tool calls, not just via the
-    `session.send(...)` Python API.
-  - Create `make_send_message_tool(session)` — Session captures itself in the
-    closure. The tool may also read `ctx.session` (7.8.1) — implementation choice;
-    pick one and be consistent across the three Session-injected tools.
-  - Tool signature (model-facing):
-    `SendMessage(to: str, message: str) -> ToolResult`
-  - Internally: builds a `Message(from=<calling agent name>, to=to, content=message)`
-    and calls `await session.send(message)` (7.4.2); wraps the response string in
-    `ToolResult(success=True, result=response)`.
-  - `from` is the calling agent's runtime name (Decision 2 — the unique ID assigned
-    by Session). The tool must know which agent it was injected into; capture the
-    agent at injection time (Session-injected tools are per-Agent).
-  - Error handling: unknown target → `ToolResult(success=False, error=...)` (not
-    an exception — preserves tool-call contract).
-  - The tool description should explain that `to` must be an active agent name
-    — the caller knows its spawned children's ids from `SpawnAgent`'s return
-    value (PR #43 Clarification 5). (`ListAgents` is deferred per Clarification
-    6 and is not available in MBI-007.)
-  - **Files:** `src/yoker/builtin/send_message.py` (new), `src/yoker/builtin/__init__.py`
-    (extend manifest — `SendMessage` is Session-injected, not auto-registered)
-  - **Acceptance:**
-    - `SendMessage` tool is registered on Agents by the Session, not by the Agent
-    - `SendMessage(to="researcher", message="hi")` calls `session.send(...)` and
-      returns the target agent's response string
-    - Unknown target returns a `ToolResult` with `success=False` (no exception)
-    - `from` field of the Message is the calling agent's runtime name
-  - **Satisfies:** PR #43 Clarification 4 (SendMessage, Session-injected)
-  - **Depends on:** 7.4.2 (session.send), 7.8.1 (ToolContext.session, if used)
-
-- [ ] ~~**[MBI-007] 7.8.7 ListAgents tool~~ — **DEFERRED to a follow-up MBI
-  (PR #43 Clarification 6)**
-  - PR #43 Clarification 6: `ListAgents` is **deferred** out of MBI-007. The
-    owner framed `ListAgents` as enabling a swarm/team-based discovery model
-    (any agent can find any other active agent), which is a separate use case
-    from MBI-007's tree-like hierarchy scope. A parent knows its children
-    directly via the id returned by `SpawnAgent` (PR #43 Clarification 5); no
-    discovery tool is needed for the tree-hierarchy case.
-  - The §7.3 Clarification 4 recommendation to include `ListAgents` in
-    MBI-007 is **superseded** by this clarification.
-  - **Not implemented in MBI-007.** No `ListAgents` tool is created; no
-    `src/yoker/builtin/list_agents.py` file is created; the Session does not
-    inject `ListAgents` onto Agents. Task 7.8.5, 7.8.2, and 7.9.6 do not
-    reference `ListAgents`.
-  - **Follow-up MBI scope (deferred):** `ListAgents` as a Session-injected
-    tool returning `(name, status)` for active agents; revisit agent status
-    semantics (the `{idle, running}` states from Clarification 7 are
-    sufficient for active agents — finished agents are removed, so
-    `ListAgents` would return only active agents). The follow-up MBI should
-    also revisit swarm discovery scope (visibility of agents the caller did
-    not spawn) and naming authority.
-  - **Satisfies:** PR #43 Clarification 6 (ListAgents deferred)
-  - **Depends on:** — (not part of MBI-007)
-
-- [x] **[MBI-007] 7.8.4 Rename run_session() to run_repl()**
-  - Rename `run_session` function to `run_repl` in `src/yoker/__main__.py` (D6)
-  - PR #43 Clarification 1: no alias / no shim — the old name is removed, not kept
-    as a deprecated alias.
-  - `run_repl` operates inside a Session — signature changes to accept Session
-    (or the agent/session pair)
-  - Update the call site in `main()`
-  - Update any imports/references to `run_session` in tests or examples
-  - **Files:** `src/yoker/__main__.py` (modify)
-  - **Acceptance:**
-    - `run_repl` function exists; `run_session` does not (no alias)
-    - No references to `run_session` remain in `src/` or `tests/`
-  - **Satisfies:** D6, PR #43 Clarification 1
-  - **Depends on:** —
-
-- [x] **[MBI-007] 7.8.5 Construct Session in main() + wire UIBridge on Session**
-  - In `main()`: after config is loaded and bootstrap completes, construct a `Session`:
-    `async with Session(config=agent.config) as session:`
-  - Create the primary Agent within the session: `Agent(config=..., session=session, ...)`
-  - The Session injects `SpawnAgent` and `SendMessage` onto the primary
-    Agent (PR #43 Clarifications 2 & 4; `ListAgents` is deferred per
-    Clarification 6)
-  - Register `UIBridge` on Session: `session.add_event_handler(bridge)` (not on Agent)
-  - Plugin loading targets Session for agent registry (7.2.4)
-  - Call `run_repl(session, agent, ui, commands)` inside the `async with` block
-  - The user-visible behaviour of `python -m yoker` is unchanged
-  - **Files:** `src/yoker/__main__.py` (modify — main restructure)
-  - **Acceptance:**
-    - `python -m yoker` interactive mode works unchanged for the user
-    - Session is constructed in `main()`; UIBridge is registered on Session
-    - Primary Agent has `SpawnAgent` and `SendMessage` tools (Session-injected);
-      no `ListAgents` tool (deferred)
-    - Sub-agent activity is visible in the UI when `event_aggregation=True`
-  - **Satisfies:** D6, D5 (UIBridge on Session), PR #43 Clarifications 2, 4 & 6
-  - **Depends on:** 7.1.2, 7.2.3, 7.2.4, 7.7.3, 7.8.2, 7.8.3, 7.8.4, 7.8.6
-
----
-
-#### 7.9 Tests, docs, verification
-
-**Depends on:** 7.1-7.8
-
-- [x] **[MBI-007] 7.9.1 Session lifecycle tests**
-  - Test `async with Session(config=...) as session:` enter/exit
-  - Test cleanup on normal exit (outstanding tasks cancelled)
-  - Test cleanup on exception exit
-  - Test `max_agents` limit enforcement
-  - Test `session.id` is unique per instance
-  - **Files:** `tests/test_session/test_lifecycle.py` (new)
-  - **Acceptance:** All lifecycle tests pass
-  - **Depends on:** 7.1, 7.6
-
-- [x] **[MBI-007] 7.9.2 Spawn and recursion tests**
-  - Test `session.spawn()` returns response string
-  - Test recursion depth enforcement (spawn beyond limit returns error)
-  - Test timeout enforcement
-  - Test agent name disambiguation (researcher, researcher-2)
-  - Test agent definition resolution via `session.agents`
-  - Test **allowlist enforcement** (PR #43 Clarification 3):
-    - `session.spawn("x", prompt, requester=agent)` rejects when
-      `"x"` not in `agent.definition.agents`
-    - Top-level spawn (`requester=None`) bypasses the allowlist
-    - Allowlist rejection takes precedence over depth/capacity rejection
-  - **Files:** `tests/test_session/test_spawn.py` (new)
-  - **Acceptance:** All spawn tests pass
-  - **Depends on:** 7.8.2
-
-- [x] **[MBI-007] 7.9.3 Event aggregation tests**
-  - Test events from spawned agents reach session-level handlers wrapped in
-    `SessionEvent` envelopes (PR #43 Clarification 9)
-  - Test the inner `Event` inside a `SessionEvent` is dispatched unchanged
-    (no modifications to existing event dataclasses)
-  - Test `agent_id` from the envelope is available to handlers
-  - Test `AGENT_SPAWNED` / `AGENT_FINISHED` events emitted
-  - Test finished agents are **removed from `session._agents_map`** (no
-    `finished` state — PR #43 Clarification 7)
-  - Test `event_aggregation=False` suppresses sub-agent events
-  - Test `EventRecorder` on Session captures full multi-agent trace (with
-    `agent_id` from envelopes)
-  - **Files:** `tests/test_session/test_events.py` (new)
-  - **Acceptance:** All event aggregation tests pass
-  - **Depends on:** 7.7
-
-- [x] **[MBI-007] 7.9.4 Inter-agent messaging tests**
-  - Test `session.send(Message(...))` routes to target agent
-  - Test request-response pattern returns response string
-  - Test `AGENT_MESSAGE` event emitted
-  - Test sending to unknown agent raises `ValueError`
-  - **Files:** `tests/test_session/test_messaging.py` (new)
-  - **Acceptance:** All messaging tests pass
-  - **Depends on:** 7.4
-
-- [x] **[MBI-007] 7.9.5 Backend sharing tests**
-  - Test two agents with same provider config share the same `ModelBackend` instance
-  - Test per-agent model override creates a fresh backend
-  - Test `session.get_backend()` is idempotent for same config
-  - **Files:** `tests/test_session/test_backends.py` (new)
-  - **Acceptance:** All backend sharing tests pass
-  - **Depends on:** 7.5
-
-- [x] **[MBI-007] 7.9.6 Session-injected tools tests (SpawnAgent, SendMessage)**
-  - PR #43 Clarifications 2, 4, 5 & 6 (`ListAgents` deferred — not tested here)
-  - Test `SpawnAgent` tool is registered on Agents by the Session (not by Agent)
-  - Test `SpawnAgent` calls `session.spawn(...)` with `requester` set and returns
-    a `ToolResult` whose `result` contains **both** the spawned agent's id and
-    the response string (PR #43 Clarification 5)
-  - Test `SpawnAgent` on failure returns `ToolResult(success=False, ...)` (no
-    exception raised)
-  - Test `SpawnAgent` tool description lists only allowlisted agent names
-  - Test `SendMessage` tool routes via `session.send(...)` and returns a `ToolResult`
-    (success=True with response, or success=False on unknown target — no exception)
-  - Test `SendMessage` sets `Message.from` to the calling agent's runtime name
-  - Test that no `ListAgents` tool is registered on Agents (PR #43 Clarification 6
-    — deferred)
-  - **Files:** `tests/test_session/test_session_tools.py` (new)
-  - **Acceptance:** All Session-injected tool tests pass
-  - **Depends on:** 7.8.2, 7.8.3, 7.8.6
-
-- [x] **[MBI-007] 7.9.7 Single-agent path and no-shim tests (PR #43 Clarification 1)**
-  - Test single-agent `Agent()` without Session works as a chat loop
-  - Test `Agent(config=...)` + `agent.process()` still works
-  - Test existing examples (`library_usage.py`, `batch_mode.py`,
-    `research_workflow.py`) run without modification
-  - Test `Agent(_recursion_depth=...)` raises `TypeError` (no deprecation
-    warning, no silent ignore — PR #43 Clarification 1)
-  - Test `agent.agents` raises `AttributeError` (no proxy property)
-  - Test `run_session` name is gone (no alias); only `run_repl` exists
-  - Test old TOML files without `[session]` section still load
-  - **Files:** `tests/test_session/test_single_agent.py` (new), existing tests
-  - **Acceptance:**
-    - All existing tests pass without modification
-    - Existing examples run without modification
-    - Old config files load with default `[session]` values
-    - Removed args/fields raise loudly (TypeError / AttributeError), no shims
-  - **Depends on:** 7.1-7.8
-
-- [x] **[MBI-007] 7.9.8 New session_demo.py example**
-  - Create `examples/session_demo.py` demonstrating:
-    - Constructing a Session
-    - Spawning multiple agents in one session
-    - **Reading the spawned agent's id from `SpawnResult`** and using it to
-      address the child via `SendMessage` (PR #43 Clarification 5 — the
-      tree-hierarchy pattern; no `ListAgents` needed)
-    - Inter-agent messaging via `session.send()` (Python API)
-    - Inter-agent messaging via `SendMessage` tool (tool-call path)
-    - Event aggregation visibility
-  - **Files:** `examples/session_demo.py` (new)
-  - **Acceptance:**
-    - Example runs successfully (with a configured backend)
-    - Demonstrates spawning, the SpawnResult id, messaging (both paths), and
-      event visibility
-  - **Depends on:** 7.1-7.8
-
-- [x] **[MBI-007] 7.9.9 Documentation updates**
-  - Update `docs/rationale.md` "Recursive Composition: True Sub-Agents" section
-    to reflect real multi-agent support (addressing, event visibility, shared
-    backends, Session-injected tools)
-  - Update `CLAUDE.md` module structure to include `src/yoker/session/`
-  - Update `analysis/mbi-003-python-api-design.md` Layer 3 to reference the real
-    `Session` construct (note: MBI-003 is on hold, but the doc cross-reference
-    should be updated)
-  - Document the Session-injected tools (`SpawnAgent`, `SendMessage`) and
-    the agent allowlist enforcement. Note that `ListAgents` is deferred to a
-    follow-up MBI (PR #43 Clarification 6).
-  - **Files:** `docs/rationale.md` (modify), `CLAUDE.md` (modify),
-    `analysis/mbi-003-python-api-design.md` (modify)
-  - **Acceptance:**
-    - `docs/rationale.md` reflects real multi-agent support
-    - `CLAUDE.md` includes `session/` in module structure
-    - MBI-003 design doc references real Session
-    - Session-injected tools and allowlist documented
-  - **Depends on:** 7.1-7.8
-
-- [x] **[MBI-007] 7.9.10 Final verification: make check green**
-  - Run `make check` end-to-end (format, lint, typecheck, test) — all green
-  - Verify no existing tests were modified to make the refactor pass
-    (behaviour unchanged for single-agent path)
-  - Verify `python -m yoker` interactive mode works unchanged
-  - Verify `python -m yoker` batch mode works unchanged
-  - Verify existing examples run without modification
-  - Verify new `examples/session_demo.py` runs
-  - **Acceptance:**
-    - `make check` green
-    - Zero behaviour change on the single-agent path
-    - All new session tests pass
-    - All existing examples work
-  - **Depends on:** 7.9.1-7.9.9
-
----
-
-### Concerns and Risks
-
-1. **No transitional shims (PR #43 Clarification 1):** The migration is a clean
-   break, not a phased deprecation. The registry must be moved to Session (7.3)
-   *before* it is removed from Agent (7.2.1) — but during the in-flight commit
-   sequence there is no "Agent temporarily has both" state shipped; the two
-   changes land together. The ordering in the dependency graph is about
-   implementation order within a single merge, not about shipping an intermediate
-   state. No proxy properties, no deprecation warnings, no ignored args.
-
-2. **`BaseUIHandler` is NOT recreated (PR #43 Clarification 8):** the owner
-   explicitly rejected recreating `BaseUIHandler`. Task 7.7.4 adds
-   `agent_spawned` / `agent_finished` **directly to the `UIHandler` protocol**
-   as optional methods; the `UIBridge` guards calls with `hasattr` /
-   `getattr`. No `src/yoker/ui/base.py` is created.
-   `InteractiveUIHandler` implements the methods; `BatchUIHandler` does not
-   (and is not broken).
-
-3. **Plugin loading is tightly coupled to Agent:** `load_configured_plugins(agent,
-   config, cli_plugins)` populates `agent.tools`, `agent.skills`, and
-   `agent.agents` in one call. After the migration, agent definitions must go to
-   `session.agents` while tools/skills remain per-agent. Task 7.2.4 splits this
-   call. The `yoker` builtin plugin manifest (`__YOKER_MANIFEST__`) loads agents
-   from `agents_dir="agents"` — this must target Session's registry. The
-   `SpawnAgent`/`SendMessage` tools are **not** loaded via the plugin
-   manifest — they are Session-injected (PR #43 Clarifications 2 & 4;
-   `ListAgents` is deferred per Clarification 6).
-
-4. **`_resolve_agent_definition` uses `self.agents.resolve()`:** Agent's
-   definition resolver (line 358 of `agent/__init__.py`) looks up agent
-   definitions by name in its own registry. After the registry moves to Session,
-   this must route through `self._session.agents.resolve()` when a session is
-   present, or use the explicit `agent_definition` / `agent_path` constructor
-   args (which remain unchanged).
-
-5. **`ToolContext` is a frozen dataclass:** Adding a `session` field is additive
-   but requires updating all `ToolContext` construction sites. There is only one
-   construction site: `_build_tool_context()` in `agent/_processing.py`. The
-   field defaults to `None` so existing code that doesn't set it remains valid.
-
-6. **`make_spawn_agent_tool` bakes available names at construction time:** The
-   factory reads `requester.definition.agents` (intersected with
-   `session.agents.names`) to build the tool description (PR #43 Clarification 3).
-   If agents are dynamically added to the session after the tool is constructed,
-   the description won't reflect them. This matches current behaviour (names
-   are baked at Agent init time) and is acceptable for MBI-007.
-
-7. **Event `agent_id` tagging approach (PR #43 Clarification 9):** the
-   `SessionEvent` envelope wrapper is the chosen approach — a frozen
-   `SessionEvent(agent_id, event)` dataclass wraps each agent event. **No
-   changes to existing frozen event dataclasses** and no changes to their
-   construction sites in `agent/_processing.py`. The `UIBridge` and
-   `EventRecorder` handle both `SessionEvent` (multi-agent) and bare `Event`
-   (single-agent) inputs. This supersedes the earlier "design choice"
-   formulation in task 7.7.2.
-
-8. **`Agent(_recursion_depth=...)` is a public constructor arg:** Removing it
-   breaks any caller using it. Since it is `_`-prefixed (conventionally private)
-   and PR #43 Clarification 1 mandates no shims, removal is the chosen path.
-   Task 7.2.2 removes it; the implementation raises `TypeError` (unexpected
-   keyword) — no deprecation warning, no silent ignore.
-
-9. **Session-injected tools are per-Agent:** `SpawnAgent` and `SendMessage`
-   need to know which Agent they were injected into (for the `requester` /
-   `from` fields and the allowlist-intersected description). The factory
-   functions should capture the Agent at injection time, producing a distinct
-   tool instance per Agent. This is a per-Agent injection, not a single shared
-   tool across the Session. (`ListAgents` is deferred per PR #43
-   Clarification 6.)
-
-### Note: Config Factory (belongs to MBI-003, not MBI-007)
-
-The owner requested (PR #42 Comment 1) a **Config factory** for creating `Config` in code, with a flag to enable/skip normal config loading (TOML discovery + CLI args). This is needed by the `agent()` factory function in MBI-003's Python API. It is recorded in `analysis/session-concept-analysis.md` §7.2 and tracked on the MBI-003 entry in PLAN.md. It will be addressed when MBI-003 resumes after MBI-007 merges to master.
-
----
-
-## Ready: MBI-003: Python API
-
-**Goal:** Python developers can easily integrate agentic (sub-)workflows in Python function calls, with a clean utility API wrapping the current class-oriented architecture. Three-layer API: one-shot functions, agent builder, workflow primitives built on the real `Session`.
-
-**Design source of truth:** `analysis/mbi-003-python-api-design.md` (three-layer utility API: Layer 1 one-shot functions, Layer 2 agent builder, Layer 3 `yoker.session()` workflow primitive built on the real `Session`).
-
-**Status:** Ready (unblocked — MBI-007 merged 2026-07-06, MBI-002 Bootstrap merged 2026-07-01). Next MBI to activate.
-
-**Milestone:** Developers can call `yoker.ask(...)`, `yoker.run_skill(...)`, `yoker.agent(...)`, and `yoker.session(...)` from Python code without understanding internal classes.
+**Status:** Backlog (dependencies met: MBI-002, MBI-003, MBI-004 all complete)
 
 ### Tasks
 
-- [x] **[MBI-003] 3.1 Config factory**
-  - Create a `Config` in code with a flag to enable/skip normal config loading (TOML discovery + CLI args). Needed by the `agent()` factory function so programmatic callers can construct a Config without touching the filesystem. (Owner request, PR #42 Comment 1.)
-  - **Satisfies:** Config factory requirement
-  - **Depends on:** —
-  - **Priority:** P2
+- [ ] **[MBI-005] Create yoker-assistant package project**
+  - Setup check with bootstrap trigger
+  - Custom loop logic (mail account integration)
+  - Custom context builder
+  - Agent triggering and personalization
+  - Git integration (commit/push)
+  - Mail response handling
 
-- [x] **[MBI-003] 3.2 Review current class-oriented API**
-  - Review existing `Agent`, `Config`, `AgentDefinition`, `ToolRegistry`, `SkillRegistry`, context managers, and event system
-  - Identify boilerplate patterns in `examples/library_usage.py`, `examples/batch_mode.py`, `examples/research_workflow.py`
-  - Document the five-step ritual: load config → construct Agent → wire bridge → register handler → process
-  - **Satisfies:** RES component
-  - **Depends on:** —
-  - **Priority:** P2
+- [ ] **[MBI-005] Create yoker-writing-assistant package**
+  - Based on c3:writing-assistant skill
+  - Demonstrates skill-based agent specialization
+  - Shows how to package a skill-based agent as an executable
 
-- [x] **[MBI-003] 3.3 Design developer-friendly utility functions**
-  - Design the three-layer API surface (Layer 1 one-shot, Layer 2 agent builder, Layer 3 workflow primitives)
-  - Align on naming and ergonomics (`yoker.ask`, `yoker.run_skill`, `yoker.complete`, `yoker.agent`, `yoker.session`)
-  - Document the facade pattern over existing `Agent` class
-  - **Satisfies:** RES component
-  - **Depends on:** 3.2
-  - **Priority:** P2
-
-- [x] **[MBI-003] 3.4 Implement Layer 1: one-shot functions**
-  - Implement `yoker.ask(...)`, `yoker.run_skill(...)`, `yoker.complete(...)` — stateless, synchronous-feeling, one line of code
-  - Build on the Config factory (3.1) and existing `Agent` class
-  - **Satisfies:** DEV component (Layer 1)
-  - **Depends on:** 3.1, 3.3
-  - **Priority:** P2
-
-- [x] **[MBI-003] 3.5 Implement Layer 2: agent builder**
-  - Implement `yoker.agent(...)` returning a configured `Agent` with fluent, declarative setup
-  - Same object reusable across turns and async tasks
-  - **Satisfies:** DEV component (Layer 2)
-  - **Depends on:** 3.1, 3.3
-  - **Priority:** P2
-  - **Note:** Exposed as `yoker.build_agent(...)` at the top level (the
-    design's `yoker.agent(...)` shadows the `yoker.agent` submodule and
-    breaks `monkeypatch.setattr("yoker.agent.process_message", ...)`).
-    The function is still `yoker.api.agent(...)` in the api namespace.
-
-- [x] **[MBI-003] 3.6 Implement Layer 3: workflow primitives**
-  - Implement `yoker.session(...)` building on the real `Session` construct from MBI-007
-  - Sub-agent spawning, event hooks, plugin loading expressed as ordinary Python constructs (context managers, async iterators, callables)
-  - **Satisfies:** DEV component (Layer 3, builds on MBI-007 Session)
-  - **Depends on:** 3.4, 3.5
-  - **Priority:** P2
-
-- [ ] **[MBI-003] 3.7 (Optional) Auto-generate functions for detected skills/agents**
-  - Auto-generate callable functions for detected skills/agents (e.g. `from package.skills import skill_name; skill_name("prompt")`)
-  - **Satisfies:** Optional DEV component
-  - **Depends on:** 3.4, 3.5
-  - **Priority:** P3
-  - **Note:** Deferred per design doc §10 (Out of Scope) — follow-up MBI.
-
-- [x] **[MBI-003] 3.8 API usage tests**
-  - Write tests for all three layers of the utility API
-  - Test Config factory, one-shot functions, agent builder, workflow primitives
-  - **Satisfies:** TEST component
-  - **Depends on:** 3.4, 3.5, 3.6
-  - **Priority:** P2
-
-- [x] **[MBI-003] 3.9 Python API documentation with examples**
-  - Document common integration patterns
-  - Update README.md and docs/ with Python API examples
-  - **Satisfies:** DOCS component
-  - **Depends on:** 3.4, 3.5, 3.6
-  - **Priority:** P2
-  - **Note:** Showcase examples added under `examples/python_api/`;
-    DEVELOPMENT.md and CLAUDE.md updated. README/docs/ full integration
-    deferred to a follow-up docs pass.
-
-- [x] **[MBI-003] 3.10 Final verification: make check green**
-  - Run `make check` end-to-end (format, lint, typecheck, test) — all green
-  - Verify existing examples run without modification (backward compatible)
-  - Verify new utility API examples work
-  - **Satisfies:** Completion gate
-  - **Depends on:** 3.8, 3.9
-  - **Priority:** P2
+- [ ] **[MBI-005] Documentation for both packages**
+  - Comprehensive documentation explaining architecture and patterns
+  - Tutorial and examples
+  - Both projects serve as reference implementations
 
 **Acceptance Criteria:**
-- [x] Developers can call `yoker.ask("...")` from Python code (one-shot)
-- [x] Developers can call `yoker.run_skill("skill-name", "prompt")` from Python code
-- [x] `yoker.agent(...)` returns a configured, reusable `Agent` (exposed as `yoker.build_agent`)
-- [x] `yoker.session(...)` builds on the real `Session` construct from MBI-007
-- [x] A Config factory exists for programmatic Config construction (skip filesystem/CLI loading)
-- [x] API documentation shows common integration patterns
-- [x] Utility functions provide clean abstraction over internal classes
-- [x] Existing `Agent` class unchanged; new API is a thin facade
-- [x] `make check` green
-
----
-
-## Done: MBI-002: Bootstrap (2026-07-01)
-
-**Goal:** Interactive guided setup for first-time users without configuration.
-
-**Milestone:** Users run `yoker` and are guided through backend selection, model selection, Ollama account creation, and config creation.
-
-### Tasks
-
-- [x] **2.0 Change Config Default Model to `gemini-3-flash-preview:cloud` (single location)** ✅ (2026-07-01)
-  - Update **only** `OllamaConfig.model` in `src/yoker/config/__init__.py` from
-    `llama3.2:latest` to `gemini-3-flash-preview:cloud`. This is the **single
-    source** of the default model (owner PR #34 point 1).
-  - Audit the codebase for any other location referencing a default model
-    (literals in `src/`, tests, docs, examples, agent defaults). Any code that
-    needs the default must obtain it from the `Config` class (e.g.
-    `Config().backend.ollama.model`), not by redefining the literal. Test
-    assertions and docs that currently hardcode `llama3.2:latest` are updated to
-    the new default or to read it from `Config`.
-  - Rationale (owner): frictionless first run — cloud model, no local download
-    needed. `llama3.2:latest` would force a download on first use.
-  - This default is referenced by the wizard's Step 5 curated list (via
-    `Config()`, not a literal) and by the generated config.
-  - Write unit tests (assert the single default value; verify no duplicate
-    default literals remain in `src/`).
-  **Satisfies:** Frictionless default model
-  **Design:** See `analysis/bootstrap-wizard-design.md` (Resolved Q2 + task 2.0; PR #34 point 1)
-
-- [x] **2.1 Detect Missing Configuration (`config_provided() -> bool`)** ✅ (2026-07-01)
-  - Implement `config_provided() -> bool` in `src/yoker/bootstrap/detect.py`
-    (owner PR #34 point 2 — replaces the `ConfigStatus` / `detect_config()` /
-    state-machine design).
-  - "Provided" means the user induced any config source: `~/.yoker.toml` exists,
-    `./yoker.toml` exists, or CLI args override defaults. No field-presence
-    check, no `REQUIRED_CONFIG_FIELDS`, no `missing/incomplete/complete` state.
-  - Trigger: `if not config_provided(): <wizard or warn-and-exit>`.
-  - Wire into `__main__.py::main()` as a pre-flight check before `Agent()`;
-    library mode (`Agent(config=...)`) skips detection.
-  - Edge cases: empty TOML file exists → `True` (sparse is still provided);
-    malformed TOML → `ConfigurationError` (not silent); permission denied →
-    error; dangling symlink → treated as not existing.
-  - **Write unit tests for the logic** (boolean, file-existence, CLI-arg
-    detection) — this is logic, not IO.
-  **Satisfies:** Bootstrap trigger condition
-  **API design:** See `analysis/bootstrap-config-detection.md`.
-
-- [x] **2.2 Welcome & Guided-vs-Manual Flow** ✅ (2026-07-01)
-  - Step 0: explain yoker (provider-neutral AI backend for agentic workflows)
-  - Step 1: report no config found; offer guided (recommended) vs manual setup
-  - Manual path: print config skeleton + docs link, exit without writing
-  - All I/O via `UIHandler` (UI-layer separation intact)
-  - **No unit tests** — pure IO/user interaction (owner PR #34 point 3);
-    testing is user-driven.
-  **Satisfies:** Bootstrap entry / low-friction onboarding
-  **Design:** See `analysis/bootstrap-wizard-design.md`
-
-- [x] **2.3 Ollama Account & Connection-Method Steps** ✅ (2026-07-01)
-  - Step 2: backend intro (single backend today: Ollama, free tier, no fake
-    multi-way menu)
-  - Step 3: "Do you have an ollama account?" → no: **open the docs guide URL**
-    (may launch browser via `webbrowser.open()`), say we'll wait, then resume
-    — the wizard does **not** abort or exit. yes: continue.
-  - Step 4: split choice — (1) ollama app signed in (default backend, no API key)
-    or (2) API key (masked input, optional guide link). Locked wording (app-first
-    key-second):
-    "Connect via: 1) The ollama app running locally (recommended — no key needed)
-     2) An ollama API key"
-  - Per-owner principle: least-possible steps to a minimal yet complete config
-  - **No unit tests** — pure IO/user interaction (owner PR #34 point 3);
-    testing is user-driven.
-  **Satisfies:** Account/connection guidance
-  **Design:** See `analysis/bootstrap-wizard-design.md`
-
-- [x] **2.4 Model Selection Wizard** ✅ (2026-07-01)
-  - `modellist.py`: holds a **curated list** of recommended models (including
-    the default, read from `Config().backend.ollama.model` — not a literal) plus
-    a **free-text entry** option — **NO network call**. Live fetch via
-    `AsyncClient.list()` / `GET /api/tags` was considered and **rejected** for
-    first-install UX (owner: first-time install has no models pulled yet, so
-    the tag list is empty/useless). Curated list + free text is the **primary
-    and only** approach.
-  - Step 5 prompt: pick from curated list / accept default / free text
-  - Default model `gemini-3-flash-preview:cloud` (matches task 2.0's single
-    Config default — cloud, no download needed)
-  - **No unit tests** — pure IO/user interaction (owner PR #34 point 3);
-    testing is user-driven.
-  **Satisfies:** Model selection capability
-  **Design:** See `analysis/bootstrap-wizard-design.md` (Resolved Q2, Q5)
-
-- [x] **2.5 Config Writer (in the config module) & Continue into Session** ✅ (2026-07-01)
-  - **Lives in `src/yoker/config/writer.py`**, NOT `yoker/bootstrap/writer.py`
-    (owner PR #34 point 4). It is a general-purpose config-writing utility;
-    the bootstrap wizard calls it, it does not own it. Reusable for in-session
-    config augmentation (e.g. "add `plugins enabled = true` to your
-    configuration?").
-  - **Annotation-driven / generic** (owner PR #34 point 5): reads config-class
-    metadata/`help` annotations to render full default `Config` → TOML with
-    inline comments. Adding a config field requires NO writer change —
-    instrument the config class instead. Never hardcode current field names.
-  - Override only non-default values collected by wizard (model, optionally
-    api_key/base_url); merge preserving unknown keys.
-  - Write to user-level `~/.yoker.toml` (works across all yoker-based apps)
-  - **`chmod 600`** every yoker config file written
-  - API key stored **only** in `~/.yoker.toml`; never project config, never
-    env var, never logged, never echoed
-  - Brief confirmation that config was created (home-folder level, shared by
-    all yoker-based apps) and that **yoker is continuing into the normal
-    session now** — the user does NOT need to rerun `yoker`
-  - **Return control to `__main__.py`**, which proceeds straight into normal
-    Agent startup using the freshly-written config, as if a config had existed
-    all along. The wizard does NOT exit the process or ask the user to relaunch.
-  - **Write unit tests for the rendering logic** (TOML output, overrides,
-    annotation-driven comments, chmod) — this is logic, not IO.
-  **Satisfies:** Config creation capability (generic, reusable)
-  **Design:** See `analysis/bootstrap-wizard-design.md` (Annotation-Driven
-  ConfigWriter section; PR #34 points 4 & 5)
-
-- [x] **2.6 Non-Interactive Path & `__main__.py` Wiring** ✅ (2026-07-01)
-  - Wire `config_provided()` → `BootstrapWizard` in interactive mode (async).
-    The wizard returns after writing config; `__main__.py` then continues into
-    normal Agent startup (does not exit after bootstrap).
-  - Non-interactive mode (BatchUIHandler): do **not** instantiate wizard; print
-    approved stderr warning and exit non-zero:
-    "No yoker configuration found at ~/.yoker.toml.
-     Run `yoker` interactively to configure, or see <docs URL>.
-     Aborting (non-interactive mode)."
-  - Library mode (`Agent(config=...)`) skips bootstrap entirely
-  - **No unit tests for the wizard IO path** (owner PR #34 point 3); the
-    boolean gate logic is tested in 2.1.
-  **Satisfies:** Safe non-interactive behavior
-  **Design:** See `analysis/bootstrap-wizard-design.md` (Resolved Q3)
-
-- [x] **2.7 Bootstrap Documentation Guide (docs site)** ✅ (2026-07-01)
-  - **One merged page** covering ollama account creation + local app/proxy
-    install + (optional) API-key creation, with screenshots; optional per-OS
-    variants
-  - Wizard links to anchors within this page (account check, key creation)
-  - Decision: one merged page (least duplication; resolved Q4)
-  **Satisfies:** External account/install guidance (referenced by wizard)
-  **Owner:** Confirmed new requirement
-  **Design:** See `analysis/bootstrap-wizard-design.md` (Resolved Q4)
-
-- [x] **2.8 End-to-end onboarding guide (Python/uv install → yoker → wizard → hello agent)** ✅ (2026-06-28)
-  - New docs page `docs/guides/getting-started.md`: Python + uv setup (macOS,
-    Windows, Linux), install yoker, run the bootstrap wizard, and perform a
-    first "hello agent" interaction on Ollama's free tier.
-  - Placed at the top of the `docs/index.md` toctree (entry point for new users).
-
----
-
-## Done: MBI-006: Multi-Provider Backend Support (Phase 1) (2026-06-29)
-
-**Goal:** Introduce the `ModelBackend` async Protocol and provider-neutral `ChatChunk` stream type, reimplement the existing Ollama behaviour on top of them, widen the config schema to the tagged-union shape, make subagent spawn provider-agnostic, and add optional stats fields to `TurnEndEvent`. **Pure refactor — no behaviour change, no new provider, no wizard changes.**
-
-**Design source of truth:** `analysis/multi-provider-backend-design.md` §5 (Phase 1). Functional counterpart: `analysis/functional-multi-provider-backend.md`.
-
-**Preconditions:** PRE-1 (M.5 — populate `Agent._tool_backends` for Ollama) — DONE/merged.
-
-**Out of scope for Phase 1:** OpenAI backend, Anthropic backend, bootstrap wizard provider selection, `build_bootstrap_overrides` provider-awareness, web tools for non-Ollama providers, live API model discovery.
-
-### Tasks
-
-- [x] **[MBI-006] 6.1 Backends package: ModelBackend Protocol + ChatChunk types** ✅ (2026-06-29)
-  - Create new `src/yoker/backends/` package
-  - `src/yoker/backends/protocol.py`: define `ModelBackend` async Protocol with
-    `provider` property and `chat_stream(*, model, messages, tools, think, **kwargs) -> AsyncIterator[ChatChunk]` (signature per design §4.3; `**kwargs` purely internal per Q20)
-  - `src/yoker/backends/protocol.py`: define provider-neutral stream types:
-    `ChatChunkEvent` enum (CONTENT_START/DELTA/STOP, THINKING_START/DELTA/STOP, TOOL_CALL_START/DELTA/STOP, USAGE, DONE), `ToolCallDelta` (index, id, name, arguments_delta), `UsageStats` (input_tokens, output_tokens, prompt_eval_count, eval_count, total_duration_ms), and `ChatChunk` (event, index, text, tool_call, usage) — per design §4.2
-  - `src/yoker/backends/__init__.py`: re-export `ModelBackend`, `ChatChunk`, `ChatChunkEvent`, `ToolCallDelta`, `UsageStats` (and `create_backend` once 6.5 lands)
-  - Design `ChatChunk` to accommodate Anthropic's block-style streaming even though Anthropic is Phase 3 (explicit `index` for block indexing; START/DELTA/STOP bracketing)
-  - Write unit tests asserting the dataclasses are frozen and field defaults are correct
-  - **Acceptance:**
-    - `from yoker.backends import ModelBackend, ChatChunk, ChatChunkEvent, ToolCallDelta, UsageStats` works
-    - `ChatChunk` is frozen; exactly one of `text`/`tool_call`/`usage` is set per `event`
-    - `UsageStats` preserves Ollama-native fields (`prompt_eval_count`/`eval_count`/`total_duration_ms`) alongside `input_tokens`/`output_tokens`
-    - `make check` green (no existing tests modified)
-  **Satisfies:** Protocol + neutral stream type foundation
-  **Depends on:** —
-
-- [x] **[MBI-006] 6.2 TurnEndEvent: optional input_tokens/output_tokens stats fields** ✅ (2026-06-29)
-  - `src/yoker/events/types.py`: add `input_tokens: int = 0` and `output_tokens: int = 0` to `TurnEndEvent` (Q15)
-  - Keep Ollama-native `prompt_eval_count`/`eval_count`/`total_duration_ms` for backwards compatibility
-  - Non-breaking: defaults of 0 preserve existing behaviour
-  - Update UIBridge/stats display to read whichever is non-zero (UI reads `input_tokens`/`output_tokens` when Ollama-native fields are 0)
-  - Write unit tests asserting new fields default to 0 and existing Ollama-native stats still populate
-  - **Acceptance:**
-    - `TurnEndEvent` has `input_tokens` and `output_tokens` fields defaulting to 0
-    - Existing Ollama sessions still populate `prompt_eval_count`/`eval_count`/`total_duration_ms`
-    - All existing event tests pass without modification
-  **Satisfies:** Provider-agnostic stats surface
-  **Depends on:** —
-
-- [x] **[MBI-006] 6.3 Config tagged-union shape + Clevis CLI args** ✅ (2026-06-29)
-  - `src/yoker/config/__init__.py`: widen `BackendConfig` to discriminated-dataclass shape — add `openai: OpenAIConfig | None = None` and `anthropic: AnthropicConfig | None = None` Optional fields (Q2)
-  - Forward-declare `OpenAIConfig`/`AnthropicConfig` stubs under `TYPE_CHECKING` (Phase 2/3 populate them; Phase 1 only needs the field slots to exist with `None` defaults)
-  - Widen `provider` whitelist from `("ollama",)` to `("ollama", "openai", "anthropic")` so the choice arg lists all future providers, but only wire the ollama validation guard in `__post_init__` (require `backend.ollama` when `provider == "ollama"`; openai/anthropic guards added in Phase 2/3)
-  - Keep `OllamaParameters.top_k`/`num_ctx` Ollama-specific (Q4); do NOT introduce a shared parameter base class
-  - Keep `provider` default `"ollama"` (Q9)
-  - Verify Clevis auto-generates `--backend-provider {ollama,openai,anthropic}` and `--backend-openai-*` / `--backend-anthropic-*` args (default None, ignored at runtime in Phase 1)
-  - Write unit tests: default `BackendConfig()` yields `provider="ollama"`, `openai=None`, `anthropic=None`; old TOML files (single-Ollama shape) still load (Q8 — strict superset, no migration); `provider="openai"` with `openai=None` does NOT raise in Phase 1 (guard only enforces ollama) — or raises a clear `ValidationError` per design §4.5; pick the behaviour consistent with the design note and document it
-  - **Acceptance:**
-    - `BackendConfig()` defaults to `provider="ollama"` with `openai`/`anthropic` None
-    - Existing `~/.yoker.toml` files load unchanged (no migration script)
-    - `--backend-provider` lists all three providers; `--backend-openai-*`/`--backend-anthropic-*` args exist and default to None
-    - `make check` green
-  **Satisfies:** Config schema superset for all three phases
-  **Depends on:** —
-
-- [x] **[MBI-006] 6.4 render_config_toml union-aware** ✅ (2026-06-29)
-  - `src/yoker/config/writer.py::render_config_toml`: confirm the generic dataclass walk omits `None` per-provider sub-configs; add explicit handling/tests if needed (Q7 split — writer stays in Phase 1 because it lives in the config module and is reusable)
-  - Do NOT touch `build_bootstrap_overrides` (wizard-specific, deferred with §8)
-  - Write unit tests asserting a config with `openai=None`/`anthropic=None` writes a TOML file with no `[backend.openai]`/`[backend.anthropic]` section, and that the written file round-trips back to an equal `BackendConfig`
-  - **Acceptance:**
-    - `render_config_toml` omits `None` per-provider sub-configs
-    - Round-trip: `load(render_config_toml(cfg)) == cfg` for an Ollama-only config
-    - `make check` green
-  **Satisfies:** Config writer union-awareness (reusable, non-wizard)
-  **Depends on:** 6.3
-
-- [x] **[MBI-006] 6.5 OllamaBackend adapter + create_backend factory** ✅ (2026-06-29)
-  - `src/yoker/backends/ollama.py`: new `OllamaBackend` wrapping `ollama.AsyncClient`
-    - Constructor builds the client from `config.backend.ollama` (relocate `agent/_setup.py::create_client` logic here — no behaviour change)
-    - `provider` property returns `"ollama"`
-    - `chat_stream(*, model, messages, tools, think, **kwargs)` calls `self._client.chat(model, messages, tools, think=think, stream=True)` and translates each native chunk into `ChatChunk`:
-      - `message.thinking` -> `THINKING_START`/`THINKING_DELTA`/`THINKING_STOP` (synthesise START before first thinking delta, STOP at end of thinking)
-      - `message.content` -> `CONTENT_START` (before first content delta) / `CONTENT_DELTA` / `CONTENT_STOP` (synthesise boundaries; Ollama is delta-style per design §4.2)
-      - `message.tool_calls` -> `TOOL_CALL_START`/`TOOL_CALL_DELTA`/`TOOL_CALL_STOP` per call
-      - `chunk.done` + native stats (`prompt_eval_count`/`eval_count`/`total_duration`) -> `USAGE` (populate `UsageStats` native fields) then terminal `DONE`
-    - Preserves native `think=` flag mapping (Q11) and native stats (Q15)
-  - `src/yoker/backends/factory.py`: new. `create_backend(config) -> ModelBackend`; `BACKENDS = {"ollama": lambda cfg: OllamaBackend(cfg)}` only in Phase 1. Unknown provider raises `ConfigurationError` listing configured providers (Q10 — no silent fallback)
-  - `src/yoker/agent/_setup.py`: remove `create_client()` (moved into `OllamaBackend`); keep `create_web_guardrails`, `validate_recursion_depth`, `add_skill_discovery_block` unchanged
-  - Write unit tests:
-    - `create_backend(Config())` returns an `OllamaBackend` instance
-    - `create_backend` with unknown provider raises `ConfigurationError` naming configured providers
-    - `OllamaBackend.chat_stream` fed a recorded Ollama chunk sequence emits `CONTENT_START` before first `CONTENT_DELTA`, `THINKING_START`/`STOP` around thinking deltas, `TOOL_CALL_START`/`DELTA`/`STOP` per call, and a terminal `DONE` with `UsageStats` populated from native fields
-  - **Acceptance:**
-    - `create_backend(Config())` is an `OllamaBackend`
-    - Unknown provider -> `ConfigurationError` (Agent never starts)
-    - `OllamaBackend.chat_stream` emits the documented `ChatChunk` event sequence with synthesised block boundaries
-    - `make check` green
-  **Satisfies:** Ollama adapter on the new Protocol + factory dispatch
-  **Depends on:** 6.1, 6.3
-
-- [x] **[MBI-006] 6.6 Agent wiring: _backend, _resolve_model, _chat_stream, _consume_stream rewrite** ✅ (2026-06-29)
-  - `src/yoker/agent/agent.py`:
-    - Replace `self._client: AsyncClient | None` with `self._backend: ModelBackend | None`
-    - Replace `create_client(self.config, AsyncClient)` with `create_backend(self.config)`
-    - Keep optional `backend: ModelBackend | None = None` injection param (renamed from `client`)
-    - `_resolve_model()`: read from the active provider's sub-config, not `config.backend.ollama.model` directly. Introduce helper `_active_backend_config(config)` (or `getattr(config.backend, config.backend.provider)`) — keep returning the Ollama model in Phase 1
-  - `src/yoker/agent/_processing.py`:
-    - `_chat_stream()`: replace `agent._client.chat(...)` with `agent._backend.chat_stream(model=..., messages=..., tools=..., think=...)`
-    - `_consume_stream()`: rewrite to iterate `ChatChunk` instead of Ollama-native chunks. Map `ChatChunkEvent` to existing `Event` types (ThinkingStart/Chunk/End, ContentStart/Chunk/End, ToolCallEvent). Accumulate tool calls from `TOOL_CALL_START`/`DELTA`/`STOP`. Build `TurnEndEvent` from `UsageStats`: map `prompt_eval_count`/`eval_count`/`total_duration_ms` to native fields; fall back to `input_tokens`/`output_tokens` for non-Ollama (set native fields to 0 when absent)
-  - Add a golden-stream unit test: feed a recorded sequence of `ChatChunk` through `_consume_stream` and assert the emitted `Event` sequence matches a captured Ollama session (design §5.4 acceptance)
-  - Do NOT change event types (beyond 6.2), UIBridge mapping, or UI handlers
-  - **Acceptance:**
-    - All existing tests pass without modification (behaviour unchanged)
-    - Golden-stream test: recorded `ChatChunk` sequence -> expected `Event` sequence
-    - Ollama round-trip works exactly as before through the new Protocol (interactive + batch)
-    - `make check` green
-  **Satisfies:** Agent hot path on the new Protocol
-  **Depends on:** 6.5, 6.2
-
-- [x] **[MBI-006] 6.7 Subagent spawn provider-agnostic** ✅ (2026-06-29)
-  - Introduce `with_model(backend: BackendConfig, model: str) -> BackendConfig` helper in `src/yoker/backends/__init__.py` (or `config` module) — returns a copy of `backend` with `model` overridden on the active sub-config via `getattr`/`dataclasses.replace` (design §9.3)
-  - `src/yoker/builtin/agent.py::_create_subagent`: replace the hardcoded `BackendConfig(provider=..., ollama=OllamaConfig(...))` rebuild with the provider-agnostic copy using `with_model`
-  - `src/yoker/bootstrap/modellist.py`: read default model from the active provider config (helper), not `config.backend.ollama.model` directly. Curated list stays Ollama-only in Phase 1
-  - Phase 1 implements `with_model` for `ollama` only; Phase 2/3 extend to `openai`/`anthropic`
-  - Write unit tests: subagent spawn produces a `Config` whose `backend` is a faithful copy of the parent's with only the model overridden, regardless of provider (test under `provider="ollama"`)
-  - **Acceptance:**
-    - Subagent `Config.backend` equals parent's `backend` with only `model` overridden
-    - No hardcoded `OllamaConfig` rebuild in `_create_subagent`
-    - `make check` green
-  **Satisfies:** Provider-agnostic subagent spawn
-  **Depends on:** 6.3, 6.6
-
-- [x] **[MBI-006] 6.8 Phase 1 verification** ✅ (2026-06-29)
-  - Run `make check` end-to-end (format, lint, typecheck, test) — all green
-  - Verify no existing tests were modified to make the refactor pass (behaviour unchanged)
-  - Verify `~/.yoker.toml` written by the wizard still produces a working Ollama session (round-trip unchanged — manual or integration check)
-  - Verify `render_config_toml` writes a config with `openai`/`anthropic` absent when those sub-configs are `None`
-  - Verify `create_backend(Config())` returns an `OllamaBackend` and unknown provider raises `ConfigurationError`
-  - Confirm wizard files (`bootstrap/wizard.py`, `bootstrap/steps.py`) are unchanged (deferred per §8)
-  - Confirm `build_bootstrap_overrides` is NOT touched (deferred with the wizard)
-  - Confirm web tools (`websearch`/`webfetch`) under Ollama still work (PRE-1 base) and are not extended to other providers
-  - **Acceptance:**
-    - `make check` green; zero behaviour change on the Ollama path
-    - All Phase 1 design §5.4 acceptance criteria verified
-    - No wizard changes; no `build_bootstrap_overrides` changes; no new provider wired
-  **Satisfies:** Phase 1 completion gate
-  **Depends on:** 6.1-6.7
+- [ ] Users can run `uvx yoker-assistant` successfully
+- [ ] Users can run `uvx yoker-writing-assistant` successfully
+- [ ] yoker-assistant demonstrates all yoker capabilities
+- [ ] yoker-writing-assistant demonstrates skill-based agent specialization
+- [ ] Documentation explains architecture and patterns for both
+- [ ] Both projects serve as reference implementations
 
 ---
 
@@ -2221,108 +399,34 @@ Unsorted improvements and fixes.
   - Rename namespace from `yoker:` to `builtin:`
   - When listing tools (e.g. /tools), don't include the `builtin:` prefix
   - Update documentation
-  **Priority:** P3
+  **Priority:** P1 (in scope for 1.0.0)
 
 - [ ] **M.2 Default Tools Behavior**
   - When agent has no explicit tools configuration, ALL tools should be available
   - Update agent initialization logic
   - Write unit tests
-  **Priority:** P3
+  **Priority:** P1 (in scope for 1.0.0)
 
-- [ ] **M.3 Namespace Frontmatter Configuration**
-  - Allow namespace configuration in skill and agent frontmatter
+- [ ] **M.3 Namespace from Plugin/Package**
+  - Allow namespace configuration derived from the plugin/package, not from skill/agent frontmatter
   - Update SkillLoader and AgentLoader
   - Write unit tests
-  **Priority:** P3
+  **Priority:** P2 (in scope for 1.0.0)
 
 - [ ] **M.4 Clean Up Duplicate Tests**
   - Review all tests for duplicates (e.g. tests/test_tools/test_base.py and tests/tools/test_base.py)
   - Consolidate duplicate tests
   - Ensure full coverage maintained
-  **Priority:** P4
-
-- [x] ✅ **M.5 Populate `Agent._tool_backends` for Ollama web tools (prerequisite for multi-provider backend)**
-  - `Agent._tool_backends` is initialised to `{}` and never populated, so the
-    `websearch` and `webfetch` built-in tools already fail today with
-    "No backend configured" regardless of provider. This is a pre-existing bug
-    independent of the multi-provider backend design.
-  - Fix scope: populate `Agent._tool_backends` with the
-    `OllamaWebSearchBackend` / `OllamaWebFetchBackend` instances when the
-    configured provider is Ollama, so the web tools actually work. Keep it small
-    and focused — this is a bug fix, not a feature.
-  - **Prerequisite for:** the multi-provider backend work
-    (`analysis/multi-provider-backend-design.md`). The design note documents
-    this gap (§7.4 and §9.17 Q17 Option B) and the owner has decided to fix it
-    as a separate precondition before the backend phases begin. Do this before
-    Phase 1 of the multi-provider backend effort.
-  - Write unit tests asserting the `websearch` / `webfetch` backends are
-    populated under the Ollama provider and that the tools execute successfully.
-  - Do not extend web tools to non-Ollama providers — that remains out of scope
-    (design note §7.4); the multi-provider backend effort will handle the
-    "Ollama provider required" error path for other providers.
-  **Priority:** P2
-  **Date:** 2026-06-28
-
-- [x] **M.6 Exclude api_key from Clevis CLI generation** ✅ (2026-06-29)
-  - Clevis released `metadata={'cli': False}` support (FR christophevg/clevis#30).
-  - Implemented in Phase 1 task 6.3 as part of the config tagged-union + Clevis
-    CLI args work (see MBI-006 task 6.3 acceptance criteria).
-  - This is a follow-up to the multi-provider backend security review
-    (`analysis/security-multi-provider-backend.md`, finding H1) and amends
-    design decision Q6 (`analysis/multi-provider-backend-design.md` §11.6).
-  - `api_key` fields on `OllamaConfig`/`OpenAIConfig`/`AnthropicConfig` will be
-    annotated with `metadata={"cli": False}` in Phase 1 task 6.3; test asserts
-    no `--backend-*-api-key` CLI arg is generated.
-  **Priority:** P3
-  **Date:** 2026-06-29
+  **Priority:** P3 (in scope for 1.0.0)
 
 ---
 
-## Done: UI Separation Migration (2026-06-15)
-
-**Status:** Completed 2026-06-15 via PR #27
-
-**Goal:** Separate UI from Agent in the yoker codebase, establishing a clean boundary where the Agent layer is purely event-driven and the UI layer handles all presentation.
-
-**Approach:** Clean break - no backward compatibility, no deprecation shims.
-
-**Related Analysis:**
-- [Overview and Architecture](analysis/ui-separation-overview.md)
-- [IO Operations Catalog](analysis/ui-separation-io-catalog.md)
-- [Error Handling Strategy](analysis/ui-separation-errors.md)
-- [Agent Module Refactoring](analysis/ui-separation-agent-module.md)
-- [UI Handler Design](analysis/ui-separation-ui-design.md)
-- [Migration Plan](analysis/ui-separation-migration.md)
-
-**Outcome:** All migration phases complete (UI-001 through UI-055). PR #27 merged the final documentation and examples.
-
----
-
-
-## Done: MBI-001: Package Plugin System (2026-06-25)
-
-**Goal:** Enable Python packages to provide tools and skills to yoker via `yoker --with <package>`
-
-**Status:** Core implementation complete. Validation with pkgq project pending before final PyPI release.
-
-### Completed Phases
-
-- [x] **Phase 2: Skill System (Core)** — Skill Infrastructure, Slash Commands, Skill Tool
-- [x] **Phase 3: Package Plugin System** — Package Plugin Discovery, CLI --with Argument
-- [x] **Phase 5: Polish** — Error Handling, Documentation, Testing
-- [x] **Phase 6.2: Examples and Tutorials**
-
-### Remaining
-
-- See **MBI-001 Validation** section above for pkgq validation and PyPI release tasks
-
----
-
-## Launch Preparation: Public Announcement (2026-06-17)
+## Launch Preparation: Public Announcement (On Hold)
 
 **Source:** Email from Christophe, 2026-06-17
 **Goal:** Prepare marketing materials and dedicated website for Yoker's public announcement.
 **USP:** "Add LLM capabilities to your Python apps and modules without worrying about the agentic foundations. Agentic Functions."
+**Status:** On hold — start only when owner signals implementation works is finalizing.
 
 ### Social Media Launch Plan
 
@@ -2383,9 +487,9 @@ Unsorted improvements and fixes.
 
 ### Phase 7: Config System Refactoring
 
-**Status:** Design required
+**Status:** Backlog (in scope for 1.0.0)
 
-**Priority:** P5 (Post-MVP architectural improvement)
+**Priority:** P2
 
 **Problem:** The current config system uses frozen dataclasses for `ToolsConfig`, which cannot be extended dynamically. Plugins added via `--with` need to register their own configuration fields (e.g., `[tools.pkgq]` settings). This requires architectural changes to the config system.
 
@@ -2395,7 +499,7 @@ Unsorted improvements and fixes.
   - Determine how plugins register their config schema
   - Design config discovery and validation flow
   - Document interaction with existing `WebGuardrailConfig` duplication
-  - **Priority:** P5
+  - **Priority:** P2 (in scope for 1.0.0)
   - **Estimated time:** 4-6 hours (design only)
   - **Note:** This is a design task. Implementation will be a separate task.
 
@@ -2405,7 +509,7 @@ Unsorted improvements and fixes.
   - Support config field injection at runtime
   - Update existing hardcoded tool configs to use registration pattern
   - **Depends on:** 7.1
-  - **Priority:** P5
+  - **Priority:** P2 (in scope for 1.0.0)
   - **Estimated time:** 8-12 hours
   - **Note:** Requires Clevis support or local workaround
 
@@ -2416,7 +520,7 @@ Unsorted improvements and fixes.
   - Ensure config passes guardrail settings directly to guardrails
   - Update `agent/_setup.py` to use consolidated config classes
   - **Depends on:** 7.2
-  - **Priority:** P5
+  - **Priority:** P2 (in scope for 1.0.0)
   - **Estimated time:** 2-4 hours
   - **Note:** This task should NOT be done separately. It depends on the plugin config registration system being in place first, because:
     1. The duplication exists because `ToolsConfig` is frozen
@@ -2450,98 +554,73 @@ Unsorted improvements and fixes.
   - Update config loading to check keyring first, then config file
   - Document the keyring integration in security docs
   - Write unit tests with mocked keyring backend
-  - **Priority:** P2
+  - **Priority:** P2 (in scope for 1.0.0)
   - **Reference:** User request 2026-07-01
 
 ---
 
-## Future Work (Post-Release)
+## Subsumed by MBI-008 / MBI-009
 
-### Additional Tools (Phase 2 continued)
+These items are retained for history. They are now covered by the new MBIs and should not be worked on independently.
 
-- [ ] **2.15 Python Tool**
-  - Depends on: 2.14 Python Tool Research (complete)
-  - Implement Python script execution functionality
-  - Support virtual environment activation (uv, pyenv, venv)
-  - Implement code validation guardrails (6-layer defense)
-  - Define allowed operations and permissions
-  - Add timeout and resource limits
-  - Write unit tests
-  - See `analysis/api-python-tool.md` for API design
-  - **Priority:** P4
+### Covered by MBI-009: Toolset Coverage for 1.0.0
 
-- [ ] **2.16 Pytest Tool**
-  - Implement test execution functionality via pytest
-  - Support running all tests, single test file, or selection
-  - Add optional `activate_venv` parameter
-  - Add optional `filter` parameter for grep pattern
-  - Add optional `max_lines` parameter for output
-  - Apply PathGuardrail for test file paths
-  - Add timeout enforcement
-  - Write unit tests
-  - See `analysis/api-pytest-tool.md` for API design
-  - **Priority:** P4
+- [x] **2.15 Python Tool** — **Covered by MBI-009** (T2: `read` enhancement with `package://` URLs covers the `inspect` use case; `exec` deferred to post-1.0.0)
+  - Original: Python script execution functionality
+  - Resolution: `inspect` folded into `read` tool as `package://` URL support; `exec` deferred to post-1.0.0 per owner decision
+  - See `analysis/mbi-toolset-coverage.md` Section 7.2 and 7.4
 
-- [ ] **2.17 AskUserQuestion Tool**
-  - Implement interactive question asking capability
-  - Support choice-based questions with predefined options
-  - Support open-ended questions
-  - Add timeout and default value handling
-  - Integrate with TUI for interactive sessions
-  - Write unit tests
-  - See `analysis/api-askuserquestion-tool.md` for API design
-  - **Priority:** P4
+- [x] **2.16 Pytest Tool** — **Covered by MBI-009** (T4: `pytest` tool)
+  - Original: Test execution via pytest
+  - Resolution: Implemented as `pytest` tool in MBI-009 Tier 2
+  - See `analysis/mbi-toolset-coverage.md` Section 7.5
 
-- [ ] **2.18 Development Workflow Tools**
-  - Implement RuffTool for linting/formatting operations
-  - Implement MyPyTool for type checking
-  - Implement ToxTool for multi-version testing
-  - Implement MakeTool for Makefile target execution
-  - Implement PyPiTool for package publishing
-  - All tools use PathGuardrail for path validation
-  - All tools have timeout enforcement
-  - Write unit tests for each tool
-  - See `analysis/api-dev-tools.md` for API design
-  - **Priority:** P4
+- [x] **2.17 AskUserQuestion Tool** — **Covered by MBI-009** (T6: `askuserquestion` tool)
+  - Original: Interactive question asking capability
+  - Resolution: Implemented as static built-in `askuserquestion` tool in MBI-009 Tier 2
+  - See `analysis/mbi-toolset-coverage.md` Section 7.7
 
-- [ ] **2.19 GitHub Tool**
-  - Implement GitHub CLI wrapper tool for repository operations
-  - Support read-only operations: repo_view, issue_list/view, pr_list/view, workflow_list/view, release_list/view
-  - Use `gh` CLI with `--json` output for structured responses
-  - Add operation allowlist guardrail
-  - Add timeout enforcement (default 30 seconds)
-  - Add result count limits (max 100 for lists)
-  - Handle authentication errors gracefully
-  - Subprocess execution with list args (no shell=True)
-  - Write unit tests
-  - See `analysis/api-github-tool.md` for API design
-  - See `analysis/security-github-tool.md` for security analysis
-  - **Priority:** P4
+- [x] **2.18 Development Workflow Tools** — **Covered by MBI-009** (T1: `make` tool + T8: `lint` tool)
+  - Original: RuffTool, MyPyTool, ToxTool, MakeTool, PyPiTool
+  - Resolution: `make` tool in Tier 1; ruff+mypy consolidated into `lint` tool in Tier 2; ToxTool and PyPiTool not included for 1.0.0
+  - See `analysis/mbi-toolset-coverage.md` Sections 7.1 and 7.11
 
-- [ ] **2.20 Add [start:stop] Arguments to Output-Heavy Tools**
-  - Extend offset/limit pattern to tools with large outputs
-  - Add `offset` and `limit` parameters to SearchTool results
-  - Add `offset` and `limit` parameters to ListTool
-  - Use consistent parameter naming (offset/limit)
-  - Add result count metadata (total_matches, shown_matches, has_more)
-  - Update tool descriptions
-  - Write unit tests for pagination edge cases
-  - **Priority:** P4
+- [x] **2.19 GitHub Tool** — **Covered by MBI-009** (T7: `github` tool)
+  - Original: GitHub CLI wrapper tool
+  - Resolution: Implemented as `github` tool with subcommand blocking in MBI-009 Tier 2
+  - See `analysis/mbi-toolset-coverage.md` Section 7.8
 
-- [ ] **2.22 uv Tool**
-  - Implement uv CLI wrapper tool for Python package management
-  - Support common operations: install, sync, add, remove, run, venv
-  - Add operation allowlist guardrail
-  - Add timeout enforcement (default 60 seconds)
-  - Use PathGuardrail for virtual environment paths
-  - Handle virtual environment activation
-  - Add result parsing for structured output
-  - Subprocess execution with list args (no shell=True)
-  - Write unit tests
-  - See `analysis/api-uv-tool.md` for API design
-  - **Priority:** P4
+- [x] **2.20 Add [start:stop] Arguments to Output-Heavy Tools** — **Covered by MBI-009** (T2: `read` offset/limit; T3: `search` enhancements)
+  - Original: Extend offset/limit pattern to tools with large outputs
+  - Resolution: `read` offset/limit in Tier 1; `search` enhancements in Tier 1; ListTool pagination deferred to post-1.0.0
+  - See `analysis/mbi-toolset-coverage.md` Sections 7.2 and 7.3
 
-### Backend Integration (Phase 3)
+- [x] **2.22 uv Tool** — **Covered by MBI-009** (T9: `uv` tool)
+  - Original: uv CLI wrapper tool for Python package management
+  - Resolution: Implemented as `uv` tool in MBI-009 Tier 2
+  - See `analysis/mbi-toolset-coverage.md` Section 7.12
+
+### Covered by MBI-008: Prompt Sets
+
+- [x] **3.5 Prompt Sets Implementation** — **Covered by MBI-008**
+  - Original: Create prompts/sets/default/, minimal/, detailed/; PromptTemplate with variable rendering
+  - Resolution: Fully superseded by MBI-008 which externalizes all prompts into Jinja2 templates with 13 injection points and two prompt sets (Yoker default + Claude Code demo)
+  - See `analysis/mbi-prompt-sets.md`
+
+### Partially covered by MBI-008
+
+- [x] **3.8 Context Reminders Implementation** — **Partially covered by MBI-008**
+  - Original: ContextReminder protocol, SkillsReminder, ClaudeMdReminder, CurrentDateReminder, WorkingDirectoryReminder, GitContextReminder
+  - Resolution: Partially superseded by MBI-008. The new injection points (IP-8 session start, IP-9 env info, IP-10 file change, IP-13 context update) cover the same ground as context reminders but through the prompt set framework rather than a separate ContextReminder protocol. The prompt set's `session_start.j2` template handles CLAUDE.md injection, current date, git status. The `env_info.j2` handles skills/agents listing. Remaining reminder concepts (working directory, git context) are available as template variables in the prompt set system.
+  - See `analysis/mbi-prompt-sets.md` Section 2.2 (IP-8, IP-9, IP-10, IP-13)
+
+---
+
+## Deferred to Post-1.0.0
+
+Items explicitly deferred until after the 1.0.0 release.
+
+### Backend Integration (Deferred)
 
 - [ ] **3.4 Configurable Components Infrastructure**
   - Create base classes (SetMetadata, ComponentSet, ComponentLoader)
@@ -2551,18 +630,7 @@ Unsorted improvements and fixes.
   - Add configuration support to Config schema
   - Write unit tests
   - See `analysis/configurable-components-design.md` for design
-  - **Priority:** P5
-
-- [ ] **3.5 Prompt Sets Implementation**
-  - Create prompts/sets/default/ with main.md, general-purpose.md, explore.md, plan.md
-  - Create prompts/sets/minimal/ with shortened prompts
-  - Create prompts/sets/detailed/ with verbose prompts
-  - Implement PromptTemplate with variable rendering
-  - Implement PromptLoader with set support
-  - Integrate with Agent class
-  - Write unit tests
-  - **Depends on:** 3.4
-  - **Priority:** P5
+  - **Priority:** Post-1.0.0
 
 - [ ] **3.6 Skills Sets Implementation**
   - Create skills/sets/default/ with core skills
@@ -2573,7 +641,7 @@ Unsorted improvements and fixes.
   - Add skill discovery
   - Write unit tests
   - **Depends on:** 3.4
-  - **Priority:** P5
+  - **Priority:** Post-1.0.0
 
 - [ ] **3.7 Agent Sets Implementation**
   - Create agents/sets/default/ with main.md, researcher.md, developer.md, reviewer.md
@@ -2585,20 +653,7 @@ Unsorted improvements and fixes.
   - Add tool filtering per agent definition
   - Write unit tests
   - **Depends on:** 3.4
-  - **Priority:** P5
-
-- [ ] **3.8 Context Reminders Implementation**
-  - Implement ContextReminder protocol
-  - Implement SkillsReminder (list available skills)
-  - Implement ClaudeMdReminder (global + project CLAUDE.md)
-  - Implement CurrentDateReminder
-  - Implement WorkingDirectoryReminder
-  - Implement GitContextReminder (branch, status)
-  - Create ReminderComposer class
-  - Integrate with Agent message building
-  - Write unit tests
-  - See `analysis/context-implementation-plan.md` for design
-  - **Priority:** P5
+  - **Priority:** Post-1.0.0
 
 - [ ] **3.9 Lazy Loading Implementation**
   - Implement LazyToolRegistry (load tools on first use)
@@ -2609,9 +664,9 @@ Unsorted improvements and fixes.
   - Add configuration for lazy vs eager loading
   - Write unit tests
   - **Depends on:** 3.4, 3.5, 3.6, 3.7
-  - **Priority:** P5
+  - **Priority:** Post-1.0.0
 
-### Future Features (Low Priority)
+### Future Features (Deferred)
 
 - [ ] **2.13.1 Local WebSearch Backend**
   - Implement LocalWebSearchBackend using DDGS library
@@ -2620,7 +675,7 @@ Unsorted improvements and fixes.
   - Integrate with WebSearchTool via plugin system
   - Write unit tests
   - Note: OllamaWebSearchBackend is working, this is for offline-first
-  - **Priority:** P6
+  - **Priority:** Post-1.0.0
 
 - [ ] **2.13.2 Local WebFetch Backend**
   - Implement LocalWebFetchBackend using httpx + Trafilatura
@@ -2629,7 +684,7 @@ Unsorted improvements and fixes.
   - Integrate with WebFetchTool via plugin system
   - Write unit tests
   - Note: OllamaWebFetchBackend is working, this is for full control
-  - **Priority:** P6
+  - **Priority:** Post-1.0.0
 
 - [ ] **R.1 Hermes Agent Comparison**
   - Research Hermes Agent architecture and capabilities
@@ -2637,7 +692,7 @@ Unsorted improvements and fixes.
   - Compare Hermes to C3 Agentic Harness approach
   - Document findings in research folder
   - Identify features worth incorporating
-  - **Priority:** P6
+  - **Priority:** Post-1.0.0
 
 - [ ] **F.1 Multi-Agent Chat Room Demo**
   - Design multi-agent chat room architecture
@@ -2645,862 +700,16 @@ Unsorted improvements and fixes.
   - Create agent folder structure for spawned agents
   - Implement agent-to-agent communication protocol
   - Create demonstration scenario
-  - **Priority:** P6
-
----
-
-## Done
-
-### MBI-001 Validation: Package Plugin System (2026-07-03)
-
-**Goal:** Final validation before MBI-001 closure.
-
-- [x] **1.1 Validate with pkgq Project** ✅ (2026-07-03)
-  - Test plugin system with pkgq project locally
-  - Verify all acceptance criteria work
-  - Document any issues found
-  - Validated, v0.6.0 released
-  **Priority:** P1
-
-- [x] **1.2 Publish Release to PyPI** ✅ (2026-07-03)
-  - Finalize pyproject.toml metadata
-  - Test installation from source distribution
-  - Upload to TestPyPI
-  - Upload to PyPI
-  - Published v0.6.0 to PyPI
-  **Priority:** P1
-  **Note:** Requires release manager credentials
-
-### MBI-006 Phase 2: LitellmBackend for Multi-Provider Support (2026-07-01)
-
-**Goal:** Implement `LitellmBackend` wrapping the litellm library to support OpenAI, Anthropic, and 100+ other providers through a unified interface.
-
-**Design source of truth:** `analysis/dual-backend-architecture.md` (Phase 2). This replaces the original Phase 2 (OpenAI backend) and Phase 3 (Anthropic backend) with a single unified approach.
-
-**Architecture decision:** Dual backend — OllamaBackend (Phase 1, native SDK) for Ollama, LitellmBackend (Phase 2, new) for all other providers.
-
-**Out of scope for Phase 2:** Bootstrap wizard provider selection, `build_bootstrap_overrides` provider-awareness, live API model discovery for non-Ollama providers, extending web tools to non-Ollama providers.
-
-#### Tasks
-
-- [x] **[MBI-006] 8.1 Add litellm dependency** ✅ (2026-07-01)
-  - Add `litellm>=1.90.0` to `pyproject.toml` dependencies
-  - Run `uv sync` to install the dependency
-  - Verify litellm supports Ollama, OpenAI, Anthropic in dependency documentation
-  - **Acceptance:**
-    - `litellm>=1.90.0` in `pyproject.toml`
-    - `uv lock` updated with litellm and its transitive dependencies
-    - Import `litellm` succeeds in Python environment
-  **Satisfies:** Dependency foundation for LitellmBackend
-  **Depends on:** —
-
-- [x] **[MBI-006] 8.2 Create LitellmBackend implementation** ✅ (2026-07-01)
-  - Create `src/yoker/backends/litellm.py` with `LitellmBackend` class
-  - Implement `ModelBackend` Protocol from `backends/protocol.py`
-  - Constructor takes Yoker config, extracts provider credentials
-  - `provider` property returns current provider name
-  - `chat_stream()` method:
-    - Map Yoker model to litellm model string (`ollama/llama3.2`, `openai/gpt-4o`, `anthropic/claude-sonnet-4`, etc.)
-    - Call `litellm.acompletion()` with streaming enabled
-    - Translate `ModelResponseStream` chunks to Yoker `ChatChunk` events
-    - Synthesize START/STOP events (litellm only emits deltas)
-    - Handle `reasoning_content` for thinking/reasoning models
-  - Write unit tests with mocked litellm
-  - **Acceptance:**
-    - `LitellmBackend` implements all `ModelBackend` Protocol methods
-    - Constructor extracts API keys from provider-specific config
-    - `chat_stream()` returns `AsyncIterator[ChatChunk]`
-    - Model string mapping works for OpenAI, Anthropic, and Ollama prefixes
-  **Satisfies:** LitellmBackend core implementation
-  **Depends on:** 8.1
-
-- [x] **[MBI-006] 8.3 Implement stream translation** ✅ (2026-07-01)
-  - Create `_translate_chunk()` method in LitellmBackend
-  - Translate litellm's `ModelResponseStream` to Yoker's `ChatChunk`
-  - State tracking for `CONTENT_START`/`CONTENT_STOP` synthesis
-  - State tracking for `THINKING_START`/`THINKING_STOP` synthesis (from `reasoning_content`)
-  - State tracking for `TOOL_CALL_START`/`TOOL_CALL_STOP` synthesis
-  - Emit `USAGE` with `input_tokens`/`output_tokens` from litellm usage stats
-  - Emit terminal `DONE` after final chunk
-  - Handle litellm exceptions gracefully (network errors, rate limits, auth errors)
-  - Write unit tests with recorded chunk sequences
-  - **Acceptance:**
-    - Delta-only litellm chunks correctly synthesized into START/DELTA/STOP sequences
-    - `reasoning_content` mapped to THINKING events
-    - Tool calls properly bracketed with START/STOP
-    - USAGE event contains token counts from litellm
-    - Terminal DONE event always emitted (even on error)
-  **Satisfies:** Stream translation layer
-  **Depends on:** 8.2
-
-- [x] **[MBI-006] 8.4 Register LitellmBackend in factory** ✅ (2026-07-01)
-  - Update `src/yoker/backends/factory.py`
-  - Map OpenAI, Anthropic, and other providers to `LitellmBackend`
-  - Keep Ollama mapping to `OllamaBackend` (dual backend architecture)
-  - Unknown providers default to `LitellmBackend` (leverages litellm's 100+ providers)
-  - Import `LitellmBackend` in `backends/__init__.py`
-  - Write unit tests asserting correct backend instantiation per provider
-  - **Acceptance:**
-    - `create_backend(Config(backend=BackendConfig(provider="openai")))` returns `LitellmBackend`
-    - `create_backend(Config(backend=BackendConfig(provider="anthropic")))` returns `LitellmBackend`
-    - `create_backend(Config(backend=BackendConfig(provider="ollama")))` returns `OllamaBackend`
-    - Unknown provider like `"groq"` returns `LitellmBackend` (litellm handles it)
-  **Satisfies:** Factory dispatch for dual backend
-  **Depends on:** 8.2
-
-- [x] **[MBI-006] 8.5 Preserve base_url trust boundary** ✅ (2026-07-01)
-  - Keep existing trust boundary validation from Phase 1 (OllamaBackend)
-  - Apply to all providers (not just Ollama)
-  - `base_url` warning/confirmation for custom endpoints
-  - Batch mode `YOKER_ALLOW_CUSTOM_BASE_URL` environment variable support
-  - Document security implications in code comments
-  - Write unit tests for trust boundary behavior
-  - **Acceptance:**
-    - Custom `base_url` triggers warning in interactive mode
-    - Batch mode requires `YOKER_ALLOW_CUSTOM_BASE_URL=1` for custom endpoints
-    - Behavior consistent across Ollama, OpenAI, Anthropic providers
-  **Satisfies:** Security: base_url validation
-  **Depends on:** 8.2
-
-- [x] **[MBI-006] 8.6 Configure litellm from Yoker config** ✅ (2026-07-01)
-  - Extract API key from provider-specific config (`config.backend.openai.api_key`, `config.backend.anthropic.api_key`, etc.)
-  - Map provider-specific parameters to litellm kwargs (`num_ctx`, `budget_tokens`, etc.)
-  - Handle `think` flag mapping:
-    - OpenAI o-series: `reasoning_effort` parameter
-    - Anthropic: `budget_tokens` parameter
-    - Other providers: pass through or warn
-  - Support all Phase 1 config fields (`model`, `base_url`, `api_key`)
-  - Write unit tests for config mapping
-  - **Acceptance:**
-    - API keys correctly extracted from provider sub-configs
-    - Provider-specific parameters passed to litellm
-    - `think` flag mapped appropriately per provider
-    - Missing API key raises clear `ConfigurationError`
-  **Satisfies:** Config → litellm parameter mapping
-  **Depends on:** 8.2, 8.4
-
-- [x] **[MBI-006] 8.7 Verify web tools dispatch** ✅ (2026-07-01)
-  - Verify web tools (`websearch`/`webfetch`) still work with Ollama (native SDK path)
-  - Verify graceful failure for non-Ollama providers
-  - `Agent._create_tool_backends()` only populates web backends when `provider == "ollama"`
-  - No changes to web tools implementation (they remain Ollama-specific)
-  - Write unit tests asserting web tools behavior per provider
-  - **Acceptance:**
-    - Ollama provider: web tools populated and functional
-    - OpenAI provider: web tools not populated (no error)
-    - Anthropic provider: web tools not populated (no error)
-    - Attempting to use web tools with non-Ollama provider raises clear error
-  **Satisfies:** Web tools dual-backend behavior
-  **Depends on:** 8.4
-
-- [x] **[MBI-006] 8.8 Update with_model helper** ✅ (2026-07-01)
-  - Extend `with_model()` helper from Phase 1 to support LitellmBackend
-  - Model override works for all litellm providers (simple prefix change in model string)
-  - Ollama model override continues to work (Phase 1 behavior)
-  - Write unit tests for all providers
-  - **Acceptance:**
-    - `with_model(backend, "gpt-4o")` produces correct config for OpenAI
-    - `with_model(backend, "claude-sonnet-4")` produces correct config for Anthropic
-    - `with_model(backend, "llama3.2")` produces correct config for Ollama
-    - Unknown provider model strings work via litellm prefix logic
-  **Satisfies:** Provider-agnostic model override
-  **Depends on:** 8.4, 8.6
-
-- [x] **[MBI-006] 8.9 Phase 2 verification** ✅ (2026-07-01)
-  - Run `make check` end-to-end (format, lint, typecheck, test) — all green
-  - Verify no existing tests modified (behaviour unchanged for Ollama path)
-  - Write integration tests with mocked OpenAI/Anthropic API responses
-  - Optional: integration tests with real OpenAI API (requires API key)
-  - Verify `create_backend()` returns `LitellmBackend` for non-Ollama providers
-  - Verify `TurnEndEvent` carries `input_tokens`/`output_tokens` from litellm
-  - Verify `base_url` trust boundary enforcement
-  - **Acceptance:**
-    - `make check` green
-    - Ollama path unchanged (all existing tests pass)
-    - OpenAI backend works end-to-end (mocked or real API)
-    - Anthropic backend works end-to-end (mocked or real API)
-    - Web tools work with Ollama, fail gracefully with others
-    - Native Ollama features preserved (stats, thinking, web tools)
-    - Phase 2 acceptance criteria from `analysis/dual-backend-architecture.md` verified
-  **Satisfies:** Phase 2 completion gate
-  **Depends on:** 8.1-8.8
-
-**Completion Summary (2026-07-01):** All Phase 2 tasks (8.1-8.9) implemented and merged in PR #37. LitellmBackend wraps the litellm library to support OpenAI, Anthropic, and 100+ other providers through a unified interface. Dual backend architecture: OllamaBackend (native SDK) for Ollama, LitellmBackend for all other providers. `make check` green; Ollama path unchanged; OpenAI/Anthropic backends verified end-to-end.
-
-### Completed 2026-06-15
-
-- [x] **16.1 Migrate Configuration System to Clevis** (2026-06-15)
-  - Replaced custom yoker/config/ module with Clevis package
-  - Migrated config/loader.py to Clevis loader pattern
-  - Migrated config/schema.py to Clevis schema with frozen dataclasses
-  - Migrated config/validator.py to Clevis validation hooks
-  - Preserved custom validation via `__post_init__` on config classes
-  - Supported environment variables via TOML interpolation (Clevis native)
-  - Implemented configuration discovery: user < project < CLI (Clevis pattern)
-  - Ensured minimal breaking changes to public config file format
-  - **See:** Issue #16
-  - **Satisfies:** Configuration infrastructure modernization
-
-- [x] **3.1 Package Plugin Discovery** (2026-06-15)
-  - Import `{package}.yoker` module if present (using importlib)
-  - Extract `TOOLS`, `SKILLS`, `AGENTS` lists from module
-  - Handle graceful failure when package lacks yoker support
-  - Implement namespace format: `{package}:{tool|skill|agent}` (e.g., `pkgq:find`)
-  - Register discovered components with respective registries
-  - Write unit tests for plugin discovery and registration
-  - **See:** Issue #14
-  - **Satisfies:** Package integration capability
-
-### Phase 1: UI Module Structure (2026-06-11)
-
-- [x] **UI-001: Create UI module directory structure** (2026-06-11)
-  - Created `yoker/ui/` directory with empty `__init__.py`
-  - Created placeholder files: `handler.py`, `base.py`, `bridge.py`
-  - Reference: analysis/ui-separation-migration.md#phase-1-foundation
-  - Acceptance: Directory structure exists, imports work
-
-- [x] **UI-002: Define UIHandler protocol** (2026-06-11)
-  - Added `UIHandler` protocol to `yoker/ui/handler.py`
-  - Included all methods: lifecycle, input, content output, diagnostic output, streaming
-  - Reference: analysis/ui-separation-ui-design.md#1-uihandler-protocol
-  - Acceptance: Protocol defined with all required methods, type hints complete
-
-- [x] **UI-003: Create BaseUIHandler abstract class** (2026-06-11)
-  - Added `BaseUIHandler` to `yoker/ui/base.py`
-  - Implemented state management (turn count, streaming state)
-  - Provided default implementations for convenience methods
-  - No formatting logic (implementation-specific)
-  - Reference: analysis/ui-separation-ui-design.md#3-base-ui-handler
-  - Acceptance: Abstract class with state management, clear abstract methods
-
-- [x] **UI-004: Create UIBridge event dispatcher** (2026-06-11)
-  - Added `UIBridge` to `yoker/ui/bridge.py`
-  - Bridged EventHandler protocol to UIHandler protocol
-  - Dispatched events to appropriate UI methods
-  - Handled all event types (TURN_START, TURN_END, THINKING_*, CONTENT_*, TOOL_*, ERROR)
-  - Reference: analysis/ui-separation-ui-design.md#2-event-bridge
-  - Acceptance: Bridge dispatches all event types correctly
-
-- [x] **UI-005: Update exceptions module** (2026-06-11)
-  - Verified `YokerError` base exception exists
-  - Ensured `NetworkError`, `ToolError`, `ConfigError`, `AgentError`, `SkillError` exist
-  - Added `recoverable` attribute to `NetworkError`
-  - Reference: analysis/ui-separation-errors.md#2-exception-hierarchy
-  - Acceptance: Exception hierarchy complete, documented
-
-- [x] **UI-006: Export UI module public API** (2026-06-11)
-  - Updated `yoker/ui/__init__.py`
-  - Exported: `UIHandler`, `BaseUIHandler`, `UIBridge`
-  - Reference: analysis/ui-separation-migration.md#phase-1-foundation
-  - Acceptance: Public API imports correctly
-
-### Phase 2: Content Types and Events (2026-06-15)
-
-- [x] **UI-007: Add content_type to ContentChunkEvent** (2026-06-15)
-  - Added `content_type: str = "text/plain"` field to `ContentChunkEvent`
-  - Updated event creation in Agent
-  - Reference: analysis/ui-separation-io-catalog.md#31-events-with-variable-content-types
-  - Acceptance: ContentChunkEvent has content_type field, default "text/plain"
-
-- [x] **UI-008: Verify ToolContentEvent content_type** (2026-06-15)
-  - Ensured `ToolContentEvent` has `content_type` field
-  - Documented expected content types (text/plain, text/x-diff, application/json)
-  - Reference: analysis/ui-separation-io-catalog.md#31-events-with-variable-content-types
-  - Acceptance: Field exists, documented in code comments
-
-- [x] **UI-009: Remove ErrorEvent** (2026-06-15)
-  - Removed `ErrorEvent` from `events/types.py`
-  - Removed any code that emits `ErrorEvent`
-  - Replaced with exception raising
-  - Reference: analysis/ui-separation-errors.md#7-migration-notes
-  - Acceptance: ErrorEvent removed, exceptions used instead
-
-- [x] **UI-010: Create content type detection utility** (2026-06-15)
-  - Created `yoker/content_type.py`
-  - Implemented `detect_content_type(content: bytes, path: Path) -> str`
-  - Library detection, fallback to extension, fallback to text/plain
-  - Reference: analysis/ui-separation-io-catalog.md#33-content-type-detection
-  - Acceptance: Utility detects content types, fallbacks work correctly
-
-- [x] **UI-011: Update tools to set content_type** (2026-06-15)
-  - `ReadTool`: Detect content type from file
-  - `WriteTool`: Set content type to summary (or text/plain)
-  - `UpdateTool`: Set content type to diff (text/x-diff)
-  - `GitTool`: Use `--no-color`, set content type to text/plain
-  - Reference: analysis/ui-separation-io-catalog.md#42-tool-implementation
-  - Acceptance: All tools set content_type appropriately
-
-### Phase 3: UI Implementations (2026-06-15)
-
-**PR:** #22
-
-#### Interactive UI Tasks
-
-- [x] **UI-012: Create InteractiveUIHandler skeleton** (2026-06-15)
-  - Created `yoker/ui/interactive.py`
-  - Extended `BaseUIHandler`
-  - Initialized Rich console and prompt_toolkit session
-  - Reference: analysis/ui-separation-ui-design.md#4-interactive-ui-handler
-  - Acceptance: Class skeleton exists, initializes correctly
-
-- [x] **UI-013: Implement interactive input handling** (2026-06-15)
-  - Implemented `get_input()` with prompt_toolkit
-  - Support multiline input (Esc+Enter)
-  - Support command history
-  - Handle EOF and KeyboardInterrupt
-  - Reference: analysis/ui-separation-ui-design.md#interactive-ui-handler
-  - Acceptance: Input works, multiline supported, history works
-
-- [x] **UI-014: Implement interactive lifecycle methods** (2026-06-15)
-  - Implemented `start()` - print banner and config info
-  - Implemented `shutdown()` - print goodbye message
-  - Reference: analysis/ui-separation-ui-design.md#interactive-ui-handler
-  - Acceptance: Lifecycle methods display appropriate messages
-
-- [x] **UI-015: Implement interactive content streaming** (2026-06-15)
-  - Implemented `start_content_stream()`, `stream_content()`, `end_content_stream()`
-  - Use Rich Live display for streaming
-  - Handle ANSI codes from LLM output
-  - Reference: analysis/ui-separation-ui-design.md#interactive-ui-handler
-  - Acceptance: Content streams with live display, ANSI preserved
-
-- [x] **UI-016: Implement interactive thinking streaming** (2026-06-15)
-  - Implemented thinking stream methods
-  - Show thinking in gray/dim style
-  - Respect `show_thinking` setting
-  - Reference: analysis/ui-separation-ui-design.md#interactive-ui-handler
-  - Acceptance: Thinking streams separately from content
-
-- [x] **UI-017: Implement interactive tool output** (2026-06-15)
-  - Implemented `output_tool_call()`, `output_tool_result()`, `output_tool_content()`
-  - Respect `show_tool_calls` setting
-  - Format tool information appropriately
-  - Reference: analysis/ui-separation-ui-design.md#interactive-ui-handler
-  - Acceptance: Tool calls and results displayed correctly
-
-- [x] **UI-018: Implement interactive error display** (2026-06-15)
-  - Implemented `output_error()` with Rich formatting
-  - Handle different error types (NetworkError, ToolError, etc.)
-  - Format based on error type and recoverability
-  - Reference: analysis/ui-separation-errors.md#42-interactive-implementation
-  - Acceptance: Errors displayed with appropriate formatting
-
-#### Batch UI Tasks
-
-- [x] **UI-019: Create BatchUIHandler skeleton** (2026-06-15)
-  - Created `yoker/ui/batch.py`
-  - Extended `BaseUIHandler`
-  - Support stdin/stdout/stderr channels
-  - Reference: analysis/ui-separation-ui-design.md#5-batch-ui-handler
-  - Acceptance: Class skeleton exists, channels defined
-
-- [x] **UI-020: Implement batch input handling** (2026-06-15)
-  - Implemented `get_input()` from stdin
-  - Support predefined input messages (set_input_messages)
-  - Handle EOF
-  - Reference: analysis/ui-separation-ui-design.md#batch-ui-handler
-  - Acceptance: Input from stdin works, predefined messages supported
-
-- [x] **UI-021: Implement batch output channels** (2026-06-15)
-  - Content → stdout
-  - Thinking, errors, stats → stderr
-  - No formatting, preserve ANSI
-  - Reference: analysis/ui-separation-ui-design.md#batch-ui-handler
-  - Acceptance: Output goes to correct channels
-
-- [x] **UI-022: Implement batch streaming** (2026-06-15)
-  - Implemented streaming methods (no buffering needed)
-  - Direct output to appropriate channels
-  - Respect show_thinking, show_tool_calls, show_stats settings
-  - Reference: analysis/ui-separation-ui-design.md#batch-ui-handler
-  - Acceptance: Streaming works without buffering
-
-#### Shared UI Tasks
-
-- [x] **UI-023: Move LiveDisplay to UI layer** (2026-06-15)
-  - Created `yoker/ui/spinner.py`
-  - Moved LiveDisplay implementation from `yoker/events/handlers.py`
-  - Reference: analysis/ui-separation-migration.md#phase-3-ui-implementations
-  - Acceptance: LiveDisplay available to InteractiveUIHandler
-
-- [x] **UI-024: Update UI module exports** (2026-06-15)
-  - Updated `yoker/ui/__init__.py`
-  - Export: `UIHandler`, `BaseUIHandler`, `UIBridge`, `InteractiveUIHandler`, `BatchUIHandler`
-  - Reference: analysis/ui-separation-migration.md#phase-3-ui-implementations
-  - Acceptance: All UI classes import correctly
-
-### Phase 4: Refactor Agent Module (2026-06-15)
-
-**PR:** #23
-
-- [x] **UI-025: Create agent package directory structure** (2026-06-15)
-  - Created `yoker/agent/` directory
-  - Created placeholder files: `__init__.py`, `core.py`, `agent.py`, `processing.py`, `tools.py`
-  - Reference: analysis/ui-separation-agent-module.md#2-target-structure
-  - Acceptance: Directory structure exists
-
-- [x] **UI-026: Refactor ContextManager to be list-like** (2026-06-15)
-  - Modified `ContextManager` to extend `UserList`
-  - Implemented `append()` to persist on add
-  - Agent sees context as a plain list
-  - Reference: analysis/ui-separation-overview.md#4-context-and-contextmanager
-  - Acceptance: ContextManager works as list, Agent can use plain list too
-
-- [x] **UI-027: Move AgentCore to agent/core.py** (2026-06-15)
-  - Moved `AgentCore` class from `base.py` to `agent/core.py`
-  - Included event handler management
-  - Included guardrail validation
-  - Reference: analysis/ui-separation-agent-module.md#41-agentcorepy
-  - Acceptance: AgentCore works in new location
-
-- [x] **UI-028: Extract Agent initialization and properties** (2026-06-15)
-  - Created `Agent` class in `agent/agent.py`
-  - Moved initialization and property accessors
-  - Delegated to AgentCore
-  - Reference: analysis/ui-separation-agent-module.md#42-agentagentpy
-  - Acceptance: Agent initializes correctly, properties work
-
-- [x] **UI-029: Extract message processing logic** (2026-06-15)
-  - Created processing logic module in `agent/processing.py`
-  - Extracted streaming, tool calls, event emission
-  - Kept as methods on Agent class (not separate)
-  - Reference: analysis/ui-separation-agent-module.md#43-agentprocessingpy
-  - Acceptance: Processing logic in agent module, not separate file
-
-- [x] **UI-030: Extract tool registry building** (2026-06-15)
-  - Created `_build_tool_registry()` in `agent/tools.py`
-  - Moved tool initialization logic
-  - Reference: analysis/ui-separation-agent-module.md#44-agenttoolspy
-  - Acceptance: Tool registry builds correctly
-
-- [x] **UI-031: Remove Agent session lifecycle** (2026-06-15)
-  - Removed `begin_session()` and `end_session()` methods from Agent
-  - Removed `SessionStartEvent` and `SessionEndEvent` from events
-  - Agent lifecycle is create → use → discard
-  - Reference: analysis/ui-separation-overview.md#6-agent-lifecycle-no-session
-  - Acceptance: No session methods, no session events
-
-- [x] **UI-032: Update context module for list-like interface** (2026-06-15)
-  - Created `context/` module
-  - Created `manager.py` with `ContextManager` extending `UserList`
-  - Created `basic.py` with `BasicContextManager`
-  - Created placeholder for `PersistenceContextManager`
-  - Reference: analysis/ui-separation-overview.md#45-module-structure
-  - Acceptance: Context module structure complete
-
-- [x] **UI-033: Update imports throughout codebase** (2026-06-15)
-  - Updated `yoker/__init__.py` to import from `yoker.agent`
-  - Updated all imports from old locations
-  - Reference: analysis/ui-separation-agent-module.md#54-update-imports
-  - Acceptance: All imports work, tests pass
-
-- [x] **UI-034: Remove old files** (2026-06-15)
-  - Deleted `yoker/base.py`
-  - Deleted `yoker/agent.py`
-  - Removed session events from `events/types.py`
-  - Reference: analysis/ui-separation-agent-module.md#55-remove-old-files
-  - Acceptance: Old files deleted, no references remain
-
-### Phase 5: Slash Commands (2026-06-15)
-
-**PR:** #24
-
-- [x] **UI-035: Create commands directory structure** (2026-06-15)
-  - Create `yoker/ui/commands/` directory
-  - Create `__init__.py` with command registry
-  - Create placeholder files for each command
-  - Reference: analysis/ui-separation-migration.md#phase-5-slash-commands
-  - Acceptance: Directory structure exists
-
-- [x] **UI-036: Add Agent.inject_skill_context() method** (2026-06-15)
-  - Add method to inject skill context into conversation
-  - Used by skill invocation commands
-  - Reference: analysis/ui-separation-migration.md#phase-5-slash-commands
-  - Acceptance: Method works, skill context injected correctly
-
-- [x] **UI-037: Move /help command to UI layer** (2026-06-15)
-  - Create `commands/help.py`
-  - Move help logic from `__main__.py`
-  - Command receives UIHandler, outputs via UIHandler
-  - Reference: analysis/ui-separation-migration.md#phase-5-slash-commands
-  - Acceptance: /help command works in new location
-
-- [x] **UI-038: Move /think command to UI layer** (2026-06-15)
-  - Create `commands/think.py`
-  - Move think logic
-  - Command sets Agent thinking_mode state
-  - Reference: analysis/ui-separation-migration.md#phase-5-slash-commands
-  - Acceptance: /think command works
-
-- [x] **UI-039: Move /skills command to UI layer** (2026-06-15)
-  - Create `commands/skills.py`
-  - Command queries Agent for skill list
-  - Outputs via UIHandler
-  - Reference: analysis/ui-separation-migration.md#phase-5-slash-commands
-  - Acceptance: /skills command works
-
-- [x] **UI-040: Move /context command to UI layer** (2026-06-15)
-  - Create `commands/context.py`
-  - Command queries Agent for context state
-  - Outputs via UIHandler
-  - Reference: analysis/ui-separation-migration.md#phase-5-slash-commands
-  - Acceptance: /context command works
-
-- [x] **UI-041: Create skill invocation command** (2026-06-15)
-  - Create `commands/skill_invoke.py`
-  - Handle `/<skill-name>` commands
-  - Call `Agent.inject_skill_context()`
-  - Reference: analysis/ui-separation-migration.md#phase-5-slash-commands
-  - Acceptance: Skill invocation works
-
-- [x] **UI-042: Create command registry** (2026-06-15)
-  - Create registry in `yoker/ui/commands/__init__.py`
-  - Register all commands
-  - Provide dispatch mechanism
-  - Reference: analysis/ui-separation-migration.md#phase-5-slash-commands
-  - Acceptance: Command registry dispatches commands correctly
-
-### Phase 6: Entry Point Refactoring (2026-06-15)
-
-**PR:** #25
-
-- [x] **UI-043: Add UI configuration to Config** (2026-06-15)
-  - Add `UIConfig` dataclass to config
-  - Include mode, show_thinking, show_tool_calls, show_stats
-  - Reference: analysis/ui-separation-migration.md#phase-6-entry-point-refactoring
-  - Acceptance: Config has UI section
-
-- [x] **UI-044: Create run_session() helper** (2026-06-15)
-  - Create session loop function
-  - Handle exception catching and UI error display
-  - Handle cleanup
-  - Reference: analysis/ui-separation-migration.md#phase-6-entry-point-refactoring
-  - Acceptance: Session loop works with UI handler
-
-- [x] **UI-045: Refactor __main__.py to use UIHandler** (2026-06-15)
-  - Create UI handler based on mode (interactive or batch)
-  - Create UIBridge and connect to Agent
-  - Call `ui.start()` and `ui.shutdown()` directly
-  - Remove all print statements
-  - Reference: analysis/ui-separation-migration.md#phase-6-entry-point-refactoring
-  - Acceptance: __main__.py uses UI handler, no print statements
-
-- [x] **UI-046: Implement mode selection logic** (2026-06-15)
-  - Parse CLI arguments for mode
-  - Create appropriate UI handler
-  - Wire up with Clevis config
-  - Reference: analysis/ui-separation-migration.md#phase-6-entry-point-refactoring
-  - Acceptance: Mode selection works (interactive vs batch)
-
-- [x] **UI-047: Remove old command dispatch from __main__.py** (2026-06-15)
-  - Remove inline command handling
-  - Use command registry from UI layer
-  - Reference: analysis/ui-separation-migration.md#phase-6-entry-point-refactoring
-  - Acceptance: Command dispatch uses registry
-
-### Phase 7: Remove Old Code (2026-06-15)
-
-**PR:** #26
-
-- [x] **UI-048: Remove ConsoleEventHandler** (2026-06-15)
-  - Delete `yoker/events/handlers.py`
-  - Update `yoker/events/__init__.py`
-  - Verify all references removed
-  - Reference: analysis/ui-separation-migration.md#phase-7-remove-old-code
-  - Acceptance: ConsoleEventHandler removed, no references
-
-- [x] **UI-049: Clean up imports** (2026-06-15)
-  - Remove unused imports from all files
-  - Update `__all__` exports
-  - Reference: analysis/ui-separation-migration.md#phase-7-remove-old-code
-  - Acceptance: No unused imports, exports clean
-
-- [x] **UI-050: Remove old code from __main__.py** (2026-06-15)
-  - Remove all deprecated code paths
-  - Verify no dead code
-  - Reference: analysis/ui-separation-migration.md#phase-7-remove-old-code
-  - Acceptance: __main__.py is clean, minimal
-
-### Phase 8: Final Polish (2026-06-15)
-
-**PR:** #27
-
-**Goal:** Documentation and examples.
-
-**Dependency:** All previous phases complete
-
-- [x] **UI-051: Update README.md** (2026-06-15)
-  - Document interactive mode usage
-  - Document batch mode usage
-  - Add library usage example
-  - Reference: analysis/ui-separation-migration.md#phase-8-final-polish
-  - Acceptance: README updated with new usage patterns
-
-- [x] **UI-052: Create batch mode example** (2026-06-15)
-  - Create `examples/batch_mode.py`
-  - Show batch mode usage
-  - Reference: analysis/ui-separation-migration.md#phase-8-final-polish
-  - Acceptance: Example works correctly
-
-- [x] **UI-053: Create library usage example** (2026-06-15)
-  - Create `examples/library_usage.py`
-  - Show how to use yoker as library
-  - Reference: analysis/ui-separation-migration.md#phase-8-final-polish
-  - Acceptance: Example works correctly
-
-- [x] **UI-054: Create custom handler example** (2026-06-15)
-  - Create `examples/custom_handler.py`
-  - Show how to implement custom UIHandler
-  - Reference: analysis/ui-separation-migration.md#phase-8-final-polish
-  - Acceptance: Example works correctly
-
-- [x] **UI-055: Update CLAUDE.md** (2026-06-15)
-  - Document new module structure
-  - Document UI layer architecture
-  - Update current state section
-  - Reference: analysis/ui-separation-migration.md#phase-8-final-polish
-  - Acceptance: CLAUDE.md reflects new architecture
-
-### Phase 1.7: Async-First Agent Architecture
-
-- [x] **1.7.1 Extract AgentCore Class** (2026-05-23)
-  - Created `src/yoker/base.py` with shared state and utilities
-  - 51 tests, 98% coverage
-  - See: `reporting/1.7.1-agentcore-extraction/summary.md`
-
-- [x] **1.7.2 Async-Only Agent** (2026-05-23)
-  - Renamed AsyncAgent to Agent (async-only)
-  - All methods are async
-  - 1047 tests passing
-
-- [x] **1.7.3 Async Tool Execution** (2026-05-23)
-  - All tools converted to async
-  - Tool base class has abstract async method
-
-- [x] **1.7.4 Async CLI Integration** (2026-05-23)
-  - Created `main_async()` function
-  - Uses `prompt_async()` for async input
-
-- [x] **1.7.5 Update Documentation** (2026-05-25)
-  - Updated docs/quickstart.md
-  - Updated REQUIREMENTS.md
-
-- [x] **1.7.7 Async Event Handler Support** (2026-05-25)
-  - Updated ConsoleEventHandler for async operation
-  - See: `reporting/1.7.7-async-event-handler/functional-review.md`
-
-- [x] **1.7.8 Async Test Coverage** (2026-05-25)
-  - 1047 tests passing, 82% coverage
-
-- [x] **1.7.9 Documentation Updates** (2026-05-25)
-  - Async-only architecture documented
-
-- [x] **1.8 Config Auto-Discovery and Agent Definition Path** (2026-05-26)
-  - Added `definition` field to `AgentsConfig`
-  - Implemented `discover_config()` and `Config.discover()`
-  - Environment variable support
-  - PR: #13
-
-### Phase 1.6: Documentation
-
-- [x] **1.6.1 Update Documentation Folder**
-  - Reviewed and updated all docs/
-  - Added feature checkboxes and "Why Yoker?" section
-  - See: `reporting/1.6.1-documentation/summary.md`
-
-- [x] **1.6.2 Define Project Rationale**
-  - Created rationale document
-  - Identified gaps in existing solutions
-  - See: `docs/rationale.md`
-
-### Phase 1.5: UI/UX Fixes
-
-- [x] **1.5.1 Remove Thinking Headers**
-  - Removed "[thinking]" and "[response]" text headers
-  - Used visual styling for thinking sections
-
-- [x] **1.5.2 Fix Mouse Selection in Interactive Mode**
-  - Set `mouse_support=False` in PromptSession
-  - Text selection works in terminal output
-  - See: `reporting/1.5.2-mouse-selection/summary.md`
-
-- [x] **1.5.3 Update Demo Session Script**
-  - Updated tool display format
-  - Cyan color for tool name
-  - Improved replay mode
-  - See: `reporting/1.5.3-demo-session/functional-review.md`
-
-- [x] **1.5.4 Event Logging System**
-  - Created EventLogger class for JSONL logging
-  - EventReplayAgent for full replay
-  - See: `reporting/1.5.4-event-logging/summary.md`
-
-- [x] **1.5.5 Show Write/Update Tool Content in CLI** (2026-05-05)
-  - Added ToolContentEvent to event types
-  - Added ContentDisplayConfig to configuration
-  - See: `reporting/1.5.5-write-update-display/consensus.md`
-
-- [x] **1.5.6 Complete Tool Content Display** (2026-05-16)
-  - Agent emits ToolContentEvent
-  - ConsoleEventHandler displays tool content
-  - 47 tests converted from stubs
-  - See: `reporting/1.5.6-tool-content-display/summary.md`
-
-### Phase 1: Core Infrastructure
-
-- [x] **1.1 Project Setup**
-  - Created Python package structure
-  - Set up pyproject.toml
-  - Configured development environment
-
-- [x] **1.2 Configuration System**
-  - Implemented TOML config loader
-  - Defined configuration schema
-  - Created example configurations
-
-- [x] **1.3 Agent Definition Loader**
-  - Implemented Markdown file parser
-  - Parsed YAML frontmatter
-  - Created example agent definitions
-  - See: `reporting/1.3-agent-definition-loader/summary.md`
-
-- [x] **1.5 Logging System**
-  - Integrated structlog for structured logging
-  - See: `reporting/1.5-logging-system/summary.md`
-
-### Phase 2: Tool Implementation (Core Tools)
-
-- [x] **2.1 Tool Base Framework**
-  - Defined Tool abstract base class
-  - Defined ToolResult and ValidationResult types
-  - Implemented tool registry
-
-- [x] **2.1.5 Shared PathGuardrail Implementation**
-  - Implemented PathGuardrail with config permissions
-  - Path traversal prevention, symlinks, blocked patterns
-  - See: `analysis/security-list-tool.md`
-
-- [x] **2.2 List Tool**
-  - Implemented directory listing
-  - Path restriction guardrails
-  - See: `analysis/api-list-tool.md`
-
-- [x] **2.3 Read Tool**
-  - Implemented file reading
-  - Path restriction guardrails
-  - See: `reporting/2.3-read-tool/summary.md`
-
-- [x] **2.4 Write Tool**
-  - Implemented file writing
-  - Overwrite protection, size limits
-  - See: `reporting/2.4-write-tool/summary.md`
-
-- [x] **2.5 Update Tool**
-  - Implemented file editing operations
-  - Exact match validation, diff size limits
-  - See: `reporting/2.5-update-tool/summary.md`
-
-- [x] **2.6 Search Tool**
-  - Implemented content search (grep-like)
-  - Implemented filename search (glob-like)
-  - Regex complexity limits, timeout enforcement
-  - See: `reporting/2.6-search-tool/summary.md`
-
-- [x] **2.7 Agent Tool**
-  - Implemented subagent spawning
-  - Recursion depth tracking, timeout handling
-  - See: `reporting/2.7-agent-tool/consensus.md`
-
-- [x] **2.8 File Existence Tool**
-  - Implemented file/folder existence check
-  - Path restriction guardrails
-  - See: `reporting/2.8-existence-tool/summary.md`
-
-- [x] **2.9 Folder Creation Tool**
-  - Implemented folder creation (mkdir -p)
-  - Path restriction guardrails
-  - See: `reporting/2.9-mkdir-tool/summary.md`
-
-- [x] **2.10 Git Tool**
-  - Implemented Git operations (status, log, diff, branch, show)
-  - Permission handlers for write operations
-  - Command sanitization
-  - See: `reporting/2.10-git-tool/summary.md`
-
-- [x] **2.11 WebSearch and WebFetch Tools Research**
-  - Recommended custom implementation
-  - See: `analysis/websearch-webfetch-research.md`
-
-- [x] **2.12 WebSearch Tool**
-  - Implemented WebSearchTool with OllamaWebSearchBackend
-  - WebGuardrail with SSRF protection
-  - See: `reporting/2.12-websearch-tool/summary.md`
-
-- [x] **2.12 WebFetch Tool**
-  - Implemented WebFetchTool with OllamaWebFetchBackend
-  - Domain whitelist/blacklist
-  - See: `reporting/2.12-webfetch-tool/summary.md`
-
-- [x] **2.14 Python Tool Research**
-  - Recommended subprocess isolation + AST validation
-  - 6-layer defense model
-  - See: `research/2026-05-05-python-execution-safety/README.md`
-
-### Phase 3: Backend Integration
-
-- [x] **3.1 Ollama Client**
-  - Implemented HTTP client for Ollama API
-  - Streaming response handling
-  - Supports local Ollama and ollama.com with API key
-
-- [x] **3.2 Tool Call Processing**
-  - Parse tool call requests from LLM responses
-  - Route to appropriate tool implementation
-  - Tool call loop with deduplication
-
-- [x] **3.3 Context Management Research**
-  - Analyzed logged sessions for context patterns
-  - Documented sub-agent context isolation
-  - See: `analysis/context-management-research.md`
-
-### Phase 4: Agent Runner
-
-- [x] **4.1 Agent Lifecycle**
-  - Implemented Agent class with state management
-  - Load agent definition from Markdown file
-
-- [x] **4.2 Main Execution Loop**
-  - Implemented message exchange loop
-  - Context management, tool call loop
-
-- [x] **4.3 Hierarchical Spawning**
-  - Implemented internal depth tracking
-  - Fresh context for subagents
-  - See: AgentTool implementation
-
-### Standard Project Setup
-
-- [x] **migrate-to-hatchling** (2026-04-29)
-  - Migrated from setuptools to hatchling
-  - See: `reporting/migrate-to-hatchling/summary.md`
-
-- [x] **migrate-to-uv** (2026-04-30)
-  - Migrated from pyenv virtualenv to uv
-  - Updated Makefile and CI workflow
-  - See: `analysis/uv-migration-checklist.md`
-
-### Issues Completed
-
-- [x] **Issue #7: Config Auto-Discovery and Agent Definition Path** (2026-05-26)
-  - Config auto-discovery, environment variables
-  - PR: #13
-
-- [x] **Issue #10: Add Type Exports** (2026-05-25)
-  - Added AgentDefinition and load_agent_definition exports
-  - PR: #12
-
-- [x] **Issue #9: Fix ~ in Storage Path** (2026-05-25)
-  - Fixed tilde expansion bug
-  - PR: #11
-
-
+  - **Note:** Handled by ../yoker-chat
+  - **Priority:** Post-1.0.0
+
+### Deferred MBI Follow-ups
+
+- [ ] **MBI-007 7.8.7 ListAgents tool** — Deferred to a follow-up MBI (PR #43 Clarification 6)
+  - Session-injected tool returning (name, status) for active agents
+  - Enables swarm/team-based discovery model
+  - Revisit agent status semantics and naming authority
+
+- [ ] **MBI-003 3.7 Auto-generate functions for detected skills/agents** — Deferred per design doc section 10
+  - Auto-generate callable functions for detected skills/agents
+  - `from package.skills import skill_name; skill_name("prompt")`
