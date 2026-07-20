@@ -170,3 +170,103 @@ The hybrid/explicit-opt-in path is strictly safer and strictly more expressive (
 - The `_filter_tools_by_definition` method already distinguishes the "default agent" case (`simple_name is None and namespace is None`) from named agents, which gives a clean place to insert sentinel handling.
 - Built-in tool set is explicit and auditable at `src/yoker/builtin/__init__.py:44-48`.
 - The agent `agents` allowlist field (spawn authorization) is a separate, well-scoped boundary that is not affected by this flip.
+
+---
+
+## 8. Option C evaluation (owner proposal)
+
+Owner's proposed semantics (PR #47 comment):
+
+1. `AgentDefinition()` — no `tools` field at all → **all tools**.
+2. `AgentDefinition(tools=None)` or `AgentDefinition(tools=[])` → **no tools**.
+
+Option C distinguishes a **missing field** (→ all tools) from an **explicit empty value** (→ no tools). This removes the sentinel (`tools: "*"`) that Option B required, at the cost of making the loader distinguish "key absent" from "key present with empty/null value".
+
+### 8.1 Security profile vs. Option B
+
+**Where Option C improves on the original empty-means-all proposal (and on Option B):**
+
+- An author who writes `tools: []` explicitly now gets **no tools** — the silent-privilege-expansion risk for the most common "I explicitly want nothing" form **disappears**. This is the single largest safety gain over the original M.2 proposal and resolves the `backwards.md` regression without any change to that file.
+- "No tools" remains expressible without inventing a new sentinel (Option B kept `[]` as no-tools, which is the same outcome, but Option C reaches it by a different conceptual route).
+- "All tools" no longer requires authors to learn a sentinel; it is the implicit default of an unspecified capability field, which is a common YAML/TOML convention ("unset = inherit the framework default").
+
+**Where Option C is weaker than Option B (residual risk):**
+
+- The risk shifts from `tools: []` to **field omission**: an author who **forgets the field entirely** still silently gains all tools. Option B made "all tools" opt-in via an unambiguous sentinel; Option C makes "all tools" the default for forgetfulness.
+- Whether "field absent" is a stronger author-intent signal than "field empty" is a judgement call. In practice, YAML authors rarely omit a field they meant to set; tooling and templates usually carry a `tools:` line. But "the author forgot" is a real failure mode, and it lands in the **maximally permissive** direction (all tools, including `write`, `git`, `webfetch`, `websearch`). Option B's failure mode for a forgotten field was "no tools" — fail-closed. Option C's failure mode for a forgotten field is "all tools" — fail-open.
+- **STRIDE Elevation-of-Privilege**: under Option C, the privilege-expansion vector is "plugin author forgot the `tools:` line", not "plugin author wrote `tools: []`". The vector is smaller (forgetting a field is less common than writing an empty list when copying a template), but the consequence is identical to the original M.2 proposal for that subset of cases.
+
+**Net assessment**: Option C is **strictly safer than the original M.2 empty-means-all proposal** (it removes the `tools: []` → all-tools trap and the `backwards.md` regression), and **slightly less safe than Option B** (it removes the sentinel's unambiguous opt-in for "all tools" and accepts fail-open-on-omission). The gap between Option C and Option B is small but real, and is concentrated in the "author forgot the field" scenario.
+
+### 8.2 Third-party plugin agents on upgrade
+
+This is the critical case for Option C.
+
+- A plugin shipped today with `tools: []` (explicit empty) → under Option C: **still no tools**. No regression. `backwards.md` falls in this group — regression avoided.
+- A plugin shipped today with **no `tools:` line at all** → today: rejected at load time (`ConfigurationError` from the strict loader, `loader.py:112-116`). After upgrading to yoker 1.0.0 with Option C: **silently gains all tools**. This **is** a privilege expansion driven by a yoker upgrade, not by a plugin source change. The plugin author never opted into all tools; they simply failed to specify, and the old loader treated that as a load error (fail-closed), while the new loader treats it as all-tools (fail-open).
+
+So Option C does **not** fully eliminate the upgrade-driven privilege expansion — it narrows it from "all plugins with `tools: []` or missing" to "plugins with missing `tools`". The narrowing is meaningful (most careful plugin authors write `tools:` even if empty), but the residual risk is the same kind of risk as the original M.2 proposal: an upgrade grants capabilities the plugin author never asked for.
+
+**Is "field absent" a reasonable default-open signal?** It is defensible (it matches the convention of "unspecified = framework default"), but it is the wrong default direction for a **capability** field. Capability fields should default to the least capability (least privilege), not to maximal capability. The framework default for an unspecified tools field could just as defensibly be "no tools" (Option B) as "all tools" (Option C). The choice is a policy choice, not a convention forced by YAML.
+
+**Recommendation for this axis**: Option C is acceptable **only if** the upgrade-driven expansion for missing-field plugins is acknowledged and mitigated (see §8.4).
+
+### 8.3 Feasibility / YAML parsing pitfalls
+
+The loader must distinguish four forms:
+
+| Form | YAML parse result | Distinguishable from key-absent? |
+|---|---|---|
+| (no `tools:` line) | `frontmatter` dict has no `"tools"` key | Yes — `"tools" not in frontmatter` |
+| `tools:` (bare key, no value) | `None` (key present, value `None`) | Yes — `"tools" in frontmatter and frontmatter["tools"] is None` |
+| `tools: null` / `tools: ~` | `None` (key present, value `None`) | Yes — same as above |
+| `tools: ""` | `""` (empty string) | Yes — `"tools" in frontmatter` |
+| `tools: []` | `[]` (empty list) | Yes — `"tools" in frontmatter` |
+
+**Conclusion: Option C is implementable as specified.** `yaml.safe_load` preserves the distinction between "key absent" and "key present with `None`/empty value". The current loader uses `frontmatter.get("tools")`, which **collapses** absent and `None` into the same `None` return — so implementing Option C requires changing the loader to test `"tools" in frontmatter` before reading the value. That is a one-line change and is reliable.
+
+**Pitfalls to flag for the implementation:**
+
+1. **`tools:` with no value must be classified as "explicit empty" → no tools**, not as "missing". An author who writes `tools:` (a bare key) has signalled awareness of the field; treating that as no-tools matches the owner's stated semantics (`tools: None` → no tools). The loader must use `key in frontmatter`, not `frontmatter.get(key) is None`, to distinguish.
+2. **`tools: null` and `tools: ~`** parse to `None` and must be treated identically to `tools:` (explicit empty → no tools), per the owner's `tools: None` rule. This is the same code branch as pitfall #1.
+3. **Default agent (no AgentDefinition)**: the existing `_filter_tools_by_definition` already short-circuits when `simple_name is None and namespace is None` (the in-memory default agent), keeping all tools. Option C must preserve this branch — it is not the same case as a loaded agent definition with missing `tools`, and conflating them would re-introduce ambiguity.
+4. **Schema default**: `AgentDefinition.tools` currently defaults to `()` (empty tuple). Under Option C, `()` must mean "no tools" (which it already does at runtime via the `len == 0` branch in `_filter_tools_by_definition`), and the "all tools" signal must be carried by a **separate** flag (e.g. `tools_unspecified: bool`) or by a sentinel tuple value, because `tuple[str, ...]` cannot represent "absent" — `()` is already taken for "explicitly empty". This is the single most important implementation detail: **the dataclass field cannot by itself carry Option C's three states (missing / empty / list)**. The loader must set a side-channel flag (e.g. `tools_unspecified=True` when the key was absent) and the runtime filter must consult that flag.
+5. **Plugin manifest agent definitions** (loaded via `load_agents_from_package` → `parse_agent_definition`): the same `"tools" in frontmatter` test must be applied there, so plugin agents get the same Option C semantics as user-authored agents. This is the path that drives the upgrade-driven privilege expansion in §8.2.
+6. **`tools: ""`** (empty string) currently parses to an empty tuple (loader line 121-124). Under Option C this is "explicit empty → no tools", which the current code already produces. No change needed, but the test must confirm `""` is treated as explicit, not absent.
+7. **Comments-only `tools:` block** (e.g. `tools:\n  # todo`) — `yaml.safe_load` parses this as `None` (key present, no value). Under Option C: no tools. Implementer should add a test for this form.
+
+**Bottom line**: Option C is implementable, but it is **not** implementable as "just flip the empty branch". It requires a side-channel flag on `AgentDefinition` to carry the missing-vs-empty distinction, because the existing `tools: tuple[str, ...] = ()` field cannot represent three states on its own. This is the main implementation hazard the owner should be aware of.
+
+### 8.4 Endorsement and required mitigations
+
+**Position: conditional endorsement of Option C**, with the following non-negotiable mitigations. Option B remains the strictly-safer choice; Option C is acceptable because it eliminates the most common silent-expansion vector (`tools: []` → all tools) and the `backwards.md` regression, at the cost of a residual upgrade-driven expansion for missing-field plugins that must be explicitly addressed.
+
+**Required mitigations under Option C:**
+
+1. **Side-channel flag on `AgentDefinition`** (e.g. `tools_unspecified: bool = False`) set by the loader when `"tools" not in frontmatter`. The runtime filter (`_filter_tools_by_definition`) consults this flag: `tools_unspecified=True` → keep all tools; `tools_unspecified=False` and `tools == ()` → clear the registry. Without this, Option C cannot be expressed in the dataclass and the loader's `frontmatter.get("tools")` will silently collapse the two cases back together.
+2. **Loader change**: replace the `frontmatter.get("tools")` check with `"tools" in frontmatter` for the absent-vs-empty distinction. Treat `None`, `""`, `[]`, and `~` as "explicit empty → no tools" (per owner's spec).
+3. **Startup warning when all-tools is granted by default-omission**: emit a `WARN`-level log event `agent_tools_default_granted` with the agent name and source path whenever `tools_unspecified=True` results in all tools being granted. This must be visible (not `debug`), so operators can see when a plugin agent gained all tools by omission. This is the single most important compensating control for the §8.2 upgrade-expansion risk.
+4. **Audit shipped agent definitions for missing `tools`**: every shipped agent definition in `examples/` and `src/yoker/` must have an explicit `tools:` line. If any shipped agent legitimately wants all tools, it should use an explicit opt-in form — under Option C the cleanest such form is `tools: [read, list, write, update, git, mkdir, existence, search, webfetch, websearch, skill]` (explicit list) or a documented "all tools" marker. **No shipped agent definition should rely on field-omission to mean "all tools"** — that pattern is exactly what the §8.2 upgrade risk warns against, and shipping it in-repo would set the wrong precedent for plugin authors.
+5. **Re-wire the validator into runtime** (already flagged in §6). Under Option C, the validator's `must specify at least one tool` check must be removed (it contradicts Option C), but the rest of `validate_agent_definition` should be called from the production load path, not only from tests. A semantic change that depends on a validator that is never called is not actually enforced.
+6. **Changelog and upgrade note** explicitly calling out: "Plugin agents shipped without a `tools:` field will now gain all built-in tools on upgrade to yoker 1.0.0. Plugin authors should add an explicit `tools:` line to every agent definition. Use `tools: []` to declare a tool-less agent." This is security-relevant and must be in the upgrade guide, not just the changelog.
+7. **`backwards.md`** stays at `tools: []` — under Option C this is "no tools", preserving its stated purpose. No file change required. (This is the concrete win Option C has over the original M.2 proposal.)
+8. **Test matrix** (acceptance criteria): the loader/runtime must be tested for all of: (a) key absent → all tools + warning logged; (b) `tools:` bare → no tools; (c) `tools: null` → no tools; (d) `tools: ~` → no tools; (e) `tools: ""` → no tools; (f) `tools: []` → no tools; (g) `tools: [read]` → only `read`; (h) default agent (no definition) → all tools, no warning.
+
+### 8.5 Revised file list under Option C
+
+- `src/yoker/agents/schema.py` — add `tools_unspecified: bool = False` to `AgentDefinition` (or equivalent side-channel). Update docstring.
+- `src/yoker/agents/loader.py` — replace `frontmatter.get("tools")` with `"tools" in frontmatter` test; set `tools_unspecified=True` when key absent; treat `None`/`""`/`[]`/`~` as explicit empty → `tools=()`. Lines 110-132.
+- `src/yoker/core/__init__.py` — `_filter_tools_by_definition` (lines 394-443): add branch for `tools_unspecified=True` → keep all tools + emit `agent_tools_default_granted` warning; keep `len(tools) == 0 and not tools_unspecified` → clear registry.
+- `src/yoker/agents/validator.py` — remove the `must specify at least one tool` check (lines 92-93); re-wire the rest of the validator into the load path.
+- `src/yoker/agents/registry.py` or loader caller — call `validate_agent_definition` at load time (currently only called from tests).
+- `examples/agents/*.md` and `examples/plugins/demo/yoker_plugin_demo/agents/*.md` — audit; ensure no shipped agent relies on field-omission for all-tools. `backwards.md` unchanged.
+- `tests/agents/test_loader.py` (or equivalent) — add the 8-case test matrix from §8.4 item 8.
+- `CHANGELOG.md` / upgrade notes — document the upgrade-driven expansion for missing-field plugins.
+- `README.md` / agent authoring docs — document the three-state semantic: omit → all tools (with warning), `tools: []`/`null`/`~`/`""` → no tools, explicit list → those tools.
+
+### 8.6 Recommendation summary
+
+- **Option B (sentinel) remains strictly safer** because its failure mode for a forgotten field is fail-closed (no tools), while Option C's failure mode for a forgotten field is fail-open (all tools). The sentinel is unambiguous and is not affected by YAML's None-vs-absent collapse.
+- **Option C is acceptable with the mitigations in §8.4**. It eliminates the `tools: []` → all-tools trap (the most common form of silent expansion) and the `backwards.md` regression, and is implementable with a side-channel flag. The residual risk (missing-field plugins gain all tools on upgrade) is real but smaller than under the original M.2 proposal, and is addressed by the startup warning, the changelog note, and the audit of shipped agents.
+- **If the owner wants Option C without the side-channel flag**: not viable. The dataclass `tools: tuple[str, ...] = ()` field cannot represent three states. Attempting to use `None` as "all tools" inside the dataclass (treating `None` as all-tools and `()` as no-tools) would invert the owner's spec (the owner said `tools: None` → no tools), and would re-introduce the YAML-collapse pitfall (bare `tools:` parses to `None`, which would then mean all-tools — the opposite of the owner's intent). The side-channel flag is non-negotiable for Option C.
+- **Default direction**: if the owner is undecided, Option B is the recommended choice on security grounds. Option C is the recommended choice on ergonomics grounds (no sentinel to learn). The security cost of Option C is the §8.2 upgrade-expansion risk; the ergonomic cost of Option B is one extra line for authors who want all tools.

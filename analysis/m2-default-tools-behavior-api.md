@@ -185,3 +185,143 @@ The functional-analyst's four-file list is correct. Refinements:
 ## Conclusion
 
 **Approved for implementation** with the refinements above. The proposed approach is architecturally consistent, has effectively zero backward-compatibility risk (because the previously-rejected state was never reachable in valid definitions), and preserves the layered config-gating model. The "empty means all" semantic is the right call over a sentinel; the `logger.info` mitigation addresses the "author forgot" concern without adding syntax surface.
+
+---
+
+## Option C Evaluation (Owner Proposal)
+
+**Date**: 2026-07-20
+**Trigger**: PR #47 owner comment — proposed a third option neither reviewer had framed. Owner asked both reviewers to check for oversights.
+
+**Owner's proposal**:
+
+1. Default all tools: `AgentDefinition()` (no `tools` field at all) → all tools.
+2. Explicit no tools: `AgentDefinition(tools=None)` or `AgentDefinition(tools=[])` → no tools.
+
+This **distinguishes missing field (→ all tools) from explicit empty (→ no tools)**. My Option A collapsed both into "all tools"; the security-engineer's Option B used a sentinel `tools: "*"` for "all" and empty for "no tools". Option C uses **field absence** as the "all" signal.
+
+### C.1 Is Option C covered by Option A, or genuinely new?
+
+**Genuinely new.** Option A has two semantic states: empty/missing → all tools; explicit non-empty list → filtered. Option C has three: missing → all tools; explicit empty → no tools; explicit non-empty list → filtered. The third state (explicit empty = no tools) is a capability neither A nor today's behavior exposes cleanly. It is closer to the security-engineer's Option B in the "explicit empty = no tools" branch, but differs in how "all tools" is signalled: B requires an opt-in sentinel (`tools: "*"`), C uses field absence.
+
+### C.2 Architectural soundness
+
+**Sound, and arguably a cleaner fix for the asymmetry than Option A.**
+
+The original asymmetry M.2 set out to fix is: `AgentDefinition()` (default `tools=()`) keeps all tools, but a named agent with `tools=()` (via `tools: []` frontmatter) clears all tools. The current code distinguishes these two cases only via a proxy check (`simple_name is None and namespace is None` at `core/__init__.py:401-402`). Both states produce the **same field value** (`tools=()`); the proxy is the only thing separating them.
+
+- **Option A "fixes" the asymmetry by collapsing the two states**: both `tools=()` cases mean "all tools". This removes the "no tools" capability entirely. Authors can no longer express a tool-less agent at all — a real loss.
+- **Option C fixes the asymmetry by making the states distinguishable in the data model itself**: `tools=None` (field absent) means "all tools"; `tools=()` (field present, empty) means "no tools". The proxy check is no longer needed because the field value carries the author's intent natively.
+
+Option C is the more principled fix: the bug was never "empty means different things in different contexts" — it was "two different intents (all vs. none) were encoded as the same value, forcing a proxy check." Option C gives each intent its own value. The symmetry argument I made earlier is **weakened but replaced by a stronger one**: instead of "empty should mean the same thing everywhere" (Option A), Option C argues "absent = inherit default, present = author intent" — which is the standard Python dataclass convention and a clearer principle than "empty means all."
+
+The `AgentDefinition()` default behavior is preserved: the dataclass default for `tools` becomes `None` (not `()`), so `AgentDefinition()` → `tools=None` → all tools. Identical to today.
+
+### C.3 Loader/schema feasibility
+
+**Feasible, with two concrete implementation requirements the functional-analyst must follow.**
+
+**Requirement 1: dataclass field type changes to `tuple[str, ...] | None` with default `None`.**
+
+```python
+# schema.py
+tools: tuple[str, ...] | None = None
+```
+
+`None` is the "all tools" sentinel; `()` is the "no tools" value; a non-empty tuple is the explicit filter. Python dataclasses distinguish `None` from `()` natively — no proxy check needed. This is the load-bearing change.
+
+**Requirement 2: loader must distinguish key-absence from key-present-but-null, using `in` rather than `.get()`.**
+
+This is the critical feasibility question. Today `parse_agent_definition` uses `frontmatter.get("tools")`, which returns `None` for both "key absent" and "key present with YAML null value" (e.g. `tools:` with nothing after the colon, or `tools: null`). These are indistinguishable via `.get()`. Under Option C they must diverge:
+
+- `"tools" not in frontmatter` (key absent) → `tools = None` (all tools)
+- `"tools" in frontmatter` (key present) with value `None`/`""`/`[]` → `tools = ()` (no tools)
+- `"tools" in frontmatter` with a string or list → parse as today
+
+This is detectable via `"tools" in frontmatter` (membership test) rather than `frontmatter.get("tools")`. The loader branch becomes:
+
+```python
+if "tools" not in frontmatter:
+    tools: tuple[str, ...] | None = None
+else:
+    tools_raw = frontmatter["tools"]
+    if tools_raw is None:  # `tools:` or `tools: null`
+        tools = ()
+    elif isinstance(tools_raw, str):
+        tools = tuple(t.strip() for t in tools_raw.split(",") if t.strip())
+    elif isinstance(tools_raw, list):
+        tools = tuple(str(t).strip() for t in tools_raw if t)
+    else:
+        # strict-mode error
+        ...
+```
+
+**YAML-null footgun.** `tools:` (bare key, nothing after) is YAML null → `tools_raw is None` → "no tools" under Option C. An author who writes `tools:` thinking "no value = default = all tools" would get **no tools** — the opposite of their intent. This is a real footgun that neither Option A nor Option B has.
+
+**Mitigation:** emit a `logger.warning("agent_tools_explicit_null_treated_as_empty", ...)` when `"tools" in frontmatter and tools_raw is None`, suggesting the author either omit the field entirely (for all tools) or write `tools: []` explicitly (for no tools). Document the convention in the schema docstring. The warning makes the footgun discoverable.
+
+**In-memory construction is clean.** `AgentDefinition()` → `tools=None` (all tools). `AgentDefinition(tools=())` → `tools=()` (no tools). `AgentDefinition(tools=("read",))` → filtered. The `None`-vs-`()` distinction is native to Python and needs no special accessor — `self.definition.tools is None` vs `len(self.definition.tools) == 0`.
+
+### C.4 Oversights
+
+**Oversight 1 (mine, significant): `backwards.md` regresses under Option A.**
+
+My original analysis (section 6) claimed "no valid agent definition file in the wild can have empty or missing tools" because the validator rejects empty tools. **This was wrong.** `validate_agent_definition` is **not on the production load path** — only `parse_agent_definition` is, and it accepts `tools: []` (producing `tools=()`). `backwards.md` ships with `tools: []` and today is a no-tools agent in production: `parse_agent_definition` accepts it, then `_filter_tools_by_definition` clears all tools via the `len == 0` branch.
+
+| Definition | Today | Option A | Option C |
+|------------|------|----------|---------|
+| `examples/.../backwards.md` (`tools: []`) | No tools (via clear branch) | **All tools (regression!)** | No tools (no regression) |
+
+This is a **concrete, shipped counterexample** to my Option A backward-compat claim. Option C is strictly safer here. **Option A would silently turn a no-tools demo agent into an all-tools agent — a behavior change I failed to flag.**
+
+**Oversight 2 (shared): the validator is not on the load path.** Neither reviewer noted that `validate_agent_definition` is dead code in production — it is only invoked from tests, docs, and (optionally) by user code. The "remove the `if not definition.tools` guard" recommendation in my original analysis (and the functional-analyst's) is therefore **less impactful than implied**: removing it changes no production behavior, only unblocks users who call `validate_agent_definition` directly. The real production gate is `parse_agent_definition`'s strict-mode `tools_raw is None` rejection, which is what must change under any of the three options.
+
+**Oversight 3 (new, flagged by Option C): the plugin privilege-expansion risk is unchanged from Option A.** Under Option C, a plugin agent shipped without a `tools:` field gets **all tools** — including other plugins' tools and all yoker built-ins. This is the same risk the security-engineer flagged for Option A. Option C does **not** mitigate it; it only adds the "no tools" capability that A lacked. The mitigation remains the `logger.info` line at agent init, plus documentation. A stricter variant — plugin agents default to "no tools" unless they explicitly opt in — was not requested by the owner and would add namespace-dependent semantics (worth raising with the owner, but not blocking).
+
+**Oversight 4: `tools: ""` (empty string) is now a "no tools" expression.** Today `tools: ""` produces `tools=()` and clears all tools (via the `len == 0` branch). Under Option C it produces `tools=()` and means "no tools". Under Option A it would have meant "all tools". Same regression pattern as `backwards.md`. Option C preserves the today-behavior for `tools: ""` too.
+
+**Oversight 5: the YAML-null footgun (C.3 above).** Neither Option A nor Option B has this; Option C introduces it. The `logger.warning` mitigation handles it but is a new code path the implementation must include.
+
+### C.5 Revised recommendation
+
+**Endorse Option C** over my original Option A and the security-engineer's Option B.
+
+Reasoning, in priority order:
+
+1. **Option A regresses `backwards.md`** (and any `tools: ""`/`tools: []` definition in the wild). My original "effectively zero backward-compat risk" claim was wrong because I incorrectly assumed the validator was on the load path. Option C has **no regression** for any shipped definition: `tools: []` stays "no tools" (today's behavior), `tools: <explicit list>` stays filtered, only missing `tools:` changes (from rejected to "all tools" — a pure capability addition).
+
+2. **Option C preserves the "no tools" capability.** Option A removes it. A tool-less agent (an agent that should only reason, not act) is a legitimate use case — `backwards.md` is one. Removing the capability to fix an asymmetry is the wrong trade.
+
+3. **Option C fixes the root cause; Option A patches the symptom.** The bug is that two intents (all vs. none) are encoded as one value (`()`), forcing a proxy check. Option C gives each intent its own value (`None` vs `()`), eliminating the proxy. Option A eliminates the distinction by deleting one of the intents. The principle "absent = inherit default, present = author intent" is more defensible than "empty means all".
+
+4. **Option B's `tools: "*"` sentinel adds friction for the common case.** Every general-purpose agent would need to write `tools: "*"`. Option C lets the common case be the default (omit the field). The privilege-expansion risk for plugins is real but is the same under B and C for the missing-field case — and under B, plugin authors who omit `tools:` get "no tools" (least privilege), which is safer. **This is the one genuine advantage of B over C.** Worth raising with the owner: if plugin-agent safety is a priority, a hybrid (Option C for built-in/user agents, Option B for plugin agents) could be considered — but that adds complexity and I do not recommend it unless the owner has a concrete third-party-plugin threat in mind.
+
+### C.6 Refined file list (delta vs. original analysis)
+
+The original four-file list is mostly correct; Option C changes the **shape** of the changes, not the files. Deltas:
+
+| File | Original (Option A) | Option C delta |
+|------|---------------------|----------------|
+| `src/yoker/agents/schema.py` | Update docstring | **Change field type**: `tools: tuple[str, ...] \| None = None`. Update docstring to state: "`None` (default) = all available tools; `()` = no tools; non-empty tuple = explicit filter." Cross-reference `agents` field's opposite convention. |
+| `src/yoker/agents/loader.py` | Drop strict-mode rejection of missing `tools:`; treat missing as `[]` | **Use `"tools" in frontmatter` (membership test)**, not `.get()`. Missing → `tools=None`. Present-but-null/empty/`[]`/`""` → `tools=()`. Present non-empty → parse as today. Emit `logger.warning("agent_tools_explicit_null_treated_as_empty", ...)` when `tools_raw is None` (the YAML-null footgun). Drop the strict-mode `tools_raw is None` rejection. Namespace `None` and `()` both pass through `_namespace_tools` unchanged (return `[]` for falsy input — verify this still holds for `None`). |
+| `src/yoker/core/__init__.py` | Collapse the two branches into `if len(tools) == 0: keep all` | **Three branches**: `if self.definition.tools is None: logger.info("agent_tools_default_all", ...); return` (all tools). `elif len(self.definition.tools) == 0: logger.info("agent_tools_empty", ...); self.tools.clear(); return` (no tools). Else explicit filter (unchanged). **Remove the `simple_name is None and namespace is None` proxy check entirely** — `None` carries the intent now. |
+| `src/yoker/agents/validator.py` | Remove `if not definition.tools: raise ValidationError(...)` | Same removal — still correct. (And note: this validator is not on the production load path; the change only affects callers who invoke it directly.) |
+| `tests/agents/test_loader.py` | Add: missing `tools:` loads; `tools: ""` and `tools: []` load | Add: missing `tools:` → `definition.tools is None`; `tools:` (YAML null) → `definition.tools == ()` AND a warning is logged; `tools: []` → `definition.tools == ()`; `tools: ""` → `definition.tools == ()`. |
+| `tests/agents/test_validator.py` | Add: empty `tools` passes | Split into two: `tools=None` passes; `tools=()` passes. (Today both raise.) |
+| `tests/core/test_agent_tools.py` | Named agent with `tools=()` has all tools | **Three cases**: `tools=None` → all registered tools; `tools=()` → no tools (registry cleared); `tools=("read",)` → only `read`. Plus: `tools=None` with a config-disabled tool → disabled tool NOT in the all-tools set (config gating preserved). |
+
+### C.7 Refined acceptance criteria (delta vs. original)
+
+1. **Three-way semantic.** `tools=None` (field absent / default) → all available tools; `tools=()` (field present, empty) → no tools; `tools=(...)` (non-empty) → explicit filter. Documented in schema docstring.
+2. **Config gating preserved.** "All available tools" = all tools that survived `ToolsConfig` per-tool `enabled` gating and plugin-load security gating. A tool disabled via `config.tools.<name>.enabled = False` is NOT in the "all" set, even when `tools is None`.
+3. **Logged for discoverability.** Both branches emit distinct `logger.info` events: `agent_tools_default_all` (the `None` branch — flag accidental omissions) and `agent_tools_empty` (the `()` branch — confirm explicit "no tools" intent).
+4. **YAML-null footgun warning.** When `tools:` is present in frontmatter with a YAML null value (i.e. `tools:` with nothing after, or `tools: null`), emit `logger.warning("agent_tools_explicit_null_treated_as_empty", ...)` advising the author to either omit the field (for all tools) or write `tools: []` (for no tools). This is the new code path Option C requires that A and B do not.
+5. **No proxy check.** The `simple_name is None and namespace is None` early return in `_filter_tools_by_definition` is removed. The `tools is None` check replaces it. The default in-memory `AgentDefinition()` (which now has `tools=None`) takes the "all tools" branch via the same check — uniform semantics, no special case.
+6. **No backward-compat regression for shipped definitions.** `backwards.md` (`tools: []`) remains a no-tools agent. Any definition with `tools: <explicit list>` remains filtered. Only the missing-field case changes behavior (from rejected to "all tools") — a pure capability addition.
+7. **Schema docstring documents the asymmetry.** `AgentDefinition.tools` docstring states the three states and cross-references `AgentDefinition.agents` where empty means "no spawns" (and there is no `None`-sentinel because spawns are permissions defaulting closed, not capabilities defaulting open).
+
+### C.8 Open question for the owner
+
+The one respect in which Option B is strictly safer than Option C: **third-party plugin agents that omit `tools:`**. Under C they get all tools (privilege expansion from today's "rejected"). Under B they get no tools (least privilege). The mitigation in C is the `logger.info` line plus documentation, which is reasonable for first-party agents but weaker for third-party plugins the user may install without auditing.
+
+If the owner anticipates third-party yoker plugins being installed untrusted, a hybrid is worth considering: built-in/user agents use Option C (missing = all), plugin agents use Option B semantics (missing = no tools, opt-in via `tools: "*"` for all). This adds a namespace-dependent default but is implementable in `parse_agent_definition` by checking the `namespace` argument. **I do not recommend this unless the owner has a concrete third-party threat in mind** — it adds complexity for a hypothetical. Flagging for the owner's decision; not blocking.
