@@ -15,6 +15,7 @@ from structlog import get_logger
 from yoker.agents import (
   AgentDefinition,
   load_agent_definition,
+  validate_agent_definition,
 )
 from yoker.backends import ModelBackend, create_backend
 from yoker.builtin import make_skill_tool
@@ -104,6 +105,11 @@ class Agent:
 
     # load own definition
     self.definition: AgentDefinition = self._resolve_agent_definition(agent_definition, agent_path)
+
+    # validate the resolved definition against config constraints (warnings
+    # only; never blocks construction — the runtime _warn_missing_tools check
+    # stays authoritative for tool availability).
+    self._validate_definition()
 
     # check that all requested tools for the agent are available (warn before filtering)
     self._warn_missing_tools()
@@ -391,17 +397,48 @@ class Agent:
         available_tools=list(self.tools.names),
       )
 
-  def _filter_tools_by_definition(self) -> None:
-    """Filter tools in registry to only those specified in agent definition.
+  def _validate_definition(self) -> None:
+    """Validate the resolved agent definition against config constraints.
 
-    If the agent definition specifies an empty tools tuple, all tools are kept
-    (default agent behavior). If tools are specified, only those tools are kept.
+    Logs warnings returned by :func:`validate_agent_definition`. Never raises
+    — the runtime ``_warn_missing_tools`` check stays authoritative for tool
+    availability. Called once after the definition is resolved so the static
+    validator (previously only invoked from tests) is on the runtime path.
     """
-    # Default agent (no explicit definition) keeps all tools
-    if self.definition.simple_name is None and self.definition.namespace is None:
+    warnings = validate_agent_definition(self.definition, self.config.tools)
+    for warning in warnings:
+      logger.warning(
+        "agent_validation_warning",
+        agent=self.definition.name,
+        warning=warning,
+      )
+
+  def _filter_tools_by_definition(self) -> None:
+    """Filter the tool registry according to the agent definition.
+
+    Three branches (Option C):
+
+    - ``tools_unspecified=True`` (no ``tools`` line / no ``tools`` kwarg):
+      keep every config-enabled tool. Emit a visible WARN
+      ``agent_tools_default_granted`` so operators notice agents that
+      silently gain all tools by omission.
+    - ``tools=()`` with ``tools_unspecified=False`` (``tools:``/``null``/
+      ``~``/``""``/``[]`` / ``AgentDefinition(tools=None|[])``): clear the
+      registry — the agent has no tools.
+    - Non-empty ``tools``: keep only the matching tools (case-insensitive,
+      with the ``yoker:`` prefix handled for built-ins).
+    """
+    # Branch 1: tools unspecified → grant all config-enabled tools.
+    if self.definition.tools_unspecified:
+      logger.warning(
+        "agent_tools_default_granted",
+        agent=self.definition.name,
+        tool_count=len(self.tools),
+        tools=list(self.tools.names),
+      )
       return
 
-    # Empty tools tuple means no tools (agent explicitly requests no tools)
+    # Branch 2: tools explicitly empty → no tools.
     if len(self.definition.tools) == 0:
       logger.debug(
         "agent_tools_empty",
@@ -411,27 +448,18 @@ class Agent:
       self.tools.clear()
       return
 
-    # Build set of requested tool names (case-insensitive, with yoker: prefix handling)
+    # Branch 3: filter to the requested tools.
     requested = set()
     for tool_name in self.definition.tools:
       normalized = tool_name.lower()
       if ":" in normalized:
         requested.add(normalized)
       else:
-        # Add both with and without yoker: prefix for built-in tools
+        # Add both with and without yoker: prefix for built-in tools.
         requested.add(normalized)
         requested.add(f"yoker:{normalized}")
 
-    # Filter tools to only those requested
-    available = list(self.tools.names)
-    to_remove = []
-
-    for tool_name in available:
-      # Check if tool matches any requested tool (case-insensitive)
-      normalized = tool_name.lower()
-      if normalized not in requested:
-        to_remove.append(tool_name)
-
+    to_remove = [tool_name for tool_name in self.tools.names if tool_name.lower() not in requested]
     if to_remove:
       for tool_name in to_remove:
         del self.tools.data[tool_name]

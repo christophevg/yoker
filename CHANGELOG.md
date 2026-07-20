@@ -4,6 +4,34 @@ All notable changes to yoker are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Changed
+
+- **Default Tools Behavior (M.2, Option C)**: Agent definitions without a
+  `tools:` line now grant ALL config-enabled tools at runtime. Previously,
+  a missing `tools:` field raised `ConfigurationError` at load time. To get
+  "no tools", explicitly set `tools:` (bare), `tools: null`, `tools: ~`,
+  `tools: ""`, or `tools: []` in YAML; or pass `tools=None` / `tools=[]` to
+  `AgentDefinition()` / `yoker.agent()`. A visible WARN event
+  `agent_tools_default_granted` is emitted whenever all-tools is granted by
+  omission, so operators can spot agents that silently broadened on upgrade.
+  A new `tools_unspecified: bool` side-channel on `AgentDefinition`
+  distinguishes "no `tools` line" (True, default — all tools) from "tools
+  explicitly empty" (False — no tools).
+- **Validator on runtime path**: `validate_agent_definition` is now called
+  during `Agent` construction (warnings only; never blocks). Unknown bare
+  tool names and disabled tools produce warnings instead of raising. The
+  runtime `_warn_missing_tools` check stays authoritative for tool
+  availability.
+
+### Upgrade Notes
+
+- **Plugins with a missing `tools:` line gain all tools on upgrade.** Add an
+  explicit `tools: []` to agent definition files that should have no tools.
+  The bundled `examples/plugins/demo/.../backwards.md` already uses
+  `tools: []` as a regression guard.
+
 ## 0.8.0 (2026-07-15)
 
 ### Added
