@@ -6,6 +6,8 @@ agent's tool registry and core state, then outputs via the UIHandler.
 
 from typing import TYPE_CHECKING
 
+from yoker.agents.schema import AllToolsSentinel
+
 if TYPE_CHECKING:
   from yoker.core import Agent
   from yoker.tools.schema import ToolSpec
@@ -28,10 +30,14 @@ async def handle(args: str, agent: "Agent", ui: "UIHandler") -> str:
 
     Built-in tools may omit the ``yoker:`` prefix and are matched
     case-insensitively. Plugin tools must be referenced with their full
-    namespaced name.
+    namespaced name. When ``tools is ALL_TOOLS`` every tool is available.
     """
     if not ag.definition:
       return False
+
+    # ALL_TOOLS sentinel: all tools available (no per-tool filter).
+    if isinstance(ag.definition.tools, AllToolsSentinel):
+      return True
 
     # Normalize tool name for comparison
     tool_name_lower = tl.name.lower()
@@ -78,7 +84,10 @@ async def handle(args: str, agent: "Agent", ui: "UIHandler") -> str:
 
   if agent.definition:
     lines.append(f"Agent: {agent.definition.name}")
-    lines.append(f"  Allowed tools: {', '.join(sorted(agent.definition.tools))}")
+    if isinstance(agent.definition.tools, AllToolsSentinel):
+      lines.append("  Allowed tools: ALL (no `tools:` filter)")
+    else:
+      lines.append(f"  Allowed tools: {', '.join(sorted(agent.definition.tools))}")
   else:
     lines.append("No agent loaded. All enabled tools are available.")
 

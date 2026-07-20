@@ -2,7 +2,7 @@
 
 import pytest
 
-from yoker.agents.schema import AgentDefinition
+from yoker.agents.schema import ALL_TOOLS, AgentDefinition
 from yoker.agents.validator import (
   validate_agent_definition,
   validate_non_empty_string,
@@ -132,17 +132,17 @@ class TestValidateAgentDefinition:
     assert "agent.description" in str(exc_info.value)
 
   def test_validate_empty_tools(self, tools_config: ToolsConfig) -> None:
-    """Empty/missing tools are accepted (Option C: tools_unspecified flag decides)."""
-    # tools=() with tools_unspecified=True (default) — all tools at runtime.
+    """Empty/missing tools are accepted (Option C: ALL_TOOLS sentinel decides)."""
+    # tools=ALL_TOOLS (default) — all tools at runtime.
     definition_all = AgentDefinition(
       simple_name="test",
       description="Test",
-      tools=(),
     )
+    assert definition_all.tools is ALL_TOOLS
     warnings = validate_agent_definition(definition_all, tools_config)
     assert warnings == []
 
-    # tools=None → tools_unspecified=False (no tools at runtime).
+    # tools=None → () (no tools at runtime).
     definition_none = AgentDefinition(
       simple_name="test",
       description="Test",

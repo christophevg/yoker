@@ -2,8 +2,8 @@
 
 Covers all 12 acceptance criteria from the approved plan:
 
-1. Missing `tools` in YAML → tools=() + tools_unspecified=True → ALL config tools.
-2. tools: (null/null/~/""/[]) → tools=() + tools_unspecified=False → NO tools.
+1. Missing `tools` in YAML → tools=ALL_TOOLS → ALL config tools.
+2. tools: (null/null/~/""/[]) → tools=() → NO tools.
 3. tools: [read, list] → exactly those tools (no regression).
 4. In-memory AgentDefinition() → ALL tools (no regression).
 5. In-memory AgentDefinition(tools=None) and AgentDefinition(tools=[]) → NO tools.
@@ -23,6 +23,7 @@ from unittest.mock import patch
 import pytest
 
 from yoker.agents import AgentDefinition, load_agent_definition
+from yoker.agents.schema import ALL_TOOLS
 from yoker.agents.validator import validate_agent_definition
 from yoker.config import Config
 from yoker.core import Agent
@@ -36,27 +37,26 @@ class TestLoaderMatrix:
     f.write_text(f"---\n{frontmatter}\n---\n\nBody.\n")
     return f
 
-  def test_missing_tools_loads_all_tools_flag(self, tmp_path: Path) -> None:
-    """Criterion 1: missing `tools:` → tools=() + tools_unspecified=True."""
+  def test_missing_tools_loads_all_tools_sentinel(self, tmp_path: Path) -> None:
+    """Criterion 1: missing `tools:` → tools=ALL_TOOLS (all tools)."""
     f = self._write(tmp_path, "name: test\ndescription: Test\n")
     d = load_agent_definition(f)
-    assert d.tools == ()
-    assert d.tools_unspecified is True
+    assert d.tools is ALL_TOOLS
 
   @pytest.mark.parametrize("value", ["", "null", "~", "[]"])
-  def test_present_null_tools_loads_no_tools_flag(self, tmp_path: Path, value: str) -> None:
-    """Criterion 2: present-but-empty → tools=() + tools_unspecified=False."""
+  def test_present_null_tools_loads_no_tools(self, tmp_path: Path, value: str) -> None:
+    """Criterion 2: present-but-empty → tools=() (no tools)."""
     f = self._write(tmp_path, f"name: test\ndescription: Test\ntools: {value}\n")
     d = load_agent_definition(f)
     assert d.tools == ()
-    assert d.tools_unspecified is False
+    assert d.tools is not ALL_TOOLS
 
   def test_explicit_list_filters(self, tmp_path: Path) -> None:
     """Criterion 3: tools: [read, list] → exactly those (namespaced)."""
     f = self._write(tmp_path, "name: test\ndescription: Test\ntools:\n  - read\n  - list\n")
     d = load_agent_definition(f)
     assert d.tools == ("file:read", "file:list")
-    assert d.tools_unspecified is False
+    assert d.tools is not ALL_TOOLS
 
 
 class TestInMemoryAgentDefinition:
@@ -65,21 +65,20 @@ class TestInMemoryAgentDefinition:
   def test_default_constructor_grants_all_tools(self) -> None:
     """Criterion 4: AgentDefinition() → all tools (no regression)."""
     d = AgentDefinition()
-    assert d.tools == ()
-    assert d.tools_unspecified is True
+    assert d.tools is ALL_TOOLS
 
   @pytest.mark.parametrize("empty", [None, []])
   def test_explicit_empty_disables_tools(self, empty) -> None:
     """Criterion 5: AgentDefinition(tools=None) and AgentDefinition(tools=[]) → no tools."""
     d = AgentDefinition(simple_name="test-agent", description="d", tools=empty)
     assert d.tools == ()
-    assert d.tools_unspecified is False
+    assert d.tools is not ALL_TOOLS
 
   def test_explicit_filter(self) -> None:
     """Criterion 6: AgentDefinition(tools=("yoker:read",)) → filter (no regression)."""
     d = AgentDefinition(simple_name="test-agent", description="d", tools=("yoker:read",))
     assert d.tools == ("yoker:read",)
-    assert d.tools_unspecified is False
+    assert d.tools is not ALL_TOOLS
 
 
 class TestRuntimeFiltering:
@@ -201,16 +200,14 @@ class TestValidatorOnRuntimePath:
   def test_validator_accepts_empty_tools(self) -> None:
     """Empty/missing tools no longer raise (Option C)."""
     config = Config()
-    # tools=() with tools_unspecified=True (default).
+    # tools=ALL_TOOLS (default) — all tools at runtime.
     d_all = AgentDefinition(simple_name="test-agent", description="d")
     assert validate_agent_definition(d_all, config.tools) == []
-    # tools=None → tools_unspecified=False (no tools).
+    # tools=None → () (no tools at runtime).
     d_none = AgentDefinition(simple_name="test-agent", description="d", tools=None)
     assert validate_agent_definition(d_none, config.tools) == []
-    # tools=() + tools_unspecified=False (no tools).
-    d_explicit = AgentDefinition(
-      simple_name="test-agent", description="d", tools=(), tools_unspecified=False
-    )
+    # tools=() explicit (no tools at runtime).
+    d_explicit = AgentDefinition(simple_name="test-agent", description="d", tools=())
     assert validate_agent_definition(d_explicit, config.tools) == []
 
 
@@ -231,7 +228,7 @@ class TestBackwardsRegression:
     assert backwards_path.exists(), f"backwards.md not found at {backwards_path}"
     d = load_agent_definition(backwards_path)
     assert d.tools == ()
-    assert d.tools_unspecified is False
+    assert d.tools is not ALL_TOOLS
     # At runtime: no tools.
     agent = Agent(config=Config(), agent_definition=d)
     assert list(agent.tools.names) == []
@@ -243,17 +240,16 @@ class TestDocstringAgreement:
   def test_filter_tools_docstring_describes_three_branches(self) -> None:
     """_filter_tools_by_definition docstring documents the three Option C branches."""
     doc = Agent._filter_tools_by_definition.__doc__ or ""
-    assert "tools_unspecified=True" in doc
-    assert "tools_unspecified=False" in doc
+    assert "ALL_TOOLS" in doc
     assert "agent_tools_default_granted" in doc
     assert "no tools" in doc.lower() or "clear the registry" in doc.lower()
 
   def test_schema_tools_field_documents_unspecified(self) -> None:
-    """AgentDefinition.tools field docstring mentions tools_unspecified semantics."""
+    """AgentDefinition.tools field docstring mentions ALL_TOOLS sentinel semantics."""
     from yoker.agents.schema import AgentDefinition as AD
 
     doc = AD.__doc__ or ""
-    assert "tools_unspecified" in doc
+    assert "ALL_TOOLS" in doc
     assert "all config-enabled tools" in doc or "all tools" in doc.lower()
 
   def test_loader_handles_present_vs_missing_keys(self) -> None:

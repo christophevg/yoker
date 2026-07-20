@@ -10,53 +10,75 @@ Yoker is a Python agent harness with configurable tools and guardrails. It provi
 
 ### M.2: Default Tools Behavior — Option C (2026-07-20)
 
-Implemented the owner-approved Option C side-channel `tools_unspecified`
-flag so an agent definition without a `tools:` line grants ALL
-config-enabled tools at runtime, while a present-but-empty `tools:` line
-grants NO tools.
+Implemented the owner-approved Option C `ALL_TOOLS` sentinel so an agent
+definition without a `tools:` line grants ALL config-enabled tools at
+runtime, while a present-but-empty `tools:` line grants NO tools. The
+sentinel replaces the earlier `tools_unspecified: bool` side-channel
+flag — the intent now lives in the `tools` field value itself, with no
+secondary flag to keep in sync.
 
-- **`agents/schema.py`**: Added `tools_unspecified: bool = True` field on
-  `AgentDefinition` with a `__post_init__` that normalizes `None`/`list`
-  inputs to a tuple and flips the flag to False whenever an explicit value
-  (including `None`/`[]`) is passed. A default-constructed empty tuple keeps
-  the flag True. Field type kept as `tuple[str, ...]` (canonical post-init
-  form) — tests may pass `None`/`[]` at runtime; mypy is not run on tests.
+- **`agents/schema.py`**: Added a dedicated `AllToolsSentinel` class
+  (singleton via `__new__`, non-iterable with a `TypeError`-raising
+  `__iter__`, self-documenting `repr` → `ALL_TOOLS`, pickle-safe via
+  `__reduce__`, truthy via `__bool__`) and a module-level `ALL_TOOLS`
+  singleton. `AgentDefinition.tools` field default changed from `()` to
+  `ALL_TOOLS`; field type widened to `tuple[str, ...] | AllToolsSentinel`.
+  `__post_init__` preserves the sentinel when set and normalizes
+  `None`/`list` → `tuple` otherwise. The old `tools_unspecified: bool`
+  field is removed entirely.
 - **`agents/loader.py`**: Uses `"tools" not in frontmatter` (not `.get()`)
-  to distinguish missing-key (→ `tools_unspecified=True`, all tools) from
-  present-but-null/empty (→ `tools_unspecified=False`, no tools; logs
+  to distinguish missing-key (→ `tools=ALL_TOOLS`, all tools) from
+  present-but-null/empty (→ `tools=()`, no tools; logs
   `agent_tools_explicit_null_treated_as_empty` warning for the bare-null
-  forms `tools:`/`null`/`~`). Non-empty lists parse as before and set the
-  flag False.
-- **`agents/validator.py`**: Removed the "must specify at least one tool"
-  guard. `validate_tools` now treats unknown bare tools as warnings (not
-  errors) and skips namespaced tools entirely — the runtime
-  `_warn_missing_tools` is authoritative for plugin/file tools. This makes
-  it safe to call `validate_agent_definition` from the runtime path.
+  forms `tools:`/`null`/`~`). Non-empty lists parse as before. The
+  `_namespace_tools` call is guarded with `isinstance(tools, AllToolsSentinel)`
+  — the sentinel is not iterable, so namespacing is skipped when set.
+- **`agents/validator.py`**: `validate_agent_definition` skips
+  `validate_tools` when `definition.tools` is the `ALL_TOOLS` sentinel
+  (guarded with `isinstance(definition.tools, AllToolsSentinel)`) — there
+  is no explicit list to validate. The "must specify at least one tool"
+  guard was already removed in round 0.
 - **`core/__init__.py`**: Wired `validate_agent_definition` into the Agent
-  constructor (new `_validate_definition` helper logs warnings, never
-  raises). Replaced the old `simple_name/namespace` proxy check in
-  `_filter_tools_by_definition` with three explicit Option C branches:
-  `tools_unspecified=True` → keep all (emit WARN
-  `agent_tools_default_granted` at visible level); `tools=()` with
-  `tools_unspecified=False` → clear registry; non-empty → filter (with
-  case-insensitive `yoker:` prefix handling, unchanged).
-- **`api.py`** (deviation, not in plan): `_build_config_and_definition`
-  now passes `tools_unspecified=tools is None` when constructing the
-  in-memory `AgentDefinition`, so `yoker.process(..., tools=[])` and
-  `yoker.agent(tools=[])` continue to disable all tools (no regression
-  for `test_process_with_empty_tools_disables_all` /
-  `test_builder_tools_empty_disables_all`). Without this, api.py's
-  `tuple([])` would lose the "explicit empty" signal.
-- **`CHANGELOG.md`**: Added an Unreleased entry with the upgrade note
-  (missing-`tools:` plugins gain all tools on upgrade; add explicit
-  `tools: []` to keep no-tools agents).
-- **Tests**: Updated `tests/agents/test_loader.py` (8-case matrix for
-  YAML forms), `tests/agents/test_validator.py` (empty/missing tools
-  accepted, unknown bare tools warn, namespaced tools skipped), and
-  `tests/test_agent.py::TestAgentToolMatching::test_empty_tools_list`
-  (now uses `None` and `[]` per Option C). New
-  `tests/core/test_agent_tools.py` covers all 12 acceptance criteria
-  including the `backwards.md` regression guard.
+  constructor (`_validate_definition` helper logs warnings, never raises).
+  `_filter_tools_by_definition` has three explicit Option C branches keyed
+  on a local `tools = self.definition.tools` binding:
+  `isinstance(tools, AllToolsSentinel)` → keep all (emit WARN
+  `agent_tools_default_granted` at visible level); `len(tools) == 0` →
+  clear registry; non-empty → filter (with case-insensitive `yoker:`
+  prefix handling, unchanged). `_warn_missing_tools` early-returns when
+  `isinstance(self.definition.tools, AllToolsSentinel)` (all tools granted
+  by default — nothing to warn about). The runtime checks use
+  `isinstance(..., AllToolsSentinel)` rather than `is ALL_TOOLS` because
+  mypy only narrows `is` checks for `None`; `isinstance` narrows the
+  `tuple[str, ...] | AllToolsSentinel` union correctly. The two are
+  semantically equivalent because `AllToolsSentinel` is a singleton.
+- **`ui/commands/tools.py` and `ui/commands/agents.py`**: Guarded the
+  `/tools` and `/agents` command rendering against the sentinel — when
+  `isinstance(..._definition.tools, AllToolsSentinel)` the command shows
+  "ALL (no `tools:` filter)" instead of trying to iterate / `sorted()`.
+- **`api.py`** (contract aligned with `AgentDefinition`): The
+  `yoker.agent()` / `yoker.process()` / `yoker.do()` / `yoker.session()`
+  `tools` kwarg defaults to `ALL_TOOLS` and is passed through UNCHANGED to
+  `AgentDefinition` — the prior `tools=ALL_TOOLS if tools is None else
+  tuple(tools)` bridge is removed, eliminating the dual contract flagged by
+  the api-architect. `yoker.agent()` (no `tools` arg) and
+  `yoker.agent(tools=ALL_TOOLS)` → all tools; `yoker.agent(tools=None)` →
+  no tools (matches `AgentDefinition(tools=None)`); `yoker.agent(tools=[])`
+  → no tools; `yoker.agent(tools=["yoker:read", ...])` → filter. A
+  `typing.cast` reflects the post-`__post_init__` runtime invariant for
+  mypy (the field's declared type is the post-normalization
+  `tuple[str, ...] | AllToolsSentinel`; `None`/`list` are accepted at
+  construction and normalized by `__post_init__`).
+- **`CHANGELOG.md`**: Updated the Unreleased entry to describe the
+  `ALL_TOOLS` sentinel (replacing the `tools_unspecified` paragraph).
+- **Tests**: Updated `tests/core/test_agent_tools.py` (12 acceptance
+  criteria, assertions swapped from `tools_unspecified is True/False` to
+  `tools is ALL_TOOLS` / `tools == ()`), `tests/agents/test_loader.py`
+  (8-case matrix asserts `tools is ALL_TOOLS` vs `tools == ()`),
+  `tests/agents/test_validator.py` (uses default `AgentDefinition()` for
+  the all-tools case), and `tests/test_agent.py` (one comment update).
+  The `TestDocstringAgreement` class now asserts `ALL_TOOLS` appears in
+  the `_filter_tools_by_definition` and `AgentDefinition` docstrings.
 
 **Verification**: `make check` green — 1889 tests pass (+32 new), ruff
 format/lint clean, mypy typecheck clean (123 source files).

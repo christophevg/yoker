@@ -9,6 +9,7 @@ from yoker.agents.loader import (
   load_agent_definitions,
   parse_frontmatter,
 )
+from yoker.agents.schema import ALL_TOOLS
 from yoker.exceptions import ConfigurationError, FileNotFoundError
 
 
@@ -219,8 +220,8 @@ Body.
       load_agent_definition(agent_file)
     assert "description" in str(exc_info.value)
 
-  def test_load_missing_tools_loads_all_tools_flag(self, tmp_path: Path) -> None:
-    """Missing `tools:` line loads with tools_unspecified=True (all tools)."""
+  def test_load_missing_tools_loads_all_tools_sentinel(self, tmp_path: Path) -> None:
+    """Missing `tools:` line loads with tools=ALL_TOOLS (all tools)."""
     agent_file = tmp_path / "test.md"
     agent_file.write_text("""---
 name: test
@@ -230,8 +231,7 @@ description: Test
 Body.
 """)
     definition = load_agent_definition(agent_file)
-    assert definition.tools == ()
-    assert definition.tools_unspecified is True
+    assert definition.tools is ALL_TOOLS
 
   @pytest.mark.parametrize(
     "yaml_value",
@@ -242,10 +242,8 @@ Body.
       "[]",
     ],
   )
-  def test_load_present_null_tools_loads_no_tools_flag(
-    self, tmp_path: Path, yaml_value: str
-  ) -> None:
-    """Present-but-empty tools loads with tools_unspecified=False (no tools)."""
+  def test_load_present_null_tools_loads_no_tools(self, tmp_path: Path, yaml_value: str) -> None:
+    """Present-but-empty tools loads with tools=() (no tools)."""
     agent_file = tmp_path / "test.md"
     agent_file.write_text(f"""---
 name: test
@@ -257,10 +255,10 @@ Body.
 """)
     definition = load_agent_definition(agent_file)
     assert definition.tools == ()
-    assert definition.tools_unspecified is False
+    assert definition.tools is not ALL_TOOLS
 
   def test_load_explicit_tools_list_filters(self, tmp_path: Path) -> None:
-    """Non-empty tools list loads with tools_unspecified=False and the listed tools."""
+    """Non-empty tools list loads with the listed tools (filter)."""
     agent_file = tmp_path / "test.md"
     agent_file.write_text("""---
 name: test
@@ -274,10 +272,10 @@ Body.
 """)
     definition = load_agent_definition(agent_file)
     assert definition.tools == ("file:read", "file:list")
-    assert definition.tools_unspecified is False
+    assert definition.tools is not ALL_TOOLS
 
   def test_load_empty_tools_string(self, tmp_path: Path) -> None:
-    """Empty tools string results in empty tools tuple with tools_unspecified=False."""
+    """Empty tools string results in empty tools tuple (no tools)."""
     agent_file = tmp_path / "test.md"
     agent_file.write_text("""---
 name: test
@@ -290,7 +288,7 @@ Body.
     # Empty tools string is valid - agents don't need tools
     definition = load_agent_definition(agent_file)
     assert definition.tools == ()
-    assert definition.tools_unspecified is False
+    assert definition.tools is not ALL_TOOLS
 
   def test_load_invalid_tools_type(self, tmp_path: Path) -> None:
     """Test invalid tools type raises ConfigurationError."""

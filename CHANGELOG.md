@@ -16,14 +16,25 @@ adheres to [Semantic Versioning](https://semver.org/).
   `AgentDefinition()` / `yoker.agent()`. A visible WARN event
   `agent_tools_default_granted` is emitted whenever all-tools is granted by
   omission, so operators can spot agents that silently broadened on upgrade.
-  A new `tools_unspecified: bool` side-channel on `AgentDefinition`
-  distinguishes "no `tools` line" (True, default — all tools) from "tools
-  explicitly empty" (False — no tools).
+  An `ALL_TOOLS` sentinel (module-level singleton of a dedicated
+  `AllToolsSentinel` class in `yoker.agents.schema`) is the default value of
+  `AgentDefinition.tools`, distinguishing "no `tools` line" (`ALL_TOOLS` —
+  all tools) from "tools explicitly empty" (`()` — no tools). Test with
+  `is ALL_TOOLS` (identity) or `isinstance(tools, AllToolsSentinel)`.
 - **Validator on runtime path**: `validate_agent_definition` is now called
   during `Agent` construction (warnings only; never blocks). Unknown bare
   tool names and disabled tools produce warnings instead of raising. The
   runtime `_warn_missing_tools` check stays authoritative for tool
   availability.
+- **Thin API tools contract aligned with `AgentDefinition` (M.2)**: The
+  `yoker.agent()` / `yoker.process()` / `yoker.do()` / `yoker.session()`
+  `tools` kwarg now defaults to the `ALL_TOOLS` sentinel (all tools) and is
+  passed through UNCHANGED to `AgentDefinition` — the previous api.py bridge
+  that translated `tools=None` → `ALL_TOOLS` (all tools) is removed. This
+  eliminates the dual contract: `yoker.agent(tools=None)` now means "no
+  tools" (matching `AgentDefinition(tools=None)`), not "all tools". Omit the
+  arg (or pass `ALL_TOOLS` explicitly) for all tools; `tools=[]` also
+  disables all tools; `tools=["read", ...]` filters as before.
 
 ### Upgrade Notes
 
