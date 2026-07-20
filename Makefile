@@ -1,7 +1,5 @@
 -include ~/.claude/Makefile
 
-# MODEL=glm-5.2:cloud
-
 .PHONY: env-dev env-run install-pythons test test-cov test-all test-file test-one format lint typecheck check run docs docs-view build publish publish-test pre-publish clean clean-all help demo demos
 
 ## Environment
@@ -106,4 +104,3 @@ clean: ## Remove build artifacts
 
 clean-all: clean ## Remove virtualenv and lock file
 	rm -rf .venv uv.lock
-
