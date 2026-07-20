@@ -3,7 +3,7 @@
 Validates agent definitions against configuration constraints.
 """
 
-from yoker.agents.schema import AgentDefinition, AllToolsSentinel
+from yoker.agents.schema import AgentDefinition
 from yoker.config import ToolsConfig
 from yoker.exceptions import ValidationError
 
@@ -23,7 +23,7 @@ def validate_non_empty_string(value: str, path: str) -> None:
 
 
 def validate_tools(
-  tools: tuple[str, ...],
+  tools: list[str] | None,
   tools_config: ToolsConfig,
   path: str,
 ) -> list[str]:
@@ -35,7 +35,9 @@ def validate_tools(
   check is authoritative for those.
 
   Args:
-    tools: Tools specified in agent definition.
+    tools: Tools specified in agent definition. ``None`` and ``[]`` (the
+      ``ALL_TOOLS`` sentinel is ``[]``) produce no warnings — all-tools
+      and no-tools both have nothing to validate.
     tools_config: Global tools configuration.
     path: Configuration path for warning messages.
 
@@ -45,6 +47,8 @@ def validate_tools(
     never blocks agent construction — the runtime ``_warn_missing_tools``
     check stays authoritative.
   """
+  if not tools:
+    return []
   # Map of bare built-in tool names to their config attributes.
   known_tools = {
     "list": tools_config.list,
@@ -96,13 +100,11 @@ def validate_agent_definition(
   validate_non_empty_string(definition.name, "agent.name")
   validate_non_empty_string(definition.description, "agent.description")
 
-  # Validate tools. Empty/missing tools are valid (Option C): an agent with
-  # tools=ALL_TOOLS gets all tools at runtime; tools=() gets no tools. When
-  # the sentinel is set there is no explicit list to validate, so skip.
-  # isinstance narrows the union for mypy; AllToolsSentinel is a singleton so
-  # this is equivalent to `definition.tools is ALL_TOOLS`.
-  if not isinstance(definition.tools, AllToolsSentinel):
-    warnings.extend(validate_tools(definition.tools, tools_config, "agent.tools"))
+  # Validate tools. Empty/missing tools are valid: an agent with
+  # tools=ALL_TOOLS (the [] sentinel) gets all tools at runtime; tools=[]
+  # gets no tools. Both have nothing to validate (validate_tools returns []
+  # for falsy input).
+  warnings.extend(validate_tools(definition.tools, tools_config, "agent.tools"))
 
   # Check uniqueness
   if existing_names and definition.name in existing_names:

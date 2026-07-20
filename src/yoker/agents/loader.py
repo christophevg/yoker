@@ -15,7 +15,7 @@ from typing import Any
 
 from structlog import get_logger
 
-from yoker.agents.schema import ALL_TOOLS, AgentDefinition, AllToolsSentinel
+from yoker.agents.schema import ALL_TOOLS, AgentDefinition
 from yoker.exceptions import ConfigurationError, FileNotFoundError
 from yoker.resources import (
   is_dir,
@@ -41,7 +41,7 @@ def _apply_namespace(name: str, namespace: str | None) -> str:
   return f"{namespace}:{name}"
 
 
-def _namespace_tools(tools: list[object] | tuple[str, ...], namespace: str | None) -> list[str]:
+def _namespace_tools(tools: "list[str] | tuple[str, ...]", namespace: str | None) -> list[str]:
   """Namespace tool names for a plugin agent definition."""
   if not namespace:
     return [str(t) for t in tools]
@@ -109,41 +109,39 @@ def parse_agent_definition(
   # Extract tools. Distinguish "no `tools:` line" (all tools at runtime) from
   # "tools: present-but-empty" (no tools) via the ALL_TOOLS sentinel on
   # AgentDefinition.tools. Missing key → tools=ALL_TOOLS (all tools). Bare
-  # null / `~` / `""` / `[]` → tools=() (no tools, with a warning, since
+  # null / `~` / `""` / `[]` → tools=[] (no tools, with a warning, since
   # these forms are easy to mistake for "no tools line").
   if "tools" not in frontmatter:
-    tools: tuple[str, ...] | AllToolsSentinel = ALL_TOOLS
+    tools: list[str] = ALL_TOOLS
   else:
     tools_raw = frontmatter["tools"]
     if tools_raw is None:
-      tools = ()
+      tools = []
       logger.warning(
         "agent_tools_explicit_null_treated_as_empty",
         agent=name,
         setting="tools",
       )
     elif isinstance(tools_raw, str):
-      tools = tuple(t.strip() for t in tools_raw.split(",") if t.strip())
+      tools = [t.strip() for t in tools_raw.split(",") if t.strip()]
     elif isinstance(tools_raw, list):
-      tools = tuple(str(t).strip() for t in tools_raw if t)
+      tools = [str(t).strip() for t in tools_raw if t]
     else:
       if strict:
         raise ConfigurationError(
           setting="tools",
           message=f"Field 'tools' must be a comma-separated string or list, got {type(tools_raw).__name__}",
         )
-      tools = ()
+      tools = []
 
   # Empty tools list is valid - agents don't need tools
   # (removed check that required at least one tool)
 
   # Namespace tools for plugin agent definitions (e.g. 'write' -> 'pkg:write',
   # 'demo:echo' -> 'full.package:echo'); 'yoker:' tools are preserved.
-  # The ALL_TOOLS sentinel is not iterable — skip namespacing when set.
-  # isinstance narrows the union for mypy; AllToolsSentinel is a singleton so
-  # this is equivalent to `tools is ALL_TOOLS`.
-  if not isinstance(tools, AllToolsSentinel):
-    tools = tuple(_namespace_tools(tools, namespace))
+  # The ALL_TOOLS sentinel is skipped (resolved later by the Agent).
+  if tools is not ALL_TOOLS:
+    tools = _namespace_tools(tools, namespace)
 
   # Extract optional color
   color = frontmatter.get("color")

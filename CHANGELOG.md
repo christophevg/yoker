@@ -16,11 +16,14 @@ adheres to [Semantic Versioning](https://semver.org/).
   `AgentDefinition()` / `yoker.agent()`. A visible WARN event
   `agent_tools_default_granted` is emitted whenever all-tools is granted by
   omission, so operators can spot agents that silently broadened on upgrade.
-  An `ALL_TOOLS` sentinel (module-level singleton of a dedicated
-  `AllToolsSentinel` class in `yoker.agents.schema`) is the default value of
-  `AgentDefinition.tools`, distinguishing "no `tools` line" (`ALL_TOOLS` —
-  all tools) from "tools explicitly empty" (`()` — no tools). Test with
-  `is ALL_TOOLS` (identity) or `isinstance(tools, AllToolsSentinel)`.
+  The `ALL_TOOLS` sentinel is a module-level `[]` (empty list) in
+  `yoker.agents.schema`, used as the default value of
+  `AgentDefinition.tools`. It distinguishes "no `tools` line" (`ALL_TOOLS` —
+  all tools) from "tools explicitly empty" (`[]` — no tools) via identity
+  (`is ALL_TOOLS`). The sentinel is resolved in exactly ONE place —
+  `Agent._filter_tools_by_definition` — which replaces it with the real list
+  of all tool names from the registry; everywhere else, `tools` is just a
+  list.
 - **Validator on runtime path**: `validate_agent_definition` is now called
   during `Agent` construction (warnings only; never blocks). Unknown bare
   tool names and disabled tools produce warnings instead of raising. The

@@ -23,9 +23,9 @@ import asyncio
 from collections.abc import AsyncIterator, Coroutine
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, Literal, TypeVar, cast
+from typing import Any, Literal, TypeVar
 
-from yoker.agents import ALL_TOOLS, AgentDefinition, AllToolsSentinel, load_agent_definition
+from yoker.agents import ALL_TOOLS, AgentDefinition, load_agent_definition
 from yoker.backends import ModelBackend
 from yoker.config import (
   KNOWN_PROVIDERS,
@@ -85,7 +85,7 @@ def _build_config_and_definition(
   model: str | None,
   provider: str | None,
   system_prompt: str | None,
-  tools: list[str] | AllToolsSentinel | None,
+  tools: list[str] | None,
   agent_path: str | Path | None,
   agent_definition: AgentDefinition | None,
   thinking: str,
@@ -136,16 +136,14 @@ def _build_config_and_definition(
     # assistant."). tools is passed through UNCHANGED — no None→ALL_TOOLS
     # bridge — so the api.py contract matches the AgentDefinition contract:
     # tools=ALL_TOOLS (default or explicit) → all tools; tools=None/[] → no
-    # tools; tools=["read", ...] → filter. AgentDefinition.__post_init__
-    # normalizes None/list to () (no tools). The cast reflects the
-    # post-__post_init__ runtime invariant for mypy.
+    # tools; tools=["read", ...] → filter.
     if system_prompt is not None or tools is not ALL_TOOLS:
       resolved_definition = AgentDefinition(
         simple_name="custom" if tools is not ALL_TOOLS else None,
         system_prompt=system_prompt
         if system_prompt is not None
         else "You are a helpful assistant.",
-        tools=cast("tuple[str, ...] | AllToolsSentinel", tools),
+        tools=tools,
       )
 
   thinking_mode = _THINKING_MAP.get(thinking)
@@ -164,7 +162,7 @@ def agent(
   model: str | None = None,
   provider: str | None = None,
   system_prompt: str | None = None,
-  tools: list[str] | AllToolsSentinel | None = ALL_TOOLS,
+  tools: list[str] | None = ALL_TOOLS,
   skills: list[str] | None = None,
   plugins: tuple[str, ...] | None = None,
   agent_path: str | Path | None = None,
@@ -320,7 +318,7 @@ async def session(
   model: str | None = None,
   provider: str | None = None,
   system_prompt: str | None = None,
-  tools: list[str] | AllToolsSentinel | None = ALL_TOOLS,
+  tools: list[str] | None = ALL_TOOLS,
   skills: list[str] | None = None,
   plugins: list[str] | None = None,
   agent_path: str | Path | None = None,

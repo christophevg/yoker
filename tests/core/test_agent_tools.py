@@ -1,13 +1,13 @@
-"""Acceptance tests for M.2 Default Tools Behavior (Option C).
+"""Acceptance tests for M.2 Default Tools Behavior.
 
 Covers all 12 acceptance criteria from the approved plan:
 
 1. Missing `tools` in YAML → tools=ALL_TOOLS → ALL config tools.
-2. tools: (null/null/~/""/[]) → tools=() → NO tools.
+2. tools: (null/null/~/""/[]) → tools=[] → NO tools.
 3. tools: [read, list] → exactly those tools (no regression).
 4. In-memory AgentDefinition() → ALL tools (no regression).
 5. In-memory AgentDefinition(tools=None) and AgentDefinition(tools=[]) → NO tools.
-6. In-memory AgentDefinition(tools=("yoker:read",)) → filter (no regression).
+6. In-memory AgentDefinition(tools=["yoker:read"]) → filter (no regression).
 7. config.tools.<name>.enabled=False drops a tool even when all-tools is granted.
 8. WARN event `agent_tools_default_granted` emitted when all-tools is granted by omission.
 9. validate_agent_definition on runtime path; empty/missing tools accepted.
@@ -45,17 +45,17 @@ class TestLoaderMatrix:
 
   @pytest.mark.parametrize("value", ["", "null", "~", "[]"])
   def test_present_null_tools_loads_no_tools(self, tmp_path: Path, value: str) -> None:
-    """Criterion 2: present-but-empty → tools=() (no tools)."""
+    """Criterion 2: present-but-empty → tools=[] (no tools)."""
     f = self._write(tmp_path, f"name: test\ndescription: Test\ntools: {value}\n")
     d = load_agent_definition(f)
-    assert d.tools == ()
+    assert d.tools == []
     assert d.tools is not ALL_TOOLS
 
   def test_explicit_list_filters(self, tmp_path: Path) -> None:
     """Criterion 3: tools: [read, list] → exactly those (namespaced)."""
     f = self._write(tmp_path, "name: test\ndescription: Test\ntools:\n  - read\n  - list\n")
     d = load_agent_definition(f)
-    assert d.tools == ("file:read", "file:list")
+    assert d.tools == ["file:read", "file:list"]
     assert d.tools is not ALL_TOOLS
 
 
@@ -71,13 +71,13 @@ class TestInMemoryAgentDefinition:
   def test_explicit_empty_disables_tools(self, empty) -> None:
     """Criterion 5: AgentDefinition(tools=None) and AgentDefinition(tools=[]) → no tools."""
     d = AgentDefinition(simple_name="test-agent", description="d", tools=empty)
-    assert d.tools == ()
+    assert d.tools == []
     assert d.tools is not ALL_TOOLS
 
   def test_explicit_filter(self) -> None:
-    """Criterion 6: AgentDefinition(tools=("yoker:read",)) → filter (no regression)."""
-    d = AgentDefinition(simple_name="test-agent", description="d", tools=("yoker:read",))
-    assert d.tools == ("yoker:read",)
+    """Criterion 6: AgentDefinition(tools=["yoker:read"]) → filter (no regression)."""
+    d = AgentDefinition(simple_name="test-agent", description="d", tools=["yoker:read"])
+    assert d.tools == ["yoker:read"]
     assert d.tools is not ALL_TOOLS
 
 
@@ -118,7 +118,7 @@ class TestRuntimeFiltering:
     `file:` namespace on tool names, which is exercised separately by the
     loader tests).
     """
-    d = AgentDefinition(simple_name="test-agent", description="d", tools=("read", "list"))
+    d = AgentDefinition(simple_name="test-agent", description="d", tools=["read", "list"])
     agent = Agent(config=Config(), agent_definition=d)
     assert agent.tools.get("yoker:read") is not None
     assert agent.tools.get("yoker:list") is not None
@@ -138,8 +138,8 @@ class TestRuntimeFiltering:
     assert list(agent.tools.names) == []
 
   def test_in_memory_explicit_filter(self) -> None:
-    """Criterion 6: AgentDefinition(tools=("yoker:read",)) → only read."""
-    d = AgentDefinition(simple_name="test-agent", description="d", tools=("yoker:read",))
+    """Criterion 6: AgentDefinition(tools=["yoker:read"]) → only read."""
+    d = AgentDefinition(simple_name="test-agent", description="d", tools=["yoker:read"])
     agent = Agent(config=Config(), agent_definition=d)
     assert agent.tools.get("yoker:read") is not None
     assert agent.tools.get("yoker:list") is None
@@ -198,16 +198,16 @@ class TestValidatorOnRuntimePath:
       assert len(validation_calls) == 1
 
   def test_validator_accepts_empty_tools(self) -> None:
-    """Empty/missing tools no longer raise (Option C)."""
+    """Empty/missing tools no longer raise."""
     config = Config()
     # tools=ALL_TOOLS (default) — all tools at runtime.
     d_all = AgentDefinition(simple_name="test-agent", description="d")
     assert validate_agent_definition(d_all, config.tools) == []
-    # tools=None → () (no tools at runtime).
+    # tools=None → [] (no tools at runtime).
     d_none = AgentDefinition(simple_name="test-agent", description="d", tools=None)
     assert validate_agent_definition(d_none, config.tools) == []
-    # tools=() explicit (no tools at runtime).
-    d_explicit = AgentDefinition(simple_name="test-agent", description="d", tools=())
+    # tools=[] explicit (no tools at runtime).
+    d_explicit = AgentDefinition(simple_name="test-agent", description="d", tools=[])
     assert validate_agent_definition(d_explicit, config.tools) == []
 
 
@@ -227,7 +227,7 @@ class TestBackwardsRegression:
     )
     assert backwards_path.exists(), f"backwards.md not found at {backwards_path}"
     d = load_agent_definition(backwards_path)
-    assert d.tools == ()
+    assert d.tools == []
     assert d.tools is not ALL_TOOLS
     # At runtime: no tools.
     agent = Agent(config=Config(), agent_definition=d)
@@ -238,7 +238,7 @@ class TestDocstringAgreement:
   """Criterion 11: docstrings agree with code in core/__init__.py, schema.py, loader.py."""
 
   def test_filter_tools_docstring_describes_three_branches(self) -> None:
-    """_filter_tools_by_definition docstring documents the three Option C branches."""
+    """_filter_tools_by_definition docstring documents the three branches."""
     doc = Agent._filter_tools_by_definition.__doc__ or ""
     assert "ALL_TOOLS" in doc
     assert "agent_tools_default_granted" in doc
@@ -265,8 +265,8 @@ class TestNoRegression:
   """Criterion 12: no regression for explicit-tool filtering and namespace handling."""
 
   def test_explicit_filter_still_filters(self) -> None:
-    """tools=("read",) keeps only read-related tools (existing behavior)."""
-    d = AgentDefinition(simple_name="test-agent", description="d", tools=("read",))
+    """tools=["read"] keeps only read-related tools (existing behavior)."""
+    d = AgentDefinition(simple_name="test-agent", description="d", tools=["read"])
     agent = Agent(config=Config(), agent_definition=d)
     assert agent.tools.get("yoker:read") is not None
     assert agent.tools.get("yoker:list") is None
@@ -275,7 +275,7 @@ class TestNoRegression:
   def test_case_insensitive_filter_still_works(self) -> None:
     """Built-in tools are matched case-insensitively from agent definitions."""
     d = AgentDefinition(
-      simple_name="test-agent", description="d", tools=("Read", "LIST", "Yoker:write")
+      simple_name="test-agent", description="d", tools=["Read", "LIST", "Yoker:write"]
     )
     agent = Agent(config=Config(), agent_definition=d)
     assert agent.tools.get("yoker:read") is not None
@@ -285,5 +285,5 @@ class TestNoRegression:
 
   def test_namespaced_tools_preserved(self) -> None:
     """Namespaced tool references are preserved verbatim (no re-namespacing)."""
-    d = AgentDefinition(simple_name="test-agent", description="d", tools=("yoker:read",))
-    assert d.tools == ("yoker:read",)
+    d = AgentDefinition(simple_name="test-agent", description="d", tools=["yoker:read"])
+    assert d.tools == ["yoker:read"]
