@@ -3,6 +3,7 @@
 import pytest
 
 import yoker
+from yoker.agents import ALL_TOOLS
 from yoker.config import Config
 from yoker.core import Agent
 from yoker.core.thinking import ThinkingMode
@@ -68,9 +69,19 @@ class TestAgentBuilderTools:
     a = yoker.agent(tools=[], config=Config())
     assert list(a.tools.names) == []
 
-  def test_tools_none_keeps_all(self) -> None:
-    """tools=None (default) keeps all built-in tools."""
+  def test_tools_default_keeps_all(self) -> None:
+    """Omitting tools (default ALL_TOOLS) keeps all built-in tools."""
     a = yoker.agent()
+    assert len(a.tools.names) > 0
+
+  def test_tools_none_disables_all(self) -> None:
+    """tools=None disables all tools (matches AgentDefinition contract)."""
+    a = yoker.agent(tools=None, config=Config())
+    assert list(a.tools.names) == []
+
+  def test_tools_all_tools_sentinel_keeps_all(self) -> None:
+    """tools=ALL_TOOLS (explicit sentinel) keeps all built-in tools."""
+    a = yoker.agent(tools=ALL_TOOLS)
     assert len(a.tools.names) > 0
 
 

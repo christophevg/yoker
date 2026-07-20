@@ -9,7 +9,7 @@ from yoker.agents.loader import (
   parse_frontmatter,
 )
 from yoker.agents.registry import AgentRegistry
-from yoker.agents.schema import AgentDefinition
+from yoker.agents.schema import ALL_TOOLS, AgentDefinition, AllToolsSentinel
 from yoker.agents.validator import (
   validate_agent_definition,
   validate_non_empty_string,
@@ -21,6 +21,8 @@ __all__ = [
   "AgentRegistry",
   # Schema
   "AgentDefinition",
+  "AllToolsSentinel",
+  "ALL_TOOLS",
   # Loader
   "load_agent_definition",
   "load_agent_definitions",

@@ -15,7 +15,7 @@ from typing import Any
 
 from structlog import get_logger
 
-from yoker.agents.schema import AgentDefinition
+from yoker.agents.schema import ALL_TOOLS, AgentDefinition, AllToolsSentinel
 from yoker.exceptions import ConfigurationError, FileNotFoundError
 from yoker.resources import (
   is_dir,
@@ -107,18 +107,16 @@ def parse_agent_definition(
     description = ""
 
   # Extract tools. Distinguish "no `tools:` line" (all tools at runtime) from
-  # "tools: present-but-empty" (no tools) using a side-channel flag on the
-  # AgentDefinition. Missing key → tools=() + tools_unspecified=True. Bare
-  # null / `~` / `""` / `[]` → tools=() + tools_unspecified=False (with a
-  # warning, since these forms are easy to mistake for "no tools line").
+  # "tools: present-but-empty" (no tools) via the ALL_TOOLS sentinel on
+  # AgentDefinition.tools. Missing key → tools=ALL_TOOLS (all tools). Bare
+  # null / `~` / `""` / `[]` → tools=() (no tools, with a warning, since
+  # these forms are easy to mistake for "no tools line").
   if "tools" not in frontmatter:
-    tools: tuple[str, ...] = ()
-    tools_unspecified = True
+    tools: tuple[str, ...] | AllToolsSentinel = ALL_TOOLS
   else:
     tools_raw = frontmatter["tools"]
     if tools_raw is None:
       tools = ()
-      tools_unspecified = False
       logger.warning(
         "agent_tools_explicit_null_treated_as_empty",
         agent=name,
@@ -126,10 +124,8 @@ def parse_agent_definition(
       )
     elif isinstance(tools_raw, str):
       tools = tuple(t.strip() for t in tools_raw.split(",") if t.strip())
-      tools_unspecified = False
     elif isinstance(tools_raw, list):
       tools = tuple(str(t).strip() for t in tools_raw if t)
-      tools_unspecified = False
     else:
       if strict:
         raise ConfigurationError(
@@ -137,14 +133,17 @@ def parse_agent_definition(
           message=f"Field 'tools' must be a comma-separated string or list, got {type(tools_raw).__name__}",
         )
       tools = ()
-      tools_unspecified = False
 
   # Empty tools list is valid - agents don't need tools
   # (removed check that required at least one tool)
 
   # Namespace tools for plugin agent definitions (e.g. 'write' -> 'pkg:write',
   # 'demo:echo' -> 'full.package:echo'); 'yoker:' tools are preserved.
-  tools = tuple(_namespace_tools(tools, namespace))
+  # The ALL_TOOLS sentinel is not iterable — skip namespacing when set.
+  # isinstance narrows the union for mypy; AllToolsSentinel is a singleton so
+  # this is equivalent to `tools is ALL_TOOLS`.
+  if not isinstance(tools, AllToolsSentinel):
+    tools = tuple(_namespace_tools(tools, namespace))
 
   # Extract optional color
   color = frontmatter.get("color")
@@ -173,7 +172,6 @@ def parse_agent_definition(
     namespace=namespace,
     description=str(description),
     tools=tools,
-    tools_unspecified=tools_unspecified,
     color=color,
     model=model,
     system_prompt=body.strip(),

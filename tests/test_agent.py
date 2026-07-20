@@ -466,8 +466,8 @@ class TestAgentToolMatching:
     """Test agent definition with explicit empty tools (None or []) → no tools.
 
     Per Option C, ``AgentDefinition(tools=None)`` and ``AgentDefinition(tools=[])``
-    both produce an agent with NO tools. ``AgentDefinition(tools=())`` alone is
-    ambiguous and defaults to "all tools" (tools_unspecified=True).
+    both produce an agent with NO tools. ``AgentDefinition()`` (default) carries
+    the ``ALL_TOOLS`` sentinel and grants all tools.
     """
     from yoker.agents import AgentDefinition
 

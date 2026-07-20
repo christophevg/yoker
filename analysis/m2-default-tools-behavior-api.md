@@ -325,3 +325,309 @@ The original four-file list is mostly correct; Option C changes the **shape** of
 The one respect in which Option B is strictly safer than Option C: **third-party plugin agents that omit `tools:`**. Under C they get all tools (privilege expansion from today's "rejected"). Under B they get no tools (least privilege). The mitigation in C is the `logger.info` line plus documentation, which is reasonable for first-party agents but weaker for third-party plugins the user may install without auditing.
 
 If the owner anticipates third-party yoker plugins being installed untrusted, a hybrid is worth considering: built-in/user agents use Option C (missing = all), plugin agents use Option B semantics (missing = no tools, opt-in via `tools: "*"` for all). This adds a namespace-dependent default but is implementable in `parse_agent_definition` by checking the `namespace` argument. **I do not recommend this unless the owner has a concrete third-party threat in mind** — it adds complexity for a hypothetical. Flagging for the owner's decision; not blocking.
+
+---
+
+## Owner ALL_TOOLS feedback evaluation
+
+**Date**: 2026-07-20
+**Trigger**: PR #47 owner feedback challenging the implemented `tools_unspecified` side-channel and proposing an `ALL_TOOLS` sentinel as the default value for `AgentDefinition.tools`.
+**Prior art**: this review's recommendation 1 (§4 of `reporting/m2-default-tools-behavior/api-architect-review.md`) flagged the side-channel as the root cause of the api.py ↔ AgentDefinition dual contract and proposed migrating to the plan's `tools: tuple[str, ...] | None = None` sentinel. The owner's proposal is a different sentinel.
+
+### D.1 Is the owner's ALL_TOOLS the sentinel I originally recommended?
+
+**No — it is a different (and better) sentinel.**
+
+My recommended sentinel (C.3, line 226-229) was `None`: `tools: tuple[str, ...] | None = None`, where `None` = all tools and `()` = no tools. The owner's `ALL_TOOLS` sentinel inverts this: a dedicated sentinel object = all tools, `None` = no tools.
+
+**The owner's approach is more faithful to Option C than my `None`-sentinel was.** Option C (as the owner framed it in C.2) requires three distinguishable states:
+
+| State | Owner's Option C framing | My `None`-sentinel (C.3) | Owner's `ALL_TOOLS` |
+|-------|--------------------------|--------------------------|----------------------|
+| Field absent (default) | all tools | `None` → all tools | `ALL_TOOLS` → all tools |
+| Field present, null/empty | no tools | `()` → no tools | `None`/`()` → no tools |
+| Field present, non-empty | filter | `(...)` → filter | `(...)` → filter |
+
+My `None`-sentinel collapsed the first two rows' `None`-meaning: `AgentDefinition(tools=None)` meant "all tools" under my approach, but the owner's Option C framing required `AgentDefinition(tools=None)` to mean "no tools" (explicit null = explicit no tools). **My C.3 recommendation was internally inconsistent with the Option C framing I endorsed in C.5.** The owner is correct to reject it.
+
+The `ALL_TOOLS` sentinel preserves all three Option C states natively:
+- `AgentDefinition()` → `tools=ALL_TOOLS` (the default) → all tools
+- `AgentDefinition(tools=None)` → `tools=None` → no tools (matches "explicit null = no tools")
+- `AgentDefinition(tools=())` / `AgentDefinition(tools=[])` → no tools
+- `AgentDefinition(tools=("read",))` → filter
+
+This is the correct Option C implementation. My `None`-sentinel was a regression to a two-state model dressed up as three-state.
+
+**Verdict: the owner's `ALL_TOOLS` sentinel is better than my `None`-sentinel for Option C.** It respects the owner's stated semantics, keeps `None` as the intuitive "explicit no tools" value (matching YAML null and Python `None` conventions), and uses the sentinel only for the "inherit default" state — which is exactly what sentinels are for.
+
+### D.2 Sentinel design — bare `[]` vs alternatives
+
+The owner sketched `ALL_TOOLS = []` with `is` comparison and noted "object, so unique singleton-like identifiable". The intent is right; the implementation sketch needs refinement.
+
+**D.2.1 Is bare `[]` safe as a sentinel?**
+
+| Concern | `[]` as sentinel | Verdict |
+|---------|------------------|---------|
+| Mutability | A mutable list — someone could accidentally `ALL_TOOLS.append("read")`, mutating the sentinel | **Risk**: low (identity preserved) but real; a sentinel should be immutable |
+| Identity comparison | `is` works (every `[]` literal is a new list, so `tools is ALL_TOOLS` is True only for the default) | **OK**: but fragile if anyone constructs the field via `list()` or copies |
+| Type annotation | `tools: list \| None = ALL_TOOLS` — `ALL_TOOLS` is a `list`, so the annotation is satisfied | **OK**: but misleading — the sentinel is never iterated as a list |
+| mypy narrowing | `tools` is typed `list \| None`; mypy cannot distinguish the sentinel `list` from a user-supplied `list` | **Problem**: after `if tools is ALL_TOOLS:`, mypy still sees `tools: list`, not "sentinel branch" — no narrowing benefit |
+| Debug clarity | `repr(ALL_TOOLS)` is `[]` — indistinguishable from an actual empty tools list in logs/errors | **Problem**: `tools=[]` (no tools) and `tools=ALL_TOOLS` (all tools) print identically |
+| Reimport safety | `[]` is recreated per-process; module-level `ALL_TOOLS = []` is a single object within a process | **OK**: standard singleton-via-module-constant pattern |
+
+**Bottom line: `[]` works but is the wrong tool.** A sentinel's job is to be unmistakably distinguishable from every legitimate value. `[]` is a legitimate value (empty list), so it fails this test — the `is` check is the only thing separating them, and it offers no type-level or repr-level distinction.
+
+**D.2.2 Recommended sentinel: a dedicated, immutable, named class.**
+
+```python
+class AllToolsSentinel:
+  """Sentinel indicating an agent should receive all available config-enabled tools.
+
+  Distinguished from ``None`` (explicit no tools) and from ``()``/``[]`` (also
+  no tools) by identity. Use ``tools is ALL_TOOLS`` to test.
+  """
+  _instance: "AllToolsSentinel | None" = None
+
+  def __new__(cls) -> "AllToolsSentinel":
+    if cls._instance is None:
+      cls._instance = super().__new__(cls)
+    return cls._instance
+
+  def __repr__(self) -> str:
+    return "ALL_TOOLS"
+
+  def __bool__(self) -> bool:
+    return True  # "all tools" is truthy; distinguishes from None/[] which are falsy
+
+  def __iter__(self):
+    # Prevent accidental iteration; "all tools" is not a concrete list.
+    raise TypeError("ALL_TOOLS is a sentinel, not an iterable; test with `is`")
+
+ALL_TOOLS: AllToolsSentinel = AllToolsSentinel()
+```
+
+**Why this is better than the alternatives:**
+
+| Alternative | Verdict |
+|-------------|---------|
+| `ALL_TOOLS = object()` | Clean and immutable, but `repr` is `<object object at 0x...>` — useless in logs/errors. No `__bool__`, no `__iter__` guard. Acceptable but inferior to a named class. |
+| `class AllToolsSentinel` (recommended) | Self-documenting `repr` (`ALL_TOOLS`), singleton-enforced, `__bool__` for truthiness checks, `__iter__` guard prevents accidental iteration. mypy can narrow on `isinstance` or `is`. |
+| `enum.Enum` (`class ToolsMode(Enum): ALL = ...`) | Over-engineered for a single sentinel. Enums are for enumerated sets of values; here we have one sentinel + regular tuples. Adds ceremony without benefit. |
+| `dataclasses.MISSING` | Semantically wrong — `MISSING` means "field not set by the user", which is an internal dataclass concern. Repurposing it as "all tools" couples our domain semantic to a dataclass implementation detail. |
+| `[]` (owner's sketch) | Mutable, iterable, ambiguous `repr`, no mypy narrowing. Functional but the weakest option. |
+
+**D.2.3 Interaction with the (non-frozen) dataclass and `__post_init__`.**
+
+`AgentDefinition` is declared `@dataclass` without `frozen=True` (the `schema.py:1` module docstring claiming "frozen" is a pre-existing inaccuracy — see review §1). The `__post_init__` normalization must preserve the sentinel rather than collapsing it:
+
+```python
+@dataclass
+class AgentDefinition:
+  tools: "tuple[str, ...] | AllToolsSentinel | None" = ALL_TOOLS
+  # ... other fields ...
+
+  def __post_init__(self) -> None:
+    if self.tools is ALL_TOOLS:
+      return  # preserve sentinel — downstream checks `is ALL_TOOLS`
+    # Normalize everything else to a tuple.
+    if self.tools is None:
+      self.tools = ()
+    elif isinstance(self.tools, list):
+      self.tools = tuple(self.tools)
+    # else: already a tuple, keep as-is
+```
+
+After `__post_init__`, the field is either `ALL_TOOLS` (sentinel) or `tuple[str, ...]`. `None` and `[]` are both normalized to `()` (no tools), which is correct — both are "explicit no tools" expressions. The runtime type narrows to `AllToolsSentinel | tuple[str, ...]`.
+
+**D.2.4 Type annotation.**
+
+The field type before normalization: `tuple[str, ...] | AllToolsSentinel | None = ALL_TOOLS`.
+After `__post_init__` (the state downstream code sees): `AllToolsSentinel | tuple[str, ...]`.
+
+For mypy, the `is ALL_TOOLS` check narrows correctly:
+```python
+if self.definition.tools is ALL_TOOLS:
+  # mypy: tools is AllToolsSentinel here
+  return  # all tools
+# mypy: tools is tuple[str, ...] here
+if len(self.definition.tools) == 0:
+  ...  # no tools
+```
+
+This is cleaner than the current `tools_unspecified: bool` flag, which requires mypy to track two fields and their invariant.
+
+### D.3 Does the sentinel eliminate the api.py ↔ schema dual-contract seam?
+
+**Yes — if api.py adopts the same sentinel. No — if api.py keeps translating `None` to "all tools".**
+
+The seam (review §4) was: `yoker.agent(tools=None)` meant "all tools" (api.py "None = unset") while `AgentDefinition(tools=None)` meant "no tools" (schema "None = explicit none"). Same kwarg name, opposite semantics.
+
+**With the sentinel, two options for api.py:**
+
+**Option D-1 (eliminates the seam — recommended):** api.py adopts the sentinel as its default too.
+
+```python
+# api.py
+def agent(*, tools: "list[str] | AllToolsSentinel | None" = ALL_TOOLS, ...) -> Agent:
+  ...
+  definition = AgentDefinition(tools=tools, ...)
+```
+
+| Call | api.py meaning | AgentDefinition meaning | Seam? |
+|------|----------------|-------------------------|-------|
+| `yoker.agent()` | all tools (default `ALL_TOOLS`) | all tools | **Aligned** |
+| `yoker.agent(tools=ALL_TOOLS)` | all tools (explicit) | all tools | **Aligned** |
+| `yoker.agent(tools=None)` | no tools | no tools | **Aligned** |
+| `yoker.agent(tools=[])` | no tools | no tools | **Aligned** |
+| `yoker.agent(tools=["read"])` | filter | filter | **Aligned** |
+
+No translation, no side-channel, no seam. Both layers share one contract on the `tools` kwarg name.
+
+**Behavior change for api.py users**: `yoker.agent(tools=None)` changes from "all tools" (current) to "no tools" (sentinel approach). This is a semantic break for anyone explicitly passing `tools=None` — but that call is redundant with `yoker.agent()` (the default), so the fix is to omit the kwarg. Users who want all tools explicitly can pass `tools=ALL_TOOLS`. **The breakage surface is minimal and the new contract is more intuitive** (`None` = no tools matches Python/YAML conventions; the sentinel is the explicit opt-in for "all").
+
+**Option D-2 (hides the seam inside api.py — not recommended):** api.py keeps "None = all tools" and translates.
+
+```python
+# api.py
+def agent(*, tools: "list[str] | None" = None, ...) -> Agent:
+  ...
+  definition = AgentDefinition(
+    tools=ALL_TOOLS if tools is None else tools,
+    ...
+  )
+```
+
+This preserves api.py's current "None = unset = all tools" contract, so no user-facing break. But the seam persists internally: `yoker.agent(tools=None)` still means "all tools" while `AgentDefinition(tools=None)` means "no tools". The `tools_unspecified` flag is gone, but the translation layer remains. **This is strictly worse than D-1** — it keeps the confusion while removing only the implementation artifact.
+
+**Verdict: adopt Option D-1.** The sentinel's whole point is to give "all tools" a dedicated, unambiguous value. If api.py then re-uses `None` for "all tools", the sentinel has failed its purpose at the api.py layer. The clean state is: both layers treat `ALL_TOOLS` as all tools, `None`/`[]` as no tools, and non-empty as filter — one contract, no translation.
+
+### D.4 Architecture cleanliness — single field vs two-field invariant
+
+**The sentinel collapses the two-field invariant to one field. This is a strict improvement.**
+
+| Aspect | Current (`tools` + `tools_unspecified`) | Sentinel (`tools` only) |
+|--------|------------------------------------------|--------------------------|
+| Field count | 2 | 1 |
+| Source of truth | Split: `tools` holds the list, `tools_unspecified` holds the intent | Unified: `tools` holds both (sentinel = all, tuple = explicit) |
+| Invariant to maintain | `tools_unspecified` must stay in sync with whether `tools` was explicitly set | None — the field value IS the intent |
+| Failure mode | Caller passes `tools=()` with `tools_unspecified=True` (or vice versa) → silent wrong behavior | No secondary field to get wrong |
+| Downstream check | `if self.definition.tools_unspecified:` | `if self.definition.tools is ALL_TOOLS:` |
+| Domain object purity | `tools_unspecified` is parser state on a domain dataclass (review §7) | `ALL_TOOLS` is a domain value (an intent), not parser state — cleaner |
+| Public API surface | `tools_unspecified` leaks into the dataclass constructor signature | Only `ALL_TOOLS` is public (a clear, named constant) |
+
+**New complexity introduced by the sentinel:**
+
+1. A sentinel class must be defined and exported (`yoker.ALL_TOOLS` or `yoker.agents.ALL_TOOLS`). Minor — ~15 lines.
+2. Downstream code (`_filter_tools_by_definition`, `_warn_missing_tools`, `validate_tools`) must use `is ALL_TOOLS` checks instead of `tools_unspecified`. Net neutral — same number of branches, cleaner conditions.
+3. Type annotations widen to `tuple[str, ...] | AllToolsSentinel | None`. Minor mypy burden, offset by better narrowing.
+4. `__post_init__` must not normalize the sentinel away. One guard clause (`if self.tools is ALL_TOOLS: return`).
+
+**Net: the sentinel removes more complexity than it adds.** The two-field invariant was the heavier burden.
+
+### D.5 Concrete recommendation
+
+**Endorse the owner's `ALL_TOOLS` sentinel approach, with three refinements:**
+
+1. **Use a dedicated `AllToolsSentinel` class (not bare `[]`).** The class gives a self-documenting `repr` (`ALL_TOOLS`), immutability, an `__iter__` guard against accidental iteration, and clean mypy narrowing. Bare `[]` is mutable, ambiguous in logs, and indistinguishable from an actual empty list.
+
+2. **Export `ALL_TOOLS` publicly** from `yoker` (or `yoker.agents`) so users can write `yoker.agent(tools=ALL_TOOLS)` as an explicit self-documenting opt-in for "all tools", and so loader code can reference it in the loader's membership-test branch.
+
+3. **Adopt the sentinel at both layers (api.py + schema) — Option D-1.** `yoker.agent()` and `AgentDefinition()` both default to `tools=ALL_TOOLS`; `yoker.agent(tools=None)` and `AgentDefinition(tools=None)` both mean "no tools". One contract, no translation layer, no seam. Accept the minor behavior change for `yoker.agent(tools=None)` (was "all tools", becomes "no tools") — it is a redundant call pattern, and the new contract is more intuitive.
+
+**Recommended field signature:**
+
+```python
+# schema.py
+class AllToolsSentinel:
+  _instance: "AllToolsSentinel | None" = None
+  def __new__(cls) -> "AllToolsSentinel":
+    if cls._instance is None:
+      cls._instance = super().__new__(cls)
+    return cls._instance
+  def __repr__(self) -> str: return "ALL_TOOLS"
+  def __bool__(self) -> bool: return True
+  def __iter__(self): raise TypeError("ALL_TOOLS is a sentinel, not iterable; test with `is`")
+
+ALL_TOOLS: AllToolsSentinel = AllToolsSentinel()
+
+@dataclass
+class AgentDefinition:
+  tools: "tuple[str, ...] | AllToolsSentinel | None" = ALL_TOOLS
+  # ... other fields unchanged ...
+
+  def __post_init__(self) -> None:
+    if self.tools is ALL_TOOLS:
+      return
+    if self.tools is None:
+      self.tools = ()
+    elif isinstance(self.tools, list):
+      self.tools = tuple(self.tools)
+```
+
+```python
+# api.py
+def agent(
+  *,
+  tools: "list[str] | AllToolsSentinel | None" = ALL_TOOLS,
+  ...,
+) -> Agent:
+  # No translation. Pass tools straight through to AgentDefinition.
+  ...
+```
+
+```python
+# core/__init__.py — _filter_tools_by_definition
+def _filter_tools_by_definition(self) -> None:
+  if self.definition.tools is ALL_TOOLS:
+    logger.info("agent_tools_default_all", agent=self.definition.name)
+    return
+  if len(self.definition.tools) == 0:
+    logger.info("agent_tools_empty", agent=self.definition.name)
+    self.tools.clear()
+    return
+  # ... existing explicit-filter logic ...
+```
+
+**Loader branch** (unchanged from C.3's membership-test approach, just the target value differs):
+```python
+# loader.py
+if "tools" not in frontmatter:
+  tools = ALL_TOOLS          # field absent → all tools
+else:
+  tools_raw = frontmatter["tools"]
+  if tools_raw is None:      # YAML null → no tools (with warning)
+    tools = None
+    logger.warning("agent_tools_explicit_null_treated_as_empty", ...)
+  elif isinstance(tools_raw, str):
+    tools = tuple(t.strip() for t in tools_raw.split(",") if t.strip())
+  elif isinstance(tools_raw, list):
+    tools = tuple(str(t).strip() for t in tools_raw if t)
+  else:
+    ... # strict-mode error
+```
+
+### D.6 Verdict
+
+**Endorse the owner's `ALL_TOOLS` approach (with refinement: use a dedicated `AllToolsSentinel` class instead of bare `[]`, and adopt the sentinel at both the api.py and schema layers to fully eliminate the dual-contract seam).**
+
+The owner's instinct is correct: `tools_unspecified` is a meta-argument that pollutes the interface, and a sentinel is the cleaner way to distinguish "default" from "explicit no tools". The owner's `ALL_TOOLS` sentinel is also a better fit for Option C than my earlier `None`-sentinel recommendation (which contradicted the owner's framing of `tools=None` as "no tools"). The one refinement needed is the sentinel's type: bare `[]` is mutable, ambiguous in `repr`, and offers no mypy narrowing — a dedicated `AllToolsSentinel` class with a singleton `__new__`, a `__repr__` returning `"ALL_TOOLS"`, and an `__iter__` guard is the production-grade version of the owner's sketch.
+
+**Prefer this over the implemented `tools_unspecified` side-channel because:**
+- One field instead of two (no invariant to maintain).
+- The intent lives in the value, not in a secondary flag.
+- No api.py ↔ schema dual contract (if api.py adopts the sentinel — Option D-1).
+- The sentinel is a domain value (an intent), not parser state on a domain object.
+- `ALL_TOOLS` is self-documenting in user code (`yoker.agent(tools=ALL_TOOLS)` reads as "all tools"); `tools_unspecified=True` reads as implementation plumbing.
+
+### D.7 Action items (delta)
+
+- [ ] Replace `tools_unspecified: bool` with the `ALL_TOOLS` sentinel (dedicated `AllToolsSentinel` class) in `schema.py`.
+- [ ] Update `__post_init__` to preserve the sentinel rather than normalizing it away.
+- [ ] Update `_filter_tools_by_definition` (`core/__init__.py`) to check `is ALL_TOOLS` instead of `tools_unspecified`.
+- [ ] Update `_warn_missing_tools` and `validate_tools` to guard against the sentinel (skip iteration when `is ALL_TOOLS`).
+- [ ] Update `loader.py` to assign `ALL_TOOLS` when `"tools" not in frontmatter` (membership test, per C.3).
+- [ ] Update `api.py` to adopt `ALL_TOOLS` as the default for the `tools` kwarg (Option D-1) — eliminate the translation layer.
+- [ ] Export `ALL_TOOLS` (and optionally `AllToolsSentinel`) from `yoker` and/or `yoker.agents`.
+- [ ] Update tests: replace `tools_unspecified` assertions with `is ALL_TOOLS` assertions; add `yoker.agent(tools=None)` → no tools test (behavior change from current "all tools").
+- [ ] CHANGELOG note: `yoker.agent(tools=None)` now means "no tools" (was "all tools"); use `yoker.agent()` or `yoker.agent(tools=ALL_TOOLS)` for all tools.
+- [ ] Correct `schema.py:1` module docstring "frozen dataclasses" → "dataclasses" (pre-existing, but the sentinel makes the mutability question more visible).

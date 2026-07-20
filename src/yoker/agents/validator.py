@@ -3,7 +3,7 @@
 Validates agent definitions against configuration constraints.
 """
 
-from yoker.agents.schema import AgentDefinition
+from yoker.agents.schema import AgentDefinition, AllToolsSentinel
 from yoker.config import ToolsConfig
 from yoker.exceptions import ValidationError
 
@@ -97,9 +97,12 @@ def validate_agent_definition(
   validate_non_empty_string(definition.description, "agent.description")
 
   # Validate tools. Empty/missing tools are valid (Option C): an agent with
-  # tools_unspecified=True gets all tools at runtime; tools_unspecified=False
-  # with empty tools gets no tools. Either way, no error here.
-  warnings.extend(validate_tools(definition.tools, tools_config, "agent.tools"))
+  # tools=ALL_TOOLS gets all tools at runtime; tools=() gets no tools. When
+  # the sentinel is set there is no explicit list to validate, so skip.
+  # isinstance narrows the union for mypy; AllToolsSentinel is a singleton so
+  # this is equivalent to `definition.tools is ALL_TOOLS`.
+  if not isinstance(definition.tools, AllToolsSentinel):
+    warnings.extend(validate_tools(definition.tools, tools_config, "agent.tools"))
 
   # Check uniqueness
   if existing_names and definition.name in existing_names:

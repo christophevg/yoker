@@ -23,9 +23,9 @@ import asyncio
 from collections.abc import AsyncIterator, Coroutine
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, Literal, TypeVar
+from typing import Any, Literal, TypeVar, cast
 
-from yoker.agents import AgentDefinition, load_agent_definition
+from yoker.agents import ALL_TOOLS, AgentDefinition, AllToolsSentinel, load_agent_definition
 from yoker.backends import ModelBackend
 from yoker.config import (
   KNOWN_PROVIDERS,
@@ -85,7 +85,7 @@ def _build_config_and_definition(
   model: str | None,
   provider: str | None,
   system_prompt: str | None,
-  tools: list[str] | None,
+  tools: list[str] | AllToolsSentinel | None,
   agent_path: str | Path | None,
   agent_definition: AgentDefinition | None,
   thinking: str,
@@ -130,17 +130,22 @@ def _build_config_and_definition(
   if resolved_definition is None and agent_path is not None and load_path_inline:
     resolved_definition = load_agent_definition(agent_path)
   if resolved_definition is None and agent_path is None:
-    # tools=[] clears all tools; system_prompt alone needs a default prompt.
-    # tools_unspecified=False when the caller passed a `tools` value (even []),
-    # so the runtime grants NO tools rather than ALL tools (Option C).
-    if system_prompt is not None or tools is not None:
+    # Build an in-memory AgentDefinition only when the caller overrode
+    # something; otherwise let the Agent constructor build the default
+    # AgentDefinition() (tools=ALL_TOOLS, system_prompt="You are a helpful
+    # assistant."). tools is passed through UNCHANGED — no None→ALL_TOOLS
+    # bridge — so the api.py contract matches the AgentDefinition contract:
+    # tools=ALL_TOOLS (default or explicit) → all tools; tools=None/[] → no
+    # tools; tools=["read", ...] → filter. AgentDefinition.__post_init__
+    # normalizes None/list to () (no tools). The cast reflects the
+    # post-__post_init__ runtime invariant for mypy.
+    if system_prompt is not None or tools is not ALL_TOOLS:
       resolved_definition = AgentDefinition(
-        simple_name="custom" if tools is not None else None,
+        simple_name="custom" if tools is not ALL_TOOLS else None,
         system_prompt=system_prompt
         if system_prompt is not None
         else "You are a helpful assistant.",
-        tools=tuple(tools) if tools is not None else (),
-        tools_unspecified=tools is None,
+        tools=cast("tuple[str, ...] | AllToolsSentinel", tools),
       )
 
   thinking_mode = _THINKING_MAP.get(thinking)
@@ -159,7 +164,7 @@ def agent(
   model: str | None = None,
   provider: str | None = None,
   system_prompt: str | None = None,
-  tools: list[str] | None = None,
+  tools: list[str] | AllToolsSentinel | None = ALL_TOOLS,
   skills: list[str] | None = None,
   plugins: tuple[str, ...] | None = None,
   agent_path: str | Path | None = None,
@@ -187,8 +192,11 @@ def agent(
     model: Optional model override applied to the active provider config.
     provider: Optional backend provider (``"ollama"``, ``"openai"``, ...).
     system_prompt: Optional override for the agent's system prompt.
-    tools: Optional whitelist of tool names. ``None`` keeps all configured
-      tools; ``[]`` disables all; ``["read"]`` keeps only ``read``.
+    tools: Whitelist of tool names, the :data:`ALL_TOOLS` sentinel, or
+      ``None``. The default (``ALL_TOOLS``) grants all config-enabled tools;
+      omit the arg (or pass ``ALL_TOOLS`` explicitly) for all tools.
+      ``None`` disables all tools (matches the :class:`AgentDefinition`
+      contract); ``[]`` also disables all; ``["read"]`` keeps only ``read``.
     skills: Optional whitelist of skill names. ``None`` keeps all loaded
       skills; ``[]`` disables all; ``["commit"]`` keeps only ``commit``.
     plugins: Optional plugin packages to load (e.g. ``["pkgq"]``).
@@ -312,7 +320,7 @@ async def session(
   model: str | None = None,
   provider: str | None = None,
   system_prompt: str | None = None,
-  tools: list[str] | None = None,
+  tools: list[str] | AllToolsSentinel | None = ALL_TOOLS,
   skills: list[str] | None = None,
   plugins: list[str] | None = None,
   agent_path: str | Path | None = None,
@@ -342,8 +350,11 @@ async def session(
     model: Optional model override applied to the active provider config.
     provider: Optional backend provider (``"ollama"``, ``"openai"``, ...).
     system_prompt: Optional override for the agent's system prompt.
-    tools: Optional whitelist of tool names. ``None`` keeps all configured
-      tools; ``[]`` disables all; ``["read"]`` keeps only ``read``.
+    tools: Whitelist of tool names, the :data:`ALL_TOOLS` sentinel, or
+      ``None``. The default (``ALL_TOOLS``) grants all config-enabled tools;
+      omit the arg (or pass ``ALL_TOOLS`` explicitly) for all tools.
+      ``None`` disables all tools (matches the :class:`AgentDefinition`
+      contract); ``[]`` also disables all; ``["read"]`` keeps only ``read``.
     skills: Optional whitelist of skill names. ``None`` keeps all loaded
       skills; ``[]`` disables all; ``["commit"]`` keeps only ``commit``.
     plugins: Optional plugin packages to load (e.g. ``["pkgq"]``).
