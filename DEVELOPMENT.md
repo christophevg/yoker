@@ -8,6 +8,59 @@ Yoker is a Python agent harness with configurable tools and guardrails. It provi
 
 ## Recent Changes
 
+### M.2: Default Tools Behavior — Option C (2026-07-20)
+
+Implemented the owner-approved Option C side-channel `tools_unspecified`
+flag so an agent definition without a `tools:` line grants ALL
+config-enabled tools at runtime, while a present-but-empty `tools:` line
+grants NO tools.
+
+- **`agents/schema.py`**: Added `tools_unspecified: bool = True` field on
+  `AgentDefinition` with a `__post_init__` that normalizes `None`/`list`
+  inputs to a tuple and flips the flag to False whenever an explicit value
+  (including `None`/`[]`) is passed. A default-constructed empty tuple keeps
+  the flag True. Field type kept as `tuple[str, ...]` (canonical post-init
+  form) — tests may pass `None`/`[]` at runtime; mypy is not run on tests.
+- **`agents/loader.py`**: Uses `"tools" not in frontmatter` (not `.get()`)
+  to distinguish missing-key (→ `tools_unspecified=True`, all tools) from
+  present-but-null/empty (→ `tools_unspecified=False`, no tools; logs
+  `agent_tools_explicit_null_treated_as_empty` warning for the bare-null
+  forms `tools:`/`null`/`~`). Non-empty lists parse as before and set the
+  flag False.
+- **`agents/validator.py`**: Removed the "must specify at least one tool"
+  guard. `validate_tools` now treats unknown bare tools as warnings (not
+  errors) and skips namespaced tools entirely — the runtime
+  `_warn_missing_tools` is authoritative for plugin/file tools. This makes
+  it safe to call `validate_agent_definition` from the runtime path.
+- **`core/__init__.py`**: Wired `validate_agent_definition` into the Agent
+  constructor (new `_validate_definition` helper logs warnings, never
+  raises). Replaced the old `simple_name/namespace` proxy check in
+  `_filter_tools_by_definition` with three explicit Option C branches:
+  `tools_unspecified=True` → keep all (emit WARN
+  `agent_tools_default_granted` at visible level); `tools=()` with
+  `tools_unspecified=False` → clear registry; non-empty → filter (with
+  case-insensitive `yoker:` prefix handling, unchanged).
+- **`api.py`** (deviation, not in plan): `_build_config_and_definition`
+  now passes `tools_unspecified=tools is None` when constructing the
+  in-memory `AgentDefinition`, so `yoker.process(..., tools=[])` and
+  `yoker.agent(tools=[])` continue to disable all tools (no regression
+  for `test_process_with_empty_tools_disables_all` /
+  `test_builder_tools_empty_disables_all`). Without this, api.py's
+  `tuple([])` would lose the "explicit empty" signal.
+- **`CHANGELOG.md`**: Added an Unreleased entry with the upgrade note
+  (missing-`tools:` plugins gain all tools on upgrade; add explicit
+  `tools: []` to keep no-tools agents).
+- **Tests**: Updated `tests/agents/test_loader.py` (8-case matrix for
+  YAML forms), `tests/agents/test_validator.py` (empty/missing tools
+  accepted, unknown bare tools warn, namespaced tools skipped), and
+  `tests/test_agent.py::TestAgentToolMatching::test_empty_tools_list`
+  (now uses `None` and `[]` per Option C). New
+  `tests/core/test_agent_tools.py` covers all 12 acceptance criteria
+  including the `backwards.md` regression guard.
+
+**Verification**: `make check` green — 1889 tests pass (+32 new), ruff
+format/lint clean, mypy typecheck clean (123 source files).
+
 ### Clevis 0.7.0 Upgrade (2026-07-15)
 
 Upgraded the Clevis dependency from 0.3.3 to 0.7.0, replacing all Clevis

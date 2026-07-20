@@ -219,8 +219,8 @@ Body.
       load_agent_definition(agent_file)
     assert "description" in str(exc_info.value)
 
-  def test_load_missing_tools(self, tmp_path: Path) -> None:
-    """Test missing tools field raises ConfigurationError."""
+  def test_load_missing_tools_loads_all_tools_flag(self, tmp_path: Path) -> None:
+    """Missing `tools:` line loads with tools_unspecified=True (all tools)."""
     agent_file = tmp_path / "test.md"
     agent_file.write_text("""---
 name: test
@@ -229,12 +229,55 @@ description: Test
 
 Body.
 """)
-    with pytest.raises(ConfigurationError) as exc_info:
-      load_agent_definition(agent_file)
-    assert "tools" in str(exc_info.value)
+    definition = load_agent_definition(agent_file)
+    assert definition.tools == ()
+    assert definition.tools_unspecified is True
+
+  @pytest.mark.parametrize(
+    "yaml_value",
+    [
+      "",  # tools: (bare, parses as null)
+      "null",
+      "~",
+      "[]",
+    ],
+  )
+  def test_load_present_null_tools_loads_no_tools_flag(
+    self, tmp_path: Path, yaml_value: str
+  ) -> None:
+    """Present-but-empty tools loads with tools_unspecified=False (no tools)."""
+    agent_file = tmp_path / "test.md"
+    agent_file.write_text(f"""---
+name: test
+description: Test
+tools: {yaml_value}
+---
+
+Body.
+""")
+    definition = load_agent_definition(agent_file)
+    assert definition.tools == ()
+    assert definition.tools_unspecified is False
+
+  def test_load_explicit_tools_list_filters(self, tmp_path: Path) -> None:
+    """Non-empty tools list loads with tools_unspecified=False and the listed tools."""
+    agent_file = tmp_path / "test.md"
+    agent_file.write_text("""---
+name: test
+description: Test
+tools:
+  - read
+  - list
+---
+
+Body.
+""")
+    definition = load_agent_definition(agent_file)
+    assert definition.tools == ("file:read", "file:list")
+    assert definition.tools_unspecified is False
 
   def test_load_empty_tools_string(self, tmp_path: Path) -> None:
-    """Test empty tools string results in empty tools tuple."""
+    """Empty tools string results in empty tools tuple with tools_unspecified=False."""
     agent_file = tmp_path / "test.md"
     agent_file.write_text("""---
 name: test
@@ -247,6 +290,7 @@ Body.
     # Empty tools string is valid - agents don't need tools
     definition = load_agent_definition(agent_file)
     assert definition.tools == ()
+    assert definition.tools_unspecified is False
 
   def test_load_invalid_tools_type(self, tmp_path: Path) -> None:
     """Test invalid tools type raises ConfigurationError."""

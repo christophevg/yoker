@@ -463,21 +463,27 @@ class TestAgentToolMatching:
     assert core.tools.get("yoker:write") is not None
 
   def test_empty_tools_list(self) -> None:
-    """Test agent definition with empty tools list."""
+    """Test agent definition with explicit empty tools (None or []) → no tools.
+
+    Per Option C, ``AgentDefinition(tools=None)`` and ``AgentDefinition(tools=[])``
+    both produce an agent with NO tools. ``AgentDefinition(tools=())`` alone is
+    ambiguous and defaults to "all tools" (tools_unspecified=True).
+    """
     from yoker.agents import AgentDefinition
 
-    agent_def = AgentDefinition(
-      simple_name="test",
-      description="Test agent",
-      tools=(),  # Empty tools list
-      system_prompt="Test prompt",
-    )
-    core = Agent(config=Config(), agent_definition=agent_def)
+    for empty_tools in (None, []):
+      agent_def = AgentDefinition(
+        simple_name="test",
+        description="Test agent",
+        tools=empty_tools,  # explicit empty → no tools
+        system_prompt="Test prompt",
+      )
+      core = Agent(config=Config(), agent_definition=agent_def)
 
-    # No tools should be registered
-    assert core.tools.get("yoker:read") is None
-    assert core.tools.get("yoker:list") is None
-    assert core.tools.get("yoker:write") is None
+      # No tools should be registered
+      assert core.tools.get("yoker:read") is None
+      assert core.tools.get("yoker:list") is None
+      assert core.tools.get("yoker:write") is None
 
 
 class TestAgentBuildToolRegistry:

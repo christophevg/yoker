@@ -106,29 +106,38 @@ def parse_agent_definition(
   elif not description:
     description = ""
 
-  # Extract tools
-  tools_raw = frontmatter.get("tools")
-  if strict:
-    if tools_raw is None:
-      raise ConfigurationError(
-        setting="tools",
-        message="Required field 'tools' is missing or empty",
-      )
+  # Extract tools. Distinguish "no `tools:` line" (all tools at runtime) from
+  # "tools: present-but-empty" (no tools) using a side-channel flag on the
+  # AgentDefinition. Missing key → tools=() + tools_unspecified=True. Bare
+  # null / `~` / `""` / `[]` → tools=() + tools_unspecified=False (with a
+  # warning, since these forms are easy to mistake for "no tools line").
+  if "tools" not in frontmatter:
+    tools: tuple[str, ...] = ()
+    tools_unspecified = True
   else:
+    tools_raw = frontmatter["tools"]
     if tools_raw is None:
-      tools_raw = []
-
-  if isinstance(tools_raw, str):
-    tools = tuple(t.strip() for t in tools_raw.split(",") if t.strip())
-  elif isinstance(tools_raw, list):
-    tools = tuple(str(t).strip() for t in tools_raw if t)
-  else:
-    if strict:
-      raise ConfigurationError(
+      tools = ()
+      tools_unspecified = False
+      logger.warning(
+        "agent_tools_explicit_null_treated_as_empty",
+        agent=name,
         setting="tools",
-        message=f"Field 'tools' must be a comma-separated string or list, got {type(tools_raw).__name__}",
       )
-    tools = ()
+    elif isinstance(tools_raw, str):
+      tools = tuple(t.strip() for t in tools_raw.split(",") if t.strip())
+      tools_unspecified = False
+    elif isinstance(tools_raw, list):
+      tools = tuple(str(t).strip() for t in tools_raw if t)
+      tools_unspecified = False
+    else:
+      if strict:
+        raise ConfigurationError(
+          setting="tools",
+          message=f"Field 'tools' must be a comma-separated string or list, got {type(tools_raw).__name__}",
+        )
+      tools = ()
+      tools_unspecified = False
 
   # Empty tools list is valid - agents don't need tools
   # (removed check that required at least one tool)
@@ -164,6 +173,7 @@ def parse_agent_definition(
     namespace=namespace,
     description=str(description),
     tools=tools,
+    tools_unspecified=tools_unspecified,
     color=color,
     model=model,
     system_prompt=body.strip(),

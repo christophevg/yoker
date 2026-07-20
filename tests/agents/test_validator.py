@@ -57,10 +57,16 @@ class TestValidateTools:
     assert warnings == []
 
   def test_validate_unknown_tool(self, tools_config: ToolsConfig) -> None:
-    """Test validation fails for unknown tool."""
-    with pytest.raises(ValidationError) as exc_info:
-      validate_tools(("UnknownTool",), tools_config, "agent.tools")
-    assert "unknown tool" in str(exc_info.value)
+    """Unknown bare tools produce a warning (resolved at runtime)."""
+    warnings = validate_tools(("UnknownTool",), tools_config, "agent.tools")
+    assert len(warnings) == 1
+    assert "not a known built-in tool" in warnings[0]
+    assert "UnknownTool" in warnings[0]
+
+  def test_validate_namespaced_tool_skipped(self, tools_config: ToolsConfig) -> None:
+    """Namespaced tools are plugin/file-specific and skip static validation."""
+    warnings = validate_tools(("yoker:read", "pkg:echo", "file:Read"), tools_config, "agent.tools")
+    assert warnings == []
 
   def test_validate_disabled_tool_warning(self, tools_config: ToolsConfig) -> None:
     """Test validation warns for disabled tools."""
@@ -126,26 +132,34 @@ class TestValidateAgentDefinition:
     assert "agent.description" in str(exc_info.value)
 
   def test_validate_empty_tools(self, tools_config: ToolsConfig) -> None:
-    """Test empty tools raises ValidationError."""
-    definition = AgentDefinition(
+    """Empty/missing tools are accepted (Option C: tools_unspecified flag decides)."""
+    # tools=() with tools_unspecified=True (default) — all tools at runtime.
+    definition_all = AgentDefinition(
       simple_name="test",
       description="Test",
       tools=(),
     )
-    with pytest.raises(ValidationError) as exc_info:
-      validate_agent_definition(definition, tools_config)
-    assert "agent.tools" in str(exc_info.value)
+    warnings = validate_agent_definition(definition_all, tools_config)
+    assert warnings == []
+
+    # tools=None → tools_unspecified=False (no tools at runtime).
+    definition_none = AgentDefinition(
+      simple_name="test",
+      description="Test",
+      tools=None,
+    )
+    warnings = validate_agent_definition(definition_none, tools_config)
+    assert warnings == []
 
   def test_validate_unknown_tool(self, tools_config: ToolsConfig) -> None:
-    """Test unknown tool raises ValidationError."""
+    """Unknown bare tools produce a warning, not an error (runtime is authoritative)."""
     definition = AgentDefinition(
       simple_name="test",
       description="Test",
       tools=("UnknownTool",),
     )
-    with pytest.raises(ValidationError) as exc_info:
-      validate_agent_definition(definition, tools_config)
-    assert "unknown tool" in str(exc_info.value)
+    warnings = validate_agent_definition(definition, tools_config)
+    assert any("not a known built-in tool" in w for w in warnings)
 
   def test_validate_duplicate_name(self, tools_config: ToolsConfig) -> None:
     """Test duplicate name raises ValidationError."""

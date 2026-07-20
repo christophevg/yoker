@@ -29,18 +29,23 @@ def validate_tools(
 ) -> list[str]:
   """Validate tools against enabled tools configuration.
 
+  Bare names (``"read"``) are checked against the built-in tool config.
+  Namespaced names (``"yoker:read"``, ``"pkg:echo"``, ``"file:Read"``) are
+  plugin/file-specific and skipped — the runtime ``_warn_missing_tools``
+  check is authoritative for those.
+
   Args:
     tools: Tools specified in agent definition.
     tools_config: Global tools configuration.
-    path: Configuration path for error messages.
+    path: Configuration path for warning messages.
 
   Returns:
-    List of validation warnings (tool not enabled but specified).
-
-  Raises:
-    ValidationError: If any specified tool is not recognized.
+    List of validation warnings. Unknown bare tools and disabled tools
+    both produce warnings (no raises) so wiring this onto the runtime path
+    never blocks agent construction — the runtime ``_warn_missing_tools``
+    check stays authoritative.
   """
-  # Map of tool names to their config attributes
+  # Map of bare built-in tool names to their config attributes.
   known_tools = {
     "list": tools_config.list,
     "read": tools_config.read,
@@ -55,10 +60,13 @@ def validate_tools(
   enabled_tools = {name for name, config in known_tools.items() if config.enabled}
 
   for tool in tools:
-    if tool.lower() not in known_tools:
-      raise ValidationError(path, tool, f"unknown tool '{tool}'")
-
-    if tool.lower() not in enabled_tools:
+    # Namespaced tools are plugin/file-specific; skip static validation.
+    if ":" in tool:
+      continue
+    normalized = tool.lower()
+    if normalized not in known_tools:
+      warnings.append(f"Tool '{tool}' is not a known built-in tool (path: {path})")
+    elif normalized not in enabled_tools:
       warnings.append(f"Tool '{tool}' is specified but not enabled in configuration")
 
   return warnings
@@ -88,10 +96,9 @@ def validate_agent_definition(
   validate_non_empty_string(definition.name, "agent.name")
   validate_non_empty_string(definition.description, "agent.description")
 
-  # Validate tools
-  if not definition.tools:
-    raise ValidationError("agent.tools", definition.tools, "must specify at least one tool")
-
+  # Validate tools. Empty/missing tools are valid (Option C): an agent with
+  # tools_unspecified=True gets all tools at runtime; tools_unspecified=False
+  # with empty tools gets no tools. Either way, no error here.
   warnings.extend(validate_tools(definition.tools, tools_config, "agent.tools"))
 
   # Check uniqueness

@@ -130,7 +130,9 @@ def _build_config_and_definition(
   if resolved_definition is None and agent_path is not None and load_path_inline:
     resolved_definition = load_agent_definition(agent_path)
   if resolved_definition is None and agent_path is None:
-    # tools=[] clears all tools; system_prompt alone needs a default prompt
+    # tools=[] clears all tools; system_prompt alone needs a default prompt.
+    # tools_unspecified=False when the caller passed a `tools` value (even []),
+    # so the runtime grants NO tools rather than ALL tools (Option C).
     if system_prompt is not None or tools is not None:
       resolved_definition = AgentDefinition(
         simple_name="custom" if tools is not None else None,
@@ -138,6 +140,7 @@ def _build_config_and_definition(
         if system_prompt is not None
         else "You are a helpful assistant.",
         tools=tuple(tools) if tools is not None else (),
+        tools_unspecified=tools is None,
       )
 
   thinking_mode = _THINKING_MAP.get(thinking)
