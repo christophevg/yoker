@@ -163,7 +163,7 @@ You are a research assistant.
     assert definition.name == "file:researcher"
     assert definition.description == "Research assistant"
     # Tools from file-based agents get namespace prefix
-    assert definition.tools == ("file:Read", "file:Search")
+    assert definition.tools == ["file:Read", "file:Search"]
     assert definition.color == "blue"
     assert "Researcher Agent" in definition.system_prompt
     assert str(agent_file) == definition.source_path
@@ -184,7 +184,7 @@ Body.
 """)
     definition = load_agent_definition(agent_file)
     # Tools from file-based agents get namespace prefix
-    assert definition.tools == ("file:List", "file:Read", "file:Search")
+    assert definition.tools == ["file:List", "file:Read", "file:Search"]
 
   def test_load_missing_file(self, tmp_path: Path) -> None:
     """Test loading non-existent file raises FileNotFoundError."""
@@ -254,7 +254,7 @@ tools: {yaml_value}
 Body.
 """)
     definition = load_agent_definition(agent_file)
-    assert definition.tools == ()
+    assert definition.tools == []
     assert definition.tools is not ALL_TOOLS
 
   def test_load_explicit_tools_list_filters(self, tmp_path: Path) -> None:
@@ -271,11 +271,11 @@ tools:
 Body.
 """)
     definition = load_agent_definition(agent_file)
-    assert definition.tools == ("file:read", "file:list")
+    assert definition.tools == ["file:read", "file:list"]
     assert definition.tools is not ALL_TOOLS
 
   def test_load_empty_tools_string(self, tmp_path: Path) -> None:
-    """Empty tools string results in empty tools tuple (no tools)."""
+    """Empty tools string results in empty tools list (no tools)."""
     agent_file = tmp_path / "test.md"
     agent_file.write_text("""---
 name: test
@@ -287,7 +287,7 @@ Body.
 """)
     # Empty tools string is valid - agents don't need tools
     definition = load_agent_definition(agent_file)
-    assert definition.tools == ()
+    assert definition.tools == []
     assert definition.tools is not ALL_TOOLS
 
   def test_load_invalid_tools_type(self, tmp_path: Path) -> None:
@@ -366,8 +366,8 @@ Research prompt.
     assert "agents:main" in definitions
     assert "agents:researcher" in definitions
     # Tools get namespace prefix from directory name
-    assert definitions["agents:main"].tools == ("agents:Read",)
-    assert definitions["agents:researcher"].tools == ("agents:Read", "agents:Search")
+    assert definitions["agents:main"].tools == ["agents:Read"]
+    assert definitions["agents:researcher"].tools == ["agents:Read", "agents:Search"]
 
   def test_load_empty_directory(self, tmp_path: Path) -> None:
     """Test loading from empty directory."""

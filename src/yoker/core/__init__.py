@@ -13,8 +13,8 @@ from dotenv import load_dotenv
 from structlog import get_logger
 
 from yoker.agents import (
+  ALL_TOOLS,
   AgentDefinition,
-  AllToolsSentinel,
   load_agent_definition,
   validate_agent_definition,
 )
@@ -376,13 +376,11 @@ class Agent:
 
     Built-in tools may omit the ``yoker:`` prefix and are matched
     case-insensitively. Plugin tools must be referenced with their full
-    namespaced name. Skipped entirely when ``tools is ALL_TOOLS`` (all tools
-    granted by default — nothing to warn about).
+    namespaced name. When ``tools is ALL_TOOLS`` (the ``[]`` sentinel) the
+    loop body doesn't execute — there is nothing to warn about.
     """
-    # isinstance narrows the union for mypy; AllToolsSentinel is a singleton so
-    # this is equivalent to `self.definition.tools is ALL_TOOLS`.
-    if isinstance(self.definition.tools, AllToolsSentinel):
-      return  # all tools granted by default — nothing to check
+    if not self.definition.tools:
+      return  # ALL_TOOLS ([]) or explicit [] — nothing to check
     available = {name.lower() for name in self.tools.names}
     missing: list[str] = []
 
@@ -422,13 +420,15 @@ class Agent:
   def _filter_tools_by_definition(self) -> None:
     """Filter the tool registry according to the agent definition.
 
-    Three branches (Option C):
+    Three branches:
 
     - ``tools is ALL_TOOLS`` (no ``tools`` line / no ``tools`` kwarg / default
       ``AgentDefinition()``): keep every config-enabled tool. Emit a visible
       WARN ``agent_tools_default_granted`` so operators notice agents that
-      silently gain all tools by omission.
-    - ``tools == ()`` (``tools:``/``null``/``~``/``""``/``[]`` /
+      silently gain all tools by omission. The sentinel is resolved HERE
+      (the single ``is ALL_TOOLS`` spot) to the real list of tool names so
+      downstream code (UI, validator, etc.) sees a plain list.
+    - ``tools == []`` (``tools:``/``null``/``~``/``""``/``[]`` /
       ``AgentDefinition(tools=None|[])``): clear the registry — the agent has
       no tools.
     - Non-empty ``tools``: keep only the matching tools (case-insensitive,
@@ -436,19 +436,21 @@ class Agent:
     """
     tools = self.definition.tools
     # Branch 1: tools is ALL_TOOLS → grant all config-enabled tools.
-    # isinstance narrows the union for mypy; AllToolsSentinel is a singleton so
-    # this is equivalent to `tools is ALL_TOOLS`.
-    if isinstance(tools, AllToolsSentinel):
+    # This is the ONE spot that checks `is ALL_TOOLS` and resolves the
+    # sentinel to a plain list of all tool names on the definition.
+    if tools is ALL_TOOLS:
+      all_names = list(self.tools.names)
+      self.definition.tools = all_names
       logger.warning(
         "agent_tools_default_granted",
         agent=self.definition.name,
         tool_count=len(self.tools),
-        tools=list(self.tools.names),
+        tools=all_names,
       )
       return
 
     # Branch 2: tools explicitly empty → no tools.
-    if len(tools) == 0:
+    if not tools:
       logger.debug(
         "agent_tools_empty",
         agent=self.definition.name,

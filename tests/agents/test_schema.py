@@ -1,7 +1,5 @@
 """Tests for agent definition schema."""
 
-import pytest
-
 from yoker.agents.schema import AgentDefinition
 
 
@@ -13,11 +11,11 @@ class TestAgentDefinitionSchema:
     definition = AgentDefinition(
       simple_name="test-agent",
       description="Test agent for unit tests",
-      tools=("Read", "Search"),
+      tools=["Read", "Search"],
     )
     assert definition.simple_name == "test-agent"
     assert definition.description == "Test agent for unit tests"
-    assert definition.tools == ("Read", "Search")
+    assert definition.tools == ["Read", "Search"]
     assert definition.color is None
     # system_prompt has a default value
     assert definition.system_prompt == "You are a helpful assistant."
@@ -28,14 +26,14 @@ class TestAgentDefinitionSchema:
     definition = AgentDefinition(
       simple_name="researcher",
       description="Research assistant",
-      tools=("List", "Read", "Search"),
+      tools=["List", "Read", "Search"],
       color="blue",
       system_prompt="You are a research assistant.",
       source_path="/agents/researcher.md",
     )
     assert definition.simple_name == "researcher"
     assert definition.description == "Research assistant"
-    assert definition.tools == ("List", "Read", "Search")
+    assert definition.tools == ["List", "Read", "Search"]
     assert definition.color == "blue"
     assert definition.system_prompt == "You are a research assistant."
     assert definition.source_path == "/agents/researcher.md"
@@ -45,40 +43,38 @@ class TestAgentDefinitionSchema:
     definition = AgentDefinition(
       simple_name="test",
       description="Test",
-      tools=("Read",),
+      tools=["Read"],
     )
     # AgentDefinition is mutable (not frozen)
     definition.simple_name = "changed"  # type: ignore
     assert definition.simple_name == "changed"
 
-  def test_agent_definition_tuple_immutable(self) -> None:
-    """Test that tools tuple is immutable."""
+  def test_agent_definition_tuple_normalized_to_list(self) -> None:
+    """Test that a tools tuple is normalized to a list."""
     definition = AgentDefinition(
       simple_name="test",
       description="Test",
       tools=("Read", "Search"),
     )
-    # Tuples are immutable, so this should work as expected
-    assert definition.tools == ("Read", "Search")
-    # Cannot modify tuple
-    with pytest.raises(TypeError):
-      definition.tools[0] = "Write"  # type: ignore
+    # Tuples are normalized to lists in __post_init__.
+    assert definition.tools == ["Read", "Search"]
+    assert isinstance(definition.tools, list)
 
   def test_agent_definition_empty_tools(self) -> None:
-    """Test AgentDefinition can have empty tools tuple (validation handles this)."""
+    """Test AgentDefinition can have empty tools list (validation handles this)."""
     definition = AgentDefinition(
       simple_name="test",
       description="Test",
-      tools=(),
+      tools=[],
     )
-    assert definition.tools == ()
+    assert definition.tools == []
 
   def test_agent_definition_single_tool(self) -> None:
     """Test AgentDefinition with single tool."""
     definition = AgentDefinition(
       simple_name="test",
       description="Test",
-      tools=("Read",),
+      tools=["Read"],
     )
     assert len(definition.tools) == 1
     assert definition.tools[0] == "Read"

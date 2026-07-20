@@ -221,7 +221,7 @@ class TestAgentRegistryNamespacing:
       description="Test agent",
       model="llama3.2",
       system_prompt="You are a test agent.",
-      tools=("read", "write"),
+      tools=["read", "write"],
     )
     registry = AgentRegistry()
 
@@ -230,5 +230,5 @@ class TestAgentRegistryNamespacing:
     assert original.name == "pkg:test-agent"
     assert original.description == "Test agent"
     assert original.model == "llama3.2"
-    assert original.tools == ("read", "write")
+    assert original.tools == ["read", "write"]
     assert registry.get("pkg:test-agent") is original

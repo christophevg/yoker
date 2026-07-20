@@ -132,7 +132,7 @@ class TestValidateAgentDefinition:
     assert "agent.description" in str(exc_info.value)
 
   def test_validate_empty_tools(self, tools_config: ToolsConfig) -> None:
-    """Empty/missing tools are accepted (Option C: ALL_TOOLS sentinel decides)."""
+    """Empty/missing tools are accepted (ALL_TOOLS sentinel decides)."""
     # tools=ALL_TOOLS (default) — all tools at runtime.
     definition_all = AgentDefinition(
       simple_name="test",
@@ -142,7 +142,7 @@ class TestValidateAgentDefinition:
     warnings = validate_agent_definition(definition_all, tools_config)
     assert warnings == []
 
-    # tools=None → () (no tools at runtime).
+    # tools=None → [] (no tools at runtime).
     definition_none = AgentDefinition(
       simple_name="test",
       description="Test",

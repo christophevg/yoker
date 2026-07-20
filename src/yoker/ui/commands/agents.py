@@ -6,7 +6,6 @@ agent's state and config, then outputs via the UIHandler.
 
 from typing import TYPE_CHECKING
 
-from yoker.agents.schema import AllToolsSentinel
 from yoker.ui.commands.base import Command
 
 if TYPE_CHECKING:
@@ -40,9 +39,7 @@ async def handle(args: str, agent: "Agent", ui: "UIHandler") -> str:
     lines.append(f"      Description: {agent.definition.description}")
     if agent.definition.model:
       lines.append(f"      Model: {agent.definition.model}")
-    if isinstance(agent.definition.tools, AllToolsSentinel):
-      lines.append("      Tools: ALL (no `tools:` filter)")
-    elif agent.definition.tools:
+    if agent.definition.tools:
       lines.append(f"      Tools: {', '.join(sorted(agent.definition.tools))}")
 
   lines.append("")
@@ -67,9 +64,7 @@ async def handle(args: str, agent: "Agent", ui: "UIHandler") -> str:
       lines.append("")
       if agent_definition.model:
         lines.append(f"      Model: {agent_definition.model}")
-      if isinstance(agent_definition.tools, AllToolsSentinel):
-        lines.append("      Tools: ALL (no `tools:` filter)")
-      elif agent_definition.tools:
+      if agent_definition.tools:
         lines.append(f"      Tools: {', '.join(sorted(agent_definition.tools))}")
       lines.append("")
 
