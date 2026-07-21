@@ -607,7 +607,9 @@ allowed_extensions = [".txt", ".md", ".py"]
 ### `make` tool configuration
 
 The `make` tool executes Makefile targets with target validation, a
-per-target env var allowlist, and process-group timeout enforcement.
+per-target env var allowlist, and process-group timeout enforcement. The
+`make` tool requires POSIX process-group support and is not available on
+Windows.
 
 ```toml
 [tools.make]
