@@ -174,3 +174,107 @@ The `make` tool implementation satisfies every Blocking and High-severity contro
 6. **Optional**: add an end-to-end make-tool test for `LD_PRELOAD` or `YOKER_TRUST_SOURCE` via `env_vars` to complement the unit-level guardrail tests.
 
 None of these block merge. They are additive hardening and documentation accuracy items suitable for a follow-up PR or backlog ticket.
+
+---
+
+## Section 9 — Round 2 Scoped Re-run: Windows Env Guardrail Extension
+
+**Reviewer:** security-engineer
+**Date:** 2026-07-21
+**Scope:** `src/yoker/tools/guardrails/env.py` — `_WIN_DENIED_EXTRA` frozenset (17 Windows-specific env vars) + case-insensitive matching on Windows in `is_denied_env_var`. Pre-computed uppercased frozensets at module load. POSIX path unchanged.
+
+### 9.1 Case-insensitivity correctness on Windows
+
+`is_denied_env_var` (`env.py:109-131`) flow for `sys.platform == "win32"`:
+
+1. Exact match against `_DENIED_EXACT` (case-sensitive) — misses case variants.
+2. `_DENIED_PREFIX_RE.match` (case-sensitive regex) — misses case variants.
+3. Windows branch: `upper = name.upper()`; check `_DENIED_EXACT_UPPER`, `_WIN_DENIED_EXTRA_UPPER`, then `upper.startswith(_WIN_PREFIXES_UPPER)`.
+
+| Input | Path | Result |
+|-------|------|--------|
+| `"Path"` | not in exact; regex miss; win32 branch: `"PATH" in _DENIED_EXACT_UPPER` | **True** ✅ |
+| `"MakeFlags"` | win32 branch: `"MAKEFLAGS" in _DENIED_EXACT_UPPER` | **True** ✅ |
+| `"Yoker_Trust_Source"` | regex miss (case-sensitive `YOKER_`); win32 branch: `"YOKER_TRUST_SOURCE".startswith(("YOKER_", ...))` | **True** ✅ |
+| `"comspec"` | win32 branch: `"COMSPEC" in _WIN_DENIED_EXTRA_UPPER` | **True** ✅ |
+| `"SystemRoot"` | exact miss (case-sensitive); win32 branch: `"SYSTEMROOT" in _WIN_DENIED_EXTRA_UPPER` | **True** ✅ |
+
+Tests: `tests/test_tools/test_env_guardrail.py:191-216` (`TestIsDeniedEnvVarWindowsCaseSensitivity`, Windows-only). All five required cases covered.
+
+### 9.2 POSIX case-sensitivity preserved
+
+The Windows branch is gated by `if sys.platform == "win32":` (`env.py:123`). On POSIX the function returns after the two case-sensitive checks (exact + regex) and never uppercases.
+
+| Input | POSIX result | Evidence |
+|-------|--------------|----------|
+| `"Path"` | **False** (case-sensitive; `Path` ≠ `PATH`) | `env.py:119` `name in _DENIED_EXACT` — `"Path"` not in set; regex miss; no upper branch |
+| `"PATH"` | **True** | `env.py:119` — `"PATH" in _DENIED_EXACT` |
+
+Tests: `tests/test_tools/test_env_guardrail.py:219-231` (`TestIsDeniedEnvVarPosixCaseSensitivity`, POSIX-only). Confirms `Path` is NOT denied on POSIX (regression guard against the Windows branch leaking).
+
+### 9.3 Windows denylist completeness
+
+The 17 entries in `_WIN_DENIED_EXTRA` cover every Windows-specific identity/path/config vector enumerated in the review criteria:
+
+| Category | Entries | Status |
+|----------|---------|--------|
+| Home/identity | `USERPROFILE`, `USERNAME`, `USERDOMAIN`, `HOMEDRIVE`, `HOMEPATH` | ✅ |
+| System paths | `SystemRoot`, `WINDIR`, `SYSTEMDRIVE` | ✅ |
+| Shell | `COMSPEC`, `PATHEXT` | ✅ |
+| Data/program paths | `APPDATA`, `LOCALAPPDATA`, `PROGRAMDATA`, `PROGRAMFILES`, `PROGRAMFILES(X86)` | ✅ |
+| Temp | `TEMP`, `TMP` | ✅ |
+
+**Candidate additions assessed:**
+
+| Candidate | Risk | In scope for 1.0.0 minimal? |
+|-----------|------|------------------------------|
+| `PSModulePath` | PowerShell module search path — code injection if a recipe invokes `powershell` | **Defer.** The make tool's Windows platform gate (`make.py:101-105`) returns before any subprocess is spawned, so env_vars never reach a Windows subprocess via `make`. The guardrail is defense-in-depth for the validation path only. Reasonable additive for a follow-up alongside any future Windows-capable subprocess tool. |
+| `DOTNET_ROOT` | .NET runtime redirect | **Defer.** Cross-platform (not Windows-specific); low relevance to make recipes. |
+| `JAVA_HOME` / `CLASSPATH` | Java runtime/class redirect | **Defer.** Cross-platform; not Windows-specific. If added, belongs in `_DENIED_EXACT` (POSIX-relevant too), not `_WIN_DENIED_EXTRA`. |
+| `LIB` / `INCLUDE` | MSVC lib/include path injection — could redirect compilation | **Defer.** Narrow (MSVC-only); same platform-gate reasoning as `PSModulePath`. |
+
+**Assessment:** The 17-entry set is complete for the 1.0.0 minimal guardrail. The platform gate means no Windows subprocess is spawned, so the Windows denylist is pure defense-in-depth. `PSModulePath` is the most defensible additive (parallel to `PYTHONPATH`/`NODE_PATH`), but adding it is non-blocking and fits a follow-up with the Section 8 recommendations. No entries are **missing** in the blocking sense.
+
+### 9.4 No bypass paths on Windows
+
+**Unicode case-folding:** Python's `str.upper()` uses Unicode default case folding (not locale-aware), so `"i"` → `"I"` and `"İ"` (U+0130, Turkish dotted capital I) → `"İ"` (stays as-is). Windows env var names are ASCII by convention (Win32 environment blocks use UTF-16 but names are ASCII); Python's `os.environ` on Windows is case-insensitive and normalizes to uppercase. The Turkish-I edge case is not a real concern for env var names. **No bypass.**
+
+**Prefix-regex gap:** `_DENIED_PREFIX_RE` (`env.py:73-75`) is case-sensitive, so a case variant like `yoker_foo` does NOT match the regex. The Windows branch closes this via `upper.startswith(_WIN_PREFIXES_UPPER)` (`env.py:129`), which uppercases both the name and the prefixes. **No gap.**
+
+**Multiple-case dict keys:** If an agent supplies both `Path` and `PATH` in `env_vars`, `validate_env_vars` iterates the dict and calls `is_denied_env_var` on each name — both are denied. (On Windows, Python's `os.environ` would merge them anyway, but validation catches both before that point.) **No bypass.**
+
+### 9.5 `validate_env_vars` integration
+
+`env.py:154-170` iterates `env_vars.items()`; for each entry calls `is_denied_env_var(name)` at line 157. The Windows case-insensitive path is entirely encapsulated in `is_denied_env_var`, so `validate_env_vars` needs no platform branching — it flows through correctly. The per-target allowlist check (`name not in allowed_names`, line 155) runs BEFORE the denylist check, so a denied name that is also allowlisted is still rejected (denylist is a hard invariant that the operator cannot waive). **Confirmed.**
+
+### 9.6 `make.py` platform gate
+
+`make.py:101-105`:
+```python
+if sys.platform == "win32":
+    return ToolResult(
+      success=False,
+      error="make tool requires POSIX process-group support; not available on Windows",
+    )
+```
+
+This runs BEFORE target validation, cwd resolution, env_vars validation, and `Popen` creation. On Windows, no env vars reach a subprocess via the make tool. The env guardrail's Windows branch is therefore **defense-in-depth** for the validation path (exercised if a future tool spawns a Windows subprocess without a platform gate) and for consistency with the Windows env-var case-insensitivity model. The gate is the correct primary control: R4 (`os.killpg`/`SIGKILL`/`start_new_session`) is POSIX-only, and a Windows process-tree kill via Job Objects is explicitly out of scope for 1.0. **Confirmed correct.**
+
+Test: `tests/test_tools/test_make_windows.py:30-38` (`TestWindowsPlatformGate.test_make_rejected_on_windows`, Windows-only) asserts `not result.success` and `"not available on Windows" in result.error`.
+
+### 9.7 Round 2 Verdict
+
+### **APPROVED**
+
+| Verification point | Result |
+|--------------------|--------|
+| Case-insensitivity correctness on Windows (`Path`, `MakeFlags`, `Yoker_Trust_Source`) | ✅ Confirmed (code path + Windows-only tests) |
+| POSIX case-sensitivity preserved (`Path` not denied, `PATH` denied) | ✅ Confirmed (POSIX-only regression tests) |
+| Windows denylist completeness (17 entries) | ✅ Complete for 1.0.0 minimal guardrail; `PSModulePath` is a non-blocking additive for a follow-up |
+| No bypass paths (Unicode edge cases, prefix-regex case gap, multi-case dict keys) | ✅ No bypass; Windows env var names are ASCII; win32 upper-branch closes the case-sensitive regex gap |
+| `validate_env_vars` integration | ✅ Calls `is_denied_env_var` per entry; Windows path flows through correctly; denylist enforced after allowlist (hard invariant) |
+| `make.py` platform gate | ✅ Returns before subprocess creation on Windows; env guardrail is defense-in-depth; tested |
+
+**Non-blocking additive recommendation (backlog):** Add `PSModulePath` to `_WIN_DENIED_EXTRA` in a follow-up alongside the Section 8 recommendations — closes the PowerShell module-injection vector parallel to `PYTHONPATH`/`NODE_PATH`. ~1 line. Only relevant if a future Windows-capable subprocess tool is added, since `make` itself is platform-gated.
+
+No blocking issues. The Windows env guardrail extension is correct, complete for 1.0.0, and properly tested on both platforms.

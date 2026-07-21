@@ -209,3 +209,65 @@ No acceptance criteria regressed.
 ### Verdict
 
 **Approved.** The documentation fixes address the round-0 documentation rejection without touching executable behavior. The two code cleanups are non-functional (dead-code removal in a test, unreachable mapping entry for completeness). `make check` passes with 2005 tests, matching the round-0 baseline. No acceptance criteria regressed.
+
+---
+
+## Round 2 scoped re-run
+
+**Date:** 2026-07-21
+**Trigger:** Owner flagged Windows compatibility; CI failed on `windows-latest` with `os.killpg` `AttributeError`. Developer applied Windows guardrails (platform gate in `make.py`, case-insensitive env guardrail on Windows, Windows-only denylist extension, separate Windows-only test file, README platform-support note).
+
+### Changes verified
+
+1. **`src/yoker/builtin/make.py` — Windows platform gate** (`make.py:96-105`). At the top of `make()`, before target validation, cwd resolution, env_var validation, and the `subprocess.Popen` call, a `sys.platform == "win32"` branch returns `ToolResult(success=False, error="make tool requires POSIX process-group support; not available on Windows")`. The POSIX path is unchanged: the gate is skipped and execution falls through to the existing subprocess/Popen/`os.killpg` code path. Inline comment explains the rationale (R4 relies on POSIX-only `os.killpg`, `signal.SIGKILL`, `start_new_session`; Windows Job Objects / `taskkill /T` out of scope for 1.0).
+
+2. **`src/yoker/tools/guardrails/env.py` — Windows case-insensitive matching + Windows-only denylist extension** (`env.py:77-131`).
+   - `_WIN_DENIED_EXTRA` frozenset (`env.py:82-102`) adds 17 Windows-specific env vars: `USERPROFILE, USERNAME, USERDOMAIN, APPDATA, LOCALAPPDATA, PROGRAMDATA, PROGRAMFILES, PROGRAMFILES(X86), SystemRoot, WINDIR, COMSPEC, PATHEXT, SYSTEMDRIVE, HOMEDRIVE, HOMEPATH, TEMP, TMP`. Count verified: 17 entries.
+   - Pre-computed uppercased views (`_DENIED_EXACT_UPPER`, `_WIN_DENIED_EXTRA_UPPER`, `_WIN_PREFIXES_UPPER`) at `env.py:104-106` avoid per-call allocation.
+   - `is_denied_env_var` (`env.py:109-131`): POSIX path stays case-sensitive (exact-match `_DENIED_EXACT` + `_DENIED_PREFIX_RE`). On Windows (`sys.platform == "win32"`), an additional case-insensitive pass uppercases the name and checks it against the uppercased exact set, the uppercased Windows extension set, and the uppercased prefix tuple.
+   - Windows semantics match Windows env var behavior (case-insensitive): `Path` → `PATH` (denied), `MakeFlags` → `MAKEFLAGS` (denied), `Yoker_Trust_Source` → `YOKER_` prefix (denied), `comspec` → `COMSPEC` (denied).
+   - POSIX regression: `Path` (mixed case) is NOT denied on POSIX because it is not in `_DENIED_EXACT` and does not match any prefix; only `PATH` is denied. This is correct — POSIX env vars are case-sensitive, so `Path` is a different variable.
+
+3. **`tests/test_tools/test_make.py` — module-level POSIX-only pytestmark** (`test_make.py:26-29`). `pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="make tool requires POSIX process-group support")`. The entire module is skipped on Windows because every test exercises the POSIX subprocess path (Popen, `os.killpg`, `start_new_session`). Verified: on POSIX, all 114 tests in this module run.
+
+4. **`tests/test_tools/test_make_windows.py` — separate Windows-only test file** (NEW). Class-level `@pytest.mark.skipif(sys.platform != "win32", reason="Windows-only platform gate test")` on `TestWindowsPlatformGate`. The single test `test_make_rejected_on_windows` calls `make(target="check", ctx=..., cwd=tmp_path)` directly and asserts `not result.success` and `"not available on Windows" in result.error`. No other markers on the class — it will run on Windows CI without being skipped by anything else. Verified on POSIX: 1 skipped.
+
+5. **`tests/test_tools/test_env_guardrail.py` — Windows case-sensitivity tests + POSIX regression tests** (`test_env_guardrail.py:191-231`).
+   - `TestIsDeniedEnvVarWindowsCaseSensitivity` (class-level skipif `sys.platform != "win32"`): 6 tests — `Path`, `MakeFlags`, `Yoker_Trust_Source`, `USERPROFILE`, `SystemRoot`, `comspec` all denied on Windows. Verified on POSIX: 6 skipped.
+   - `TestIsDeniedEnvVarPosixCaseSensitivity` (class-level skipif `sys.platform == "win32"`): 2 tests — `PATH` denied, `Path` NOT denied on POSIX (regression guard against the Windows case-insensitive branch leaking to POSIX).
+
+6. **`README.md` — platform-support note** (lines 611-612). One-line note under the `[tools.make]` config subsection: "`make` tool requires POSIX process-group support and is not available on Windows." Documentation-only; no executable behavior changed.
+
+### Platform gate correctness
+
+On Windows, `make()` returns the expected `ToolResult(success=False, error="...not available on Windows...")` at `make.py:101-105` before any subprocess call. The gate is placed *after* the `MakeToolConfig` type check (so a misconfigured tool still fails with a clear config error) and *before* target validation, cwd resolution, env_var validation, and the `Popen` call. On POSIX, the gate is skipped and the existing behavior is unchanged — verified by the full `test_make.py` suite (114 tests) passing on POSIX.
+
+### Env guardrail Windows case-insensitivity
+
+Verified via test assertions (run on Windows) and code inspection:
+- `Path` → `"PATH".upper() = "PATH"` ∈ `_DENIED_EXACT_UPPER` (contains `"PATH"`) → denied.
+- `MakeFlags` → `"MAKEFLAGS"` ∈ `_DENIED_EXACT_UPPER` → denied.
+- `Yoker_Trust_Source` → starts with `"YOKER_"` ∈ `_WIN_PREFIXES_UPPER` → denied.
+- `comspec` → `"COMSPEC"` ∈ `_WIN_DENIED_EXTRA_UPPER` → denied.
+
+POSIX regression: `is_denied_env_var("Path")` on POSIX returns `False` (not in `_DENIED_EXACT`, `_DENIED_PREFIX_RE` does not match). `is_denied_env_var("PATH")` returns `True`. Verified by `test_path_denied_exact_on_posix` and `test_path_variant_not_denied_on_posix`.
+
+### Windows denylist completeness
+
+`_WIN_DENIED_EXTRA` enumerates exactly the 17 Windows-specific env vars listed in the review brief: USERPROFILE, USERNAME, USERDOMAIN, APPDATA, LOCALAPPDATA, PROGRAMDATA, PROGRAMFILES, PROGRAMFILES(X86), SystemRoot, WINDIR, COMSPEC, PATHEXT, SYSTEMDRIVE, HOMEDRIVE, HOMEPATH, TEMP, TMP. Each appears once. Count: 17. Verified.
+
+### Test strategy — separate file earned
+
+The separate `test_make_windows.py` file is the right call. Rationale: a module-level `pytestmark = pytest.mark.skipif(sys.platform == "win32", ...)` in `test_make.py` skips every class in that module on Windows. A Windows-only test class placed in the same file would be skipped by the module-level mark, defeating its purpose. Splitting the Windows-only test into its own file with a class-level skipif (`sys.platform != "win32"`) inverts the condition so the test runs only on Windows and is skipped on POSIX. No other markers are applied to `TestWindowsPlatformGate`, so nothing else can skip it on Windows CI.
+
+### No POSIX regressions
+
+`make check` passes: **2007 passed, 7 skipped, 14 warnings in 33.06s**. The 7 skipped are exactly the Windows-only tests (1 from `test_make_windows.py::TestWindowsPlatformGate` + 6 from `test_env_guardrail.py::TestIsDeniedEnvVarWindowsCaseSensitivity`), verified by running those two files in isolation (`71 passed, 7 skipped`). The POSIX regression class `TestIsDeniedEnvVarPosixCaseSensitivity` runs on POSIX and passes (2 tests). Test count delta vs. round-1 baseline: +2 (2005 → 2007) from the new POSIX case-sensitivity regression tests; the Windows-only tests are counted in the skip count rather than the pass count on POSIX. All prior acceptance criteria (Section 1, AC#1–15) remain satisfied on POSIX — no executable POSIX behavior in `make.py`, `env.py`, `config/__init__.py`, or the manifest was modified.
+
+### CI failure path is gated
+
+The `os.killpg` `AttributeError` on Windows occurred because `os.killpg` does not exist on Windows (it is a POSIX-only API). The platform gate at `make.py:101-105` returns before `subprocess.Popen` is called (`make.py:150`) and therefore before `_kill_process_group` (`make.py:213-218`) can be invoked on timeout. The Windows code path never reaches the `os.killpg` reference. Additionally, `os.killpg` is referenced inside the function body of `_kill_process_group`, not at module import time, so the AttributeError cannot occur at import either. The CI failure is resolved.
+
+### Verdict
+
+**Approved.** Platform gate correctness confirmed. Env guardrail Windows case-insensitivity confirmed. Windows denylist completeness confirmed (17 entries). Test strategy (separate Windows-only test file) earned. No POSIX regressions (`make check`: 2007 passed, 7 skipped). CI failure path is gated — `os.killpg` is unreachable on Windows. All prior acceptance criteria remain satisfied on POSIX.

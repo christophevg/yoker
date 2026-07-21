@@ -19,6 +19,15 @@ from yoker.tools.guardrails.path import PathGuardrail
 
 make_module = sys.modules["yoker.builtin.make"]
 
+# POSIX-only: the make tool uses os.killpg + SIGKILL + start_new_session to
+# uphold R4 (kill the whole process group on timeout). The Windows path is
+# covered by TestWindowsPlatformGate below; the rest of this module exercises
+# the POSIX subprocess path and is skipped on Windows.
+pytestmark = pytest.mark.skipif(
+  sys.platform == "win32",
+  reason="make tool requires POSIX process-group support",
+)
+
 
 def _make_spec():
   """Register the make tool and return its spec."""

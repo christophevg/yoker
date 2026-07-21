@@ -4,6 +4,8 @@ Covers: hard-denylist enforcement (each denied pattern), per-target allowlist
 enforcement, and value validation (oversize, NUL, newline, non-UTF-8).
 """
 
+import sys
+
 import pytest
 
 from yoker.tools.guardrails.env import is_denied_env_var, validate_env_vars
@@ -184,3 +186,46 @@ class TestValidateEnvVars:
     result = validate_env_vars(env_vars, ("FIRST",), 4096)
     assert result is not None
     assert result[0] == "SECOND"
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows env vars are case-insensitive")
+class TestIsDeniedEnvVarWindowsCaseSensitivity:
+  """On Windows the denylist must match case-insensitively.
+
+  Windows env var names are case-insensitive (``PATH`` == ``Path`` == ``path``),
+  so an agent setting ``Path``, ``MakeFlags``, or ``Yoker_Trust_Source`` must
+  not bypass the exact-match denylist.
+  """
+
+  def test_path_denied_case_insensitive_on_windows(self) -> None:
+    assert is_denied_env_var("Path") is True
+
+  def test_makeflags_denied_case_insensitive_on_windows(self) -> None:
+    assert is_denied_env_var("MakeFlags") is True
+
+  def test_yoker_prefix_denied_case_insensitive_on_windows(self) -> None:
+    assert is_denied_env_var("Yoker_Trust_Source") is True
+
+  def test_userprofile_denied_on_windows(self) -> None:
+    assert is_denied_env_var("USERPROFILE") is True
+
+  def test_systemroot_denied_on_windows(self) -> None:
+    assert is_denied_env_var("SystemRoot") is True
+
+  def test_comspec_denied_case_insensitive_on_windows(self) -> None:
+    assert is_denied_env_var("comspec") is True
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX env vars are case-sensitive")
+class TestIsDeniedEnvVarPosixCaseSensitivity:
+  """POSIX env vars are case-sensitive — the denylist stays exact-match.
+
+  Regression: the Windows case-insensitive branch must not leak to POSIX.
+  ``Path`` is a different variable from ``PATH`` on POSIX and is not denied.
+  """
+
+  def test_path_denied_exact_on_posix(self) -> None:
+    assert is_denied_env_var("PATH") is True
+
+  def test_path_variant_not_denied_on_posix(self) -> None:
+    assert is_denied_env_var("Path") is False

@@ -8,6 +8,7 @@ or redirect network/credentials. Mirrors the ``path.py`` guardrail pattern
 """
 
 import re
+import sys
 
 # Exact-match denials: name must be in this set verbatim.
 _DENIED_EXACT: frozenset[str] = frozenset(
@@ -73,14 +74,61 @@ _DENIED_PREFIX_RE = re.compile(
   r"^(?:YOKER_|LD_|DYLD_|BASH_FUNC_|GIT_CONFIG_KEY_|GIT_CONFIG_VALUE_)"
 )
 
+# Windows env vars are case-insensitive (PATH == Path == path). The POSIX
+# denylist above uses exact-string match, so on Windows we additionally check
+# an uppercased view of the name against uppercased denylist entries plus a
+# Windows-only extension set (identity/config vectors that have no POSIX
+# equivalent: USERPROFILE, SystemRoot, COMSPEC, PATHEXT, ...).
+_WIN_DENIED_EXTRA: frozenset[str] = frozenset(
+  {
+    "USERPROFILE",
+    "USERNAME",
+    "USERDOMAIN",
+    "APPDATA",
+    "LOCALAPPDATA",
+    "PROGRAMDATA",
+    "PROGRAMFILES",
+    "PROGRAMFILES(X86)",
+    "SystemRoot",
+    "WINDIR",
+    "COMSPEC",
+    "PATHEXT",
+    "SYSTEMDRIVE",
+    "HOMEDRIVE",
+    "HOMEPATH",
+    "TEMP",
+    "TMP",
+  }
+)
+
+_DENIED_EXACT_UPPER = frozenset(n.upper() for n in _DENIED_EXACT)
+_WIN_DENIED_EXTRA_UPPER = frozenset(n.upper() for n in _WIN_DENIED_EXTRA)
+_WIN_PREFIXES_UPPER = tuple(p.upper() for p in _DENIED_PREFIXES)
+
 
 def is_denied_env_var(name: str) -> bool:
   """True if ``name`` is on the framework hard-denylist.
 
   Checked after the per-tool allowlist and enforced regardless of operator
   configuration. The operator cannot waive framework invariants.
+
+  On Windows, env var names are case-insensitive, so the denylist is matched
+  case-insensitively (``Path``, ``MakeFlags``, ``Yoker_Trust_Source`` must not
+  bypass it). POSIX stays case-sensitive (env vars are case-sensitive there).
   """
-  return name in _DENIED_EXACT or _DENIED_PREFIX_RE.match(name) is not None
+  if name in _DENIED_EXACT:
+    return True
+  if _DENIED_PREFIX_RE.match(name) is not None:
+    return True
+  if sys.platform == "win32":
+    upper = name.upper()
+    if upper in _DENIED_EXACT_UPPER:
+      return True
+    if upper in _WIN_DENIED_EXTRA_UPPER:
+      return True
+    if upper.startswith(_WIN_PREFIXES_UPPER):
+      return True
+  return False
 
 
 def validate_env_vars(

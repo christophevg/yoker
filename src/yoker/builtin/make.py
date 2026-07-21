@@ -31,6 +31,7 @@ import os
 import re
 import signal
 import subprocess
+import sys
 from pathlib import Path
 from typing import Annotated
 
@@ -91,6 +92,17 @@ async def make(
   if not isinstance(make_config, MakeToolConfig):
     logger.warning("make_invalid_config_type", config_type=type(make_config).__name__)
     return ToolResult(success=False, error="Invalid configuration for make tool")
+
+  # --- Windows platform gate ---
+  # R4 (kill the whole process group on timeout) relies on POSIX-only APIs
+  # (os.killpg, signal.SIGKILL, start_new_session). Windows process-tree kill
+  # requires Job Objects / taskkill /T, which is out of scope for 1.0. Refuse
+  # the call with a clear error rather than silently regressing the invariant.
+  if sys.platform == "win32":
+    return ToolResult(
+      success=False,
+      error="make tool requires POSIX process-group support; not available on Windows",
+    )
 
   # --- Target validation (R2, R3) ---
   if not isinstance(target, str):
