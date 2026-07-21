@@ -11,6 +11,7 @@ spawn/registration time.
 from yoker.builtin.existence import existence
 from yoker.builtin.git import git
 from yoker.builtin.list import list
+from yoker.builtin.make import make
 from yoker.builtin.mkdir import mkdir
 from yoker.builtin.read import read
 from yoker.builtin.search import search
@@ -25,6 +26,7 @@ __all__ = [
   "existence",
   "git",
   "list",
+  "make",
   "mkdir",
   "read",
   "search",
@@ -42,7 +44,7 @@ __all__ = [
 # runtime.
 
 __YOKER_MANIFEST__ = PluginManifest(
-  tools=[existence, git, list, mkdir, read, search, update, webfetch, websearch, write],
+  tools=[existence, git, list, make, mkdir, read, search, update, webfetch, websearch, write],
   skills_dir="skills",
   agents_dir="agents",
 )

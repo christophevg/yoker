@@ -477,6 +477,7 @@ See [docs/rationale.md](docs/rationale.md) for the full rationale and comparison
 - [x] `existence` tool - Check if files or folders exist with security hardening
 - [x] `mkdir` tool - Create directories with recursive parent creation and depth limits
 - [x] `git` tool - Git operations (status, log, diff, branch, show) with permission-controlled commit/push
+- [x] `make` tool - Execute Makefile targets (e.g., `make check`, `make test`) with target validation, per-target env var allowlist, and process-group timeout enforcement.
 - [x] `websearch` tool - Web search with SSRF protection, domain filtering, and rate limiting
 - [x] `webfetch` tool - Fetch web content with SSRF protection, URL validation, and size limits
 - [x] `agent` tool - Spawn subagents with isolated context and recursion limits
@@ -602,6 +603,40 @@ definition = "./agents/researcher.md"  # Optional: agent definition file
 enabled = true
 allowed_extensions = [".txt", ".md", ".py"]
 ```
+
+### `make` tool configuration
+
+The `make` tool executes Makefile targets with target validation, a
+per-target env var allowlist, and process-group timeout enforcement.
+
+```toml
+[tools.make]
+timeout_ms = 300000       # default per-call timeout
+max_output_kb = 100       # per-stream (stdout/stderr) truncation limit
+max_env_var_bytes = 4096  # per-env-var value byte limit
+
+# Per-target env var allowlist (deny-by-default). Keys are Makefile
+# target names; values are the env var names that target may receive.
+# Targets not listed deny all env vars.
+[tools.make.allowed_env_vars]
+test = ["TEST"]
+lint = ["LINT_FLAGS", "LINT_CONFIG"]
+```
+
+The same `allowed_env_vars` may also be written as inline tables:
+
+```toml
+[tools.make]
+timeout_ms = 300000
+allowed_env_vars = {test = ["TEST"], lint = ["LINT_FLAGS", "LINT_CONFIG"]}
+```
+
+**Env-inheritance residual risk:** Makefile recipes inherit the yoker
+process env, so any secret present in yoker's env (API keys, tokens) is
+readable by recipes. The per-target allowlist and framework hard-denylist
+only govern agent-supplied `env_vars` — they do not filter the inherited
+env. Load sensitive API keys from a secrets store (not plain env vars)
+when running untrusted agents.
 
 Example for OpenAI:
 

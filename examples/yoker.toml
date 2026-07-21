@@ -101,6 +101,20 @@ enabled = true
 allowed_commands = ["status", "log", "diff", "branch", "show"]
 requires_permission = ["commit", "push"]
 
+[tools.make]
+enabled = true
+timeout_ms = 300000
+max_output_kb = 100
+max_env_var_bytes = 4096
+
+# Per-target env var allowlist (deny-by-default). Keys are Makefile target
+# names; values are the env var names that target is permitted to receive.
+# Targets not listed deny all env vars. A framework hard-denylist
+# (yoker.tools.guardrails.env) is enforced regardless of this allowlist.
+[tools.make.allowed_env_vars]
+test = ["TEST"]
+lint = ["LINT_FLAGS", "LINT_CONFIG"]
+
 [tools.mkdir]
 enabled = true
 max_depth = 20
