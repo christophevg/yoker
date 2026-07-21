@@ -28,7 +28,7 @@ logger = get_logger(__name__)
 
 # Tools that operate on filesystem paths
 _FILESYSTEM_TOOLS = frozenset(
-  {"read", "list", "write", "update", "search", "existence", "mkdir", "git"}
+  {"read", "list", "write", "update", "search", "existence", "mkdir", "git", "make"}
 )
 
 
@@ -385,6 +385,7 @@ class PathGuardrail(Guardrail):
       "agent": tools.agent,
       "git": tools.git,
       "mkdir": tools.mkdir,
+      "make": tools.make,
     }
     return mapping.get(tool_name)
 

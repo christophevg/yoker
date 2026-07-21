@@ -27,7 +27,7 @@ Completed work is recorded in git history. See `git log -- TODO.md` for prior ta
 All items below must be complete before declaring 1.0.0. Implementation order is suggested but not mandatory.
 
 - [x] M.2: Default Tools Behavior (PR #47, 2026-07-20)
-- [ ] `make` tool
+- [ ] `make` tool (PR #48, pending review)
 - [ ] `read` offset/limit
 - [ ] `search` enhancements
 - [ ] `github` tool
@@ -51,7 +51,7 @@ All items below must be complete before declaring 1.0.0. Implementation order is
 
 ### `make` tool
 
-- [ ] **`make` tool — Makefile target execution**
+- [ ] **`make` tool — Makefile target execution** (PR #48, pending review)
   - `make(target, ctx, cwd, timeout_ms) -> ToolResult`
   - Target validation (reject shell metacharacters: `;`, `|`, `&`, `$`, backticks)
   - PathGuardrail on `cwd`

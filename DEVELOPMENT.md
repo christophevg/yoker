@@ -1216,3 +1216,97 @@ The multi-provider backend architecture is complete:
   parallel tool execution.
 
 
+
+## MBI-009 T1 — `make` Built-in Tool (PR #48)
+
+Implemented the `make` tool per the owner-approved design (PR #48 consensus).
+Executes `make <target>` in a working directory with security guardrails.
+
+### What was implemented
+
+- **`make` tool** (`src/yoker/builtin/make.py`): async function with signature
+  `make(target, ctx, cwd=".", timeout_ms=300000, env_vars=None) -> ToolResult`.
+  Uses `subprocess.Popen` (not `subprocess.run`) with `start_new_session=True`
+  so the child leads its own process group — required to honor R4 (kill the
+  whole group on timeout via `os.killpg(pid, SIGKILL)`). The spec's
+  `subprocess.run` + `proc.pid` reference was inconsistent (`TimeoutExpired`
+  from `run()` does not expose `proc`); `Popen` is the correct primitive for
+  R4. ToolResult.result is a dict `{exit_code, stdout, stderr, truncated}`.
+
+- **Env var guardrail** (`src/yoker/tools/guardrails/env.py`): module-level
+  frozenset + prefix regex, mirroring the `path.py` pattern. Exports
+  `is_denied_env_var(name)` and `validate_env_vars(env_vars, allowed_names,
+  max_bytes) -> (name, error) | None`. Hard denylist is non-configurable
+  and enforced regardless of the operator's per-target allowlist (YOKER_*,
+  LD_*, DYLD_*, MAKEFLAGS, MFLAGS, GIT_DIR, GIT_WORK_TREE, GIT_CONFIG_*,
+  BASH_ENV, ENV, BASH_FUNC_*, PYTHON*, PERL5OPT, RUBYOPT, NODE_*, IFS,
+  HTTP_PROXY/HTTPS_PROXY/ALL_PROXY/NO_PROXY, SSL_CERT_FILE,
+  REQUESTS_CA_BUNDLE, CURL_CA_BUNDLE, HOME, USER, LOGNAME, *_API_KEY,
+  GITHUB_TOKEN, PATH).
+
+- **`MakeToolConfig`** (`src/yoker/config/__init__.py`): dataclass with
+  `timeout_ms=300000`, `max_output_kb=100`,
+  `allowed_env_vars: dict[str, tuple[str, ...]]` (per-target, deny-by-default,
+  Option A from the per-target allowlist response), `max_env_var_bytes=4096`.
+  `__post_init__` validates positive ints and target-name keys against
+  `_TARGET_NAME_RE`. Registered on `ToolsConfig.make`; exported in `__all__`.
+  No change to `GitToolConfig` (Q3 rejected — make-only).
+
+- **PathGuardrail** (`src/yoker/tools/guardrails/path.py`): added `"make"` to
+  `_FILESYSTEM_TOOLS` so the `cwd` parameter (annotated `PathArg`) is
+  validated against allowed roots (R1).
+
+- **Builtin manifest** (`src/yoker/builtin/__init__.py`): `make` added to
+  `__YOKER_MANIFEST__.tools` and `__all__`.
+
+### Security invariants (R1–R5)
+
+- **R1**: PathGuardrail on `cwd` (make is in `_FILESYSTEM_TOOLS`).
+- **R2**: target must be non-empty, not start with `-`, len ≤ 256, match
+  `^[A-Za-z0-9][A-Za-z0-9._%+\-]*$`.
+- **R3**: no `;`, `|`, `&`, `$`, backtick, `\n`, `\r`, `\x00` in target.
+- **R4**: `start_new_session=True` + `os.killpg(pid, SIGKILL)` on timeout.
+- **R5**: env_vars validated against per-target allowlist (deny-by-default)
+  AND the non-configurable hard denylist, plus value rules (str, ≤
+  `max_env_var_bytes`, no NUL, no newlines, valid UTF-8).
+
+### Timeout clamping
+
+`effective_timeout_ms = max(min(timeout_ms, ctx.config.tools.make.timeout_ms), 1000)`
+— clamps to the config ceiling and a 1s minimum.
+
+### Output truncation
+
+Per-stream (stdout, stderr independently) at
+`ctx.config.tools.make.max_output_kb * 1024` bytes, UTF-8-boundary cut with
+`"\n... [truncated]\n"` appended; `truncated: True` in the result dict if
+either stream was truncated.
+
+### Files
+
+- `src/yoker/tools/guardrails/env.py` (new)
+- `src/yoker/builtin/make.py` (new)
+- `src/yoker/config/__init__.py` (MakeToolConfig, ToolsConfig.make, __all__)
+- `src/yoker/tools/guardrails/path.py` (one line: add "make")
+- `src/yoker/builtin/__init__.py` (manifest entry)
+- `tests/test_tools/test_env_guardrail.py` (new)
+- `tests/test_tools/test_make.py` (new)
+
+### Tests
+
+- `make check` passes: 2005 tests, lint, typecheck, format all green.
+- New tests: 114 (env guardrail + make tool).
+- `tests/test_tools/test_make.py` placed alongside the actual
+  `test_git.py` (the spec referenced `tests/test_builtin/test_git.py` which
+  does not exist; the real git tests live in `tests/test_tools/`).
+
+### Deviation from spec
+
+- Used `subprocess.Popen` + `proc.communicate(timeout=...)` instead of
+  `subprocess.run`. Justification: `subprocess.run` does not expose the
+  child `Popen` object in the `TimeoutExpired` exception, so
+  `os.killpg(proc.pid, ...)` from the spec is unreachable with `run()`. `Popen`
+  is the correct primitive to honor R4 (kill the whole process group).
+- Test path `tests/test_tools/test_make.py` instead of
+  `tests/test_builtin/test_make.py` (the `test_builtin/` dir does not exist;
+  the git test the spec referenced is actually at `tests/test_tools/test_git.py`).

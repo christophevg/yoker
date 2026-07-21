@@ -39,6 +39,7 @@ CLI Arguments:
 """
 
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, cast
@@ -424,6 +425,10 @@ class AgentToolConfig(ToolConfig):
     validate_positive_int(self.timeout_seconds, "tools.agent.timeout_seconds")
 
 
+# Matches valid Makefile target names per GNU make conventions.
+_TARGET_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._%+\-]*$")
+
+
 @dataclass
 class GitToolConfig(ToolConfig):
   """Git tool configuration.
@@ -441,6 +446,39 @@ class GitToolConfig(ToolConfig):
     "show",
   )
   requires_permission: tuple[str, ...] = ("commit", "push")
+
+
+@dataclass
+class MakeToolConfig(ToolConfig):
+  """Make tool configuration.
+
+  Attributes:
+    timeout_ms: Default timeout in milliseconds.
+    max_output_kb: Maximum output size per stream (stdout/stderr) in KB.
+    allowed_env_vars: Per-target allowlist of env var names. Keys are
+      Makefile target names; values are the env var names that target is
+      permitted to receive. Targets not in the dict deny all env vars
+      (deny-by-default). Empty dict = all env vars denied for all targets.
+    max_env_var_bytes: Maximum byte size per env var value.
+  """
+
+  timeout_ms: int = 300000
+  max_output_kb: int = 100
+  allowed_env_vars: dict[str, tuple[str, ...]] = field(default_factory=dict)
+  max_env_var_bytes: int = 4096
+
+  def __post_init__(self) -> None:
+    """Validate make tool configuration."""
+    validate_positive_int(self.timeout_ms, "tools.make.timeout_ms")
+    validate_positive_int(self.max_output_kb, "tools.make.max_output_kb")
+    validate_positive_int(self.max_env_var_bytes, "tools.make.max_env_var_bytes")
+    for target in self.allowed_env_vars:
+      if not _TARGET_NAME_RE.fullmatch(target):
+        raise ValidationError(
+          "tools.make.allowed_env_vars",
+          target,
+          f"invalid target name key: {target!r}",
+        )
 
 
 @dataclass
@@ -553,6 +591,7 @@ class ToolsConfig:
     websearch: Web search tool config.
     webfetch: Web fetch tool config.
     skill: Skill tool config.
+    make: Make tool config.
   """
 
   list: ListToolConfig = field(default_factory=ListToolConfig)
@@ -567,6 +606,7 @@ class ToolsConfig:
   websearch: WebSearchToolConfig = field(default_factory=WebSearchToolConfig)
   webfetch: WebFetchToolConfig = field(default_factory=WebFetchToolConfig)
   skill: SkillToolConfig = field(default_factory=SkillToolConfig)
+  make: MakeToolConfig = field(default_factory=MakeToolConfig)
 
   def __getitem__(self, name: str) -> ToolConfig:
     return cast(ToolConfig, getattr(self, name))
@@ -839,6 +879,7 @@ __all__ = [
   "SearchToolConfig",
   "AgentToolConfig",
   "GitToolConfig",
+  "MakeToolConfig",
   "MkdirToolConfig",
   "ExistenceToolConfig",
   "WebSearchToolConfig",

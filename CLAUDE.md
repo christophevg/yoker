@@ -83,6 +83,7 @@ src/yoker/
 │   ├── existence.py         # existence: check files/folders exist
 │   ├── search.py            # search: file and content search
 │   ├── git.py               # git: Git operations
+│   ├── make.py              # make: Makefile target execution
 │   ├── webfetch.py          # webfetch: fetch web content through a backend
 │   ├── websearch.py         # websearch: search the web through a backend
 │   └── skill.py             # make_skill_tool factory (skill invocation tool)
@@ -133,6 +134,7 @@ src/yoker/
 │   ├── content_type.py      # Content type detection from file content and path extension
 │   ├── guardrails/          # Guardrail framework
 │   │   ├── __init__.py      # Guardrail abstract base class
+│   │   ├── env.py           # EnvGuardrail (env var allowlist + hard denylist + value validation)
 │   │   └── path.py          # PathGuardrail (traversal, size, extension checks)
 │   └── web/                 # Web tool backends and guardrails
 │       ├── __init__.py      # Web tool component exports
