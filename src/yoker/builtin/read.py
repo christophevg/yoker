@@ -7,7 +7,7 @@ schema's ``path`` annotation.
 
 import os
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 from structlog import get_logger
 
@@ -18,31 +18,101 @@ from yoker.tools.schema import ToolResult
 
 logger = get_logger(__name__)
 
+# cat -n renders line numbers in a 6-wide right-aligned field.
+CAT_N_WIDTH = 6
+
 
 async def read(
   path: Annotated[str, PathArg("Path to the file to read (or plugin:// URL)")],
   ctx: ToolContext,
+  offset: int | None = None,
+  limit: int | None = None,
 ) -> ToolResult:
-  """Read the contents of a file.
+  """Read the contents of a file, optionally sliced by line range.
 
-  Args:
-    path: Path to the file to read.
-    ctx: Tool execution context with configuration.
-
-  Returns:
-    ToolResult with file contents.
+  When neither ``offset`` nor ``limit`` is provided, the full file content is
+  returned unchanged (byte-identical to the historical behavior, no prefix,
+  no metadata). When either is provided, the result is formatted ``cat -n``
+  style with a right-aligned line-number prefix, and ``content_metadata``
+  describes the slice with the flat shape consumed by ``ToolContentEvent``.
   """
   if not isinstance(path, str):
     logger.warning("read_invalid_path_type", path_type=type(path).__name__)
     return ToolResult(success=False, error="Invalid path parameter")
 
+  # Validate offset/limit before any I/O — cheap, deterministic, no file access.
+  validation_error = _validate_offset_limit(offset, limit)
+  if validation_error is not None:
+    return ToolResult(success=False, error=validation_error)
+
   if path.startswith("plugin://"):
-    return await _read_plugin_resource(path)
+    return await _read_plugin_resource(path, offset, limit)
 
-  return await _read_file(path)
+  return await _read_file(path, offset, limit)
 
 
-async def _read_plugin_resource(url: str) -> ToolResult:
+def _validate_offset_limit(offset: int | None, limit: int | None) -> str | None:
+  """Return an error string if offset/limit are invalid, else None."""
+  if offset is not None:
+    if not isinstance(offset, int):
+      return "offset must be an integer"
+    if offset < 1:
+      return "offset must be >= 1"
+  if limit is not None:
+    if not isinstance(limit, int):
+      return "limit must be an integer"
+    if limit < 1:
+      return "limit must be >= 1"
+  return None
+
+
+def _apply_offset_limit(
+  text: str, offset: int | None, limit: int | None, resolved_path: str
+) -> dict[str, Any]:
+  """Slice text by 1-indexed line range and render with a cat -n prefix.
+
+  Returns the flat ``content_metadata`` dict consumed by ``ToolContentEvent``:
+  ``operation``, ``path``, ``content_type``, ``content``, and a nested
+  ``metadata`` with the read-specific fields.
+  """
+  lines = text.splitlines(keepends=True)
+  total = len(lines)
+  start_line = offset if offset is not None else 1
+  start = start_line - 1
+  end = start + limit if limit is not None else total
+  sliced = lines[start:end]
+  actual_count = len(sliced)
+  numbered = "".join(f"{start + i + 1:>{CAT_N_WIDTH}}\t{line}" for i, line in enumerate(sliced))
+  return {
+    "operation": "read",
+    "path": resolved_path,
+    "content_type": "text/plain",
+    "content": numbered,
+    "metadata": {
+      "offset": start_line,
+      "limit": limit,
+      "total_lines": total,
+      "returned_lines": actual_count,
+    },
+  }
+
+
+def _finalize_read(
+  content: str, offset: int | None, limit: int | None, resolved_path: str
+) -> ToolResult:
+  """Build the final ToolResult, applying offset/limit if requested.
+
+  When neither ``offset`` nor ``limit`` is set, returns the raw content with
+  no metadata (byte-identical to the historical behavior). Otherwise renders
+  the slice ``cat -n`` style and attaches the flat ``content_metadata``.
+  """
+  if offset is None and limit is None:
+    return ToolResult(success=True, result=content)
+  metadata = _apply_offset_limit(content, offset, limit, resolved_path)
+  return ToolResult(success=True, result=metadata["content"], content_metadata=metadata)
+
+
+async def _read_plugin_resource(url: str, offset: int | None, limit: int | None) -> ToolResult:
   """Read a file from a Python package using a plugin:// URL.
 
   Agent URLs (``plugin://pkg/agents/<name>``) are rejected — this tool reads
@@ -82,10 +152,10 @@ async def _read_plugin_resource(url: str) -> ToolResult:
     path=parsed.subpath,
     bytes=len(content.encode("utf-8")),
   )
-  return ToolResult(success=True, result=content)
+  return _finalize_read(content, offset, limit, str(resource))
 
 
-async def _read_file(path_str: str) -> ToolResult:
+async def _read_file(path_str: str, offset: int | None, limit: int | None) -> ToolResult:
   """Read a regular file from the filesystem."""
   original_path = Path(path_str)
   if original_path.is_symlink():
@@ -108,14 +178,15 @@ async def _read_file(path_str: str) -> ToolResult:
 
   try:
     content = resolved.read_text(encoding="utf-8", errors="replace")
-    logger.info("read_success", path=str(resolved), bytes=len(content.encode("utf-8")))
-    return ToolResult(success=True, result=content)
   except PermissionError:
     logger.warning("read_permission_denied", path=str(resolved))
     return ToolResult(success=False, error="Permission denied")
   except OSError as e:
     logger.error("read_os_error", path=str(resolved), error=str(e))
     return ToolResult(success=False, error="Error reading file")
+
+  logger.info("read_success", path=str(resolved), bytes=len(content.encode("utf-8")))
+  return _finalize_read(content, offset, limit, str(resolved))
 
 
 __all__ = ["read"]

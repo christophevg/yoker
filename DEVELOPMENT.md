@@ -1310,3 +1310,87 @@ either stream was truncated.
 - Test path `tests/test_tools/test_make.py` instead of
   `tests/test_builtin/test_make.py` (the `test_builtin/` dir does not exist;
   the git test the spec referenced is actually at `tests/test_tools/test_git.py`).
+
+
+
+## MBI-009 T2 — `read` Offset/Limit Enhancement (PR #49)
+
+Added optional `offset` and `limit` parameters to the `read` tool for
+efficient large-file reading via line-range slicing.
+
+### What was implemented
+
+- **`read` tool** (`src/yoker/builtin/read.py`): signature is now
+  `read(path, ctx, offset=None, limit=None) -> ToolResult`. The two new
+  parameters are plain typed optionals (`int | None`); no new annotation,
+  guardrail, config field, or manifest change was needed. The `ctx` parameter
+  stays in its existing position (before defaulted params) to match the
+  codebase convention and Python syntax (non-default cannot follow default).
+  The harness binds `ctx` by keyword via `sig.bind(**kwargs)`, so the
+  parameter order does not affect call-site binding.
+
+- **Parameter semantics**: `offset` is 1-indexed (offset=1 or None = first
+  line). `limit` is the max number of lines returned. Both provided: lines
+  `[offset, offset + limit - 1]`. Default (both None): byte-identical to the
+  historical behavior — full file content, no line-number prefix, no metadata.
+
+- **Validation** (`_validate_offset_limit` helper): runs before any file
+  resolution. offset=0, offset<0, limit=0, limit<0 all rejected with
+  `ToolResult(success=False, error="offset must be >= 1")` / `"limit must be
+  >= 1"`. Non-integer types are rejected. The validation
+  precedes `plugin://` parsing, so invalid offset/limit on a plugin URL
+  return the validation error, not a URL-resolution error.
+
+- **`_apply_offset_limit` helper**: the single helper both `_read_file` and
+  `_read_plugin_resource` route through (via `_finalize_read`). Splits with
+  `splitlines(keepends=True)` (preserves trailing newlines on non-final lines),
+  slices `[offset-1:]` then `[:limit]`, and renders `cat -n` style: 6-wide
+  right-aligned line number, tab, line content (e.g. `     1\tfirst line\n`).
+  Uses `offset if offset is not None else 1` (not `offset or 1`) so `offset=0`
+  cannot silently become `1` if validation is ever bypassed. Returns the flat
+  `content_metadata` dict consumed by `ToolContentEvent`:
+  `{"operation": "read", "path": <resolved>, "content_type": "text/plain",
+  "content": <rendered>, "metadata": {"offset", "limit", "total_lines",
+  "returned_lines"}}`. The read-specific fields are nested under `metadata`,
+  not at the top level — matching `write.py`/`update.py` convention so the
+  event-emission path in `core/_processing.py` reads them correctly.
+
+- **`_finalize_read` helper**: the single end-to-end finalization path used by
+  both `_read_file` and `_read_plugin_resource`. When both offset and limit
+  are None, returns `ToolResult(success=True, result=content)` (byte-identical
+  to historical behavior, no prefix, no metadata). Otherwise calls
+  `_apply_offset_limit` and returns the rendered content with the flat
+  `content_metadata` attached.
+
+- **Edge cases**: offset > total_lines returns `success=True, result=""`,
+  `returned_lines=0`. limit exceeding remaining lines returns what remains
+  (no padding), `returned_lines` reflects the actual count. `plugin://` URLs
+  apply offset/limit to the resolved resource text with the same semantics.
+
+### Files Modified
+
+- `src/yoker/builtin/read.py` (modify): added offset/limit parameters,
+  `_validate_offset_limit` and `_apply_offset_limit` helpers, default-path
+  bypass.
+- `tests/tools/test_read.py` (extend): added `TestReadOffsetLimit` class
+  covering offset-only, limit-only, offset+limit, offset beyond EOF, limit
+  exceeds remaining, zero/negative rejection, cat -n prefix format,
+  metadata shape (flat `content_metadata` with nested `metadata`),
+  default path unchanged, plugin:// with offset/limit, and an
+  event-emission-path test verifying the flat keys (`operation`, `path`,
+  `content_type`, `content`, `metadata`) are present at the top level so
+  `ToolContentEvent` does not silently drop them.
+
+### Tests
+
+- `make check` passes: 2022 tests, lint, typecheck, format all green.
+- New tests: 16 (in `TestReadOffsetLimit`).
+
+### Deviation from spec
+
+- Parameter order in the signature: the analysis doc proposed
+  `read(path, offset=None, limit=None, ctx)` but that is invalid Python
+  (non-default argument `ctx` follows default arguments). Implemented as
+  `read(path, ctx, offset=None, limit=None)` to match the codebase convention
+  (write, search, update, make all place `ctx` before defaulted params) and
+  Python syntax. The harness binds by keyword, so call sites are unaffected.
