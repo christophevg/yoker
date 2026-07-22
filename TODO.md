@@ -7,7 +7,7 @@ Bare-minimum 1.0.0 scope: 8 items + dogfooding gate. Full MBI-008 (Prompt Sets) 
 | Priority | Item | Status |
 |----------|------|--------|
 | **P1** | M.2 Default Tools Behavior | Done (PR #47) |
-| **P1** | `make` tool | Open (from MBI-009 T1) |
+| **P1** | `make` tool | Done (PR #48) |
 | **P1** | `read` offset/limit | Open (from MBI-009 T2) |
 | **P1** | `search` enhancements | Open (from MBI-009 T3) |
 | **P1** | `github` tool | Open (from MBI-009 T7) |
@@ -27,7 +27,7 @@ Completed work is recorded in git history. See `git log -- TODO.md` for prior ta
 All items below must be complete before declaring 1.0.0. Implementation order is suggested but not mandatory.
 
 - [x] M.2: Default Tools Behavior (PR #47, 2026-07-20)
-- [ ] `make` tool (PR #48, pending review)
+- [x] `make` tool (PR #48, 2026-07-21)
 - [ ] `read` offset/limit
 - [ ] `search` enhancements
 - [ ] `github` tool
@@ -51,7 +51,7 @@ All items below must be complete before declaring 1.0.0. Implementation order is
 
 ### `make` tool
 
-- [ ] **`make` tool — Makefile target execution** (PR #48, pending review)
+- [x] **`make` tool — Makefile target execution** (PR #48, 2026-07-21)
   - `make(target, ctx, cwd, timeout_ms) -> ToolResult`
   - Target validation (reject shell metacharacters: `;`, `|`, `&`, `$`, backticks)
   - PathGuardrail on `cwd`
