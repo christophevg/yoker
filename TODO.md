@@ -12,7 +12,7 @@ Bare-minimum 1.0.0 scope: 8 items + dogfooding gate. Full MBI-008 (Prompt Sets) 
 | **P1** | `search` enhancements | Done (PR #50) |
 | **P1** | `github` tool | Done (PR #51) |
 | **P1** | Context overflow management (IP-12) | Done (PR #52) |
-| **P1** | `protected_files` guardrail | Open (from MBI-009 T12) |
+| **P1** | `protected_files` guardrail | Done (PR #53) |
 | **P1** | MBI-005: Two Assistant Packages | Ready (deps met) |
 | **GATE** | Dogfooding Gate | Open |
 | **HOLD** | L.1-L.9 Launch Preparation | On hold (wait for owner) |
@@ -32,7 +32,7 @@ All items below must be complete before declaring 1.0.0. Implementation order is
 - [x] `search` enhancements (PR #50, 2026-07-27)
 - [x] `github` tool (PR #51, 2026-07-27)
 - [x] Context overflow management (IP-12) (PR #52, 2026-07-27)
-- [ ] `protected_files` guardrail
+- [x] `protected_files` guardrail (PR #53, 2026-07-27)
 - [ ] MBI-005: Two Assistant Packages
 - [ ] Dogfooding Gate: Last Yoker sessions done using Yoker itself (not Claude Code)
 
@@ -122,7 +122,7 @@ All items below must be complete before declaring 1.0.0. Implementation order is
 
 ### `protected_files` guardrail
 
-- [ ] **`protected_files` guardrail — soft guardrail for powerful mistakes**
+- [x] **`protected_files` guardrail — soft guardrail for powerful mistakes** (PR #53, 2026-07-27)
   - When agent writes to a protected file (Makefile, pyproject.toml, tox.ini, etc.), show the user a diff and ask for permission
   - Only apply the change on approval
   - In non-interactive mode, block the change
@@ -132,6 +132,18 @@ All items below must be complete before declaring 1.0.0. Implementation order is
   - Applied to `write` and `update` tools via PathGuardrail
   - **Source:** `analysis/mbi-toolset-coverage.md` (MBI-009 T12, Tier 1)
   - **Files:** `src/yoker/config/__init__.py` (modify — PermissionsConfig), `src/yoker/tools/guardrails/path.py` (modify)
+  - **Delivered (PR #53):**
+    - 16-entry default denylist (Makefile, pyproject.toml, yoker.toml, .git/config, .git/hooks/*, .github/workflows/*.yml, uv.lock, poetry.lock, etc.)
+    - fnmatch.fnmatchcase matching against relative path + basename
+    - Interactive approve-on-diff flow (Option A): unified diff rendered → y/N prompt → apply on approval, block on denial (fail-safe)
+    - Non-interactive (batch): simple block via PathGuardrail
+    - Config: `permissions.protected_files` (tuple[str, ...]); empty tuple disables
+    - `confirm_approval` as optional UIHandler Protocol method (like `agent_spawned`/`agent_finished`)
+    - New APIs: `PathGuardrail.is_protected()`, `Agent._approval_handler`, `generate_diff()` shared helper
+    - H1 fix during review: insert-operation diff corrected
+    - CI fix: mocked PromptSession for TTY-less environments
+    - 42 new tests (2197 passed), 22 files changed, ~1700 insertions
+    - Review: all 6 stages passed (functional, api-architect, security, code-reviewer, testing, docs)
 
 ### MBI-005: Two Assistant Packages
 
