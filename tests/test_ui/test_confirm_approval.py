@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from io import StringIO
+from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 from rich.console import Console
@@ -32,23 +34,45 @@ async def test_batch_confirm_approval_false_for_empty_diff() -> None:
 # ---------------------------------------------------------------------------
 # InteractiveUIHandler.confirm_approval — y/N prompt
 # ---------------------------------------------------------------------------
+#
+# On CI runners without a real TTY, constructing prompt_toolkit's
+# ``PromptSession`` raises ``NoConsoleScreenBufferError`` on Windows and hangs
+# on macOS. We patch ``PromptSession`` at the module level so the handler is
+# built against a stub session whose ``prompt_async`` returns canned answers
+# (or raises canned exceptions), exercising only the ``confirm_approval``
+# logic on every platform.
 
 
 def _make_interactive_handler(
-  answers: list[str], console: Console | None = None
+  answers: list[str] | None = None,
+  raises: type[BaseException] | None = None,
+  console: Console | None = None,
 ) -> InteractiveUIHandler:
-  """Build an InteractiveUIHandler whose prompt_async returns canned answers."""
-  handler = InteractiveUIHandler(history_file="none", console=console)
-  # Stub out prompt_async so we don't need a real terminal.
-  answers_iter = iter(answers)
+  """Build an ``InteractiveUIHandler`` backed by a stub ``PromptSession``.
 
-  async def _fake_prompt(prompt: str, is_password: bool = False) -> str:
+  Args:
+    answers: Canned answers returned sequentially by ``prompt_async``. An
+      exhausted iterator yields ``""`` (the empty-Enter default).
+    raises: Exception type raised by ``prompt_async`` instead of returning.
+    console: Optional Rich console (default: a fresh one).
+  """
+  answers_iter = iter(answers or [])
+
+  async def _prompt_async(_prompt: str, is_password: bool = False) -> str:
+    if raises is not None:
+      raise raises()
     try:
       return next(answers_iter)
     except StopIteration:
       return ""
 
-  handler._session.prompt_async = _fake_prompt  # type: ignore[assignment]
+  # ``PromptSession`` is called inside ``_create_session`` during
+  # ``__init__``; replace it with a stub that records the canned behavior.
+  stub_session = SimpleNamespace(prompt_async=_prompt_async)
+
+  with patch("yoker.ui.interactive.PromptSession", return_value=stub_session):
+    handler = InteractiveUIHandler(history_file="none", console=console)
+
   return handler
 
 
@@ -91,12 +115,7 @@ async def test_interactive_confirm_approval_empty_returns_false() -> None:
 @pytest.mark.asyncio
 async def test_interactive_confirm_approval_eof_returns_false() -> None:
   """EOFError (Ctrl+D) is treated as denial — fail-safe."""
-
-  async def _eof_prompt(_prompt: str, is_password: bool = False) -> str:
-    raise EOFError
-
-  handler = InteractiveUIHandler(history_file="none")
-  handler._session.prompt_async = _eof_prompt  # type: ignore[assignment]
+  handler = _make_interactive_handler(raises=EOFError)
   result = await handler.confirm_approval("/x/Makefile", "+all:\n")
   assert result is False
 
@@ -104,12 +123,7 @@ async def test_interactive_confirm_approval_eof_returns_false() -> None:
 @pytest.mark.asyncio
 async def test_interactive_confirm_approval_ctrl_c_returns_false() -> None:
   """KeyboardInterrupt is caught and treated as denial."""
-
-  async def _kb_prompt(_prompt: str, is_password: bool = False) -> str:
-    raise KeyboardInterrupt
-
-  handler = InteractiveUIHandler(history_file="none")
-  handler._session.prompt_async = _kb_prompt  # type: ignore[assignment]
+  handler = _make_interactive_handler(raises=KeyboardInterrupt)
   result = await handler.confirm_approval("/x/Makefile", "+all:\n")
   assert result is False
 
