@@ -8,6 +8,55 @@ Yoker is a Python agent harness with configurable tools and guardrails. It provi
 
 ## Recent Changes
 
+### MBI-009 T7: github tool (2026-07-27)
+
+Added a new built-in `github` tool (`src/yoker/builtin/github.py`) wrapping the
+`gh` CLI for read-only GitHub operations. The fixed operation enum (9 MVP
+operations: `repo_view`, `issue_list`, `issue_view`, `pr_list`, `pr_view`,
+`workflow_list`, `workflow_view`, `release_list`, `release_view`) IS the
+subcommand-blocking security boundary — the agent can never reach `gh api`,
+`gh extension`, `gh auth token`, or any write/destructive subcommand. The
+operation → gh subcommand mapping is a hardcoded dispatch table
+(`_OPERATION_DISPATCH`); no passthrough.
+
+- **Subprocess pattern**: follows `make.py` exactly — `subprocess.Popen` with
+  list args (no `shell=True`), `start_new_session=True`, `os.killpg(SIGKILL)`
+  on timeout. POSIX-only (Windows platform gate refuses with a clear error).
+  Inherits `os.environ` (no `env_vars` parameter — env is the credential-
+  injection channel).
+- **Validation** (pre-subprocess, in order): config type → tool enabled →
+  operation in enum → operation in `allowed_operations` → per-parameter regex
+  (`^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$` for `repo`, `^[A-Za-z0-9._-]+$` for
+  `tag`/`label`) → enum check for `state` (`open`/`closed`/`all`) → int
+  clamps for `number` (`[1, 2^31-1]`) and `limit` (`[1, max_results]`) →
+  leading-dash rejection + `FORBIDDEN_CHARS` rejection → `--` separator
+  before any user-supplied positional (issue/PR number, release tag).
+- **Output redaction**: extended credential pattern set (ghp_*, github_pat_*,
+  AWS key IDs, Slack/npm tokens, URL-embedded credentials) applied to stdout
+  AND stderr BEFORE truncation. Log counts only, never matched text.
+- **`GitHubToolConfig`** (in `src/yoker/config/__init__.py`): fields
+  `allowed_operations` (default-allow full MVP set), `timeout_ms=30000`,
+  `max_results=100`, `require_explicit_repo=False`, `max_output_kb=100`.
+  `__post_init__` validates positive ints and rejects unknown operations in
+  `allowed_operations` (config-load-time typo defense). Registered on
+  `ToolsConfig.github`.
+- **Flat `content_metadata`** (consumed by `core/_processing.py:441-453`):
+  `{operation: "github", path: repo or "default", content_type:
+  "application/json", content: <gh json>, metadata: {gh_subcommand, repo,
+  number, tag, limit, state, label, returncode, truncated}}`. On error,
+  `ToolResult(success=False, error=<friendly message>)` with no metadata.
+- **Error mapping**: `gh` not found → install hint; not authenticated →
+  `gh auth login` hint; rate limited → wait message; not found → resource-
+  specific message; timeout → timeout message with ms.
+- **Manifest**: `github` added to `__YOKER_MANIFEST__.tools` in
+  `src/yoker/builtin/__init__.py`. Static built-in (not Session-injected).
+- **Tests**: `tests/test_tools/test_github.py` covers all 9 operations (argv
+  snapshot via mocked Popen), operation enum/allowlist rejection, parameter
+  validation (regex, leading-dash, forbidden chars, int clamps), timeout
+  with `os.killpg` assertion, output redaction (ghp_*, URL creds, AWS keys),
+  truncation, Windows platform gate, config validation, and the flat
+  `content_metadata` shape. 58 tests, 90% module coverage.
+
 ### MBI-009 T3: search Enhancements (2026-07-27)
 
 Added 6 new optional parameters to the `search` tool (`src/yoker/builtin/search.py`)

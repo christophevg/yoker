@@ -481,6 +481,71 @@ class MakeToolConfig(ToolConfig):
         )
 
 
+# Known GitHub operations — the fixed enum that GitHubToolConfig.allowed_operations
+# is validated against. Mirrors yoker.builtin.github._GITHUB_OPERATIONS.
+_GITHUB_OPERATIONS: frozenset[str] = frozenset(
+  {
+    "repo_view",
+    "issue_list",
+    "issue_view",
+    "pr_list",
+    "pr_view",
+    "workflow_list",
+    "workflow_view",
+    "release_list",
+    "release_view",
+  }
+)
+
+
+@dataclass
+class GitHubToolConfig(ToolConfig):
+  """GitHub tool configuration.
+
+  Attributes:
+    allowed_operations: Operations the agent is permitted to run. This is the
+      subcommand-blocking security boundary. Defaults to the full read-only
+      MVP set. Operations in the fixed enum but not in this list are
+      rejected. An empty list disables the tool effectively (when combined
+      with ``enabled = true``; setting ``enabled = false`` is the cleaner
+      off-switch).
+    timeout_ms: Default per-call timeout in milliseconds.
+    max_results: Upper bound for the ``limit`` parameter on list operations.
+    require_explicit_repo: If True, the ``repo`` parameter is required (gh
+      auto-detection from git remote is disabled).
+    max_output_kb: Per-stream (stdout/stderr) truncation limit in KB.
+  """
+
+  allowed_operations: tuple[str, ...] = (
+    "repo_view",
+    "issue_list",
+    "issue_view",
+    "pr_list",
+    "pr_view",
+    "workflow_list",
+    "workflow_view",
+    "release_list",
+    "release_view",
+  )
+  timeout_ms: int = 30000
+  max_results: int = 100
+  require_explicit_repo: bool = False
+  max_output_kb: int = 100
+
+  def __post_init__(self) -> None:
+    """Validate GitHub tool configuration."""
+    validate_positive_int(self.timeout_ms, "tools.github.timeout_ms")
+    validate_positive_int(self.max_results, "tools.github.max_results")
+    validate_positive_int(self.max_output_kb, "tools.github.max_output_kb")
+    for op in self.allowed_operations:
+      if op not in _GITHUB_OPERATIONS:
+        raise ValidationError(
+          "tools.github.allowed_operations",
+          op,
+          f"unknown github operation; allowed: {sorted(_GITHUB_OPERATIONS)}",
+        )
+
+
 @dataclass
 class MkdirToolConfig(ToolConfig):
   """Mkdir tool configuration.
@@ -592,6 +657,7 @@ class ToolsConfig:
     webfetch: Web fetch tool config.
     skill: Skill tool config.
     make: Make tool config.
+    github: GitHub tool config.
   """
 
   list: ListToolConfig = field(default_factory=ListToolConfig)
@@ -607,6 +673,7 @@ class ToolsConfig:
   webfetch: WebFetchToolConfig = field(default_factory=WebFetchToolConfig)
   skill: SkillToolConfig = field(default_factory=SkillToolConfig)
   make: MakeToolConfig = field(default_factory=MakeToolConfig)
+  github: GitHubToolConfig = field(default_factory=GitHubToolConfig)
 
   def __getitem__(self, name: str) -> ToolConfig:
     return cast(ToolConfig, getattr(self, name))
@@ -880,6 +947,7 @@ __all__ = [
   "AgentToolConfig",
   "GitToolConfig",
   "MakeToolConfig",
+  "GitHubToolConfig",
   "MkdirToolConfig",
   "ExistenceToolConfig",
   "WebSearchToolConfig",
