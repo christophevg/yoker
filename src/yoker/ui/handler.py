@@ -190,6 +190,26 @@ class UIHandler(Protocol):
     """
     ...
 
+  # === Protected-file approval (MBI-009 T12) ===
+
+  async def confirm_approval(self, path: str, diff: str) -> bool:
+    """Ask the user to approve a write to a protected file.
+
+    Called by the processing loop when ``write``/``update`` targets a file
+    matching ``permissions.protected_files`` and an approval handler is
+    wired (interactive mode). Implementations display ``diff`` (a unified
+    diff string) and prompt the user.
+
+    Args:
+      path: The path being written/updated (resolved absolute path).
+      diff: Unified diff between current and proposed content. For a
+        new-file write, every line is an addition.
+
+    Returns:
+      True to proceed with the write/update, False to block it.
+    """
+    ...
+
   # === Streaming ===
 
   def start_content_stream(self) -> None:

@@ -393,6 +393,45 @@ class InteractiveUIHandler(UIHandler):
     self._exit_live()
     self.console.print(f"[dim]↳ Agent finished:[/dim] {name}")
 
+  # === Protected-file approval (MBI-009 T12) ===
+
+  async def confirm_approval(self, path: str, diff: str) -> bool:
+    """Ask the user to approve a write to a protected file.
+
+    Renders the unified diff with the existing colored diff renderer, then
+    prompts y/N. An empty response (Enter) or EOF counts as denial
+    (fail-safe). ``Ctrl+C`` is caught and treated as denial so the turn
+    resumes instead of crashing the session.
+
+    Args:
+      path: Path being written/updated (displayed in the prompt).
+      diff: Unified diff string between current and proposed content.
+
+    Returns:
+      True if the user explicitly approved, False otherwise.
+    """
+    self._exit_live()
+    filename = Path(path).name
+    self.console.print(
+      Panel(
+        f"Agent wants to modify [bold]{path}[/bold]",
+        title="Protected file",
+        style=TOOL_STYLE,
+      )
+    )
+    # Reuse the colored diff renderer. Synthesize a minimal metadata dict
+    # so _show_diff_content's truncation branch is not triggered.
+    self._show_diff_content(diff, filename, "approve", metadata={})
+    try:
+      answer = await self._session.prompt_async(
+        f"Approve write to {filename}? [y/N] ",
+        is_password=False,
+      )
+    except (EOFError, KeyboardInterrupt):
+      self.console.print()
+      return False
+    return answer.strip().lower() in ("y", "yes")
+
   def output_thinking(self, text: str) -> None:
     """Output thinking text directly (non-streaming).
 

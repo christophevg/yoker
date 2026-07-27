@@ -495,6 +495,7 @@ See [docs/rationale.md](docs/rationale.md) for the full rationale and comparison
 - [x] Event logging - Full session replay capability
 - [x] Demo scripts - Generate documentation screenshots from Markdown scripts
 - [x] Schema-driven guardrails - Tool parameters are annotated with `yoker.tools.annotations` markers (`Path`, `Url`, `Query`, `Text`); the harness strips the metadata before sending schemas to the model and dispatches the matching guardrail at execution time
+- [x] Protected files - SOFT guardrail blocking agent `write`/`update` to a configurable denylist (`Makefile`, `pyproject.toml`, `yoker.toml`, `uv.lock`, `.git/config`, `.github/workflows/*.yml`, ...) with interactive approve-on-diff in `yoker chat` and a simple block in batch/`yoker run`; empty tuple opts out
 - [x] Permissions - Static TOML-based access control
 - [x] Secure API key handling - Masked input during bootstrap, config files written with `chmod 600`
 
@@ -639,6 +640,44 @@ readable by recipes. The per-target allowlist and framework hard-denylist
 only govern agent-supplied `env_vars` — they do not filter the inherited
 env. Load sensitive API keys from a secrets store (not plain env vars)
 when running untrusted agents.
+
+### Protected Files (SOFT guardrail)
+
+`permissions.protected_files` is a glob (`fnmatch`) denylist of files
+protected against agent `write`/`update` calls. Reading is never blocked.
+
+```toml
+[permissions]
+# Defaults to a 16-entry denylist: Makefile, makefile, GNUmakefile,
+# Justfile, justfile, Taskfile.yml, pyproject.toml, tox.ini, setup.py,
+# setup.cfg, yoker.toml, .git/config, .git/hooks/*,
+# .github/workflows/*.yml, uv.lock, poetry.lock.
+protected_files = ["Makefile", "pyproject.toml", ".github/workflows/*.yml"]
+
+protected_files = []  # explicit opt-out: disable all protections
+```
+
+Patterns match against the relative path from the project root **and** the
+basename, so `Makefile` matches at any depth, not just the root.
+
+**SOFT guardrail — not a security boundary.** It protects against powerful
+mistakes (an agent rewriting your `Makefile` or `uv.lock`), not against a
+malicious agent that can shell out or write Python scripts to bypass
+Yoker's tools.
+
+**Behavior:**
+
+- **Interactive mode (`yoker chat`)**: a write/update to a protected file
+  shows a unified diff and prompts `y/N`. Apply on approval, block on
+  denial. Empty input, EOF, or `Ctrl+C` deny (fail-safe).
+- **Batch mode (`--ui-mode batch`) and non-interactive `yoker run`**:
+  protected writes are blocked with an error returned to the agent.
+
+**Custom UI handlers** implement `confirm_approval(path, diff) -> bool` on
+the `UIHandler` protocol; see `examples/custom_handler.py`. **Library
+users** can wire `Agent._approval_handler` (a
+`Callable[[str, str], Awaitable[bool]] | None`) to enable interactive
+approval outside the CLI.
 
 Example for OpenAI:
 

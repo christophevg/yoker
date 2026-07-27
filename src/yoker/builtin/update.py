@@ -5,7 +5,6 @@ Guardrails are enforced centrally by the harness based on the schema's
 ``path`` annotation.
 """
 
-import difflib
 import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any
@@ -16,6 +15,7 @@ from yoker.config import UpdateToolConfig
 from yoker.tools.annotations import Path as PathArg
 from yoker.tools.annotations import Text
 from yoker.tools.context import ToolContext
+from yoker.tools.diff import generate_diff
 from yoker.tools.schema import ToolResult
 
 if TYPE_CHECKING:
@@ -295,14 +295,8 @@ def _build_content_or_diff_metadata(
       old_lines = old_content.splitlines(keepends=True)
       new_lines = new_content.splitlines(keepends=True)
 
-      diff_lines = list(
-        difflib.unified_diff(
-          old_lines,
-          new_lines,
-          fromfile="before",
-          tofile="after",
-        )
-      )
+      diff_text = generate_diff(old_content, new_content, resolved_path.name)
+      diff_lines = diff_text.splitlines(keepends=True)
       diff_content, was_truncated, original_count = _truncate_diff(
         diff_lines,
         content_display.max_diff_lines,
@@ -362,14 +356,8 @@ def _build_content_or_diff_metadata(
       old_lines = old_content.splitlines(keepends=True)
       new_lines = new_content.splitlines(keepends=True)
 
-      diff_lines = list(
-        difflib.unified_diff(
-          old_lines,
-          new_lines,
-          fromfile="before",
-          tofile="after",
-        )
-      )
+      diff_text = generate_diff(old_content, new_content, resolved_path.name)
+      diff_lines = diff_text.splitlines(keepends=True)
       diff_content, was_truncated, original_count = _truncate_diff(
         diff_lines,
         content_display.max_diff_lines,

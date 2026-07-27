@@ -2,9 +2,12 @@
 
 Provides PathGuardrail, a concrete Guardrail that validates filesystem tool
 parameters against configured permission boundaries. Prevents path traversal,
-blocks sensitive patterns, enforces file size limits, and filters by extension.
+blocks sensitive patterns, enforces file size limits, filters by extension,
+and protects configured files (Makefile, pyproject.toml, ...) against agent
+writes via fnmatch glob matching.
 """
 
+import fnmatch
 import os
 import re
 from pathlib import Path
@@ -40,6 +43,7 @@ class PathGuardrail(Guardrail):
   - Blocked regex patterns (e.g., .env, credentials)
   - Allowed file extensions (for read tool)
   - Maximum file size (for read tool)
+  - Protected files (Makefile, pyproject.toml, ...) against agent writes
 
   Uses os.path.realpath() to resolve symlinks and normalize paths before
   validation, preventing path traversal attacks.
@@ -73,6 +77,11 @@ class PathGuardrail(Guardrail):
     self._allowed_roots: tuple[Path, ...] = tuple(
       Path(root).resolve() for root in self._permissions.filesystem_paths
     )
+
+    # When True, the protected_files simple block is skipped in ``validate``
+    # so the processing loop's approval hook can handle it interactively.
+    # Set by the CLI on the primary agent when an approval handler is wired.
+    self.interactive_approvals: bool = False
 
   def validate(self, tool_name: str, value: str | dict[str, Any]) -> ValidationResult:
     """Validate tool parameters against permission boundaries.
@@ -157,6 +166,14 @@ class PathGuardrail(Guardrail):
 
     # Write-specific checks
     if tool_name == "write":
+      # Protected files check: skipped in interactive mode (the processing
+      # loop's approval hook handles it then). The simple block stays as the
+      # non-interactive fallback / safety net.
+      if not self.interactive_approvals:
+        protected_reason = self._check_protected_files(resolved)
+        if protected_reason:
+          return ValidationResult(valid=False, reason=protected_reason)
+
       ext_reason = self._check_write_extension(resolved)
       if ext_reason:
         return ValidationResult(valid=False, reason=ext_reason)
@@ -174,6 +191,14 @@ class PathGuardrail(Guardrail):
         return ValidationResult(valid=False, reason=f"File not found: {path_param}")
       if not resolved.is_file():
         return ValidationResult(valid=False, reason=f"Path is not a file: {path_param}")
+
+      # Protected files check: skipped in interactive mode (the processing
+      # loop's approval hook handles it then). The simple block stays as the
+      # non-interactive fallback / safety net.
+      if not self.interactive_approvals:
+        protected_reason = self._check_protected_files(resolved)
+        if protected_reason:
+          return ValidationResult(valid=False, reason=protected_reason)
 
       # Apply read extension checks (can only update allowed file types)
       ext_reason = self._check_read_extension(resolved)
@@ -246,6 +271,69 @@ class PathGuardrail(Guardrail):
       if pattern.search(path_str):
         return f"Path matches blocked pattern: {pattern.pattern}"
     return None
+
+  def _relative_for_protected(self, resolved: Path) -> str:
+    """Return the relative path from the containing allowed root.
+
+    Falls back to the basename when the path is not under any allowed root
+    (defensive — ``_is_within_allowed_paths`` already filters this upstream).
+    POSIX-style separators are used so glob patterns like ``.git/hooks/*``
+    match consistently across platforms.
+    """
+    for root in self._allowed_roots:
+      try:
+        return resolved.relative_to(root).as_posix()
+      except ValueError:
+        continue
+    return resolved.name
+
+  def _check_protected_files(self, resolved: Path) -> str | None:
+    """Check if a resolved path matches a protected_files glob pattern.
+
+    Matching strategy (per the owner's accepted T12 design):
+      - ``fnmatch.fnmatchcase`` against each entry in ``protected_files``.
+      - Matched against the relative path from the project root (the allowed
+        root) AND the basename (so ``Makefile`` matches at any depth, not
+        just root).
+
+    A ``protected_files = ()`` (empty tuple) disables all protections
+    (explicit opt-out).
+
+    Args:
+      resolved: The resolved absolute path to check.
+
+    Returns:
+      Error message if protected, None if allowed.
+    """
+    patterns = self._permissions.protected_files
+    if not patterns:
+      return None
+
+    relative = self._relative_for_protected(resolved)
+    basename = resolved.name
+    for pattern in patterns:
+      if fnmatch.fnmatchcase(relative, pattern) or fnmatch.fnmatchcase(basename, pattern):
+        return f"File is protected against agent writes: {relative}"
+    return None
+
+  def is_protected(self, path_str: str) -> bool:
+    """Return True if ``path_str`` resolves to a protected file.
+
+    Public entry point for the processing loop's interactive approval hook
+    (which needs to know whether to invoke the approval handler without
+    going through ``validate``). Performs the same fnmatch matching as
+    :meth:`_check_protected_files` but returns a bool.
+
+    Args:
+      path_str: Raw path string from tool parameters.
+
+    Returns:
+      True if the path matches a ``protected_files`` entry, False otherwise.
+    """
+    resolved = self._resolve_path(path_str)
+    if resolved is None:
+      return False
+    return self._check_protected_files(resolved) is not None
 
   def _check_read_extension(self, resolved: Path) -> str | None:
     """Check if a file extension is allowed for reading.

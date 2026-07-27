@@ -116,7 +116,29 @@ async def _run_with_session(
 ) -> None:
   async with Session(config=config, extra_plugins=tuple(plugin_packages)) as session:
     session.on_event(bridge)
+    _wire_approval_handler(session.agent, ui)
     await _run_repl(session.agent, ui, commands)
+
+
+def _wire_approval_handler(agent: Agent, ui: UIHandler) -> None:
+  """Wire the protected-file approval handler for interactive sessions.
+
+  Only wired when ``ui`` provides ``confirm_approval`` (interactive handler).
+  ``BatchUIHandler.confirm_approval`` always returns False, so wiring it
+  would block every protected write even though the PathGuardrail simple
+  block already handles batch mode — we skip the wiring in that case and
+  let the simple block fire. When wired, the guardrail's
+  ``interactive_approvals`` flag is set so the simple block is skipped and
+  the approval hook in ``_run_tool`` handles protected writes.
+  """
+  # BatchUIHandler.confirm_approval always denies — don't wire it; let the
+  # PathGuardrail simple block handle batch mode.
+  if isinstance(ui, BatchUIHandler):
+    return
+  if not hasattr(ui, "confirm_approval"):
+    return
+  agent._approval_handler = ui.confirm_approval
+  agent.guardrail.interactive_approvals = True
 
 
 async def _run_repl(agent: Agent, ui: UIHandler, commands: CommandRegistry) -> None:
