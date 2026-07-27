@@ -13,22 +13,14 @@ from yoker.ui.batch import BatchUIHandler
 from yoker.ui.interactive import InteractiveUIHandler
 
 # ---------------------------------------------------------------------------
-# BatchUIHandler.confirm_approval — always False
+# BatchUIHandler — does not provide confirm_approval (optional pattern)
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
-async def test_batch_confirm_approval_always_false() -> None:
+def test_batch_handler_does_not_provide_confirm_approval() -> None:
+  """BatchUIHandler should not provide confirm_approval (optional pattern)."""
   handler = BatchUIHandler()
-  result = await handler.confirm_approval("/some/path/Makefile", "--- before\n+++ after\n")
-  assert result is False
-
-
-@pytest.mark.asyncio
-async def test_batch_confirm_approval_false_for_empty_diff() -> None:
-  handler = BatchUIHandler()
-  result = await handler.confirm_approval("/some/path/Makefile", "")
-  assert result is False
+  assert not hasattr(handler, "confirm_approval")
 
 
 # ---------------------------------------------------------------------------
