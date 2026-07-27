@@ -245,6 +245,30 @@ class HandlerConfig:
   message: str | None = None
 
 
+# SOFT guardrail: protects against powerful mistakes, not malicious agents.
+# Matched via fnmatch glob against the relative path from project root AND
+# the basename (so `Makefile` matches at any depth). An empty tuple disables
+# all protections (explicit opt-out).
+_DEFAULT_PROTECTED_FILES: tuple[str, ...] = (
+  "Makefile",
+  "makefile",
+  "GNUmakefile",
+  "Justfile",
+  "justfile",
+  "Taskfile.yml",
+  "pyproject.toml",
+  "tox.ini",
+  "setup.py",
+  "setup.cfg",
+  "yoker.toml",
+  ".git/config",
+  ".git/hooks/*",
+  ".github/workflows/*.yml",
+  "uv.lock",
+  "poetry.lock",
+)
+
+
 @dataclass
 class PermissionsConfig:
   """Permission boundaries configuration.
@@ -254,12 +278,19 @@ class PermissionsConfig:
     network_access: Network access level ('none', 'local', 'all').
     max_file_size_kb: Maximum file size in KB.
     handlers: Permission handler configurations.
+    protected_files: Glob patterns (fnmatch) for files protected against
+      agent writes. Matched against the relative path from the project root
+      AND the basename. Applies to ``write`` and ``update`` only (reading
+      is safe). An empty tuple disables all protections (explicit opt-out).
+      SOFT guardrail: protects against powerful mistakes, not malicious
+      agents.
   """
 
   filesystem_paths: tuple[str, ...] = (".",)
   network_access: str = "none"
   max_file_size_kb: int = 500
   handlers: dict[str, HandlerConfig] = field(default_factory=dict)
+  protected_files: tuple[str, ...] = _DEFAULT_PROTECTED_FILES
 
   def __post_init__(self) -> None:
     """Validate permissions configuration."""

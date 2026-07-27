@@ -54,6 +54,18 @@ persist_after_turn = true
 filesystem_paths = ["."]
 network_access = "none"
 max_file_size_kb = 500
+# Glob patterns (fnmatch) for files protected against agent writes.
+# Matched against the relative path from the project root AND the basename,
+# so "Makefile" matches at any depth, not just the root. Applies to `write`
+# and `update` only — reading is never blocked. An empty tuple disables all
+# protections (explicit opt-out). SOFT guardrail: protects against powerful
+# mistakes, not malicious agents. In interactive mode, writes to protected
+# files prompt a y/N approval with a unified diff; in batch mode they are
+# blocked. Defaults to a 16-entry denylist (Makefile, pyproject.toml,
+# yoker.toml, .git/config, .git/hooks/*, .github/workflows/*.yml, uv.lock,
+# poetry.lock, ...). Uncomment to override:
+# protected_files = ["Makefile", "pyproject.toml", ".github/workflows/*.yml"]
+# protected_files = []  # disable all protections
 
 [tools.list]
 enabled = true

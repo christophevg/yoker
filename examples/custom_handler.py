@@ -166,6 +166,22 @@ class PrintUIHandler:
     """
     print(f"[error] {type(error).__name__}: {error}")
 
+  async def confirm_approval(self, path: str, diff: str) -> bool:
+    """Custom handler approval prompt for protected-file writes (MBI-009 T12).
+
+    A non-interactive custom handler: always deny. Wire an interactive
+    handler (or prompt stdin) when interactive approval is desired.
+
+    Args:
+      path: Path being written/updated.
+      diff: Unified diff between current and proposed content.
+
+    Returns:
+      Always False (deny) for this non-interactive example.
+    """
+    print(f"[approval] denied write to protected file: {path}")
+    return False
+
   def output_content(self, content: str, content_type: str = "text/plain") -> None:
     """Output content text directly (non-streaming).
 

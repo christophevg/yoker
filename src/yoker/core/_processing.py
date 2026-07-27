@@ -841,6 +841,15 @@ async def _run_tool(agent: Any, tool_name: str, tool_args: dict[str, Any]) -> tu
   if agent.config.logging.include_permission_checks:
     logger.info("guardrail_allowed", tool=tool_name, path=tool_args.get("path"))
 
+  # Protected-file approval hook (MBI-009 T12). When an approval handler is
+  # wired on the agent, the PathGuardrail simple block is skipped and this
+  # hook handles protected write/update interactively. On denial, return a
+  # blocked ToolResult without executing the tool. On exception in the
+  # handler, fail-safe to denial. On approval, fall through to _execute_tool.
+  approval_block = await _maybe_block_protected(agent, tool_name, tool_args)
+  if approval_block is not None:
+    return approval_block
+
   try:
     with log_timing("tool_execution", tool=tool_name):
       tool_result = await _execute_tool(spec, agent, tool_args)
@@ -850,6 +859,127 @@ async def _run_tool(agent: Any, tool_name: str, tool_args: dict[str, Any]) -> tu
   except Exception as e:
     logger.error("tool_error", tool=tool_name, error=str(e))
     return f"Error executing tool: {e}", False, None
+
+
+async def _maybe_block_protected(
+  agent: Any, tool_name: str, tool_args: dict[str, Any]
+) -> tuple[str, bool, Any] | None:
+  """Run the interactive approval flow for protected write/update, if active.
+
+  Returns:
+    - ``None`` when no approval is needed (non-protected path, no handler
+      wired, or tool is not write/update) — the caller proceeds to execute
+      the tool. Also ``None`` on approval.
+    - A blocked ``(message, False, None)`` tuple when the user denies (or
+      the handler raises) — the caller returns it directly.
+  """
+  base_name = tool_name.split(":")[-1] if ":" in tool_name else tool_name
+  if base_name not in ("write", "update"):
+    return None
+  handler = getattr(agent, "_approval_handler", None)
+  if handler is None:
+    return None
+  path = tool_args.get("path")
+  if not isinstance(path, str):
+    return None
+  guardrail = agent._guardrails.get("path")
+  if guardrail is None or not guardrail.is_protected(path):
+    return None
+
+  diff = _build_approval_diff(base_name, path, tool_args)
+  try:
+    approved = await handler(path, diff)
+  except Exception as e:
+    logger.warning("approval_handler_error", tool=tool_name, error=str(e))
+    approved = False
+
+  if not approved:
+    return f"Error: User denied write to protected file: {path}", False, None
+  return None
+
+
+def _build_approval_diff(tool_name: str, path: str, tool_args: dict[str, Any]) -> str:
+  """Build a unified diff for an approval prompt.
+
+  - ``update``: applies the tool's replace/delete/insert logic to the
+    current file content and diffs the result. Falls back to empty old
+    content when the file cannot be read (defensive — ``update`` requires
+    an existing file, so this is unreachable in practice).
+  - ``write``: diffs the current file content (if any) against the new
+    content. New files produce an all-additions diff.
+  """
+  from pathlib import Path
+
+  from yoker.tools.diff import generate_diff
+
+  filename = Path(path).name
+
+  if tool_name == "update":
+    try:
+      old_content = Path(path).read_text(encoding="utf-8")
+    except OSError:
+      old_content = ""
+    operation = tool_args.get("operation", "replace")
+    old_string = tool_args.get("old_string", "")
+    new_string = tool_args.get("new_string", "")
+    if operation == "replace":
+      new_content = old_content.replace(old_string, new_string, 1)
+    elif operation == "delete":
+      new_content = old_content.replace(old_string, "", 1)
+    elif operation in ("insert_before", "insert_after"):
+      # Reproduce the update tool's _do_insert so the approval diff shows
+      # the insertion in context rather than a misleading full-file
+      # replacement. line_number is required by _do_insert; without it the
+      # actual tool call would also fail validation, so fall back to the
+      # new string alone (defensive).
+      line_number = tool_args.get("line_number")
+      if line_number is None:
+        new_content = new_string
+      else:
+        new_content = _apply_insert(old_content, operation, line_number, new_string)
+    else:
+      new_content = new_string
+  else:  # write
+    new_content = tool_args.get("content", "")
+    try:
+      old_content = Path(path).read_text(encoding="utf-8")
+    except OSError:
+      old_content = ""
+
+  return generate_diff(old_content, new_content, filename)
+
+
+def _apply_insert(old_content: str, operation: str, line_number: Any, new_string: str) -> str:
+  """Mirror ``yoker.builtin.update._do_insert`` for approval diff rendering.
+
+  Inserts ``new_string`` before/after the 1-based ``line_number`` in
+  ``old_content`` and returns the resulting full file content. Unlike
+  ``_do_insert``, this helper does not raise on out-of-range line numbers
+  — a bad range would make the diff unintelligible but the actual tool
+  call would fail validation anyway, so we fall back to appending at the
+  nearest boundary.
+  """
+  try:
+    line_num = int(line_number)
+  except (ValueError, TypeError):
+    return new_string
+
+  lines = old_content.splitlines(keepends=True)
+  if not lines:
+    return new_string + "\n"
+
+  if lines and not lines[-1].endswith("\n"):
+    lines[-1] = lines[-1] + "\n"
+
+  total = len(lines)
+  # Clamp to valid range so an out-of-range request still produces a
+  # readable diff rather than raising.
+  if operation == "insert_before":
+    idx = max(0, min(line_num - 1, total))
+  else:  # insert_after
+    idx = max(0, min(line_num, total))
+  lines.insert(idx, new_string + "\n")
+  return "".join(lines)
 
 
 async def _execute_tool(spec: ToolSpec, agent: Any, tool_args: dict[str, Any]) -> ToolResult:
