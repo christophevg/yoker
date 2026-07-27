@@ -9,7 +9,7 @@ Bare-minimum 1.0.0 scope: 8 items + dogfooding gate. Full MBI-008 (Prompt Sets) 
 | **P1** | M.2 Default Tools Behavior | Done (PR #47) |
 | **P1** | `make` tool | Done (PR #48) |
 | **P1** | `read` offset/limit | Done (PR #49) |
-| **P1** | `search` enhancements | Open (from MBI-009 T3) |
+| **P1** | `search` enhancements | Done (PR #50) |
 | **P1** | `github` tool | Open (from MBI-009 T7) |
 | **P1** | Context overflow management (IP-12) | Open (from MBI-008 T3.5) |
 | **P1** | `protected_files` guardrail | Open (from MBI-009 T12) |
@@ -29,7 +29,7 @@ All items below must be complete before declaring 1.0.0. Implementation order is
 - [x] M.2: Default Tools Behavior (PR #47, 2026-07-20)
 - [x] `make` tool (PR #48, 2026-07-21)
 - [x] `read` offset/limit (PR #49, 2026-07-22)
-- [ ] `search` enhancements
+- [x] `search` enhancements (PR #50, 2026-07-27)
 - [ ] `github` tool
 - [ ] Context overflow management (IP-12)
 - [ ] `protected_files` guardrail
@@ -73,7 +73,7 @@ All items below must be complete before declaring 1.0.0. Implementation order is
 
 ### `search` enhancements
 
-- [ ] **`search` enhancements — context lines, case-insensitive, file-type filter, count mode**
+- [x] **`search` enhancements — context lines, case-insensitive, file-type filter, count mode** (PR #50, 2026-07-27)
   - Add `case_insensitive: bool = False`, `context_before: int = 0`, `context_after: int = 0`
   - Add `include_pattern: str = ""`, `exclude_pattern: str = ""`, `count_only: bool = False`
   - Cap context lines at 20 to prevent output flooding
