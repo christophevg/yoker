@@ -83,6 +83,7 @@ src/yoker/
 │   ├── existence.py         # existence: check files/folders exist
 │   ├── search.py            # search: file and content search
 │   ├── git.py               # git: Git operations
+│   ├── github.py            # github: read-only GitHub operations via gh CLI (MBI-009 T7)
 │   ├── make.py              # make: Makefile target execution
 │   ├── webfetch.py          # webfetch: fetch web content through a backend
 │   ├── websearch.py         # websearch: search the web through a backend
