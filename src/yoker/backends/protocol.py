@@ -86,7 +86,17 @@ class ChatChunk:
 
 
 class ModelBackend(Protocol):
-  """Provider-neutral streaming chat backend."""
+  """Provider-neutral streaming chat backend.
+
+  Attributes:
+    supports_context_management: When True, the backend accepts a
+      ``context_management`` kwarg on :meth:`chat_stream` and forwards it
+      to the provider (e.g. Anthropic's ``context_management`` field for
+      thinking-block clearing). Defaults to ``False`` — backends that do
+      not support it must still accept and ignore the kwarg.
+  """
+
+  supports_context_management: bool
 
   def chat_stream(
     self,
@@ -95,6 +105,7 @@ class ModelBackend(Protocol):
     messages: list[dict[str, Any]],
     tools: list[dict[str, Any]] | None = None,
     think: bool = False,
+    context_management: dict[str, Any] | None = None,
     **kwargs: Any,
   ) -> AsyncIterator[ChatChunk]:
     """Stream a chat completion as a sequence of ChatChunk.
@@ -109,6 +120,9 @@ class ModelBackend(Protocol):
       messages: Conversation messages (OpenAI-style format).
       tools: Tool definitions (OpenAI function schema format).
       think: Enable thinking/reasoning mode (provider-specific behavior).
+      context_management: Provider-specific context-management directive.
+        Forwarded to the provider only when
+        ``supports_context_management`` is True; otherwise ignored.
       **kwargs: Internal use only - per-provider parameters live in config,
         not call-site kwargs.
 

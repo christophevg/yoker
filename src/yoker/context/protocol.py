@@ -80,6 +80,57 @@ class ContextManager(Protocol):
   def get_messages(self) -> list[dict[str, Any]]:
     """All recorded messages (excludes tool results)."""
 
+  # --- context overflow management ---
+
+  def truncate_oldest_non_system(
+    self,
+    keep_first_user: bool = True,
+    drop_count: int = 1,
+  ) -> int:
+    """Permanently drop the oldest non-setup messages from the tail.
+
+    The protected set is never dropped:
+      - all ``role=system`` messages
+      - the contiguous ``role=user`` scaffolding prefix emitted by
+        :meth:`add_skill_discovery_block` (and any other user messages
+        that appear before the first real user turn)
+      - the first real user turn (the first ``role=user`` message after
+        the scaffolding prefix) when ``keep_first_user`` is True
+
+    Tool-call pairs are dropped atomically: an assistant message carrying
+    ``tool_calls`` is never split from its trailing ``role=tool`` result
+    messages — they are dropped together as a single unit.
+
+    Args:
+      keep_first_user: When True, protect the first real user turn in
+        addition to system messages and the scaffolding prefix. When
+        False, the first user turn is also eligible for dropping (system
+        messages remain protected).
+      drop_count: Number of atomic units (tool-call-pair-aware) to drop.
+
+    Returns:
+      The number of messages permanently removed from ``_messages``.
+    """
+
+  def replace_messages(self, messages: list[dict[str, Any]]) -> None:
+    """Replace the entire internal message list atomically.
+
+    Used by the context-overflow machinery:
+      - the ``on_context_overflow`` hook may return a validated
+        replacement message list, which is applied via this method;
+      - the thinking-block stripping fallback (for backends that do not
+        support a provider-side ``context_management`` directive) replaces
+        the message list with a stripped copy so thinking blocks from
+        prior turns do not accumulate.
+
+    Implementations that persist (e.g. :class:`Persisted`) must rewrite
+    their storage after replacing the in-memory list.
+
+    Args:
+      messages: The new message list (owned by the context manager after
+        the call; callers should not retain references to the same list).
+    """
+
   # --- turn lifecycle ---
 
   def start_turn(self, user_message: str) -> None:

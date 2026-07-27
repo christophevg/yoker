@@ -203,6 +203,14 @@ class ContextConfig:
     storage_path: Path to store context files.
     session_id: Session identifier ('auto' for generated).
     persist_after_turn: Whether to persist after each turn.
+    max_tokens: Soft cap on estimated context tokens before overflow truncation
+      kicks in. The size check uses last turn's ``UsageStats.input_tokens``
+      when available, falling back to a char/4 heuristic. Defaults to 200_000.
+    overflow_keep_first_user: When True, the framework-default truncation
+      protects the contiguous ``role=user`` scaffolding prefix (system prompt
+      setup + skill-discovery block) and the first real user turn; only older
+      non-setup messages are dropped from the tail. When False, the first
+      user turn is also eligible for dropping (system messages stay protected).
   """
 
   manager: str = "basic_persistence"
@@ -211,6 +219,8 @@ class ContextConfig:
   persist_after_turn: bool = True
   filename: str = "{session_id}-{agent_id}"
   fresh: bool = False
+  max_tokens: int = 200_000
+  overflow_keep_first_user: bool = True
 
   def __post_init__(self) -> None:
     """Validate context configuration."""
@@ -219,6 +229,7 @@ class ContextConfig:
       "context.manager",
       ("basic_persistence", "compaction", "multi_tier"),
     )
+    validate_positive_int(self.max_tokens, "context.max_tokens")
 
 
 @dataclass

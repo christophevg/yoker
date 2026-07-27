@@ -53,6 +53,9 @@ class EventType(Enum):
   AGENT_FINISHED = auto()
   AGENT_MESSAGE = auto()
 
+  # Context management
+  CONTEXT_OVERFLOW = auto()
+
 
 @dataclass(frozen=True, kw_only=True)
 class Event:
@@ -253,3 +256,24 @@ class AgentMessageEvent(Event):
   from_id: str
   to_id: str
   content: str
+
+
+@dataclass(frozen=True)
+class ContextOverflowEvent(Event):
+  """Emitted once when context overflow truncation fires.
+
+  Audit trail for the framework-default context management: the size check
+  estimated the conversation had grown past ``context.max_tokens`` and one
+  or more non-setup messages were permanently dropped from the tail.
+
+  Attributes:
+    message_count: Number of messages in the context after truncation.
+    estimated_tokens: The estimated token count that triggered overflow.
+    max_tokens: The configured soft cap (``context.max_tokens``).
+    dropped_count: Number of messages permanently removed from ``_messages``.
+  """
+
+  message_count: int
+  estimated_tokens: int
+  max_tokens: int
+  dropped_count: int

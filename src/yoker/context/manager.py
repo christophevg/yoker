@@ -145,6 +145,142 @@ class BaseContextManager:
     """
     return [item for item in self._messages if item.get("role") != "tool"]
 
+  def truncate_oldest_non_system(
+    self,
+    keep_first_user: bool = True,
+    drop_count: int = 1,
+  ) -> int:
+    """Permanently drop the oldest non-setup messages from the tail.
+
+    See ``ContextManager.truncate_oldest_non_system`` in the Protocol for
+    the full contract. Works on a copy of ``_messages`` (per the security
+    refinement: never mutate in place during iteration) and assigns the
+    truncated list back atomically.
+
+    Args:
+      keep_first_user: Protect the first real user turn when True.
+      drop_count: Number of atomic units to drop.
+
+    Returns:
+      The number of messages permanently removed.
+    """
+    if drop_count <= 0 or not self._messages:
+      return 0
+
+    protected_end = self._protected_prefix_end(keep_first_user)
+    # Build atomic units from the droppable tail (indices >= protected_end).
+    units = self._atomic_units(protected_end)
+    if not units:
+      return 0
+
+    to_drop = min(drop_count, len(units))
+    dropped_indices: set[int] = set()
+    for _ in range(to_drop):
+      if not units:
+        break
+      start, end = units.pop(0)
+      dropped_indices.update(range(start, end + 1))
+
+    if not dropped_indices:
+      return 0
+
+    # Work on a copy, then assign back atomically (no in-place mutation
+    # during iteration).
+    new_messages = [
+      item for idx, item in enumerate(list(self._messages)) if idx not in dropped_indices
+    ]
+    dropped_count = len(self._messages) - len(new_messages)
+    self._messages = new_messages
+    return dropped_count
+
+  def replace_messages(self, messages: list[dict[str, Any]]) -> None:
+    """Replace the entire internal message list atomically.
+
+    See ``ContextManager.replace_messages`` in the Protocol for the full
+    contract. Used by the overflow hook (validated replacement list) and
+    the thinking-block stripping fallback.
+    """
+    self._messages = list(messages)
+
+  def _protected_prefix_end(self, keep_first_user: bool) -> int:
+    """Return the exclusive end index of the protected prefix.
+
+    The protected prefix is always a contiguous run at the head of
+    ``_messages``:
+      - all ``role=system`` messages (setup)
+      - the contiguous ``role=user`` scaffolding prefix (user messages
+        emitted by ``add_skill_discovery_block`` and any other user
+        messages that appear before the first non-user/non-system
+        message)
+      - the first real user turn: the last user message in the
+        contiguous user prefix (the one immediately followed by an
+        assistant or tool message), when ``keep_first_user`` is True
+
+    Once we leave the protected prefix (encounter an assistant or tool
+    message after the user run, or hit a second user turn past the first
+    real one when ``keep_first_user`` is True), the rest is droppable.
+
+    The contiguous user prefix is a single block: all leading user
+    messages. The last user in that block is the first real user turn;
+    the earlier ones are the scaffolding prefix (skill discovery, etc.).
+    """
+    n = len(self._messages)
+    i = 0
+    # System messages: always protected.
+    while i < n and self._messages[i].get("role") == "system":
+      i += 1
+    # Contiguous user prefix (scaffolding + first real user turn).
+    user_run_start = i
+    while i < n and self._messages[i].get("role") == "user":
+      i += 1
+    # ``user_run_start..i`` is the contiguous user block. The last user
+    # message in this block (index ``i - 1``) is the first real user turn
+    # — it is the user message immediately followed by a non-user message.
+    # If the block runs to the end of the list (no assistant/tool after),
+    # there is no "first real user turn" yet: every user message is
+    # pending/current and stays protected.
+    has_real_turn = i < n and self._messages[i].get("role") in ("assistant", "tool")
+    if keep_first_user or not has_real_turn:
+      # Protect the entire contiguous user block (scaffolding + first
+      # real user turn, or all pending user messages when there is no
+      # real turn yet).
+      return i
+    # keep_first_user=False with a real turn: protect the scaffolding
+    # prefix only. Drop the first real user turn (the last user in the
+    # block), protecting indices user_run_start..i-2.
+    if i == user_run_start:
+      return i
+    return i - 1
+
+  def _atomic_units(self, start: int) -> list[tuple[int, int]]:
+    """Group droppable messages (indices >= start) into atomic units.
+
+    An atomic unit is either:
+      - a single message without ``tool_calls``, or
+      - an assistant message with ``tool_calls`` followed by all its
+        trailing contiguous ``role=tool`` result messages (dropped
+        together so tool-call/tool-result pairing is never split).
+
+    Returns:
+      A list of (start_index, end_index) inclusive tuples, in order.
+    """
+    units: list[tuple[int, int]] = []
+    i = start
+    n = len(self._messages)
+    while i < n:
+      msg = self._messages[i]
+      if msg.get("role") == "assistant" and "tool_calls" in msg:
+        unit_start = i
+        i += 1
+        # Consume trailing tool result messages.
+        while i < n and self._messages[i].get("role") == "tool":
+          i += 1
+        units.append((unit_start, i - 1))
+      else:
+        units.append((i, i))
+        i += 1
+    return units
+
   def start_turn(self, user_message: str) -> None:
     """Start a new conversation turn."""
     self.add_message("user", user_message)
