@@ -319,21 +319,3 @@ class BatchUIHandler(UIHandler):
     """
     error_type = type(error).__name__
     print(f"Error [{error_type}]: {error}", file=self._stderr)
-
-  # === Protected-file approval (MBI-009 T12) ===
-
-  async def confirm_approval(self, path: str, diff: str) -> bool:
-    """Non-interactive: always deny writes to protected files.
-
-    The PathGuardrail simple block already blocks protected writes in batch
-    mode before the processing loop is reached, so this method is a
-    defensive safety net — it never approves.
-
-    Args:
-      path: Path being written/updated (ignored).
-      diff: Unified diff string (ignored).
-
-    Returns:
-      Always False.
-    """
-    return False

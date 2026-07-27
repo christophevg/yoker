@@ -121,20 +121,17 @@ async def _run_with_session(
 
 
 def _wire_approval_handler(agent: Agent, ui: UIHandler) -> None:
-  """Wire the protected-file approval handler for interactive sessions.
+  """Wire the protected-file approval handler when the UI opts in.
 
-  Only wired when ``ui`` provides ``confirm_approval`` (interactive handler).
-  ``BatchUIHandler.confirm_approval`` always returns False, so wiring it
-  would block every protected write even though the PathGuardrail simple
-  block already handles batch mode — we skip the wiring in that case and
-  let the simple block fire. When wired, the guardrail's
+  ``confirm_approval`` is an optional ``UIHandler`` method (see
+  :mod:`yoker.ui.handler`). Handlers that do not provide it are not wired,
+  and the :class:`yoker.tools.guardrails.path.PathGuardrail` simple block
+  handles protected writes (no interactive prompt). When ``ui`` provides
+  ``confirm_approval``, the handler is wired onto
+  ``Agent._approval_handler`` and the guardrail's
   ``interactive_approvals`` flag is set so the simple block is skipped and
   the approval hook in ``_run_tool`` handles protected writes.
   """
-  # BatchUIHandler.confirm_approval always denies — don't wire it; let the
-  # PathGuardrail simple block handle batch mode.
-  if isinstance(ui, BatchUIHandler):
-    return
   if not hasattr(ui, "confirm_approval"):
     return
   agent._approval_handler = ui.confirm_approval

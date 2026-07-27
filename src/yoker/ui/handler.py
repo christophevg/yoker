@@ -190,26 +190,6 @@ class UIHandler(Protocol):
     """
     ...
 
-  # === Protected-file approval (MBI-009 T12) ===
-
-  async def confirm_approval(self, path: str, diff: str) -> bool:
-    """Ask the user to approve a write to a protected file.
-
-    Called by the processing loop when ``write``/``update`` targets a file
-    matching ``permissions.protected_files`` and an approval handler is
-    wired (interactive mode). Implementations display ``diff`` (a unified
-    diff string) and prompt the user.
-
-    Args:
-      path: The path being written/updated (resolved absolute path).
-      diff: Unified diff between current and proposed content. For a
-        new-file write, every line is an addition.
-
-    Returns:
-      True to proceed with the write/update, False to block it.
-    """
-    ...
-
   # === Streaming ===
 
   def start_content_stream(self) -> None:
@@ -270,3 +250,30 @@ class UIHandler(Protocol):
   #     session; ``name`` is the spawned agent's session-assigned id.
   #   agent_finished(name) - called when a sub-agent finishes and is
   #     removed from the active list; ``name`` is the finished agent's id.
+
+  # === Protected-file approval (MBI-009 T12, optional) ===
+  #
+  # ``confirm_approval(path: str, diff: str) -> bool`` is an **optional**
+  # protocol method, documented here but not defined as a Protocol member.
+  # Unlike ``agent_spawned``/``agent_finished`` (which are dispatched via
+  # :class:`yoker.ui.bridge.UIBridge`), ``confirm_approval`` is wired
+  # directly onto ``Agent._approval_handler`` by
+  # ``yoker.cli.chat._wire_approval_handler`` and awaited from
+  # ``yoker.core._processing._maybe_block_protected`` — :class:`UIBridge`
+  # is not involved. The wiring is gated by ``hasattr(ui,
+  # "confirm_approval")`` so handlers that do not opt in are not wired;
+  # for those handlers the :class:`yoker.tools.guardrails.path.PathGuardrail`
+  # simple block handles protected writes (no interactive prompt).
+  #
+  # :class:`yoker.ui.batch.BatchUIHandler` does **not** implement it
+  # (non-interactive: protected writes are blocked by the simple block).
+  # :class:`yoker.ui.interactive.InteractiveUIHandler` implements it to
+  # render the unified diff and prompt y/N (empty/EOF/Ctrl+C = deny,
+  # fail-safe).
+  #
+  # When implemented:
+  #   confirm_approval(path, diff) - awaitable; returns True to proceed
+  #     with the protected write/update, False to block it. ``path`` is
+  #     the resolved absolute path; ``diff`` is a unified diff between
+  #     current and proposed content (for a new-file write, every line is
+  #     an addition).
