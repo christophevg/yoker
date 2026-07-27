@@ -36,6 +36,7 @@ from yoker.events import (
   SessionEvent,
   SessionStartEvent,
 )
+from yoker.logging import configure_logging
 from yoker.session.tools import make_send_message_tool, make_spawn_agent_tool
 
 logger = get_logger(__name__)
@@ -64,6 +65,7 @@ class Session:
     plugins: tuple[str, ...] | None = None,
     thinking_mode: ThinkingMode | None = None,
     console_logging: bool = CONSOLE_LOGGING,
+    on_event: EventCallback | None = None,
   ) -> None:
     self.id: str = session_id if session_id is not None else uuid.uuid4().hex
     # stamp the session id onto the context config — single source of truth
@@ -82,6 +84,11 @@ class Session:
     self._tasks: set[asyncio.Task] = set()
     # Tracks disambiguation suffix counters per definition name.
     self._name_counters: dict[str, int] = {}
+
+    configure_logging(self.config.logging, console=console_logging)
+
+    if on_event:
+      self.on_event(on_event)
 
     # Load agent definitions from configured directories and plugins
     self.agents.load(config, extra_plugins)

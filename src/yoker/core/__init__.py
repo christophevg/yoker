@@ -112,12 +112,6 @@ class Agent:
     # stays authoritative for tool availability).
     self._validate_definition()
 
-    # check that all requested tools for the agent are available (warn before filtering)
-    self._warn_missing_tools()
-
-    # filter tools based on agent definition (only keep specified tools)
-    self._filter_tools_by_definition()
-
     # Skill tool: registered when skills are available and the tool is enabled.
     if self.config.tools.skill.enabled and len(self.skills):
       self.tools.register(make_skill_tool(self.skills), namespace="yoker")
@@ -166,6 +160,12 @@ class Agent:
     # initialized on the first ``process()`` call.
     self._process_queue: asyncio.Queue[tuple[str, asyncio.Future[str]]] | None = None
     self._process_task: asyncio.Task[None] | None = None
+
+    # check that all requested tools for the agent are available (warn before filtering)
+    self._warn_missing_tools()
+
+    # filter tools based on agent definition (only keep specified tools)
+    self._filter_tools_by_definition()
 
     logger.info("agent", agent=self)
     logger.debug("agent", skills=list(self.skills.keys()))
