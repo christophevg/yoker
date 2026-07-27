@@ -274,9 +274,9 @@ def _walk_files(
     for filename in filenames:
       if filename.startswith("."):
         continue
-      if include_pattern and not fnmatch.fnmatch(filename, include_pattern):
+      if include_pattern and not fnmatch.fnmatchcase(filename, include_pattern):
         continue
-      if exclude_pattern and fnmatch.fnmatch(filename, exclude_pattern):
+      if exclude_pattern and fnmatch.fnmatchcase(filename, exclude_pattern):
         continue
       file_path = Path(dirpath) / filename
       yield file_path
@@ -387,7 +387,7 @@ def _search_filename(
     if pattern_lower is not None:
       matched = fnmatch.fnmatch(name.lower(), pattern_lower)
     else:
-      matched = fnmatch.fnmatch(name, pattern)
+      matched = fnmatch.fnmatchcase(name, pattern)
     if matched:
       total_count += 1
       if len(matches) < max_results:
