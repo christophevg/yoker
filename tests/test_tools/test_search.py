@@ -1042,3 +1042,523 @@ class TestSearchToolErrorHandling:
     assert result.result["total_matches"] >= 1
     # The file should be counted as searched
     assert result.result["files_searched"] == 1
+
+
+class TestSearchEnhancementsCaseInsensitive:
+  """Tests for case_insensitive parameter (MBI-009 T3)."""
+
+  @pytest.fixture
+  def temp_search_dir(self, tmp_path: Path) -> Path:
+    """Create a directory with mixed-case content."""
+    (tmp_path / "main.py").write_text("def Main():\n    # TODO: implement\n    pass\n")
+    (tmp_path / "utils.py").write_text("# todo: add docstrings\ndef helper():\n    pass\n")
+    (tmp_path / "README.md").write_text("# Project\n\nTODO: write docs\n")
+    return tmp_path
+
+  @pytest.mark.asyncio
+  async def test_case_insensitive_content(self, temp_search_dir: Path) -> None:
+    """case_insensitive=True matches both 'TODO' and 'todo' for pattern 'todo'."""
+    spec = _search_spec()
+    ctx = _search_context()
+    result = await spec.execute(
+      path=str(temp_search_dir), ctx=ctx, pattern="todo", type="content", case_insensitive=True
+    )
+
+    assert result.success
+    # Should match TODO (main.py), todo (utils.py), TODO (README.md) = 3
+    assert result.result["total_matches"] == 3
+    # Enhanced path emits content_metadata
+    assert result.content_metadata is not None
+    assert result.content_metadata["metadata"]["case_insensitive"] is True
+
+  @pytest.mark.asyncio
+  async def test_case_sensitive_default(self, temp_search_dir: Path) -> None:
+    """Default (case_insensitive=False) only matches exact-case 'TODO'."""
+    spec = _search_spec()
+    ctx = _search_context()
+    result = await spec.execute(path=str(temp_search_dir), ctx=ctx, pattern="TODO", type="content")
+
+    assert result.success
+    # Only main.py and README.md have uppercase TODO
+    assert result.result["total_matches"] == 2
+    # Default path — no content_metadata
+    assert result.content_metadata is None
+
+  @pytest.mark.asyncio
+  async def test_case_insensitive_filename(self, tmp_path: Path) -> None:
+    """case_insensitive=True matches case-variant filenames via pattern."""
+    (tmp_path / "Main.py").write_text("a\n")
+    (tmp_path / "Utils.py").write_text("a\n")
+    (tmp_path / "other.txt").write_text("a\n")
+
+    spec = _search_spec()
+    ctx = _search_context()
+    # Lowercase pattern should match capitalized filenames when case_insensitive=True
+    result = await spec.execute(
+      path=str(tmp_path),
+      ctx=ctx,
+      pattern="main.py",
+      type="filename",
+      case_insensitive=True,
+    )
+
+    assert result.success
+    assert result.result["total_matches"] == 1
+    assert result.result["matches"][0]["file"].endswith("Main.py")
+
+  @pytest.mark.asyncio
+  async def test_case_sensitive_filename_default(self, tmp_path: Path) -> None:
+    """Default (case_insensitive=False) does not match case-variant filename."""
+    (tmp_path / "Main.py").write_text("a\n")
+
+    spec = _search_spec()
+    ctx = _search_context()
+    result = await spec.execute(path=str(tmp_path), ctx=ctx, pattern="main.py", type="filename")
+
+    assert result.success
+    # fnmatch is case-sensitive on POSIX; default path should not match 'Main.py'
+    assert result.result["total_matches"] == 0
+
+
+class TestSearchEnhancementsContextLines:
+  """Tests for context_before / context_after parameters."""
+
+  @pytest.fixture
+  def temp_search_dir(self, tmp_path: Path) -> Path:
+    """Create a file with multiple lines so context is meaningful."""
+    (tmp_path / "main.py").write_text(
+      "import os\ndef main():\n    # TODO: implement main\n    pass\n    return None\n"
+    )
+    return tmp_path
+
+  @pytest.mark.asyncio
+  async def test_context_before(self, temp_search_dir: Path) -> None:
+    """context_before=2 returns 2 cat -n lines before each match."""
+    spec = _search_spec()
+    ctx = _search_context()
+    result = await spec.execute(
+      path=str(temp_search_dir),
+      ctx=ctx,
+      pattern="TODO",
+      type="content",
+      context_before=2,
+    )
+
+    assert result.success
+    matches = result.result["matches"]
+    assert len(matches) == 1
+    match = matches[0]
+    assert "context_before" in match
+    assert "context_after" in match  # always present when collect_context
+    assert len(match["context_before"]) == 2
+    # cat -n style: "     1\timport os" (line 1, then line 2)
+    assert match["context_before"][0].startswith("     1\t")
+    assert "import os" in match["context_before"][0]
+    assert match["context_before"][1].startswith("     2\t")
+    assert "def main():" in match["context_before"][1]
+
+  @pytest.mark.asyncio
+  async def test_context_after(self, temp_search_dir: Path) -> None:
+    """context_after=2 returns 2 cat -n lines after each match."""
+    spec = _search_spec()
+    ctx = _search_context()
+    result = await spec.execute(
+      path=str(temp_search_dir),
+      ctx=ctx,
+      pattern="TODO",
+      type="content",
+      context_after=2,
+    )
+
+    assert result.success
+    match = result.result["matches"][0]
+    assert len(match["context_after"]) == 2
+    # Lines 4 and 5 (1-indexed): "    pass" and "    return None"
+    assert match["context_after"][0].startswith("     4\t")
+    assert "pass" in match["context_after"][0]
+
+  @pytest.mark.asyncio
+  async def test_context_both(self, temp_search_dir: Path) -> None:
+    """context_before=1, context_after=1 returns 1 line on each side."""
+    spec = _search_spec()
+    ctx = _search_context()
+    result = await spec.execute(
+      path=str(temp_search_dir),
+      ctx=ctx,
+      pattern="TODO",
+      type="content",
+      context_before=1,
+      context_after=1,
+    )
+
+    assert result.success
+    match = result.result["matches"][0]
+    assert len(match["context_before"]) == 1
+    assert len(match["context_after"]) == 1
+
+  @pytest.mark.asyncio
+  async def test_context_clamped_to_max(self, tmp_path: Path) -> None:
+    """context_before > 20 is clamped to 20."""
+    # Create a file with 50 lines before the match
+    lines = [f"line {i}\n" for i in range(50)]
+    lines.append("TODO: target\n")
+    (tmp_path / "big.py").write_text("".join(lines))
+
+    spec = _search_spec()
+    ctx = _search_context()
+    result = await spec.execute(
+      path=str(tmp_path), ctx=ctx, pattern="TODO", type="content", context_before=50
+    )
+
+    assert result.success
+    match = result.result["matches"][0]
+    # Clamped to MAX_CONTEXT_LINES = 20
+    assert len(match["context_before"]) == 20
+    # Metadata records the clamped value
+    assert result.content_metadata["metadata"]["context_before"] == 20
+
+  @pytest.mark.asyncio
+  async def test_context_negative_clamped_to_zero(self, tmp_path: Path) -> None:
+    """Negative context_before clamps to 0 (no context)."""
+    (tmp_path / "main.py").write_text("line 1\nTODO: target\nline 3\n")
+
+    spec = _search_spec()
+    ctx = _search_context()
+    result = await spec.execute(
+      path=str(tmp_path), ctx=ctx, pattern="TODO", type="content", context_before=-5
+    )
+
+    assert result.success
+    # context_before=-5 clamps to 0 → enhanced is False → no context keys, no content_metadata
+    assert result.content_metadata is None
+    match = result.result["matches"][0]
+    assert "context_before" not in match
+
+  @pytest.mark.asyncio
+  async def test_context_boundary_at_file_start(self, tmp_path: Path) -> None:
+    """Context lines at file start return fewer than requested."""
+    (tmp_path / "first.py").write_text("TODO: first line\nline 2\nline 3\n")
+
+    spec = _search_spec()
+    ctx = _search_context()
+    result = await spec.execute(
+      path=str(tmp_path), ctx=ctx, pattern="TODO", type="content", context_before=5
+    )
+
+    assert result.success
+    match = result.result["matches"][0]
+    # Match at line 1, so 0 lines before (boundary clamp)
+    assert len(match["context_before"]) == 0
+
+
+class TestSearchEnhancementsFileFiltering:
+  """Tests for include_pattern / exclude_pattern parameters."""
+
+  @pytest.fixture
+  def temp_search_dir(self, tmp_path: Path) -> Path:
+    """Create files of different types."""
+    (tmp_path / "main.py").write_text("TODO: py file\n")
+    (tmp_path / "utils.py").write_text("TODO: py file\n")
+    (tmp_path / "README.md").write_text("TODO: md file\n")
+    (tmp_path / "notes.txt").write_text("TODO: txt file\n")
+    return tmp_path
+
+  @pytest.mark.asyncio
+  async def test_include_pattern(self, temp_search_dir: Path) -> None:
+    """include_pattern='*.py' only searches .py files."""
+    spec = _search_spec()
+    ctx = _search_context()
+    result = await spec.execute(
+      path=str(temp_search_dir),
+      ctx=ctx,
+      pattern="TODO",
+      type="content",
+      include_pattern="*.py",
+    )
+
+    assert result.success
+    files = {m["file"] for m in result.result["matches"]}
+    assert all(f.endswith(".py") for f in files)
+    assert result.result["total_matches"] == 2
+
+  @pytest.mark.asyncio
+  async def test_exclude_pattern(self, temp_search_dir: Path) -> None:
+    """exclude_pattern='*.md' skips .md files."""
+    spec = _search_spec()
+    ctx = _search_context()
+    result = await spec.execute(
+      path=str(temp_search_dir),
+      ctx=ctx,
+      pattern="TODO",
+      type="content",
+      exclude_pattern="*.md",
+    )
+
+    assert result.success
+    files = {m["file"] for m in result.result["matches"]}
+    assert not any(f.endswith(".md") for f in files)
+    assert result.result["total_matches"] == 3
+
+  @pytest.mark.asyncio
+  async def test_include_and_exclude_combined(self, temp_search_dir: Path) -> None:
+    """include_pattern='*.py' and exclude_pattern='main*' searches only utils.py."""
+    spec = _search_spec()
+    ctx = _search_context()
+    result = await spec.execute(
+      path=str(temp_search_dir),
+      ctx=ctx,
+      pattern="TODO",
+      type="content",
+      include_pattern="*.py",
+      exclude_pattern="main*",
+    )
+
+    assert result.success
+    files = {m["file"] for m in result.result["matches"]}
+    assert files == {str(temp_search_dir / "utils.py")}
+
+  @pytest.mark.asyncio
+  async def test_include_pattern_filename_search(self, temp_search_dir: Path) -> None:
+    """include_pattern filters on top of filename glob pattern."""
+    spec = _search_spec()
+    ctx = _search_context()
+    result = await spec.execute(
+      path=str(temp_search_dir),
+      ctx=ctx,
+      pattern="*",
+      type="filename",
+      include_pattern="*.py",
+    )
+
+    assert result.success
+    files = {m["file"] for m in result.result["matches"]}
+    assert all(f.endswith(".py") for f in files)
+    assert result.result["total_matches"] == 2
+
+  @pytest.mark.asyncio
+  async def test_include_pattern_too_long(self, tmp_path: Path) -> None:
+    """include_pattern over 500 chars returns an error."""
+    spec = _search_spec()
+    ctx = _search_context()
+    result = await spec.execute(
+      path=str(tmp_path),
+      ctx=ctx,
+      pattern="TODO",
+      type="content",
+      include_pattern="a" * 600,
+    )
+
+    assert not result.success
+    assert "too long" in result.error.lower()
+
+
+class TestSearchEnhancementsCountOnly:
+  """Tests for count_only parameter."""
+
+  @pytest.fixture
+  def temp_search_dir(self, tmp_path: Path) -> Path:
+    """Create files with multiple matches."""
+    (tmp_path / "main.py").write_text("TODO: one\nTODO: two\nother line\n")
+    (tmp_path / "utils.py").write_text("TODO: three\n")
+    return tmp_path
+
+  @pytest.mark.asyncio
+  async def test_count_only_content(self, temp_search_dir: Path) -> None:
+    """count_only=True returns counts dict, no matches list."""
+    spec = _search_spec()
+    ctx = _search_context()
+    result = await spec.execute(
+      path=str(temp_search_dir), ctx=ctx, pattern="TODO", type="content", count_only=True
+    )
+
+    assert result.success
+    data = result.result
+    assert "matches" not in data
+    assert "counts" in data
+    # main.py has 2 TODOs, utils.py has 1
+    assert data["total_matches"] == 3
+    main_key = str(temp_search_dir / "main.py")
+    utils_key = str(temp_search_dir / "utils.py")
+    assert data["counts"][main_key] == 2
+    assert data["counts"][utils_key] == 1
+
+  @pytest.mark.asyncio
+  async def test_count_only_metadata(self, temp_search_dir: Path) -> None:
+    """count_only=True emits flat content_metadata with grep-c style content."""
+    spec = _search_spec()
+    ctx = _search_context()
+    result = await spec.execute(
+      path=str(temp_search_dir), ctx=ctx, pattern="TODO", type="content", count_only=True
+    )
+
+    assert result.content_metadata is not None
+    cm = result.content_metadata
+    assert cm["operation"] == "search"
+    assert cm["content_type"] == "text/plain"
+    assert cm["path"] == str(temp_search_dir)
+    # grep-c style: "file:count"
+    assert ":" in cm["content"]
+    assert cm["metadata"]["count_only"] is True
+
+  @pytest.mark.asyncio
+  async def test_count_only_ignored_for_filename(self, temp_search_dir: Path) -> None:
+    """count_only is ignored for filename search (already count-like)."""
+    spec = _search_spec()
+    ctx = _search_context()
+    result = await spec.execute(
+      path=str(temp_search_dir),
+      ctx=ctx,
+      pattern="*.py",
+      type="filename",
+      count_only=True,
+    )
+
+    assert result.success
+    # Filename search keeps its default shape (matches list, no counts key)
+    assert "matches" in result.result
+    assert "counts" not in result.result
+
+  @pytest.mark.asyncio
+  async def test_count_only_with_context_ignored(self, temp_search_dir: Path) -> None:
+    """count_only=True with context_before wins; context is not collected."""
+    spec = _search_spec()
+    ctx = _search_context()
+    result = await spec.execute(
+      path=str(temp_search_dir),
+      ctx=ctx,
+      pattern="TODO",
+      type="content",
+      count_only=True,
+      context_before=5,
+    )
+
+    assert result.success
+    # count_only path: no matches list, counts present
+    assert "matches" not in result.result
+    assert "counts" in result.result
+
+
+class TestSearchEnhancementsDefaultPath:
+  """Tests verifying default path is byte-identical to pre-enhancement behavior."""
+
+  @pytest.mark.asyncio
+  async def test_default_path_no_content_metadata(self, tmp_path: Path) -> None:
+    """All 6 params at defaults → no content_metadata."""
+    (tmp_path / "main.py").write_text("def main():\n    # TODO: implement\n    pass\n")
+
+    spec = _search_spec()
+    ctx = _search_context()
+    result = await spec.execute(path=str(tmp_path), ctx=ctx, pattern="TODO", type="content")
+
+    assert result.success
+    assert result.content_metadata is None
+
+  @pytest.mark.asyncio
+  async def test_default_path_match_dict_shape(self, tmp_path: Path) -> None:
+    """Default path match dicts have exactly {file, line, content} keys."""
+    (tmp_path / "main.py").write_text("TODO: target\n")
+
+    spec = _search_spec()
+    ctx = _search_context()
+    result = await spec.execute(path=str(tmp_path), ctx=ctx, pattern="TODO", type="content")
+
+    assert result.success
+    match = result.result["matches"][0]
+    assert set(match.keys()) == {"file", "line", "content"}
+
+  @pytest.mark.asyncio
+  async def test_default_path_result_keys(self, tmp_path: Path) -> None:
+    """Default path result dict has the same keys as today."""
+    (tmp_path / "main.py").write_text("TODO: target\n")
+
+    spec = _search_spec()
+    ctx = _search_context()
+    result = await spec.execute(path=str(tmp_path), ctx=ctx, pattern="TODO", type="content")
+
+    assert result.success
+    assert set(result.result.keys()) == {
+      "success",
+      "matches",
+      "total_matches",
+      "truncated",
+      "files_searched",
+    }
+
+
+class TestSearchEnhancementsContentMetadataShape:
+  """Verify flat content_metadata shape on the enhanced path."""
+
+  @pytest.mark.asyncio
+  async def test_flat_shape_keys(self, tmp_path: Path) -> None:
+    """content_metadata has top-level operation, path, content_type, content, metadata."""
+    (tmp_path / "main.py").write_text("TODO: target\n")
+
+    spec = _search_spec()
+    ctx = _search_context()
+    result = await spec.execute(
+      path=str(tmp_path), ctx=ctx, pattern="TODO", type="content", case_insensitive=True
+    )
+
+    cm = result.content_metadata
+    assert set(cm.keys()) == {"operation", "path", "content_type", "content", "metadata"}
+    assert cm["operation"] == "search"
+    assert cm["content_type"] == "text/plain"
+
+  @pytest.mark.asyncio
+  async def test_metadata_keys(self, tmp_path: Path) -> None:
+    """metadata nested dict has the 7 specified keys."""
+    (tmp_path / "main.py").write_text("TODO: target\n")
+
+    spec = _search_spec()
+    ctx = _search_context()
+    result = await spec.execute(
+      path=str(tmp_path), ctx=ctx, pattern="TODO", type="content", case_insensitive=True
+    )
+
+    md = result.content_metadata["metadata"]
+    assert set(md.keys()) == {
+      "case_insensitive",
+      "context_before",
+      "context_after",
+      "include_pattern",
+      "exclude_pattern",
+      "count_only",
+      "total_matches",
+    }
+
+  @pytest.mark.asyncio
+  async def test_grep_style_content(self, tmp_path: Path) -> None:
+    """content field is grep-style 'file:line:content'."""
+    (tmp_path / "main.py").write_text("TODO: target\n")
+
+    spec = _search_spec()
+    ctx = _search_context()
+    result = await spec.execute(
+      path=str(tmp_path), ctx=ctx, pattern="TODO", type="content", case_insensitive=True
+    )
+
+    content = result.content_metadata["content"]
+    assert "main.py:1:TODO: target" in content
+
+  @pytest.mark.asyncio
+  async def test_grep_style_with_context(self, tmp_path: Path) -> None:
+    """content with context uses '-' separator for context lines."""
+    (tmp_path / "main.py").write_text("import os\ndef main():\n    TODO: target\n    pass\n")
+
+    spec = _search_spec()
+    ctx = _search_context()
+    result = await spec.execute(
+      path=str(tmp_path),
+      ctx=ctx,
+      pattern="TODO",
+      type="content",
+      context_before=1,
+      context_after=1,
+    )
+
+    content = result.content_metadata["content"]
+    lines = content.split("\n")
+    # Match line uses ':', context lines use '-'
+    assert any("main.py:3:" in line for line in lines)
+    assert any("main.py-2-" in line for line in lines)
+    assert any("main.py-4-" in line for line in lines)

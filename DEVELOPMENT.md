@@ -8,6 +8,65 @@ Yoker is a Python agent harness with configurable tools and guardrails. It provi
 
 ## Recent Changes
 
+### MBI-009 T3: search Enhancements (2026-07-27)
+
+Added 6 new optional parameters to the `search` tool (`src/yoker/builtin/search.py`)
+for grep-like coverage (case-insensitive matching, context lines, glob file filters,
+count-only mode). All parameters default to preserving byte-identical default-path
+behavior — no `content_metadata` is emitted and the result dict shape is unchanged
+when none of the 6 are set. When any of the 6 is non-default, a flat
+`content_metadata` dict is attached (same flat shape as `read.py` and `update.py`:
+top-level `operation`/`path`/`content_type`/`content`/`metadata` keys) so
+`core/_processing.py`'s `ToolContentEvent` can render grep-style output.
+
+- **New parameters** (appended after `timeout_ms`): `case_insensitive: bool = False`,
+  `context_before: int = 0`, `context_after: int = 0`, `include_pattern: str = ""`,
+  `exclude_pattern: str = ""`, `count_only: bool = False`.
+- **New module constants**: `MAX_CONTEXT_LINES = 20` (context-line cap),
+  `CAT_N_WIDTH = 6` (matches `read.py` for cross-tool cat -n consistency).
+- **`_walk_files`** now accepts `include_pattern`/`exclude_pattern` and filters
+  via `fnmatch.fnmatch(filename, ...)` on the filename (not full path). Applied
+  to both content and filename search.
+- **`_search_content`** now takes the 6 new params and returns a 5-tuple
+  `(matches, total, truncated, files_searched, counts)`. Context lines are
+  rendered cat -n style and attached as `context_before`/`context_after` lists
+  on each match dict (only when `collect_context` is true — context > 0 and
+  not `count_only`). `count_only=True` collects per-file `counts` dict and
+  skips match collection entirely. `case_insensitive=True` compiles the regex
+  with `re.IGNORECASE`. Context-line boundaries naturally clamp at file
+  start/end (no error). Negative context values clamp to 0 (default path).
+- **`_search_filename`** now takes `case_insensitive`/`include_pattern`/
+  `exclude_pattern`. `case_insensitive=True` lowers both sides of the
+  `fnmatch` call (deterministic across platforms). `count_only` is ignored
+  for filename search (filename results are already count-like via
+  `total_matches`).
+- **`include_pattern`/`exclude_pattern`** validation reuses the existing
+  `MAX_PATTERN_LENGTH` (500-char) cap; over-length patterns return the same
+  "Pattern too long" error as content regex patterns.
+- **`count_only` + context interaction**: `count_only` wins; context lines
+  are not collected. A warning is logged when both are set together.
+- **Result dict (enhanced path)**: `count_only=True` content search omits
+  `matches` and adds `counts: {file: int}`. Other enhanced paths keep the
+  default result-dict shape (with match dicts enriched by context keys when
+  context is collected).
+- **`content_metadata.content`** is grep-style text: `file:line:content`
+  for matches, `file-line-text` for context (grep -B/-A convention), and
+  `file:count` for count-only mode. Empty string when no matches.
+- **`content_metadata.metadata`** has exactly 7 keys: `case_insensitive`,
+  `context_before`, `context_after`, `include_pattern`, `exclude_pattern`,
+  `count_only`, `total_matches`.
+- **No config, manifest, guardrail, or consumer changes** — the existing
+  `PathGuardrail` on `path` covers the security surface; the new params are
+  per-call with hardcoded caps, not tunable config. Schema is auto-built via
+  `build_tool_spec()` introspection.
+- **Tests** (`tests/test_tools/test_search.py`): 26 new tests across 6 new
+  test classes covering each parameter, clamping (context > 20 → 20, negative
+  → 0), boundary conditions (file start/end), include/exclude combinations,
+  count_only interactions (with context, with filename search), default-path
+  byte-identical verification (no `content_metadata`, match dict has exactly
+  `{file, line, content}` keys), and flat `content_metadata` shape
+  verification. All 75 search tests pass; full suite 2048 passed.
+
 ### M.2: Default Tools Behavior — Simplified ALL_TOOLS Sentinel (2026-07-20)
 
 Implemented the owner-approved `ALL_TOOLS = []` sentinel so an agent
