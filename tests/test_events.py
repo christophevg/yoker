@@ -50,6 +50,8 @@ class TestEventTypes:
       "AGENT_SPAWNED",
       "AGENT_FINISHED",
       "AGENT_MESSAGE",
+      # Context management
+      "CONTEXT_OVERFLOW",
     ]
     actual = [et.name for et in EventType]
     assert set(expected) == set(actual)

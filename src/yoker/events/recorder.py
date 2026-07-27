@@ -22,6 +22,7 @@ from yoker.events.types import (
   ContentChunkEvent,
   ContentEndEvent,
   ContentStartEvent,
+  ContextOverflowEvent,
   Event,
   EventType,
   SessionEndEvent,
@@ -56,6 +57,7 @@ EVENT_CLASS_MAP: dict[EventType, type[Event]] = {
   EventType.AGENT_SPAWNED: AgentSpawnedEvent,
   EventType.AGENT_FINISHED: AgentFinishedEvent,
   EventType.AGENT_MESSAGE: AgentMessageEvent,
+  EventType.CONTEXT_OVERFLOW: ContextOverflowEvent,
 }
 
 

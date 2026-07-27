@@ -83,6 +83,21 @@ class ContextManagerWrapper:
   def get_messages(self) -> list[dict[str, Any]]:
     return self._wrapped.get_messages()
 
+  # --- context overflow management ---
+
+  def truncate_oldest_non_system(
+    self,
+    keep_first_user: bool = True,
+    drop_count: int = 1,
+  ) -> int:
+    return self._wrapped.truncate_oldest_non_system(
+      keep_first_user=keep_first_user,
+      drop_count=drop_count,
+    )
+
+  def replace_messages(self, messages: list[dict[str, Any]]) -> None:
+    self._wrapped.replace_messages(messages)
+
   # --- turn lifecycle ---
 
   def start_turn(self, user_message: str) -> None:

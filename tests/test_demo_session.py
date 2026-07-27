@@ -18,6 +18,7 @@ from yoker.events.types import (
   ContentChunkEvent,
   ContentEndEvent,
   ContentStartEvent,
+  ContextOverflowEvent,
   EventType,
   ThinkingChunkEvent,
   ThinkingEndEvent,
@@ -582,6 +583,27 @@ class TestSerializeDeserializeRoundTrip:
 
     assert deserialized.command == original.command
     assert deserialized.result == original.result
+
+  def test_roundtrip_context_overflow_event(self) -> None:
+    """Test round-trip for ContextOverflowEvent (guards EVENT_CLASS_MAP entry)."""
+    timestamp = datetime(2026, 4, 21, 10, 30, 0)
+    original = ContextOverflowEvent(
+      type=EventType.CONTEXT_OVERFLOW,
+      timestamp=timestamp,
+      message_count=12,
+      estimated_tokens=8200,
+      max_tokens=8000,
+      dropped_count=3,
+    )
+
+    serialized = serialize_event(original)
+    deserialized = deserialize_event(serialized)
+
+    assert isinstance(deserialized, ContextOverflowEvent)
+    assert deserialized.message_count == original.message_count
+    assert deserialized.estimated_tokens == original.estimated_tokens
+    assert deserialized.max_tokens == original.max_tokens
+    assert deserialized.dropped_count == original.dropped_count
 
 
 class TestEventRecorder:

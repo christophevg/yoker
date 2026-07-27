@@ -10,6 +10,7 @@ from yoker.events.types import (
   ContentChunkEvent,
   ContentEndEvent,
   ContentStartEvent,
+  ContextOverflowEvent,
   Event,
   EventCallback,
   EventType,
@@ -53,6 +54,8 @@ __all__ = [
   "AgentSpawnedEvent",
   "AgentFinishedEvent",
   "AgentMessageEvent",
+  # Context management
+  "ContextOverflowEvent",
   # Session event envelope
   "SessionEvent",
   # Recording and Replay

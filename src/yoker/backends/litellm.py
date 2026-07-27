@@ -53,7 +53,16 @@ class LitellmBackend(ModelBackend):
 
   Attributes:
     config: Yoker configuration object.
+    supports_context_management: True for the Anthropic provider (forwards
+      the ``context_management`` directive to litellm); False for all other
+      providers (the directive is dropped and the caller strips thinking
+      blocks as the fallback).
   """
+
+  # Anthropic is the only provider today that accepts a provider-side
+  # context_management directive (the clear_thinking_20251015 edit). Set
+  # dynamically in __init__ based on the configured provider.
+  supports_context_management: bool = False
 
   def __init__(self, config: Config) -> None:
     """Initialize the Litellm backend.
@@ -62,6 +71,7 @@ class LitellmBackend(ModelBackend):
       config: Yoker configuration object.
     """
     self.config = config
+    self.supports_context_management = config.backend.provider == "anthropic"
 
   async def chat_stream(
     self,
@@ -70,6 +80,7 @@ class LitellmBackend(ModelBackend):
     messages: list[dict[str, Any]],
     tools: list[dict[str, Any]] | None = None,
     think: bool = False,
+    context_management: dict[str, Any] | None = None,
     **kwargs: Any,
   ) -> AsyncIterator[ChatChunk]:
     """Stream a chat completion as a sequence of ChatChunk.
@@ -87,6 +98,10 @@ class LitellmBackend(ModelBackend):
       messages: Conversation messages (OpenAI-style format).
       tools: Tool definitions (OpenAI function schema format).
       think: Enable thinking/reasoning mode.
+      context_management: Provider-side context-management directive. When
+        ``supports_context_management`` is True (Anthropic), forwarded to
+        litellm as the ``context_management`` kwarg. When False, ignored
+        (the caller strips thinking blocks as the fallback).
       **kwargs: Internal use only (ignored).
 
     Yields:
@@ -148,6 +163,13 @@ class LitellmBackend(ModelBackend):
     if tools:
       flattened["tools"] = tools
       logger.debug("Tools being passed to LiteLLM: %s", tools)
+
+    # Forward the context_management directive only when the provider
+    # supports it (Anthropic). For non-supporting providers the caller
+    # (_processing) strips thinking blocks as the fallback, so the
+    # directive is dropped here.
+    if context_management is not None and self.supports_context_management:
+      flattened["context_management"] = context_management
 
     # Log flattened parameters
     logger.debug("Flattened parameters for LiteLLM: %s", flattened)

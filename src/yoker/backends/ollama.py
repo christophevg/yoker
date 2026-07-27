@@ -31,6 +31,9 @@ class OllamaBackend(ModelBackend):
   synthesized block boundaries.
   """
 
+  # Ollama does not support a provider-side context_management directive.
+  supports_context_management: bool = False
+
   def __init__(self, config: "Config") -> None:
     """Initialize the Ollama backend.
 
@@ -94,6 +97,7 @@ class OllamaBackend(ModelBackend):
     messages: list[dict[str, Any]],
     tools: list[dict[str, Any]] | None = None,
     think: bool = False,
+    context_management: dict[str, Any] | None = None,
     **kwargs: Any,
   ) -> AsyncIterator[ChatChunk]:
     """Stream a chat completion as a sequence of ChatChunk.
@@ -112,11 +116,17 @@ class OllamaBackend(ModelBackend):
       messages: Conversation messages (OpenAI-style format).
       tools: Tool definitions (OpenAI function schema format).
       think: Enable thinking/reasoning mode.
+      context_management: Ignored — Ollama does not support a provider-side
+        context_management directive (``supports_context_management = False``).
+        The caller (``_processing``) strips thinking blocks as the fallback.
       **kwargs: Internal use only (ignored).
 
     Yields:
       ChatChunk instances representing streaming events.
     """
+    # context_management is intentionally ignored: Ollama has no equivalent
+    # directive. The processing loop strips thinking blocks before sending
+    # when the backend lacks supports_context_management.
     # State tracking for block boundaries
     in_thinking = False
     in_content = False

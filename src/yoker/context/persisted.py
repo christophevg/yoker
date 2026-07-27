@@ -182,6 +182,30 @@ class Persisted(ContextManagerWrapper):
     self._last_turn_time = datetime.now()
     self._persist_full_state(self._wrapped.get_messages())
 
+  def truncate_oldest_non_system(
+    self,
+    keep_first_user: bool = True,
+    drop_count: int = 1,
+  ) -> int:
+    """Delegate to wrapped, then bulk-rewrite the JSONL file.
+
+    Permanently dropped messages are removed from the in-memory list AND
+    from the persisted JSONL file (the file is rewritten with the
+    truncated state).
+    """
+    dropped = self._wrapped.truncate_oldest_non_system(
+      keep_first_user=keep_first_user,
+      drop_count=drop_count,
+    )
+    if dropped > 0:
+      self._persist_full_state(self._wrapped.get_messages())
+    return dropped
+
+  def replace_messages(self, messages: list[dict[str, Any]]) -> None:
+    """Delegate to wrapped, then bulk-rewrite the JSONL file."""
+    self._wrapped.replace_messages(messages)
+    self._persist_full_state(self._wrapped.get_messages())
+
   def clear(self) -> None:
     """Clear in-memory context and truncate the JSONL file."""
     self._wrapped.clear()
