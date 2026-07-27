@@ -11,7 +11,7 @@ Bare-minimum 1.0.0 scope: 8 items + dogfooding gate. Full MBI-008 (Prompt Sets) 
 | **P1** | `read` offset/limit | Done (PR #49) |
 | **P1** | `search` enhancements | Done (PR #50) |
 | **P1** | `github` tool | Done (PR #51) |
-| **P1** | Context overflow management (IP-12) | Open (from MBI-008 T3.5) |
+| **P1** | Context overflow management (IP-12) | Done (PR #52) |
 | **P1** | `protected_files` guardrail | Open (from MBI-009 T12) |
 | **P1** | MBI-005: Two Assistant Packages | Ready (deps met) |
 | **GATE** | Dogfooding Gate | Open |
@@ -31,7 +31,7 @@ All items below must be complete before declaring 1.0.0. Implementation order is
 - [x] `read` offset/limit (PR #49, 2026-07-22)
 - [x] `search` enhancements (PR #50, 2026-07-27)
 - [x] `github` tool (PR #51, 2026-07-27)
-- [ ] Context overflow management (IP-12)
+- [x] Context overflow management (IP-12) (PR #52, 2026-07-27)
 - [ ] `protected_files` guardrail
 - [ ] MBI-005: Two Assistant Packages
 - [ ] Dogfooding Gate: Last Yoker sessions done using Yoker itself (not Claude Code)
@@ -101,7 +101,7 @@ All items below must be complete before declaring 1.0.0. Implementation order is
 
 ### Context overflow management (IP-12)
 
-- [ ] **Context overflow management — framework-level message truncation**
+- [x] **Context overflow management — framework-level message truncation** (PR #52, 2026-07-27)
   - Add context size check before each request (framework mechanism: detection + triggering)
   - Framework default: drop oldest non-system messages when over threshold (keeping first user message with config injections)
   - If backend supports `context_management` API field (Anthropic), pass through thinking token clearing directive
@@ -109,6 +109,16 @@ All items below must be complete before declaring 1.0.0. Implementation order is
   - Optional `on_context_overflow` hook for prompt sets that want custom truncation strategies
   - Without this, long sessions crash
   - **Source:** `analysis/mbi-prompt-sets.md` (MBI-008 T3.5, IP-12)
+  - **Delivered (PR #52):**
+    - Hybrid size detection (UsageStats.input_tokens primary, char/4 fallback — no new dependency)
+    - Framework default: drop oldest non-system messages with setup-prefix invariant (all role=system + contiguous role=user scaffolding + first real user turn). Tool-call-pair-aware dropping
+    - Backend protocol extension: supports_context_management + context_management kwarg. Anthropic passthrough. Non-supporting: thinking blocks stripped (always-on)
+    - Optional on_context_overflow hook with output validation. Ships as None
+    - ContextOverflowEvent audit trail
+    - Two config fields: max_tokens (200,000) + overflow_keep_first_user (True)
+    - Permanent truncation (Persisted rewrites JSONL)
+    - Security fix during review: stale-token-estimate bug (one-line fix)
+    - 50 new tests across 4 test files + 1 serialization round-trip test
 
 ### `protected_files` guardrail
 
