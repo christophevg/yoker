@@ -481,23 +481,6 @@ class MakeToolConfig(ToolConfig):
         )
 
 
-# Known GitHub operations — the fixed enum that GitHubToolConfig.allowed_operations
-# is validated against. Mirrors yoker.builtin.github._GITHUB_OPERATIONS.
-_GITHUB_OPERATIONS: frozenset[str] = frozenset(
-  {
-    "repo_view",
-    "issue_list",
-    "issue_view",
-    "pr_list",
-    "pr_view",
-    "workflow_list",
-    "workflow_view",
-    "release_list",
-    "release_view",
-  }
-)
-
-
 @dataclass
 class GitHubToolConfig(ToolConfig):
   """GitHub tool configuration.
@@ -534,6 +517,9 @@ class GitHubToolConfig(ToolConfig):
 
   def __post_init__(self) -> None:
     """Validate GitHub tool configuration."""
+    # Lazy: yoker.builtin.github imports GitHubToolConfig at module load.
+    from yoker.builtin.github import _GITHUB_OPERATIONS
+
     validate_positive_int(self.timeout_ms, "tools.github.timeout_ms")
     validate_positive_int(self.max_results, "tools.github.max_results")
     validate_positive_int(self.max_output_kb, "tools.github.max_output_kb")
