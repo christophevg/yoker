@@ -10,7 +10,7 @@ Bare-minimum 1.0.0 scope: 8 items + dogfooding gate. Full MBI-008 (Prompt Sets) 
 | **P1** | `make` tool | Done (PR #48) |
 | **P1** | `read` offset/limit | Done (PR #49) |
 | **P1** | `search` enhancements | Done (PR #50) |
-| **P1** | `github` tool | Open (from MBI-009 T7) |
+| **P1** | `github` tool | Done (PR #51) |
 | **P1** | Context overflow management (IP-12) | Open (from MBI-008 T3.5) |
 | **P1** | `protected_files` guardrail | Open (from MBI-009 T12) |
 | **P1** | MBI-005: Two Assistant Packages | Ready (deps met) |
@@ -30,7 +30,7 @@ All items below must be complete before declaring 1.0.0. Implementation order is
 - [x] `make` tool (PR #48, 2026-07-21)
 - [x] `read` offset/limit (PR #49, 2026-07-22)
 - [x] `search` enhancements (PR #50, 2026-07-27)
-- [ ] `github` tool
+- [x] `github` tool (PR #51, 2026-07-27)
 - [ ] Context overflow management (IP-12)
 - [ ] `protected_files` guardrail
 - [ ] MBI-005: Two Assistant Packages
@@ -82,7 +82,7 @@ All items below must be complete before declaring 1.0.0. Implementation order is
 
 ### `github` tool
 
-- [ ] **`github` tool — structured GitHub operations with subcommand blocking**
+- [x] **`github` tool — structured GitHub operations with subcommand blocking** (PR #51, 2026-07-27)
   - Read-only MVP: repo_view, issue_list/view, pr_list/view, workflow_list/view, release_list/view
   - `subprocess.run(["gh", ...], ...)` — list args, no shell
   - Operation allowlist (fixed enum, configurable per-project); subcommand blocking is the whole point
@@ -90,6 +90,14 @@ All items below must be complete before declaring 1.0.0. Implementation order is
   - For PR workflow
   - **Source:** `analysis/mbi-toolset-coverage.md` (MBI-009 T7, Tier 2), `analysis/api-github-tool.md`, `analysis/security-github-tool.md`
   - **Files:** `src/yoker/builtin/github.py` (new), `src/yoker/builtin/__init__.py` (manifest)
+  - **Delivered (PR #51):**
+    - 9 read-only operations (repo_view, issue_list/view, pr_list/view, workflow_list/view, release_list/view)
+    - Hardcoded dispatch table — subcommand blocking is the security boundary
+    - subprocess.Popen with list args (no shell), process-group kill on timeout
+    - Argument injection defenses, output redaction, no env_vars, Windows platform gate
+    - GitHubToolConfig: configurable per-project allowlist, timeout, max_results
+    - Flat content_metadata shape
+    - Post-merge feedback fix: eliminated duplicated _GITHUB_OPERATIONS via lazy import from yoker.builtin.github (single source of truth)
 
 ### Context overflow management (IP-12)
 
