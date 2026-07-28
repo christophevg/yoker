@@ -135,11 +135,40 @@ class Persisted(ContextManagerWrapper):
 
   @agent.setter
   def agent(self, new_agent: "Agent") -> None:
-    # Delegating to the wrapped setter clears and re-sets up initial context
-    # (system prompt + skill discovery block). Persist the resulting state so
-    # the JSONL file contains the system prompt.
-    self._wrapped.agent = new_agent
-    self._persist_full_state(self._wrapped.get_context())
+    # When resuming a session, the wrapped context already has messages
+    # loaded from disk (via load()). The BaseContextManager.agent setter
+    # calls clear() + setup_initial_context() + add_skill_discovery_block(),
+    # which would wipe the loaded conversation. To preserve the resumed
+    # history, we save the loaded messages, set the agent reference directly
+    # (bypassing the clear), prepend the new system prompt, and persist the
+    # combined state.
+    loaded_messages = self._wrapped.get_context()
+    has_loaded_history = len(loaded_messages) > 0
+
+    # Set the agent reference directly, bypassing the BaseContextManager
+    # setter's clear() + setup_initial_context() + add_skill_discovery_block().
+    wrapped = cast("BaseContextManager", self._wrapped)
+    wrapped._agent = new_agent
+
+    if has_loaded_history:
+      # Resume mode: prepend fresh system prompt + skill discovery block to
+      # the loaded conversation history (replace the old system messages that
+      # may have been part of the loaded state).
+      wrapped.clear()
+      wrapped.setup_initial_context()
+      wrapped.add_skill_discovery_block()
+      new_setup = wrapped.get_context()
+      # Drop the loaded system messages from the head; keep user/assistant/tool
+      # messages (the actual conversation). Then prepend the fresh setup.
+      conversation = [msg for msg in loaded_messages if msg.get("role") != "system"]
+      wrapped.replace_messages(new_setup + conversation)
+    else:
+      # Fresh session: normal setup (clear + system prompt + skill discovery).
+      wrapped.clear()
+      wrapped.setup_initial_context()
+      wrapped.add_skill_discovery_block()
+
+    self._persist_full_state(wrapped.get_context())
 
   # --- mutating overrides: delegate to wrapped, then bulk-rewrite JSONL ---
 
