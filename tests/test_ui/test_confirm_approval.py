@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from io import StringIO
 from types import SimpleNamespace
-from unittest.mock import patch
+from typing import Any
 
 import pytest
 from rich.console import Console
@@ -29,110 +29,127 @@ def test_batch_handler_does_not_provide_confirm_approval() -> None:
 #
 # On CI runners without a real TTY, constructing prompt_toolkit's
 # ``PromptSession`` raises ``NoConsoleScreenBufferError`` on Windows and hangs
-# on macOS. We patch ``PromptSession`` at the module level so the handler is
-# built against a stub session whose ``prompt_async`` returns canned answers
-# (or raises canned exceptions), exercising only the ``confirm_approval``
-# logic on every platform.
+# on macOS. Because the merged handler creates the ``PromptSession`` lazily
+# (on first ``get_input`` / ``get_secret_input`` / ``confirm_approval``),
+# the patch must stay active for the duration of each test — including the
+# ``confirm_approval`` call, not just ``__init__``. We use a fixture that
+# patches ``PromptSession`` at the module level for the whole test, and tests
+# configure the stub session's ``prompt_async`` behavior.
 
 
-def _make_interactive_handler(
+@pytest.fixture
+def stub_session(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
+  """Patch ``PromptSession`` at module level with a stub for the test's duration.
+
+  The stub's ``prompt_async`` is a coroutine that returns ``""`` by default.
+  Tests reassign ``prompt_async`` (or set ``answers`` / ``raises``) to drive
+  the desired behavior.
+  """
+  state: dict[str, Any] = {"answers": [], "raises": None}
+
+  async def _prompt_async(_prompt: str, is_password: bool = False, **_kw: Any) -> str:
+    if state["raises"] is not None:
+      raise state["raises"]()
+    answers = state["answers"]
+    if answers:
+      return answers.pop(0)
+    return ""
+
+  stub = SimpleNamespace(prompt_async=_prompt_async, is_password=False)
+  monkeypatch.setattr("yoker.ui.interactive.PromptSession", lambda *a, **kw: stub)
+  stub._state = state  # type: ignore[attr-defined]
+  return stub
+
+
+def _make_handler(
+  stub: SimpleNamespace,
   answers: list[str] | None = None,
   raises: type[BaseException] | None = None,
   console: Console | None = None,
 ) -> InteractiveUIHandler:
-  """Build an ``InteractiveUIHandler`` backed by a stub ``PromptSession``.
-
-  Args:
-    answers: Canned answers returned sequentially by ``prompt_async``. An
-      exhausted iterator yields ``""`` (the empty-Enter default).
-    raises: Exception type raised by ``prompt_async`` instead of returning.
-    console: Optional Rich console (default: a fresh one).
-  """
-  answers_iter = iter(answers or [])
-
-  async def _prompt_async(_prompt: str, is_password: bool = False) -> str:
-    if raises is not None:
-      raise raises()
-    try:
-      return next(answers_iter)
-    except StopIteration:
-      return ""
-
-  # ``PromptSession`` is called inside ``_create_session`` during
-  # ``__init__``; replace it with a stub that records the canned behavior.
-  stub_session = SimpleNamespace(prompt_async=_prompt_async)
-
-  with patch("yoker.ui.interactive.PromptSession", return_value=stub_session):
-    handler = InteractiveUIHandler(history_file="none", console=console)
-
-  return handler
+  """Build an ``InteractiveUIHandler`` against the patched ``PromptSession``."""
+  stub._state["answers"] = list(answers or [])  # type: ignore[attr-defined]
+  stub._state["raises"] = raises  # type: ignore[attr-defined]
+  return InteractiveUIHandler(history_file="none", console=console)
 
 
 @pytest.mark.asyncio
-async def test_interactive_confirm_approval_yes_returns_true() -> None:
-  handler = _make_interactive_handler(["y"])
+async def test_interactive_confirm_approval_yes_returns_true(
+  stub_session: SimpleNamespace,
+) -> None:
+  handler = _make_handler(stub_session, answers=["y"])
   result = await handler.confirm_approval("/x/Makefile", "+all:\n")
   assert result is True
 
 
 @pytest.mark.asyncio
-async def test_interactive_confirm_approval_full_yes_returns_true() -> None:
-  handler = _make_interactive_handler(["yes"])
+async def test_interactive_confirm_approval_full_yes_returns_true(
+  stub_session: SimpleNamespace,
+) -> None:
+  handler = _make_handler(stub_session, answers=["yes"])
   result = await handler.confirm_approval("/x/Makefile", "+all:\n")
   assert result is True
 
 
 @pytest.mark.asyncio
-async def test_interactive_confirm_approval_uppercase_yes_returns_true() -> None:
-  handler = _make_interactive_handler(["Y"])
+async def test_interactive_confirm_approval_uppercase_yes_returns_true(
+  stub_session: SimpleNamespace,
+) -> None:
+  handler = _make_handler(stub_session, answers=["Y"])
   result = await handler.confirm_approval("/x/Makefile", "+all:\n")
   assert result is True
 
 
 @pytest.mark.asyncio
-async def test_interactive_confirm_approval_no_returns_false() -> None:
-  handler = _make_interactive_handler(["n"])
+async def test_interactive_confirm_approval_no_returns_false(
+  stub_session: SimpleNamespace,
+) -> None:
+  handler = _make_handler(stub_session, answers=["n"])
   result = await handler.confirm_approval("/x/Makefile", "+all:\n")
   assert result is False
 
 
 @pytest.mark.asyncio
-async def test_interactive_confirm_approval_empty_returns_false() -> None:
+async def test_interactive_confirm_approval_empty_returns_false(
+  stub_session: SimpleNamespace,
+) -> None:
   """Empty response (Enter) defaults to denial (fail-safe)."""
-  handler = _make_interactive_handler([""])
+  handler = _make_handler(stub_session, answers=[""])
   result = await handler.confirm_approval("/x/Makefile", "+all:\n")
   assert result is False
 
 
 @pytest.mark.asyncio
-async def test_interactive_confirm_approval_eof_returns_false() -> None:
+async def test_interactive_confirm_approval_eof_returns_false(
+  stub_session: SimpleNamespace,
+) -> None:
   """EOFError (Ctrl+D) is treated as denial — fail-safe."""
-  handler = _make_interactive_handler(raises=EOFError)
+  handler = _make_handler(stub_session, raises=EOFError)
   result = await handler.confirm_approval("/x/Makefile", "+all:\n")
   assert result is False
 
 
 @pytest.mark.asyncio
-async def test_interactive_confirm_approval_ctrl_c_returns_false() -> None:
+async def test_interactive_confirm_approval_ctrl_c_returns_false(
+  stub_session: SimpleNamespace,
+) -> None:
   """KeyboardInterrupt is caught and treated as denial."""
-  handler = _make_interactive_handler(raises=KeyboardInterrupt)
+  handler = _make_handler(stub_session, raises=KeyboardInterrupt)
   result = await handler.confirm_approval("/x/Makefile", "+all:\n")
   assert result is False
 
 
 @pytest.mark.asyncio
 async def test_interactive_confirm_approval_renders_diff(
-  capsys: pytest.CaptureFixture[str],
+  stub_session: SimpleNamespace,
 ) -> None:
   """The diff content is rendered to the console before prompting."""
   console = Console(file=StringIO(), force_terminal=False, width=80)
-  handler = _make_interactive_handler(["n"], console=console)
+  handler = _make_handler(stub_session, answers=["n"], console=console)
   diff = "--- Makefile (before)\n+++ Makefile (after)\n@@ -1,1 +1,1 @@\n-old\n+new\n"
   result = await handler.confirm_approval("/x/Makefile", diff)
   assert result is False
   output = console.file.getvalue()
-  # The diff lines are rendered (with formatting, so check for substrings).
   assert "old" in output
   assert "new" in output
-  # The prompt header is shown.
   assert "Protected file" in output or "Makefile" in output

@@ -8,6 +8,61 @@ Yoker is a Python agent harness with configurable tools and guardrails. It provi
 
 ## Recent Changes
 
+### UI back-port: merged InteractiveUIHandler (2026-07-28)
+
+Merged `RichUIHandler` (from `yoker-assistant`) with the old
+`InteractiveUIHandler` into a single append-only handler in
+`src/yoker/ui/interactive.py`. The `LiveDisplay`-based spinner module
+(`src/yoker/ui/spinner.py`) and its tests were deleted; `LiveDisplay` /
+`live_display` are no longer exported from `yoker.ui`.
+
+- **Lazy `PromptSession`**: not created in `__init__`; built on first
+  `get_input` / `get_secret_input` / `confirm_approval` call via
+  `_get_or_create_session()`. Construction no longer requires a TTY —
+  the bootstrap wizard and scripted flows can drive a handler without
+  ever prompting. `set_input_messages` short-circuits before session
+  creation.
+- **Append-only output**: all output methods use `console.print` (no
+  Live region, no state flags). `_live`, `_exit_live`, `_ensure_live`,
+  `_end_turn`, `_thinking_shown`, `_content_shown`, `_streaming_*` are
+  all gone.
+- **Processing feedback**: a single `rich.status.Status` line
+  ("Processing…", `dots` spinner) is started in `start_thinking_stream`
+  / `start_content_stream` and stopped on the first chunk / any output
+  (`_start_processing_status` / `_stop_processing_status`). It is NOT a
+  Live grid.
+- **`start(agent, *, title="Yoker", version=None, **kwargs)`**: keeps the
+  `title` / `version` kwargs (external consumers use them). Banner now
+  lists tools (truncated to 8 + "/tools for full list" hint) and the
+  source path.
+- **Inline tool args**: `output_tool_call` renders
+  `⏺ name(key=value, …)` with all args. Values > 60 chars (or
+  multi-line) are summarized as `N chars`. For `write` / `update` tools,
+  `content` / `old_string` / `new_string` are suppressed (the diff is
+  shown separately).
+- **`output_tool_result`**: `✓ Success (N chars)` with result size.
+- **`output_stats`**: simpler `📊 Xs, N tokens` format (fixed the missing
+  `f` prefix in RichUIHandler line 189).
+- **`output_prompt`**: kept as a separate method (styled `Panel` with
+  `PROMPT_STYLE` + `box.SIMPLE_HEAD`); `get_input` calls it for
+  non-empty input, `get_secret_input` does NOT.
+- **`output_step_title` / `output_command_result` / `output_content`**:
+  added back from the old handler (RichUIHandler stubbed them as
+  `pass`), adapted to `console.print`.
+- **`agent_spawned` / `agent_finished` / `confirm_approval`**: preserved
+  from the old handler. `confirm_approval` uses `_get_or_create_session()`
+  for the y/N prompt (no `erase_when_done` — audit trail).
+- **Tests rewritten**: `tests/test_ui/test_interactive.py` asserts on
+  `console.print` output capture (no more `_live` / `_response_text`
+  assertions); lazy session is asserted (`_session is None` after
+  `__init__`, non-None after `get_input`). `tests/test_ui/test_spinner.py`
+  and `tests/events/test_spinner.py` deleted.
+  `tests/test_bootstrap/test_history_security.py` calls
+  `_get_or_create_session()` before inspecting `.history`.
+  `tests/test_ui/test_confirm_approval.py` uses a fixture-based
+  `monkeypatch` covering lazy init (the patch must stay active through
+  `confirm_approval`).
+
 ### MBI-009 T7: github tool (2026-07-27)
 
 Added a new built-in `github` tool (`src/yoker/builtin/github.py`) wrapping the

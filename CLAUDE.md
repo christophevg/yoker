@@ -157,9 +157,9 @@ src/yoker/
     ├── __init__.py          # Public UI exports
     ├── handler.py           # UIHandler protocol
     ├── bridge.py            # UIBridge: events -> UIHandler method calls
-    ├── interactive.py       # InteractiveUIHandler (Rich + prompt_toolkit terminal UI)
+    ├── interactive.py       # InteractiveUIHandler (Rich append-only output +
+    │                        #   lazy prompt_toolkit session; no Live region)
     ├── batch.py             # BatchUIHandler (stdin/stdout/stderr for pipelines)
-    ├── spinner.py           # LiveDisplay for streaming responses
     └── commands/            # Slash commands (UI layer)
         ├── __init__.py      # Command registry and dispatch
         ├── base.py          # Command base types (Agent + UIHandler received per command)
@@ -183,7 +183,7 @@ The UI layer is strictly separated from the Agent layer.
 
 Built-in handlers:
 
-- `InteractiveUIHandler`: Rich + prompt_toolkit terminal UI.
+- `InteractiveUIHandler`: Rich append-only output + lazy `prompt_toolkit` session. No `LiveDisplay` (the `spinner.py` module was removed); a single `rich.status.Status` line provides "Processing..." feedback between stream start and the first chunk.
 - `BatchUIHandler`: stdin/stdout/stderr for pipelines and scripts.
 
 ### Event Flow

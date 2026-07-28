@@ -3,10 +3,8 @@
 from yoker.ui import (
   BatchUIHandler,
   InteractiveUIHandler,
-  LiveDisplay,
   UIBridge,
   UIHandler,
-  live_display,
 )
 
 
@@ -19,8 +17,6 @@ class TestUIHandlerPublicAPI:
     assert UIBridge is not None
     assert InteractiveUIHandler is not None
     assert BatchUIHandler is not None
-    assert LiveDisplay is not None
-    assert live_display is not None
 
 
 class TestUIHandlerProtocol:
