@@ -372,3 +372,244 @@ class TestPersistedImplementsProtocol:
 
     cm = Persisted(SimpleContextManager(), storage_path=tmp_path, session_id="protocol-test")
     assert isinstance(cm, ContextManager)
+
+
+class TestPersistedBugFixes:
+  """Regression tests for the context-persistence bug fix (PR #55).
+
+  Covers:
+    - Bug #1: tool results ARE persisted to JSONL (were dropped because
+      _persist_full_state used get_messages() which excludes role=tool).
+    - Bug #2: assistant narration content is preserved on tool-call turns
+      (was hardcoded to "" in add_tool_calls).
+    - Bug #3: user messages are NOT duplicated in the JSONL file
+      (turn_start marker used to carry the same content as the message
+      record).
+    - Regression: tool results remain in the context for the next turn
+      (via get_context()) and survive a save/load round-trip.
+  """
+
+  def _read_records(self, file_path: Path) -> list[dict]:
+    records = []
+    with open(file_path) as f:
+      for line in f:
+        line = line.strip()
+        if line:
+          records.append(json.loads(line))
+    return records
+
+  def test_tool_result_persisted_to_jsonl(self, tmp_path: Path) -> None:
+    """Bug #1: a tool result is written as a `tool_result` record."""
+    session_id = "bug1-tool-result"
+    cm = Persisted(SimpleContextManager(), storage_path=tmp_path, session_id=session_id)
+    cm.add_tool_calls([{"id": "call_1", "function": {"name": "read", "arguments": {}}}])
+    cm.add_tool_result("read", "call_1", "file content", success=True)
+    cm.save()
+
+    records = self._read_records(tmp_path / f"{session_id}.jsonl")
+    tool_result_records = [r for r in records if r["type"] == "tool_result"]
+    assert len(tool_result_records) == 1
+    data = tool_result_records[0]["data"]
+    assert data["tool_name"] == "read"
+    assert data["tool_id"] == "call_1"
+    assert data["result"] == "file content"
+    assert data["success"] is True
+
+  def test_tool_result_round_trips_through_load(self, tmp_path: Path) -> None:
+    """Bug #1: tool results survive save/load (replay restores them)."""
+    session_id = "bug1-roundtrip"
+    cm1 = Persisted(SimpleContextManager(), storage_path=tmp_path, session_id=session_id)
+    cm1.add_tool_calls([{"id": "call_1", "function": {"name": "read", "arguments": {}}}])
+    cm1.add_tool_result("read", "call_1", "file content", success=True)
+    cm1.save()
+    cm1.close()
+
+    cm2 = Persisted(SimpleContextManager(), storage_path=tmp_path, session_id=session_id)
+    assert cm2.load() is True
+
+    context = cm2.get_context()
+    tool_messages = [m for m in context if m.get("role") == "tool"]
+    assert len(tool_messages) == 1
+    assert tool_messages[0]["name"] == "read"
+    assert tool_messages[0]["content"] == "file content"
+    assert tool_messages[0]["tool_id"] == "call_1"
+
+  def test_assistant_content_preserved_on_tool_call_turn(self, tmp_path: Path) -> None:
+    """Bug #2: add_tool_calls stores the narration content, not ""."""
+    cm = Persisted(SimpleContextManager(), storage_path=tmp_path, session_id="bug2-content")
+    tool_calls = [{"id": "call_1", "function": {"name": "read", "arguments": {}}}]
+    cm.add_tool_calls(tool_calls, content="Let me investigate the git tool...")
+
+    context = cm.get_context()
+    assert len(context) == 1
+    assert context[0]["role"] == "assistant"
+    assert context[0]["content"] == "Let me investigate the git tool..."
+    assert "tool_calls" in context[0]
+
+  def test_assistant_content_persisted_and_replayed(self, tmp_path: Path) -> None:
+    """Bug #2: the narration content survives save/load round-trip."""
+    session_id = "bug2-roundtrip"
+    cm1 = Persisted(SimpleContextManager(), storage_path=tmp_path, session_id=session_id)
+    cm1.add_tool_calls(
+      [{"id": "call_1", "function": {"name": "read", "arguments": {}}}],
+      content="Let me dig into the implementation.",
+    )
+    cm1.save()
+    cm1.close()
+
+    cm2 = Persisted(SimpleContextManager(), storage_path=tmp_path, session_id=session_id)
+    assert cm2.load() is True
+
+    context = cm2.get_context()
+    assistant_msgs = [m for m in context if m.get("role") == "assistant"]
+    assert len(assistant_msgs) == 1
+    assert assistant_msgs[0]["content"] == "Let me dig into the implementation."
+
+  def test_user_message_not_duplicated_in_jsonl(self, tmp_path: Path) -> None:
+    """Bug #3: exactly one `message` record with role=user per start_turn."""
+    session_id = "bug3-no-dup"
+    cm = Persisted(SimpleContextManager(), storage_path=tmp_path, session_id=session_id)
+    cm.start_turn("Hello there")
+    cm.save()
+
+    records = self._read_records(tmp_path / f"{session_id}.jsonl")
+    user_message_records = [
+      r for r in records if r["type"] == "message" and r["data"].get("role") == "user"
+    ]
+    assert len(user_message_records) == 1
+    assert user_message_records[0]["data"]["content"] == "Hello there"
+
+    # turn_start is still emitted as a pure marker (no user_message field).
+    turn_start_records = [r for r in records if r["type"] == "turn_start"]
+    assert len(turn_start_records) == 1
+    assert "user_message" not in turn_start_records[0]["data"]
+
+  def test_turn_start_still_emitted_for_turn_count(self, tmp_path: Path) -> None:
+    """Bug #3 regression guard: turn_start marker is still present (for list_sessions)."""
+    session_id = "bug3-turn-marker"
+    cm = Persisted(SimpleContextManager(), storage_path=tmp_path, session_id=session_id)
+    cm.start_turn("first turn")
+    cm.start_turn("second turn")
+    cm.save()
+
+    records = self._read_records(tmp_path / f"{session_id}.jsonl")
+    turn_start_records = [r for r in records if r["type"] == "turn_start"]
+    assert len(turn_start_records) == 2
+
+  def test_tool_result_available_for_next_turn(self, tmp_path: Path) -> None:
+    """Regression: after a tool call → result, the result is in get_context()."""
+    cm = Persisted(SimpleContextManager(), storage_path=tmp_path, session_id="regression-next-turn")
+    cm.start_turn("Please read the file.")
+    cm.add_tool_calls(
+      [{"id": "call_1", "function": {"name": "read", "arguments": {"path": "foo.py"}}}],
+      content="Reading foo.py now.",
+    )
+    cm.add_tool_result("read", "call_1", "contents of foo.py", success=True)
+
+    context = cm.get_context()
+    # user, assistant (with tool_calls + content), tool
+    assert len(context) == 3
+    assert context[0]["role"] == "user"
+    assert context[1]["role"] == "assistant"
+    assert context[1]["content"] == "Reading foo.py now."
+    assert context[2]["role"] == "tool"
+    assert context[2]["content"] == "contents of foo.py"
+    assert context[2]["tool_id"] == "call_1"
+
+  def test_full_loop_survives_save_load(self, tmp_path: Path) -> None:
+    """Regression: a tool call → result → next-turn loop survives save/load.
+
+    On replay, the tool-call/tool-result pairing must be intact (no orphaned
+    tool calls), and the assistant narration must be preserved.
+    """
+    session_id = "regression-full-loop"
+    cm1 = Persisted(SimpleContextManager(), storage_path=tmp_path, session_id=session_id)
+    cm1.start_turn("Please read foo.py.")
+    cm1.add_tool_calls(
+      [{"id": "call_1", "function": {"name": "read", "arguments": {"path": "foo.py"}}}],
+      content="Let me read foo.py.",
+    )
+    cm1.add_tool_result("read", "call_1", "contents of foo.py", success=True)
+    cm1.end_turn("Done reading foo.py.")
+    cm1.save()
+    cm1.close()
+
+    cm2 = Persisted(SimpleContextManager(), storage_path=tmp_path, session_id=session_id)
+    assert cm2.load() is True
+
+    context = cm2.get_context()
+    # user, assistant (tool_calls + content), tool, assistant (end_turn)
+    assert len(context) == 4
+    assert context[0]["role"] == "user"
+    assert context[1]["role"] == "assistant"
+    assert context[1]["content"] == "Let me read foo.py."
+    assert "tool_calls" in context[1]
+    assert context[2]["role"] == "tool"
+    assert context[2]["content"] == "contents of foo.py"
+    assert context[3]["role"] == "assistant"
+    assert context[3]["content"] == "Done reading foo.py."
+
+  def test_legacy_jsonl_file_loads_correctly(self, tmp_path: Path) -> None:
+    """Backward compatibility: JSONL files written before the fix still load.
+
+    The legacy pre-fix format had two quirks the fix corrected:
+      - turn_start carried a `user_message` field (the loader now ignores it;
+        the user content lives in the `message` record with role=user)
+      - tool_call_message had no `content` field (the loader now defaults
+        missing content to "")
+    A legacy file that also wrote a duplicate `message` record with role=user
+    (the source of the duplication bug) must load as a single user message.
+    """
+    session_id = "legacy-pre-fix"
+    file_path = tmp_path / f"{session_id}.jsonl"
+    ts = "2025-01-01T00:00:00"
+    legacy_records = [
+      {
+        "type": "session_start",
+        "timestamp": ts,
+        "data": {"session_id": session_id, "start_time": ts},
+      },
+      # Old format carried user_message in turn_start data.
+      {"type": "turn_start", "timestamp": ts, "data": {"user_message": "Please read foo.py."}},
+      # ...and also wrote a message record with role=user (the duplication bug).
+      {
+        "type": "message",
+        "timestamp": ts,
+        "data": {"role": "user", "content": "Please read foo.py."},
+      },
+      # Old tool_call_message had no content field.
+      {
+        "type": "tool_call_message",
+        "timestamp": ts,
+        "data": {
+          "tool_calls": [
+            {"id": "call_1", "function": {"name": "read", "arguments": {"path": "foo.py"}}}
+          ],
+          "thinking": None,
+        },
+      },
+      {"type": "message", "timestamp": ts, "data": {"role": "assistant", "content": "Done."}},
+      {"type": "session_end", "timestamp": ts, "data": {"end_time": ts}},
+    ]
+    file_path.write_text("".join(json.dumps(r) + "\n" for r in legacy_records))
+
+    cm = Persisted(SimpleContextManager(), storage_path=tmp_path, session_id=session_id)
+    assert cm.load() is True
+
+    context = cm.get_context()
+    # user, assistant (tool_calls, content=""), assistant (end_turn)
+    user_messages = [m for m in context if m.get("role") == "user"]
+    assert len(user_messages) == 1
+    assert user_messages[0]["content"] == "Please read foo.py."
+
+    assistant_with_tools = [
+      m for m in context if m.get("role") == "assistant" and "tool_calls" in m
+    ]
+    assert len(assistant_with_tools) == 1
+    # content defaults to "" when the field is absent from the legacy record.
+    assert assistant_with_tools[0]["content"] == ""
+    assert assistant_with_tools[0]["tool_calls"][0]["function"]["name"] == "read"
+
+    plain_assistant = [m for m in context if m.get("role") == "assistant" and "tool_calls" not in m]
+    assert len(plain_assistant) == 1
+    assert plain_assistant[0]["content"] == "Done."

@@ -111,6 +111,7 @@ class BaseContextManager:
     self,
     tool_calls: list[dict[str, Any]],
     thinking: str | None = None,
+    content: str = "",
   ) -> None:
     """Add an assistant message with tool calls to the context.
 
@@ -119,11 +120,15 @@ class BaseContextManager:
     Args:
       tool_calls: List of tool call dictionaries with 'name' and 'arguments'.
       thinking: Optional thinking/reasoning content from the assistant.
+      content: Optional assistant narration text produced alongside the
+        tool calls (when the LLM emits both text and tool calls in one
+        response). Stored so the LLM can see its own prior reasoning on
+        subsequent iterations.
     """
     assistant_msg: dict[str, Any] = {
       "role": "assistant",
       "tool_calls": tool_calls,
-      "content": "",
+      "content": content,
     }
     if thinking:
       assistant_msg["thinking"] = thinking

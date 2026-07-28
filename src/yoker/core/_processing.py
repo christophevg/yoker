@@ -268,7 +268,7 @@ async def process_message(
       logger.info("turn_completed", response_length=len(content), tool_calls_count=0)
       return content
 
-    await _execute_tool_calls(agent, tool_calls, thinking)
+    await _execute_tool_calls(agent, tool_calls, thinking, content)
 
 
 async def _manage_context_overflow(
@@ -737,7 +737,12 @@ def _turn_end_event(response: str, tool_calls: list[Any], stats: dict[str, int])
   )
 
 
-async def _execute_tool_calls(agent: Any, tool_calls: list[Any], thinking: str) -> None:
+async def _execute_tool_calls(
+  agent: Any,
+  tool_calls: list[Any],
+  thinking: str,
+  content: str = "",
+) -> None:
   """Deduplicate and execute tool calls, emitting events."""
   unique_calls = _deduplicate_tool_calls(tool_calls)
   if unique_calls:
@@ -751,7 +756,7 @@ async def _execute_tool_calls(agent: Any, tool_calls: list[Any], thinking: str) 
       }
       for i, call in enumerate(unique_calls)
     ]
-    agent.context.add_tool_calls(formatted, thinking=thinking or None)
+    agent.context.add_tool_calls(formatted, thinking=thinking or None, content=content)
 
   for call in unique_calls:
     await _execute_single_tool_call(agent, call)
