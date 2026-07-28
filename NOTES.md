@@ -308,3 +308,69 @@ Session id now shows in the MOTD. Next steps:
 3. Address remaining dogfooding blockers (context/ in .gitignore, etc.)
 
 **Branch:** `feature/git-write-ops`
+
+---
+
+### Session 6 — 2026-07-28: Session Resume Bug Fix (conversation history wiped on resume)
+
+**Branch:** `feature/git-write-ops`
+**Model:** `glm-5.2:cloud` (Ollama provider)
+**Context:** Owner reported that `--resume` was not working: the previous session's conversation was not loaded — a fresh context was seen instead. This was the first real test of the session resume feature from Session 4.
+
+#### What Was Done
+
+**Root cause found and fixed.** The bug was in the `Persisted.agent` setter (`src/yoker/context/persisted.py`).
+
+The resume flow is:
+1. `create_context_manager()` creates `Persisted(SimpleContextManager())` and calls `persisted.load()` → conversation history loaded into `wrapped._messages` ✅
+2. `Agent.__init__` line 154 calls `self.context.agent = self`
+3. `Persisted.agent` setter delegated to `BaseContextManager.agent` setter
+4. `BaseContextManager.agent` setter calls `self.clear()` → **wipes all loaded messages!** → then `setup_initial_context()` (fresh system prompt) → `add_skill_discovery_block()`
+5. `Persisted.agent` setter then called `self._persist_full_state(...)` → **overwrites the JSONL file** with just the fresh system prompt
+
+So the loaded conversation was destroyed both in memory and on disk.
+
+**Fix:** The `Persisted.agent` setter now checks whether the wrapped context already has loaded messages (from a prior `load()` call). When it does (resume mode):
+1. The agent reference is set directly on the wrapped instance (bypassing the destructive `clear()`)
+2. A fresh system prompt + skill discovery block is generated
+3. Old system messages are stripped from the loaded conversation, and the fresh setup is prepended to the remaining conversation (user/assistant/tool messages)
+4. The combined state is persisted to JSONL
+
+When there's no loaded history (fresh session), the normal clear + setup flow runs unchanged.
+
+**Files changed:**
+1. `src/yoker/context/persisted.py` — Rewrote `Persisted.agent` setter to detect resume mode and preserve loaded conversation history
+
+**All checks pass: 2206 tests, lint, typecheck green.**
+
+**Commit:** `965e333` — `fix: session resume preserves loaded conversation history when agent is wired`
+
+#### Issues Discovered This Session
+
+1. **Git commit messages cannot contain newlines** — `FORBIDDEN_CHARS` in `git.py` includes `\n`, blocking multi-line commit messages with body text and `Co-authored-by` trailers. The `message` argument is sanitized with `_validate_string` which rejects newlines. **This is the top priority for the next session.** Possible approaches:
+   - Allow `\n` in the `message` arg specifically for `commit` operation (relax the validation for that one parameter)
+   - Split validation by operation — `commit` message needs newlines, other args don't
+   - Add a `body` parameter to commit separate from the one-line `message`
+2. **Session resume worked after fix** — The fix was committed, the session was terminated and resumed with `--resume`, and the full conversation context was preserved. The MOTD showed "Resumed '<id>'". **Session resume is now functional end-to-end.**
+
+#### Open Action Items — Updated
+
+- [x] Session resume: conversation history wiped on resume — **fixed this session**
+- [ ] **Multi-line commit messages** — `FORBIDDEN_CHARS` blocks `\n` in commit message arg. Top priority for next session.
+- [ ] Add `context/` to `.gitignore` (reduce `list` noise)
+- [ ] Consider env var override for protected_files in trusted dev sessions
+- [ ] Consider `list` respecting `.gitignore` optionally
+- [ ] Consider lowering default `max_entries` for `list` tool
+- [ ] Consider adding `git checkout` to git tool (discard changes — needs careful permission design)
+- [ ] `make` env_vars allowlist: `test = ["TEST"]` needed in local `yoker.toml` (blocked by protected_files — owner needs to apply or approve)
+
+#### Resume Point
+
+Session resume is now functional. The next session should:
+1. **Fix multi-line commit messages** — relax `\n` restriction for the `commit` operation's `message` parameter in `git.py`. This is the top priority.
+2. Add `context/` to `.gitignore`
+3. Continue with remaining 1.0.0 roadmap items (C3 toolset evaluation, C3 agents/skills porting)
+4. Address remaining dogfooding blockers
+
+**Branch:** `feature/git-write-ops`
+**Last commit:** `965e333` — fix: session resume preserves loaded conversation history when agent is wired
