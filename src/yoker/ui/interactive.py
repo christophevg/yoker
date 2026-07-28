@@ -35,8 +35,8 @@ from yoker.ui.handler import UIHandler
 
 # Styles for console output
 PROMPT_STYLE = Style(color="black", bgcolor="grey93")
-THINKING_STYLE = Style(color="grey74")
-CONTENT_STYLE = Style(color="bright_black")
+THINKING_STYLE = Style(color="grey66")
+CONTENT_STYLE = Style(color="black")
 TOOL_STYLE = Style(color="cyan")
 TOOL_RESULT_STYLE = Style(color="bright_black")
 STATS_STYLE = Style(color="bright_blue", dim=True)
@@ -452,7 +452,7 @@ class InteractiveUIHandler(UIHandler):
     if not self.show_thinking:
       return
     self._stop_processing_status()
-    self.console.print()
+    self.console.print("⏺ ", end="", style=THINKING_STYLE)
 
   def stream_thinking(self, chunk: str) -> None:
     """Stream a thinking chunk.
