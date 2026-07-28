@@ -15,6 +15,7 @@ Bare-minimum 1.0.0 scope: 8 items + dogfooding gate. Full MBI-008 (Prompt Sets) 
 | **P1** | `protected_files` guardrail | Done (PR #53) |
 | **P1** | MBI-005: Two Assistant Packages | In progress (external) |
 | **P1** | Back-port RichUIHandler output | Done (PR #54) |
+| **P1** | Context Persistence Bug Fix | Done (PR #55) |
 | **P1** | C3 toolset evaluation | Open (ready to start) |
 | **P1** | C3 agents/skills porting | Open (depends on evaluation) |
 | **GATE** | Dogfooding Gate | Open |
@@ -38,6 +39,7 @@ All items below must be complete before declaring 1.0.0. Implementation order is
 - [x] `protected_files` guardrail (PR #53, 2026-07-27)
 - [ ] MBI-005: Two Assistant Packages (in progress externally — ../yoker-assistant done, ../yoker-writing-assistant started)
 - [x] Back-port RichUIHandler output improvements to InteractiveUIHandler (PR #54, 2026-07-28)
+- [x] Context Persistence Bug Fix (dogfooding-discovered) (PR #55, 2026-07-28)
 - [ ] C3 toolset evaluation — audit C3 agent/skill definitions against yoker toolset
 - [ ] C3 agents/skills porting — port definitions to match yoker toolset
 - [ ] Dogfooding Gate: Last Yoker sessions done using Yoker itself (not Claude Code)
@@ -192,6 +194,14 @@ All items below must be complete before declaring 1.0.0. Implementation order is
   - RichUIHandler in yoker-assistant serves as inspiration
   - **Source:** Owner request 2026-07-28
   - **Files:** `../yoker-assistant/src/yoker_assistant/rich_ui.py` (inspiration), `src/yoker/ui/interactive.py` (modify)
+
+### Context Persistence Bug Fix (dogfooding-discovered)
+
+- [x] **Context Persistence Bug Fix** (PR #55, 2026-07-28)
+  - Discovered during dogfooding: agent loop caused by tool results not being persisted to JSONL context
+  - Root cause: `Persisted._persist_full_state` used `get_messages()` (excludes role=tool) instead of `get_context()` (includes all); assistant reasoning lost on tool-call turns; user messages duplicated
+  - Fix: 3 bugs fixed across `src/yoker/context/{persisted,manager,wrapper,protocol}.py` and `src/yoker/core/_processing.py`; 8 behavior-asserting tests added
+  - **Analysis:** `analysis/context-persistence-bug.md`
 
 ### C3 toolset evaluation
 
