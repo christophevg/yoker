@@ -251,6 +251,20 @@ class UIHandler(Protocol):
   #   agent_finished(name) - called when a sub-agent finishes and is
   #     removed from the active list; ``name`` is the finished agent's id.
 
+  # === Processing feedback (optional) ===
+  #
+  # ``start_processing() -> None`` and ``stop_processing() -> None`` are
+  # **optional** protocol methods. The :class:`yoker.ui.bridge.UIBridge`
+  # calls ``start_processing`` on ``TURN_START`` and after each
+  # ``TOOL_RESULT`` to (re)start a visual "Processing..." indicator while
+  # the model is working. The bridge calls ``stop_processing`` before any
+  # output is rendered (content, thinking, tool call, etc.) so the
+  # indicator does not interfere with output. Handlers that do not
+  # implement them (e.g. :class:`yoker.ui.batch.BatchUIHandler`) are not
+  # affected — the calls are guarded with ``hasattr`` in the bridge.
+  # :class:`yoker.ui.interactive.InteractiveUIHandler` implements them
+  # to manage a Rich status spinner.
+
   # === Protected-file approval (MBI-009 T12, optional) ===
   #
   # ``confirm_approval(path: str, diff: str) -> bool`` is an **optional**

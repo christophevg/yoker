@@ -131,10 +131,7 @@ async def _run_with_session(
     from yoker.context.factory import _session_file_path
 
     if sid is not None and not _session_file_path(config, sid).exists():
-      ui.output_info(
-        f"No session '{sid}' found. "
-        f"Use --session-id {sid} to start a new one."
-      )
+      ui.output_info(f"No session '{sid}' found. Use --session-id {sid} to start a new one.")
       await ui.shutdown("quit")
       return
 

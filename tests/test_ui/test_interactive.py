@@ -466,11 +466,11 @@ class TestInteractiveUIHandlerContentStreaming:
     assert handler._processing_status is None
 
   def test_stream_content_stops_status_on_first_chunk(self):
-    """stream_content should stop the status on the first chunk received.
+    """start_content_stream should stop the status spinner before output.
 
-    The status line provides "Processing..." feedback between stream
-    start and first chunk; the first chunk must stop it. A second chunk
-    is a no-op for status (already None).
+    The spinner is started on TURN_START (via start_processing) and should
+    be stopped by start_content_stream so the "⏺ " marker is visible.
+    stream_content then prints directly (spinner already stopped).
     """
     output = StringIO()
     handler = InteractiveUIHandler()
@@ -478,19 +478,24 @@ class TestInteractiveUIHandlerContentStreaming:
     status_mock = MagicMock()
     handler.console.status = MagicMock(return_value=status_mock)
 
-    handler.start_content_stream()
+    # Simulate TURN_START: spinner starts.
+    handler.start_processing()
     assert handler._processing_status is status_mock
     status_mock.start.assert_called_once()
 
-    handler.stream_content("first chunk")
-    # First chunk stops the status.
+    # CONTENT_START: spinner stops, marker printed.
+    handler.start_content_stream()
     status_mock.stop.assert_called_once()
     assert handler._processing_status is None
 
-    # Second chunk: status already None, stop not called again.
-    handler.stream_content("second chunk")
+    # CONTENT_CHUNK: direct print, spinner already None.
+    handler.stream_content("first chunk")
     assert status_mock.stop.call_count == 1
     assert handler._processing_status is None
+
+    # Second chunk: still no spinner.
+    handler.stream_content("second chunk")
+    assert status_mock.stop.call_count == 1
 
     handler.end_content_stream(0)
 

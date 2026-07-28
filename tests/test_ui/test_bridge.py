@@ -232,14 +232,16 @@ class TestUIBridge:
     )
     assert ("output_command_result", "Available commands: ...") in handler.calls
 
-  async def test_bridge_ignores_turn_start(self):
-    """UIBridge should ignore TURN_START event gracefully."""
+  async def test_bridge_turn_start_starts_processing(self):
+    """UIBridge should call start_processing on TURN_START if available."""
     from yoker.events.types import TurnStartEvent
 
     handler = MockUIHandler()
+    # Add start_processing to the mock so it can be called.
+    handler.start_processing = lambda: handler.calls.append("start_processing")
     bridge = UIBridge(handler)
 
     await bridge(TurnStartEvent(type=EventType.TURN_START, message="hello"))
 
-    # No UI methods should be called for TURN_START
-    assert len(handler.calls) == 0
+    # start_processing should be called for TURN_START.
+    assert "start_processing" in handler.calls

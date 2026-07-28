@@ -188,6 +188,19 @@ class InteractiveUIHandler(UIHandler):
       self._processing_status.stop()
       self._processing_status = None
 
+  def start_processing(self) -> None:
+    """Start the "Processing..." status spinner.
+
+    Called by the bridge on TURN_START and after each TOOL_RESULT to
+    indicate the model is working. The spinner is stopped before any
+    output is rendered.
+    """
+    self._start_processing_status()
+
+  def stop_processing(self) -> None:
+    """Stop the "Processing..." status spinner if active."""
+    self._stop_processing_status()
+
   # === Lifecycle ===
 
   async def start(
@@ -410,7 +423,7 @@ class InteractiveUIHandler(UIHandler):
 
   def start_content_stream(self) -> None:
     """Start streaming content."""
-    self._start_processing_status()
+    self._stop_processing_status()
     self.console.print("⏺ ", end="", style=CONTENT_STYLE)
 
   def stream_content(self, chunk: str, content_type: str = "text/plain") -> None:
@@ -438,7 +451,7 @@ class InteractiveUIHandler(UIHandler):
     """Start streaming thinking."""
     if not self.show_thinking:
       return
-    self._start_processing_status()
+    self._stop_processing_status()
     self.console.print()
 
   def stream_thinking(self, chunk: str) -> None:

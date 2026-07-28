@@ -70,8 +70,7 @@ class UIBridge:
     """Dispatch a bare (unwrapped) event to the UI handler."""
     match event.type:
       case EventType.TURN_START:
-        # Internal state - UI doesn't need notification
-        pass
+        self._maybe_start_processing()
       case EventType.TURN_END:
         self._handle_turn_end(event)
       case EventType.THINKING_START:
@@ -99,6 +98,9 @@ class UIBridge:
           event.success,  # type: ignore[attr-defined]
           event.result,  # type: ignore[attr-defined]
         )
+        # Restart the processing spinner for the next step (model is
+        # processing the tool result and deciding what to do next).
+        self._maybe_start_processing()
       case EventType.TOOL_CONTENT:
         self.ui.output_tool_content(
           event.tool_name,  # type: ignore[attr-defined]
@@ -124,14 +126,32 @@ class UIBridge:
   def _handle_turn_end(self, event: Event) -> None:
     """Handle turn end event by outputting stats.
 
+    Also stops the processing spinner if it is still active (e.g. the
+    model produced no visible output — only tool calls with results).
+
     Args:
       event: TurnEndEvent with statistics.
     """
+    stop = getattr(self.ui, "stop_processing", None)
+    if stop is not None:
+      stop()
     self.ui.output_stats(
       duration_ms=event.total_duration_ms,  # type: ignore[attr-defined]
       prompt_tokens=event.prompt_eval_count,  # type: ignore[attr-defined]
       eval_tokens=event.eval_count,  # type: ignore[attr-defined]
     )
+
+  def _maybe_start_processing(self) -> None:
+    """Start the processing spinner if the UI handler supports it.
+
+    ``start_processing`` is an optional protocol method (see
+    :mod:`yoker.ui.handler`). Handlers that do not implement it (e.g.
+    :class:`yoker.ui.batch.BatchUIHandler`) are silently skipped — the
+    call is guarded by ``hasattr``.
+    """
+    handler = getattr(self.ui, "start_processing", None)
+    if handler is not None:
+      handler()
 
   def _maybe_agent_lifecycle(self, event: Event, method: str) -> None:
     """Dispatch an agent lifecycle event to an optional UIHandler method.
