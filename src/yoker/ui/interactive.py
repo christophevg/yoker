@@ -1,12 +1,20 @@
 """Interactive UI handler implementation.
 
-Uses prompt_toolkit for input and Rich for output. Supports streaming via
-Live display, command history, and multiline input.
+Uses prompt_toolkit for input and Rich for append-only output. The
+``PromptSession`` is created lazily on first ``get_input`` /
+``get_secret_input`` / ``confirm_approval`` call so that construction never
+requires a TTY (the bootstrap wizard and scripted flows can drive a handler
+without ever prompting). A single ``rich.status.Status`` line provides
+"Processing..." feedback during the latency between stream start and the
+first chunk; it is replaced (not Live-managed) as soon as real output
+arrives.
 """
 
 from __future__ import annotations
 
+import asyncio
 import traceback
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -14,30 +22,44 @@ from prompt_toolkit.history import FileHistory, History, InMemoryHistory
 from prompt_toolkit.key_binding import KeyBindings, KeyPressEvent
 from prompt_toolkit.shortcuts import PromptSession
 from pyfiglet import Figlet
+from rich import box
 from rich.console import Console
 from rich.panel import Panel
+from rich.status import Status
 from rich.style import Style
 
 from yoker import __version__
 from yoker.core import Agent
+from yoker.exceptions import NetworkError, ToolError
 from yoker.ui.handler import UIHandler
-from yoker.ui.spinner import LiveDisplay
 
 # Styles for console output
-THINKING_STYLE = Style(color="bright_black", dim=True)
+PROMPT_STYLE = Style(color="black", bgcolor="grey93")
+THINKING_STYLE = Style(color="grey74")
+CONTENT_STYLE = Style(color="bright_black")
 TOOL_STYLE = Style(color="cyan")
+TOOL_RESULT_STYLE = Style(color="bright_black")
+STATS_STYLE = Style(color="bright_blue", dim=True)
 ERROR_STYLE = Style(color="red", bold=True)
 STEP_TITLE_STYLE = Style(bold=True, underline=True)
 
+# Inline tool-arg display caps.
+_TOOL_ARG_MAX_CHARS = 60
+_TOOL_LARGE_FIELDS = ("content", "old_string", "new_string")
+_TOOL_SUPPRESS_LARGE_FIELDS = ("write", "update")
+_BANNER_TOOL_LIMIT = 8
+
 
 class InteractiveUIHandler(UIHandler):
-  """Interactive UI with prompt_toolkit input and Rich output.
+  """Interactive UI with lazy prompt_toolkit input and Rich append-only output.
 
   Features:
+    - Lazy ``PromptSession`` (not created in ``__init__``)
     - Multiline input (Esc+Enter for newline)
-    - Command history persisted to file
-    - Rich console formatting
-    - Live streaming display for thinking and content
+    - Command history persisted to file (or in-memory when disabled)
+    - Rich console formatting with append-only ``console.print``
+    - Single ``Status`` line for "Processing..." feedback, replaced on first
+      chunk (no Live region, no spinner state flags)
   """
 
   def __init__(
@@ -46,7 +68,7 @@ class InteractiveUIHandler(UIHandler):
     show_thinking: bool = True,
     show_tool_calls: bool = True,
     show_stats: bool = True,
-    wrap_width: int | None = None,
+    show_time: bool = False,
     console: Console | None = None,
   ) -> None:
     """Initialize the interactive UI handler.
@@ -55,17 +77,19 @@ class InteractiveUIHandler(UIHandler):
       history_file: Path to command history file. Pass None to use the
         default path (~/.yoker_history). Pass a Path object or the string
         "none" to explicitly disable persistent history (uses in-memory
-        history only). Use history_file=None for bootstrap wizard and other
-        non-conversational flows to avoid logging sensitive data like API keys.
+        history only). Use history_file="none" for bootstrap wizard and
+        other non-conversational flows to avoid logging sensitive data
+        like API keys.
       show_thinking: Whether to display thinking output.
       show_tool_calls: Whether to display tool call info.
       show_stats: Whether to display turn statistics.
-      wrap_width: Optional width for wrapping streamed output.
+      show_time: Whether to display timing info (reserved; banner always
+        shows duration via output_stats when show_stats is True).
       console: Optional Rich console (default: new Console).
     """
     self.console = console if console is not None else Console()
-    # If history_file is None, use default path. If it's a Path or string "none",
-    # use that (allows explicit None to disable history).
+    # If history_file is None, use default path. If it's a Path or string
+    # "none", use that (allows explicit opt-out of persistent history).
     self.history_file: Path | None
     if history_file is None:
       self.history_file = Path.home() / ".yoker_history"
@@ -79,38 +103,44 @@ class InteractiveUIHandler(UIHandler):
     self.show_thinking = show_thinking
     self.show_tool_calls = show_tool_calls
     self.show_stats = show_stats
-    self.wrap_width = wrap_width
+    self.show_time = show_time
 
-    # Live display managed across streams within a turn
-    self._live: LiveDisplay | None = None
+    # Lazy prompt session — created on first input/approval call.
+    self._session: PromptSession[str] | None = None
 
-    # Track display state for separators
-    self._thinking_shown = False
-    self._content_shown = False
+    # Single "Processing..." status line, replaced on first chunk.
+    self._processing_status: Status | None = None
 
-    # Streaming state
-    self._streaming_content = False
-    self._streaming_thinking = False
-
-    # Optional predefined input source for scripted/demo usage
+    # Optional predefined input source for scripted/demo usage.
     self._input_source: list[str] | None = None
     self._input_index = 0
-
-    # Create prompt session with custom key bindings
-    self._session = self._create_session()
 
   def set_input_messages(self, messages: list[str]) -> None:
     """Set predefined input messages for scripted sessions.
 
     When set, get_input returns these messages sequentially instead of
-    reading from the terminal. This is useful for demos, tests, and
-    screenshot generation.
+    reading from the terminal. This does NOT create a PromptSession —
+    scripted flows can run without a TTY.
 
     Args:
       messages: List of input messages to return sequentially.
     """
     self._input_source = messages
     self._input_index = 0
+
+  def _get_or_create_session(self) -> PromptSession[str]:
+    """Lazily create and cache the PromptSession.
+
+    Called on first ``get_input`` / ``get_secret_input`` / ``confirm_approval``.
+    Builds the session with KeyBindings, FileHistory/InMemoryHistory, and
+    multiline Esc+Enter support. Only builds once.
+
+    Returns:
+      The cached ``PromptSession`` instance.
+    """
+    if self._session is None:
+      self._session = self._create_session()
+    return self._session
 
   def _create_session(self) -> PromptSession[str]:
     """Create prompt session with multiline support.
@@ -128,13 +158,12 @@ class InteractiveUIHandler(UIHandler):
     def _handle_meta_enter(event: KeyPressEvent) -> None:
       event.current_buffer.insert_text("\n")
 
-    # Use in-memory history when history_file is None (e.g., for bootstrap wizard)
-    # This prevents sensitive data like API keys from being persisted to disk.
+    # In-memory history when history_file is None (e.g., bootstrap wizard)
+    # to avoid persisting sensitive data like API keys to disk.
     history: History
     if self.history_file is None:
       history = InMemoryHistory()
     else:
-      # Ensure history directory exists for file-based history
       self.history_file.parent.mkdir(parents=True, exist_ok=True)
       history = FileHistory(str(self.history_file))
 
@@ -145,35 +174,42 @@ class InteractiveUIHandler(UIHandler):
       key_bindings=kb,
     )
 
-  def _ensure_live(self) -> None:
-    """Create LiveDisplay if not already active."""
-    if self._live is None:
-      self._live = LiveDisplay(console=self.console)
-      self._live.__enter__()
-      self._live.start_spinner()
+  # === Processing feedback ===
 
-  def _exit_live(self) -> None:
-    """Exit and clear the current LiveDisplay if active."""
-    if self._live:
-      self._live.stop_spinner()
-      self._live.__exit__(None, None, None)
-      self._live = None
+  def _start_processing_status(self) -> None:
+    """Start the single "Processing..." status line if not already active."""
+    if self._processing_status is None:
+      self._processing_status = self.console.status("Processing...", spinner="dots")
+      self._processing_status.start()
 
-  def _end_turn(self) -> None:
-    """End current turn and reset streaming state."""
-    self._streaming_content = False
-    self._streaming_thinking = False
+  def _stop_processing_status(self) -> None:
+    """Stop the "Processing..." status line if active."""
+    if self._processing_status is not None:
+      self._processing_status.stop()
+      self._processing_status = None
 
   # === Lifecycle ===
 
-  async def start(self, agent: Agent) -> None:
+  async def start(
+    self,
+    agent: Agent,
+    *,
+    title: str = "Yoker",
+    version: str | None = None,
+    **_kwargs: Any,
+  ) -> None:
     """Start interactive UI session.
 
     Args:
       agent: The Agent instance this UI session is serving.
+      title: Banner title (defaults to "Yoker").
+      version: Banner version (defaults to ``yoker.__version__``).
+      **_kwargs: Ignored (backward compatibility for external callers).
     """
-    banner = str(Figlet(font="standard").renderText("Yoker")).rstrip()
-    banner = f"[blue bold]{banner} {__version__}[/blue bold]"
+    if version is None:
+      version = __version__
+    banner = str(Figlet(font="standard").renderText(title)).rstrip()
+    banner = f"[blue bold]{banner} {version}[/blue bold]"
 
     harness = agent.config.harness
     harness_line = f"[blue]Harness[/blue]: {harness.name}"
@@ -186,10 +222,20 @@ class InteractiveUIHandler(UIHandler):
       f"[blue]Model[/blue]: {agent.model} (provider: {agent.config.backend.provider})",
       harness_line,
       f"[blue]Thinking[/blue]: {agent.thinking_mode.value} (use /think on|off|silent to toggle)",
-      f"[blue]Agent[/blue]: {agent.definition.name} - {agent.definition.description}",
+      f"[blue]Agent[/blue]: {agent.definition.name}",
+      f"[dim]{agent.definition.description.strip()}[/dim]",
     ]
     if agent.definition.source_path:
-      motd_lines.append(f"       Source: {agent.definition.source_path}")
+      motd_lines.append(f"[blue]Source[/blue]: {agent.definition.source_path}")
+
+    if agent.tools:
+      tool_names = list(agent.tools.keys())
+      if len(tool_names) > _BANNER_TOOL_LIMIT:
+        shown = ", ".join(tool_names[:_BANNER_TOOL_LIMIT])
+        extra = len(tool_names) - _BANNER_TOOL_LIMIT
+        motd_lines.append(f"[blue]Tools[/blue]: {shown} +{extra} more (use /tools for full list)")
+      else:
+        motd_lines.append(f"[blue]Tools[/blue]: {', '.join(tool_names)}")
 
     motd_lines.append("[dim]Type /help for available commands.")
     motd_lines.append("Press Ctrl+D (or Ctrl+Z on Windows) to quit.[/dim]")
@@ -203,7 +249,7 @@ class InteractiveUIHandler(UIHandler):
     Args:
       reason: Reason for ending ("quit", "error", "interrupt").
     """
-    self._exit_live()
+    self._stop_processing_status()
     self.console.print("\nGoodbye!")
 
   # === Input ===
@@ -222,23 +268,31 @@ class InteractiveUIHandler(UIHandler):
         return None
       message = self._input_source[self._input_index]
       self._input_index += 1
+      if message:
+        self.output_prompt(message)
       return message
 
+    session = self._get_or_create_session()
+    # erase_when_done is a PromptSession/Application constructor flag, not
+    # a prompt() kwarg. Toggle it on the cached session's app for this call
+    # only, so the input line is erased after Enter and output_prompt can
+    # render the input in a styled Panel. Reset afterwards so confirm_approval
+    # (which shares this session) keeps its y/N audit trail. The finally
+    # block guarantees the flag is reset on ANY exception path (including
+    # unexpected ones like NoConsoleScreenBufferError).
+    session.app.erase_when_done = True
     try:
-      # ``is_password=False`` is passed explicitly because prompt_toolkit's
-      # ``PromptSession`` stores ``is_password`` as instance state when it is
-      # passed to ``prompt_async`` (see prompt_toolkit 3.x: ``if is_password
-      # is not None: self.is_password = is_password``). A prior
-      # ``get_secret_input`` call would otherwise leave the session in
-      # password mode and mask this regular prompt. Passing ``False`` here
-      # resets it for every normal input.
-      result: str = await self._session.prompt_async(prompt, is_password=False)
-      return result
+      result: str = await asyncio.to_thread(session.prompt, prompt)
     except EOFError:
       return None
     except KeyboardInterrupt:
       self.console.print()  # Newline after ^C
       return None
+    finally:
+      session.app.erase_when_done = False
+    if result:
+      self.output_prompt(result)
+    return result
 
   async def get_secret_input(self, prompt: str = "> ") -> str | None:
     """Get secret user input (masked) from prompt_toolkit.
@@ -260,74 +314,76 @@ class InteractiveUIHandler(UIHandler):
       self._input_index += 1
       return message
 
+    session = self._get_or_create_session()
+    # See get_input: erase_when_done is toggled on the cached session's app
+    # for this call only. Secrets are not echoed via output_prompt. The
+    # finally block also resets is_password (a session-level flag set
+    # below) so a subsequent regular get_input call is not masked, even on
+    # interrupt paths.
+    session.app.erase_when_done = True
+    session.is_password = True
     try:
-      result: str = await self._session.prompt_async(prompt, is_password=True)
-      return result
+      result: str = await asyncio.to_thread(partial(session.prompt, prompt, is_password=True))
     except EOFError:
       return None
     except KeyboardInterrupt:
       self.console.print()
       return None
+    finally:
+      session.app.erase_when_done = False
+      session.is_password = False
+    return result
+
+  # === Prompt echo ===
+
+  def output_prompt(self, text: str) -> None:
+    """Render the user's submitted input as a styled Panel.
+
+    Empty input is skipped (no Panel rendered).
+
+    Args:
+      text: The submitted input text.
+    """
+    if not text:
+      return
+    self.console.print()
+    self.console.print(Panel(text, style=PROMPT_STYLE, box=box.SIMPLE_HEAD))
+
+  # === Info / step / command output ===
 
   def output_info(self, text: str) -> None:
     """Output a discrete informational text block.
 
-    Exits any active live display first so the text renders as a static
-    block. Used by the bootstrap wizard for pre-session prompts.
-
     Args:
       text: Informational text (may contain newlines).
     """
-    self._exit_live()
+    self._stop_processing_status()
     self.console.print(text)
 
   async def output_step_title(self, step: int, total: int, title: str) -> None:
     """Output a wizard step title with emphasis (bold + underline).
 
-    Renders the ``Step N of M: Title`` line with Rich bold+underline styling
-    so the user can easily see where a new step begins. A leading blank line
-    is emitted before the title for every step after the first (``step > 1``)
-    so consecutive steps are visually separated and the flow feels lighter.
+    A leading blank line is emitted before the title for every step after
+    the first (``step > 1``) so consecutive steps are visually separated.
 
     Args:
       step: 1-based step index.
       total: Total number of steps in the wizard flow.
       title: Human-readable step title.
     """
-    self._exit_live()
+    self._stop_processing_status()
     if step > 1:
       self.console.print()
     self.console.print(f"Step {step} of {total}: {title}", style=STEP_TITLE_STYLE)
 
-  # === Content Output ===
-
-  def start_content_stream(self) -> None:
-    """Start streaming content."""
-    self._streaming_content = True
-    self._ensure_live()
-    if self._thinking_shown and self._live:
-      self._live.append_response("\n")
-      self._thinking_shown = False
-
-  def stream_content(self, chunk: str, content_type: str = "text/plain") -> None:
-    """Stream a content chunk.
+  def output_command_result(self, result: str) -> None:
+    """Output slash-command result text.
 
     Args:
-      chunk: Content chunk (may contain ANSI from LLM).
-      content_type: MIME type of content.
+      result: Command output text.
     """
-    if self._live:
-      self._live.append_response(chunk)
-
-  def end_content_stream(self, total_length: int) -> None:
-    """End streaming content.
-
-    Args:
-      total_length: Total content length.
-    """
-    self._streaming_content = False
-    if self._live:
-      self._live.stop_spinner()
+    self._stop_processing_status()
+    self.console.print(f"{result}\n")
 
   def output_content(self, content: str, content_type: str = "text/plain") -> None:
     """Output content text directly (non-streaming).
@@ -340,15 +396,50 @@ class InteractiveUIHandler(UIHandler):
     self.stream_content(content, content_type)
     self.end_content_stream(len(content))
 
+  def output_thinking(self, text: str) -> None:
+    """Output thinking text directly (non-streaming).
+
+    Args:
+      text: Thinking text.
+    """
+    self.start_thinking_stream()
+    self.stream_thinking(text)
+    self.end_thinking_stream(len(text))
+
+  # === Content Output ===
+
+  def start_content_stream(self) -> None:
+    """Start streaming content."""
+    self._start_processing_status()
+    self.console.print("⏺ ", end="", style=CONTENT_STYLE)
+
+  def stream_content(self, chunk: str, content_type: str = "text/plain") -> None:
+    """Stream a content chunk.
+
+    Args:
+      chunk: Content chunk (may contain ANSI from LLM).
+      content_type: MIME type of content.
+    """
+    self._stop_processing_status()
+    self.console.print(chunk, end="", style=CONTENT_STYLE)
+
+  def end_content_stream(self, total_length: int) -> None:
+    """End streaming content.
+
+    Args:
+      total_length: Total content length.
+    """
+    self._stop_processing_status()
+    self.console.print()  # final newline
+
   # === Thinking Output ===
 
   def start_thinking_stream(self) -> None:
     """Start streaming thinking."""
     if not self.show_thinking:
       return
-    self._streaming_thinking = True
-    self._thinking_shown = True
-    self._ensure_live()
+    self._start_processing_status()
+    self.console.print()
 
   def stream_thinking(self, chunk: str) -> None:
     """Stream a thinking chunk.
@@ -358,10 +449,8 @@ class InteractiveUIHandler(UIHandler):
     """
     if not self.show_thinking:
       return
-    if self._live:
-      self._live.append_thinking(chunk)
-    else:
-      self.console.print(chunk, style=THINKING_STYLE, end="")
+    self._stop_processing_status()
+    self.console.print(chunk, style=THINKING_STYLE, end="")
 
   def end_thinking_stream(self, total_length: int) -> None:
     """End streaming thinking.
@@ -369,9 +458,10 @@ class InteractiveUIHandler(UIHandler):
     Args:
       total_length: Total thinking length.
     """
-    self._streaming_thinking = False
-    if self.show_thinking and self._live:
-      self._live.stop_spinner()
+    if not self.show_thinking:
+      return
+    self._stop_processing_status()
+    self.console.print()
 
   # === Multi-agent lifecycle ===
 
@@ -381,7 +471,7 @@ class InteractiveUIHandler(UIHandler):
     Args:
       name: The session-assigned id of the spawned agent.
     """
-    self._exit_live()
+    self._stop_processing_status()
     self.console.print(f"[cyan]↳ Agent spawned:[/cyan] {name}")
 
   def agent_finished(self, name: str) -> None:
@@ -390,7 +480,7 @@ class InteractiveUIHandler(UIHandler):
     Args:
       name: The session-assigned id of the finished agent.
     """
-    self._exit_live()
+    self._stop_processing_status()
     self.console.print(f"[dim]↳ Agent finished:[/dim] {name}")
 
   # === Protected-file approval (MBI-009 T12) ===
@@ -398,10 +488,11 @@ class InteractiveUIHandler(UIHandler):
   async def confirm_approval(self, path: str, diff: str) -> bool:
     """Ask the user to approve a write to a protected file.
 
-    Renders the unified diff with the existing colored diff renderer, then
-    prompts y/N. An empty response (Enter) or EOF counts as denial
-    (fail-safe). ``Ctrl+C`` is caught and treated as denial so the turn
-    resumes instead of crashing the session.
+    Renders the unified diff with the colored diff renderer, then prompts
+    y/N. An empty response (Enter) or EOF counts as denial (fail-safe).
+    ``Ctrl+C`` is caught and treated as denial so the turn resumes instead
+    of crashing the session. The y/N prompt is NOT erased after submit
+    (audit trail); uses the lazy session.
 
     Args:
       path: Path being written/updated (displayed in the prompt).
@@ -410,7 +501,7 @@ class InteractiveUIHandler(UIHandler):
     Returns:
       True if the user explicitly approved, False otherwise.
     """
-    self._exit_live()
+    self._stop_processing_status()
     filename = Path(path).name
     self.console.print(
       Panel(
@@ -422,8 +513,9 @@ class InteractiveUIHandler(UIHandler):
     # Reuse the colored diff renderer. Synthesize a minimal metadata dict
     # so _show_diff_content's truncation branch is not triggered.
     self._show_diff_content(diff, filename, "approve", metadata={})
+    session = self._get_or_create_session()
     try:
-      answer = await self._session.prompt_async(
+      answer = await session.prompt_async(
         f"Approve write to {filename}? [y/N] ",
         is_password=False,
       )
@@ -432,31 +524,16 @@ class InteractiveUIHandler(UIHandler):
       return False
     return answer.strip().lower() in ("y", "yes")
 
-  def output_thinking(self, text: str) -> None:
-    """Output thinking text directly (non-streaming).
-
-    Args:
-      text: Thinking text.
-    """
-    self.start_thinking_stream()
-    self.stream_thinking(text)
-    self.end_thinking_stream(len(text))
-
-  # === Command Output ===
-
-  def output_command_result(self, result: str) -> None:
-    """Output command result.
-
-    Args:
-      result: Command output text.
-    """
-    self._exit_live()
-    self.console.print(f"{result}\n")
-
   # === Tool Output ===
 
   def output_tool_call(self, tool_name: str, args: dict[str, Any]) -> None:
     """Output tool call information.
+
+    Renders inline as ``⏺ name(key=value, ...)`` with all key=value pairs
+    shown. Multi-line or long (>60 chars) values are summarized as
+    ``N chars``. For ``write``/``update`` tools, ``content`` /
+    ``old_string`` / ``new_string`` are suppressed (the diff is shown
+    separately via ``output_tool_content``).
 
     Args:
       tool_name: Name of tool being called.
@@ -464,12 +541,10 @@ class InteractiveUIHandler(UIHandler):
     """
     if not self.show_tool_calls:
       return
-
-    self._content_shown = True
-    self._exit_live()
-
+    self._stop_processing_status()
+    self.console.print(f"⏺ {tool_name}", end="", style=TOOL_STYLE)
     details = self._format_tool_details(tool_name, args)
-    self.console.print(f"\n⏺ {self._capitalize(tool_name)} tool: {details}", end="")
+    self.console.print(f"({details})")
 
   def output_tool_result(self, tool_name: str, success: bool, result: str) -> None:
     """Output tool result status.
@@ -481,15 +556,13 @@ class InteractiveUIHandler(UIHandler):
     """
     if not self.show_tool_calls:
       return
-
+    self._stop_processing_status()
     if success:
-      self.console.print("  [green]✓ Success[green]")
+      self.console.print("  [green]✓ Success[/green]", end="")
+      self.console.print(f" ({len(result)} chars)", style=TOOL_RESULT_STYLE)
     else:
-      error_msg = result[:50] if result else "Failed"
-      self._print_error(error_msg)
-
-    # Create LiveDisplay with spinner for subsequent processing
-    self._ensure_live()
+      self.console.print("  [red]𐄂 Fail[/red]")
+      self._print_error(result if result else "Failed")
 
   def output_tool_content(
     self,
@@ -512,8 +585,7 @@ class InteractiveUIHandler(UIHandler):
     """
     if not self.show_tool_calls:
       return
-
-    self._exit_live()
+    self._stop_processing_status()
     filename = Path(path).name
 
     # Dispatch based on content_type
@@ -523,9 +595,6 @@ class InteractiveUIHandler(UIHandler):
       self._show_diff_content(content, filename, operation, metadata)
     else:
       self._show_full_content(content, filename, operation, metadata)
-
-    # Create LiveDisplay with spinner for subsequent processing
-    self._ensure_live()
 
   # === Stats Output ===
 
@@ -537,28 +606,11 @@ class InteractiveUIHandler(UIHandler):
       prompt_tokens: Number of prompt tokens.
       eval_tokens: Number of evaluation tokens.
     """
-    if self._live:
-      self._exit_live()
-
+    self._stop_processing_status()
     if self.show_stats:
-      total_tokens = prompt_tokens + eval_tokens
+      total = prompt_tokens + eval_tokens
       duration_s = duration_ms / 1000.0
-      if duration_ms > 0 or total_tokens > 0:
-        if total_tokens > 0:
-          tokens_per_sec = total_tokens / duration_s if duration_s > 0 else 0
-          stats = (
-            f"⏱ {duration_s:.1f}s | {prompt_tokens}+{eval_tokens}={total_tokens} tokens | "
-            f"{tokens_per_sec:.0f} tok/s"
-          )
-        else:
-          stats = f"⏱ {duration_s:.1f}s"
-        self.console.print(stats, style="dim")
-      else:
-        self.console.print()
-
-    self._end_turn()
-    self._thinking_shown = False
-    self._content_shown = False
+      self.console.print(f"📊 {duration_s:.1f}s, {total} tokens", style=STATS_STYLE)
 
   # === Error Output ===
 
@@ -568,20 +620,17 @@ class InteractiveUIHandler(UIHandler):
     Args:
       error: Exception that occurred.
       include_traceback: Whether to include full traceback (default: False).
-        For NetworkError, the debug message with exception chain is shown when
-        this is True. For other errors, the full Python traceback is shown.
+        For NetworkError, the debug message with exception chain is shown
+        when this is True. For other errors, the full Python traceback is
+        shown.
     """
-    self._exit_live()
-
-    from yoker.exceptions import NetworkError, ToolError
+    self._stop_processing_status()
 
     if isinstance(error, NetworkError):
-      # Show compact user-friendly message by default
       if error.recoverable:
         msg = f"{error.message}\n\nYour message was preserved. Try again or type a new message."
       else:
         msg = f"{error.message}\n\nUnable to recover. Please restart the session."
-      # Include debug message (with exception chain) if traceback requested
       debug_exc = error if include_traceback else None
       self._print_error(msg, debug_exc)
     elif isinstance(error, ToolError):
@@ -591,66 +640,26 @@ class InteractiveUIHandler(UIHandler):
       msg = f"Error: {error}"
       self._print_error(msg, error if include_traceback else None)
 
-  # === Tool Formatting Helpers ===
+  # === Formatting Helpers ===
 
   def _print_error(self, msg: str, exc: Exception | None = None) -> None:
     if exc:
-      # For NetworkError, show debug message (with exception chain) instead of full traceback
-      from yoker.exceptions import NetworkError
-
       if isinstance(exc, NetworkError):
-        # Show the debug message with exception chain
         msg += f"\n\n[dim]{exc.get_debug_message()}[/dim]"
       else:
-        # For other exceptions, show full Python traceback
         tb = "".join(traceback.TracebackException.from_exception(exc).format())
         msg += "\n\n[black]" + tb
 
     self.console.print(Panel(msg, title="ERROR", style=ERROR_STYLE))
     self.console.print()
 
-  @staticmethod
-  def _capitalize(name: str) -> str:
-    """Capitalize first letter of name for display.
-
-    Args:
-      name: Name to capitalize.
-
-    Returns:
-      Name with first letter capitalized.
-    """
-    if name:
-      return name[0].upper() + name[1:]
-    return name
-
-  @staticmethod
-  def _extract_filename(arguments: dict[str, Any]) -> str:
-    """Extract filename from tool arguments.
-
-    Args:
-      arguments: Tool arguments dictionary.
-
-    Returns:
-      Filename (basename) of the path argument, or first arg value if no path.
-    """
-    # Special case: git tool shows operation, not path
-    if "operation" in arguments:
-      return str(arguments["operation"])
-
-    # Look for common path argument names
-    for key in ("file_path", "path", "filepath"):
-      if key in arguments:
-        return Path(arguments[key]).name
-
-    # Fallback: use first argument value
-    if arguments:
-      first_value = next(iter(arguments.values()))
-      return str(first_value)
-
-    return ""
-
   def _format_tool_details(self, tool_name: str, arguments: dict[str, Any]) -> str:
-    """Format tool arguments for display.
+    """Format tool arguments for inline display.
+
+    Shows all ``key=value`` pairs. Multi-line or long (>60 chars) values are
+    summarized as ``N chars``. For ``write``/``update`` tools,
+    ``content``/``old_string``/``new_string`` are suppressed (the diff is
+    shown separately).
 
     Args:
       tool_name: Name of the tool.
@@ -659,18 +668,16 @@ class InteractiveUIHandler(UIHandler):
     Returns:
       Formatted string showing relevant arguments.
     """
-    # Special formatting for git tool: show operation, path, and args
+    # Special formatting for git tool: show operation, path, and args.
     if tool_name == "git":
       operation = arguments.get("operation", "")
       path = arguments.get("path", "")
       args = arguments.get("args", {})
 
-      # Build details string
       parts = [str(operation)] if operation else []
       if path:
         parts.append(f"on {path}")
       if args:
-        # Show key args (first 2 to keep it concise)
         args_str = ", ".join(f"{k}={v}" for k, v in list(args.items())[:2])
         if len(args) > 2:
           args_str += ", ..."
@@ -678,15 +685,28 @@ class InteractiveUIHandler(UIHandler):
 
       return " ".join(parts) if parts else str(arguments)
 
-    # Special formatting for websearch: show query
+    # Special formatting for websearch: show query.
     if tool_name == "websearch":
       query = arguments.get("query", "")
       if query:
         return str(query)
       return str(arguments)
 
-    # For other tools: show filename/path
-    return self._extract_filename(arguments)
+    # Suppress large content fields for write/update (diff shown separately).
+    if tool_name in _TOOL_SUPPRESS_LARGE_FIELDS:
+      arguments = {k: v for k, v in arguments.items() if k not in _TOOL_LARGE_FIELDS}
+
+    def str_summary(value: Any) -> str:
+      if isinstance(value, str):
+        if "\n" in value or len(value) > _TOOL_ARG_MAX_CHARS:
+          return f"{len(value)} chars"
+        return value
+      s = str(value)
+      if len(s) > _TOOL_ARG_MAX_CHARS:
+        return f"{len(s)} chars"
+      return s
+
+    return " ".join(key + "=" + str_summary(value) for key, value in arguments.items())
 
   def _show_summary(
     self,
@@ -747,21 +767,16 @@ class InteractiveUIHandler(UIHandler):
       metadata: Additional metadata.
     """
     if content is None:
-      # Fall back to summary
       self._show_summary(operation, filename, metadata)
       return
 
-    # Show header
     self.console.print(f"\n  {filename}")
 
-    # Show content with line numbers
     lines = content.splitlines()
     for i, line in enumerate(lines, start=1):
-      # Escape brackets in user content to prevent Rich markup
       escaped_line = line.replace("[", "\\[").replace("]", "\\]")
       self.console.print(f"  {i:4d}│{escaped_line}")
 
-    # Show truncation indicator if needed
     if metadata.get("truncated"):
       original_lines = metadata.get("original_line_count", 0)
       remaining = original_lines - len(lines)
@@ -783,27 +798,20 @@ class InteractiveUIHandler(UIHandler):
       metadata: Additional metadata.
     """
     if content is None:
-      # Fall back to summary
       self._show_summary(operation, filename, metadata)
       return
 
-    # Show header
     self.console.print(f"  {filename}")
 
-    # Show diff with colors (using Rich styles)
     lines = content.splitlines()
     for line in lines:
-      # Skip file header lines
       if line.startswith("--- ") or line.startswith("+++ "):
         continue
-      # Skip diff header
       if line.startswith("diff --"):
         continue
 
-      # Escape brackets in user content
       escaped_line = line.replace("[", "\\[").replace("]", "\\]")
 
-      # Color based on prefix (using Rich styles)
       if line.startswith("@@"):
         self.console.print(f"  [cyan]{escaped_line}[/]")
       elif line.startswith("-"):
@@ -813,71 +821,7 @@ class InteractiveUIHandler(UIHandler):
       else:
         self.console.print(f"  {escaped_line}")
 
-    # Show truncation indicator if needed
     if metadata.get("truncated"):
       original_lines = metadata.get("original_diff_lines", 0)
       remaining = original_lines - len(lines)
       self.console.print(f"  ... ({remaining} more lines)")
-
-  def _print_wrapped(
-    self,
-    text: str,
-    style: Style | None = None,
-    end: str = "",
-  ) -> None:
-    """Print text with optional wrapping at wrap_width.
-
-    Args:
-      text: Text to print.
-      style: Optional Rich style.
-      end: String to append at the end (default: "").
-    """
-    if self.wrap_width is None:
-      self.console.print(text, style=style, end=end)
-      return
-
-    # Track current position in line
-    current_line: list[str] = []
-    column = 0
-
-    def flush_line() -> None:
-      """Print current line and reset."""
-      nonlocal current_line, column
-      if current_line:
-        self.console.print("".join(current_line), style=style, end="")
-        current_line = []
-        column = 0
-
-    for char in text:
-      if char == "\n":
-        flush_line()
-        self.console.print(style=style)
-        column = 0
-      elif char == "\r":
-        flush_line()
-        column = 0
-      elif char == " ":
-        # Space: check if adding it would exceed width
-        if column + 1 > self.wrap_width:
-          # Line break at word boundary
-          flush_line()
-          self.console.print(style=style)
-          column = 0
-        else:
-          current_line.append(char)
-          column += 1
-      else:
-        # Regular character
-        if column >= self.wrap_width:
-          # Break before this character if line is full
-          flush_line()
-          self.console.print(style=style)
-          column = 0
-        current_line.append(char)
-        column += 1
-
-    # Flush remaining content
-    flush_line()
-
-    if end:
-      self.console.print(end, style=style, end="")
