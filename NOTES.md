@@ -270,3 +270,41 @@ The session resume feature is implemented. Next steps:
 4. Continue with remaining 1.0.0 roadmap items
 
 **Branch:** `feature/git-write-ops`
+
+---
+
+### Session 5 — 2026-07-28: Session ID in MOTD
+
+**Branch:** `feature/git-write-ops`
+**Model:** `glm-5.2:cloud` (Ollama provider)
+**Context:** Owner wanted the "Started/Resumed session" info message removed from `_run_with_session` and instead integrated into the MOTD welcome panel in `InteractiveUIHandler.start()`.
+
+#### What Was Done
+
+1. Removed the `ui.output_info(f"Resumed session...")` / `ui.output_info(f"Started session...")` lines from `_run_with_session` in `chat.py`.
+2. Added a "Session" line to the MOTD panel in `InteractiveUIHandler.start()`, reading `agent.config.context.session_id` and `agent.config.context.fresh` to show either `Session: Started '<id>'` or `Session: Resumed '<id>'`.
+3. Updated the test mock agent to set `config.context.session_id` and `config.context.fresh`.
+4. Added `test_start_shows_resumed_session` test.
+5. Updated `test_start_prints_banner` to assert the new `Session: Started 'test-session'` line.
+
+The session id is accessible because `Session.__init__` stamps it onto `config.context.session_id`, and `agent.config` holds the full `Config`. The UI handler receives the agent in `start(agent)`, so it can read `agent.config.context.session_id`.
+
+**Files changed:**
+1. `src/yoker/cli/chat.py` — Removed `output_info` lines for session start/resume
+2. `src/yoker/ui/interactive.py` — Added "Session" line to MOTD panel
+3. `tests/test_ui/test_interactive.py` — Updated mock agent, added test
+
+**All checks pass: 2206 tests, lint, typecheck green.**
+
+#### Issues Discovered This Session
+
+1. **`make` env_vars still not configured**: Tried `make test TEST=test_ui` but got "env var 'TEST' not in per-target allowlist". This is a known issue from Session 1 — the local `yoker.toml` needs `[tools.make.allowed_env_vars]` with `test = ["TEST"]`. Still blocked by protected_files guardrail on `yoker.toml`. **This is a recurring friction point** — I had to run the full test suite (2206 tests) instead of a targeted subset.
+
+#### Resume Point
+
+Session id now shows in the MOTD. Next steps:
+1. Address the `make` env_vars allowlist issue (owner needs to add `test = ["TEST"]` to `yoker.toml` `[tools.make.allowed_env_vars]`)
+2. Continue with remaining 1.0.0 roadmap items (C3 toolset evaluation, C3 agents/skills porting)
+3. Address remaining dogfooding blockers (context/ in .gitignore, etc.)
+
+**Branch:** `feature/git-write-ops`
