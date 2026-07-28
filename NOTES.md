@@ -129,7 +129,7 @@ Remaining:
 
 ### Open Action Items from Session 1
 
-- [x] Add `[tools.make.allowed_env_vars]` to local `yoker.toml` — owner applied
+- [x] Add `[tools.make.allowed_env_vars]` to local `yoker.toml` — applied in Session 5 (requires Yoker restart to take effect)
 - [ ] Add `context/` to `.gitignore` (reduce `list` noise)
 - [ ] Add `git add`/`git commit`/`git checkout` to git tool — currently read-only
       (`allowed_commands = ["status", "log", "diff", "branch", "show"]` in local
