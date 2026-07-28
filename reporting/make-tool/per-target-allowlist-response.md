@@ -40,12 +40,12 @@ Reviewed every subprocess-spawning built-in tool:
 | Tool | Spawns subprocess? | Env-vars use case? | Verdict |
 |------|--------------------|--------------------|---------|
 | `make` (new) | Yes (`subprocess.run`) | Yes — `TEST=file.py`, `LINT_FLAGS=...` are legitimate variable-override use cases (make's own `VAR=val` semantics) | In scope |
-| `git` | Yes (`subprocess.run`, `git.py:344`) | No — git config is args-based (`allowed_commands`, `requires_permission`). Env vars git might want (`GIT_SSH_COMMAND`, `GIT_EDITOR`, `GIT_DIR`, `GIT_WORK_TREE`, `GIT_CONFIG_PARAMETERS`) are framework-injection vectors the hard denylist blocks. Git has no "variable override" use case analogous to make's `TEST=`. | Out of scope |
+| `git` | Yes (`subprocess.run`, `git.py:344`) | No — git config is args-based (`allowed_commands`, `auto_permission`). Env vars git might want (`GIT_SSH_COMMAND`, `GIT_EDITOR`, `GIT_DIR`, `GIT_WORK_TREE`, `GIT_CONFIG_PARAMETERS`) are framework-injection vectors the hard denylist blocks. Git has no "variable override" use case analogous to make's `TEST=`. | Out of scope |
 | `webfetch` | No — HTTP backend (`webfetch.py:53`, `backend.fetch`) | N/A — env vars don't reach an HTTP client the same way | Out of scope |
 | `websearch` | No — HTTP backend (`websearch.py:50`, `backend.search`) | N/A | Out of scope |
 | `read`, `write`, `update`, `list`, `mkdir`, `existence`, `search` | No — in-process filesystem ops | N/A | Out of scope |
 
-**Confirmation:** `make` is the only built-in tool where `env_vars` provides a legitimate variable-override use case. The git tool's config surface is already covered by `allowed_commands` / `requires_permission`, and the env vars it might want are exactly the framework-injection vectors the hard denylist blocks. webfetch/websearch use HTTP clients. File ops don't spawn subprocesses.
+**Confirmation:** `make` is the only built-in tool where `env_vars` provides a legitimate variable-override use case. The git tool's config surface is already covered by `allowed_commands` / `auto_permission`, and the env vars it might want are exactly the framework-injection vectors the hard denylist blocks. webfetch/websearch use HTTP clients. File ops don't spawn subprocesses.
 
 **Conclusion: Q3 is correctly rejected — make-only this PR. No change to `GitToolConfig`.**
 

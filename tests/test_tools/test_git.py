@@ -17,7 +17,6 @@ from yoker.builtin.git import _sanitize_output
 from yoker.config import (
   Config,
   GitToolConfig,
-  HandlerConfig,
   PermissionsConfig,
   ToolsSharedConfig,
   UpdateToolConfig,
@@ -31,31 +30,42 @@ from yoker.tools.guardrails.path import PathGuardrail
 git_module = sys.modules["yoker.builtin.git"]
 
 
+# A simple async approval handler for tests: always returns True.
+async def _approve_always(context: str, diff: str) -> bool:
+  return True
+
+
+# A simple async approval handler for tests: always returns False.
+async def _deny_always(context: str, diff: str) -> bool:
+  return False
+
+
 def _git_spec(
-  config: GitToolConfig | None = None, permission_handlers: dict[str, HandlerConfig] | None = None
+  config: GitToolConfig | None = None,
 ):
   """Create and register the git tool."""
   registry = ToolRegistry()
-  # Create backends dict with permission_handlers if provided
-  backends = {}
-  if permission_handlers:
-    backends["permission_handlers"] = permission_handlers
   return registry.register(git, name="git")
 
 
 def _git_context(
-  config: GitToolConfig | None = None, permission_handlers: dict[str, HandlerConfig] | None = None
+  config: GitToolConfig | None = None,
+  approval_handler=None,
 ) -> ToolContext:
-  """Get ToolContext for tests."""
-  backends: dict = {}
-  if permission_handlers:
-    backends["permission_handlers"] = permission_handlers
+  """Get ToolContext for tests.
+
+  Args:
+    config: GitToolConfig, defaults to GitToolConfig().
+    approval_handler: Optional async callable ``(context, diff) -> bool``.
+      Pass ``_approve_always`` or ``_deny_always`` for approval tests.
+  """
   if config is None:
     config = GitToolConfig()
   return ToolContext(
     config=config,
     shared=ToolsSharedConfig(),
-    backends=backends,
+    backends={},
+    approval_handler=approval_handler,
   )
 
 
@@ -388,7 +398,7 @@ class TestGitToolReadOnlyOperations:
 
 
 class TestGitToolPermissionRequiredOperations:
-  """Tests for operations that require explicit permission."""
+  """Tests for operations that require approval (not in auto_permission)."""
 
   @pytest.fixture
   def git_repo(self, tmp_path: Path) -> Path:
@@ -420,16 +430,18 @@ class TestGitToolPermissionRequiredOperations:
     return repo
 
   @pytest.mark.asyncio
-  async def test_git_commit_blocked_without_permission(self, git_repo: Path) -> None:
+  async def test_git_commit_blocked_without_handler(self, git_repo: Path) -> None:
     """
-    Given: A git tool without permission handler for commit
+    Given: A git tool with commit in allowed_commands but no approval handler
     When: Executing git commit operation
-    Then: Returns error that commit requires permission
+    Then: Returns error that commit requires approval
     """
-    # Allow commit in config but don't provide handler
-    config = GitToolConfig(allowed_commands=("status", "log", "commit"))
+    config = GitToolConfig(
+      allowed_commands=("status", "log", "commit"),
+      auto_permission=("status", "log"),
+    )
     spec = _git_spec()
-    ctx = _git_context(config=config, permission_handlers={})
+    ctx = _git_context(config=config)  # no approval_handler
 
     result = await spec.execute(
       operation="commit",
@@ -439,20 +451,21 @@ class TestGitToolPermissionRequiredOperations:
     )
 
     assert not result.success
-    assert "requires permission" in result.error.lower()
+    assert "requires approval" in result.error.lower()
 
   @pytest.mark.asyncio
-  async def test_git_commit_blocked_with_block_handler(self, git_repo: Path) -> None:
+  async def test_git_commit_blocked_when_denied(self, git_repo: Path) -> None:
     """
-    Given: A git tool with permission handler mode='block' for commit
+    Given: A git tool with approval handler that returns False
     When: Executing git commit operation
-    Then: Returns error with handler's message
+    Then: Returns error that user denied the operation
     """
-    config = GitToolConfig(allowed_commands=("status", "log", "commit"))
-    handlers = {"git_commit": HandlerConfig(mode="block", message="Commits are blocked")}
-
+    config = GitToolConfig(
+      allowed_commands=("status", "log", "commit"),
+      auto_permission=("status", "log"),
+    )
     spec = _git_spec()
-    ctx = _git_context(config=config, permission_handlers=handlers)
+    ctx = _git_context(config=config, approval_handler=_deny_always)
 
     result = await spec.execute(
       operation="commit",
@@ -462,12 +475,12 @@ class TestGitToolPermissionRequiredOperations:
     )
 
     assert not result.success
-    assert "Commits are blocked" in result.error
+    assert "denied" in result.error.lower()
 
   @pytest.mark.asyncio
-  async def test_git_commit_allowed_with_permission(self, git_repo: Path) -> None:
+  async def test_git_commit_allowed_when_approved(self, git_repo: Path) -> None:
     """
-    Given: A git tool with permission handler mode='allow' for commit
+    Given: A git tool with approval handler that returns True
     When: Executing git commit operation with message
     Then: Commit is created successfully
     """
@@ -475,11 +488,12 @@ class TestGitToolPermissionRequiredOperations:
     (git_repo / "new_file.txt").write_text("New content")
     subprocess.run(["git", "add", "new_file.txt"], cwd=git_repo, check=True, capture_output=True)
 
-    config = GitToolConfig(allowed_commands=("status", "log", "commit"))
-    handlers = {"git_commit": HandlerConfig(mode="allow")}
-
+    config = GitToolConfig(
+      allowed_commands=("status", "log", "commit"),
+      auto_permission=("status", "log"),
+    )
     spec = _git_spec()
-    ctx = _git_context(config=config, permission_handlers=handlers)
+    ctx = _git_context(config=config, approval_handler=_approve_always)
 
     result = await spec.execute(
       operation="commit",
@@ -491,59 +505,119 @@ class TestGitToolPermissionRequiredOperations:
     assert result.success
 
   @pytest.mark.asyncio
-  async def test_git_push_blocked_without_permission(self, git_repo: Path) -> None:
+  async def test_git_commit_auto_permission_skips_approval(self, git_repo: Path) -> None:
     """
-    Given: A git tool without permission handler for push
-    When: Executing git push operation
-    Then: Returns error that push requires permission
+    Given: A git tool with commit in auto_permission
+    When: Executing git commit operation (no approval handler wired)
+    Then: Commit succeeds without approval prompt
     """
-    config = GitToolConfig(allowed_commands=("status", "log", "push"))
+    (git_repo / "auto_file.txt").write_text("Auto content")
+    subprocess.run(["git", "add", "auto_file.txt"], cwd=git_repo, check=True, capture_output=True)
 
+    config = GitToolConfig(
+      allowed_commands=("status", "log", "commit"),
+      auto_permission=("status", "log", "commit"),
+    )
     spec = _git_spec()
-    ctx = _git_context(config=config, permission_handlers={})
+    ctx = _git_context(config=config)  # no approval_handler needed
+
+    result = await spec.execute(
+      operation="commit",
+      path=str(git_repo),
+      args={"message": "Auto commit"},
+      ctx=ctx,
+    )
+
+    assert result.success
+
+  @pytest.mark.asyncio
+  async def test_git_push_blocked_without_handler(self, git_repo: Path) -> None:
+    """
+    Given: A git tool with push in allowed_commands but no approval handler
+    When: Executing git push operation
+    Then: Returns error that push requires approval
+    """
+    config = GitToolConfig(
+      allowed_commands=("status", "log", "push"),
+      auto_permission=("status", "log"),
+    )
+    spec = _git_spec()
+    ctx = _git_context(config=config)
 
     result = await spec.execute(operation="push", path=str(git_repo), ctx=ctx)
 
     assert not result.success
-    assert "requires permission" in result.error.lower()
+    assert "requires approval" in result.error.lower()
 
   @pytest.mark.asyncio
-  async def test_git_push_blocked_with_block_handler(self, git_repo: Path) -> None:
+  async def test_git_push_blocked_when_denied(self, git_repo: Path) -> None:
     """
-    Given: A git tool with permission handler mode='block' for push
+    Given: A git tool with approval handler that returns False
     When: Executing git push operation
-    Then: Returns error with handler's message
+    Then: Returns error that user denied the operation
     """
-    config = GitToolConfig(allowed_commands=("status", "log", "push"))
-    handlers = {"git_push": HandlerConfig(mode="block", message="Push is blocked")}
-
+    config = GitToolConfig(
+      allowed_commands=("status", "log", "push"),
+      auto_permission=("status", "log"),
+    )
     spec = _git_spec()
-    ctx = _git_context(config=config, permission_handlers=handlers)
+    ctx = _git_context(config=config, approval_handler=_deny_always)
 
     result = await spec.execute(operation="push", path=str(git_repo), ctx=ctx)
 
     assert not result.success
-    assert "Push is blocked" in result.error
+    assert "denied" in result.error.lower()
 
   @pytest.mark.asyncio
-  async def test_git_push_allowed_with_permission(self, git_repo: Path) -> None:
+  async def test_git_push_allowed_when_approved(self, git_repo: Path) -> None:
     """
-    Given: A git tool with permission handler mode='allow' for push
+    Given: A git tool with approval handler that returns True
     When: Executing git push operation
-    Then: Push succeeds (or fails with network error if no remote)
+    Then: Push gets past approval (may fail with network error if no remote)
     """
-    config = GitToolConfig(allowed_commands=("status", "log", "push"))
-    handlers = {"git_push": HandlerConfig(mode="allow")}
-
+    config = GitToolConfig(
+      allowed_commands=("status", "log", "push"),
+      auto_permission=("status", "log"),
+    )
     spec = _git_spec()
-    ctx = _git_context(config=config, permission_handlers=handlers)
+    ctx = _git_context(config=config, approval_handler=_approve_always)
 
-    # Push will fail because there's no remote, but it should get past permission check
+    # Push will fail because there's no remote, but it should get past approval check
     result = await spec.execute(operation="push", path=str(git_repo), ctx=ctx)
 
-    # The error should be from git, not from permission
+    # The error should be from git, not from approval
     if not result.success:
+      assert "approval" not in result.error.lower()
       assert "permission" not in result.error.lower()
+
+  @pytest.mark.asyncio
+  async def test_git_add_auto_permission_stages_files(self, git_repo: Path) -> None:
+    """
+    Given: A git tool with add in auto_permission (default)
+    When: Creating a new file and staging it with git add --all
+    Then: File is staged without approval prompt
+    """
+    (git_repo / "new.txt").write_text("content")
+    spec = _git_spec()
+    ctx = _git_context()  # default config has add in auto_permission
+
+    result = await spec.execute(
+      operation="add",
+      path=str(git_repo),
+      args={"all": True},
+      ctx=ctx,
+    )
+
+    assert result.success
+
+    # Verify the file is staged
+    status_result = subprocess.run(
+      ["git", "status", "--porcelain"],
+      cwd=git_repo,
+      capture_output=True,
+      text=True,
+    )
+    assert "A  new.txt" in status_result.stdout
 
   @pytest.mark.asyncio
   async def test_disallowed_operation_returns_error(self, git_repo: Path) -> None:

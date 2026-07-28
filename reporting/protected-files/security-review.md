@@ -50,13 +50,13 @@ symlink pointing outside the project fails the `_is_within_allowed_paths` check 
 **Make tool — not covered (acceptable for SOFT).** The `make` tool can execute arbitrary
 shell that writes files, bypassing the protected_files check. This is a real bypass, but it
 falls outside the SOFT threat model: a "powerful mistake" via `make` is gated by the existing
-`requires_permission` / env-var allowlist controls on the make tool itself, and a malicious
+`auto_permission` / env-var allowlist controls on the make tool itself, and a malicious
 agent using `make` to write `Makefile` is explicitly out of scope. See observation O-1.
 
 **Git tool — not covered (acceptable for SOFT).** `git checkout`, `git apply`, etc. can
 overwrite protected files. Same reasoning as `make`: out of scope for the SOFT model. The
 `GitToolConfig.allowed_commands` defaults to read-only ops (`status`, `log`, `diff`,
-`branch`, `show`); `commit`/`push` require permission. See observation O-1.
+`branch`, `show`); `commit`/`push` require interactive approval via `auto_permission`. See observation O-1.
 
 ### 3. Fail-Safe Behavior — Correct
 

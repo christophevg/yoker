@@ -357,8 +357,8 @@ class GitToolConfig(ToolConfig):
   """Git tool configuration.
 
   Attributes:
-    allowed_commands: Allowed git commands.
-    requires_permission: Commands that require user permission.
+    allowed_commands: All git commands the tool may execute.
+    auto_permission: Subset auto-approved without asking. Defaults to read-only + add.
   """
 
   allowed_commands: tuple[str, ...] = (
@@ -367,8 +367,18 @@ class GitToolConfig(ToolConfig):
     "diff",
     "branch",
     "show",
+    "add",
+    "commit",
+    "push",
   )
-  requires_permission: tuple[str, ...] = ("commit", "push")
+  auto_permission: tuple[str, ...] = (
+    "status",
+    "log",
+    "diff",
+    "branch",
+    "show",
+    "add",
+  )
 ```
 
 ### 5.2 Configuration Example
@@ -376,20 +386,11 @@ class GitToolConfig(ToolConfig):
 ```toml
 [tools.git]
 enabled = true
-# Read-only operations allowed by default
-allowed_commands = ["status", "log", "diff", "branch", "show"]
-# Destructive operations require explicit permission
-requires_permission = ["commit", "push"]
-
-# Permission handler for git commit
-[permissions.handlers.git_commit]
-mode = "ask_user"  # or "block" for automated environments
-message = "Allow committing changes to this repository?"
-
-# Permission handler for git push
-[permissions.handlers.git_push]
-mode = "block"  # Block push by default for safety
-message = "Push operations are not allowed in this configuration"
+# All commands the tool may execute
+allowed_commands = ["status", "log", "diff", "branch", "show", "add", "commit", "push"]
+# Subset auto-approved without asking (defaults to read-only + add)
+auto_permission = ["status", "log", "diff", "branch", "show", "add"]
+# To enable autonomous commits, add "commit" to auto_permission
 ```
 
 ---
@@ -430,33 +431,42 @@ def _validate_repository_path(self, path: str) -> ValidationResult:
   return ValidationResult(valid=True)
 ```
 
-### 6.2 Permission Handler Integration
+### 6.2 Approval Handler Integration
 
-Destructive operations check permission handlers:
+Operations not in `auto_permission` check the approval handler:
 
 ```python
-def _check_permission(self, operation: str) -> tuple[bool, str | None]:
-  """Check if operation requires and has permission.
+async def _check_approval(operation: str, ctx: ToolContext) -> tuple[bool, str | None]:
+  """Check if the operation is approved.
 
-  Args:
-    operation: Git operation name.
-
-  Returns:
-    Tuple of (allowed, reason_if_blocked).
+  If an approval handler is available (interactive mode), use it to
+  prompt the user with a preview of what the operation will do.
+  If no handler is available (batch mode), fail-safe to denial.
   """
-  if operation not in self._config.requires_permission:
-    return True, None
-
-  # Check permission handlers from config
-  handler_key = f"git_{operation}"
-  handler = self._config.permissions.handlers.get(handler_key)
-
+  handler = ctx.approval_handler
   if handler is None:
-    # Default: block destructive operations without explicit handler
-    return False, f"Operation {operation} requires permission but no handler configured"
+    return False, (
+      f"Operation '{operation}' requires approval but no interactive handler "
+      "is available. Add it to auto_permission in yoker.toml to allow "
+      "without confirmation."
+    )
 
-  if handler.mode == "allow":
-    return True, None
+  # Build a preview for the approval prompt.
+  if operation == "commit":
+    preview = _staged_diff_preview()
+  elif operation == "push":
+    preview = _push_preview()
+  else:
+    preview = f"git {operation}"
+
+  try:
+    approved = await handler(context_label, preview)
+  except Exception as e:
+    return False, f"Approval handler error for operation '{operation}': {e}"
+
+  if not approved:
+    return False, f"User denied git {operation}."
+  return True, None
   elif handler.mode == "block":
     return False, handler.message or f"Operation {operation} is blocked"
   elif handler.mode == "ask_user":

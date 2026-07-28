@@ -110,8 +110,11 @@ timeout_seconds = 300
 
 [tools.git]
 enabled = true
-allowed_commands = ["status", "log", "diff", "branch", "show"]
-requires_permission = ["commit", "push"]
+# All commands the tool may execute.
+allowed_commands = ["status", "log", "diff", "branch", "show", "add", "commit", "push"]
+# Subset that is auto-approved without asking. Defaults to read-only + staging.
+# Add "commit" and/or "push" here to enable autonomous git write operations.
+auto_permission = ["status", "log", "diff", "branch", "show", "add"]
 
 [tools.make]
 enabled = true

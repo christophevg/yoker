@@ -8,14 +8,24 @@ session-aware tools (e.g. ``send_message``) can reach the
 :class:`yoker.session.Session` that owns the calling agent. The ``agent``
 tool uses closure capture instead, but ``ToolContext.session`` is the
 canonical injection point for future session-aware tools.
+
+``ToolContext`` also carries an optional ``approval_handler`` — an async
+callable that tools can use to request interactive approval before
+executing operations that need user confirmation (e.g. git commit/push).
+The handler is wired from ``UIHandler.confirm_approval`` in interactive
+mode. When ``None`` (batch mode), tools that require approval must
+fail-safe to denial.
 """
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
   from yoker.config import ToolConfig, ToolsSharedConfig
   from yoker.session import Session
+
+  ApprovalHandler = Callable[[str, str], Awaitable[bool]]
 
 
 @dataclass
@@ -32,12 +42,16 @@ class ToolContext:
       ({"websearch": OllamaWebSearchBackend, ...}).
     session: The :class:`Session` owning the calling agent, when the agent
       runs inside a session. ``None`` on the single-agent path.
+    approval_handler: Optional async callable
+      ``(context: str, diff: str) -> bool`` for interactive approval.
+      ``None`` in batch mode; tools must fail-safe to denial.
   """
 
   config: "ToolConfig"  # Tool-specific config (WriteToolConfig, etc.)
   shared: "ToolsSharedConfig"  # content_display, etc.
   backends: dict[str, Any]  # {"websearch": OllamaWebSearchBackend, ...}
   session: "Session | None" = None
+  approval_handler: "ApprovalHandler | None" = None
 
 
 __all__ = ["ToolContext"]

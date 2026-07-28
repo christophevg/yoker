@@ -352,8 +352,8 @@ mode = "ask_user"  # Requires user confirmation
 message = "Commit changes to repository?"
 
 [tools.git]
-allowed_commands = ["status", "log", "diff", "commit"]
-requires_permission = ["commit"]  # These need explicit permission
+allowed_commands = ["status", "log", "diff", "branch", "show", "add", "commit", "push"]
+auto_permission = ["status", "log", "diff", "branch", "show", "add"]  # commit/push need approval
 ```
 
 **Decision Rationale**:
@@ -688,8 +688,8 @@ timeout_seconds = 300
 
 [tools.git]
 enabled = true
-allowed_commands = ["status", "log", "diff", "commit"]
-requires_permission = ["commit"]
+allowed_commands = ["status", "log", "diff", "branch", "show", "add", "commit", "push"]
+auto_permission = ["status", "log", "diff", "branch", "show", "add"]
 
 # Agent definitions
 [agents]

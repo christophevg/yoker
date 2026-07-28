@@ -475,9 +475,26 @@ _TARGET_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._%+\-]*$")
 class GitToolConfig(ToolConfig):
   """Git tool configuration.
 
+  Secure-by-default: all commands are in ``allowed_commands`` but only
+  read-only operations are in ``auto_permission`` (auto-approved without
+  user confirmation). Operations in ``allowed_commands`` but not in
+  ``auto_permission`` require interactive approval via the
+  ``_approval_handler`` (wired in interactive mode by
+  :func:`yoker.cli.chat._wire_approval_handler`). In batch mode
+  (no handler wired), they are blocked — fail-safe.
+
+  To enable autonomous commits in a trusted workflow, add ``"commit"``
+  (and/or ``"push"``) to ``auto_permission`` in ``yoker.toml``:
+
+  .. code-block:: toml
+
+      [tools.git]
+      auto_permission = ["status", "log", "diff", "branch", "show", "commit"]
+
   Attributes:
-    allowed_commands: Allowed git commands.
-    requires_permission: Commands that require user permission.
+    allowed_commands: All git commands the tool may execute.
+    auto_permission: Subset that is auto-approved without asking.
+      Defaults to read-only operations only.
   """
 
   allowed_commands: tuple[str, ...] = (
@@ -486,8 +503,18 @@ class GitToolConfig(ToolConfig):
     "diff",
     "branch",
     "show",
+    "add",
+    "commit",
+    "push",
   )
-  requires_permission: tuple[str, ...] = ("commit", "push")
+  auto_permission: tuple[str, ...] = (
+    "status",
+    "log",
+    "diff",
+    "branch",
+    "show",
+    "add",
+  )
 
 
 @dataclass

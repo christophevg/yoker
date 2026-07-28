@@ -2,6 +2,27 @@
 
 Provides the ``git`` async function for executing Git operations with
 security guardrails.
+
+Permission model (secure-by-default):
+
+- ``allowed_commands`` — all commands the tool may execute (default:
+  status, log, diff, branch, show, commit, push).
+- ``auto_permission`` — subset that is auto-approved without asking
+  (default: read-only operations only: status, log, diff, branch, show).
+
+Operations in ``allowed_commands`` but not in ``auto_permission`` (e.g.
+``commit``, ``push``) require interactive approval via the
+``ctx.approval_handler`` (wired from ``UIHandler.confirm_approval`` in
+interactive mode). In batch mode (no handler wired), they are blocked —
+fail-safe.
+
+To enable autonomous commits in a trusted workflow, add the operation
+to ``auto_permission`` in ``yoker.toml``:
+
+.. code-block:: toml
+
+    [tools.git]
+    auto_permission = ["status", "log", "diff", "branch", "show", "commit"]
 """
 
 import re
@@ -49,6 +70,13 @@ OPERATION_ARGS: dict[str, dict[str, dict[str, Any]]] = {
   "show": {
     "format": {"type": "string", "description": "Pretty format string"},
     "stat": {"type": "boolean", "description": "Show diffstat output"},
+  },
+  "add": {
+    "all": {"type": "boolean", "description": "Stage all changes in the working tree"},
+    "update": {
+      "type": "boolean",
+      "description": "Stage only tracked files (no new files)",
+    },
   },
   "commit": {
     "message": {"type": "string", "description": "Commit message"},
@@ -98,17 +126,18 @@ async def git(
   ctx: ToolContext = None,  # type: ignore[assignment]
   args: dict[str, Any] | None = None,
 ) -> ToolResult:
-  """Execute a Git operation on a repository."""
-  # Get config values
+  """Execute a Git operation on a repository.
+
+  Read-only operations (status, log, diff, branch, show) are auto-approved.
+  Write operations (commit, push) require interactive approval unless
+  explicitly added to ``auto_permission`` in config.
+  """
   git_config = ctx.config
   if not isinstance(git_config, GitToolConfig):
     logger.warning("git_invalid_config_type", config_type=type(git_config).__name__)
     return ToolResult(success=False, error="Invalid configuration for git tool")
   allowed_commands = git_config.allowed_commands
-  requires_permission = git_config.requires_permission
-
-  # Permission handlers from context backends (if available)
-  permission_handlers = ctx.backends.get("permission_handlers")
+  auto_permission = git_config.auto_permission
 
   if not operation:
     return ToolResult(success=False, error="Missing required parameter: operation")
@@ -123,14 +152,14 @@ async def git(
       error=f"Operation not allowed: {operation}. Allowed: {allowed_list}",
     )
 
-  allowed, reason = _check_permission(
-    operation, allowed_commands, requires_permission, permission_handlers
-  )
-  if not allowed:
-    logger.info("git_permission_denied", operation=operation, reason=reason)
-    return ToolResult(
-      success=False, error=reason or f"Permission denied for operation: {operation}"
-    )
+  # Secure-by-default: operations not in auto_permission require approval.
+  if operation not in auto_permission:
+    approved, reason = await _check_approval(operation, ctx)
+    if not approved:
+      logger.info("git_permission_denied", operation=operation, reason=reason)
+      return ToolResult(
+        success=False, error=reason or f"Permission denied for operation: {operation}"
+      )
 
   if not isinstance(path, str):
     return ToolResult(success=False, error="Parameter 'path' must be a string")
@@ -230,30 +259,73 @@ def _validate_repository_path(path: str) -> ValidationResult:
   return ValidationResult(valid=True)
 
 
-def _check_permission(
-  operation: str,
-  allowed_commands: tuple[str, ...],
-  requires_permission: tuple[str, ...],
-  permission_handlers: dict[str, Any] | None,
-) -> tuple[bool, str | None]:
-  """Check if operation requires and has permission."""
-  if operation not in requires_permission:
-    return True, None
+async def _check_approval(operation: str, ctx: ToolContext) -> tuple[bool, str | None]:
+  """Check if the operation is approved.
 
-  handler_key = f"git_{operation}"
-  handler = permission_handlers.get(handler_key) if permission_handlers else None
-
+  If an approval handler is available (interactive mode), use it to
+  prompt the user with a preview of what the operation will do.
+  If no handler is available (batch mode), fail-safe to denial.
+  """
+  handler = ctx.approval_handler
   if handler is None:
-    return False, f"Operation {operation} requires permission but no handler configured"
+    return False, (
+      f"Operation '{operation}' requires approval but no interactive handler "
+      "is available. Add it to auto_permission in yoker.toml to allow "
+      "without confirmation."
+    )
 
-  if handler.mode == "allow":
-    return True, None
-  elif handler.mode == "block":
-    return False, handler.message or f"Operation {operation} is blocked"
-  elif handler.mode == "ask_user":
-    return False, f"Operation {operation} requires user confirmation"
+  context_label = f"git {operation}"
 
-  return False, f"Unknown permission mode: {handler.mode}"
+  # Build a preview for the approval prompt.
+  if operation == "commit":
+    preview = _staged_diff_preview()
+  elif operation == "push":
+    preview = _push_preview()
+  else:
+    preview = f"git {operation}"
+
+  try:
+    approved = await handler(context_label, preview)
+  except Exception as e:
+    logger.warning("git_approval_error", operation=operation, error=str(e))
+    return False, f"Approval handler error for operation '{operation}': {e}"
+
+  if not approved:
+    return False, f"User denied git {operation}."
+  return True, None
+
+
+def _staged_diff_preview() -> str:
+  """Build a preview of staged changes for the approval prompt."""
+  try:
+    _, stdout, _ = _execute_command(["git", "diff", "--no-color", "--cached"], Path.cwd())
+    if stdout.strip():
+      return stdout[:4000]
+    # No staged changes — show working tree status instead.
+    _, stdout, _ = _execute_command(["git", "status", "--short"], Path.cwd())
+    return f"(no staged changes)\n\nWorking tree:\n{stdout[:2000]}"
+  except Exception:
+    return "git commit"
+
+
+def _push_preview() -> str:
+  """Build a preview of what would be pushed."""
+  try:
+    _, stdout, _ = _execute_command(
+      ["git", "log", "--no-color", "--oneline", "-5", "@{push}.."], Path.cwd()
+    )
+    if stdout.strip():
+      return f"Commits to be pushed:\n{stdout}"
+    return "git push (no unpushed commits or no upstream configured)"
+  except Exception:
+    # @{push} may not be available (no upstream) — fall back to unpushed commits
+    try:
+      _, stdout, _ = _execute_command(
+        ["git", "log", "--no-color", "--oneline", "-5", "origin/HEAD.."], Path.cwd()
+      )
+      return f"Commits to be pushed:\n{stdout}" if stdout.strip() else "git push"
+    except Exception:
+      return "git push"
 
 
 def _build_command(

@@ -82,26 +82,25 @@ The implementation correctly categorizes operations:
 **PASS** - Permission handlers work correctly:
 
 ```python
-# GitTool constructor accepts permission_handlers
-def __init__(
-  self,
-  config: GitToolConfig,
-  guardrail: "Guardrail | None" = None,
-  permission_handlers: dict[str, HandlerConfig] | None = None,
-) -> None:
+# GitTool uses ctx.approval_handler for interactive approval
+async def _check_approval(operation: str, ctx: ToolContext) -> tuple[bool, str | None]:
 ```
 
-Permission checking logic (lines 369-397):
-- Checks if operation is in `requires_permission` tuple
-- Looks up handler by `git_{operation}` key
-- Supports modes: `allow`, `block`, `ask_user`
-- Default: blocks without explicit handler
+Permission checking logic:
+- Operations in `auto_permission` are auto-approved
+- Operations not in `auto_permission` require `ctx.approval_handler`
+- In batch mode (no handler), blocked — fail-safe
+- Preview generated for commit (staged diff) and push (unpushed commits)
 
 Test coverage:
-- `test_git_commit_blocked_without_permission` (line 359)
-- `test_git_commit_blocked_with_block_handler` (line 378)
-- `test_git_commit_allowed_with_permission` (line 398)
-- `test_git_push_blocked_without_permission` (line 421)
+- `test_git_commit_blocked_without_handler` — no handler, blocked
+- `test_git_commit_blocked_when_denied` — handler returns False
+- `test_git_commit_allowed_when_approved` — handler returns True
+- `test_git_commit_auto_permission_skips_approval` — in auto_permission, no handler needed
+- `test_git_push_blocked_without_handler`
+- `test_git_push_blocked_when_denied`
+- `test_git_push_allowed_when_approved`
+- `test_git_add_auto_permission_stages_files`
 - `test_git_push_blocked_with_block_handler` (line 436)
 - `test_git_push_allowed_with_permission` (line 452)
 

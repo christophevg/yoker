@@ -1100,4 +1100,5 @@ def _build_tool_context(agent: Any, tool_name: str) -> ToolContext:
     shared=shared_config,
     backends=backends,
     session=None,
+    approval_handler=getattr(agent, "_approval_handler", None),
   )

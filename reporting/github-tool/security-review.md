@@ -150,7 +150,7 @@ New/backlog (Low).
 All 9 operations map to read-only `gh` subcommands (`view`, `list`). No write
 or destructive operation (`merge`, `create`, `delete`, `close`, `comment`,
 `rerun`, `cancel`, `enable/disable`, `clone`) is reachable through the enum.
-The `requires_permission` concept from `GitToolConfig` is not needed here
+The `auto_permission` concept from `GitToolConfig` is not needed here
 because there are no write operations in the MVP enum.
 
 ### 9. Timeout handling — PASS
