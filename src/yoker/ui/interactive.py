@@ -231,9 +231,16 @@ class InteractiveUIHandler(UIHandler):
     if harness.author:
       harness_line += f" by {harness.author}"
 
+    # Session id is stamped onto config.context.session_id by Session.__init__.
+    # Show "resumed" when the session was loaded from disk (fresh=False),
+    # otherwise "started" (fresh=True or auto-generated).
+    session_id = agent.config.context.session_id
+    is_resume = not agent.config.context.fresh and session_id != "auto"
+    session_label = "Resumed" if is_resume else "Started"
     motd_lines = banner.split("\n") + [
       f"[blue]Model[/blue]: {agent.model} (provider: {agent.config.backend.provider})",
       harness_line,
+      f"[blue]Session[/blue]: {session_label} '{session_id}'",
       f"[blue]Thinking[/blue]: {agent.thinking_mode.value} (use /think on|off|silent to toggle)",
       f"[blue]Agent[/blue]: {agent.definition.name}",
       f"[dim]{agent.definition.description.strip()}[/dim]",

@@ -123,6 +123,8 @@ class TestInteractiveUIHandlerLifecycle:
     agent.config.harness.version = "1.2.3"
     agent.config.harness.author = "Test Author"
     agent.config.backend.provider = "ollama"
+    agent.config.context.session_id = "test-session"
+    agent.config.context.fresh = True
     agent.definition.name = "default"
     agent.definition.description = "An agent."
     agent.definition.source_path = None
@@ -143,9 +145,24 @@ class TestInteractiveUIHandlerLifecycle:
     assert __version__ in text
     assert "Model: llama3.1" in text
     assert "Harness: test-harness v1.2.3 by Test Author" in text
+    assert "Session: Started 'test-session'" in text
     assert "Thinking: on" in text
     assert "Type /help" in text
     assert "Ctrl+D" in text
+
+  @pytest.mark.asyncio
+  async def test_start_shows_resumed_session(self):
+    """start should show 'Resumed' when fresh=False and session_id is not 'auto'."""
+    output = StringIO()
+    handler = InteractiveUIHandler()
+    handler.console = make_console(output)
+    agent = self._make_agent()
+    agent.config.context.fresh = False
+
+    await handler.start(agent)
+
+    text = output.getvalue()
+    assert "Session: Resumed 'test-session'" in text
 
   @pytest.mark.asyncio
   async def test_start_respects_thinking_disabled(self):

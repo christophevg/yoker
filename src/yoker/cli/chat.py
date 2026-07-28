@@ -142,10 +142,6 @@ async def _run_with_session(
   ) as session:
     session.on_event(bridge)
     _wire_approval_handler(session.agent, ui)
-    if config.resume:
-      ui.output_info(f"Resumed session '{sid}'.")
-    elif sid is not None:
-      ui.output_info(f"Started session '{sid}'.")
     await _run_repl(session.agent, ui, commands)
 
 
