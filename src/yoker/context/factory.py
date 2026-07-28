@@ -19,8 +19,10 @@ def create_context_manager(config: Config, agent_id: str) -> ContextManager:
   When ``persist_after_turn`` is set, a :class:`Persisted` wrapper is built
   with a per-agent filename derived from ``config.context.filename``
   interpolated with ``session_id`` and ``agent_id``. When ``fresh`` is set
-  any existing persisted state for that filename is deleted first. When
-  persistence is disabled a bare :class:`SimpleContextManager` is returned.
+  any existing persisted state for that filename is deleted first (new named
+  session). When ``fresh`` is ``False`` and a session file exists, the
+  conversation history is loaded from disk (resume). When persistence is
+  disabled a bare :class:`SimpleContextManager` is returned.
 
   No agent wiring or registration — callers set ``.agent`` after assignment.
   """
@@ -42,8 +44,28 @@ def create_context_manager(config: Config, agent_id: str) -> ContextManager:
   storage_path = Path(ctx.storage_path).expanduser()
   persisted = Persisted(SimpleContextManager(), storage_path=storage_path, session_id=filename)
   if ctx.fresh:
-    persisted.delete()
+    # Fresh start: delete any existing file. Ignore "not found" — the
+    # file may not exist yet (first run with this session id).
+    if persisted._file_path.exists():
+      persisted.delete()
+  else:
+    # Resume mode: load existing conversation if a file exists.
+    if persisted._file_path.exists():
+      persisted.load()
   return persisted
+
+
+def _session_file_path(config: Config, session_id: str) -> Path:
+  """Compute the JSONL file path for a session id.
+
+  Uses the same filename pattern as :func:`create_context_manager`.
+  The agent_id component defaults to "primary" since this is called
+  before the Session is created.
+  """
+  ctx = config.context
+  storage_path = Path(ctx.storage_path).expanduser()
+  filename = ctx.filename.format(session_id=session_id, agent_id="primary")
+  return storage_path / f"{filename}.jsonl"
 
 
 __all__ = ["create_context_manager"]

@@ -27,10 +27,21 @@ from yoker.config import Config
 class ChatConfig(Config):  # type: ignore[misc]
   """Config for ``yoker chat``.
 
-  Same fields as :class:`Config`; no additions needed. ``chat`` is the default
-  subcommand when no subcommand is given (handled natively by Clevis via
-  ``default_cmd=True``).
+  Extends :class:`Config` with session management fields. ``chat`` is the
+  default subcommand when no subcommand is given (handled natively by Clevis
+  via ``default_cmd=True``).
+
+  Session management:
+    - ``--session-id <name>``: Start a new named session. Any existing
+      session with that id is deleted first (fresh start).
+    - ``--resume <name>``: Resume an existing named session. The
+      conversation history is loaded from disk. Aborts if no session
+      with that id exists.
+    - Neither: A fresh auto-generated UUID session (current default).
   """
+
+  session_id: str | None = None
+  resume: str | None = None
 
 
 @configclass(cmd="run", help="Run an agentic package non-interactively")  # type: ignore[arg-type]

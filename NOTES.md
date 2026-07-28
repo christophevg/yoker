@@ -224,3 +224,49 @@ After this commit, the agent can now use `git add` and `git commit` autonomously
 3. Address remaining dogfooding blockers (context/ in .gitignore, etc.)
 
 **Branch:** `feature/git-write-ops`
+
+---
+
+### Session 4 — 2026-07-28: Session Resume Support
+
+**Branch:** `feature/git-write-ops`
+**Model:** `glm-5.2:cloud` (Ollama provider)
+**Context:** The dogfooding workflow demands the ability to stop a session, rebuild Yoker with new code, and resume the conversation with full context. This session implemented the bare minimum: `yoker chat --session-id <name>` and `yoker chat --resume <name>`.
+
+#### What Was Done
+
+Added two new CLI fields to `ChatConfig`:
+- `--session-id <name>`: Start a new named session (fresh — deletes any existing)
+- `--resume <name>`: Resume an existing session (loads conversation history from disk)
+
+**Design:**
+- `--session-id` sets `config.context.fresh = True` → factory deletes any existing file
+- `--resume` sets `config.context.fresh = False` → factory loads existing conversation via `persisted.load()`
+- Neither: auto UUID, same as before (backward compatible)
+- `--resume <nonexistent>`: graceful abort with helpful message ("No session 'X' found. Use --session-id X to start a new one.")
+- Session ID is printed at startup ("Started session 'X'" / "Resumed session 'X'")
+
+**Files changed:**
+1. `src/yoker/cli/commands.py` — Added `session_id` and `resume` fields to `ChatConfig`
+2. `src/yoker/cli/chat.py` — Wired session_id/resume through to `Session` constructor; added graceful abort for missing sessions; print session info at startup
+3. `src/yoker/context/factory.py` — Modified `create_context_manager` to call `persisted.load()` when `fresh=False` and file exists; added `_session_file_path` helper for pre-flight check
+
+**Key fix in factory:** Previously `create_context_manager` only called `persisted.delete()` when `fresh=True`, but never called `persisted.load()` when `fresh=False`. The `Persisted` wrapper was created empty — the conversation history was never loaded. Now it loads when the file exists and `fresh=False`.
+
+**All checks pass: 2205 tests, lint, typecheck green.**
+
+#### Issues Discovered This Session
+
+1. **Git commit messages cannot contain newlines** — `FORBIDDEN_CHARS` includes `\n`, blocking multi-line commit messages with body text and `Co-authored-by` trailers. Needs relaxation for commit's `message` argument.
+2. **No way to stage individual files** — `git add` only supports `all: true` / `update: true`. The `path` parameter is the repo root, not the files to stage.
+3. **Git diff file scoping unclear** — Passing a file to diff requires the top-level `path` parameter, not an arg. Error message doesn't guide you there.
+
+#### Resume Point
+
+The session resume feature is implemented. Next steps:
+1. Test the resume flow: `yoker chat --session-id dogfooding` → stop → `yoker chat --resume dogfooding`
+2. Further git tool improvements (multiline commit messages, individual file staging, better docs)
+3. Add `context/` to `.gitignore`
+4. Continue with remaining 1.0.0 roadmap items
+
+**Branch:** `feature/git-write-ops`

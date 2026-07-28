@@ -108,15 +108,47 @@ def create_ui(config: Config) -> UIHandler:
 
 
 async def _run_with_session(
-  config: Config,
+  config: ChatConfig,
   plugin_packages: list[str],
   ui: UIHandler,
   commands: CommandRegistry,
   bridge: UIBridge,
 ) -> None:
-  async with Session(config=config, extra_plugins=tuple(plugin_packages)) as session:
+  # Determine session id and fresh/resume mode from CLI flags.
+  if config.resume:
+    sid: str | None = config.resume
+    config.context.fresh = False
+  elif config.session_id:
+    sid = config.session_id
+    config.context.fresh = True
+  else:
+    sid = None
+    config.context.fresh = False
+
+  if config.resume:
+    # Graceful abort: check that the session file exists before entering
+    # the Session context manager (which would create an empty one).
+    from yoker.context.factory import _session_file_path
+
+    if sid is not None and not _session_file_path(config, sid).exists():
+      ui.output_info(
+        f"No session '{sid}' found. "
+        f"Use --session-id {sid} to start a new one."
+      )
+      await ui.shutdown("quit")
+      return
+
+  async with Session(
+    config=config,
+    extra_plugins=tuple(plugin_packages),
+    session_id=sid,
+  ) as session:
     session.on_event(bridge)
     _wire_approval_handler(session.agent, ui)
+    if config.resume:
+      ui.output_info(f"Resumed session '{sid}'.")
+    elif sid is not None:
+      ui.output_info(f"Started session '{sid}'.")
     await _run_repl(session.agent, ui, commands)
 
 
