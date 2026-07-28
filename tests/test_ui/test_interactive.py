@@ -2,8 +2,9 @@
 
 import sys
 from io import StringIO
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from types import SimpleNamespace
+from typing import Any
+from unittest.mock import MagicMock
 
 import pytest
 from rich.console import Console
@@ -12,7 +13,6 @@ from yoker import __version__
 from yoker.core.thinking import ThinkingMode
 from yoker.exceptions import NetworkError, ToolError
 from yoker.ui import InteractiveUIHandler
-from yoker.ui.spinner import LiveDisplay
 
 if sys.platform == "win32":
   pytest.skip(
@@ -31,36 +31,78 @@ def make_console(output: StringIO) -> Console:
   )
 
 
+@pytest.fixture
+def stub_session(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
+  """Patch ``PromptSession`` lazily with a stub returning canned answers.
+
+  Patches the sync ``prompt`` method (``get_input``/``get_secret_input`` run
+  it via ``asyncio.to_thread``).
+  """
+  state: dict[str, Any] = {"answers": [], "raises": None}
+
+  def _prompt(_prompt: str, is_password: bool = False, **_kw: Any) -> str:
+    if state["raises"] is not None:
+      raise state["raises"]()
+    answers = state["answers"]
+    if answers:
+      return answers.pop(0)
+    return ""
+
+  stub = SimpleNamespace(
+    prompt=_prompt,
+    is_password=False,
+    # PromptSession.app is the cached Application; get_input/get_secret_input
+    # toggle app.erase_when_done around the prompt() call.
+    app=SimpleNamespace(erase_when_done=False),
+  )
+  monkeypatch.setattr("yoker.ui.interactive.PromptSession", lambda *a, **kw: stub)
+  stub._state = state  # type: ignore[attr-defined]
+  return stub
+
+
+def _set_answers(stub: SimpleNamespace, answers: list[str]) -> None:
+  stub._state["answers"] = list(answers)  # type: ignore[attr-defined]
+
+
+def _set_raises(stub: SimpleNamespace, raises: type[BaseException] | None) -> None:
+  stub._state["raises"] = raises  # type: ignore[attr-defined]
+
+
 class TestInteractiveUIHandlerInitialization:
   """Tests for InteractiveUIHandler initialization."""
 
   def test_init_defaults(self):
-    """Should initialize with default values."""
+    """Should initialize with default values; no live state attributes."""
     handler = InteractiveUIHandler()
     assert handler.show_thinking is True
     assert handler.show_tool_calls is True
-    assert handler.wrap_width is None
-    assert handler.history_file == Path.home() / ".yoker_history"
-    assert handler._live is None
+    assert handler.show_stats is True
+    assert handler.history_file == __import__("pathlib").Path.home() / ".yoker_history"
+    # Lazy session — not created in __init__.
+    assert handler._session is None
+    # No Live-display state attributes.
+    assert not hasattr(handler, "_live")
+    assert not hasattr(handler, "_thinking_shown")
+    assert not hasattr(handler, "_content_shown")
+    assert not hasattr(handler, "_streaming_content")
+    assert not hasattr(handler, "_streaming_thinking")
 
   def test_init_custom_values(self):
     """Should initialize with custom values."""
-    history = Path("/tmp/test_history")
+    history = __import__("pathlib").Path("/tmp/test_history")
     handler = InteractiveUIHandler(
       history_file=history,
       show_thinking=False,
       show_tool_calls=False,
-      wrap_width=80,
     )
     assert handler.show_thinking is False
     assert handler.show_tool_calls is False
-    assert handler.wrap_width == 80
     assert handler.history_file == history
 
-  def test_prompt_session_created(self):
-    """Should create prompt_toolkit session."""
+  def test_session_not_created_in_init(self):
+    """PromptSession is NOT created in __init__ (lazy init)."""
     handler = InteractiveUIHandler()
-    assert handler._session is not None
+    assert handler._session is None
 
   def test_init_accepts_custom_console(self):
     """Should use provided console instead of creating a new one."""
@@ -73,25 +115,32 @@ class TestInteractiveUIHandlerInitialization:
 class TestInteractiveUIHandlerLifecycle:
   """Tests for InteractiveUIHandler lifecycle methods."""
 
-  @pytest.mark.asyncio
-  async def test_start_prints_banner(self):
-    """start should print banner and config info."""
-    output = StringIO()
-    handler = InteractiveUIHandler()
-    handler.console = make_console(output)
-
+  def _make_agent(self) -> MagicMock:
     agent = MagicMock()
     agent.model = "llama3.1"
     agent.thinking_mode = ThinkingMode.ON
     agent.config.harness.name = "test-harness"
     agent.config.harness.version = "1.2.3"
     agent.config.harness.author = "Test Author"
+    agent.config.backend.provider = "ollama"
+    agent.definition.name = "default"
+    agent.definition.description = "An agent."
+    agent.definition.source_path = None
+    agent.tools = {}
+    return agent
+
+  @pytest.mark.asyncio
+  async def test_start_prints_banner(self):
+    """start should print banner and config info."""
+    output = StringIO()
+    handler = InteractiveUIHandler()
+    handler.console = make_console(output)
+    agent = self._make_agent()
 
     await handler.start(agent)
 
     text = output.getvalue()
     assert __version__ in text
-    # Banner now shows provider and model together
     assert "Model: llama3.1" in text
     assert "Harness: test-harness v1.2.3 by Test Author" in text
     assert "Thinking: on" in text
@@ -104,9 +153,7 @@ class TestInteractiveUIHandlerLifecycle:
     output = StringIO()
     handler = InteractiveUIHandler()
     handler.console = make_console(output)
-
-    agent = MagicMock()
-    agent.model = "model"
+    agent = self._make_agent()
     agent.thinking_mode = ThinkingMode.OFF
     agent.config.harness.name = "yoker"
     agent.config.harness.version = None
@@ -119,6 +166,68 @@ class TestInteractiveUIHandlerLifecycle:
     assert "Thinking: off" in text
 
   @pytest.mark.asyncio
+  async def test_start_uses_explicit_version(self):
+    """start should honor an explicit version kwarg."""
+    output = StringIO()
+    handler = InteractiveUIHandler()
+    handler.console = make_console(output)
+    agent = self._make_agent()
+
+    await handler.start(agent, version="9.9.9")
+
+    assert "9.9.9" in output.getvalue()
+
+  @pytest.mark.asyncio
+  async def test_start_uses_explicit_title(self):
+    """start should honor an explicit title kwarg (figlet art differs)."""
+    output_default = StringIO()
+    handler_default = InteractiveUIHandler()
+    handler_default.console = make_console(output_default)
+    agent = self._make_agent()
+    await handler_default.start(agent, version="x")
+
+    output_custom = StringIO()
+    handler_custom = InteractiveUIHandler()
+    handler_custom.console = make_console(output_custom)
+    await handler_custom.start(agent, title="Hi", version="x")
+
+    # Different titles produce different figlet art.
+    assert output_default.getvalue() != output_custom.getvalue()
+
+  @pytest.mark.asyncio
+  async def test_start_shows_truncated_tools_banner(self):
+    """start should truncate the tools list to 8 + hint."""
+    output = StringIO()
+    handler = InteractiveUIHandler()
+    handler.console = make_console(output)
+    agent = self._make_agent()
+    agent.tools = {f"tool{i}": None for i in range(10)}
+
+    await handler.start(agent)
+
+    text = output.getvalue()
+    assert "Tools:" in text
+    assert "tool0" in text
+    assert "tool7" in text
+    # tool8/tool9 are NOT listed individually; truncated with +2 more.
+    assert "+2 more" in text
+    assert "/tools for full list" in text
+
+  @pytest.mark.asyncio
+  async def test_start_shows_short_tools_banner(self):
+    """start should list all tools when <= 8."""
+    output = StringIO()
+    handler = InteractiveUIHandler()
+    handler.console = make_console(output)
+    agent = self._make_agent()
+    agent.tools = {"read": None, "write": None}
+
+    await handler.start(agent)
+
+    text = output.getvalue()
+    assert "Tools: read, write" in text
+
+  @pytest.mark.asyncio
   async def test_shutdown_prints_goodbye(self):
     """shutdown should print goodbye message."""
     output = StringIO()
@@ -129,53 +238,84 @@ class TestInteractiveUIHandlerLifecycle:
 
     assert "Goodbye!" in output.getvalue()
 
-  @pytest.mark.asyncio
-  async def test_shutdown_exits_live_display(self):
-    """shutdown should clean up active LiveDisplay."""
-    handler = InteractiveUIHandler()
-    handler.start_content_stream()
-    assert handler._live is not None
-
-    await handler.shutdown("quit")
-    assert handler._live is None
-
 
 class TestInteractiveUIHandlerInput:
   """Tests for InteractiveUIHandler input handling."""
 
   @pytest.mark.asyncio
-  async def test_get_input_returns_input(self):
+  async def test_get_input_returns_input(self, stub_session):
     """get_input should return user input."""
-    handler = InteractiveUIHandler()
-    handler._session.prompt_async = AsyncMock(return_value="hello")  # type: ignore[method-assign]
+    _set_answers(stub_session, ["hello"])
+    handler = InteractiveUIHandler(history_file="none")
 
     result = await handler.get_input()
+
     assert result == "hello"
 
   @pytest.mark.asyncio
-  async def test_get_input_handles_eof(self):
+  async def test_get_input_creates_session_lazily(self, stub_session):
+    """get_input should create the PromptSession on first call."""
+    _set_answers(stub_session, ["hello"])
+    handler = InteractiveUIHandler(history_file="none")
+    assert handler._session is None
+
+    await handler.get_input()
+
+    assert handler._session is not None
+
+  @pytest.mark.asyncio
+  async def test_get_input_handles_eof(self, stub_session):
     """get_input should return None on EOFError."""
-    handler = InteractiveUIHandler()
-    handler._session.prompt_async = AsyncMock(side_effect=EOFError)  # type: ignore[method-assign]
+    _set_raises(stub_session, EOFError)
+    handler = InteractiveUIHandler(history_file="none")
 
     result = await handler.get_input()
+
     assert result is None
 
   @pytest.mark.asyncio
-  async def test_get_input_handles_keyboard_interrupt(self):
+  async def test_get_input_handles_keyboard_interrupt(self, stub_session):
     """get_input should return None on KeyboardInterrupt."""
+    _set_raises(stub_session, KeyboardInterrupt)
     output = StringIO()
-    handler = InteractiveUIHandler()
+    handler = InteractiveUIHandler(history_file="none")
     handler.console = make_console(output)
-    handler._session.prompt_async = AsyncMock(side_effect=KeyboardInterrupt)  # type: ignore[method-assign]
 
     result = await handler.get_input()
+
     assert result is None
+
+  @pytest.mark.asyncio
+  async def test_get_input_calls_output_prompt_for_nonempty(self, stub_session):
+    """get_input should call output_prompt for non-empty input."""
+    _set_answers(stub_session, ["hello"])
+    output = StringIO()
+    handler = InteractiveUIHandler(history_file="none")
+    handler.console = make_console(output)
+
+    await handler.get_input()
+
+    # output_prompt renders a Panel containing the input.
+    assert "hello" in output.getvalue()
+
+  @pytest.mark.asyncio
+  async def test_get_input_skips_output_prompt_for_empty(self, stub_session):
+    """get_input should not render a Panel for empty input."""
+    _set_answers(stub_session, [""])
+    output = StringIO()
+    handler = InteractiveUIHandler(history_file="none")
+    handler.console = make_console(output)
+
+    await handler.get_input()
+
+    # No Panel marker (the Panel renders as a box); output should be
+    # effectively empty (no "hello" content).
+    assert "hello" not in output.getvalue()
 
   @pytest.mark.asyncio
   async def test_get_input_uses_predefined_messages(self):
-    """get_input should return predefined messages in order."""
-    handler = InteractiveUIHandler()
+    """get_input should return predefined messages in order (no TTY needed)."""
+    handler = InteractiveUIHandler(history_file="none")
     handler.set_input_messages(["hello", "world"])
 
     assert await handler.get_input() == "hello"
@@ -184,87 +324,227 @@ class TestInteractiveUIHandlerInput:
   @pytest.mark.asyncio
   async def test_get_input_returns_none_after_predefined_messages(self):
     """get_input should return None when predefined messages are exhausted."""
-    handler = InteractiveUIHandler()
+    handler = InteractiveUIHandler(history_file="none")
     handler.set_input_messages(["only one"])
 
     assert await handler.get_input() == "only one"
     assert await handler.get_input() is None
 
+  @pytest.mark.asyncio
+  async def test_get_input_predefined_does_not_create_session(self):
+    """Predefined input path must NOT create a PromptSession."""
+    handler = InteractiveUIHandler(history_file="none")
+    handler.set_input_messages(["hello"])
+
+    await handler.get_input()
+
+    assert handler._session is None
+
+  @pytest.mark.asyncio
+  async def test_get_secret_input_masks_and_resets(self, stub_session):
+    """get_secret_input should use is_password=True then reset to False."""
+    _set_answers(stub_session, ["secret"])
+    handler = InteractiveUIHandler(history_file="none")
+
+    result = await handler.get_secret_input("API key: ")
+
+    assert result == "secret"
+    # Session is_password flag should be reset after a secret prompt.
+    assert handler._session is not None
+    assert handler._session.is_password is False  # type: ignore[attr-defined]
+
+  @pytest.mark.asyncio
+  async def test_get_secret_input_no_output_prompt(self, stub_session):
+    """get_secret_input should NOT echo the secret via output_prompt."""
+    _set_answers(stub_session, ["secret"])
+    output = StringIO()
+    handler = InteractiveUIHandler(history_file="none")
+    handler.console = make_console(output)
+
+    await handler.get_secret_input()
+
+    assert "secret" not in output.getvalue()
+
+  @pytest.mark.asyncio
+  async def test_get_input_toggles_erase_when_done(self, monkeypatch):
+    """get_input should set erase_when_done True during prompt, False after.
+
+    Captures the flag state at prompt-call time, then asserts it is reset
+    to False after get_input returns. Guards against the flag leaking
+    True into a subsequent confirm_approval call (which would erase the
+    y/N audit trail).
+    """
+    captured: dict[str, Any] = {}
+
+    def _prompt(_p: str, **_kw: Any) -> str:
+      # Record the flag state at the moment prompt() is called.
+      captured["erase_when_done"] = stub.app.erase_when_done
+      return "hello"
+
+    stub = SimpleNamespace(
+      prompt=_prompt,
+      is_password=False,
+      app=SimpleNamespace(erase_when_done=False),
+    )
+    monkeypatch.setattr("yoker.ui.interactive.PromptSession", lambda *a, **kw: stub)
+
+    handler = InteractiveUIHandler(history_file="none")
+    result = await handler.get_input()
+
+    assert result == "hello"
+    # Flag must be True during the prompt() call.
+    assert captured["erase_when_done"] is True
+    # Flag must be reset to False after the call returns.
+    assert stub.app.erase_when_done is False
+
+  @pytest.mark.asyncio
+  async def test_get_input_resets_erase_when_done_on_unexpected_exception(self, monkeypatch):
+    """get_input must reset erase_when_done via finally on any exception.
+
+    An unexpected exception (not EOFError/KeyboardInterrupt) must still
+    trigger the finally block so the flag does not leak True.
+    """
+
+    class _UnexpectedError(Exception):
+      pass
+
+    def _prompt(_p: str, **_kw: Any) -> str:
+      raise _UnexpectedError("boom")
+
+    stub = SimpleNamespace(
+      prompt=_prompt,
+      is_password=False,
+      app=SimpleNamespace(erase_when_done=False),
+    )
+    monkeypatch.setattr("yoker.ui.interactive.PromptSession", lambda *a, **kw: stub)
+
+    handler = InteractiveUIHandler(history_file="none")
+    with pytest.raises(_UnexpectedError):
+      await handler.get_input()
+
+    # The finally block must have reset the flag despite the propagation.
+    assert stub.app.erase_when_done is False
+
+  @pytest.mark.asyncio
+  async def test_get_secret_input_predefined_does_not_create_session(self):
+    """Predefined secret input must NOT create a PromptSession.
+
+    Mirrors test_get_input_predefined_does_not_create_session for the
+    secret path: the _input_source short-circuit returns the predefined
+    message without ever touching the lazy session.
+    """
+    handler = InteractiveUIHandler(history_file="none")
+    handler.set_input_messages(["super-secret"])
+
+    result = await handler.get_secret_input("API key: ")
+
+    assert result == "super-secret"
+    assert handler._session is None
+
 
 class TestInteractiveUIHandlerContentStreaming:
-  """Tests for InteractiveUIHandler content streaming."""
+  """Tests for InteractiveUIHandler content streaming (append-only console)."""
 
-  def test_start_content_stream_creates_live(self):
-    """start_content_stream should create LiveDisplay."""
+  def test_start_stop_processing_status_toggles_status(self):
+    """_start/_stop_processing_status should start/stop a Rich status."""
+    output = StringIO()
     handler = InteractiveUIHandler()
+    handler.console = make_console(output)
+    status_mock = MagicMock()
+    handler.console.status = MagicMock(return_value=status_mock)
+
+    handler._start_processing_status()
+
+    # Status created via console.status, started, and cached.
+    handler.console.status.assert_called_once()
+    status_mock.start.assert_called_once()
+    assert handler._processing_status is status_mock
+
+    handler._stop_processing_status()
+
+    status_mock.stop.assert_called_once()
+    assert handler._processing_status is None
+
+  def test_stream_content_stops_status_on_first_chunk(self):
+    """stream_content should stop the status on the first chunk received.
+
+    The status line provides "Processing..." feedback between stream
+    start and first chunk; the first chunk must stop it. A second chunk
+    is a no-op for status (already None).
+    """
+    output = StringIO()
+    handler = InteractiveUIHandler()
+    handler.console = make_console(output)
+    status_mock = MagicMock()
+    handler.console.status = MagicMock(return_value=status_mock)
+
     handler.start_content_stream()
-    assert handler._live is not None
-    assert isinstance(handler._live, LiveDisplay)
+    assert handler._processing_status is status_mock
+    status_mock.start.assert_called_once()
 
-  def test_stream_content_appends_response(self):
-    """stream_content should append response chunks."""
+    handler.stream_content("first chunk")
+    # First chunk stops the status.
+    status_mock.stop.assert_called_once()
+    assert handler._processing_status is None
+
+    # Second chunk: status already None, stop not called again.
+    handler.stream_content("second chunk")
+    assert status_mock.stop.call_count == 1
+    assert handler._processing_status is None
+
+    handler.end_content_stream(0)
+
+  def test_stream_content_appends_to_console(self):
+    """stream_content should append chunks directly to the console."""
+    output = StringIO()
     handler = InteractiveUIHandler()
+    handler.console = make_console(output)
+
     handler.start_content_stream()
     handler.stream_content("Hello ")
     handler.stream_content("World")
+    handler.end_content_stream(11)
 
-    assert handler._live is not None
-    assert handler._live._response_text.plain == "Hello World"
+    assert "Hello World" in output.getvalue()
 
-  def test_end_content_stream_stops_spinner(self):
-    """end_content_stream should stop spinner."""
+  def test_content_stream_preserves_text(self):
+    """stream_content should preserve text content."""
+    output = StringIO()
     handler = InteractiveUIHandler()
+    handler.console = make_console(output)
+
     handler.start_content_stream()
-    handler.stream_content("Hello")
-    handler.end_content_stream(5)
+    handler.stream_content("raw-text")
+    handler.end_content_stream(8)
 
-    assert handler._live is not None
-    assert handler._live._spinner_active is False
+    assert "raw-text" in output.getvalue()
 
-  def test_content_stream_preserves_ansi(self):
-    """stream_content should preserve ANSI codes."""
+  def test_output_content_non_streaming(self):
+    """output_content should print content as a stream block."""
+    output = StringIO()
     handler = InteractiveUIHandler()
-    handler.start_content_stream()
-    handler.stream_content("\033[31mred\033[0m")
+    handler.console = make_console(output)
 
-    assert handler._live is not None
-    assert "\033[31mred\033[0m" in handler._live._response_text.plain
+    handler.output_content("line 1\nline 2")
 
-  def test_content_stream_after_thinking_adds_separator(self):
-    """Content stream after thinking should add separator."""
-    handler = InteractiveUIHandler()
-    handler.start_thinking_stream()
-    handler.stream_thinking("thinking")
-    handler.start_content_stream()
-    handler.stream_content("content")
-
-    assert handler._live is not None
-    assert handler._live._response_text.plain == "\ncontent"
+    assert "line 1" in output.getvalue()
+    assert "line 2" in output.getvalue()
 
 
 class TestInteractiveUIHandlerThinkingStreaming:
   """Tests for InteractiveUIHandler thinking streaming."""
 
-  def test_start_thinking_stream_creates_live(self):
-    """start_thinking_stream should create LiveDisplay when enabled."""
+  def test_stream_thinking_prints_when_enabled(self):
+    """stream_thinking should print chunks when enabled."""
+    output = StringIO()
     handler = InteractiveUIHandler(show_thinking=True)
-    handler.start_thinking_stream()
-    assert handler._live is not None
+    handler.console = make_console(output)
 
-  def test_start_thinking_stream_respects_setting(self):
-    """start_thinking_stream should do nothing when disabled."""
-    handler = InteractiveUIHandler(show_thinking=False)
-    handler.start_thinking_stream()
-    assert handler._live is None
-
-  def test_stream_thinking_appends_thinking(self):
-    """stream_thinking should append thinking chunks."""
-    handler = InteractiveUIHandler(show_thinking=True)
     handler.start_thinking_stream()
     handler.stream_thinking("thinking...")
+    handler.end_thinking_stream(12)
 
-    assert handler._live is not None
-    assert handler._live._thinking_text.plain == "thinking..."
+    assert "thinking..." in output.getvalue()
 
   def test_stream_thinking_suppressed_when_disabled(self):
     """stream_thinking should be suppressed when disabled."""
@@ -272,33 +552,27 @@ class TestInteractiveUIHandlerThinkingStreaming:
     handler = InteractiveUIHandler(show_thinking=False)
     handler.console = make_console(output)
 
-    handler.stream_thinking("thinking...")
-    assert output.getvalue() == ""
-
-  def test_end_thinking_stream_stops_spinner(self):
-    """end_thinking_stream should stop spinner."""
-    handler = InteractiveUIHandler(show_thinking=True)
     handler.start_thinking_stream()
-    handler.stream_thinking("done")
-    handler.end_thinking_stream(4)
+    handler.stream_thinking("thinking...")
+    handler.end_thinking_stream(12)
 
-    assert handler._live is not None
-    assert handler._live._spinner_active is False
+    assert "thinking..." not in output.getvalue()
 
 
 class TestInteractiveUIHandlerToolOutput:
   """Tests for InteractiveUIHandler tool output."""
 
-  def test_output_tool_call_respects_setting(self):
-    """output_tool_call should print when enabled."""
+  def test_output_tool_call_inline_args(self):
+    """output_tool_call should print inline key=value args."""
     output = StringIO()
     handler = InteractiveUIHandler(show_tool_calls=True)
     handler.console = make_console(output)
 
     handler.output_tool_call("read", {"path": "/tmp/file.txt"})
+
     text = output.getvalue()
-    assert "⏺ Read tool" in text
-    assert "file.txt" in text
+    assert "⏺ read" in text
+    assert "path=/tmp/file.txt" in text
 
   def test_output_tool_call_suppressed_when_disabled(self):
     """output_tool_call should not print when disabled."""
@@ -307,16 +581,61 @@ class TestInteractiveUIHandlerToolOutput:
     handler.console = make_console(output)
 
     handler.output_tool_call("read", {"path": "/tmp/file.txt"})
+
     assert output.getvalue() == ""
 
-  def test_output_tool_result_success(self):
-    """output_tool_result should print success indicator."""
+  def test_output_tool_call_caps_long_value(self):
+    """output_tool_call should summarize values > 60 chars as N chars."""
     output = StringIO()
     handler = InteractiveUIHandler(show_tool_calls=True)
     handler.console = make_console(output)
 
-    handler.output_tool_result("read", True, "contents")
-    assert "✓ Success" in output.getvalue()
+    long_value = "x" * 100
+    handler.output_tool_call("read", {"content": long_value})
+
+    text = output.getvalue()
+    assert "100 chars" in text
+    assert long_value not in text
+
+  def test_output_tool_call_suppresses_content_for_write(self):
+    """output_tool_call should suppress content/old/new for write/update."""
+    output = StringIO()
+    handler = InteractiveUIHandler(show_tool_calls=True)
+    handler.console = make_console(output)
+
+    handler.output_tool_call(
+      "write",
+      {"path": "/tmp/file.txt", "content": "line1\nline2\nline3"},
+    )
+
+    text = output.getvalue()
+    assert "path=/tmp/file.txt" in text
+    # content field is suppressed (the diff is shown separately).
+    assert "content=" not in text
+    assert "line1" not in text
+
+  def test_output_tool_call_websearch_shows_query(self):
+    """output_tool_call for websearch should show the query."""
+    output = StringIO()
+    handler = InteractiveUIHandler(show_tool_calls=True)
+    handler.console = make_console(output)
+
+    handler.output_tool_call("websearch", {"query": "best llm"})
+
+    text = output.getvalue()
+    assert "best llm" in text
+
+  def test_output_tool_result_success_shows_size(self):
+    """output_tool_result should print success indicator with result size."""
+    output = StringIO()
+    handler = InteractiveUIHandler(show_tool_calls=True)
+    handler.console = make_console(output)
+
+    handler.output_tool_result("read", True, "x" * 1234)
+
+    text = output.getvalue()
+    assert "✓ Success" in text
+    assert "1234 chars" in text
 
   def test_output_tool_result_failure(self):
     """output_tool_result should print failure indicator."""
@@ -325,8 +644,8 @@ class TestInteractiveUIHandlerToolOutput:
     handler.console = make_console(output)
 
     handler.output_tool_result("read", False, "Error message here")
+
     text = output.getvalue()
-    # _print_error uses a Panel with title "ERROR"
     assert "ERROR" in text
     assert "Error message here" in text
 
@@ -386,79 +705,75 @@ class TestInteractiveUIHandlerToolOutput:
     assert "-old" in text
     assert "+new" in text
 
-  def test_tool_call_exits_live_display(self):
-    """output_tool_call should exit active LiveDisplay."""
-    handler = InteractiveUIHandler(show_tool_calls=True)
-    handler.start_content_stream()
-    assert handler._live is not None
-
-    handler.output_tool_call("read", {"path": "/tmp/file.txt"})
-    assert handler._live is None
-
-  def test_tool_result_creates_live_display(self):
-    """output_tool_result should create LiveDisplay for subsequent processing."""
-    handler = InteractiveUIHandler(show_tool_calls=True)
-    handler.output_tool_result("read", True, "contents")
-    assert handler._live is not None
-
 
 class TestInteractiveUIHandlerCommandOutput:
   """Tests for InteractiveUIHandler command output."""
 
   def test_output_command_result(self):
-    """output_command_result should print result and exit live display."""
+    """output_command_result should print result."""
     output = StringIO()
     handler = InteractiveUIHandler()
     handler.console = make_console(output)
 
-    handler.start_content_stream()
     handler.output_command_result("command output")
-    assert handler._live is None
+
     assert "command output" in output.getvalue()
+
+
+class TestInteractiveUIHandlerStepTitle:
+  """Tests for InteractiveUIHandler step-title output (bootstrap wizard)."""
+
+  @pytest.mark.asyncio
+  async def test_output_step_title_first_step(self):
+    """output_step_title for step 1 should not emit a leading blank line."""
+    output = StringIO()
+    handler = InteractiveUIHandler()
+    handler.console = make_console(output)
+
+    await handler.output_step_title(1, 3, "Welcome")
+
+    text = output.getvalue()
+    assert "Step 1 of 3: Welcome" in text
+
+  @pytest.mark.asyncio
+  async def test_output_step_title_subsequent_step_emits_blank_line(self):
+    """output_step_title for step > 1 should emit a leading blank line."""
+    output = StringIO()
+    handler = InteractiveUIHandler()
+    handler.console = make_console(output)
+
+    await handler.output_step_title(2, 3, "Select Provider")
+
+    text = output.getvalue()
+    assert "Step 2 of 3: Select Provider" in text
+    # A leading blank line is emitted before the title for step > 1.
+    assert text.startswith("\n")
 
 
 class TestInteractiveUIHandlerStats:
   """Tests for InteractiveUIHandler stats output."""
 
-  def test_output_stats_with_live_display(self):
-    """output_stats should show stats and exit LiveDisplay."""
-    handler = InteractiveUIHandler()
-    handler.start_content_stream()
-    handler.stream_content("Hello")
-    handler.output_stats(1500, 50, 100)
-
-    assert handler._live is None
-
-  def test_output_stats_without_live_display(self):
-    """output_stats should print stats directly when no LiveDisplay."""
+  def test_output_stats_prints_simple_format(self):
+    """output_stats should print the simpler RichUIHandler format."""
     output = StringIO()
     handler = InteractiveUIHandler()
     handler.console = make_console(output)
 
     handler.output_stats(1500, 50, 100)
+
     text = output.getvalue()
     assert "1.5s" in text
-    assert "50+100=150" in text
-    assert "tok/s" in text
+    assert "150 tokens" in text
 
-  def test_output_stats_no_timing_data(self):
-    """output_stats should add blank line when no timing data."""
+  def test_output_stats_suppressed_when_disabled(self):
+    """output_stats should not print when show_stats is False."""
     output = StringIO()
-    handler = InteractiveUIHandler()
+    handler = InteractiveUIHandler(show_stats=False)
     handler.console = make_console(output)
 
-    handler.output_stats(0, 0, 0)
-    # Should just print a blank line
-    assert output.getvalue() == "\n"
+    handler.output_stats(1500, 50, 100)
 
-  def test_output_stats_resets_state(self):
-    """output_stats should reset thinking and content flags."""
-    handler = InteractiveUIHandler()
-    handler._thinking_shown = True
-    handler._content_shown = True
-    handler.output_stats(100, 1, 1)
-    assert handler._thinking_shown is False
-    assert handler._content_shown is False
+    assert "tokens" not in output.getvalue()
 
 
 class TestInteractiveUIHandlerErrors:
@@ -474,7 +789,6 @@ class TestInteractiveUIHandlerErrors:
     handler.output_error(error)
 
     text = output.getvalue()
-    # New format shows just the message without "Network Error" prefix
     assert "connection refused" in text
     assert "Try again" in text
 
@@ -488,7 +802,6 @@ class TestInteractiveUIHandlerErrors:
     handler.output_error(error)
 
     text = output.getvalue()
-    # New format shows just the message without "Fatal Network Error" prefix
     assert "fatal error" in text
     assert "restart" in text
 
@@ -518,11 +831,51 @@ class TestInteractiveUIHandlerErrors:
     assert "Error" in text
     assert "something failed" in text
 
-  def test_output_error_exits_live_display(self):
-    """output_error should exit active LiveDisplay."""
-    handler = InteractiveUIHandler()
-    handler.start_content_stream()
-    assert handler._live is not None
 
-    handler.output_error(ValueError("test"))
-    assert handler._live is None
+class TestInteractiveUIHandlerAgentLifecycle:
+  """Tests for the optional agent_spawned / agent_finished methods."""
+
+  def test_agent_spawned_prints(self):
+    output = StringIO()
+    handler = InteractiveUIHandler()
+    handler.console = make_console(output)
+
+    handler.agent_spawned("child-1")
+
+    text = output.getvalue()
+    assert "Agent spawned" in text
+    assert "child-1" in text
+
+  def test_agent_finished_prints(self):
+    output = StringIO()
+    handler = InteractiveUIHandler()
+    handler.console = make_console(output)
+
+    handler.agent_finished("child-1")
+
+    text = output.getvalue()
+    assert "Agent finished" in text
+    assert "child-1" in text
+
+
+class TestInteractiveUIHandlerOutputPrompt:
+  """Tests for the output_prompt Panel method."""
+
+  def test_output_prompt_renders_panel(self):
+    output = StringIO()
+    handler = InteractiveUIHandler()
+    handler.console = make_console(output)
+
+    handler.output_prompt("hello user")
+
+    assert "hello user" in output.getvalue()
+
+  def test_output_prompt_skips_empty(self):
+    output = StringIO()
+    handler = InteractiveUIHandler()
+    handler.console = make_console(output)
+
+    handler.output_prompt("")
+
+    # No Panel rendered for empty input.
+    assert output.getvalue() == ""
