@@ -72,8 +72,9 @@ class ContextManagerWrapper:
     self,
     tool_calls: list[dict[str, Any]],
     thinking: str | None = None,
+    content: str = "",
   ) -> None:
-    self._wrapped.add_tool_calls(tool_calls, thinking=thinking)
+    self._wrapped.add_tool_calls(tool_calls, thinking=thinking, content=content)
 
   # --- reads ---
 

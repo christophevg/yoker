@@ -2,7 +2,7 @@
 
 Inherits from ContextManagerWrapper and adds JSONL persistence by
 overriding mutating methods: delegate to wrapped, then bulk-rewrite the
-full JSONL file via _persist_full_state(self._wrapped.get_messages()).
+full JSONL file via _persist_full_state(self._wrapped.get_context()).
 
 Record types (moved over from the former PersistenceContextManager):
   - session_start: Session metadata
@@ -139,7 +139,7 @@ class Persisted(ContextManagerWrapper):
     # (system prompt + skill discovery block). Persist the resulting state so
     # the JSONL file contains the system prompt.
     self._wrapped.agent = new_agent
-    self._persist_full_state(self._wrapped.get_messages())
+    self._persist_full_state(self._wrapped.get_context())
 
   # --- mutating overrides: delegate to wrapped, then bulk-rewrite JSONL ---
 
@@ -151,7 +151,7 @@ class Persisted(ContextManagerWrapper):
     thinking: str | None = None,
   ) -> None:
     self._wrapped.add_message(role, content, metadata=metadata, thinking=thinking)
-    self._persist_full_state(self._wrapped.get_messages())
+    self._persist_full_state(self._wrapped.get_context())
 
   def add_tool_result(
     self,
@@ -162,25 +162,26 @@ class Persisted(ContextManagerWrapper):
   ) -> None:
     self._wrapped.add_tool_result(tool_name, tool_id, result, success=success)
     self._tool_call_count += 1
-    self._persist_full_state(self._wrapped.get_messages())
+    self._persist_full_state(self._wrapped.get_context())
 
   def add_tool_calls(
     self,
     tool_calls: list[dict[str, Any]],
     thinking: str | None = None,
+    content: str = "",
   ) -> None:
-    self._wrapped.add_tool_calls(tool_calls, thinking=thinking)
-    self._persist_full_state(self._wrapped.get_messages())
+    self._wrapped.add_tool_calls(tool_calls, thinking=thinking, content=content)
+    self._persist_full_state(self._wrapped.get_context())
 
   def start_turn(self, user_message: str) -> None:
     self._wrapped.start_turn(user_message)
     self._last_turn_time = datetime.now()
-    self._persist_full_state(self._wrapped.get_messages())
+    self._persist_full_state(self._wrapped.get_context())
 
   def end_turn(self, assistant_message: str, thinking: str | None = None) -> None:
     self._wrapped.end_turn(assistant_message, thinking=thinking)
     self._last_turn_time = datetime.now()
-    self._persist_full_state(self._wrapped.get_messages())
+    self._persist_full_state(self._wrapped.get_context())
 
   def truncate_oldest_non_system(
     self,
@@ -198,13 +199,13 @@ class Persisted(ContextManagerWrapper):
       drop_count=drop_count,
     )
     if dropped > 0:
-      self._persist_full_state(self._wrapped.get_messages())
+      self._persist_full_state(self._wrapped.get_context())
     return dropped
 
   def replace_messages(self, messages: list[dict[str, Any]]) -> None:
     """Delegate to wrapped, then bulk-rewrite the JSONL file."""
     self._wrapped.replace_messages(messages)
-    self._persist_full_state(self._wrapped.get_messages())
+    self._persist_full_state(self._wrapped.get_context())
 
   def clear(self) -> None:
     """Clear in-memory context and truncate the JSONL file."""
@@ -220,7 +221,7 @@ class Persisted(ContextManagerWrapper):
   def save(self) -> None:
     """Persist context to storage via bulk-rewrite."""
     self._wrapped.save()
-    self._persist_full_state(self._wrapped.get_messages())
+    self._persist_full_state(self._wrapped.get_context())
 
   def load(self) -> bool:
     """Load context from storage.
@@ -265,7 +266,7 @@ class Persisted(ContextManagerWrapper):
   def close(self) -> None:
     """Release resources and append a session_end marker via bulk-rewrite."""
     self._wrapped.close()
-    self._persist_full_state(self._wrapped.get_messages(), end_session=True)
+    self._persist_full_state(self._wrapped.get_context(), end_session=True)
 
   def get_statistics(self) -> ContextStatistics:
     """Merge wrapped stats with persistence stats."""
@@ -301,13 +302,14 @@ class Persisted(ContextManagerWrapper):
 
     for item in messages:
       # Emit a turn_start marker for each user message so list_sessions can
-      # count turns and capture the last user message preview.
+      # count turns. The marker is a pure boundary marker — the user content
+      # lives in the `message` record below, avoiding duplicate persistence.
       if item.get("role") == "user":
         records.append(
           {
             "type": "turn_start",
             "timestamp": datetime.now().isoformat(),
-            "data": {"user_message": item.get("content", "")},
+            "data": {},
           }
         )
       record_type, data = self._item_to_record(item)
@@ -345,6 +347,7 @@ class Persisted(ContextManagerWrapper):
       return "tool_call_message", {
         "tool_calls": item["tool_calls"],
         "thinking": item.get("thinking"),
+        "content": item.get("content", ""),
       }
     if role in ("user", "assistant", "system"):
       return "message", item
@@ -484,7 +487,7 @@ class Persisted(ContextManagerWrapper):
         {
           "role": "assistant",
           "tool_calls": data["tool_calls"],
-          "content": "",
+          "content": data.get("content", ""),
           "thinking": data.get("thinking"),
         }
       )

@@ -69,6 +69,7 @@ class ContextManager(Protocol):
     self,
     tool_calls: list[dict[str, Any]],
     thinking: str | None = None,
+    content: str = "",
   ) -> None:
     """Add an assistant message carrying tool_calls. Must precede add_tool_result."""
 

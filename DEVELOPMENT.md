@@ -8,6 +8,58 @@ Yoker is a Python agent harness with configurable tools and guardrails. It provi
 
 ## Recent Changes
 
+### Context persistence bug fix (PR #55, 2026-07-28)
+
+Fixed four bugs in the context persistence system. The root cause was a
+one-line accessor misuse in `Persisted._persist_full_state` plus a
+content-threading gap in the processing loop.
+
+- **Bug #1 (critical)** — Tool results were never persisted to JSONL.
+  `Persisted._persist_full_state` called `self._wrapped.get_messages()`
+  which excludes `role=tool` messages; the `tool_result` serialization
+  branch in `_item_to_record` was dead code. All 9 persist call sites in
+  `src/yoker/context/persisted.py` now use `self._wrapped.get_context()`
+  (the full list including tool results).
+- **Bug #2 (high)** — Assistant narration text was lost on tool-call
+  turns. `add_tool_calls` hardcoded `content=""`, and the processing
+  loop did not thread the streamed `content` through to it. Four
+  coordinated changes: `BaseContextManager.add_tool_calls`,
+  `ContextManagerWrapper.add_tool_calls`, `Persisted.add_tool_calls`
+  (plus `_item_to_record` and `_process_record` for the
+  `tool_call_message` record), and `_execute_tool_calls` in
+  `src/yoker/core/_processing.py` now accept and forward a `content`
+  parameter. The ContextManager Protocol in
+  `src/yoker/context/protocol.py` was updated accordingly.
+- **Bug #3 (medium)** — User messages were persisted twice (once as a
+  `turn_start` marker with `user_message` content, once as a `message`
+  record). `turn_start` is now a pure boundary marker (`data: {}`); the
+  user content lives only in the `message` record. `list_sessions`
+  derives its preview from the `message` record, so no behavior change
+  there.
+- **Bug #4 (low)** — Synthetic timestamps from bulk-rewrite. OUT OF
+  SCOPE per the plan; noted for future work.
+
+Files changed:
+- `src/yoker/context/persisted.py` — `get_messages()` → `get_context()`
+  at all 9 persist call sites; `add_tool_calls` accepts `content`;
+  `tool_call_message` record includes `content`; replay restores
+  `content`; `turn_start` marker no longer carries `user_message`.
+- `src/yoker/context/manager.py` — `add_tool_calls` accepts
+  `content: str = ""` and stores it instead of the hardcoded `""`.
+- `src/yoker/context/wrapper.py` — `add_tool_calls` forwards `content`.
+- `src/yoker/context/protocol.py` — `ContextManager.add_tool_calls`
+  signature updated.
+- `src/yoker/core/_processing.py` — `_execute_tool_calls` accepts
+  `content` and threads it to `add_tool_calls`; `process_message`
+  passes the streamed `content` through.
+
+Tests: 8 new tests in `tests/test_context_persisted.py`
+(`TestPersistedBugFixes`) covering tool-result persistence, save/load
+round-trip of tool results, assistant content on tool-call turns (in
+memory and round-trip), user-message deduplication, turn-marker
+preservation for `list_sessions`, and a full tool-call → result →
+next-turn regression. Suite: 2195 passed, 8 skipped.
+
 ### UI back-port: merged InteractiveUIHandler (2026-07-28)
 
 Merged `RichUIHandler` (from `yoker-assistant`) with the old
