@@ -23,8 +23,8 @@ class TestBootstrapHistorySecurity:
     handler = InteractiveUIHandler(history_file=history_file)
 
     assert handler.history_file == history_file
-    # Verify that a session is created (indirectly tests FileHistory is used)
-    assert handler._session is not None
+    # The session is created lazily; force it so we can inspect history.
+    assert handler._get_or_create_session() is not None
 
   @pytest.mark.skipif(sys.platform == "win32", reason="prompt_toolkit requires Windows console")
   def test_interactive_handler_none_uses_default_path(self):
@@ -41,10 +41,11 @@ class TestBootstrapHistorySecurity:
     # history_file should be None internally
     assert handler.history_file is None
 
-    # Verify session uses InMemoryHistory
-    assert handler._session is not None
-    # The history object should be InMemoryHistory, not FileHistory
-    assert isinstance(handler._session.history, InMemoryHistory)
+    # The session is created lazily; force it so we can inspect history.
+    session = handler._get_or_create_session()
+    assert session is not None
+    # The history object should be InMemoryHistory, not FileHistory.
+    assert isinstance(session.history, InMemoryHistory)
 
   @pytest.mark.skipif(sys.platform == "win32", reason="prompt_toolkit requires Windows console")
   def test_interactive_handler_custom_path_uses_file_history(self, tmp_path: Path):
@@ -53,4 +54,10 @@ class TestBootstrapHistorySecurity:
     handler = InteractiveUIHandler(history_file=history_file)
 
     assert handler.history_file == history_file
-    assert handler._session is not None
+    assert handler._get_or_create_session() is not None
+
+  @pytest.mark.skipif(sys.platform == "win32", reason="prompt_toolkit requires Windows console")
+  def test_session_not_created_in_init(self):
+    """The PromptSession must NOT be created in __init__ (lazy init)."""
+    handler = InteractiveUIHandler(history_file="none")
+    assert handler._session is None
