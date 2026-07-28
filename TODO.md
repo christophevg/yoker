@@ -13,7 +13,10 @@ Bare-minimum 1.0.0 scope: 8 items + dogfooding gate. Full MBI-008 (Prompt Sets) 
 | **P1** | `github` tool | Done (PR #51) |
 | **P1** | Context overflow management (IP-12) | Done (PR #52) |
 | **P1** | `protected_files` guardrail | Done (PR #53) |
-| **P1** | MBI-005: Two Assistant Packages | Ready (deps met) |
+| **P1** | MBI-005: Two Assistant Packages | In progress (external) |
+| **P1** | Back-port RichUIHandler output | Open (to be discussed) |
+| **P1** | C3 toolset evaluation | Open (ready to start) |
+| **P1** | C3 agents/skills porting | Open (depends on evaluation) |
 | **GATE** | Dogfooding Gate | Open |
 | **HOLD** | L.1-L.9 Launch Preparation | On hold (wait for owner) |
 | **DEFER** | Full MBI-008, full MBI-009 (rest), M.1, M.3, M.4, S.1, 7.1-7.3, other deferred items | Post-1.0.0 |
@@ -33,7 +36,10 @@ All items below must be complete before declaring 1.0.0. Implementation order is
 - [x] `github` tool (PR #51, 2026-07-27)
 - [x] Context overflow management (IP-12) (PR #52, 2026-07-27)
 - [x] `protected_files` guardrail (PR #53, 2026-07-27)
-- [ ] MBI-005: Two Assistant Packages
+- [ ] MBI-005: Two Assistant Packages (in progress externally — ../yoker-assistant done, ../yoker-writing-assistant started)
+- [ ] Back-port RichUIHandler output improvements to InteractiveUIHandler
+- [ ] C3 toolset evaluation — audit C3 agent/skill definitions against yoker toolset
+- [ ] C3 agents/skills porting — port definitions to match yoker toolset
 - [ ] Dogfooding Gate: Last Yoker sessions done using Yoker itself (not Claude Code)
 
 ---
@@ -171,6 +177,45 @@ All items below must be complete before declaring 1.0.0. Implementation order is
 - [ ] Both projects serve as reference implementations
 
 **Dependencies:** MBI-002 (Bootstrap) — DONE, MBI-003 (Python API) — DONE, MBI-004 (yoker Commands) — DONE
+
+---
+
+### Back-port RichUIHandler output improvements
+
+- [ ] **Back-port RichUIHandler from yoker-assistant to InteractiveUIHandler**
+  - yoker-assistant has a custom RichUIHandler with improved UI/UX output experience (output-only, no input)
+  - Back-port the output improvements to yoker's InteractiveUIHandler
+  - Simplify InteractiveUIHandler: remove live/spinner aspects, make output more stable (stdout-like)
+  - Options to evaluate:
+    - a) Import into InteractiveUIHandler — existing input functionality simply not used (check if read-only use is possible without side effects)
+    - b) New read-only UI handler + shared output logic with InteractiveUIHandler
+  - RichUIHandler in yoker-assistant serves as inspiration
+  - **Status:** To be discussed in detail
+  - **Source:** Owner request 2026-07-28
+  - **Files:** `../yoker-assistant/src/yoker_assistant/rich_ui.py` (inspiration), `src/yoker/ui/interactive.py` (modify)
+
+### C3 toolset evaluation
+
+- [ ] **C3 toolset evaluation — audit C3 agent/skill definitions against yoker toolset**
+  - Go through each agent and skill definition currently in C3
+  - Check if the instructions are possible with the current yoker toolset
+  - The answer will likely be "no" for many definitions
+  - Result: a report stating:
+    - Which tools/options on tools are missing
+    - How instructions can be rewritten to fit the toolset
+  - **Status:** Ready to start
+  - **Source:** Owner request 2026-07-28
+  - **Files:** `analysis/c3-toolset-evaluation.md` (new report)
+
+### C3 agents/skills porting
+
+- [ ] **C3 agents/skills porting — port definitions to match yoker toolset**
+  - Port C3 agents and skills to work with Yoker
+  - Include instructions to "ask for tools/more options" if the yoker toolset drastically limits the LLM
+  - Open question: where to host yoker-specific vs claude-specific definitions
+  - **Status:** To be discussed in detail (depends on C3 toolset evaluation)
+  - **Source:** Owner request 2026-07-28
+  - **Depends on:** C3 toolset evaluation
 
 ---
 
