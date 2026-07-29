@@ -531,6 +531,44 @@ class TestGitToolPermissionRequiredOperations:
     assert result.success
 
   @pytest.mark.asyncio
+  async def test_git_commit_multiline_message(self, git_repo: Path) -> None:
+    """
+    Given: A git tool with commit in auto_permission
+    When: Executing git commit with a multi-line message (subject, body, trailer)
+    Then: Commit succeeds and the message preserves newlines
+    """
+    (git_repo / "multiline.txt").write_text("content")
+    subprocess.run(["git", "add", "multiline.txt"], cwd=git_repo, check=True, capture_output=True)
+
+    config = GitToolConfig(
+      allowed_commands=("status", "log", "commit"),
+      auto_permission=("status", "log", "commit"),
+    )
+    spec = _git_spec()
+    ctx = _git_context(config=config)
+
+    message = "feat: add multi-line support\n\nThis allows commit messages with body text\nand trailers.\n\nCo-authored-by: Agent <agent@yoker.dev>"
+    result = await spec.execute(
+      operation="commit",
+      path=str(git_repo),
+      args={"message": message},
+      ctx=ctx,
+    )
+
+    assert result.success
+
+    # Verify the commit message was stored correctly
+    log_result = await spec.execute(
+      operation="log",
+      path=str(git_repo),
+      args={"n": 1, "format": "%B"},
+      ctx=ctx,
+    )
+    assert log_result.success
+    assert "Co-authored-by: Agent <agent@yoker.dev>" in log_result.result
+    assert "This allows commit messages with body text" in log_result.result
+
+  @pytest.mark.asyncio
   async def test_git_push_blocked_without_handler(self, git_repo: Path) -> None:
     """
     Given: A git tool with push in allowed_commands but no approval handler

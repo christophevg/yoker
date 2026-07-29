@@ -79,7 +79,12 @@ OPERATION_ARGS: dict[str, dict[str, dict[str, Any]]] = {
     },
   },
   "commit": {
-    "message": {"type": "string", "description": "Commit message"},
+    "message": {
+      "type": "string",
+      "description": "Commit message (supports multi-line: subject, body, trailers)",
+      "allow_newlines": True,
+      "max_length": 2000,
+    },
     "all": {"type": "boolean", "description": "Commit all changed files"},
     "amend": {"type": "boolean", "description": "Amend previous commit"},
   },
@@ -389,8 +394,15 @@ def _sanitize_arg(
     if not isinstance(value, str):
       raise ValueError(f"Argument {key} must be string")
     if len(value) > 1000:
-      raise ValueError(f"Argument {key} exceeds length limit")
+      max_length = schema.get("max_length", 1000)
+      if len(value) > max_length:
+        raise ValueError(f"Argument {key} exceeds length limit ({max_length})")
+    # When allow_newlines is set (e.g. commit message), \n and \r are
+    # permitted; all other forbidden characters are still rejected.
+    allow_newlines = schema.get("allow_newlines", False)
     for char in FORBIDDEN_CHARS:
+      if allow_newlines and char in ("\n", "\r"):
+        continue
       if char in value:
         raise ValueError(f"Argument {key} contains forbidden character")
 
