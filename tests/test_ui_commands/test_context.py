@@ -95,8 +95,8 @@ class TestContextCommand:
     agent.context.get_statistics.return_value = ContextStatistics()
     agent.context.get_messages.return_value = [
       {"role": "assistant", "content": "", "tool_calls": [
-        {"name": "read", "arguments": {"path": "/tmp"}},
-        {"name": "search", "arguments": {"pattern": "test"}},
+        {"id": "call_0", "function": {"name": "read", "arguments": {"path": "/tmp"}}},
+        {"id": "call_1", "function": {"name": "search", "arguments": {"pattern": "test"}}},
       ]},
     ]
     ui = MockUI()
@@ -115,7 +115,7 @@ class TestContextCommand:
     agent.context.get_statistics.return_value = ContextStatistics()
     agent.context.get_messages.return_value = [
       {"role": "assistant", "content": "Let me search for that.", "tool_calls": [
-        {"name": "search", "arguments": {"pattern": "test"}},
+        {"id": "call_0", "function": {"name": "search", "arguments": {"pattern": "test"}}},
       ]},
     ]
     ui = MockUI()

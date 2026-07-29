@@ -57,7 +57,7 @@ async def handle(args: str, agent: "Agent", ui: "UIHandler") -> str:
         if content:
           lines.append("      --- tool calls ---")
         for tc in tool_calls:
-          name = tc.get("name", "unknown")
+          name = tc.get("name") or tc.get("function", {}).get("name", "unknown")
           lines.append(f"      [tool: {name}]")
       if not content and not tool_calls and not thinking:
         lines.append("      (empty)")
