@@ -88,6 +88,59 @@ class TestContextCommand:
     assert "a" * 100 in result
 
   @pytest.mark.asyncio
+  async def test_context_shows_tool_calls(self):
+    """/context should show tool call names for assistant messages with tool_calls."""
+    agent = self._make_agent()
+    agent.context.get_session_id.return_value = "session-123"
+    agent.context.get_statistics.return_value = ContextStatistics()
+    agent.context.get_messages.return_value = [
+      {"role": "assistant", "content": "", "tool_calls": [
+        {"name": "read", "arguments": {"path": "/tmp"}},
+        {"name": "search", "arguments": {"pattern": "test"}},
+      ]},
+    ]
+    ui = MockUI()
+
+    result = await handle("", agent, ui)
+
+    assert "#1 (assistant)" in result
+    assert "[tool: read]" in result
+    assert "[tool: search]" in result
+
+  @pytest.mark.asyncio
+  async def test_context_shows_tool_calls_with_content(self):
+    """/context should show content then tool calls when both present."""
+    agent = self._make_agent()
+    agent.context.get_session_id.return_value = "session-123"
+    agent.context.get_statistics.return_value = ContextStatistics()
+    agent.context.get_messages.return_value = [
+      {"role": "assistant", "content": "Let me search for that.", "tool_calls": [
+        {"name": "search", "arguments": {"pattern": "test"}},
+      ]},
+    ]
+    ui = MockUI()
+
+    result = await handle("", agent, ui)
+
+    assert "Let me search for that." in result
+    assert "[tool: search]" in result
+
+  @pytest.mark.asyncio
+  async def test_context_shows_empty_label_for_truly_empty(self):
+    """/context should show (empty) for messages with no content, thinking, or tool_calls."""
+    agent = self._make_agent()
+    agent.context.get_session_id.return_value = "session-123"
+    agent.context.get_statistics.return_value = ContextStatistics()
+    agent.context.get_messages.return_value = [
+      {"role": "assistant", "content": ""},
+    ]
+    ui = MockUI()
+
+    result = await handle("", agent, ui)
+
+    assert "(empty)" in result
+
+  @pytest.mark.asyncio
   async def test_context_registered_in_default_registry(self):
     """/context should be dispatchable from the default registry."""
     registry = create_default_registry()

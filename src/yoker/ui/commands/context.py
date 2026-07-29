@@ -43,14 +43,24 @@ async def handle(args: str, agent: "Agent", ui: "UIHandler") -> str:
       role = msg.get("role", "unknown")
       content = msg.get("content", "")
       thinking = msg.get("thinking")
+      tool_calls = msg.get("tool_calls")
       lines.append(f"    #{index} ({role})")
       if thinking:
         lines.append("      --- thinking ---")
         for line in str(thinking).splitlines():
           lines.append(f"      {line}")
         lines.append("      --- content ---")
-      for line in content.splitlines():
-        lines.append(f"      {line}")
+      if content:
+        for line in content.splitlines():
+          lines.append(f"      {line}")
+      if tool_calls:
+        if content:
+          lines.append("      --- tool calls ---")
+        for tc in tool_calls:
+          name = tc.get("name", "unknown")
+          lines.append(f"      [tool: {name}]")
+      if not content and not tool_calls and not thinking:
+        lines.append("      (empty)")
       lines.append("")
 
   return "\n".join(lines)
