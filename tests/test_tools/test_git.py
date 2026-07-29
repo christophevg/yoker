@@ -722,6 +722,192 @@ class TestGitToolPermissionRequiredOperations:
       assert "permission" not in result.error.lower()
 
   @pytest.mark.asyncio
+  async def test_git_checkout_create_branch(self, git_repo: Path) -> None:
+    """
+    Given: A git tool with checkout in auto_permission
+    When: Creating a new branch with create=true
+    Then: Branch is created and checked out
+    """
+    config = GitToolConfig(
+      allowed_commands=("status", "log", "branch", "checkout"),
+      auto_permission=("status", "log", "branch", "checkout"),
+    )
+    spec = _git_spec()
+    ctx = _git_context(config=config)
+
+    result = await spec.execute(
+      operation="checkout",
+      path=str(git_repo),
+      args={"branch": "feature-test", "create": True},
+      ctx=ctx,
+    )
+
+    assert result.success
+
+    # Verify we're on the new branch
+    branch_result = await spec.execute(
+      operation="branch",
+      path=str(git_repo),
+      ctx=ctx,
+    )
+    assert branch_result.success
+    assert "feature-test" in branch_result.result
+    assert "*" in branch_result.result  # current branch marker
+
+  @pytest.mark.asyncio
+  async def test_git_checkout_switch_branch(self, git_repo: Path) -> None:
+    """
+    Given: A git tool with checkout in auto_permission and two branches
+    When: Checking out an existing branch
+    Then: Switches to that branch
+    """
+    config = GitToolConfig(
+      allowed_commands=("status", "log", "branch", "checkout"),
+      auto_permission=("status", "log", "branch", "checkout"),
+    )
+    spec = _git_spec()
+    ctx = _git_context(config=config)
+
+    # Create a second branch
+    subprocess.run(
+      ["git", "branch", "other-branch"],
+      cwd=git_repo,
+      check=True,
+      capture_output=True,
+    )
+
+    # Switch to it
+    result = await spec.execute(
+      operation="checkout",
+      path=str(git_repo),
+      args={"branch": "other-branch"},
+      ctx=ctx,
+    )
+
+    assert result.success
+
+    # Verify we're on other-branch
+    branch_result = await spec.execute(
+      operation="branch",
+      path=str(git_repo),
+      ctx=ctx,
+    )
+    assert branch_result.success
+    assert "* other-branch" in branch_result.result
+
+  @pytest.mark.asyncio
+  async def test_git_checkout_create_with_startpoint(self, git_repo: Path) -> None:
+    """
+    Given: A git tool with checkout in auto_permission
+    When: Creating a new branch from a specific commit
+    Then: Branch is created from that commit
+    """
+    config = GitToolConfig(
+      allowed_commands=("status", "log", "branch", "checkout"),
+      auto_permission=("status", "log", "branch", "checkout"),
+    )
+    spec = _git_spec()
+    ctx = _git_context(config=config)
+
+    # Get the initial commit hash
+    log_result = await spec.execute(
+      operation="log",
+      path=str(git_repo),
+      args={"n": 1, "format": "%H"},
+      ctx=ctx,
+    )
+    commit_hash = log_result.result.strip()
+
+    result = await spec.execute(
+      operation="checkout",
+      path=str(git_repo),
+      args={"branch": "from-commit", "create": True, "startpoint": commit_hash},
+      ctx=ctx,
+    )
+
+    assert result.success
+
+    # Verify we're on the new branch
+    branch_result = await spec.execute(
+      operation="branch",
+      path=str(git_repo),
+      ctx=ctx,
+    )
+    assert "from-commit" in branch_result.result
+
+  @pytest.mark.asyncio
+  async def test_git_checkout_requires_branch_arg(self, git_repo: Path) -> None:
+    """
+    Given: A git tool with checkout in auto_permission
+    When: Calling checkout without branch argument
+    Then: Returns error that branch is required
+    """
+    config = GitToolConfig(
+      allowed_commands=("status", "log", "checkout"),
+      auto_permission=("status", "log", "checkout"),
+    )
+    spec = _git_spec()
+    ctx = _git_context(config=config)
+
+    result = await spec.execute(
+      operation="checkout",
+      path=str(git_repo),
+      ctx=ctx,
+    )
+
+    assert not result.success
+    assert "branch" in result.error.lower()
+    assert "required" in result.error.lower()
+
+  @pytest.mark.asyncio
+  async def test_git_checkout_blocked_without_handler(self, git_repo: Path) -> None:
+    """
+    Given: A git tool with checkout in allowed_commands but not auto_permission
+    When: Executing git checkout without an approval handler
+    Then: Returns error that checkout requires approval
+    """
+    config = GitToolConfig(
+      allowed_commands=("status", "log", "checkout"),
+      auto_permission=("status", "log"),
+    )
+    spec = _git_spec()
+    ctx = _git_context(config=config)
+
+    result = await spec.execute(
+      operation="checkout",
+      path=str(git_repo),
+      args={"branch": "test-branch", "create": True},
+      ctx=ctx,
+    )
+
+    assert not result.success
+    assert "requires approval" in result.error.lower()
+
+  @pytest.mark.asyncio
+  async def test_git_checkout_branch_injection_blocked(self, git_repo: Path) -> None:
+    """
+    Given: A git tool with checkout in auto_permission
+    When: Branch name containing shell injection chars
+    Then: Returns error about forbidden character
+    """
+    config = GitToolConfig(
+      allowed_commands=("status", "log", "checkout"),
+      auto_permission=("status", "log", "checkout"),
+    )
+    spec = _git_spec()
+    ctx = _git_context(config=config)
+
+    result = await spec.execute(
+      operation="checkout",
+      path=str(git_repo),
+      args={"branch": "test;rm -rf /", "create": True},
+      ctx=ctx,
+    )
+
+    assert not result.success
+    assert "forbidden" in result.error.lower()
+
+  @pytest.mark.asyncio
   async def test_git_add_auto_permission_stages_files(self, git_repo: Path) -> None:
     """
     Given: A git tool with add in auto_permission (default)

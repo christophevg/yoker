@@ -33,7 +33,8 @@ from typing import Annotated, Any
 from structlog import get_logger
 
 from yoker.config import GitToolConfig
-from yoker.tools.annotations import Path as PathArg, Text
+from yoker.tools.annotations import Path as PathArg
+from yoker.tools.annotations import Text
 from yoker.tools.context import ToolContext
 from yoker.tools.schema import ToolResult, ValidationResult
 
@@ -98,6 +99,21 @@ OPERATION_ARGS: dict[str, dict[str, dict[str, Any]]] = {
     "tags": {"type": "boolean", "description": "Push tags"},
     "force": {"type": "boolean", "description": "Force push (dangerous)"},
   },
+  "checkout": {
+    "branch": {
+      "type": "string",
+      "description": "Branch name to checkout or create",
+    },
+    "create": {
+      "type": "boolean",
+      "description": "Create a new branch (equivalent to -b) and switch to it",
+      "flag": "-b",
+    },
+    "startpoint": {
+      "type": "string",
+      "description": "Starting point for new branch (commit, tag, or branch name). Only used with create=true.",
+    },
+  },
 }
 
 DANGEROUS_OPTIONS: frozenset[str] = frozenset(
@@ -133,7 +149,7 @@ async def git(
     str,
     Text(
       "Git operation to execute. One of: status, log, diff, branch, show, "
-      "add, commit, push."
+      "add, commit, push, checkout."
     ),
   ],
   path: Annotated[
@@ -154,7 +170,8 @@ async def git(
       "  - To show a specific file, set the 'path' parameter to the file path.\n"
       "add: {all: bool (stage everything), update: bool (stage tracked only), files: [str] (specific files)}\n"
       "commit: {message: str (supports multi-line), all: bool, amend: bool}\n"
-      "push: {all: bool, tags: bool, force: bool}"
+      "push: {all: bool, tags: bool, force: bool}\n"
+      "checkout: {branch: str (required), create: bool (create new branch with -b), startpoint: str (base for new branch)}"
     ),
   ] = None,
 ) -> ToolResult:
@@ -252,6 +269,29 @@ async def git(
     # Remove 'files' from args so _build_command doesn't try to process it.
     args = {k: v for k, v in args.items() if k != "files"}
 
+  # Extract branch and startpoint for 'checkout' — they are positional
+  # args appended after '--' on the command line.
+  checkout_pathspecs: list[str] = []
+  if operation == "checkout":
+    if "branch" not in args or not args["branch"]:
+      return ToolResult(success=False, error="Argument 'branch' is required for checkout operation")
+    branch_schema = OPERATION_ARGS["checkout"]["branch"]
+    try:
+      sanitized_branch = _sanitize_arg("branch", args["branch"], branch_schema)
+    except ValueError as e:
+      return ToolResult(success=False, error=str(e))
+    checkout_pathspecs.append(sanitized_branch)
+    # Remove 'branch' from args so _build_command doesn't process it.
+    args = {k: v for k, v in args.items() if k != "branch"}
+    if "startpoint" in args and args["startpoint"]:
+      startpoint_schema = OPERATION_ARGS["checkout"]["startpoint"]
+      try:
+        sanitized_sp = _sanitize_arg("startpoint", args["startpoint"], startpoint_schema)
+      except ValueError as e:
+        return ToolResult(success=False, error=str(e))
+      checkout_pathspecs.append(sanitized_sp)
+      args = {k: v for k, v in args.items() if k != "startpoint"}
+
   try:
     cmd = _build_command(operation, args, allowed_commands)
   except ValueError as e:
@@ -261,6 +301,10 @@ async def git(
     cmd.extend(["--", file_arg])
   elif file_pathspecs:
     cmd.extend(["--"] + file_pathspecs)
+  elif checkout_pathspecs:
+    # Branch names are refs, not pathspecs — don't use '--' separator.
+    # Flag injection is already prevented by _sanitize_arg (rejects leading '-').
+    cmd.extend(checkout_pathspecs)
 
   logger.info("git_executing", operation=operation, path=str(work_dir))
 
@@ -341,6 +385,8 @@ async def _check_approval(operation: str, ctx: ToolContext) -> tuple[bool, str |
     preview = _staged_diff_preview()
   elif operation == "push":
     preview = _push_preview()
+  elif operation == "checkout":
+    preview = _checkout_preview()
   else:
     preview = f"git {operation}"
 
@@ -388,6 +434,17 @@ def _push_preview() -> str:
       return "git push"
 
 
+def _checkout_preview() -> str:
+  """Build a preview of the working tree state for the approval prompt."""
+  try:
+    _, stdout, _ = _execute_command(["git", "status", "--short"], Path.cwd())
+    if stdout.strip():
+      return f"Working tree (uncommitted changes may be carried over):\n{stdout[:2000]}"
+    return "git checkout (clean working tree)"
+  except Exception:
+    return "git checkout"
+
+
 def _build_command(
   operation: str,
   args: dict[str, Any],
@@ -413,7 +470,11 @@ def _build_command(
 
     if isinstance(value, bool):
       if value:
-        if len(key) == 1:
+        # Use custom flag if specified in schema (e.g. create -> -b)
+        custom_flag = allowed_args[key].get("flag")
+        if custom_flag:
+          cmd.append(custom_flag)
+        elif len(key) == 1:
           cmd.append(f"-{key}")
         else:
           cmd.append(f"--{key}")

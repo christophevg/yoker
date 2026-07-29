@@ -506,6 +506,7 @@ class GitToolConfig(ToolConfig):
     "add",
     "commit",
     "push",
+    "checkout",
   )
   auto_permission: tuple[str, ...] = (
     "status",
