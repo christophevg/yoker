@@ -119,6 +119,34 @@ class TestGitToolSchema:
     assert "path" not in required
     assert "args" not in required
 
+  def test_schema_operation_has_description(self) -> None:
+    """
+    Given: The git tool schema
+    When: Checking the 'operation' parameter
+    Then: It has a description listing available operations
+    """
+    spec = _git_spec()
+    props = spec.schema["function"]["parameters"]["properties"]
+    assert "operation" in props
+    desc = props["operation"].get("description", "")
+    assert "status" in desc
+    assert "diff" in desc
+    assert "commit" in desc
+
+  def test_schema_args_has_description(self) -> None:
+    """
+    Given: The git tool schema
+    When: Checking the 'args' parameter
+    Then: It has a description listing per-operation arguments
+    """
+    spec = _git_spec()
+    props = spec.schema["function"]["parameters"]["properties"]
+    assert "args" in props
+    desc = props["args"].get("description", "")
+    assert "diff" in desc
+    assert "cached" in desc
+    assert "path" in desc  # mentions file-scoping via path param
+
 
 class TestGitToolReadOnlyOperations:
   """Tests for read-only Git operations (safe, always allowed)."""

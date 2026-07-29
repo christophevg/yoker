@@ -33,7 +33,7 @@ from typing import Annotated, Any
 from structlog import get_logger
 
 from yoker.config import GitToolConfig
-from yoker.tools.annotations import Path as PathArg
+from yoker.tools.annotations import Path as PathArg, Text
 from yoker.tools.context import ToolContext
 from yoker.tools.schema import ToolResult, ValidationResult
 
@@ -129,18 +129,44 @@ CREDENTIAL_PATTERN = re.compile(r"(https?://)[^:]+:[^@]*@")
 
 
 async def git(
-  operation: str,
+  operation: Annotated[
+    str,
+    Text(
+      "Git operation to execute. One of: status, log, diff, branch, show, "
+      "add, commit, push."
+    ),
+  ],
   path: Annotated[
     str, PathArg("Path to the Git repository, or file for diff/show operations")
   ] = ".",
   ctx: ToolContext = None,  # type: ignore[assignment]
-  args: dict[str, Any] | None = None,
+  args: Annotated[
+    dict[str, Any] | None,
+    Text(
+      "Operation-specific arguments.\n"
+      "\n"
+      "status: {short: bool, porcelain: bool}\n"
+      "log: {oneline: bool, n: int (1-100), since: str, until: str, author: str, format: str}\n"
+      "diff: {cached: bool (staged changes), stat: bool (diffstat), name_only: bool}\n"
+      "  - To diff a specific file, set the 'path' parameter to the file path, not an arg.\n"
+      "branch: {list: bool, all: bool, remotes: bool}\n"
+      "show: {format: str, stat: bool}\n"
+      "  - To show a specific file, set the 'path' parameter to the file path.\n"
+      "add: {all: bool (stage everything), update: bool (stage tracked only), files: [str] (specific files)}\n"
+      "commit: {message: str (supports multi-line), all: bool, amend: bool}\n"
+      "push: {all: bool, tags: bool, force: bool}"
+    ),
+  ] = None,
 ) -> ToolResult:
   """Execute a Git operation on a repository.
 
   Read-only operations (status, log, diff, branch, show) are auto-approved.
   Write operations (commit, push) require interactive approval unless
   explicitly added to ``auto_permission`` in config.
+
+  For diff and show, to scope to a specific file, pass the file path as the
+  'path' parameter (not as an arg). Example: git(operation='diff',
+  path='src/main.py') shows changes for that file only.
   """
   git_config = ctx.config
   if not isinstance(git_config, GitToolConfig):
