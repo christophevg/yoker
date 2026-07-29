@@ -77,6 +77,11 @@ OPERATION_ARGS: dict[str, dict[str, dict[str, Any]]] = {
       "type": "boolean",
       "description": "Stage only tracked files (no new files)",
     },
+    "files": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Specific file paths to stage (relative to the repo path). When provided, 'all' and 'update' are ignored.",
+    },
   },
   "commit": {
     "message": {
@@ -199,6 +204,28 @@ async def git(
   if not isinstance(args, dict):
     return ToolResult(success=False, error="Parameter 'args' must be an object")
 
+  # Extract file pathspecs for 'add' — they are appended after '--' on the
+  # command line, not as flags. This allows staging individual files.
+  file_pathspecs: list[str] = []
+  if operation == "add" and "files" in args:
+    raw_files = args["files"]
+    if not isinstance(raw_files, list):
+      return ToolResult(success=False, error="Argument 'files' must be an array")
+    if not raw_files:
+      return ToolResult(success=False, error="Argument 'files' must not be empty")
+    for f in raw_files:
+      if not isinstance(f, str):
+        return ToolResult(success=False, error="Each entry in 'files' must be a string")
+      # Reuse the string sanitization to block injection chars.
+      file_schema = OPERATION_ARGS["add"]["files"]["items"]
+      try:
+        sanitized = _sanitize_arg("files", f, file_schema)
+      except ValueError as e:
+        return ToolResult(success=False, error=str(e))
+      file_pathspecs.append(sanitized)
+    # Remove 'files' from args so _build_command doesn't try to process it.
+    args = {k: v for k, v in args.items() if k != "files"}
+
   try:
     cmd = _build_command(operation, args, allowed_commands)
   except ValueError as e:
@@ -206,6 +233,8 @@ async def git(
 
   if file_arg is not None:
     cmd.extend(["--", file_arg])
+  elif file_pathspecs:
+    cmd.extend(["--"] + file_pathspecs)
 
   logger.info("git_executing", operation=operation, path=str(work_dir))
 

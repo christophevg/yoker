@@ -658,6 +658,130 @@ class TestGitToolPermissionRequiredOperations:
     assert "A  new.txt" in status_result.stdout
 
   @pytest.mark.asyncio
+  async def test_git_add_individual_files(self, git_repo: Path) -> None:
+    """
+    Given: A git tool with add in auto_permission
+    When: Creating multiple files and staging only specific ones
+    Then: Only the specified files are staged
+    """
+    (git_repo / "file_a.txt").write_text("content a")
+    (git_repo / "file_b.txt").write_text("content b")
+    (git_repo / "file_c.txt").write_text("content c")
+    spec = _git_spec()
+    ctx = _git_context()
+
+    result = await spec.execute(
+      operation="add",
+      path=str(git_repo),
+      args={"files": ["file_a.txt", "file_c.txt"]},
+      ctx=ctx,
+    )
+
+    assert result.success
+
+    status_result = subprocess.run(
+      ["git", "status", "--porcelain"],
+      cwd=git_repo,
+      capture_output=True,
+      text=True,
+    )
+    assert "A  file_a.txt" in status_result.stdout
+    assert "A  file_c.txt" in status_result.stdout
+    assert "?? file_b.txt" in status_result.stdout  # not staged
+
+  @pytest.mark.asyncio
+  async def test_git_add_individual_files_with_paths(self, git_repo: Path) -> None:
+    """
+    Given: A git tool with add in auto_permission
+    When: Staging files with subdirectory paths
+    Then: Files in subdirectories are staged correctly
+    """
+    subdir = git_repo / "src" / "module"
+    subdir.mkdir(parents=True)
+    (subdir / "main.py").write_text("# main")
+    (git_repo / "other.txt").write_text("other")
+    spec = _git_spec()
+    ctx = _git_context()
+
+    result = await spec.execute(
+      operation="add",
+      path=str(git_repo),
+      args={"files": ["src/module/main.py"]},
+      ctx=ctx,
+    )
+
+    assert result.success
+
+    status_result = subprocess.run(
+      ["git", "status", "--porcelain"],
+      cwd=git_repo,
+      capture_output=True,
+      text=True,
+    )
+    assert "A  src/module/main.py" in status_result.stdout
+    assert "?? other.txt" in status_result.stdout  # not staged
+
+  @pytest.mark.asyncio
+  async def test_git_add_files_rejects_injection(self, git_repo: Path) -> None:
+    """
+    Given: A git tool with add in auto_permission
+    When: Staging a file path containing shell injection chars
+    Then: Returns error about forbidden character
+    """
+    spec = _git_spec()
+    ctx = _git_context()
+
+    result = await spec.execute(
+      operation="add",
+      path=str(git_repo),
+      args={"files": ["file;rm -rf /"]},
+      ctx=ctx,
+    )
+
+    assert not result.success
+    assert "forbidden" in result.error.lower()
+
+  @pytest.mark.asyncio
+  async def test_git_add_files_rejects_flag_injection(self, git_repo: Path) -> None:
+    """
+    Given: A git tool with add in auto_permission
+    When: Staging a file path starting with a dash
+    Then: Returns error about dash/flag injection
+    """
+    spec = _git_spec()
+    ctx = _git_context()
+
+    result = await spec.execute(
+      operation="add",
+      path=str(git_repo),
+      args={"files": ["--malicious"]},
+      ctx=ctx,
+    )
+
+    assert not result.success
+    assert "dash" in result.error.lower() or "flag" in result.error.lower()
+
+  @pytest.mark.asyncio
+  async def test_git_add_empty_files_array_rejected(self, git_repo: Path) -> None:
+    """
+    Given: A git tool with add in auto_permission
+    When: Staging with an empty files array
+    Then: Returns error about empty files
+    """
+    spec = _git_spec()
+    ctx = _git_context()
+
+    result = await spec.execute(
+      operation="add",
+      path=str(git_repo),
+      args={"files": []},
+      ctx=ctx,
+    )
+
+    assert not result.success
+    assert "empty" in result.error.lower()
+
+  @pytest.mark.asyncio
   async def test_disallowed_operation_returns_error(self, git_repo: Path) -> None:
     """
     Given: A git tool with only status and log allowed
