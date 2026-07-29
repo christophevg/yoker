@@ -374,3 +374,82 @@ Session resume is now functional. The next session should:
 
 **Branch:** `feature/git-write-ops`
 **Last commit:** `965e333` — fix: session resume preserves loaded conversation history when agent is wired
+
+---
+
+### Session 7 — 2026-07-28: UI Rendering Fixes, Multi-line Commits, Individual File Staging
+
+**Branch:** `feature/git-write-ops`
+**Model:** `glm-5.2:cloud` (Ollama provider)
+**Context:** After the session resume fix from Session 6, the owner resumed and we continued dogfooding. The owner spotted several UI rendering issues and we tackled the top git tool friction points.
+
+#### What Was Done
+
+**1. /context command: render tool calls instead of empty entries**
+- Assistant messages with `tool_calls` but empty `content` appeared as blank lines in `/context`
+- Fixed `/context` to show `[tool: <name>]` for each tool call
+- Fixed tool name extraction from nested `function.name` structure (OpenAI function-calling format)
+- Added `(empty)` label for messages with no content, thinking, or tool calls
+
+**2. Rich markup bracket swallowing (3 fixes)**
+- `output_command_result`: Rich's `console.print()` parsed `[tool: read]` as a markup tag and swallowed it. Fixed with `markup=False`.
+- `output_info`: Same issue — informational text with `[...]` was swallowed. Fixed with `markup=False`.
+- `output_prompt`: User input displayed in a Panel had brackets swallowed. Fixed by escaping `[` → `\\[` and `]` → `\\]` before passing to Panel.
+
+**3. Multi-line commit messages**
+- `FORBIDDEN_CHARS` in `git.py` included `\n` and `\r`, blocking multi-line commit messages
+- Added `allow_newlines` flag to the `OPERATION_ARGS` schema for commit's `message` parameter
+- Added `max_length` schema field (default 1000, commit message allows 2000)
+- `_sanitize_arg` now respects both `allow_newlines` and `max_length` from the schema
+- Other string args (log format, etc.) still reject newlines for injection safety
+
+**4. Individual file staging for git add**
+- `git add` only supported `all: true` / `update: true` — no way to stage specific files
+- Added `files` array argument to `git add` operation schema
+- Each file path is sanitized through `_sanitize_arg` (rejects injection chars, flag injection)
+- Files are appended after `--` on the command line: `git add -- file1 file2 file3`
+- When `files` is provided, `--all` and `--update` are ignored
+
+**Files changed:**
+1. `src/yoker/ui/commands/context.py` — Render tool calls, extract name from `function.name`, show `(empty)`
+2. `src/yoker/ui/interactive.py` — `markup=False` on command result and info output; escape brackets in prompt panel
+3. `src/yoker/builtin/git.py` — `allow_newlines` + `max_length` schema; `files` array for `add`; `_sanitize_arg` respects both
+4. `tests/test_ui_commands/test_context.py` — Tests for tool calls, content+tool calls, empty messages
+5. `tests/test_tools/test_git.py` — Tests for multi-line commit, individual file staging, injection rejection
+
+**All checks pass: 2206+ tests, lint, typecheck green.**
+
+**Commits this session:**
+- `cf9eb6c` — fix: /context command renders tool calls instead of empty assistant messages
+- `e9965e0` — fix: /context tool name extraction from nested function.name structure
+- `68ae79d` — fix: disable Rich markup parsing in output_command_result and output_info
+- `ec4d9aa` — fix: escape Rich markup brackets in output_prompt panel
+- `34d7a14` — feat: support multi-line commit messages with body text and trailers
+- `e201373` — feat: support staging individual files via git add files array argument
+
+#### Open Action Items — Updated
+
+- [x] Session resume: conversation history wiped on resume — fixed in Session 6
+- [x] Multi-line commit messages — fixed this session
+- [x] Individual file staging — fixed this session
+- [x] /context rendering of tool calls — fixed this session
+- [x] Rich markup bracket swallowing — fixed this session
+- [ ] Add `context/` to `.gitignore` (reduce `list` noise)
+- [ ] Consider env var override for protected_files in trusted dev sessions
+- [ ] Consider `list` respecting `.gitignore` optionally
+- [ ] Consider lowering default `max_entries` for `list` tool
+- [ ] Consider adding `git checkout`/`git switch` to git tool (branch switching — needs careful permission design)
+- [ ] `git diff` file scoping: error message should guide user to use `path` parameter for file-scoped diff
+- [ ] `git log` args discoverability: tool description should enumerate available args per operation
+- [ ] `make` env_vars allowlist: `test = ["TEST"]` is configured and working
+
+#### Resume Point
+
+Git tool is now significantly more usable: multi-line commit messages, individual file staging, and proper UI rendering. Next steps:
+1. Add `git checkout`/`git switch` for branch switching
+2. Add `context/` to `.gitignore`
+3. Improve git tool descriptions for better arg discoverability
+4. Continue with remaining 1.0.0 roadmap items (C3 toolset evaluation, C3 agents/skills porting)
+
+**Branch:** `feature/git-write-ops`
+**Last commit:** `e201373` — feat: support staging individual files via git add files array argument
