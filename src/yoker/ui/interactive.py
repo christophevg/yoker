@@ -378,7 +378,7 @@ class InteractiveUIHandler(UIHandler):
       text: Informational text (may contain newlines).
     """
     self._stop_processing_status()
-    self.console.print(text)
+    self.console.print(text, markup=False)
 
   async def output_step_title(self, step: int, total: int, title: str) -> None:
     """Output a wizard step title with emphasis (bold + underline).
@@ -403,7 +403,8 @@ class InteractiveUIHandler(UIHandler):
       result: Command output text.
     """
     self._stop_processing_status()
-    self.console.print(f"{result}\n")
+    self.console.print(result, markup=False)
+    self.console.print()
 
   def output_content(self, content: str, content_type: str = "text/plain") -> None:
     """Output content text directly (non-streaming).
