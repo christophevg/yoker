@@ -56,7 +56,7 @@ SKIP_DIRS: frozenset[str] = frozenset(
 
 
 async def search(
-  path: Annotated[str, PathArg("Directory to search in")],
+  path: Annotated[str, PathArg("Directory to search in (must be a directory, not a file). To read a specific file, use the read tool instead.")],
   ctx: ToolContext,
   pattern: Annotated[
     str,
@@ -76,6 +76,8 @@ async def search(
   count_only: bool = False,
 ) -> ToolResult:
   """Search for patterns in files.
+
+  The 'path' parameter must be a directory — to read a specific file, use the read tool instead.
 
   Args:
     path: Directory to search in.
@@ -159,7 +161,10 @@ async def search(
     if not resolved.exists():
       return ToolResult(success=False, error=f"Path not found: {path}")
     if not resolved.is_dir():
-      return ToolResult(success=False, error=f"Path is not a directory: {path}")
+      return ToolResult(
+        success=False,
+        error=f"Path is not a directory: {path}. The search tool only accepts directories. To read a specific file, use the read tool instead.",
+      )
   except PermissionError:
     return ToolResult(success=False, error=f"Permission denied: {path}")
   except Exception as e:

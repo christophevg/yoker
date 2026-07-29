@@ -449,6 +449,7 @@ class TestSearchToolValidation:
 
     assert not result.success
     assert "not a directory" in result.error.lower()
+    assert "read tool" in result.error.lower()
 
   @pytest.mark.asyncio
   async def test_invalid_search_type(self, tmp_path: Path) -> None:
