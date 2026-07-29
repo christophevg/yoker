@@ -56,7 +56,12 @@ SKIP_DIRS: frozenset[str] = frozenset(
 
 
 async def search(
-  path: Annotated[str, PathArg("Directory to search in (must be a directory, not a file). To read a specific file, use the read tool instead.")],
+  path: Annotated[
+    str,
+    PathArg(
+      "Directory to search in (must be a directory, not a file). To read a specific file, use the read tool instead."
+    ),
+  ],
   ctx: ToolContext,
   pattern: Annotated[
     str,

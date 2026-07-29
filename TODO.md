@@ -228,6 +228,89 @@ All items below must be complete before declaring 1.0.0. Implementation order is
 
 ---
 
+## Dogfooding Backlog
+
+Improvements discovered while using Yoker to develop Yoker. These are quality-of-life and
+workflow improvements that make the agent more effective during dogfooding sessions.
+
+### High Priority
+
+- [ ] **`make` tool: stdout swallowed on failure**
+  - When `make` fails (exit code != 0), the `_processing.py` result formatting only surfaces `error` (which was stderr). stdout — where pytest, ruff, and mypy print their actual errors — is discarded. **Fix in progress:** `verbose` flag added + error now includes stdout+stderr on failure.
+  - **Files:** `src/yoker/builtin/make.py`, `tests/test_tools/test_make.py`
+
+- [ ] **`update` tool: exact match is brittle**
+  - `old_string` must match exactly, including whitespace. Frequently fails with "Search text not found" or "ambiguous match" when file content has subtle differences from what the agent reconstructs.
+  - **Proposals:** (a) line-number-based replace mode (`line_number` + `new_string`); (b) fuzzy/whitespace-insensitive matching option; (c) better error messages showing the closest match found.
+
+- [ ] **`context/` directory in `.gitignore`**
+  - Thousands of session JSONL files in `context/` are tracked by git and flood `list` output (2000 entries truncated). Should add `context/` to `.gitignore`.
+  - **Files:** `.gitignore`
+
+- [ ] **`search` tool: cannot search within a single file**
+  - `search` only accepts directories. When the agent needs to find a line/pattern in a specific file, it must `read` the entire file and scan visually, wasting context window.
+  - **Proposals:** (a) accept file paths in `search` and search just that file; (b) add a "find lines matching pattern" mode to `read`.
+
+- [ ] **`git` tool: no `git restore` / `git stash`**
+  - Cannot discard uncommitted changes to files (`git restore <file>`) or temporarily shelve work (`git stash`). When an edit goes wrong, the agent is stuck with bad content.
+  - **Proposal:** Add `restore` operation (with file pathspecs like `add`) and `stash` operation (with `push`/`pop`/`list` sub-args).
+
+### Medium Priority
+
+- [ ] **`make` tool: success output is too verbose**
+  - On success, `str(tool_result.result)` returns the full dict including all stdout (e.g., 2200 lines of "PASSED"). The agent rarely needs this. **Fix in progress:** `verbose=False` default returns only stderr on success (usually empty/warnings).
+  - **Files:** `src/yoker/builtin/make.py`
+
+- [ ] **`list` tool: noise from `context/` and other large directories**
+  - Even with `context/` in `.gitignore`, `list` doesn't respect `.gitignore` — it still shows ignored files.
+  - **Proposals:** (a) optionally respect `.gitignore` in `list`; (b) lower default `max_entries` from 2000 to ~200.
+
+- [ ] **`protected_files` guardrail: no override for trusted dev sessions**
+  - Writing to `yoker.toml`, `Makefile`, etc. is blocked in batch mode. No env var override exists for trusted development sessions.
+  - **Proposal:** `YOKER_ALLOW_PROTECTED_WRITES=1` env var override.
+
+- [ ] **`git` tool: no `git log` file-scoping guidance**
+  - Already improved the schema description, but the `log` operation could also support file-scoped logs (e.g., `git log -- path/to/file`). Currently no way to see commit history for a specific file.
+
+- [ ] **`update` tool: no line-number-based insert mode**
+  - `insert` operation requires a `line_number`, but `replace` requires `old_string` exact match. A line-number-based replace (replace lines N-M with `new_string`) would be more robust.
+
+### Low Priority
+
+- [ ] **`search` tool: `include_pattern` only filters filenames, not directories**
+  - Cannot search only within a specific subdirectory pattern. Must search the whole tree and filter results.
+  - **Proposal:** Add `include_dirs` pattern or allow `path` to be a list of directories.
+
+- [ ] **`read` tool: no binary file detection warning**
+  - Reading a binary file returns garbled content. Should detect and warn/skip like `search` does.
+  - **Proposal:** Add binary detection (check for NUL bytes in first 8KB) and return a clear error.
+
+- [ ] **`git` tool: no `git tag` operation**
+  - Cannot list, create, or delete tags. Useful for release workflows.
+  - **Proposal:** Add `tag` operation with `list`, `create` (name + optional message), `delete` sub-args.
+
+- [ ] **`git` tool: no `git merge` operation**
+  - Cannot merge branches. Would complete the branch workflow (create branch → work → commit → switch back → merge).
+  - **Proposal:** Add `merge` operation with branch name arg. Needs careful permission design.
+
+- [ ] **`write` tool: `allow_overwrite` is project-level config, not per-call**
+  - Agent cannot overwrite a file even when it explicitly wants to (e.g., rewriting a generated file). Must use `update` instead, which requires exact match.
+  - **Proposal:** Per-call `overwrite: bool` flag on `write` tool.
+
+- [ ] **`make` tool: no `make clean` or arbitrary target args**
+  - Some Makefile targets need arguments that aren't env vars (e.g., `make clean V=1`). Currently only env_vars are supported.
+  - **Proposal:** Consider `make_args` parameter for extra make arguments (with sanitization).
+
+- [ ] **`github` tool: no way to create issues/PRs**
+  - Currently read-only. For full dogfooding workflow, creating issues and PRs would be valuable.
+  - **Proposal:** Add write operations (issue_create, pr_create) with approval model like git tool.
+
+- [ ] **Context window: no visibility into remaining context budget**
+  - Agent doesn't know how much context space is left before overflow truncation kicks in. Would help with planning large operations.
+  - **Proposal:** Add context stats to `/context` command (tokens used / max_tokens).
+
+---
+
 ## Post-1.0.0
 
 Full MBI-008 (Prompt Sets) and MBI-009 (Toolset Coverage) analyses are preserved at `analysis/mbi-prompt-sets.md` and `analysis/mbi-toolset-coverage.md` for post-1.0.0 implementation. The detailed task breakdowns for these MBIs have been removed from this file to keep it concise; refer to the analysis documents and `git log -- TODO.md` for the full breakdowns.

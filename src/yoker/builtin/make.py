@@ -63,6 +63,7 @@ async def make(
   cwd: Annotated[str, PathArg("Working directory containing the Makefile")] = ".",
   timeout_ms: int = 300000,
   env_vars: dict[str, str] | None = None,
+  verbose: bool = False,
 ) -> ToolResult:
   """Execute a Makefile target via ``make <target>``.
 
@@ -78,12 +79,17 @@ async def make(
     env_vars: Optional env vars to pass to make. Each name must be in the
       target's ``allowed_env_vars`` allowlist and not on the framework
       hard-denylist; values are length- and content-validated.
+    verbose: When True, always return full stdout and stderr regardless of
+      exit code. When False (default), on success returns only stderr (usually
+      empty or warnings) and on failure returns stdout + stderr combined
+      (since tools like pytest, ruff, and mypy print errors to stdout, not
+      stderr).
 
   Returns:
     A ``ToolResult`` whose ``result`` is ``{"exit_code": int, "stdout": str,
     "stderr": str, "truncated": bool}``. ``success`` is True iff
-    ``exit_code == 0``. On failure ``error`` carries stderr (or a
-    guardrail/validation message).
+    ``exit_code == 0``. On failure ``error`` carries the relevant output
+    (stdout + stderr when non-verbose, stderr only when verbose).
 
   See the module docstring for the full security model, including the
   R5 env-inheritance residual risk.
@@ -185,15 +191,47 @@ async def make(
   stdout_truncated, stdout_out = _truncate(stdout or "", max_output_bytes)
   stderr_truncated, stderr_out = _truncate(stderr or "", max_output_bytes)
 
+  truncated = stdout_truncated or stderr_truncated
+  exit_code = proc.returncode
+  success = exit_code == 0
+
+  result = {
+    "exit_code": exit_code,
+    "stdout": stdout_out,
+    "stderr": stderr_out,
+    "truncated": truncated,
+  }
+
+  # On failure, the error field is what the LLM sees (line 862 in
+  # _processing.py: f"Error: {tool_result.error}"). Tools like pytest,
+  # ruff, and mypy print their errors to stdout, not stderr — so returning
+  # only stderr on failure hides the actual error messages.
+  #
+  # Strategy:
+  # - verbose=True: error = stderr only (full output is in result dict)
+  # - verbose=False, failure: error = stdout + stderr (so LLM sees errors)
+  # - verbose=False, success: error = None (success, no error)
+  if success:
+    error_msg: str | None = None
+  elif verbose:
+    error_msg = stderr_out
+  else:
+    # Combine stdout and stderr for failure — stdout typically has the
+    # actual error messages (test failures, lint errors, type errors).
+    combined = ""
+    if stdout_out.strip():
+      combined = stdout_out
+    if stderr_out.strip():
+      if combined:
+        combined += f"\n--- stderr ---\n{stderr_out}"
+      else:
+        combined = stderr_out
+    error_msg = combined if combined.strip() else f"make '{target}' failed with exit code {exit_code}"
+
   return ToolResult(
-    success=(proc.returncode == 0),
-    result={
-      "exit_code": proc.returncode,
-      "stdout": stdout_out,
-      "stderr": stderr_out,
-      "truncated": stdout_truncated or stderr_truncated,
-    },
-    error=stderr_out if proc.returncode != 0 else None,
+    success=success,
+    result=result,
+    error=error_msg,
   )
 
 

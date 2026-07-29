@@ -495,7 +495,38 @@ class TestMakeToolErrorHandling:
     assert result.result["exit_code"] == 2
     assert "to-stdout" in result.result["stdout"]
     assert "to-stderr" in result.result["stderr"]
+    # Non-verbose: error includes both stdout and stderr (since tools like
+    # pytest, ruff, mypy print errors to stdout, not stderr).
+    assert "to-stdout" in result.error
+    assert "to-stderr" in result.error
+
+  @pytest.mark.asyncio
+  async def test_nonzero_exit_verbose_error_is_stderr_only(self, tmp_path: Path) -> None:
+    """Verbose mode: error is stderr only (full output in result dict)."""
+    _write_makefile(
+      tmp_path,
+      "check:\n\t@echo to-stdout\n\t@echo to-stderr 1>&2\n\t@exit 2\n",
+    )
+    spec = _make_spec()
+    ctx = _make_context()
+    result = await spec.execute(target="check", ctx=ctx, cwd=str(tmp_path), verbose=True)
+    assert not result.success
+    assert result.result["exit_code"] == 2
+    assert "to-stdout" in result.result["stdout"]
+    assert "to-stderr" in result.result["stderr"]
+    # Verbose: error is stderr only
     assert result.error == result.result["stderr"]
+    assert "to-stdout" not in result.error
+
+  @pytest.mark.asyncio
+  async def test_success_error_is_none(self, tmp_path: Path) -> None:
+    """Successful make target has error=None regardless of verbose flag."""
+    _write_makefile(tmp_path, "check:\n\t@echo hi\n")
+    spec = _make_spec()
+    ctx = _make_context()
+    result = await spec.execute(target="check", ctx=ctx, cwd=str(tmp_path))
+    assert result.success
+    assert result.error is None
 
 
 class TestMakeToolResultStructure:
