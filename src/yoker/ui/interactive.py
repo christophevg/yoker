@@ -367,7 +367,8 @@ class InteractiveUIHandler(UIHandler):
     if not text:
       return
     self.console.print()
-    self.console.print(Panel(text, style=PROMPT_STYLE, box=box.SIMPLE_HEAD))
+    escaped = text.replace("[", "\\[").replace("]", "\\]")
+    self.console.print(Panel(escaped, style=PROMPT_STYLE, box=box.SIMPLE_HEAD))
 
   # === Info / step / command output ===
 
