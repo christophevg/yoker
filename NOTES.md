@@ -2,6 +2,10 @@
 
 Project-level context and strategic information for Yoker that doesn't fit in TODO.md or CLAUDE.md.
 
+## Conventions
+
+- **Commit attribution**: Always use `🤖 Implemented together with Yoker` as the trailer line on commits made by the agent. No `Co-authored-by` format.
+
 ## Positioning
 
 **USP:** Add LLM capabilities to your Python apps and modules without worrying about the agentic foundations. Agentic Functions.
