@@ -87,7 +87,7 @@ OPERATION_ARGS: dict[str, dict[str, dict[str, Any]]] = {
     "message": {
       "type": "string",
       "description": "Commit message (supports multi-line: subject, body, trailers)",
-      "allow_newlines": True,
+      "unsafe_content": True,
       "max_length": 2000,
     },
     "all": {"type": "boolean", "description": "Commit all changed files"},
@@ -426,14 +426,18 @@ def _sanitize_arg(
       max_length = schema.get("max_length", 1000)
       if len(value) > max_length:
         raise ValueError(f"Argument {key} exceeds length limit ({max_length})")
-    # When allow_newlines is set (e.g. commit message), \n and \r are
-    # permitted; all other forbidden characters are still rejected.
-    allow_newlines = schema.get("allow_newlines", False)
-    for char in FORBIDDEN_CHARS:
-      if allow_newlines and char in ("\n", "\r"):
-        continue
-      if char in value:
-        raise ValueError(f"Argument {key} contains forbidden character")
+    # When unsafe_content is set (e.g. commit message), the content is
+    # free-form prose -- only the NUL byte is rejected. The shell injection
+    # chars in FORBIDDEN_CHARS are safe here because commands are executed
+    # via subprocess with a list (no shell). When unsafe_content is not
+    # set, all FORBIDDEN_CHARS are rejected as before.
+    if schema.get("unsafe_content", False):
+      if "\x00" in value:
+        raise ValueError(f"Argument {key} contains NUL byte")
+    else:
+      for char in FORBIDDEN_CHARS:
+        if char in value:
+          raise ValueError(f"Argument {key} contains forbidden character")
 
     if value in DANGEROUS_OPTIONS:
       raise ValueError(f"Argument {key} contains dangerous option: {value}")

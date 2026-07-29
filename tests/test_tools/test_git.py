@@ -569,6 +569,71 @@ class TestGitToolPermissionRequiredOperations:
     assert "This allows commit messages with body text" in log_result.result
 
   @pytest.mark.asyncio
+  async def test_git_commit_message_allows_prose_chars(self, git_repo: Path) -> None:
+    """
+    Given: A git tool with commit in auto_permission
+    When: Committing with a message containing ;, &, |, $, backtick (normal prose)
+    Then: Commit succeeds — these chars are safe in subprocess (no shell)
+    """
+    (git_repo / "prose.txt").write_text("content")
+    subprocess.run(["git", "add", "prose.txt"], cwd=git_repo, check=True, capture_output=True)
+
+    config = GitToolConfig(
+      allowed_commands=("status", "log", "commit"),
+      auto_permission=("status", "log", "commit"),
+    )
+    spec = _git_spec()
+    ctx = _git_context(config=config)
+
+    message = "fix: handle edge case; refactor X & Y | cleanup $vars and `backtick` refs"
+    result = await spec.execute(
+      operation="commit",
+      path=str(git_repo),
+      args={"message": message},
+      ctx=ctx,
+    )
+
+    assert result.success
+
+    log_result = await spec.execute(
+      operation="log",
+      path=str(git_repo),
+      args={"n": 1, "format": "%B"},
+      ctx=ctx,
+    )
+    assert log_result.success
+    assert "handle edge case; refactor X & Y" in log_result.result
+    assert "$vars" in log_result.result
+    assert "`backtick`" in log_result.result
+
+  @pytest.mark.asyncio
+  async def test_git_commit_message_rejects_nul_byte(self, git_repo: Path) -> None:
+    """
+    Given: A git tool with commit in auto_permission
+    When: Committing with a message containing a NUL byte
+    Then: Returns error about NUL byte
+    """
+    (git_repo / "nul.txt").write_text("content")
+    subprocess.run(["git", "add", "nul.txt"], cwd=git_repo, check=True, capture_output=True)
+
+    config = GitToolConfig(
+      allowed_commands=("status", "log", "commit"),
+      auto_permission=("status", "log", "commit"),
+    )
+    spec = _git_spec()
+    ctx = _git_context(config=config)
+
+    result = await spec.execute(
+      operation="commit",
+      path=str(git_repo),
+      args={"message": "test\x00malicious"},
+      ctx=ctx,
+    )
+
+    assert not result.success
+    assert "nul" in result.error.lower()
+
+  @pytest.mark.asyncio
   async def test_git_push_blocked_without_handler(self, git_repo: Path) -> None:
     """
     Given: A git tool with push in allowed_commands but no approval handler
