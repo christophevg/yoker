@@ -104,6 +104,8 @@ If it blocks the full Yoker development workflow, it's not ready for public anno
 - [ ] **`write` tool: per-call `overwrite` flag** — `allow_overwrite` is project-level config. Agent cannot overwrite even when it explicitly wants to (e.g. rewriting a generated file)
 - [ ] **`make` tool: arbitrary target args** — some Makefile targets need arguments that aren't env vars (e.g. `make clean V=1`). Consider `make_args` parameter with sanitization
 - [ ] **`github` tool: write operations** — currently read-only. Add `issue_create`, `pr_create` with approval model like `git` tool
+- [ ] **`file` tool: `stat`/`info` sub-operation** — return file size, type, modification time without reading content. Useful for deciding whether to read a file
+- [ ] **`file` tool: `diff` sub-operation** — compare two files without reading both into context
 
 ### P5: Launch Preparation (active, worked on externally in parallel)
 
@@ -135,13 +137,14 @@ All 13 injection points, 2 prompt sets (Yoker default + Claude Code demo), Jinja
 
 Remaining tools and enhancements not pulled into pre-release:
 - `pytest` tool (Tier 2)
-- `file` tool — delete, copy, move, chmod, symlink (Tier 2)
+- `file` tool — chmod, symlink sub-operations (Tier 2)
 - `askuserquestion` tool — static built-in, interactive (Tier 2)
 - `lint` tool — consolidated ruff + mypy (Tier 2)
 - `uv` tool — package management (Tier 2)
 - `git` enhancement — add + checkout (Tier 3)
 - `webfetch` enhancement — prompt parameter (Tier 3)
 - `read` `package://` URL support (deferred from pre-release slice)
+- `multi-write` tool — batch creation of multiple files in one tool call (optimization, post-release)
 
 **Analysis:** `analysis/mbi-toolset-coverage.md`
 
@@ -219,3 +222,6 @@ Key completed items (PRs):
 - `context/` added to `.gitignore`
 - Git tool schema enriched with per-operation arg descriptions
 - `make` env_vars allowlist configured in local yoker.toml
+- `file` tool: copy, move, delete operations (from C3 porting feedback)
+- `git rm` operation with `--cached` support (from C3 porting feedback)
+- `write` tool: improved `create_parents` documentation (from C3 porting feedback)
