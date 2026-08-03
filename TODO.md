@@ -94,6 +94,17 @@ If it blocks the full Yoker development workflow, it's not ready for public anno
   - Currently only accepts directories. Agent must `read` the whole file and scan visually, wasting context window.
   - Allow `search` to accept a file path and search just that file
 
+- [ ] **Silent JSON decode failure in tool call argument parsing**
+  - When the LLM emits tool call arguments as a JSON string that fails to parse
+    (e.g. truncated, malformed escaping in large multi-line strings), the error
+    is silently swallowed and an empty `{}` dict is used instead
+  - Root cause: `_build_tool_call` in `_processing.py` catches
+    `json.JSONDecodeError` and sets `self.arguments = {}` with no logging
+  - Result: `_execute_tool` sees `missing a required argument` instead of the
+    real error, making debugging very difficult
+  - Fix: log the error with the raw arguments string, and return a descriptive
+    error to the LLM so it can retry with correct JSON
+
 #### Medium Priority
 
 - [ ] **`list` tool: reduce noise**
