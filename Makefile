@@ -1,6 +1,10 @@
--include ~/.claude/Makefile
+UVX_FROM=--from .
+-include ~/.yoker/Makefile
 
 .PHONY: env-dev env-run install-pythons test test-cov test-all test-file test-one format lint typecheck check run docs docs-view build publish publish-test pre-publish clean clean-all help demo demos
+
+yoker:
+	uv run yoker
 
 ## Environment
 
