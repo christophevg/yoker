@@ -31,7 +31,7 @@ logger = get_logger(__name__)
 
 # Tools that operate on filesystem paths
 _FILESYSTEM_TOOLS = frozenset(
-  {"read", "list", "write", "update", "search", "existence", "mkdir", "git", "make"}
+  {"read", "list", "write", "update", "search", "existence", "mkdir", "git", "make", "file"}
 )
 
 
@@ -215,6 +215,16 @@ class PathGuardrail(Guardrail):
         size_reason = self._check_update_diff_size(value)
         if size_reason:
           return ValidationResult(valid=False, reason=size_reason)
+
+    # File tool checks: protected files guardrail on all paths.
+    # The file tool's delete operation should not delete protected files,
+    # and copy/move should not overwrite protected files (though the tool
+    # itself already refuses to overwrite existing files).
+    if tool_name == "file":
+      if not self.interactive_approvals:
+        protected_reason = self._check_protected_files(resolved)
+        if protected_reason:
+          return ValidationResult(valid=False, reason=protected_reason)
 
     # Log allowed decision
     if self._config.logging.include_permission_checks:
@@ -474,6 +484,7 @@ class PathGuardrail(Guardrail):
       "git": tools.git,
       "mkdir": tools.mkdir,
       "make": tools.make,
+      "file": tools.file,
     }
     return mapping.get(tool_name)
 

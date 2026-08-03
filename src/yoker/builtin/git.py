@@ -114,6 +114,21 @@ OPERATION_ARGS: dict[str, dict[str, dict[str, Any]]] = {
       "description": "Starting point for new branch (commit, tag, or branch name). Only used with create=true.",
     },
   },
+  "rm": {
+    "cached": {
+      "type": "boolean",
+      "description": "Untrack and remove from the index, but keep the file in the working tree",
+    },
+    "r": {
+      "type": "boolean",
+      "description": "Remove directories recursively",
+    },
+    "files": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Specific file paths to remove (relative to the repo path). Required.",
+    },
+  },
 }
 
 DANGEROUS_OPTIONS: frozenset[str] = frozenset(
@@ -149,7 +164,7 @@ async def git(
     str,
     Text(
       "Git operation to execute. One of: status, log, diff, branch, show, "
-      "add, commit, push, checkout."
+      "add, commit, push, checkout, rm."
     ),
   ],
   path: Annotated[
@@ -171,15 +186,17 @@ async def git(
       "add: {all: bool (stage everything), update: bool (stage tracked only), files: [str] (specific files)}\n"
       "commit: {message: str (supports multi-line), all: bool, amend: bool}\n"
       "push: {all: bool, tags: bool, force: bool}\n"
-      "checkout: {branch: str (required), create: bool (create new branch with -b), startpoint: str (base for new branch)}"
+      "checkout: {branch: str (required), create: bool (create new branch with -b), startpoint: str (base for new branch)}\n"
+      "rm: {cached: bool (untrack without deleting), r: bool (recursive), files: [str] (required, specific file paths to remove)}"
     ),
   ] = None,
 ) -> ToolResult:
   """Execute a Git operation on a repository.
 
   Read-only operations (status, log, diff, branch, show) are auto-approved.
-  Write operations (commit, push) require interactive approval unless
-  explicitly added to ``auto_permission`` in config.
+  Staging operations (add, rm) are auto-approved. Write operations (commit,
+  push, checkout) require interactive approval unless explicitly added to
+  ``auto_permission`` in config.
 
   For diff and show, to scope to a specific file, pass the file path as the
   'path' parameter (not as an arg). Example: git(operation='diff',
@@ -247,10 +264,15 @@ async def git(
   if not isinstance(args, dict):
     return ToolResult(success=False, error="Parameter 'args' must be an object")
 
-  # Extract file pathspecs for 'add' — they are appended after '--' on the
-  # command line, not as flags. This allows staging individual files.
+  # git rm requires explicit file paths.
+  if operation == "rm" and "files" not in args:
+    return ToolResult(success=False, error="Argument 'files' is required for rm operation")
+
+  # Extract file pathspecs for 'add' and 'rm' — they are appended after
+  # '--' on the command line, not as flags. This allows staging/removing
+  # individual files.
   file_pathspecs: list[str] = []
-  if operation == "add" and "files" in args:
+  if operation in ("add", "rm") and "files" in args:
     raw_files = args["files"]
     if not isinstance(raw_files, list):
       return ToolResult(success=False, error="Argument 'files' must be an array")
@@ -260,7 +282,7 @@ async def git(
       if not isinstance(f, str):
         return ToolResult(success=False, error="Each entry in 'files' must be a string")
       # Reuse the string sanitization to block injection chars.
-      file_schema = OPERATION_ARGS["add"]["files"]["items"]
+      file_schema = OPERATION_ARGS[operation]["files"]["items"]
       try:
         sanitized = _sanitize_arg("files", f, file_schema)
       except ValueError as e:

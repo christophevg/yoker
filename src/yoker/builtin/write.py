@@ -61,7 +61,18 @@ async def write(
   ctx: ToolContext,
   create_parents: bool = False,
 ) -> ToolResult:
-  """Write content to a file."""
+  """Write content to a file.
+
+  If the parent directory does not exist:
+    - With create_parents=True: all parent directories are created
+      automatically (equivalent to mkdir -p).
+    - With create_parents=False (default): the operation fails with
+      "Parent directory does not exist". Use the mkdir tool first to
+      create the directory structure, or pass create_parents=true.
+
+  Overwriting existing files is controlled by the allow_overwrite setting
+  in the write tool configuration (default: not permitted).
+  """
   # Config values come from ctx.config (WriteToolConfig with defaults)
   write_config = ctx.config
   if not isinstance(write_config, WriteToolConfig):

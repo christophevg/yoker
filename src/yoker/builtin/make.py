@@ -226,7 +226,9 @@ async def make(
         combined += f"\n--- stderr ---\n{stderr_out}"
       else:
         combined = stderr_out
-    error_msg = combined if combined.strip() else f"make '{target}' failed with exit code {exit_code}"
+    error_msg = (
+      combined if combined.strip() else f"make '{target}' failed with exit code {exit_code}"
+    )
 
   return ToolResult(
     success=success,

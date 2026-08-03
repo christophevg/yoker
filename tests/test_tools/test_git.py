@@ -2044,3 +2044,186 @@ class TestGitToolIntegration:
 
     assert result.success
     assert "# Updated" in result.result
+
+
+class TestGitToolRmOperation:
+  """Tests for the git rm operation."""
+
+  @pytest.fixture
+  def git_repo(self, tmp_path: Path) -> Path:
+    """Create a temporary Git repository with tracked files."""
+    repo = tmp_path / "test_repo"
+    repo.mkdir()
+    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+      ["git", "config", "user.name", "Test"],
+      cwd=repo,
+      check=True,
+      capture_output=True,
+    )
+    subprocess.run(
+      ["git", "config", "user.email", "test@test.com"],
+      cwd=repo,
+      check=True,
+      capture_output=True,
+    )
+    (repo / "README.md").write_text("# Test\n")
+    (repo / "config.py").write_text("DEBUG = True\n")
+    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+      ["git", "commit", "-m", "Initial"],
+      cwd=repo,
+      check=True,
+      capture_output=True,
+    )
+    return repo
+
+  @pytest.mark.asyncio
+  async def test_rm_removes_tracked_file(self, git_repo: Path) -> None:
+    """
+    Given: A git repo with a tracked file
+    When: Using git rm to remove the file
+    Then: File is removed from working tree and staged for deletion
+    """
+    spec = _git_spec()
+    ctx = _git_context()
+
+    result = await spec.execute(
+      operation="rm",
+      path=str(git_repo),
+      args={"files": ["config.py"]},
+      ctx=ctx,
+    )
+
+    assert result.success
+    assert not (git_repo / "config.py").exists()
+    status = subprocess.run(
+      ["git", "status", "--porcelain"],
+      cwd=git_repo,
+      capture_output=True,
+      text=True,
+    )
+    assert "D  config.py" in status.stdout
+
+  @pytest.mark.asyncio
+  async def test_rm_cached_untracks_without_deleting(self, git_repo: Path) -> None:
+    """
+    Given: A git repo with a tracked file
+    When: Using git rm --cached to untrack the file
+    Then: File remains in working tree but is staged for deletion in index
+    """
+    spec = _git_spec()
+    ctx = _git_context()
+
+    result = await spec.execute(
+      operation="rm",
+      path=str(git_repo),
+      args={"files": ["config.py"], "cached": True},
+      ctx=ctx,
+    )
+
+    assert result.success
+    assert (git_repo / "config.py").exists()  # file still on disk
+    status = subprocess.run(
+      ["git", "status", "--porcelain"],
+      cwd=git_repo,
+      capture_output=True,
+      text=True,
+    )
+    assert "D  config.py" in status.stdout
+
+  @pytest.mark.asyncio
+  async def test_rm_requires_files_arg(self, git_repo: Path) -> None:
+    """
+    Given: A git rm call without files argument
+    When: Executing the operation
+    Then: Returns error that files is required
+    """
+    spec = _git_spec()
+    ctx = _git_context()
+
+    result = await spec.execute(
+      operation="rm",
+      path=str(git_repo),
+      ctx=ctx,
+    )
+
+    assert not result.success
+    assert "files" in result.error.lower()
+
+  @pytest.mark.asyncio
+  async def test_rm_rejects_empty_files(self, git_repo: Path) -> None:
+    """
+    Given: A git rm call with empty files array
+    When: Executing the operation
+    Then: Returns error that files must not be empty
+    """
+    spec = _git_spec()
+    ctx = _git_context()
+
+    result = await spec.execute(
+      operation="rm",
+      path=str(git_repo),
+      args={"files": []},
+      ctx=ctx,
+    )
+
+    assert not result.success
+    assert "empty" in result.error.lower()
+
+  @pytest.mark.asyncio
+  async def test_rm_rejects_flag_injection(self, git_repo: Path) -> None:
+    """
+    Given: A git rm call with a file path starting with a dash
+    When: Executing the operation
+    Then: Returns error about flag injection
+    """
+    spec = _git_spec()
+    ctx = _git_context()
+
+    result = await spec.execute(
+      operation="rm",
+      path=str(git_repo),
+      args={"files": ["--force"]},
+      ctx=ctx,
+    )
+
+    assert not result.success
+    assert "dash" in result.error.lower() or "injection" in result.error.lower()
+
+  @pytest.mark.asyncio
+  async def test_rm_auto_permission_no_approval_needed(self, git_repo: Path) -> None:
+    """
+    Given: rm is in auto_permission (default)
+    When: Executing git rm
+    Then: No approval handler is needed — succeeds without one
+    """
+    spec = _git_spec()
+    ctx = _git_context()  # no approval_handler
+
+    result = await spec.execute(
+      operation="rm",
+      path=str(git_repo),
+      args={"files": ["config.py"]},
+      ctx=ctx,
+    )
+
+    assert result.success
+
+  def test_rm_in_allowed_commands_by_default(self) -> None:
+    """
+    Given: Default GitToolConfig
+    When: Checking allowed_commands
+    Then: rm is included
+    """
+    config = GitToolConfig()
+    assert "rm" in config.allowed_commands
+
+  def test_rm_in_auto_permission_by_default(self) -> None:
+    """
+    Given: Default GitToolConfig
+    When: Checking auto_permission
+    Then: rm is included (staging operation, like add)
+    """
+    config = GitToolConfig()
+    assert "rm" in config.auto_permission

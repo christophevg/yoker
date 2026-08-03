@@ -9,6 +9,7 @@ spawn/registration time.
 """
 
 from yoker.builtin.existence import existence
+from yoker.builtin.file import file
 from yoker.builtin.git import git
 from yoker.builtin.github import github
 from yoker.builtin.list import list
@@ -25,6 +26,7 @@ from yoker.plugins.manifest import PluginManifest
 
 __all__ = [
   "existence",
+  "file",
   "git",
   "github",
   "list",
@@ -48,6 +50,7 @@ __all__ = [
 __YOKER_MANIFEST__ = PluginManifest(
   tools=[
     existence,
+    file,
     git,
     github,
     list,

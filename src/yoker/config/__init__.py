@@ -507,6 +507,7 @@ class GitToolConfig(ToolConfig):
     "commit",
     "push",
     "checkout",
+    "rm",
   )
   auto_permission: tuple[str, ...] = (
     "status",
@@ -515,6 +516,7 @@ class GitToolConfig(ToolConfig):
     "branch",
     "show",
     "add",
+    "rm",
   )
 
 
@@ -611,6 +613,17 @@ class MkdirToolConfig(ToolConfig):
   """
 
   max_depth: int = 20
+
+
+@dataclass
+class FileToolConfig(ToolConfig):
+  """File tool configuration.
+
+  Attributes:
+    enabled: Whether the file tool is enabled.
+  """
+
+  pass  # Inherits enabled: bool = True from ToolConfig
 
 
 @dataclass
@@ -714,6 +727,7 @@ class ToolsConfig:
     skill: Skill tool config.
     make: Make tool config.
     github: GitHub tool config.
+    file: File tool config.
   """
 
   list: ListToolConfig = field(default_factory=ListToolConfig)
@@ -730,6 +744,7 @@ class ToolsConfig:
   skill: SkillToolConfig = field(default_factory=SkillToolConfig)
   make: MakeToolConfig = field(default_factory=MakeToolConfig)
   github: GitHubToolConfig = field(default_factory=GitHubToolConfig)
+  file: FileToolConfig = field(default_factory=FileToolConfig)
 
   def __getitem__(self, name: str) -> ToolConfig:
     return cast(ToolConfig, getattr(self, name))
@@ -1005,6 +1020,7 @@ __all__ = [
   "MakeToolConfig",
   "GitHubToolConfig",
   "MkdirToolConfig",
+  "FileToolConfig",
   "ExistenceToolConfig",
   "WebSearchToolConfig",
   "WebFetchToolConfig",
