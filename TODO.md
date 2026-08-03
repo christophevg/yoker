@@ -85,10 +85,10 @@ If it blocks the full Yoker development workflow, it's not ready for public anno
   - Root cause: `_validate_repository_path` only checks `resolved.parent / ".git"` — for nested files, the parent has no `.git`
   - Fix: walk up the directory tree to find the repo root, or use `git rev-parse --show-toplevel`
 
-- [ ] **`update` tool improvements** (merged: exact match brittleness + line-number-based mode)
+- [x] **`update` tool improvements** (merged: exact match brittleness + line-number-based mode)
   - `old_string` must match exactly including whitespace — frequently fails with "Search text not found" or "ambiguous match"
-  - Evaluate during implementation: (a) line-number-based replace mode; (b) fuzzy/whitespace-insensitive matching; (c) better error messages showing closest match; (d) line-number-based insert mode
-  - Line-number-based mode would also scope updates to a specific region, avoiding ambiguous matches in large files
+  - Implemented: (a) `line_range` parameter for line-number-based replace/delete; (b) `require_exact_match` per-call override with whitespace-insensitive matching; (c) better error messages showing closest match with similarity % and line numbers for multiple matches; (d) line-number-based insert mode (already existed)
+  - Line-number-based mode also scopes updates to a specific region, avoiding ambiguous matches in large files
 
 - [ ] **`search` tool: accept file paths**
   - Currently only accepts directories. Agent must `read` the whole file and scan visually, wasting context window.

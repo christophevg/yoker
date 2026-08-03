@@ -6,6 +6,25 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
+### Added
+
+- **`update` tool: `line_range` parameter**: The `replace` and `delete`
+  operations now accept a `line_range` parameter (`[start, end]`, 1-indexed,
+  inclusive) to edit a range of lines directly without string matching. This
+  avoids ambiguous matches in large files and enables precise line-targeted
+  edits. When `line_range` is provided, it takes precedence over `old_string`.
+
+- **`update` tool: `require_exact_match` per-call override**: The
+  `require_exact_match` parameter can now be passed per-call to override the
+  config default. When set to `false`, whitespace is normalized for matching
+  (regex-based fuzzy match), and the first occurrence is used without
+  ambiguity errors.
+
+- **`update` tool: improved error messages**: When `old_string` is not found,
+  the error message now includes the closest matching line with a similarity
+  percentage. When multiple matches are found, the error lists the line
+  numbers of all occurrences and suggests using `line_range`.
+
 ### Changed
 
 - **Default Tools Behavior (M.2, Option C)**: Agent definitions without a

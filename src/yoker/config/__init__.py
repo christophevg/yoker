@@ -400,7 +400,7 @@ class UpdateToolConfig(ToolConfig):
   """Update tool configuration.
 
   Attributes:
-    require_exact_match: Whether to require exact match for updates.
+    require_exact_match: Whether to require exact match for updates by default.
     max_diff_size_kb: Maximum diff size in KB.
   """
 

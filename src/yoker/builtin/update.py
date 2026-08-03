@@ -3,8 +3,26 @@
 Provides the ``update`` async function for editing existing file contents.
 Guardrails are enforced centrally by the harness based on the schema's
 ``path`` annotation.
+
+## Matching modes
+
+The ``replace`` and ``delete`` operations support two ways to identify the
+target text:
+
+1. **String match** (default): provide ``old_string`` to find the text to
+   replace or delete. When ``require_exact_match`` is true (config default),
+   the string must appear exactly once. When false, whitespace is normalized
+   for matching, and the first match is used.
+
+2. **Line-range match**: provide ``line_range`` as ``[start, end]``
+   (1-indexed, inclusive) to replace or delete a range of lines without
+   needing to match any text. This avoids ambiguous matches in large files.
+
+The ``insert_before`` and ``insert_after`` operations already use
+``line_number`` to position new content.
 """
 
+import difflib
 import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any
@@ -49,14 +67,31 @@ async def update(
     str, Text("Replacement or insertion text (required for replace and insert)")
   ] = "",
   line_number: int | None = None,
+  line_range: Annotated[
+    list[int] | None,
+    Text(
+      "Line range [start, end] (1-indexed, inclusive) for line-based replace or delete. "
+      "When provided, replaces or deletes those lines directly without string matching."
+    ),
+  ] = None,
+  require_exact_match: Annotated[
+    bool | None,
+    Text(
+      "Override the config default for exact match. When false, whitespace is "
+      "normalized for matching and multiple matches use the first occurrence."
+    ),
+  ] = None,
 ) -> ToolResult:
   """Update an existing file by replacing, inserting, or deleting content."""
-  # Config values come from ctx.config (UpdateToolConfig with defaults)
   update_config = ctx.config
   if not isinstance(update_config, UpdateToolConfig):
     logger.warning("update_invalid_config_type", config_type=type(update_config).__name__)
     return ToolResult(success=False, error="Invalid configuration for update tool")
-  require_exact_match = update_config.require_exact_match
+
+  # Per-call override takes precedence over config default
+  exact_match = (
+    require_exact_match if require_exact_match is not None else update_config.require_exact_match
+  )
   max_diff_size_kb = update_config.max_diff_size_kb
 
   if not isinstance(path, str) or not path.strip():
@@ -118,11 +153,11 @@ async def update(
 
   try:
     if operation == "replace":
-      result_content = _do_replace(old_content, old_string, new_string, require_exact_match)
+      result_content = _do_replace(old_content, old_string, new_string, line_range, exact_match)
     elif operation in ("insert_before", "insert_after"):
       result_content = _do_insert(old_content, operation, line_number, new_string)
     elif operation == "delete":
-      result_content = _do_delete(old_content, old_string, line_number, require_exact_match)
+      result_content = _do_delete(old_content, old_string, line_number, line_range, exact_match)
     else:
       return ToolResult(success=False, error="Invalid operation")
   except ValueError as e:
@@ -143,6 +178,7 @@ async def update(
       old_string=old_string,
       new_string=new_string,
       line_number=line_number,
+      line_range=line_range,
       ctx=ctx,
     )
 
@@ -168,6 +204,7 @@ def _build_content_metadata(
   new_string: str,
   line_number: Any,
   ctx: ToolContext | None,
+  line_range: list[int] | None = None,
 ) -> dict[str, Any] | None:
   """Build content_metadata for ToolResult."""
   # Get content display config from context or use defaults
@@ -191,6 +228,7 @@ def _build_content_metadata(
       old_string=old_string,
       new_string=new_string,
       line_number=line_number,
+      line_range=line_range,
       content_display=content_display,
     )
 
@@ -203,6 +241,7 @@ def _build_content_metadata(
       old_string=old_string,
       new_string=new_string,
       line_number=line_number,
+      line_range=line_range,
     )
 
   return _build_content_or_diff_metadata(
@@ -213,6 +252,7 @@ def _build_content_metadata(
     old_string=old_string,
     new_string=new_string,
     line_number=line_number,
+    line_range=line_range,
     use_diff=False,
     content_display=content_display,
   )
@@ -226,6 +266,7 @@ def _build_summary_metadata(
   old_string: str,
   new_string: str,
   line_number: Any,
+  line_range: list[int] | None = None,
 ) -> dict[str, Any]:
   """Build summary metadata for summary verbosity mode."""
   old_lines = len(old_content.splitlines()) if old_content else 0
@@ -283,6 +324,7 @@ def _build_content_or_diff_metadata(
   line_number: Any,
   use_diff: bool = True,
   content_display: Any | None = None,
+  line_range: list[int] | None = None,
 ) -> dict[str, Any]:
   """Build content or diff metadata for content verbosity mode."""
   if content_display is None:
@@ -397,18 +439,105 @@ def _do_replace(
   old_content: str,
   old_string: str,
   new_string: str,
+  line_range: list[int] | None,
   require_exact_match: bool,
 ) -> str:
-  """Replace old_string with new_string in content."""
-  occurrences = old_content.count(old_string)
+  """Replace content by string match or line range.
 
-  if occurrences == 0:
-    raise ValueError("Search text not found")
+  When ``line_range`` is provided, replaces lines start..end (1-indexed,
+  inclusive) with ``new_string``, ignoring ``old_string`` entirely.
 
-  if require_exact_match and occurrences > 1:
-    raise ValueError("Search text appears multiple times; ambiguous match")
+  When ``line_range`` is None, uses ``old_string`` to find and replace.
+  With ``require_exact_match=True``, the string must appear exactly once.
+  With ``require_exact_match=False``, whitespace is normalized for matching.
+  """
+  if line_range is not None:
+    return _replace_line_range(old_content, line_range, new_string)
 
-  return old_content.replace(old_string, new_string, 1)
+  if not old_string:
+    raise ValueError("Either old_string or line_range is required for replace")
+
+  return _replace_string(old_content, old_string, new_string, require_exact_match)
+
+
+def _replace_line_range(
+  old_content: str,
+  line_range: list[int],
+  new_string: str,
+) -> str:
+  """Replace a range of lines with new_string."""
+  if len(line_range) != 2:
+    raise ValueError("line_range must be a [start, end] pair")
+
+  start, end = line_range
+  if not isinstance(start, int) or not isinstance(end, int):
+    raise ValueError("line_range values must be integers")
+
+  if start < 1:
+    raise ValueError(f"line_range start {start} must be >= 1")
+  if end < start:
+    raise ValueError(f"line_range end {end} must be >= start {start}")
+
+  lines = old_content.splitlines(keepends=True)
+  total = len(lines)
+
+  if total == 0:
+    raise ValueError(f"Line range [{start}, {end}] out of range (file has 0 lines)")
+  if start > total:
+    raise ValueError(f"line_range start {start} out of range (file has {total} lines)")
+
+  # Clamp end to total — allows replacing from start to end-of-file
+  actual_end = min(end, total)
+
+  if lines and not lines[-1].endswith("\n") and actual_end == total:
+    lines[-1] = lines[-1] + "\n"
+
+  replacement = new_string
+  if replacement and not replacement.endswith("\n"):
+    replacement = replacement + "\n"
+
+  new_lines = lines[: start - 1] + [replacement] + lines[actual_end:]
+  return "".join(new_lines)
+
+
+def _replace_string(
+  old_content: str,
+  old_string: str,
+  new_string: str,
+  require_exact_match: bool,
+) -> str:
+  """Replace old_string with new_string, optionally with fuzzy matching."""
+  if require_exact_match:
+    occurrences = old_content.count(old_string)
+
+    if occurrences == 0:
+      raise ValueError(_not_found_error(old_content, old_string))
+
+    if occurrences > 1:
+      raise ValueError(_multiple_matches_error(old_content, old_string))
+
+    return old_content.replace(old_string, new_string, 1)
+
+  # Whitespace-insensitive matching: find the first occurrence where
+  # whitespace-normalized content matches the normalized search string.
+  return _fuzzy_replace(old_content, old_string, new_string)
+
+
+def _fuzzy_replace(old_content: str, old_string: str, new_string: str) -> str:
+  """Replace first whitespace-insensitive match of old_string."""
+  import re
+
+  # Build a regex that treats any whitespace run in old_string as \s+
+  escaped = re.escape(old_string)
+  pattern = re.sub(r"\\ ", r"\\s+", escaped)
+  # Also normalize: any sequence of escaped spaces/tabs -> \s+
+  pattern = re.sub(r"(?:\\ )+", r"\\s+", pattern)
+
+  match = re.search(pattern, old_content)
+  if match:
+    return old_content[: match.start()] + new_string + old_content[match.end() :]
+
+  raise ValueError(_not_found_error(old_content, old_string))
 
 
 def _do_insert(
@@ -452,9 +581,13 @@ def _do_delete(
   old_content: str,
   old_string: str,
   line_number: Any,
+  line_range: list[int] | None,
   require_exact_match: bool,
 ) -> str:
-  """Delete content by old_string or by line number."""
+  """Delete content by old_string, line number, or line range."""
+  if line_range is not None:
+    return _delete_line_range(old_content, line_range)
+
   if line_number is not None:
     try:
       line_num = int(line_number)
@@ -474,17 +607,101 @@ def _do_delete(
     return "".join(lines)
 
   if old_string:
-    occurrences = old_content.count(old_string)
+    if require_exact_match:
+      occurrences = old_content.count(old_string)
+      if occurrences == 0:
+        raise ValueError(_not_found_error(old_content, old_string))
+      if occurrences > 1:
+        raise ValueError(_multiple_matches_error(old_content, old_string))
+      return old_content.replace(old_string, "", 1)
 
-    if occurrences == 0:
-      raise ValueError("Search text not found")
+    # Fuzzy delete
+    import re
 
-    if require_exact_match and occurrences > 1:
-      raise ValueError("Search text appears multiple times; ambiguous match")
+    escaped = re.escape(old_string)
+    pattern = re.sub(r"(?:\\ )+", r"\\s+", escaped)
+    match = re.search(pattern, old_content)
+    if match:
+      return old_content[: match.start()] + old_content[match.end() :]
+    raise ValueError(_not_found_error(old_content, old_string))
 
-    return old_content.replace(old_string, "", 1)
+  raise ValueError("Either old_string, line_number, or line_range is required for delete")
 
-  raise ValueError("Either old_string or line_number is required for delete")
+
+def _delete_line_range(old_content: str, line_range: list[int]) -> str:
+  """Delete a range of lines."""
+  if len(line_range) != 2:
+    raise ValueError("line_range must be a [start, end] pair")
+
+  start, end = line_range
+  if not isinstance(start, int) or not isinstance(end, int):
+    raise ValueError("line_range values must be integers")
+
+  if start < 1:
+    raise ValueError(f"line_range start {start} must be >= 1")
+  if end < start:
+    raise ValueError(f"line_range end {end} must be >= start {start}")
+
+  lines = old_content.splitlines(keepends=True)
+  total = len(lines)
+
+  if total == 0:
+    raise ValueError(f"Line range [{start}, {end}] out of range (file has 0 lines)")
+  if start > total:
+    raise ValueError(f"line_range start {start} out of range (file has {total} lines)")
+
+  actual_end = min(end, total)
+  del lines[start - 1 : actual_end]
+  return "".join(lines)
+
+
+def _not_found_error(old_content: str, old_string: str) -> str:
+  """Build a helpful 'not found' error message with closest match context."""
+  search_lines = old_string.strip().splitlines()
+  if not search_lines:
+    return "Search text not found (empty search)"
+
+  first_search_line = search_lines[0].strip()
+  content_lines = old_content.splitlines()
+
+  # Find the closest matching line using difflib
+  best_ratio = 0.0
+  best_line_num = 0
+  best_line = ""
+  for i, line in enumerate(content_lines):
+    ratio = difflib.SequenceMatcher(None, first_search_line, line.strip()).ratio()
+    if ratio > best_ratio:
+      best_ratio = ratio
+      best_line_num = i + 1
+      best_line = line
+
+  if best_ratio > 0.5:
+    return (
+      f"Search text not found. Closest match at line {best_line_num} "
+      f"({best_ratio:.0%} similarity): {best_line.strip()!r}"
+    )
+  return "Search text not found"
+
+
+def _multiple_matches_error(old_content: str, old_string: str) -> str:
+  """Build a helpful 'multiple matches' error with line numbers."""
+  content_lines = old_content.splitlines(keepends=True)
+  first_search_line = old_string.strip().splitlines()[0] if old_string.strip() else ""
+
+  match_lines = []
+  for i, line in enumerate(content_lines):
+    if first_search_line and first_search_line in line:
+      match_lines.append(i + 1)
+
+  if match_lines:
+    lines_str = ", ".join(str(n) for n in match_lines[:10])
+    suffix = f" ... and {len(match_lines) - 10} more" if len(match_lines) > 10 else ""
+    return (
+      f"Search text appears multiple times; ambiguous match. "
+      f"Found at line(s): {lines_str}{suffix}. "
+      f"Use line_range for line-based replace, or provide more context in old_string."
+    )
+  return "Search text appears multiple times; ambiguous match"
 
 
 __all__ = ["update"]
