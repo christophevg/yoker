@@ -265,16 +265,17 @@ class UIHandler(Protocol):
   # :class:`yoker.ui.interactive.InteractiveUIHandler` implements them
   # to manage a Rich status spinner.
 
-  # === Protected-file approval (MBI-009 T12, optional) ===
+  # === Protected-file / git-operation approval (MBI-009 T12, optional) ===
   #
-  # ``confirm_approval(path: str, diff: str) -> bool`` is an **optional**
-  # protocol method, documented here but not defined as a Protocol member.
-  # Unlike ``agent_spawned``/``agent_finished`` (which are dispatched via
-  # :class:`yoker.ui.bridge.UIBridge`), ``confirm_approval`` is wired
-  # directly onto ``Agent._approval_handler`` by
+  # ``confirm_approval(label: str, preview: str, kind: str = "file") -> bool``
+  # is an **optional** protocol method, documented here but not defined as a
+  # Protocol member. Unlike ``agent_spawned``/``agent_finished`` (which are
+  # dispatched via :class:`yoker.ui.bridge.UIBridge`), ``confirm_approval`` is
+  # wired directly onto ``Agent._approval_handler`` by
   # ``yoker.cli.chat._wire_approval_handler`` and awaited from
-  # ``yoker.core._processing._maybe_block_protected`` — :class:`UIBridge`
-  # is not involved. The wiring is gated by ``hasattr(ui,
+  # ``yoker.core._processing._maybe_block_protected`` (with ``kind="file"``)
+  # and from ``yoker.builtin.git._check_approval`` (with ``kind="git"``) —
+  # :class:`UIBridge` is not involved. The wiring is gated by ``hasattr(ui,
   # "confirm_approval")`` so handlers that do not opt in are not wired;
   # for those handlers the :class:`yoker.tools.guardrails.path.PathGuardrail`
   # simple block handles protected writes (no interactive prompt).
@@ -282,12 +283,15 @@ class UIHandler(Protocol):
   # :class:`yoker.ui.batch.BatchUIHandler` does **not** implement it
   # (non-interactive: protected writes are blocked by the simple block).
   # :class:`yoker.ui.interactive.InteractiveUIHandler` implements it to
-  # render the unified diff and prompt y/N (empty/EOF/Ctrl+C = deny,
-  # fail-safe).
+  # render the unified diff / command preview and prompt y/N (empty/EOF/
+  # Ctrl+C = deny, fail-safe).
   #
   # When implemented:
-  #   confirm_approval(path, diff) - awaitable; returns True to proceed
-  #     with the protected write/update, False to block it. ``path`` is
-  #     the resolved absolute path; ``diff`` is a unified diff between
-  #     current and proposed content (for a new-file write, every line is
-  #     an addition).
+  #   confirm_approval(label, preview, kind) - awaitable; returns True to
+  #     proceed with the operation, False to block it. For ``kind="file"``,
+  #     ``label`` is the resolved absolute path and ``preview`` is a unified
+  #     diff between current and proposed content (for a new-file write,
+  #     every line is an addition). For ``kind="git"``, ``label`` is
+  #     ``"git <operation>"`` (e.g. ``"git commit"``) and ``preview`` is a
+  #     command preview (staged diff for commit, unpushed commits for push,
+  #     working-tree status for checkout).

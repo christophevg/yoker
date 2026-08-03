@@ -162,13 +162,15 @@ class Agent:
     self._process_queue: asyncio.Queue[tuple[str, asyncio.Future[str]]] | None = None
     self._process_task: asyncio.Task[None] | None = None
 
-    # Protected-file approval handler (MBI-009 T12). Optional async callable
-    # wired by the CLI in interactive mode. When set, the processing loop
-    # invokes it before write/update on a protected file and the
-    # PathGuardrail simple block is skipped (interactive approval flow).
-    # When None (non-interactive / library use), the simple block fires.
+    # Protected-file / git-operation approval handler (MBI-009 T12). Optional
+    # async callable wired by the CLI in interactive mode. When set, the
+    # processing loop invokes it before write/update on a protected file
+    # (with kind="file") and the git tool invokes it for non-auto-permissioned
+    # operations (with kind="git"). The PathGuardrail simple block is skipped
+    # (interactive approval flow). When None (non-interactive / library use),
+    # the simple block fires for protected files and the git tool blocks.
     # Typed as a narrow callable so the Agent stays UI-agnostic.
-    self._approval_handler: Callable[[str, str], Awaitable[bool]] | None = None
+    self._approval_handler: Callable[[str, str, str], Awaitable[bool]] | None = None
 
     # check that all requested tools for the agent are available (warn before filtering)
     self._warn_missing_tools()

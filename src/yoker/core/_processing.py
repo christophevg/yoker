@@ -893,7 +893,7 @@ async def _maybe_block_protected(
 
   diff = _build_approval_diff(base_name, path, tool_args)
   try:
-    approved = await handler(path, diff)
+    approved = await handler(path, diff, "file")
   except Exception as e:
     logger.warning("approval_handler_error", tool=tool_name, error=str(e))
     approved = False

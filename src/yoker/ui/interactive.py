@@ -505,40 +505,50 @@ class InteractiveUIHandler(UIHandler):
     self._stop_processing_status()
     self.console.print(f"[dim]↳ Agent finished:[/dim] {name}")
 
-  # === Protected-file approval (MBI-009 T12) ===
+  # === Protected-file / git-operation approval (MBI-009 T12) ===
 
-  async def confirm_approval(self, path: str, diff: str) -> bool:
-    """Ask the user to approve a write to a protected file.
+  async def confirm_approval(self, label: str, preview: str, kind: str = "file") -> bool:
+    """Ask the user to approve a protected operation.
 
-    Renders the unified diff with the colored diff renderer, then prompts
-    y/N. An empty response (Enter) or EOF counts as denial (fail-safe).
+    Renders a preview (unified diff for file writes, command preview for
+    git operations) with the colored diff renderer, then prompts y/N.
+    An empty response (Enter) or EOF counts as denial (fail-safe).
     ``Ctrl+C`` is caught and treated as denial so the turn resumes instead
     of crashing the session. The y/N prompt is NOT erased after submit
     (audit trail); uses the lazy session.
 
     Args:
-      path: Path being written/updated (displayed in the prompt).
-      diff: Unified diff string between current and proposed content.
+      label: For ``kind="file"``, the file path being written/updated.
+        For ``kind="git"``, the operation label (e.g. ``"git commit"``).
+      preview: Unified diff (file) or command preview text (git).
+      kind: Approval context — ``"file"`` or ``"git"``.
 
     Returns:
       True if the user explicitly approved, False otherwise.
     """
     self._stop_processing_status()
-    filename = Path(path).name
+    if kind == "git":
+      title = "Git operation"
+      prompt_label = label
+      panel_text = f"Agent wants to run [bold]{label}[/bold]"
+    else:
+      title = "Protected file"
+      prompt_label = Path(label).name
+      panel_text = f"Agent wants to modify [bold]{label}[/bold]"
     self.console.print(
       Panel(
-        f"Agent wants to modify [bold]{path}[/bold]",
-        title="Protected file",
+        panel_text,
+        title=title,
         style=TOOL_STYLE,
       )
     )
     # Reuse the colored diff renderer. Synthesize a minimal metadata dict
     # so _show_diff_content's truncation branch is not triggered.
-    self._show_diff_content(diff, filename, "approve", metadata={})
+    self._show_diff_content(preview, prompt_label, "approve", metadata={})
     session = self._get_or_create_session()
     try:
       answer = await session.prompt_async(
-        f"Approve write to {filename}? [y/N] ",
+        f"Approve {prompt_label}? [y/N] ",
         is_password=False,
       )
     except (EOFError, KeyboardInterrupt):

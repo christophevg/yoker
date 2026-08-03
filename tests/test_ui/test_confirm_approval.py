@@ -153,3 +153,50 @@ async def test_interactive_confirm_approval_renders_diff(
   assert "old" in output
   assert "new" in output
   assert "Protected file" in output or "Makefile" in output
+
+
+# ---------------------------------------------------------------------------
+# InteractiveUIHandler.confirm_approval — git operation approval (kind="git")
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_interactive_confirm_approval_git_shows_git_title(
+  stub_session: SimpleNamespace,
+) -> None:
+  """Git approval shows 'Git operation' title, not 'Protected file'."""
+  console = Console(file=StringIO(), force_terminal=False, width=80)
+  handler = _make_handler(stub_session, answers=["y"], console=console)
+  result = await handler.confirm_approval("git commit", "staged diff", kind="git")
+  assert result is True
+  output = console.file.getvalue()
+  assert "Git operation" in output
+  assert "Protected file" not in output
+  assert "git commit" in output
+
+
+@pytest.mark.asyncio
+async def test_interactive_confirm_approval_git_prompt_says_approve_not_write(
+  stub_session: SimpleNamespace,
+) -> None:
+  """Git approval panel says 'run' not 'modify', and no 'write to' language."""
+  console = Console(file=StringIO(), force_terminal=False, width=80)
+  handler = _make_handler(stub_session, answers=["n"], console=console)
+  await handler.confirm_approval("git push", "commits to push", kind="git")
+  output = console.file.getvalue()
+  assert "Agent wants to run" in output
+  assert "modify" not in output
+  assert "write to" not in output.lower()
+
+
+@pytest.mark.asyncio
+async def test_interactive_confirm_approval_file_default_kind(
+  stub_session: SimpleNamespace,
+) -> None:
+  """Default kind='file' preserves backward-compatible behavior."""
+  console = Console(file=StringIO(), force_terminal=False, width=80)
+  handler = _make_handler(stub_session, answers=["n"], console=console)
+  await handler.confirm_approval("/x/Makefile", "+all:\n")
+  output = console.file.getvalue()
+  assert "Protected file" in output
+  assert "Agent wants to modify" in output

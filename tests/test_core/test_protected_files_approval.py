@@ -176,7 +176,7 @@ async def test_approval_not_needed_when_no_handler_wired() -> None:
 
 @pytest.mark.asyncio
 async def test_approval_not_needed_when_path_not_protected() -> None:
-  async def handler(_path: str, _diff: str) -> bool:
+  async def handler(_path: str, _diff: str, _kind: str = "file") -> bool:
     return True
 
   agent = _FakeAgent(handler=handler, protected=False)
@@ -191,7 +191,7 @@ async def test_approval_approved_returns_none(tmp_path: Path) -> None:
 
   captured: dict[str, str] = {}
 
-  async def handler(path: str, diff: str) -> bool:
+  async def handler(path: str, diff: str, _kind: str = "file") -> bool:
     captured["path"] = path
     captured["diff"] = diff
     return True
@@ -209,7 +209,7 @@ async def test_approval_approved_returns_none(tmp_path: Path) -> None:
 async def test_approval_denied_returns_blocked_message(tmp_path: Path) -> None:
   target = tmp_path / "Makefile"
 
-  async def handler(_path: str, _diff: str) -> bool:
+  async def handler(_path: str, _diff: str, _kind: str = "file") -> bool:
     return False
 
   agent = _FakeAgent(handler=handler, protected=True)
@@ -226,7 +226,7 @@ async def test_approval_denied_returns_blocked_message(tmp_path: Path) -> None:
 async def test_approval_handler_exception_treated_as_denial(tmp_path: Path) -> None:
   target = tmp_path / "Makefile"
 
-  async def handler(_path: str, _diff: str) -> bool:
+  async def handler(_path: str, _diff: str, _kind: str = "file") -> bool:
     raise RuntimeError("boom")
 
   agent = _FakeAgent(handler=handler, protected=True)
@@ -244,7 +244,7 @@ async def test_approval_handler_exception_treated_as_denial(tmp_path: Path) -> N
 async def test_namespaced_tool_name_handled(tmp_path: Path) -> None:
   target = tmp_path / "Makefile"
 
-  async def handler(_path: str, _diff: str) -> bool:
+  async def handler(_path: str, _diff: str, _kind: str = "file") -> bool:
     return False
 
   agent = _FakeAgent(handler=handler, protected=True)

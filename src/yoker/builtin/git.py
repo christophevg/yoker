@@ -391,6 +391,8 @@ async def _check_approval(operation: str, ctx: ToolContext) -> tuple[bool, str |
   If an approval handler is available (interactive mode), use it to
   prompt the user with a preview of what the operation will do.
   If no handler is available (batch mode), fail-safe to denial.
+  The handler is called with ``kind="git"`` so the UI renders
+  appropriate language (not "Protected file" / "write to").
   """
   handler = ctx.approval_handler
   if handler is None:
@@ -413,7 +415,7 @@ async def _check_approval(operation: str, ctx: ToolContext) -> tuple[bool, str |
     preview = f"git {operation}"
 
   try:
-    approved = await handler(context_label, preview)
+    approved = await handler(context_label, preview, "git")
   except Exception as e:
     logger.warning("git_approval_error", operation=operation, error=str(e))
     return False, f"Approval handler error for operation '{operation}': {e}"

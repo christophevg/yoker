@@ -146,7 +146,7 @@ async def _run_with_session(
 
 
 def _wire_approval_handler(agent: Agent, ui: UIHandler) -> None:
-  """Wire the protected-file approval handler when the UI opts in.
+  """Wire the approval handler when the UI opts in.
 
   ``confirm_approval`` is an optional ``UIHandler`` method (see
   :mod:`yoker.ui.handler`). Handlers that do not provide it are not wired,
@@ -155,7 +155,9 @@ def _wire_approval_handler(agent: Agent, ui: UIHandler) -> None:
   ``confirm_approval``, the handler is wired onto
   ``Agent._approval_handler`` and the guardrail's
   ``interactive_approvals`` flag is set so the simple block is skipped and
-  the approval hook in ``_run_tool`` handles protected writes.
+  the approval hook in ``_run_tool`` handles protected writes (with
+  ``kind="file"``). The git tool also uses this handler for non-auto-
+  permissioned operations (with ``kind="git"``).
   """
   if not hasattr(ui, "confirm_approval"):
     return

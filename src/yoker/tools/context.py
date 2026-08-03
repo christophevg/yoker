@@ -15,6 +15,11 @@ executing operations that need user confirmation (e.g. git commit/push).
 The handler is wired from ``UIHandler.confirm_approval`` in interactive
 mode. When ``None`` (batch mode), tools that require approval must
 fail-safe to denial.
+
+The handler signature is ``(label: str, preview: str, kind: str) ->
+bool``. ``kind`` is ``"file"`` for protected-file writes (``label`` is a
+file path, ``preview`` is a unified diff) or ``"git"`` for git operations
+(``label`` is ``"git <operation>"``, ``preview`` is a command preview).
 """
 
 from collections.abc import Awaitable, Callable
@@ -25,7 +30,7 @@ if TYPE_CHECKING:
   from yoker.config import ToolConfig, ToolsSharedConfig
   from yoker.session import Session
 
-  ApprovalHandler = Callable[[str, str], Awaitable[bool]]
+  ApprovalHandler = Callable[[str, str, str], Awaitable[bool]]
 
 
 @dataclass
@@ -43,8 +48,8 @@ class ToolContext:
     session: The :class:`Session` owning the calling agent, when the agent
       runs inside a session. ``None`` on the single-agent path.
     approval_handler: Optional async callable
-      ``(context: str, diff: str) -> bool`` for interactive approval.
-      ``None`` in batch mode; tools must fail-safe to denial.
+      ``(label: str, preview: str, kind: str) -> bool`` for interactive
+      approval. ``None`` in batch mode; tools must fail-safe to denial.
   """
 
   config: "ToolConfig"  # Tool-specific config (WriteToolConfig, etc.)

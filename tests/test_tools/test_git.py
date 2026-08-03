@@ -31,12 +31,12 @@ git_module = sys.modules["yoker.builtin.git"]
 
 
 # A simple async approval handler for tests: always returns True.
-async def _approve_always(context: str, diff: str) -> bool:
+async def _approve_always(context: str, diff: str, kind: str = "file") -> bool:
   return True
 
 
 # A simple async approval handler for tests: always returns False.
-async def _deny_always(context: str, diff: str) -> bool:
+async def _deny_always(context: str, diff: str, kind: str = "file") -> bool:
   return False
 
 
@@ -56,7 +56,7 @@ def _git_context(
 
   Args:
     config: GitToolConfig, defaults to GitToolConfig().
-    approval_handler: Optional async callable ``(context, diff) -> bool``.
+    approval_handler: Optional async callable ``(label, preview, kind) -> bool``.
       Pass ``_approve_always`` or ``_deny_always`` for approval tests.
   """
   if config is None:
