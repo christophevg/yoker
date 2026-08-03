@@ -14,36 +14,68 @@ Quick captures for MBI ideas. These are raw requests that haven't been analyzed 
 
 The MBI currently being implemented. Only one Active MBI at a time.
 
-None — bare-minimum 1.0.0 scope defined, ready to implement.
+### MBI-005: Two Assistant Packages (In Progress)
+
+**Goal:** Two reference implementation packages demonstrating yoker capabilities.
+**Value:** Showcases yoker as a runtime for agentic packages; serves as documentation and validation.
+**Status:** In Progress (externally)
+
+**Tasks:**
+- [x] yoker-assistant — done
+- [ ] yoker-writing-assistant — actively being worked on
+- [ ] Documentation for both packages
+
+**Acceptance Criteria:**
+- [ ] Users can run `uvx yoker-assistant` successfully
+- [ ] Users can run `uvx yoker-writing-assistant` successfully
+- [ ] yoker-assistant demonstrates all yoker capabilities (looping, context, messaging, git)
+- [ ] yoker-writing-assistant demonstrates skill-based agent specialization
+- [ ] Documentation explains architecture and patterns for both
+- [ ] Both projects serve as reference implementations
+
+**Dependencies:** MBI-002 ✅, MBI-003 ✅, MBI-004 ✅
 
 ---
 
-## 1.0.0 Release Gate
+## 0.10.0 Release Gate
 
-All items below must be complete before declaring 1.0.0. The full MBI-008 (Prompt Sets) and MBI-009 (Toolset Coverage) analyses are preserved as post-1.0.0 references at `analysis/mbi-prompt-sets.md` and `analysis/mbi-toolset-coverage.md`. Only the critical slices listed here are pulled forward into the minimal 1.0.0 scope.
+All items must be complete before public announcement. The version will likely be 0.10.0, not 1.0.0 — minor versioning continues until the backlog is exhausted.
 
-### 1.0.0 Scope (in implementation order)
+### Release Gate Items
 
-1. **M.2: Default Tools Behavior** — all tools available when no explicit config. Without this, agents have no tools.
-2. **`make` tool** — Makefile target execution. Agent can run `make check`, `make test`, etc. (from MBI-009 Tier 1)
-3. **`read` offset/limit** — read large files efficiently with offset and limit parameters. (from MBI-009 Tier 1)
-4. **`search` enhancements** — context lines, case-insensitive, file-type filter, count mode. (from MBI-009 Tier 1)
-5. **`github` tool** — structured GitHub operations with subcommand blocking. For PR workflow. (from MBI-009 Tier 2)
-6. **Context overflow management** (IP-12 from MBI-008) — framework-level message truncation when context fills up. Without this, long sessions crash.
-7. **`protected_files` guardrail** — when agent writes to a protected file (Makefile, pyproject.toml, tox.ini, etc.), show the user a diff and ask for permission. Only apply on approval. In non-interactive mode, block the change. This is a SOFT guardrail — it protects against powerful mistakes, not malicious agents. (from MBI-009 Tier 1)
-8. **MBI-005: Two Assistant Packages** — yoker-assistant + yoker-writing-assistant (based on c3:writing-assistant). Showcase capabilities.
+1. **MBI-005: Two Assistant Packages** — in progress (see Active MBI above)
+2. **C3 toolset evaluation** — audit C3 agent/skill definitions against yoker toolset. Output: `analysis/c3-toolset-evaluation.md`
+3. **C3 agents/skills porting** — port C3 to work with Yoker (or make dual-compatible). Depends on evaluation.
+4. **Dogfooding Gate** — continuous effort, transitions into normal usage. Passed when owner can do full development workflow without falling back to Claude Code.
 
-### Dogfooding Gate
+### Pre-Release Work (ordered by priority)
 
-- [ ] Last Yoker development sessions must be doable with Yoker itself (not Claude Code)
+1. **Post-filter on all tools** — "grep" pattern on tool output before returning. Reduces context growth. Head start on context management.
+2. **Usage Stats** — Ollama usage API integration. Track session/weekly cost, cost per tokens, context size vs usage correlation.
+3. **Context Management** — TTR (time-to-remember), forget tool, /compact command, context budget visibility. All needed before public announcement.
+4. **Bug Fixes & UX Polish** (in priority order): bootstrap wizard models, tool call UI feedback delayed, write tool result display, tool result max 20 lines, `yoker chat` initial prompt, interactive UI Panel for bootstrap, bootstrap `--path` issue.
+5. **Dogfooding Backlog** — all items needed for full development workflow (update tool improvements, search file paths, list noise reduction, git tag/merge/restore/stash, write overwrite, make args, github write ops, search directory filter, read binary detection).
+6. **Launch Preparation** — active, worked on externally in parallel (L.1-L.9, website at yoker.dev, CONTRIBUTING.md).
+
+### Completed Release Gate Items
+
+- [x] M.2: Default Tools Behavior (PR #47)
+- [x] `make` tool (PR #48)
+- [x] `read` offset/limit (PR #49)
+- [x] `search` enhancements (PR #50)
+- [x] `github` tool (PR #51)
+- [x] Context overflow management / IP-12 (PR #52)
+- [x] `protected_files` guardrail (PR #53)
+- [x] Back-port RichUIHandler output (PR #54)
+- [x] Context Persistence Bug Fix (PR #55)
 
 ---
 
 ## Backlog
 
-### Post-1.0.0
+### Post-Release
 
-Items deferred until after the 1.0.0 release.
+Items deferred until after the 0.10.0 release. Further dogfooding may move some of these to pre-release.
 
 #### MBI-008: Prompt Sets (full)
 
@@ -51,11 +83,11 @@ Items deferred until after the 1.0.0 release.
 
 **Value:** Makes prompts independent of the codebase (no code changes to modify prompts), swappable at configuration time, distributable as part of plugins/packages, and versionable/customizable per project. The Claude Code demo set demonstrates full compatibility with Claude Code's context injection behavior.
 
-**Status:** Ready (post-1.0.0)
+**Status:** Ready (post-release)
 
 **Analysis source of truth:** `analysis/mbi-prompt-sets.md` (finalized — all 6 design decisions D1-D6 resolved, owner-approved)
 
-**Note:** Only IP-12 (context overflow management) is pulled into 1.0.0. The rest is post-1.0.0.
+**Note:** Only IP-12 (context overflow management) is pulled into pre-release. The rest is post-release.
 
 **Scope:**
 - 13 injection points (IP-1 through IP-13): 7 existing (system prompt, skill discovery/invocation, tool descriptions, tool param descriptions, agent/send_message tool descriptions) + 6 new (session start, env info, file change, tool result, context overflow, context update)
@@ -87,15 +119,15 @@ Items deferred until after the 1.0.0 release.
 
 **Value:** Without a comprehensive toolset, agents stall on routine tasks (running tests, executing linters, managing files) and the user must intervene with manual shell commands. Research showed 39.7% of all tool calls in a real development session were shell commands — the single largest gap.
 
-**Status:** Ready (post-1.0.0 for remaining items)
+**Status:** Ready (post-release for remaining items)
 
 **Analysis source of truth:** `analysis/mbi-toolset-coverage.md` (finalized — revision 5, all 11 open questions resolved, owner-approved)
 
 **Design principle:** Specialized, controllable tools with fixed operation enums — NOT a general-purpose shell. Each tool uses `subprocess.run` with list args (no `shell=True`).
 
-**Pulled into 1.0.0:** `make` tool, `read` offset/limit, `search` enhancements, `github` tool, `protected_files` guardrail.
+**Pulled into pre-release:** `make` tool, `read` offset/limit, `search` enhancements, `github` tool, `protected_files` guardrail.
 
-**Post-1.0.0 scope (rest):**
+**Post-release scope (rest):**
 - `pytest` tool (Tier 2)
 - `file` tool — delete, copy, move, chmod, symlink (Tier 2)
 - `askuserquestion` tool — static built-in, interactive (Tier 2)
@@ -103,7 +135,7 @@ Items deferred until after the 1.0.0 release.
 - `uv` tool — package management (Tier 2)
 - `git` enhancement — add + checkout (Tier 3)
 - `webfetch` enhancement — prompt parameter (Tier 3)
-- `read` `package://` URL support (Tier 1, deferred from 1.0.0 slice)
+- `read` `package://` URL support (Tier 1, deferred from pre-release slice)
 
 **Dependencies:** — (no blocking MBIs)
 
@@ -111,9 +143,9 @@ Items deferred until after the 1.0.0 release.
 
 #### Maintenance: M.1, M.3, M.4
 
-**Goal:** Three maintenance tasks deferred to post-1.0.0.
+**Goal:** Three maintenance tasks deferred to post-release.
 
-**Status:** Open (post-1.0.0)
+**Status:** Open (post-release)
 
 **Tasks:**
 - [ ] M.1: Rename `yoker:` plugin tools namespace to `builtin:`; hide `builtin:` prefix in `/tools` listing
@@ -130,7 +162,7 @@ Items deferred until after the 1.0.0 release.
 
 **Value:** Eliminates API keys from plain-text config files, reducing the risk of accidental exposure via dotfile sharing, backup systems, or version control.
 
-**Status:** Open (post-1.0.0)
+**Status:** Open (post-release)
 
 **Dependencies:** —
 
@@ -142,7 +174,7 @@ Items deferred until after the 1.0.0 release.
 
 **Value:** Plugins added via `--with` need to register their own configuration fields (e.g., `[tools.pkgq]` settings). Without this, plugin tools cannot be configured per-project. Also eliminates the `WebGuardrailConfig` duplication between `tools/web/guardrail.py` and `config/__init__.py`.
 
-**Status:** Backlog (post-1.0.0)
+**Status:** Backlog (post-release)
 
 **Tasks:**
 - [ ] 7.1: Plugin Config Registration System Design (analyze Clevis `register_field`, design API, document flow)
@@ -165,18 +197,20 @@ Items deferred until after the 1.0.0 release.
 - F.1 Multi-Agent Chat Room Demo (handled by ../yoker-chat)
 - MBI-007 7.8.7 ListAgents tool (Session-injected tool for agent discovery)
 - MBI-003 3.7 Auto-generate functions for detected skills/agents (deferred per design doc section 10)
+- Evaluate basic instructions (review examples like Karpathy skills CLAUDE.md)
+- `yoker init` config generation option (only default overriding values)
+- yoker-memory (LLM functions for long-term memory storage/retrieval, based on research)
+- yoker-dashboard (web interface on top of running yoker instance)
 
-### On Hold
-
-Items that start only when the owner signals implementation work is finalizing.
+### Active (worked on externally in parallel)
 
 #### L.1-L.9: Launch Preparation
 
 **Goal:** Prepare marketing materials and dedicated website for Yoker's public announcement.
 
-**USP:** "Add LLM capabilities to your Python apps and modules without worrying about the agentic foundations. Agentic Functions."
+**USP:** "Yoker is a Python-first agent harness framework."
 
-**Status:** On hold — start only when owner signals implementation work is finalizing.
+**Status:** Active — website work started in parallel, worked on externally.
 
 **Tasks:**
 - [ ] L.1 Storyboard of Publications
@@ -188,6 +222,8 @@ Items that start only when the owner signals implementation work is finalizing.
 - [ ] L.7 Best Practices Research
 - [ ] L.8 Look and Feel Research
 - [ ] L.9 Low Entry / Bootstrapping Showcase
+- [ ] Website at yoker.dev (GitHub Pages, frontpage with examples, "why we built yoker" page)
+- [ ] CONTRIBUTING.md (quick task, draft exists uncommitted)
 
 ---
 
@@ -283,7 +319,7 @@ Completed MBIs.
 
 **Design source of truth:** `analysis/mbi-003-python-api-design.md` (three-layer utility API: Layer 1 wrappers over existing classes, Layer 2 `execute_skill` one-shot, Layer 3 `yoker.session()` workflow primitive built on the real `Session`).
 
-**Note:** The optional auto-generate feature (3.7) is deferred to a follow-up MBI (post-1.0.0).
+**Note:** The optional auto-generate feature (3.7) is deferred to a follow-up MBI (post-release).
 
 ---
 
