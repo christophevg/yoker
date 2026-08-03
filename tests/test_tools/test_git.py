@@ -2227,3 +2227,345 @@ class TestGitToolRmOperation:
     """
     config = GitToolConfig()
     assert "rm" in config.auto_permission
+
+
+class TestGitPullOperation:
+  """Tests for the git pull operation."""
+
+  @pytest.fixture
+  def git_repo(self, tmp_path: Path) -> Path:
+    """Create a temporary Git repository with a commit."""
+    repo = tmp_path / "test_repo"
+    repo.mkdir()
+    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+      ["git", "config", "user.name", "Test"],
+      cwd=repo,
+      check=True,
+      capture_output=True,
+    )
+    subprocess.run(
+      ["git", "config", "user.email", "test@test.com"],
+      cwd=repo,
+      check=True,
+      capture_output=True,
+    )
+    (repo / "file.txt").write_text("content")
+    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+      ["git", "commit", "-m", "initial"],
+      cwd=repo,
+      check=True,
+      capture_output=True,
+    )
+    return repo
+
+  def test_pull_in_allowed_commands_by_default(self) -> None:
+    config = GitToolConfig()
+    assert "pull" in config.allowed_commands
+
+  def test_pull_in_auto_permission_by_default(self) -> None:
+    config = GitToolConfig()
+    assert "pull" in config.auto_permission
+
+  @pytest.mark.asyncio
+  async def test_pull_auto_permission_no_approval_needed(self, git_repo: Path) -> None:
+    """pull is in auto_permission — should not require approval handler."""
+    spec = _git_spec()
+    ctx = _git_context()  # no approval_handler
+
+    result = await spec.execute(operation="pull", path=str(git_repo), ctx=ctx)
+
+    # Without a remote, pull will fail, but the failure should NOT be a
+    # permission denial — it should be a git error about no remote.
+    assert not result.success
+    assert "permission" not in result.error.lower()
+    assert "approval" not in result.error.lower()
+
+  @pytest.mark.asyncio
+  async def test_pull_blocked_when_not_in_allowed_commands(self, git_repo: Path) -> None:
+    config = GitToolConfig(allowed_commands=("status", "log"))
+    spec = _git_spec()
+    ctx = _git_context(config=config)
+
+    result = await spec.execute(operation="pull", path=str(git_repo), ctx=ctx)
+
+    assert not result.success
+    assert "not allowed" in result.error.lower()
+
+
+class TestGitTagOperation:
+  """Tests for the git tag operation."""
+
+  @pytest.fixture
+  def git_repo_with_tags(self, tmp_path: Path) -> Path:
+    """Create a git repo with tags for testing."""
+    repo = tmp_path / "test_repo"
+    repo.mkdir()
+    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+      ["git", "config", "user.name", "Test"],
+      cwd=repo,
+      check=True,
+      capture_output=True,
+    )
+    subprocess.run(
+      ["git", "config", "user.email", "test@test.com"],
+      cwd=repo,
+      check=True,
+      capture_output=True,
+    )
+    (repo / "file.txt").write_text("v1")
+    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+      ["git", "commit", "-m", "first"],
+      cwd=repo,
+      check=True,
+      capture_output=True,
+    )
+    subprocess.run(
+      ["git", "tag", "v1.0.0"],
+      cwd=repo,
+      check=True,
+      capture_output=True,
+    )
+    (repo / "file.txt").write_text("v2")
+    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+      ["git", "commit", "-m", "second"],
+      cwd=repo,
+      check=True,
+      capture_output=True,
+    )
+    subprocess.run(
+      ["git", "tag", "v2.0.0"],
+      cwd=repo,
+      check=True,
+      capture_output=True,
+    )
+    return repo
+
+  @pytest.fixture
+  def git_repo_no_tags(self, tmp_path: Path) -> Path:
+    """Create a git repo with a commit but no tags."""
+    repo = tmp_path / "test_repo"
+    repo.mkdir()
+    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+      ["git", "config", "user.name", "Test"],
+      cwd=repo,
+      check=True,
+      capture_output=True,
+    )
+    subprocess.run(
+      ["git", "config", "user.email", "test@test.com"],
+      cwd=repo,
+      check=True,
+      capture_output=True,
+    )
+    (repo / "file.txt").write_text("content")
+    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+      ["git", "commit", "-m", "initial"],
+      cwd=repo,
+      check=True,
+      capture_output=True,
+    )
+    return repo
+
+  def test_tag_in_allowed_commands_by_default(self) -> None:
+    config = GitToolConfig()
+    assert "tag" in config.allowed_commands
+
+  def test_tag_in_auto_permission_by_default(self) -> None:
+    config = GitToolConfig()
+    assert "tag" in config.auto_permission
+
+  @pytest.mark.asyncio
+  async def test_tag_list_returns_all_tags(self, git_repo_with_tags: Path) -> None:
+    spec = _git_spec()
+    ctx = _git_context()
+
+    result = await spec.execute(
+      operation="tag",
+      path=str(git_repo_with_tags),
+      ctx=ctx,
+      args={"list": True},
+    )
+
+    assert result.success
+    assert "v1.0.0" in result.result
+    assert "v2.0.0" in result.result
+
+  @pytest.mark.asyncio
+  async def test_tag_default_lists_all_tags(self, git_repo_with_tags: Path) -> None:
+    """When neither list nor last is set, defaults to list behavior."""
+    spec = _git_spec()
+    ctx = _git_context()
+
+    result = await spec.execute(
+      operation="tag",
+      path=str(git_repo_with_tags),
+      ctx=ctx,
+    )
+
+    assert result.success
+    assert "v1.0.0" in result.result
+    assert "v2.0.0" in result.result
+
+  @pytest.mark.asyncio
+  async def test_tag_last_returns_most_recent(self, git_repo_with_tags: Path) -> None:
+    spec = _git_spec()
+    ctx = _git_context()
+
+    result = await spec.execute(
+      operation="tag",
+      path=str(git_repo_with_tags),
+      ctx=ctx,
+      args={"last": True},
+    )
+
+    assert result.success
+    assert result.result == "v2.0.0"
+
+  @pytest.mark.asyncio
+  async def test_tag_last_no_tags_returns_empty(self, git_repo_no_tags: Path) -> None:
+    """git describe fails when no tags exist — should return success with empty string."""
+    spec = _git_spec()
+    ctx = _git_context()
+
+    result = await spec.execute(
+      operation="tag",
+      path=str(git_repo_no_tags),
+      ctx=ctx,
+      args={"last": True},
+    )
+
+    assert result.success
+    assert result.result == ""
+
+  @pytest.mark.asyncio
+  async def test_tag_list_no_tags_returns_empty(self, git_repo_no_tags: Path) -> None:
+    """git tag --sort with no tags should succeed with empty output."""
+    spec = _git_spec()
+    ctx = _git_context()
+
+    result = await spec.execute(
+      operation="tag",
+      path=str(git_repo_no_tags),
+      ctx=ctx,
+      args={"list": True},
+    )
+
+    assert result.success
+    assert result.result == "(no output)"
+
+  @pytest.mark.asyncio
+  async def test_tag_auto_permission_no_approval_needed(self, git_repo_with_tags: Path) -> None:
+    """tag is in auto_permission — should not require approval handler."""
+    spec = _git_spec()
+    ctx = _git_context()  # no approval_handler
+
+    result = await spec.execute(
+      operation="tag",
+      path=str(git_repo_with_tags),
+      ctx=ctx,
+      args={"last": True},
+    )
+
+    assert result.success
+
+
+class TestGitBranchShowCurrent:
+  """Tests for the branch show_current argument."""
+
+  @pytest.fixture
+  def git_repo(self, tmp_path: Path) -> Path:
+    """Create a git repo with a branch."""
+    repo = tmp_path / "test_repo"
+    repo.mkdir()
+    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+      ["git", "config", "user.name", "Test"],
+      cwd=repo,
+      check=True,
+      capture_output=True,
+    )
+    subprocess.run(
+      ["git", "config", "user.email", "test@test.com"],
+      cwd=repo,
+      check=True,
+      capture_output=True,
+    )
+    (repo / "file.txt").write_text("content")
+    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+      ["git", "commit", "-m", "initial"],
+      cwd=repo,
+      check=True,
+      capture_output=True,
+    )
+    subprocess.run(
+      ["git", "branch", "feature"],
+      cwd=repo,
+      check=True,
+      capture_output=True,
+    )
+    return repo
+
+  @pytest.mark.asyncio
+  async def test_show_current_returns_branch_name(self, git_repo: Path) -> None:
+    spec = _git_spec()
+    ctx = _git_context()
+
+    result = await spec.execute(
+      operation="branch",
+      path=str(git_repo),
+      ctx=ctx,
+      args={"show_current": True},
+    )
+
+    assert result.success
+    # Default branch is main or master depending on git config.
+    assert result.result in ("main", "master")
+
+  @pytest.mark.asyncio
+  async def test_show_current_after_checkout(self, git_repo: Path) -> None:
+    spec = _git_spec()
+    ctx = _git_context()
+
+    # Checkout the feature branch first.
+    subprocess.run(
+      ["git", "checkout", "feature"],
+      cwd=git_repo,
+      check=True,
+      capture_output=True,
+    )
+
+    result = await spec.execute(
+      operation="branch",
+      path=str(git_repo),
+      ctx=ctx,
+      args={"show_current": True},
+    )
+
+    assert result.success
+    assert result.result == "feature"
+
+  @pytest.mark.asyncio
+  async def test_show_current_ignores_other_args(self, git_repo: Path) -> None:
+    """When show_current is true, other branch args (list, all, remotes) are ignored."""
+    spec = _git_spec()
+    ctx = _git_context()
+
+    result = await spec.execute(
+      operation="branch",
+      path=str(git_repo),
+      ctx=ctx,
+      args={"show_current": True, "list": True, "all": True, "remotes": True},
+    )
+
+    assert result.success
+    # Should return just the branch name, not a multi-line list.
+    assert result.result in ("main", "master")
+    assert "\n" not in result.result

@@ -38,11 +38,11 @@ From dogfooding session: `../c3/docs/yoker-tool-improvements.md`. These changes 
 
 #### Phase 1 — Unblock Project-Manager Workflow (highest urgency)
 
-- [ ] **Git: `pull` operation** — sync current branch with remote upstream. Auto-permit (safe, non-destructive). Needed for post-merge workflow (pull after switching to main before editing TODO.md).
-- [ ] **Git: `tag` operation** — `list: bool` (all tags sorted by creatordate desc), `last: bool` (most recent tag via `git describe --tags --abbrev=0`, returns null if none). Auto-permit (read-only). Needed for version detection in project state report.
-- [ ] **Git: `branch` → `show_current: bool` arg** — return just the current branch name string (`git branch --show-current`). Needed for project state report without parsing full `git status`.
-- [ ] **GitHub: `pr_list` enhanced output** — add `reviewDecision` (APPROVED/REVIEW_REQUIRED/CHANGES_REQUESTED) and `statusCheckRollup` (CI check statuses) fields. Needed for PR CI status at a glance in project state report.
-- [ ] **GitHub: `issue_list` enhanced output** — add `labels` field (list of label names). Needed for issue triage in project state report.
+- [x] **Git: `pull` operation** — sync current branch with remote upstream. Auto-permit (safe, non-destructive). Needed for post-merge workflow (pull after switching to main before editing TODO.md).
+- [x] **Git: `tag` operation** — `list: bool` (all tags sorted by creatordate desc), `last: bool` (most recent tag via `git describe --tags --abbrev=0`, returns null if none). Auto-permit (read-only). Needed for version detection in project state report.
+- [x] **Git: `branch` → `show_current: bool` arg** — return just the current branch name string (`git branch --show-current`). Needed for project state report without parsing full `git status`.
+- [x] **GitHub: `pr_list` enhanced output** — add `reviewDecision` (APPROVED/REVIEW_REQUIRED/CHANGES_REQUESTED) and `statusCheckRollup` (CI check statuses) fields. Needed for PR CI status at a glance in project state report.
+- [x] **GitHub: `issue_list` enhanced output** — add `labels` field (list of label names). Needed for issue triage in project state report. (Already had `labels` in `--json` fields — verified and tested.)
 
 #### Phase 2 — Unblock PR Feedback Workflow
 

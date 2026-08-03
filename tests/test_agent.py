@@ -58,9 +58,9 @@ class TestAgentInitialization:
       _ = core.agents  # noqa: F841
 
   def test_agent_session_reference_defaults_none(self) -> None:
-    """Agent is Session-agnostic and has no _session attribute."""
+    """Agent is Session-agnostic; _session defaults to None."""
     core = Agent(config=Config())
-    assert not hasattr(core, "_session")
+    assert core._session is None
 
 
 class TestAgentToolRegistry:

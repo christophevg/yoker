@@ -77,10 +77,14 @@ _OPERATION_DISPATCH: dict[str, tuple[list[str], str, str | None]] = {
     "number,title,body,state,labels,author,assignees,comments",
     "number",
   ),
-  "pr_list": (["pr", "list"], "number,title,state,author,headRefName,createdAt", None),
+  "pr_list": (
+    ["pr", "list"],
+    "number,title,state,author,headRefName,createdAt,reviewDecision,statusCheckRollup",
+    None,
+  ),
   "pr_view": (
     ["pr", "view"],
-    "number,title,body,state,author,baseRefName,headRefName,mergeable,files",
+    "number,title,body,state,author,baseRefName,headRefName,mergeable,files,reviewDecision,statusCheckRollup",
     "number",
   ),
   "workflow_list": (

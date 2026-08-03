@@ -8,7 +8,7 @@ import asyncio
 import inspect
 from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from dotenv import load_dotenv
 from structlog import get_logger
@@ -35,11 +35,16 @@ from yoker.tools import ToolRegistry
 from yoker.tools.guardrails import Guardrail
 from yoker.tools.guardrails.path import PathGuardrail
 
+if TYPE_CHECKING:
+  from yoker.session import Session
+
 logger = get_logger(__name__)
 
 
 class Agent:
   """Asynchronous agent that chats with model backends and uses tools."""
+
+  _session: "Session | None" = None
 
   def __init__(
     self,

@@ -508,6 +508,8 @@ class GitToolConfig(ToolConfig):
     "push",
     "checkout",
     "rm",
+    "pull",
+    "tag",
   )
   auto_permission: tuple[str, ...] = (
     "status",
@@ -517,6 +519,8 @@ class GitToolConfig(ToolConfig):
     "show",
     "add",
     "rm",
+    "pull",
+    "tag",
   )
 
 

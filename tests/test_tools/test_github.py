@@ -132,6 +132,38 @@ class TestGithubOperations:
     assert "--state" in cmd  # pr_list accepts --state
 
   @pytest.mark.asyncio
+  async def test_pr_list_json_includes_review_decision_and_ci_status(self, mocker: MockerFixture) -> None:
+    """pr_list --json fields must include reviewDecision and statusCheckRollup."""
+    popen = _mock_popen(mocker, stdout="[]")
+    await github(operation="pr_list", ctx=_ctx(), repo="owner/repo")
+    cmd = popen.call_args.args[0]
+    json_idx = cmd.index("--json")
+    fields = cmd[json_idx + 1]
+    assert "reviewDecision" in fields
+    assert "statusCheckRollup" in fields
+
+  @pytest.mark.asyncio
+  async def test_pr_view_json_includes_review_decision_and_ci_status(self, mocker: MockerFixture) -> None:
+    """pr_view --json fields must include reviewDecision and statusCheckRollup."""
+    popen = _mock_popen(mocker, stdout='{"number":42}')
+    await github(operation="pr_view", ctx=_ctx(), number=42, repo="owner/repo")
+    cmd = popen.call_args.args[0]
+    json_idx = cmd.index("--json")
+    fields = cmd[json_idx + 1]
+    assert "reviewDecision" in fields
+    assert "statusCheckRollup" in fields
+
+  @pytest.mark.asyncio
+  async def test_issue_list_json_includes_labels(self, mocker: MockerFixture) -> None:
+    """issue_list --json fields must include labels."""
+    popen = _mock_popen(mocker, stdout="[]")
+    await github(operation="issue_list", ctx=_ctx(), repo="owner/repo")
+    cmd = popen.call_args.args[0]
+    json_idx = cmd.index("--json")
+    fields = cmd[json_idx + 1]
+    assert "labels" in fields
+
+  @pytest.mark.asyncio
   async def test_pr_view(self, mocker: MockerFixture) -> None:
     popen = _mock_popen(mocker, stdout='{"number":42}')
     await github(operation="pr_view", ctx=_ctx(), number=42, repo="owner/repo")

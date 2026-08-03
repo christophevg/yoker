@@ -67,6 +67,21 @@ OPERATION_ARGS: dict[str, dict[str, dict[str, Any]]] = {
     "list": {"type": "boolean", "description": "List branches"},
     "all": {"type": "boolean", "description": "List all branches (remote and local)"},
     "remotes": {"type": "boolean", "description": "List remote branches"},
+    "show_current": {
+      "type": "boolean",
+      "description": "Return just the current branch name (equivalent to --show-current). When true, all other args are ignored.",
+    },
+  },
+  "pull": {},
+  "tag": {
+    "list": {
+      "type": "boolean",
+      "description": "Return all tags sorted by creatordate descending (default if neither list nor last is set)",
+    },
+    "last": {
+      "type": "boolean",
+      "description": "Return only the most recent tag (equivalent to git describe --tags --abbrev=0). Returns empty if no tags exist.",
+    },
   },
   "show": {
     "format": {"type": "string", "description": "Pretty format string"},
@@ -164,7 +179,7 @@ async def git(
     str,
     Text(
       "Git operation to execute. One of: status, log, diff, branch, show, "
-      "add, commit, push, checkout, rm."
+      "add, commit, push, checkout, rm, pull, tag."
     ),
   ],
   path: Annotated[
@@ -180,14 +195,16 @@ async def git(
       "log: {oneline: bool, n: int (1-100), since: str, until: str, author: str, format: str}\n"
       "diff: {cached: bool (staged changes), stat: bool (diffstat), name_only: bool}\n"
       "  - To diff a specific file, set the 'path' parameter to the file path, not an arg.\n"
-      "branch: {list: bool, all: bool, remotes: bool}\n"
+      "branch: {list: bool, all: bool, remotes: bool, show_current: bool (current branch name only)}\n"
       "show: {format: str, stat: bool}\n"
       "  - To show a specific file, set the 'path' parameter to the file path.\n"
       "add: {all: bool (stage everything), update: bool (stage tracked only), files: [str] (specific files)}\n"
       "commit: {message: str (supports multi-line), all: bool, amend: bool}\n"
       "push: {all: bool, tags: bool, force: bool}\n"
       "checkout: {branch: str (required), create: bool (create new branch with -b), startpoint: str (base for new branch)}\n"
-      "rm: {cached: bool (untrack without deleting), r: bool (recursive), files: [str] (required, specific file paths to remove)}"
+      "rm: {cached: bool (untrack without deleting), r: bool (recursive), files: [str] (required, specific file paths to remove)}\n"
+      "pull: *(no args)* — sync current branch with remote upstream\n"
+      "tag: {list: bool (all tags sorted desc), last: bool (most recent tag only)}"
     ),
   ] = None,
 ) -> ToolResult:
@@ -314,10 +331,20 @@ async def git(
       checkout_pathspecs.append(sanitized_sp)
       args = {k: v for k, v in args.items() if k != "startpoint"}
 
-  try:
-    cmd = _build_command(operation, args, allowed_commands)
-  except ValueError as e:
-    return ToolResult(success=False, error=str(e))
+  # branch --show-current: short-circuit to just the branch name.
+  if operation == "branch" and args.get("show_current"):
+    cmd = ["git", "branch", "--show-current"]
+  # tag: needs special command building (list vs last vs default).
+  elif operation == "tag":
+    cmd = _build_tag_command(args)
+  # pull: no args, just git pull.
+  elif operation == "pull":
+    cmd = ["git", "pull"]
+  else:
+    try:
+      cmd = _build_command(operation, args, allowed_commands)
+    except ValueError as e:
+      return ToolResult(success=False, error=str(e))
 
   if file_arg is not None:
     cmd.extend(["--", file_arg])
@@ -343,6 +370,10 @@ async def git(
       )
       return ToolResult(success=True, result=sanitized_output.strip() or "(no output)")
     else:
+      # tag last: git describe fails when no tags exist — return empty, not error.
+      if operation == "tag" and args.get("last"):
+        logger.info("git_tag_last_none", path=str(work_dir))
+        return ToolResult(success=True, result="")
       sanitized_stderr = _sanitize_output(stderr)
       logger.warning(
         "git_failed",
@@ -509,6 +540,21 @@ def _build_command(
         cmd.append(f"--{key}={sanitized}")
 
   return cmd
+
+
+def _build_tag_command(args: dict[str, Any]) -> list[str]:
+  """Build a git tag command.
+
+  - ``last: true`` → ``git describe --tags --abbrev=0`` (most recent tag)
+  - ``list: true`` or no args → ``git tag --sort=-creatordate`` (all tags, newest first)
+
+  Returns the command list. Caller handles the non-zero exit for ``last``
+  when no tags exist.
+  """
+  if args.get("last", False):
+    return ["git", "describe", "--tags", "--abbrev=0"]
+  # Default to list when neither is set, or when list is explicitly true.
+  return ["git", "tag", "--sort=-creatordate"]
 
 
 def _sanitize_arg(
