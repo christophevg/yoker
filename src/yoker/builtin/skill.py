@@ -26,7 +26,8 @@ def make_skill_tool(skill_registry: "SkillRegistry") -> Any:
     args: Annotated[str, Text("Optional arguments")] = "",
   ) -> ToolResult:
     """Invoke a skill by name to get its full instructions."""
-    s = skill_registry.get(skill_name)
+    resolved_name = skill_registry.resolve(skill_name)
+    s = skill_registry.data.get(resolved_name) if resolved_name else None
 
     if s is None:
       available_skills = ", ".join(sorted(skill_registry.names))
@@ -40,6 +41,7 @@ def make_skill_tool(skill_registry: "SkillRegistry") -> Any:
       "skill() invoked",
       skill_name=skill_name,
       skill_full_name=s.name,
+      resolved_name=resolved_name,
       has_args=bool(args),
     )
 

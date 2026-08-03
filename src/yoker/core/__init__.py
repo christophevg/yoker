@@ -247,14 +247,9 @@ class Agent:
     first one (alphabetically) is used. Raises :class:`SkillError` if no
     match is found.
     """
-    if skill_name in self.skills.data:
-      return skill_name
-    # Bare-name match across namespaces.
-    matches = [
-      key for key, skill in self.skills.data.items() if (skill.simple_name or "") == skill_name
-    ]
-    if matches:
-      return sorted(matches)[0]
+    resolved = self.skills.resolve(skill_name)
+    if resolved:
+      return resolved
     available = ", ".join(sorted(self.skills.names))
     raise SkillError(
       skill_name,
@@ -366,7 +361,8 @@ class Agent:
     """Inject skill context into the conversation."""
     from yoker.skills import format_invocation_block
 
-    skill = self.skills.get(skill_name)
+    resolved_name = self.skills.resolve(skill_name)
+    skill = self.skills.data.get(resolved_name) if resolved_name else None
     if skill is None:
       available = ", ".join(self.skills.names)
       raise SkillError(
@@ -379,6 +375,7 @@ class Agent:
       "skill context injected",
       skill_name=skill_name,
       skill_full_name=skill.name,
+      resolved_name=resolved_name,
       has_args=bool(args),
     )
 

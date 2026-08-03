@@ -67,6 +67,30 @@ class SkillRegistry(UserDict[str, Skill]):
       self.register_all(plugin.skills, namespace=plugin.source)
       logger.info("skills_registered", package=plugin.source, count=len(plugin.skills))
 
+  def resolve(self, name: str) -> str | None:
+    """Resolve a skill name (bare or namespaced) to its registry key.
+
+    When ``name`` is a full registry key (e.g. ``"skills:commit"``), it is
+    returned as-is when present. When ``name`` is a bare simple name (e.g.
+    ``"commit"``), the registry is searched for any skill whose
+    ``simple_name`` matches. If exactly one match is found, that key is
+    returned; if multiple match, the first alphabetically is returned.
+
+    Args:
+      name: Skill name to resolve (may be bare or namespaced).
+
+    Returns:
+      The registry key for the skill, or ``None`` if not found.
+    """
+    if name in self.data:
+      return name
+    matches = [
+      key for key, skill in self.data.items() if (skill.simple_name or "") == name
+    ]
+    if matches:
+      return sorted(matches)[0]
+    return None
+
   @property
   def skills(self) -> list[Skill]:
     """Return all registered skills sorted by name."""

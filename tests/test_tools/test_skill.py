@@ -172,3 +172,49 @@ class TestSkillTool:
 
     assert result.success is True
     assert "<command-args></command-args>" in result.result
+
+  @pytest.mark.asyncio
+  async def test_skill_tool_resolves_bare_name_with_namespace(self) -> None:
+    """Skill tool resolves a bare name to its namespaced key."""
+    skill = Skill(
+      simple_name="commit",
+      namespace="skills",
+      description="Guide git commits",
+      content="# Commit Skill\n\nCreate atomic commits.",
+    )
+    registry = SkillRegistry()
+    registry.register(skill)
+
+    spec = _skill_spec(registry)
+
+    # Invoke with bare name (no namespace prefix)
+    result = await spec.execute(skill_name="commit")
+
+    assert result.success is True
+    assert "<command-name>skills:commit</command-name>" in result.result
+
+  @pytest.mark.asyncio
+  async def test_skill_tool_resolves_bare_name_multiple_namespaces(self) -> None:
+    """Skill tool picks first alphabetical match for ambiguous bare name."""
+    skill_a = Skill(
+      simple_name="test",
+      namespace="alpha",
+      description="Alpha test",
+      content="# Alpha Test",
+    )
+    skill_b = Skill(
+      simple_name="test",
+      namespace="beta",
+      description="Beta test",
+      content="# Beta Test",
+    )
+    registry = SkillRegistry()
+    registry.register(skill_a)
+    registry.register(skill_b)
+
+    spec = _skill_spec(registry)
+
+    result = await spec.execute(skill_name="test")
+
+    assert result.success is True
+    assert "<command-name>alpha:test</command-name>" in result.result

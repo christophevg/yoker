@@ -205,6 +205,72 @@ class TestSkillRegistry:
     assert result2 is not None
     assert result2.namespace == "other"
 
+  def test_resolve_full_name(self) -> None:
+    """resolve() returns the key when a full namespaced name is given."""
+    registry = SkillRegistry()
+    skill = Skill(
+      simple_name="commit",
+      description="Guide commits",
+      content="Content",
+      namespace="skills",
+    )
+    registry.register(skill)
+
+    assert registry.resolve("skills:commit") == "skills:commit"
+
+  def test_resolve_bare_name_single_match(self) -> None:
+    """resolve() finds a bare name across namespaces."""
+    registry = SkillRegistry()
+    skill = Skill(
+      simple_name="commit",
+      description="Guide commits",
+      content="Content",
+      namespace="skills",
+    )
+    registry.register(skill)
+
+    assert registry.resolve("commit") == "skills:commit"
+
+  def test_resolve_bare_name_multiple_matches(self) -> None:
+    """resolve() returns the first alphabetical match for ambiguous bare names."""
+    registry = SkillRegistry()
+    skill_a = Skill(
+      simple_name="test",
+      description="A",
+      content="Content",
+      namespace="alpha",
+    )
+    skill_b = Skill(
+      simple_name="test",
+      description="B",
+      content="Content",
+      namespace="beta",
+    )
+    registry.register(skill_a)
+    registry.register(skill_b)
+
+    assert registry.resolve("test") == "alpha:test"
+
+  def test_resolve_bare_name_no_namespace(self) -> None:
+    """resolve() finds a bare skill with no namespace."""
+    registry = SkillRegistry()
+    skill = Skill(simple_name="commit", description="Guide commits", content="Content")
+    registry.register(skill)
+
+    assert registry.resolve("commit") == "commit"
+
+  def test_resolve_nonexistent(self) -> None:
+    """resolve() returns None for unknown skill names."""
+    registry = SkillRegistry()
+
+    assert registry.resolve("nonexistent") is None
+
+  def test_resolve_empty_registry(self) -> None:
+    """resolve() returns None when the registry is empty."""
+    registry = SkillRegistry()
+
+    assert registry.resolve("anything") is None
+
 
 class TestCreateDefaultSkillRegistry:
   """Tests for create_default_skill_registry function."""
