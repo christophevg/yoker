@@ -108,3 +108,50 @@ class TestAgentsCommand:
 
     # Both should return the same output
     assert result1 == result2
+
+  @pytest.mark.asyncio
+  async def test_agents_command_lists_known_agents(self) -> None:
+    """Test that known agents from the session registry are listed."""
+    current_def = AgentDefinition(
+      simple_name="current-agent",
+      description="The active agent",
+      tools=(),
+    )
+    other_def = AgentDefinition(
+      simple_name="researcher",
+      description="A research agent",
+      tools=("read", "search"),
+    )
+
+    agent = self._make_agent(
+      agent_def=current_def,
+      plugin_agents=[current_def, other_def],
+    )
+    command = create_agents_command()
+    result = await command.handler("", agent, Mock())
+
+    assert "Known agents:" in result
+    assert "No agents configured." not in result
+    assert "current-agent" in result
+    assert "researcher" in result
+    assert "A research agent" in result
+
+  @pytest.mark.asyncio
+  async def test_agents_command_no_known_agents_without_session(self) -> None:
+    """Test that known agents shows 'No agents configured' when no session."""
+    agent_def = AgentDefinition(
+      simple_name="standalone-agent",
+      description="A standalone agent",
+      tools=(),
+    )
+
+    agent = Mock()
+    agent.definition = agent_def
+    # Mock auto-creates attributes; explicitly set _session to None to
+    # simulate a standalone Agent without a Session.
+    agent._session = None
+    command = create_agents_command()
+    result = await command.handler("", agent, Mock())
+
+    assert "Known agents:" in result
+    assert "No agents configured." in result

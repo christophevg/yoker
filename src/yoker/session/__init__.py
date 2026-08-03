@@ -360,6 +360,10 @@ class Session:
       kwargs["thinking_mode"] = thinking_mode
     agent = Agent(**kwargs)
 
+    # Back-reference so UI commands (e.g. /agents) can reach the session's
+    # AgentRegistry through agent._session.
+    agent._session = self
+
     self._agents_map[agent_id] = agent
     self.inject_tools(agent, agent_id)
     if self.config.session.event_aggregation:
