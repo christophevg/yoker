@@ -47,6 +47,10 @@ All items must be complete before public announcement. The version will likely b
 2. **C3 toolset evaluation** — audit C3 agent/skill definitions against yoker toolset. Output: `analysis/c3-toolset-evaluation.md`
 3. **C3 agents/skills porting** — port C3 to work with Yoker (or make dual-compatible). Depends on evaluation.
 4. **Dogfooding Gate** — continuous effort, transitions into normal usage. Passed when owner can do full development workflow without falling back to Claude Code.
+5. **C3 Migration Tool Improvements** — urgent tool changes from dogfooding session (`../c3/docs/yoker-tool-improvements.md`). Three phases:
+   - **Phase 1** (unblock project-manager): Git `pull` op, Git `tag` op (list/last), Git `branch --show-current` arg, GitHub `pr_list` + `reviewDecision`/`statusCheckRollup`, GitHub `issue_list` + `labels`
+   - **Phase 2** (unblock PR feedback): GitHub `pr_reviews` op, GitHub `pr_comments` op, GitHub `pr_view` enhanced (reviewDecision, statusCheckRollup, include_comments)
+   - **Phase 3** (unblock release): GitHub `pr_create` op, GitHub `release_create` op, Config updates for git pull/tag and github write ops
 
 ### Pre-Release Work (ordered by priority)
 

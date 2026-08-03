@@ -32,6 +32,33 @@ All items must be complete before public announcement. The version will likely b
   - Open question: where to host yoker-specific vs claude-specific definitions
   - **Depends on:** C3 toolset evaluation
 
+### Urgent: C3 Migration Tool Improvements
+
+From dogfooding session: `../c3/docs/yoker-tool-improvements.md`. These changes are needed to migrate the release-manager agent (and subsequently other agents/skills) from bash commands to native Yoker tool calls. Phased by priority — each phase unblocks a workflow.
+
+#### Phase 1 — Unblock Project-Manager Workflow (highest urgency)
+
+- [ ] **Git: `pull` operation** — sync current branch with remote upstream. Auto-permit (safe, non-destructive). Needed for post-merge workflow (pull after switching to main before editing TODO.md).
+- [ ] **Git: `tag` operation** — `list: bool` (all tags sorted by creatordate desc), `last: bool` (most recent tag via `git describe --tags --abbrev=0`, returns null if none). Auto-permit (read-only). Needed for version detection in project state report.
+- [ ] **Git: `branch` → `show_current: bool` arg** — return just the current branch name string (`git branch --show-current`). Needed for project state report without parsing full `git status`.
+- [ ] **GitHub: `pr_list` enhanced output** — add `reviewDecision` (APPROVED/REVIEW_REQUIRED/CHANGES_REQUESTED) and `statusCheckRollup` (CI check statuses) fields. Needed for PR CI status at a glance in project state report.
+- [ ] **GitHub: `issue_list` enhanced output** — add `labels` field (list of label names). Needed for issue triage in project state report.
+
+#### Phase 2 — Unblock PR Feedback Workflow
+
+- [ ] **GitHub: `pr_reviews` operation** — get PR review details (id, user, state, body, submitted_at). Auto-permit (read-only). Needed for check PR status workflow.
+- [ ] **GitHub: `pr_comments` operation** — get all PR comments (general + inline code review) with unified format (id, type, user, body, path, line, created_at). Auto-permit (read-only). Needed for PR feedback iteration.
+- [ ] **GitHub: `pr_view` enhanced** — add `reviewDecision`, `statusCheckRollup` fields; new `include_comments: bool` arg (default false) to optionally fetch comments. Avoids always fetching large comment data.
+
+#### Phase 3 — Unblock Release Workflow
+
+- [ ] **GitHub: `pr_create` operation** — create PR (required: repo, title, body; optional: head, base). Write operation — NOT auto-permit, must be explicitly allowed in config. Needed for release and project-manage workflows.
+- [ ] **GitHub: `release_create` operation** — create GitHub release (required: repo, tag, title, notes; optional: draft, prerelease). Write operation — NOT auto-permit, must be explicitly allowed in config. Needed for release workflow.
+- [ ] **Config: Git — add `pull`, `tag` to `allowed_commands` and `auto_permission`** — enable the new git operations in config.
+- [ ] **Config: GitHub — add `pr_create`, `release_create` to `allowed_operations`** — explicitly opt-in for write operations; never auto-permit.
+
+**Source:** `../c3/docs/yoker-tool-improvements.md` (full spec with behavior details, config snippets, and use cases)
+
 ---
 
 ## Pre-Release Work
