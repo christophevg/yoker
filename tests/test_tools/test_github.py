@@ -132,7 +132,9 @@ class TestGithubOperations:
     assert "--state" in cmd  # pr_list accepts --state
 
   @pytest.mark.asyncio
-  async def test_pr_list_json_includes_review_decision_and_ci_status(self, mocker: MockerFixture) -> None:
+  async def test_pr_list_json_includes_review_decision_and_ci_status(
+    self, mocker: MockerFixture
+  ) -> None:
     """pr_list --json fields must include reviewDecision and statusCheckRollup."""
     popen = _mock_popen(mocker, stdout="[]")
     await github(operation="pr_list", ctx=_ctx(), repo="owner/repo")
@@ -143,7 +145,9 @@ class TestGithubOperations:
     assert "statusCheckRollup" in fields
 
   @pytest.mark.asyncio
-  async def test_pr_view_json_includes_review_decision_and_ci_status(self, mocker: MockerFixture) -> None:
+  async def test_pr_view_json_includes_review_decision_and_ci_status(
+    self, mocker: MockerFixture
+  ) -> None:
     """pr_view --json fields must include reviewDecision and statusCheckRollup."""
     popen = _mock_popen(mocker, stdout='{"number":42}')
     await github(operation="pr_view", ctx=_ctx(), number=42, repo="owner/repo")
@@ -234,6 +238,22 @@ class TestGithubOperations:
     assert "--json" not in cmd
 
   @pytest.mark.asyncio
+  async def test_pr_reviews_empty_array_returns_success(self, mocker: MockerFixture) -> None:
+    """pr_reviews with no reviews returns success (empty array from API)."""
+    _mock_popen(mocker, stdout="[]")
+    result = await github(operation="pr_reviews", ctx=_ctx(), repo="owner/repo", number=42)
+    assert result.success
+    assert result.result == "[]"
+
+  @pytest.mark.asyncio
+  async def test_pr_comments_empty_array_returns_success(self, mocker: MockerFixture) -> None:
+    """pr_comments with no comments returns success (empty array from API)."""
+    _mock_popen(mocker, stdout="[]")
+    result = await github(operation="pr_comments", ctx=_ctx(), repo="owner/repo", number=42)
+    assert result.success
+    assert result.result == "[]"
+
+  @pytest.mark.asyncio
   async def test_pr_reviews_requires_repo(self, mocker: MockerFixture) -> None:
     _mock_popen(mocker)
     result = await github(operation="pr_reviews", ctx=_ctx(), number=42)
@@ -278,13 +298,16 @@ class TestGithubOperations:
     assert result.success
     # The result should contain the merged JSON with comments
     import json as json_mod
+
     merged = json_mod.loads(result.result)
     assert merged["number"] == 42
     assert "comments" in merged
     assert merged["comments"][0]["id"] == 1
 
   @pytest.mark.asyncio
-  async def test_pr_view_without_include_comments_no_extra_call(self, mocker: MockerFixture) -> None:
+  async def test_pr_view_without_include_comments_no_extra_call(
+    self, mocker: MockerFixture
+  ) -> None:
     """pr_view without include_comments does NOT make a second gh api call."""
     popen = _mock_popen(mocker, stdout='{"number": 42}')
     result = await github(
@@ -302,6 +325,404 @@ class TestGithubOperations:
     )
     assert not result.success
     assert "include_comments" in result.error
+
+
+class TestGithubWriteOperations:
+  """Tests for pr_create and release_create write operations."""
+
+  @pytest.mark.asyncio
+  async def test_pr_create_builds_correct_command(self, mocker: MockerFixture) -> None:
+    """pr_create builds gh pr create with --title= and --body=, no --json."""
+    popen = _mock_popen(
+      mocker, stdout="https://github.com/owner/repo/pull/42"
+    )
+    cfg = GitHubToolConfig(allowed_operations=("pr_create",))
+    await github(
+      operation="pr_create",
+      ctx=_ctx(cfg),
+      repo="owner/repo",
+      title="Fix bug",
+      body="This fixes the bug.",
+    )
+    cmd = popen.call_args.args[0]
+    assert cmd[:3] == ["gh", "pr", "create"]
+    assert "--repo" in cmd and "owner/repo" in cmd
+    assert "--title=Fix bug" in cmd
+    assert "--body=This fixes the bug." in cmd
+    assert "--json" not in cmd
+
+  @pytest.mark.asyncio
+  async def test_pr_create_with_head_and_base(self, mocker: MockerFixture) -> None:
+    """pr_create includes --head and --base when provided."""
+    popen = _mock_popen(mocker, stdout="https://github.com/owner/repo/pull/42")
+    cfg = GitHubToolConfig(allowed_operations=("pr_create",))
+    await github(
+      operation="pr_create",
+      ctx=_ctx(cfg),
+      repo="owner/repo",
+      title="Fix",
+      body="body",
+      head="feature-branch",
+      base="main",
+    )
+    cmd = popen.call_args.args[0]
+    assert "--head=feature-branch" in cmd
+    assert "--base=main" in cmd
+
+  @pytest.mark.asyncio
+  async def test_pr_create_without_head_base_omits_them(self, mocker: MockerFixture) -> None:
+    """pr_create omits --head and --base when not provided (gh uses defaults)."""
+    popen = _mock_popen(mocker, stdout="https://github.com/owner/repo/pull/42")
+    cfg = GitHubToolConfig(allowed_operations=("pr_create",))
+    await github(
+      operation="pr_create",
+      ctx=_ctx(cfg),
+      repo="owner/repo",
+      title="Fix",
+      body="body",
+    )
+    cmd = popen.call_args.args[0]
+    assert not any(c.startswith("--head=") for c in cmd)
+    assert not any(c.startswith("--base=") for c in cmd)
+
+  @pytest.mark.asyncio
+  async def test_pr_create_not_in_default_allowlist(self, mocker: MockerFixture) -> None:
+    """pr_create is rejected with default config (not in default allowlist)."""
+    _mock_popen(mocker)
+    result = await github(
+      operation="pr_create",
+      ctx=_ctx(),  # default config, no pr_create in allowed_operations
+      repo="owner/repo",
+      title="Fix",
+      body="body",
+    )
+    assert not result.success
+    assert "not allowed" in result.error.lower()
+
+  @pytest.mark.asyncio
+  async def test_pr_create_requires_repo(self, mocker: MockerFixture) -> None:
+    """pr_create requires the repo parameter."""
+    _mock_popen(mocker)
+    cfg = GitHubToolConfig(allowed_operations=("pr_create",))
+    result = await github(
+      operation="pr_create",
+      ctx=_ctx(cfg),
+      title="Fix",
+      body="body",
+    )
+    assert not result.success
+    assert "repo" in result.error.lower()
+
+  @pytest.mark.asyncio
+  async def test_pr_create_requires_title(self, mocker: MockerFixture) -> None:
+    """pr_create requires a non-empty title."""
+    _mock_popen(mocker)
+    cfg = GitHubToolConfig(allowed_operations=("pr_create",))
+    result = await github(
+      operation="pr_create",
+      ctx=_ctx(cfg),
+      repo="owner/repo",
+      title="",
+      body="body",
+    )
+    assert not result.success
+    assert "title" in result.error.lower()
+
+  @pytest.mark.asyncio
+  async def test_pr_create_requires_body(self, mocker: MockerFixture) -> None:
+    """pr_create requires a non-empty body."""
+    _mock_popen(mocker)
+    cfg = GitHubToolConfig(allowed_operations=("pr_create",))
+    result = await github(
+      operation="pr_create",
+      ctx=_ctx(cfg),
+      repo="owner/repo",
+      title="Fix",
+      body="",
+    )
+    assert not result.success
+    assert "body" in result.error.lower()
+
+  @pytest.mark.asyncio
+  async def test_pr_create_rejects_shell_chars_in_title(self, mocker: MockerFixture) -> None:
+    """pr_create rejects shell metacharacters in title (except newlines)."""
+    _mock_popen(mocker)
+    cfg = GitHubToolConfig(allowed_operations=("pr_create",))
+    result = await github(
+      operation="pr_create",
+      ctx=_ctx(cfg),
+      repo="owner/repo",
+      title="Fix; rm -rf /",
+      body="body",
+    )
+    assert not result.success
+    assert "forbidden" in result.error.lower()
+
+  @pytest.mark.asyncio
+  async def test_pr_create_allows_newlines_in_body(self, mocker: MockerFixture) -> None:
+    """pr_create allows newlines in body (multi-line PR description)."""
+    popen = _mock_popen(mocker, stdout='{"number": 42}')
+    cfg = GitHubToolConfig(allowed_operations=("pr_create",))
+    result = await github(
+      operation="pr_create",
+      ctx=_ctx(cfg),
+      repo="owner/repo",
+      title="Fix",
+      body="Line 1\nLine 2\nLine 3",
+    )
+    assert result.success
+    cmd = popen.call_args.args[0]
+    body_arg = [c for c in cmd if c.startswith("--body=")][0]
+    assert "\n" in body_arg
+
+  @pytest.mark.asyncio
+  async def test_pr_create_rejects_leading_dash_head(self, mocker: MockerFixture) -> None:
+    """pr_create rejects head starting with dash (flag injection)."""
+    _mock_popen(mocker)
+    cfg = GitHubToolConfig(allowed_operations=("pr_create",))
+    result = await github(
+      operation="pr_create",
+      ctx=_ctx(cfg),
+      repo="owner/repo",
+      title="Fix",
+      body="body",
+      head="--evil",
+    )
+    assert not result.success
+    assert "dash" in result.error.lower() or "-" in result.error
+
+  @pytest.mark.asyncio
+  async def test_release_create_builds_correct_command(self, mocker: MockerFixture) -> None:
+    """release_create builds gh release create with tag, --title=, --notes=, no --json."""
+    popen = _mock_popen(mocker, stdout="https://github.com/owner/repo/releases/tag/v1.0.0")
+    cfg = GitHubToolConfig(allowed_operations=("release_create",))
+    await github(
+      operation="release_create",
+      ctx=_ctx(cfg),
+      repo="owner/repo",
+      tag="v1.0.0",
+      title="Release v1.0.0",
+      notes="Changes here.",
+    )
+    cmd = popen.call_args.args[0]
+    assert cmd[:3] == ["gh", "release", "create"]
+    assert "--repo" in cmd and "owner/repo" in cmd
+    # tag is positional after --
+    assert "--" in cmd
+    idx = cmd.index("--")
+    assert cmd[idx + 1] == "v1.0.0"
+    assert "--title=Release v1.0.0" in cmd
+    assert "--notes=Changes here." in cmd
+    assert "--json" not in cmd
+
+  @pytest.mark.asyncio
+  async def test_release_create_with_draft_and_prerelease(self, mocker: MockerFixture) -> None:
+    """release_create includes --draft and --prerelease flags when set."""
+    popen = _mock_popen(mocker, stdout="https://github.com/owner/repo/releases/tag/v2.0.0-beta")
+    cfg = GitHubToolConfig(allowed_operations=("release_create",))
+    await github(
+      operation="release_create",
+      ctx=_ctx(cfg),
+      repo="owner/repo",
+      tag="v2.0.0-beta",
+      title="Beta",
+      notes="Beta release.",
+      draft=True,
+      prerelease=True,
+    )
+    cmd = popen.call_args.args[0]
+    assert "--draft" in cmd
+    assert "--prerelease" in cmd
+
+  @pytest.mark.asyncio
+  async def test_release_create_without_draft_prerelease_omits_them(
+    self, mocker: MockerFixture
+  ) -> None:
+    """release_create omits --draft and --prerelease when not set."""
+    popen = _mock_popen(mocker, stdout="https://github.com/owner/repo/releases/tag/v1.0.0")
+    cfg = GitHubToolConfig(allowed_operations=("release_create",))
+    await github(
+      operation="release_create",
+      ctx=_ctx(cfg),
+      repo="owner/repo",
+      tag="v1.0.0",
+      title="Release",
+      notes="Notes",
+    )
+    cmd = popen.call_args.args[0]
+    assert "--draft" not in cmd
+    assert "--prerelease" not in cmd
+
+  @pytest.mark.asyncio
+  async def test_release_create_not_in_default_allowlist(self, mocker: MockerFixture) -> None:
+    """release_create is rejected with default config."""
+    _mock_popen(mocker)
+    result = await github(
+      operation="release_create",
+      ctx=_ctx(),
+      repo="owner/repo",
+      tag="v1.0.0",
+      title="Release",
+      notes="Notes",
+    )
+    assert not result.success
+    assert "not allowed" in result.error.lower()
+
+  @pytest.mark.asyncio
+  async def test_release_create_requires_repo(self, mocker: MockerFixture) -> None:
+    """release_create requires the repo parameter."""
+    _mock_popen(mocker)
+    cfg = GitHubToolConfig(allowed_operations=("release_create",))
+    result = await github(
+      operation="release_create",
+      ctx=_ctx(cfg),
+      tag="v1.0.0",
+      title="Release",
+      notes="Notes",
+    )
+    assert not result.success
+    assert "repo" in result.error.lower()
+
+  @pytest.mark.asyncio
+  async def test_release_create_requires_tag(self, mocker: MockerFixture) -> None:
+    """release_create requires a tag."""
+    _mock_popen(mocker)
+    cfg = GitHubToolConfig(allowed_operations=("release_create",))
+    result = await github(
+      operation="release_create",
+      ctx=_ctx(cfg),
+      repo="owner/repo",
+      tag="",
+      title="Release",
+      notes="Notes",
+    )
+    assert not result.success
+    assert "tag" in result.error.lower()
+
+  @pytest.mark.asyncio
+  async def test_release_create_requires_title(self, mocker: MockerFixture) -> None:
+    """release_create requires a title."""
+    _mock_popen(mocker)
+    cfg = GitHubToolConfig(allowed_operations=("release_create",))
+    result = await github(
+      operation="release_create",
+      ctx=_ctx(cfg),
+      repo="owner/repo",
+      tag="v1.0.0",
+      title="",
+      notes="Notes",
+    )
+    assert not result.success
+    assert "title" in result.error.lower()
+
+  @pytest.mark.asyncio
+  async def test_release_create_requires_notes(self, mocker: MockerFixture) -> None:
+    """release_create requires notes."""
+    _mock_popen(mocker)
+    cfg = GitHubToolConfig(allowed_operations=("release_create",))
+    result = await github(
+      operation="release_create",
+      ctx=_ctx(cfg),
+      repo="owner/repo",
+      tag="v1.0.0",
+      title="Release",
+      notes="",
+    )
+    assert not result.success
+    assert "notes" in result.error.lower()
+
+  @pytest.mark.asyncio
+  async def test_release_create_rejects_shell_chars_in_title(self, mocker: MockerFixture) -> None:
+    """release_create rejects shell metacharacters in title."""
+    _mock_popen(mocker)
+    cfg = GitHubToolConfig(allowed_operations=("release_create",))
+    result = await github(
+      operation="release_create",
+      ctx=_ctx(cfg),
+      repo="owner/repo",
+      tag="v1.0.0",
+      title="Release; cat /etc/passwd",
+      notes="Notes",
+    )
+    assert not result.success
+    assert "forbidden" in result.error.lower()
+
+  @pytest.mark.asyncio
+  async def test_release_create_allows_newlines_in_notes(self, mocker: MockerFixture) -> None:
+    """release_create allows newlines in notes (multi-line release notes)."""
+    popen = _mock_popen(mocker, stdout='{"url": "https://example.com"}')
+    cfg = GitHubToolConfig(allowed_operations=("release_create",))
+    result = await github(
+      operation="release_create",
+      ctx=_ctx(cfg),
+      repo="owner/repo",
+      tag="v1.0.0",
+      title="Release",
+      notes="Line 1\nLine 2\nLine 3",
+    )
+    assert result.success
+    cmd = popen.call_args.args[0]
+    notes_arg = [c for c in cmd if c.startswith("--notes=")][0]
+    assert "\n" in notes_arg
+
+  @pytest.mark.asyncio
+  async def test_release_create_rejects_invalid_tag(self, mocker: MockerFixture) -> None:
+    """release_create rejects tag with shell metacharacters."""
+    _mock_popen(mocker)
+    cfg = GitHubToolConfig(allowed_operations=("release_create",))
+    result = await github(
+      operation="release_create",
+      ctx=_ctx(cfg),
+      repo="owner/repo",
+      tag="v1.0;rm -rf /",
+      title="Release",
+      notes="Notes",
+    )
+    assert not result.success
+    assert "tag" in result.error.lower()
+
+  @pytest.mark.asyncio
+  async def test_write_op_returns_success_with_json(self, mocker: MockerFixture) -> None:
+    """pr_create returns success with parsed JSON from URL output."""
+    pr_url = "https://github.com/owner/repo/pull/42"
+    _mock_popen(mocker, stdout=pr_url)
+    cfg = GitHubToolConfig(allowed_operations=("pr_create",))
+    result = await github(
+      operation="pr_create",
+      ctx=_ctx(cfg),
+      repo="owner/repo",
+      title="Fix",
+      body="Body",
+    )
+    assert result.success
+    assert result.content_metadata is not None
+    assert result.content_metadata["operation"] == "github"
+    assert result.content_metadata["path"] == "owner/repo"
+    # The URL output should be parsed into JSON with url and number
+    import json as json_mod
+    parsed = json_mod.loads(result.result)
+    assert parsed["url"] == pr_url
+    assert parsed["number"] == 42
+
+  @pytest.mark.asyncio
+  async def test_release_create_returns_success_with_parsed_url(self, mocker: MockerFixture) -> None:
+    """release_create returns success with parsed JSON from URL output."""
+    release_url = "https://github.com/owner/repo/releases/tag/v1.0.0"
+    _mock_popen(mocker, stdout=release_url)
+    cfg = GitHubToolConfig(allowed_operations=("release_create",))
+    result = await github(
+      operation="release_create",
+      ctx=_ctx(cfg),
+      repo="owner/repo",
+      tag="v1.0.0",
+      title="Release",
+      notes="Notes",
+    )
+    assert result.success
+    import json as json_mod
+    parsed = json_mod.loads(result.result)
+    assert parsed["url"] == release_url
+    assert parsed["tagName"] == "v1.0.0"
 
 
 class TestGithubOperationAllowlist:
@@ -669,6 +1090,14 @@ class TestGithubConfigValidation:
   def test_default_allowlist_has_eleven_ops(self) -> None:
     cfg = GitHubToolConfig()
     assert len(cfg.allowed_operations) == 11
+    # Write ops are NOT in the default allowlist
+    assert "pr_create" not in cfg.allowed_operations
+    assert "release_create" not in cfg.allowed_operations
+
+  def test_write_ops_allowed_when_explicitly_configured(self) -> None:
+    cfg = GitHubToolConfig(allowed_operations=("repo_view", "pr_create", "release_create"))
+    assert "pr_create" in cfg.allowed_operations
+    assert "release_create" in cfg.allowed_operations
 
   def test_invalid_timeout_raises(self) -> None:
     with pytest.raises(ValidationError):

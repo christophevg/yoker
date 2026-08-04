@@ -1,22 +1,27 @@
 """GitHub tool implementation for Yoker.
 
-Wraps the ``gh`` CLI for a fixed set of read-only GitHub operations. The
-operation enum is the security boundary: the agent can only invoke the
-hardcoded ``gh`` subcommands listed in ``_OPERATION_DISPATCH`` — never
-``gh extension``, ``gh auth token``, or any write/destructive
-subcommand. The ``pr_reviews`` and ``pr_comments`` operations use
-``gh api`` with hardcoded REST endpoint templates (still read-only).
+Wraps the ``gh`` CLI for a fixed set of GitHub operations. Read operations
+are auto-permitted via the default allowlist. Write operations (``pr_create``,
+``release_create``) require explicit opt-in via ``allowed_operations`` in
+config — they are never in the default allowlist. The operation enum is the
+security boundary: the agent can only invoke the hardcoded ``gh`` subcommands
+listed in ``_OPERATION_DISPATCH`` — never ``gh extension``, ``gh auth
+token``, or any unlisted subcommand. The ``pr_reviews`` and ``pr_comments``
+operations use ``gh api`` with hardcoded REST endpoint templates (read-only).
 
 Security model
 --------------
 - **Operation enum + allowlist**: ``operation`` must be in the fixed enum
-  AND in ``GitHubToolConfig.allowed_operations`` (default-allow the full
-  read-only MVP set). This is the subcommand-blocking gate.
+  AND in ``GitHubToolConfig.allowed_operations``. Read operations are
+  default-allowed; write operations require explicit config opt-in. This is
+  the subcommand-blocking gate.
 - **No shell**: ``subprocess.Popen`` with list args, ``shell=False``.
 - **Argument-injection defenses**: tight regexes for ``repo``/``tag``/``label``,
   enum check for ``state``, int clamps for ``number``/``limit``, leading-dash
   rejection, ``FORBIDDEN_CHARS`` rejection, ``--`` separator before any
-  user-supplied positional.
+  user-supplied positional. Write-operation flag values (``--title=...``,
+  ``--body=...``, ``--notes=...``) use ``=`` format so values starting with
+  ``-`` are never interpreted as flags.
 - **Process-group kill on timeout (R4)**: ``start_new_session=True`` +
   ``os.killpg(SIGKILL)`` so ``gh`` and any children (pagers, git helpers)
   are cleaned up on timeout. POSIX-only — Windows is refused.
@@ -34,7 +39,7 @@ import re
 import signal
 import subprocess
 import sys
-from typing import Annotated
+from typing import Annotated, Any
 
 from structlog import get_logger
 
@@ -61,8 +66,16 @@ _GITHUB_OPERATIONS: frozenset[str] = frozenset(
     "workflow_view",
     "release_list",
     "release_view",
+    "pr_create",
+    "release_create",
   }
 )
+
+# Operations that modify GitHub state. These require explicit opt-in via
+# ``GitHubToolConfig.allowed_operations`` — they are NOT in the default
+# allowlist. Even when allowed, they are never auto-permitted (the config
+# owner must consciously add them).
+_WRITE_OPS: frozenset[str] = frozenset({"pr_create", "release_create"})
 
 # (gh_subcommand_prefix, --json fields, required_param)
 _OPERATION_DISPATCH: dict[str, tuple[list[str], str, str | None]] = {
@@ -113,6 +126,16 @@ _OPERATION_DISPATCH: dict[str, tuple[list[str], str, str | None]] = {
     None,
   ),
   "release_view": (["release", "view"], "tagName,name,body,assets", "tag"),
+  "pr_create": (
+    ["pr", "create"],
+    "number,url,title,state",
+    None,
+  ),
+  "release_create": (
+    ["release", "create"],
+    "url,tagName,name,isDraft,isPrerelease",
+    None,
+  ),
 }
 
 # Operations that use ``gh api`` instead of a regular ``gh`` subcommand.
@@ -165,17 +188,35 @@ async def github(
   label: Annotated[str, Text("Filter by label (for issue_list)")] = "",
   include_comments: bool = False,
   timeout_ms: int | None = None,
+  # --- pr_create parameters ---
+  title: Annotated[str, Text("PR title (for pr_create)")] = "",
+  body: Annotated[str, Text("PR body/description (for pr_create)")] = "",
+  head: Annotated[str, Text("Source branch for PR (for pr_create)")] = "",
+  base: Annotated[str, Text("Target branch for PR (for pr_create)")] = "",
+  # --- release_create parameters ---
+  notes: Annotated[str, Text("Release notes body (for release_create)")] = "",
+  draft: bool = False,
+  prerelease: bool = False,
 ) -> ToolResult:
-  """Perform a read-only GitHub operation via the ``gh`` CLI.
+  """Perform a GitHub operation via the ``gh`` CLI.
 
-  Operations are restricted to a fixed enum (the security boundary) and
-  further gated by ``GitHubToolConfig.allowed_operations``. All commands
+  Read operations are restricted to a fixed enum (the security boundary)
+  and further gated by ``GitHubToolConfig.allowed_operations``. Write
+  operations (``pr_create``, ``release_create``) require explicit opt-in via
+  ``allowed_operations`` — they are NOT in the default allowlist. All commands
   run via ``subprocess`` with list args (no shell); timeout is enforced by
   killing the whole process group.
 
   When ``include_comments=True`` (only for ``pr_view``), a second ``gh api``
   call fetches PR comments and inline review comments, merged into the
   result JSON under a ``comments`` key.
+
+  ``pr_create`` requires ``repo``, ``title``, and ``body``. Optional ``head``
+  (source branch) and ``base`` (target branch) default to the current branch
+  and repo default respectively.
+
+  ``release_create`` requires ``repo``, ``tag``, ``title``, and ``notes``.
+  Optional ``draft`` and ``prerelease`` flags default to false.
   """
   # --- 1. Config type check ---
   gh_config = ctx.config
@@ -200,7 +241,8 @@ async def github(
     logger.info(
       "github_rejected",
       reason="operation_not_allowed",
-      operation=operation,    )
+      operation=operation,
+    )
     return ToolResult(
       success=False,
       error=(f"Operation not allowed: {operation}. Allowed: {list(gh_config.allowed_operations)}"),
@@ -226,6 +268,19 @@ async def github(
       error=f"Operation '{operation}' requires a 'repo' parameter (owner/name)",
     )
 
+  # --- 5d. Write-operation parameter validation ---
+  if operation == "pr_create":
+    werr = _validate_pr_create_params(repo, title, body, head, base)
+    if werr is not None:
+      logger.info("github_rejected", reason="invalid_pr_create_param", error=werr)
+      return ToolResult(success=False, error=werr)
+
+  if operation == "release_create":
+    werr = _validate_release_create_params(repo, tag, title, notes)
+    if werr is not None:
+      logger.info("github_rejected", reason="invalid_release_create_param", error=werr)
+      return ToolResult(success=False, error=werr)
+
   # --- 6. Required-parameter check ---
   _subcmd, _fields, required = _OPERATION_DISPATCH[operation]
   if required == "number" and (number is None or number < 1):
@@ -245,6 +300,7 @@ async def github(
   effective_limit = max(1, min(limit, gh_config.max_results))
 
   cmd = _build_command(operation, repo, number, tag, effective_limit, state, label)
+  cmd.extend(_build_write_args(operation, title, body, head, base, notes, draft, prerelease, tag))
 
   logger.info(
     "github_executing",
@@ -310,6 +366,8 @@ async def github(
   returncode = proc.returncode
   if operation in _API_OPS:
     gh_subcommand = f"gh api {_OPERATION_DISPATCH[operation][0][1]}"
+  elif operation in _WRITE_OPS:
+    gh_subcommand = f"gh {' '.join(_OPERATION_DISPATCH[operation][0])}"
   else:
     gh_subcommand = f"gh {' '.join(_OPERATION_DISPATCH[operation][0])} --json"
 
@@ -317,6 +375,10 @@ async def github(
     # --- pr_view with include_comments: fetch and merge comments ---
     if operation == "pr_view" and include_comments and repo and number:
       stdout_out = _merge_comments(stdout_out, repo, number, effective_timeout_ms)
+
+    # --- Write ops: gh outputs a URL, not JSON. Parse it into a JSON object. ---
+    if operation in _WRITE_OPS:
+      stdout_out = _parse_write_output(operation, stdout_out, tag)
 
     content_metadata = {
       "operation": "github",
@@ -351,6 +413,143 @@ async def github(
     truncated=truncated,
   )
   return ToolResult(success=False, error=friendly)
+
+
+def _validate_text_field(
+  name: str,
+  value: str,
+  min_len: int = 1,
+  max_len: int = 100000,
+) -> str | None:
+  """Validate a free-text field for write operations.
+
+  Uses the same forbidden-char checks as other params but allows newlines
+  (PR bodies and release notes are multi-line). Returns error string or None.
+  """
+  if not value or not isinstance(value, str):
+    return f"Parameter '{name}' is required"
+  if len(value) < min_len:
+    return f"Parameter '{name}' must be at least {min_len} character(s)"
+  if len(value) > max_len:
+    return f"Parameter '{name}' exceeds {max_len} characters"
+  # Reject NUL and shell metacharacters, but allow newlines and tabs.
+  forbidden = _FORBIDDEN_CHARS - {"\n", "\r"}
+  if any(c in value for c in forbidden):
+    return f"Parameter '{name}' contains forbidden character"
+  return None
+
+
+def _validate_branch_name(name: str, field: str) -> str | None:
+  """Validate a git branch name for head/base parameters."""
+  if not name:
+    return None  # optional
+  if not isinstance(name, str):
+    return f"Parameter '{field}' must be a string"
+  if name.startswith("-"):
+    return f"Parameter '{field}' must not start with '-'"
+  if len(name) > 255:
+    return f"Parameter '{field}' exceeds 255 characters"
+  # Allow typical branch name characters: alphanumerics, -, _, /, .
+  if not re.fullmatch(r"[A-Za-z0-9._/-]+", name):
+    return f"Invalid {field} format: {name!r}"
+  if _contains_forbidden(name):
+    return f"Parameter '{field}' contains forbidden character"
+  return None
+
+
+def _validate_pr_create_params(
+  repo: str, title: str, body: str, head: str, base: str
+) -> str | None:
+  """Validate parameters for pr_create operation."""
+  if not repo:
+    return "Parameter 'repo' is required for pr_create"
+  err = _validate_text_field("title", title, max_len=1024)
+  if err is not None:
+    return err
+  err = _validate_text_field("body", body, max_len=100000)
+  if err is not None:
+    return err
+  err = _validate_branch_name(head, "head")
+  if err is not None:
+    return err
+  err = _validate_branch_name(base, "base")
+  if err is not None:
+    return err
+  return None
+
+
+def _validate_release_create_params(repo: str, tag: str, title: str, notes: str) -> str | None:
+  """Validate parameters for release_create operation."""
+  if not repo:
+    return "Parameter 'repo' is required for release_create"
+  if not tag or not isinstance(tag, str):
+    return "Parameter 'tag' is required for release_create"
+  if tag.startswith("-"):
+    return "Parameter 'tag' must not start with '-'"
+  if len(tag) > _MAX_TAG_LABEL_LEN:
+    return f"Parameter 'tag' exceeds {_MAX_TAG_LABEL_LEN} characters"
+  if not _TAG_LABEL_RE.fullmatch(tag):
+    return f"Invalid tag format: {tag!r}"
+  if _contains_forbidden(tag):
+    return "Parameter 'tag' contains forbidden character"
+  err = _validate_text_field("title", title, max_len=1024)
+  if err is not None:
+    return err
+  err = _validate_text_field("notes", notes, max_len=100000)
+  if err is not None:
+    return err
+  return None
+
+
+def _build_write_args(
+  operation: str,
+  title: str,
+  body: str,
+  head: str,
+  base: str,
+  notes: str,
+  draft: bool,
+  prerelease: bool,
+  tag: str,
+) -> list[str]:
+  """Build the extra CLI args for write operations.
+
+  For ``pr_create``: ``--title=...``, ``--body=...``, optional ``--head=...``,
+  ``--base=...``.
+  For ``release_create``: positional tag, ``--title=...``, ``--notes=...``,
+  optional ``--draft``, ``--prerelease``.
+
+  Uses ``=`` format (``--title=value``) so values starting with ``-`` are
+  treated as the flag's value, not as a new flag. This is defense-in-depth:
+  the values are already validated to not start with ``-`` (branch names,
+  tag) or are free-text (title, body, notes) where leading ``-`` is
+  acceptable because ``=`` unambiguously assigns the value.
+  """
+  if operation == "pr_create":
+    args: list[str] = [
+      f"--title={title}",
+      f"--body={body}",
+    ]
+    if head:
+      args.append(f"--head={head}")
+    if base:
+      args.append(f"--base={base}")
+    return args
+
+  if operation == "release_create":
+    args = [
+      "--",
+      tag,
+      f"--title={title}",
+      f"--notes={notes}",
+    ]
+    if draft:
+      args.append("--draft")
+    if prerelease:
+      args.append("--prerelease")
+    return args
+
+  return []
 
 
 def _validate_params(
@@ -482,7 +681,10 @@ def _build_command(
   if operation in _LIMIT_OPS:
     cmd.extend(["--limit", str(limit)])
 
-  cmd.extend(["--json", fields])
+  # Write operations (pr_create, release_create) don't support --json;
+  # they output a URL on success which is parsed separately.
+  if operation not in _WRITE_OPS:
+    cmd.extend(["--json", fields])
 
   if required == "number":
     cmd.extend(["--", str(number)])
@@ -495,8 +697,9 @@ def _build_command(
 def _api_jq_fields(fields: str) -> str:
   """Convert a comma-separated field list to a ``--jq`` expression for ``gh api``.
 
-  Maps field names to their JSON keys, handling ``user`` → ``.user.login``
-  and ``state`` → ``.state`` (already a string for reviews).
+  Wraps in ``[.[] | { ... }]`` so the expression iterates over array
+  elements. When the API returns ``[]`` (empty array), ``.[]`` produces no
+  values and the result is ``[]`` — no error.
   """
   field_map = {
     "id": ".id",
@@ -509,7 +712,30 @@ def _api_jq_fields(fields: str) -> str:
     "created_at": ".created_at",
   }
   parts = [f"{f}: {field_map.get(f, f'.{f}')}" for f in fields.split(",")]
-  return "{" + ", ".join(parts) + "}"
+  return "[.[] | {" + ", ".join(parts) + "}]"
+
+
+def _parse_write_output(operation: str, stdout: str, tag: str) -> str:
+  """Parse the text output of a write operation into a JSON object.
+
+  ``gh pr create`` outputs a URL like ``https://github.com/owner/repo/pull/42``.
+  ``gh release create`` outputs a URL like ``https://github.com/owner/repo/releases/tag/v1.0``.
+
+  Returns a JSON string with a ``url`` field and, for PRs, an extracted ``number``.
+  Falls back to ``{"url": stdout.strip()}`` if parsing fails.
+  """
+  url = stdout.strip()
+  result: dict[str, Any] = {"url": url}
+
+  if operation == "pr_create":
+    # Extract PR number from URL: .../pull/42
+    match = re.search(r"/pull/(\d+)", url)
+    if match:
+      result["number"] = int(match.group(1))
+  elif operation == "release_create":
+    result["tagName"] = tag
+
+  return json.dumps(result)
 
 
 def _merge_comments(pr_json: str, repo: str, number: int, timeout_ms: int) -> str:

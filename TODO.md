@@ -52,10 +52,10 @@ From dogfooding session: `../c3/docs/yoker-tool-improvements.md`. These changes 
 
 #### Phase 3 — Unblock Release Workflow
 
-- [ ] **GitHub: `pr_create` operation** — create PR (required: repo, title, body; optional: head, base). Write operation — NOT auto-permit, must be explicitly allowed in config. Needed for release and project-manage workflows.
-- [ ] **GitHub: `release_create` operation** — create GitHub release (required: repo, tag, title, notes; optional: draft, prerelease). Write operation — NOT auto-permit, must be explicitly allowed in config. Needed for release workflow.
-- [ ] **Config: Git — add `pull`, `tag` to `allowed_commands` and `auto_permission`** — enable the new git operations in config.
-- [ ] **Config: GitHub — add `pr_create`, `release_create` to `allowed_operations`** — explicitly opt-in for write operations; never auto-permit.
+- [x] **GitHub: `pr_create` operation** — create PR (required: repo, title, body; optional: head, base). Write operation — NOT auto-permit, must be explicitly allowed in config. Needed for release and project-manage workflows.
+- [x] **GitHub: `release_create` operation** — create GitHub release (required: repo, tag, title, notes; optional: draft, prerelease). Write operation — NOT auto-permit, must be explicitly allowed in config. Needed for release workflow.
+- [x] **Config: Git — add `pull`, `tag` to `allowed_commands` and `auto_permission`** — enable the new git operations in config.
+- [x] **Config: GitHub — add `pr_create`, `release_create` to `allowed_operations`** — explicitly opt-in for write operations; never auto-permit.
 
 **Source:** `../c3/docs/yoker-tool-improvements.md` (full spec with behavior details, config snippets, and use cases)
 

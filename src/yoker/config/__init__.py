@@ -565,14 +565,32 @@ class GitHubToolConfig(ToolConfig):
     allowed_operations: Operations the agent is permitted to run. This is the
       subcommand-blocking security boundary. Defaults to the full read-only
       MVP set. Operations in the fixed enum but not in this list are
-      rejected. An empty list disables the tool effectively (when combined
-      with ``enabled = true``; setting ``enabled = false`` is the cleaner
-      off-switch).
+      rejected. Write operations (``pr_create``, ``release_create``) are in
+      the enum but NOT in the default allowlist — the config owner must
+      explicitly add them to enable write operations. An empty list
+      disables the tool effectively (when combined with ``enabled = true``;
+      setting ``enabled = false`` is the cleaner off-switch).
     timeout_ms: Default per-call timeout in milliseconds.
     max_results: Upper bound for the ``limit`` parameter on list operations.
     require_explicit_repo: If True, the ``repo`` parameter is required (gh
-      auto-detection from git remote is disabled).    max_output_kb: Per-stream (stdout/stderr) truncation limit in KB.
+      auto-detection from git remote is disabled).
+    max_output_kb: Per-stream (stdout/stderr) truncation limit in KB.
+
+  To enable write operations (PR creation, release creation), add them to
+  ``allowed_operations`` in ``yoker.toml``:
+
+  .. code-block:: toml
+
+      [tools.github]
+      allowed_operations = [
+        "repo_view", "issue_list", "issue_view", "pr_list", "pr_view",
+        "pr_reviews", "pr_comments",
+        "workflow_list", "workflow_view",
+        "release_list", "release_view",
+        "pr_create", "release_create"
+      ]
   """
+
   allowed_operations: tuple[str, ...] = (
     "repo_view",
     "issue_list",
