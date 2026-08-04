@@ -4,6 +4,12 @@
 
 All items must be complete before public announcement. The version will likely be 0.10.0, not 1.0.0 — minor versioning continues until the backlog is exhausted.
 
+### Unsorted New Input
+
+The following items need to be triaged...
+
+- on network error: retry with some time interval for a configurable number/time (post-release)
+
 ### In Progress
 
 - [ ] **MBI-005: Two Assistant Packages**
