@@ -44,7 +44,7 @@ from typing import Annotated, Any
 from structlog import get_logger
 
 from yoker.config import GitHubToolConfig
-from yoker.tools.annotations import Text
+from yoker.tools.annotations import Text, tool
 from yoker.tools.context import ToolContext
 from yoker.tools.schema import ToolResult
 
@@ -159,7 +159,7 @@ _FORBIDDEN_CHARS: frozenset[str] = frozenset({";", "|", "&", "$", "`", "\n", "\r
 
 _MAX_REPO_LEN = 100
 _MAX_TAG_LABEL_LEN = 100
-_MAX_NUMBER = 2**31 - 1
+_MAX_NUMBER = 2**63 - 1  # GitHub run IDs are 64-bit integers; PR/issue numbers are much smaller
 
 _TRUNCATION_NOTICE = "\n... [truncated]\n"
 
@@ -177,17 +177,69 @@ _REDACT_PATTERNS: list[tuple[re.Pattern[str], str]] = [
 _REDACT_REPLACEMENT = "<redacted>"
 
 
+@tool(
+  description=(
+    "Perform a GitHub operation via the ``gh`` CLI.\n"
+    "\n"
+    "Operations:\n"
+    "  repo_view      — View repository info. Optional: repo.\n"
+    "  issue_list     — List issues. Optional: repo, limit, state, label.\n"
+    "  issue_view     — View an issue. Required: number. Optional: repo.\n"
+    "  pr_list        — List pull requests. Optional: repo, limit, state.\n"
+    "  pr_view        — View a pull request. Required: number. Optional: repo, include_comments.\n"
+    "  pr_reviews     — List PR reviews. Required: repo, number.\n"
+    "  pr_comments    — List PR inline review comments. Required: repo, number.\n"
+    "  workflow_list  — List workflow runs (CI). Optional: repo, limit.\n"
+    "  workflow_view  — View a workflow run (CI). Required: number (run ID). Optional: repo.\n"
+    "  release_list   — List releases. Optional: repo, limit.\n"
+    "  release_view   — View a release. Required: tag. Optional: repo.\n"
+    "  pr_create      — Create a PR. Required: repo, title, body. Optional: head, base.\n"
+    "  release_create — Create a release. Required: repo, tag, title, notes. Optional: draft, prerelease.\n"
+    "\n"
+    "Common parameters:\n"
+    '  repo    — "owner/name" (e.g. "octocat/Hello-World"). If omitted, uses current git repo.\n'
+    "  number  — Issue/PR number or workflow run ID (integer >= 1).\n"
+    '  state   — Filter: "open", "closed", or "all" (default: "open"). Only for list operations.\n'
+    "  limit   — Max items for list operations (default: 30, max: config ceiling).\n"
+    "  include_comments — If True, fetch and merge PR comments into pr_view output (only for pr_view).\n"
+    "  timeout_ms — Override default timeout in milliseconds (clamped to config ceiling).\n"
+    "  draft   — Mark release as draft (only for release_create).\n"
+    "  prerelease — Mark release as prerelease (only for release_create).\n"
+    "  post_filter — Optional regex to filter output lines (e.g. 'error|warning')."
+  )
+)
 async def github(
-  operation: Annotated[str, Text("GitHub operation from the allowlist")],
+  operation: Annotated[
+    str,
+    Text(
+      "GitHub operation. One of: repo_view, issue_list, issue_view, pr_list, "
+      "pr_view, pr_reviews, pr_comments, workflow_list, workflow_view, "
+      "release_list, release_view, pr_create, release_create."
+    ),
+  ],
   ctx: ToolContext,
   repo: Annotated[str, Text("Repository as owner/name")] = "",
-  number: int | None = None,
+  number: Annotated[
+    int | None,
+    Text(
+      "Issue/PR number or workflow run ID (required for issue_view, pr_view, workflow_view, pr_reviews, pr_comments)"
+    ),
+  ] = None,
   tag: Annotated[str, Text("Release tag (for release_view)")] = "",
-  limit: int = 30,
-  state: str = "open",
+  limit: Annotated[int, Text("Max items to return for list operations (default: 30)")] = 30,
+  state: Annotated[
+    str,
+    Text(
+      "Filter by state: 'open', 'closed', or 'all' (default: 'open', only for issue_list and pr_list)"
+    ),
+  ] = "open",
   label: Annotated[str, Text("Filter by label (for issue_list)")] = "",
-  include_comments: bool = False,
-  timeout_ms: int | None = None,
+  include_comments: Annotated[
+    bool, Text("If True, fetch and merge PR comments into pr_view output (only for pr_view)")
+  ] = False,
+  timeout_ms: Annotated[
+    int | None, Text("Override default timeout in milliseconds (clamped to config ceiling)")
+  ] = None,
   # --- pr_create parameters ---
   title: Annotated[str, Text("PR title (for pr_create)")] = "",
   body: Annotated[str, Text("PR body/description (for pr_create)")] = "",
@@ -195,8 +247,8 @@ async def github(
   base: Annotated[str, Text("Target branch for PR (for pr_create)")] = "",
   # --- release_create parameters ---
   notes: Annotated[str, Text("Release notes body (for release_create)")] = "",
-  draft: bool = False,
-  prerelease: bool = False,
+  draft: Annotated[bool, Text("Mark release as draft (only for release_create)")] = False,
+  prerelease: Annotated[bool, Text("Mark release as prerelease (only for release_create)")] = False,
 ) -> ToolResult:
   """Perform a GitHub operation via the ``gh`` CLI.
 
