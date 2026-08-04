@@ -761,11 +761,11 @@ make check    # Type checking + linting
 make docs     # Build documentation
 ```
 
-Requires Python 3.10+. Uses [uv](https://docs.astral.sh/uv/) for dependency management. See [CLAUDE.md](CLAUDE.md) for project conventions.
+Requires Python 3.10+. Uses [uv](https://docs.astral.sh/uv/) for dependency management. See [AGENTS.md](AGENTS.md) for project conventions.
 
 ## Contributing
 
-Contributions welcome! Please read [CLAUDE.md](CLAUDE.md) for project conventions and development guidelines.
+Contributions welcome! Please read [AGENTS.md](AGENTS.md) for project conventions and development guidelines.
 
 ## Changelog
 
