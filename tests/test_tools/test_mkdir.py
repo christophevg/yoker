@@ -270,7 +270,10 @@ class TestMkdirToolSymlinkRejection:
     target_dir = tmp_path / "target"
     target_dir.mkdir()
     symlink_path = tmp_path / "link_to_dir"
-    symlink_path.symlink_to(target_dir)
+    try:
+      symlink_path.symlink_to(target_dir)
+    except OSError:
+      pytest.skip("Symlinks not supported on this platform")
 
     result = await spec.execute(path=str(symlink_path), ctx=ctx)
 
@@ -291,7 +294,10 @@ class TestMkdirToolSymlinkRejection:
     target.mkdir()
     # Create symlink to directory
     symlink = tmp_path / "symlink"
-    symlink.symlink_to(target)
+    try:
+      symlink.symlink_to(target)
+    except OSError:
+      pytest.skip("Symlinks not supported on this platform")
 
     result = await spec.execute(path=str(symlink), ctx=ctx)
 
@@ -311,7 +317,10 @@ class TestMkdirToolSymlinkRejection:
     target = tmp_path / "target"
     target.mkdir()
     symlink = tmp_path / "symlink"
-    symlink.symlink_to(target)
+    try:
+      symlink.symlink_to(target)
+    except OSError:
+      pytest.skip("Symlinks not supported on this platform")
 
     # Try to create a subdirectory through the symlink
     result = await spec.execute(path=str(symlink / "subdir"), ctx=ctx)

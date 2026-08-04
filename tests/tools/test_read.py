@@ -1,5 +1,6 @@
 """Tests for read tool."""
 
+import sys
 from pathlib import Path
 
 import pytest
@@ -75,6 +76,7 @@ class TestReadTool:
     assert result.result == ""
     assert "not found" in result.error.lower()
 
+  @pytest.mark.skipif(sys.platform == "win32", reason="/dev/null is Unix-only")
   @pytest.mark.asyncio
   async def test_read_result_is_toolresult(self) -> None:
     """read tool execute returns ToolResult."""
@@ -114,7 +116,10 @@ class TestReadTool:
     target = tmp_path / "target.txt"
     target.write_text("secret")
     link = tmp_path / "link.txt"
-    link.symlink_to(target)
+    try:
+      link.symlink_to(target)
+    except OSError:
+      pytest.skip("Symlinks not supported on this platform")
     spec = _read_spec()
     ctx = _read_context()
     result = await spec.execute(path=str(link), ctx=ctx)
@@ -208,6 +213,7 @@ class TestReadTool:
     assert result.success is False
     assert result.error
 
+  @pytest.mark.skipif(sys.platform == "win32", reason="/dev is Unix-only")
   @pytest.mark.asyncio
   async def test_read_permission_denied(self) -> None:
     """read tool handles permission denied."""

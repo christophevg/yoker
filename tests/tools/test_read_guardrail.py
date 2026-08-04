@@ -161,7 +161,10 @@ class TestReadToolGuardrailIntegration:
     outside.write_text("outside content")
     # Create a symlink inside the allowed root pointing outside
     link = tmp_path / "link.txt"
-    link.symlink_to(outside)
+    try:
+      link.symlink_to(outside)
+    except OSError:
+      pytest.skip("Symlinks not supported on this platform")
     spec = _read_spec()
     result = await spec.execute(path=str(link), ctx=_mock_ctx())
     # Tool-layer blocks symlinks before guardrail even runs

@@ -3,6 +3,8 @@
 import os
 from pathlib import Path
 
+import pytest
+
 from yoker.config import (
   Config,
   PermissionsConfig,
@@ -152,7 +154,10 @@ class TestPathGuardrail:
     outside = tmp_path / ".." / "outside.txt"
     outside.write_text("secret")
     symlink = tmp_path / "link.txt"
-    os.symlink(str(outside), str(symlink))
+    try:
+      os.symlink(str(outside), str(symlink))
+    except OSError:
+      pytest.skip("Symlinks not supported on this platform")
     config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
     guardrail = PathGuardrail(config)
     result = guardrail.validate("read", {"path": str(symlink)})
@@ -164,7 +169,10 @@ class TestPathGuardrail:
     target = tmp_path / "target.txt"
     target.write_text("hello")
     symlink = tmp_path / "link.txt"
-    os.symlink(str(target), str(symlink))
+    try:
+      os.symlink(str(target), str(symlink))
+    except OSError:
+      pytest.skip("Symlinks not supported on this platform")
     config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
     guardrail = PathGuardrail(config)
     result = guardrail.validate("read", {"path": str(symlink)})

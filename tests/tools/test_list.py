@@ -225,7 +225,10 @@ class TestListTool:
     target.mkdir()
     (target / "inside.txt").write_text("hello")
     symlink = tmp_path / "link"
-    os.symlink(str(target), str(symlink))
+    try:
+      os.symlink(str(target), str(symlink))
+    except OSError:
+      pytest.skip("Symlinks not supported on this platform")
 
     spec = _list_spec()
     ctx = _list_context()

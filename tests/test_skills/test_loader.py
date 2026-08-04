@@ -325,7 +325,10 @@ Content
 
     # Create symlink
     symlink = tmp_path / "link.md"
-    symlink.symlink_to(actual_file)
+    try:
+      symlink.symlink_to(actual_file)
+    except OSError:
+      pytest.skip("Symlinks not supported on this platform")
 
     # Should resolve symlink and validate
     skill = load_skill(symlink, allowed_paths=[str(tmp_path)])

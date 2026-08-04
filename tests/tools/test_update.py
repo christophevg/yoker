@@ -235,7 +235,10 @@ class TestUpdateTool:
     target = tmp_path / "target.txt"
     target.write_text("target content")
     link = tmp_path / "link.txt"
-    link.symlink_to(target)
+    try:
+      link.symlink_to(target)
+    except OSError:
+      pytest.skip("Symlinks not supported on this platform")
     spec = _update_spec()
     ctx = _update_context()
     result = await spec.execute(

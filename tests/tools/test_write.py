@@ -1,6 +1,7 @@
 """Tests for write tool."""
 
 import platform
+import sys
 from pathlib import Path
 
 import pytest
@@ -127,7 +128,10 @@ class TestWriteTool:
     target = tmp_path / "target.txt"
     target.write_text("secret")
     link = tmp_path / "link.txt"
-    link.symlink_to(target)
+    try:
+      link.symlink_to(target)
+    except OSError:
+      pytest.skip("Symlinks not supported on this platform")
     spec = _write_spec()
     ctx = _write_context()
     result = await spec.execute(path=str(link), content="new data", ctx=ctx)
@@ -262,6 +266,7 @@ class TestWriteTool:
     assert result.success is False
     assert "invalid path" in result.error.lower()
 
+  @pytest.mark.skipif(sys.platform == "win32", reason="/dev/null is Unix-only")
   @pytest.mark.asyncio
   async def test_write_result_is_toolresult(self) -> None:
     """write tool execute returns ToolResult."""
@@ -300,7 +305,10 @@ class TestWriteTool:
     target = tmp_path / "target.txt"
     target.write_text("allowed target")
     link = tmp_path / "link.txt"
-    link.symlink_to(target)
+    try:
+      link.symlink_to(target)
+    except OSError:
+      pytest.skip("Symlinks not supported on this platform")
     spec = _write_spec()
     ctx = _write_context()
     result = await spec.execute(path=str(link), content="new data", ctx=ctx)
