@@ -357,6 +357,28 @@ class TestGitToolReadOnlyOperations:
     assert "staged_file.txt" in result.result
 
   @pytest.mark.asyncio
+  async def test_git_diff_name_only_flag(self, git_repo: Path) -> None:
+    """
+    Given: A valid Git repository with uncommitted changes
+    When: Executing git diff with name_only=True
+    Then: Returns only file names, not full diff (--name-only with dashes)
+    """
+    # Modify tracked file
+    (git_repo / "README.md").write_text("# Modified\n")
+
+    config = GitToolConfig()
+    spec = _git_spec()
+    ctx = _git_context(config=config)
+    result = await spec.execute(
+      operation="diff", path=str(git_repo), ctx=ctx, args={"name_only": True}
+    )
+
+    assert result.success
+    assert "README.md" in result.result
+    # name_only should not produce diff headers like +++ or ---
+    assert "+++" not in result.result
+
+  @pytest.mark.asyncio
   async def test_git_branch_lists_branches(self, git_repo: Path) -> None:
     """
     Given: A valid Git repository with multiple branches
@@ -1503,9 +1525,7 @@ class TestGitToolErrorHandling:
     proc.kill = mocker.MagicMock()
     mocker.patch.object(git_module.asyncio, "create_subprocess_exec", return_value=proc)
     # Also mock asyncio.wait_for to propagate the TimeoutError
-    mocker.patch.object(
-      git_module.asyncio, "wait_for", side_effect=asyncio.TimeoutError()
-    )
+    mocker.patch.object(git_module.asyncio, "wait_for", side_effect=asyncio.TimeoutError())
 
     result = await spec.execute(operation="status", path=str(repo), ctx=ctx)
 
@@ -1880,9 +1900,7 @@ class TestGitToolSubprocessSecurity:
 
     mock_create = mocker.patch.object(git_module.asyncio, "create_subprocess_exec")
     mock_create.return_value.returncode = 0
-    mock_create.return_value.communicate = mocker.AsyncMock(
-      return_value=(b"On branch main", b"")
-    )
+    mock_create.return_value.communicate = mocker.AsyncMock(return_value=(b"On branch main", b""))
 
     await spec.execute(operation="status", path=str(repo), ctx=ctx)
 
@@ -1907,9 +1925,7 @@ class TestGitToolSubprocessSecurity:
 
     mock_create = mocker.patch.object(git_module.asyncio, "create_subprocess_exec")
     mock_create.return_value.returncode = 0
-    mock_create.return_value.communicate = mocker.AsyncMock(
-      return_value=(b"On branch main", b"")
-    )
+    mock_create.return_value.communicate = mocker.AsyncMock(return_value=(b"On branch main", b""))
 
     await spec.execute(operation="status", path=str(repo), ctx=ctx)
 

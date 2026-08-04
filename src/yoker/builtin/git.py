@@ -533,12 +533,12 @@ def _build_command(
         elif len(key) == 1:
           cmd.append(f"-{key}")
         else:
-          cmd.append(f"--{key}")
+          cmd.append(f"--{key.replace('_', '-')}")
     elif value is not None:
       if len(key) == 1:
         cmd.extend([f"-{key}", sanitized])
       else:
-        cmd.append(f"--{key}={sanitized}")
+        cmd.append(f"--{key.replace('_', '-')}={sanitized}")
 
   return cmd
 
