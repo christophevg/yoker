@@ -49,8 +49,10 @@ class SimpleContextManager(BaseContextManager):
     harness_id = f"{harness_name}{harness_version}{harness_author}"
     return (
       f"You are running inside the Yoker agent harness ({harness_id}). "
+      "# Environment\n"
       f"Current working directory: {Path.cwd()}. Model in use: {self._agent.model}."
       "\n\n"
+      "# Operating Instructions\n"
       "IMPORTANT — post_filter: Tool outputs can be very large and consume your "
       "context budget. EVERY tool accepts an optional `post_filter` parameter: "
       "a regex pattern that filters the output line-by-line, keeping only matching "
@@ -63,6 +65,9 @@ class SimpleContextManager(BaseContextManager):
       "ALWAYS pass post_filter when you expect large output. This is critical for "
       "keeping your session running longer. Not using it will cause context overflow "
       "and premature session termination."
+      "\n\n"
+      "# Startup Instructions - DO THIS NOW BEFORE ANSWERING ANY OTHER MESSAGE!\n"
+      "Read `AGENTS.md`. Don't report on it. Simply read it for your information."
     )
 
   @property
