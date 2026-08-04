@@ -3,6 +3,10 @@
 Essential context for working on the Yoker codebase. For user-facing
 documentation, see [README.md](README.md).
 
+## IMPORTANT CURRENT DEVELOPMENT PHASE
+
+We are in a dogfooding phase, so we're fixing problems in Yoker with Yoker. This means that you can't test fixes due to the new code not being loaded. If you want to test things, FIRST ASK me to restart the session. I can use the `--resume` argument to reload the current context, which allows me to stop and start with the new code active and the same context.
+
 ## Positioning
 
 **USP:** Add LLM capabilities to your Python apps and modules without worrying
