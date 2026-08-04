@@ -196,6 +196,7 @@ Remaining tools and enhancements not pulled into pre-release:
 
 - [ ] **M.1 Rename `yoker:` plugin tools to `builtin:`** — rename namespace; hide `builtin:` prefix in `/tools` listing; update docs
 - [ ] **M.3 Namespace from Plugin/Package** — allow namespace configuration derived from plugin/package, not from skill/agent frontmatter; update SkillLoader and AgentLoader
+- [ ] **M.5 Bare-Name Resolution at Registry Level** — agent/skill definitions should register bare tool names as-is (no namespace prefixing at load time). Resolution should happen at the ToolRegistry/SkillRegistry level when the name is used (e.g. during `_filter_tools_by_definition`): look up the bare name across all namespaces; if exactly one match exists, use it; if multiple, raise an ambiguity error listing the full namespaced candidates. This eliminates the `_YOKER_BUILTIN_TOOLS` duplication hack (added as a hotfix for the release-manager tool loss bug) and the `_namespace_tools` function's builtin-detection branch. The registry becomes the single source of truth for what tools exist and how bare names resolve. **Depends on:** M.3 (namespace from plugin/package, not folder name — e.g. C3 agents/skills should get `c3:` not `agents:`/`skills:`)
 - [ ] **M.4 Clean Up Duplicate Tests** — review all tests for duplicates; consolidate; maintain coverage
 
 ### S.1: Secure API Key Storage with Keyring

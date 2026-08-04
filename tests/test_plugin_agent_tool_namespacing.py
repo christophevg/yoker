@@ -109,8 +109,8 @@ System prompt here."""
     assert "yoker:read" in agent_def.tools
     # demo:echo should become examples.plugins.demo:echo
     assert "examples.plugins.demo:echo" in agent_def.tools
-    # write should get namespace
-    assert "examples.plugins.demo:write" in agent_def.tools
+    # write is a yoker builtin, so it gets yoker: prefix (not plugin namespace)
+    assert "yoker:write" in agent_def.tools
 
   def test_builtin_yoker_tools_not_renamespaced(self) -> None:
     """Built-in yoker: tools should not be re-namespaced with plugin prefix."""
@@ -249,9 +249,9 @@ class TestDemoAgentIntegration:
     demo_agent = next((a for a in agents if a.name == "yoker_plugin_demo:demo"), None)
     assert demo_agent is not None
 
-    # Tools without namespace prefix in the agent.md get the plugin namespace
-    assert "yoker_plugin_demo:read" in demo_agent.tools
-    # yoker_plugin_demo:echo should be present
+    # Tools matching yoker builtins get yoker: prefix (not plugin namespace)
+    assert "yoker:read" in demo_agent.tools
+    # yoker_plugin_demo:echo should be present (plugin-specific tool)
     echo_tools = [t for t in demo_agent.tools if "echo" in t]
     assert len(echo_tools) == 1
     # Should NOT have double namespacing like "yoker_plugin_demo:yoker_plugin_demo:echo"

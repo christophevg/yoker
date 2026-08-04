@@ -55,7 +55,7 @@ class TestLoaderMatrix:
     """Criterion 3: tools: [read, list] → exactly those (namespaced)."""
     f = self._write(tmp_path, "name: test\ndescription: Test\ntools:\n  - read\n  - list\n")
     d = load_agent_definition(f)
-    assert d.tools == ["file:read", "file:list"]
+    assert d.tools == ["yoker:read", "yoker:list"]
     assert d.tools is not ALL_TOOLS
 
 

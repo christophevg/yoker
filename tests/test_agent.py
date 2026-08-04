@@ -331,7 +331,7 @@ You are a test agent loaded from a file.
 
     core = Agent(config=Config(), agent_path=agent_file)
     assert core.definition.name == "file:test-agent"
-    assert "file:read" in core.definition.tools
+    assert "yoker:read" in core.definition.tools
 
   def test_agent_path_with_valid_markdown(self, tmp_path: Path) -> None:
     """Test agent_path with valid Markdown + YAML frontmatter."""

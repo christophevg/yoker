@@ -162,8 +162,8 @@ You are a research assistant.
     assert definition.simple_name == "researcher"
     assert definition.name == "file:researcher"
     assert definition.description == "Research assistant"
-    # Tools from file-based agents get namespace prefix
-    assert definition.tools == ["file:Read", "file:Search"]
+    # Tools matching yoker builtins get yoker: prefix (not file: namespace)
+    assert definition.tools == ["yoker:Read", "yoker:Search"]
     assert definition.color == "blue"
     assert "Researcher Agent" in definition.system_prompt
     assert str(agent_file) == definition.source_path
@@ -183,8 +183,8 @@ tools:
 Body.
 """)
     definition = load_agent_definition(agent_file)
-    # Tools from file-based agents get namespace prefix
-    assert definition.tools == ["file:List", "file:Read", "file:Search"]
+    # Tools matching yoker builtins get yoker: prefix (not file: namespace)
+    assert definition.tools == ["yoker:List", "yoker:Read", "yoker:Search"]
 
   def test_load_missing_file(self, tmp_path: Path) -> None:
     """Test loading non-existent file raises FileNotFoundError."""
@@ -271,7 +271,7 @@ tools:
 Body.
 """)
     definition = load_agent_definition(agent_file)
-    assert definition.tools == ["file:read", "file:list"]
+    assert definition.tools == ["yoker:read", "yoker:list"]
     assert definition.tools is not ALL_TOOLS
 
   def test_load_empty_tools_string(self, tmp_path: Path) -> None:
@@ -365,9 +365,9 @@ Research prompt.
     # Directory name is used as namespace
     assert "agents:main" in definitions
     assert "agents:researcher" in definitions
-    # Tools get namespace prefix from directory name
-    assert definitions["agents:main"].tools == ["agents:Read"]
-    assert definitions["agents:researcher"].tools == ["agents:Read", "agents:Search"]
+    # Tools matching yoker builtins get yoker: prefix (not agents: namespace)
+    assert definitions["agents:main"].tools == ["yoker:Read"]
+    assert definitions["agents:researcher"].tools == ["yoker:Read", "yoker:Search"]
 
   def test_load_empty_directory(self, tmp_path: Path) -> None:
     """Test loading from empty directory."""

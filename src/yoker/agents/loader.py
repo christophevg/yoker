@@ -33,6 +33,30 @@ FILE_NAMESPACE = "file"
 # Backward-compatible alias
 parse_frontmatter = parse_yaml_frontmatter
 
+# Known yoker builtin tool simple names. Bare tool names in agent definitions
+# that match a builtin are prefixed with ``yoker:`` instead of the collection
+# namespace. This set mirrors the tools registered in
+# ``yoker.builtin.__YOKER_MANIFEST__`` plus the session-injected
+# ``agent``/``send_message`` and the factory-registered ``skill`` tool.
+_YOKER_BUILTIN_TOOLS: frozenset[str] = frozenset({
+  "existence",
+  "file",
+  "git",
+  "github",
+  "list",
+  "make",
+  "mkdir",
+  "read",
+  "search",
+  "update",
+  "webfetch",
+  "websearch",
+  "write",
+  "agent",
+  "send_message",
+  "skill",
+})
+
 
 def _apply_namespace(name: str, namespace: str | None) -> str:
   """Apply namespace prefix to an agent name."""
@@ -42,7 +66,14 @@ def _apply_namespace(name: str, namespace: str | None) -> str:
 
 
 def _namespace_tools(tools: "list[str] | tuple[str, ...]", namespace: str | None) -> list[str]:
-  """Namespace tool names for a plugin agent definition."""
+  """Namespace tool names for an agent definition.
+
+  Bare names that match a known yoker builtin (e.g. ``read``, ``git``) are
+  prefixed with ``yoker:`` — not the collection namespace — so they resolve
+  to the actual registered builtin tool at runtime. Other bare names are
+  prefixed with the collection namespace (plugin-specific tools). Already
+  namespaced names (``yoker:read``, ``other:tool``) are preserved as-is.
+  """
   if not namespace:
     return [str(t) for t in tools]
   short_name = namespace.split(".")[-1]
@@ -57,6 +88,9 @@ def _namespace_tools(tools: "list[str] | tuple[str, ...]", namespace: str | None
         result.append(f"{namespace}:{tool_name}")
       else:
         result.append(tool_str)
+    elif tool_str.lower() in _YOKER_BUILTIN_TOOLS:
+      # Bare name matching a yoker builtin → prefix with yoker:
+      result.append(f"yoker:{tool_str}")
     else:
       result.append(f"{namespace}:{tool_str}")
   return result
