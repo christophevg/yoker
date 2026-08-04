@@ -118,6 +118,9 @@ class InteractiveUIHandler(UIHandler):
     self._input_source: list[str] | None = None
     self._input_index = 0
 
+    # Session id for the resume hint printed on shutdown.
+    self._session_id: str | None = None
+
   def set_input_messages(self, messages: list[str]) -> None:
     """Set predefined input messages for scripted sessions.
 
@@ -252,6 +255,7 @@ class InteractiveUIHandler(UIHandler):
     # Show "resumed" when the session was loaded from disk (fresh=False),
     # otherwise "started" (fresh=True or auto-generated).
     session_id = agent.config.context.session_id
+    self._session_id = session_id
     is_resume = not agent.config.context.fresh and session_id != "auto"
     session_label = "Resumed" if is_resume else "Started"
     motd_lines = banner.split("\n") + [
@@ -288,6 +292,8 @@ class InteractiveUIHandler(UIHandler):
     """
     self._stop_processing_status()
     self.console.print("\nGoodbye!")
+    if self._session_id and self._session_id != "auto":
+      self.console.print(f"[dim]Resume this session with:[/dim] yoker --resume {self._session_id}")
 
   # === Input ===
 
