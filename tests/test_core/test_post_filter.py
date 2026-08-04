@@ -385,6 +385,122 @@ class TestPostFilterExecution:
     assert "import sys" in result.result
     assert "from pathlib import Path" not in result.result
 
+  @pytest.mark.asyncio
+  async def test_post_filter_does_not_mutate_tool_args(self) -> None:
+    """post_filter extraction must not mutate the original tool_args dict.
+
+    tool_args is shared with the ToolCallEvent emitted before execution.
+    Popping from it would hide post_filter from the UI display and any
+    event handlers that inspect arguments after execution.
+    """
+    from yoker.core._processing import _execute_tool
+
+    async def my_tool() -> ToolResult:
+      """Return a test result."""
+      return ToolResult(success=True, result="ok")
+
+    spec = build_tool_spec(my_tool)
+    agent = MagicMock()
+    tool_args = {"post_filter": "ok"}
+    result = await _execute_tool(spec, agent, tool_args)
+
+    assert result.success
+    # The original dict must still contain post_filter
+    assert "post_filter" in tool_args
+    assert tool_args["post_filter"] == "ok"
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for _enforce_output_limit
+# ---------------------------------------------------------------------------
+
+
+class TestEnforceOutputLimit:
+  """Tests for the _enforce_output_limit function."""
+
+  def _make_spec(self):
+    """Build a tool spec with a named function (lambdas can't be resolved)."""
+
+    async def dummy_tool() -> ToolResult:
+      """Dummy tool for testing."""
+      return ToolResult(success=True, result="ok")
+
+    return build_tool_spec(dummy_tool)
+
+  def test_no_limit_config_returns_original(self) -> None:
+    """Tools without max_output_kb in config are not checked."""
+    from yoker.core._processing import _enforce_output_limit
+
+    spec = self._make_spec()
+    agent = MagicMock()
+    # MagicMock returns MagicMock for any attribute — not an int, so skipped
+    result = ToolResult(success=True, result="x" * 500000)
+    out = _enforce_output_limit(result, agent, spec)
+    assert out is result  # unchanged
+
+  def test_output_under_limit_returns_original(self) -> None:
+    """Output under the limit is returned unchanged."""
+    from yoker.core._processing import _enforce_output_limit
+
+    spec = self._make_spec()
+    config = MagicMock()
+    config.max_output_kb = 100
+    agent = MagicMock()
+    agent.config.tools.__getitem__ = MagicMock(return_value=config)
+
+    result = ToolResult(success=True, result="x" * 1000)  # 1KB, under 100KB
+    out = _enforce_output_limit(result, agent, spec)
+    assert out is result  # unchanged
+
+  def test_output_over_limit_returns_error(self) -> None:
+    """Output over the limit returns a ToolResult with a clear error."""
+    from yoker.core._processing import _enforce_output_limit
+
+    spec = self._make_spec()
+    config = MagicMock()
+    config.max_output_kb = 10  # 10KB limit
+    agent = MagicMock()
+    agent.config.tools.__getitem__ = MagicMock(return_value=config)
+
+    big_output = "x" * 50000  # ~50KB, over 10KB limit
+    result = ToolResult(success=True, result=big_output)
+    out = _enforce_output_limit(result, agent, spec)
+
+    assert not out.success
+    assert "exceeds" in out.error.lower()
+    assert "post_filter" in out.error.lower()
+
+  def test_output_over_limit_on_error_field(self) -> None:
+    """On failure, the error field is checked (not result)."""
+    from yoker.core._processing import _enforce_output_limit
+
+    spec = self._make_spec()
+    config = MagicMock()
+    config.max_output_kb = 10
+    agent = MagicMock()
+    agent.config.tools.__getitem__ = MagicMock(return_value=config)
+
+    big_error = "x" * 50000  # ~50KB
+    result = ToolResult(success=False, error=big_error)
+    out = _enforce_output_limit(result, agent, spec)
+
+    assert not out.success
+    assert "exceeds" in out.error.lower()
+
+  def test_dict_result_not_checked(self) -> None:
+    """Dict results (e.g. from make) are not string-checked."""
+    from yoker.core._processing import _enforce_output_limit
+
+    spec = self._make_spec()
+    config = MagicMock()
+    config.max_output_kb = 1
+    agent = MagicMock()
+    agent.config.tools.__getitem__ = MagicMock(return_value=config)
+
+    result = ToolResult(success=True, result={"exit_code": 0, "stdout": "x" * 500000})
+    out = _enforce_output_limit(result, agent, spec)
+    assert out is result  # unchanged — dict not checked
+
 
 # ---------------------------------------------------------------------------
 # Unit tests for _apply_post_filter

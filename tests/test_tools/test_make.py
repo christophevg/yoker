@@ -348,12 +348,12 @@ class TestMakeToolEnvVars:
     assert "object" in result.error.lower() or "dict" in result.error.lower()
 
 
-class TestMakeToolOutputTruncation:
-  """Per-stream truncation at max_output_kb * 1024 bytes."""
+class TestMakeToolOutputNoTruncation:
+  """make tool returns full output; size limit enforced centrally in _execute_tool."""
 
   @pytest.mark.asyncio
-  async def test_output_truncated_when_over_limit(self, tmp_path: Path) -> None:
-    """stdout exceeding max_output_kb is truncated with a notice; truncated=True."""
+  async def test_large_output_returned_in_full(self, tmp_path: Path) -> None:
+    """stdout exceeding max_output_kb is returned in full (no truncation)."""
     # Generate ~200KB of output; default cap is 100KB.
     _write_makefile(
       tmp_path,
@@ -363,23 +363,20 @@ class TestMakeToolOutputTruncation:
     ctx = _make_context(MakeToolConfig(max_output_kb=100))
     result = await spec.execute(target="check", ctx=ctx, cwd=str(tmp_path))
     assert result.success
-    assert result.result["truncated"] is True
-    assert "[truncated]" in result.result["stdout"]
-    # stdout (truncated) is bounded by cap + notice length
-    assert (
-      len(result.result["stdout"].encode("utf-8")) <= 100 * 1024 + len("\n... [truncated]\n") + 4
-    )
+    # No truncation — full output returned
+    assert "truncated" not in result.result
+    assert len(result.result["stdout"]) >= 200000
 
   @pytest.mark.asyncio
-  async def test_small_output_not_truncated(self, tmp_path: Path) -> None:
-    """Small output is not truncated; truncated=False."""
+  async def test_small_output_returned_in_full(self, tmp_path: Path) -> None:
+    """Small output is returned in full."""
     _write_makefile(tmp_path, "check:\n\t@echo hello\n")
     spec = _make_spec()
     ctx = _make_context()
     result = await spec.execute(target="check", ctx=ctx, cwd=str(tmp_path))
     assert result.success
-    assert result.result["truncated"] is False
-    assert "[truncated]" not in result.result["stdout"]
+    assert "truncated" not in result.result
+    assert "hello" in result.result["stdout"]
 
 
 class TestMakeToolTimeout:
@@ -530,7 +527,7 @@ class TestMakeToolErrorHandling:
 
 
 class TestMakeToolResultStructure:
-  """ToolResult.result dict shape: exit_code, stdout, stderr, truncated."""
+  """ToolResult.result dict shape: exit_code, stdout, stderr."""
 
   @pytest.mark.asyncio
   async def test_success_result_dict_keys(self, tmp_path: Path) -> None:
@@ -539,7 +536,7 @@ class TestMakeToolResultStructure:
     ctx = _make_context()
     result = await spec.execute(target="check", ctx=ctx, cwd=str(tmp_path))
     assert result.success
-    assert set(result.result.keys()) == {"exit_code", "stdout", "stderr", "truncated"}
+    assert set(result.result.keys()) == {"exit_code", "stdout", "stderr"}
     assert result.result["exit_code"] == 0
     assert result.error is None
 

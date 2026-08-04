@@ -530,7 +530,9 @@ class MakeToolConfig(ToolConfig):
 
   Attributes:
     timeout_ms: Default timeout in milliseconds.
-    max_output_kb: Maximum output size per stream (stdout/stderr) in KB.
+    max_output_kb: Maximum output size in KB. Enforced centrally in
+      _execute_tool after post_filter is applied. If the (filtered) output
+      exceeds this limit, an error is returned instead of silent truncation.
     allowed_env_vars: Per-target allowlist of env var names. Keys are
       Makefile target names; values are the env var names that target is
       permitted to receive. Targets not in the dict deny all env vars

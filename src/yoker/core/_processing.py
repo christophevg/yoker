@@ -1003,12 +1003,12 @@ async def _execute_tool(spec: ToolSpec, agent: Any, tool_args: dict[str, Any]) -
     return ToolResult(success=False, error=f"Tool '{spec.name}' has no execute function")
   sig = inspect.signature(spec.execute)
 
-  # Extract post_filter before binding — it is auto-injected into the schema
-  # and not a real parameter on the tool function.
-  post_filter = tool_args.pop("post_filter", None)
-
-  # Build kwargs, injecting context if needed
-  kwargs = tool_args.copy()
+  # Extract post_filter without mutating the original tool_args dict.
+  # tool_args is shared with the ToolCallEvent (emitted before _run_tool),
+  # so popping from it would hide post_filter from the UI display and any
+  # event handlers that inspect arguments after execution.
+  post_filter = tool_args.get("post_filter", None)
+  kwargs = {k: v for k, v in tool_args.items() if k != "post_filter"}
   if _tool_needs_context(spec):
     kwargs["ctx"] = _build_tool_context(agent, spec.name)
 
@@ -1035,6 +1035,13 @@ async def _execute_tool(spec: ToolSpec, agent: Any, tool_args: dict[str, Any]) -
   # the useful output (e.g. test failures) that the LLM wants to filter.
   if post_filter:
     result = _apply_post_filter(result, post_filter)
+
+  # Enforce output size limit AFTER post_filter has been applied. This
+  # ensures the LLM can use post_filter to reduce output below the limit.
+  # If the (filtered) output still exceeds max_output_kb, return an error
+  # instead of silently truncating — truncation loses the end of the output
+  # (typically where failures are), making the result useless.
+  result = _enforce_output_limit(result, agent, spec)
 
   return result
 
@@ -1102,6 +1109,52 @@ def _filter_lines(content: str, regex, pattern: str) -> tuple[str, bool]:
   filtered = "\n".join(matched)
   filtered += f"\n\n[post_filter: {kept}/{total} lines matched pattern: {pattern}]"
   return filtered, True
+
+
+def _enforce_output_limit(result: ToolResult, agent: Any, spec: ToolSpec) -> ToolResult:
+  """Check if the result's string fields exceed the tool's max_output_kb.
+
+  If the output exceeds the limit, return a ToolResult with a clear error
+  telling the LLM to use post_filter to narrow the output. This runs AFTER
+  post_filter has been applied, so the LLM can retry with a more specific
+  filter.
+
+  Only applies to tools whose config has ``max_output_kb`` (currently make
+  and github). Tools without this config field are not checked.
+  """
+  base_name = spec.simple_name
+  try:
+    tool_config = agent.config.tools[base_name]
+  except (AttributeError, KeyError, TypeError):
+    return result
+
+  max_output_kb = getattr(tool_config, "max_output_kb", None)
+  if not isinstance(max_output_kb, int):
+    return result
+
+  max_bytes = max_output_kb * 1024
+
+  # Check the relevant string field(s). On success, check result.result;
+  # on failure, check result.error (the field the LLM sees).
+  if result.success:
+    field_val = result.result
+  else:
+    field_val = result.error
+
+  if not isinstance(field_val, str) or not field_val:
+    return result
+
+  encoded = field_val.encode("utf-8")
+  if len(encoded) <= max_bytes:
+    return result
+
+  actual_kb = len(encoded) // 1024
+  error_msg = (
+    f"Output exceeds {max_output_kb}KB limit ({actual_kb}KB). "
+    f"Use post_filter to narrow the output to relevant lines only. "
+    f"Example: post_filter='FAILED|ERROR|assert|Summary' for test output."
+  )
+  return ToolResult(success=False, error=error_msg)
 
 
 def _validate_tool_args(agent: Any, spec: ToolSpec, tool_args: dict[str, Any]) -> ValidationResult:

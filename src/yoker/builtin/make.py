@@ -2,7 +2,8 @@
 
 Executes ``make <target>`` in a working directory with security guardrails:
 target name validation, per-target env_var allowlist + framework hard-denylist,
-output truncation, and process-group kill on timeout (R4).
+output size enforcement (centralized in _execute_tool after post_filter),
+and process-group kill on timeout (R4).
 
 Security model
 --------------
@@ -17,7 +18,10 @@ Security model
 - Timeout (R4): subprocess spawned with ``start_new_session=True`` so the
   child leads its own process group; on timeout the whole group is killed
   via ``os.killpg(SIGKILL)`` to prevent orphaned children.
-- Output: each stream truncated to ``max_output_kb`` on a UTF-8 boundary.
+- Output: full stdout/stderr returned; size limit enforced centrally in
+  ``_execute_tool`` after ``post_filter`` is applied. If the (filtered)
+  output exceeds ``max_output_kb``, an error is returned guiding the LLM
+  to use ``post_filter`` to narrow the output.
 
 Residual risk (R5): the subprocess env is ``{**os.environ, **validated_env}``,
 so Makefile recipes inherit the yoker process env. Any secret present in
@@ -54,8 +58,6 @@ _TARGET_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._%+\-]*$")
 # plus owner's five.
 _FORBIDDEN_TARGET_CHARS: frozenset[str] = frozenset({";", "|", "&", "$", "`", "\n", "\r", "\x00"})
 
-_TRUNCATION_NOTICE = "\n... [truncated]\n"
-
 
 async def make(
   target: Annotated[str, Text("Makefile target name (e.g., 'check', 'test')")],
@@ -87,9 +89,12 @@ async def make(
 
   Returns:
     A ``ToolResult`` whose ``result`` is ``{"exit_code": int, "stdout": str,
-    "stderr": str, "truncated": bool}``. ``success`` is True iff
-    ``exit_code == 0``. On failure ``error`` carries the relevant output
-    (stdout + stderr when non-verbose, stderr only when verbose).
+    "stderr": str}``. ``success`` is True iff ``exit_code == 0``. On failure
+    ``error`` carries the relevant output (stdout + stderr when non-verbose,
+    stderr only when verbose). Output size is enforced centrally in
+    ``_execute_tool`` after ``post_filter`` is applied — if the (filtered)
+    output exceeds ``max_output_kb``, an error is returned instead of
+    silent truncation.
 
   See the module docstring for the full security model, including the
   R5 env-inheritance residual risk.
@@ -186,20 +191,19 @@ async def make(
       error=f"make target '{target}' exceeded timeout ({effective_timeout_ms} ms)",
     )
 
-  # --- Output truncation (per-stream, UTF-8-boundary) ---
-  max_output_bytes = make_config.max_output_kb * 1024
-  stdout_truncated, stdout_out = _truncate(stdout or "", max_output_bytes)
-  stderr_truncated, stderr_out = _truncate(stderr or "", max_output_bytes)
-
-  truncated = stdout_truncated or stderr_truncated
+  # Output size limit is enforced centrally in _execute_tool AFTER post_filter
+  # is applied. The make tool returns full stdout/stderr so that post_filter
+  # can grep through the complete output (failures are typically at the end).
   exit_code = proc.returncode
   success = exit_code == 0
+
+  stdout_out = stdout or ""
+  stderr_out = stderr or ""
 
   result = {
     "exit_code": exit_code,
     "stdout": stdout_out,
     "stderr": stderr_out,
-    "truncated": truncated,
   }
 
   # On failure, the error field is what the LLM sees (line 862 in
@@ -235,19 +239,6 @@ async def make(
     result=result,
     error=error_msg,
   )
-
-
-def _truncate(text: str, max_bytes: int) -> tuple[bool, str]:
-  """Truncate text to max_bytes on a UTF-8 boundary.
-
-  Returns ``(truncated, text)``. When truncated, appends a truncation notice.
-  """
-  encoded = text.encode("utf-8")
-  if len(encoded) <= max_bytes:
-    return False, text
-  # Cut on a UTF-8 boundary: decode with errors='ignore' drops incomplete seq.
-  cut = encoded[:max_bytes].decode("utf-8", errors="ignore")
-  return True, cut + _TRUNCATION_NOTICE
 
 
 def _kill_process_group(pid: int) -> None:
