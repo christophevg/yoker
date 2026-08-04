@@ -39,6 +39,7 @@ class TestSpawnAllowlist:
       with patch("yoker.session.Agent") as mock_agent_cls:
         mock_child = MagicMock()
         mock_child.process = AsyncMock(return_value="ok")
+        mock_child.aclose = AsyncMock()
         mock_child.tools = MagicMock()
         mock_agent_cls.return_value = mock_child
         child, agent_id = await session._spawn_internal("researcher", requester=None)
@@ -91,6 +92,7 @@ class TestSpawnAllowlist:
       with patch("yoker.session.Agent") as mock_agent_cls:
         mock_child = MagicMock()
         mock_child.process = AsyncMock(return_value="ok")
+        mock_child.aclose = AsyncMock()
         mock_child.tools = MagicMock()
         mock_agent_cls.return_value = mock_child
         child, agent_id = await session._spawn_internal("researcher", requester=requester)
@@ -138,7 +140,9 @@ class TestSpawnMaxAgents:
     async with Session(config=config) as session:
       session.agents.register(agent_def)
       # Fill the active map to the cap.
-      session._agents_map["occupant"] = MagicMock()
+      occupant = MagicMock()
+      occupant.aclose = AsyncMock()
+      session._agents_map["occupant"] = occupant
       with pytest.raises(ValueError, match="max_agents"):
         await session.spawn("researcher")
 
@@ -160,11 +164,12 @@ class TestSpawnAgentMap:
       with patch("yoker.session.Agent") as mock_agent_cls:
         mock_child = MagicMock()
         mock_child.process = AsyncMock(return_value="ok")
+        mock_child.aclose = AsyncMock()
         mock_child.tools = MagicMock()
         mock_agent_cls.return_value = mock_child
         child, agent_id = await session._spawn_internal("researcher")
         await child.process("hi")
-        session.release(child)
+        await session.release(child)
       # Hardening: confirm the mock class was actually constructed. A stale
       # patch target would let a real Agent reach localhost:11434 and mask the
       # bug behind a local Ollama daemon.
@@ -187,14 +192,15 @@ class TestSpawnAgentMap:
       with patch("yoker.session.Agent") as mock_agent_cls:
         mock_child = MagicMock()
         mock_child.process = AsyncMock(return_value="ok")
+        mock_child.aclose = AsyncMock()
         mock_child.tools = MagicMock()
         mock_agent_cls.return_value = mock_child
         first_child, first_id = await session._spawn_internal("researcher")
         await first_child.process("first")
-        session.release(first_child)
+        await session.release(first_child)
         second_child, second_id = await session._spawn_internal("researcher")
         await second_child.process("second")
-        session.release(second_child)
+        await session.release(second_child)
       # Hardening: confirm the mock class was actually constructed (twice, once
       # per spawn). A stale patch target would let a real Agent reach
       # localhost:11434 and mask the bug behind a local Ollama daemon.

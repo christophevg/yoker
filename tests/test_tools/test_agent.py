@@ -170,7 +170,7 @@ class TestAgentToolDelegation:
     mock_child = MagicMock()
     mock_child.process = AsyncMock(return_value="researcher response")
     session._spawn_internal = AsyncMock(return_value=(mock_child, "researcher"))
-    session.release = MagicMock()
+    session.release = AsyncMock()
     requester = _make_requester(allowlist=("researcher",))
 
     spec = _spawn_agent_spec(session=session, requester=requester)
@@ -183,7 +183,7 @@ class TestAgentToolDelegation:
     session._spawn_internal.assert_awaited_once()
     call_kwargs = session._spawn_internal.call_args.kwargs
     assert call_kwargs["requester"] is requester
-    session.release.assert_called_once_with(mock_child)
+    session.release.assert_awaited_once_with(mock_child)
 
   @pytest.mark.asyncio
   async def test_value_error_wrapped_as_failure(self) -> None:
@@ -210,7 +210,7 @@ class TestAgentToolDelegation:
     mock_child = MagicMock()
     mock_child.process = AsyncMock(side_effect=TimeoutError("timed out after 1s"))
     session._spawn_internal = AsyncMock(return_value=(mock_child, "researcher"))
-    session.release = MagicMock()
+    session.release = AsyncMock()
     requester = _make_requester(allowlist=("researcher",))
 
     spec = _spawn_agent_spec(session=session, requester=requester)
@@ -231,7 +231,7 @@ class TestAgentToolDelegation:
     mock_child = MagicMock()
     mock_child.process = AsyncMock(side_effect=RuntimeError("boom"))
     session._spawn_internal = AsyncMock(return_value=(mock_child, "researcher"))
-    session.release = MagicMock()
+    session.release = AsyncMock()
     requester = _make_requester(allowlist=("researcher",))
 
     spec = _spawn_agent_spec(session=session, requester=requester)
@@ -254,7 +254,7 @@ class TestAgentToolDelegation:
     mock_child = MagicMock()
     mock_child.process = AsyncMock(return_value="ok")
     session._spawn_internal = AsyncMock(return_value=(mock_child, "researcher"))
-    session.release = MagicMock()
+    session.release = AsyncMock()
     requester = _make_requester(allowlist=("researcher",))
 
     spec = _spawn_agent_spec(session=session, requester=requester)
@@ -283,7 +283,7 @@ class TestAgentToolDelegation:
     mock_child = MagicMock()
     mock_child.process = AsyncMock(return_value="found it")
     session._spawn_internal = AsyncMock(return_value=(mock_child, "researcher-2"))
-    session.release = MagicMock()
+    session.release = AsyncMock()
     requester = _make_requester(allowlist=("researcher",))
 
     spec = _spawn_agent_spec(session=session, requester=requester)

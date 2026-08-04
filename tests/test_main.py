@@ -289,6 +289,7 @@ class TestMainIntegration:
       # instead — that is the reference the code under test actually calls.
       with patch("yoker.session.Agent") as mock_agent_cls:
         mock_agent_instance = mock_agent_cls.return_value
+        mock_agent_instance.aclose = AsyncMock()
         mock_agent_instance.config = Config(
           ui=UIConfig(mode="batch", show_thinking=False, show_tool_calls=False, show_stats=False),
         )

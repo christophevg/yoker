@@ -124,7 +124,7 @@ async def run_session_demo() -> None:
         except ValueError as e:
           print(f"Expected (agent finished): {e}")
         finally:
-          session.release(researcher)
+          await session.release(researcher)
       except NetworkError as e:
         print(f"Network error: {e}")
       except TimeoutError as e:

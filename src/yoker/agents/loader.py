@@ -38,24 +38,26 @@ parse_frontmatter = parse_yaml_frontmatter
 # namespace. This set mirrors the tools registered in
 # ``yoker.builtin.__YOKER_MANIFEST__`` plus the session-injected
 # ``agent``/``send_message`` and the factory-registered ``skill`` tool.
-_YOKER_BUILTIN_TOOLS: frozenset[str] = frozenset({
-  "existence",
-  "file",
-  "git",
-  "github",
-  "list",
-  "make",
-  "mkdir",
-  "read",
-  "search",
-  "update",
-  "webfetch",
-  "websearch",
-  "write",
-  "agent",
-  "send_message",
-  "skill",
-})
+_YOKER_BUILTIN_TOOLS: frozenset[str] = frozenset(
+  {
+    "existence",
+    "file",
+    "git",
+    "github",
+    "list",
+    "make",
+    "mkdir",
+    "read",
+    "search",
+    "update",
+    "webfetch",
+    "websearch",
+    "write",
+    "agent",
+    "send_message",
+    "skill",
+  }
+)
 
 
 def _apply_namespace(name: str, namespace: str | None) -> str:

@@ -9,7 +9,7 @@ static tool set loaded from plugins.
 ``agent``
   - Calls ``session._spawn_internal(name, requester=<calling agent>)``,
     runs the spawned agent's ``process(prompt)`` with a timeout, and
-    ``session.release(child)`` in a finally block.
+    ``await session.release(child)`` in a finally block.
   - Returns a ``ToolResult`` carrying both the spawned agent's unique id and
     its response string (so the model can address the child later via
     ``send_message``).
@@ -110,7 +110,7 @@ def make_spawn_agent_tool(session: "Session", requester: "Agent") -> Any:
           f"Sub-agent '{agent_id}' timed out after {timeout_seconds} seconds"
         ) from e
       finally:
-        session.release(child)
+        await session.release(child)
       logger.info("spawn_agent response", agent_id=agent_id, response=response)
       rendered = f"agent_id: {agent_id}\n\n{response}" if agent_id else response
       return ToolResult(success=True, result=rendered)

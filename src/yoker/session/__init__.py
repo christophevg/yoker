@@ -128,6 +128,7 @@ class Session:
     self._tasks.clear()
     self._emit(SessionEndEvent(type=EventType.SESSION_END, session_id=self.id))
     for agent in self._agents_map.values():
+      await agent.aclose()
       agent.context.close()
 
   def on_event(self, handler: EventCallback) -> EventCallback:
@@ -400,13 +401,18 @@ class Session:
 
     return definition
 
-  def release(self, agent: Agent) -> None:
-    """Release a spawned agent: emit AGENT_FINISHED and remove from the active map.
+  async def release(self, agent: Agent) -> None:
+    """Release a spawned agent: emit AGENT_FINISHED, cancel its consumer task, and remove from the active map.
 
     Removes the agent by identity. When the agent is not registered (already
     released or never registered) this is a no-op. This is the single
     cleanup path used by both the ``agent`` tool and standalone callers
     that drive a spawned agent directly.
+
+    Awaits :meth:`Agent.aclose` to cancel the background ``_process_consumer``
+    task so it doesn't linger as a pending task after the Agent object is
+    garbage-collected (which would trigger a ``"Task was destroyed but it is
+    pending!"`` warning from the event loop).
     """
     agent_id = next((aid for aid, a in self._agents_map.items() if a is agent), None)
     if agent_id is None:
@@ -419,6 +425,7 @@ class Session:
       )
     )
     self._agents_map = {aid: a for aid, a in self._agents_map.items() if a is not agent}
+    await agent.aclose()
 
   def inject_tools(self, agent: Agent, agent_id: str) -> None:
     """Inject Session-injected tools onto an agent

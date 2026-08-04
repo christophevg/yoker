@@ -73,6 +73,7 @@ class TestEventAggregation:
       with patch("yoker.session.Agent") as mock_cls:
         mock_child = MagicMock()
         mock_child.process = AsyncMock(return_value="ok")
+        mock_child.aclose = AsyncMock()
         # Capture the forwarding handler registered on the child.
         mock_child.on_event = MagicMock()
         mock_cls.return_value = mock_child
@@ -103,6 +104,7 @@ class TestEventAggregation:
       with patch("yoker.session.Agent") as mock_cls:
         mock_child = MagicMock()
         mock_child.process = AsyncMock(return_value="ok")
+        mock_child.aclose = AsyncMock()
         mock_child.on_event = MagicMock()
         mock_cls.return_value = mock_child
         child, _agent_id = await session._spawn_internal("researcher")
@@ -129,6 +131,7 @@ class TestEventAggregation:
       with patch("yoker.session.Agent") as mock_cls:
         mock_child = MagicMock()
         mock_child.process = AsyncMock(return_value="ok")
+        mock_child.aclose = AsyncMock()
         mock_child.on_event = MagicMock()
         mock_cls.return_value = mock_child
         child, _agent_id = await session._spawn_internal("researcher")
@@ -149,6 +152,7 @@ class TestEventAggregation:
       with patch("yoker.session.Agent") as mock_cls:
         mock_child = MagicMock()
         mock_child.process = AsyncMock(return_value="ok")
+        mock_child.aclose = AsyncMock()
         mock_child.on_event = MagicMock()
         # _spawn_internal emits AGENT_SPAWNED with definition_name drawn from
         # agent.definition.simple_name; configure it so the event assertion
@@ -177,11 +181,12 @@ class TestEventAggregation:
       with patch("yoker.session.Agent") as mock_cls:
         mock_child = MagicMock()
         mock_child.process = AsyncMock(return_value="ok")
+        mock_child.aclose = AsyncMock()
         mock_child.on_event = MagicMock()
         mock_cls.return_value = mock_child
         child, _agent_id = await session._spawn_internal("researcher")
         await child.process("hi")
-        session.release(child)
+        await session.release(child)
       # Hardening: confirm the mock class was actually constructed. A stale
       # patch target would let a real Agent reach localhost:11434 and mask the
       # bug behind a local Ollama daemon.
@@ -209,12 +214,13 @@ class TestEventAggregation:
       with patch("yoker.session.Agent") as mock_cls:
         mock_child = MagicMock()
         mock_child.process = AsyncMock(side_effect=slow_process)
+        mock_child.aclose = AsyncMock()
         mock_child.on_event = MagicMock()
         mock_cls.return_value = mock_child
         child, _agent_id = await session._spawn_internal("researcher")
         with pytest.raises(TimeoutError):
           await _asyncio.wait_for(child.process("hi"), timeout=0.05)
-        session.release(child)
+        await session.release(child)
       # Hardening: confirm the mock class was actually constructed. A stale
       # patch target would let a real Agent reach localhost:11434 and mask the
       # bug behind a local Ollama daemon.

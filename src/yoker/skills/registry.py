@@ -84,9 +84,7 @@ class SkillRegistry(UserDict[str, Skill]):
     """
     if name in self.data:
       return name
-    matches = [
-      key for key, skill in self.data.items() if (skill.simple_name or "") == name
-    ]
+    matches = [key for key, skill in self.data.items() if (skill.simple_name or "") == name]
     if matches:
       return sorted(matches)[0]
     return None

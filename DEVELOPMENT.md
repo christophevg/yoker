@@ -495,7 +495,7 @@ tool layer before calling the Python API.
   `(child, agent_id)`); public `spawn(name, *, requester=None) -> Agent`
   is now a thin wrapper that returns only the Agent. The `agent` tool
   calls `_spawn_internal` directly and runs `child.process(prompt)` +
-  `session.release(child)` inline (with `asyncio.wait_for` timeout) — the
+  `await session.release(child)` inline (with `asyncio.wait_for` timeout) — the
   `_spawn_and_run` method was deleted.
 - **`primary_agent` → `agent`**: the read-only property is now `Session.agent`
   (backed by `_agent`, set in `register_primary_agent`). `Session.primary_agent`
@@ -572,7 +572,7 @@ session-assigned id.
   one-shot skill invocation, mirroring `yoker.process`. Tests in
   `tests/test_api/test_do.py`.
 - `examples/session_demo.py` and `examples/python_api/session.py` updated
-  to the new API (`session._agent_id_for(...)`, `session.release(...)`,
+  to the new API (`session._agent_id_for(...)`, `await session.release(...)`,
   `session.primary_agent.process(...)`).
 
 ### MBI-003: Python API Redesign (2026-07-06)

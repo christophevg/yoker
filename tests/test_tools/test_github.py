@@ -333,9 +333,7 @@ class TestGithubWriteOperations:
   @pytest.mark.asyncio
   async def test_pr_create_builds_correct_command(self, mocker: MockerFixture) -> None:
     """pr_create builds gh pr create with --title= and --body=, no --json."""
-    popen = _mock_popen(
-      mocker, stdout="https://github.com/owner/repo/pull/42"
-    )
+    popen = _mock_popen(mocker, stdout="https://github.com/owner/repo/pull/42")
     cfg = GitHubToolConfig(allowed_operations=("pr_create",))
     await github(
       operation="pr_create",
@@ -700,12 +698,15 @@ class TestGithubWriteOperations:
     assert result.content_metadata["path"] == "owner/repo"
     # The URL output should be parsed into JSON with url and number
     import json as json_mod
+
     parsed = json_mod.loads(result.result)
     assert parsed["url"] == pr_url
     assert parsed["number"] == 42
 
   @pytest.mark.asyncio
-  async def test_release_create_returns_success_with_parsed_url(self, mocker: MockerFixture) -> None:
+  async def test_release_create_returns_success_with_parsed_url(
+    self, mocker: MockerFixture
+  ) -> None:
     """release_create returns success with parsed JSON from URL output."""
     release_url = "https://github.com/owner/repo/releases/tag/v1.0.0"
     _mock_popen(mocker, stdout=release_url)
@@ -720,6 +721,7 @@ class TestGithubWriteOperations:
     )
     assert result.success
     import json as json_mod
+
     parsed = json_mod.loads(result.result)
     assert parsed["url"] == release_url
     assert parsed["tagName"] == "v1.0.0"

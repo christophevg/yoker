@@ -132,6 +132,7 @@ class TestDeriveConfigModelOverride:
       with patch("yoker.session.Agent") as mock_agent_cls:
         mock_child = MagicMock()
         mock_child.process = AsyncMock(return_value="ok")
+        mock_child.aclose = AsyncMock()
         mock_child.tools = MagicMock()
         mock_agent_cls.return_value = mock_child
         # Patch create_backend to verify a fresh backend is created for the
@@ -193,7 +194,7 @@ class TestSpawnTimeoutDefaultClamping:
     mock_child = MagicMock()
     mock_child.process = AsyncMock(return_value="ok")
     session._spawn_internal = AsyncMock(return_value=(mock_child, "r"))
-    session.release = MagicMock()
+    session.release = AsyncMock()
     requester = MagicMock()
     requester.definition = AgentDefinition(
       simple_name="parent",
@@ -226,7 +227,7 @@ class TestSpawnTimeoutDefaultClamping:
     mock_child = MagicMock()
     mock_child.process = AsyncMock(return_value="ok")
     session._spawn_internal = AsyncMock(return_value=(mock_child, "r"))
-    session.release = MagicMock()
+    session.release = AsyncMock()
     requester = MagicMock()
     requester.definition = AgentDefinition(
       simple_name="parent",

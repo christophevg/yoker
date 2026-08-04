@@ -200,3 +200,74 @@ class TestProcessQueueConsumerLifecycle:
     await agent.process("b")
     task_after_second = agent._process_task
     assert task_after_first is task_after_second
+
+
+class TestAgentAclose:
+  """``Agent.aclose`` cancels the background ``_process_consumer`` task.
+
+  Without this cleanup, the consumer — an infinite ``while True`` loop
+  blocked on ``queue.get()`` — outlives the Agent object and triggers a
+  ``"Task was destroyed but it is pending!"`` warning when the GC
+  collects the agent.
+  """
+
+  @pytest.mark.asyncio
+  async def test_aclose_cancels_consumer_task(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    """aclose() cancels the _process_task and sets it to None."""
+    agent = _make_agent()
+
+    async def handler(_agent: Agent, message: str) -> str:
+      return "ok"
+
+    _patch_process_message(monkeypatch, handler)
+    await agent.process("hi")
+    assert agent._process_task is not None
+    assert not agent._process_task.done()
+
+    await agent.aclose()
+    assert agent._process_task is None
+
+  @pytest.mark.asyncio
+  async def test_aclose_no_op_when_no_consumer(self) -> None:
+    """aclose() is a no-op when _process_task was never created."""
+    agent = _make_agent()
+    assert agent._process_task is None
+    await agent.aclose()
+    assert agent._process_task is None
+
+  @pytest.mark.asyncio
+  async def test_aclose_idempotent(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Calling aclose() twice does not raise."""
+    agent = _make_agent()
+
+    async def handler(_agent: Agent, message: str) -> str:
+      return "ok"
+
+    _patch_process_message(monkeypatch, handler)
+    await agent.process("hi")
+    await agent.aclose()
+    await agent.aclose()  # second call should be a no-op
+    assert agent._process_task is None
+
+  @pytest.mark.asyncio
+  async def test_aclose_task_cancelled_not_pending(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    """After aclose(), the consumer task is cancelled (not left pending).
+
+    This is the regression test for the "Task was destroyed but it is
+    pending!" warning. We verify that after aclose() the task is
+    cancelled (done() returns True) rather than left dangling.
+    """
+    agent = _make_agent()
+
+    async def handler(_agent: Agent, message: str) -> str:
+      return "ok"
+
+    _patch_process_message(monkeypatch, handler)
+    await agent.process("hi")
+    task = agent._process_task
+    assert task is not None and not task.done()
+
+    await agent.aclose()
+    # The task should now be done (cancelled) — not pending.
+    assert task.done()
+    assert task.cancelled()

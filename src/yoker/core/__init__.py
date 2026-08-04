@@ -362,6 +362,24 @@ class Agent:
       finally:
         self._process_queue.task_done()
 
+  async def aclose(self) -> None:
+    """Cancel the background process-consumer task if still running.
+
+    Called by :meth:`yoker.session.Session.release` when a spawned agent is
+    finished, and by :meth:`yoker.session.Session.__aexit__` for all active
+    agents. Without this, the ``_process_consumer`` coroutine — an infinite
+    ``while True`` loop blocked on ``queue.get()`` — outlives the Agent object
+    and triggers a ``"Task was destroyed but it is pending!"`` warning when
+    the GC collects the agent.
+    """
+    if self._process_task is not None and not self._process_task.done():
+      self._process_task.cancel()
+      try:
+        await self._process_task
+      except asyncio.CancelledError:
+        pass
+    self._process_task = None
+
   def inject_skill_context(self, skill_name: str, args: str | None = None) -> None:
     """Inject skill context into the conversation."""
     from yoker.skills import format_invocation_block
