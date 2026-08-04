@@ -67,7 +67,7 @@ Ordered by priority.
 
 ### P1: Post-Filter on All Tools
 
-- [ ] **Post-filter "grep" pattern on all tool outputs**
+- [x] **Post-filter "grep" pattern on all tool outputs**
   - Allow the LLM to specify a pattern to filter tool output before returning
   - Reduces context growth by limiting actual output returned to the LLM
   - Applies to all tools (read, search, list, make, git, etc.)
