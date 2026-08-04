@@ -5,7 +5,6 @@ value rules, output truncation, timeout enforcement with process-group
 kill (R4), error handling, and the structured ToolResult contract.
 """
 
-import asyncio
 import sys
 from pathlib import Path
 

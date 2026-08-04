@@ -65,9 +65,7 @@ def _mock_popen(
     )
 
   # Wrap so call_args.args[0] is the command list (matching old Popen interface)
-  original_mock = mocker.patch.object(
-    github_module.asyncio, "create_subprocess_exec"
-  )
+  original_mock = mocker.patch.object(github_module.asyncio, "create_subprocess_exec")
   original_mock.side_effect = lambda *args, **kwargs: proc
   # Override call_args to present args as a single list (first positional)
   original_mock.call_args = None  # will be set after first call
@@ -317,14 +315,10 @@ class TestGithubOperations:
     comments_json = '[{"id": 1, "body": "LGTM"}]'
     proc1 = mocker.MagicMock()
     proc1.returncode = 0
-    proc1.communicate = mocker.AsyncMock(
-      return_value=(pr_json.encode("utf-8"), b"")
-    )
+    proc1.communicate = mocker.AsyncMock(return_value=(pr_json.encode("utf-8"), b""))
     proc2 = mocker.MagicMock()
     proc2.returncode = 0
-    proc2.communicate = mocker.AsyncMock(
-      return_value=(comments_json.encode("utf-8"), b"")
-    )
+    proc2.communicate = mocker.AsyncMock(return_value=(comments_json.encode("utf-8"), b""))
     procs = [proc1, proc2]
     captured_calls: list[Any] = []
 
@@ -332,9 +326,7 @@ class TestGithubOperations:
       captured_calls.append(mocker.call(list(args), **kwargs))
       return procs.pop(0)
 
-    mocker.patch.object(
-      github_module.asyncio, "create_subprocess_exec", side_effect=_create
-    )
+    mocker.patch.object(github_module.asyncio, "create_subprocess_exec", side_effect=_create)
     result = await github(
       operation="pr_view", ctx=_ctx(), repo="owner/repo", number=42, include_comments=True
     )
@@ -1065,7 +1057,9 @@ class TestGithubErrorMapping:
 
   @pytest.mark.asyncio
   async def test_gh_not_installed(self, mocker: MockerFixture) -> None:
-    mocker.patch.object(github_module.asyncio, "create_subprocess_exec", side_effect=FileNotFoundError())
+    mocker.patch.object(
+      github_module.asyncio, "create_subprocess_exec", side_effect=FileNotFoundError()
+    )
     result = await github(operation="repo_view", ctx=_ctx())
     assert not result.success
     assert "not found" in result.error.lower()
