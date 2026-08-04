@@ -46,9 +46,9 @@ From dogfooding session: `../c3/docs/yoker-tool-improvements.md`. These changes 
 
 #### Phase 2 — Unblock PR Feedback Workflow
 
-- [ ] **GitHub: `pr_reviews` operation** — get PR review details (id, user, state, body, submitted_at). Auto-permit (read-only). Needed for check PR status workflow.
-- [ ] **GitHub: `pr_comments` operation** — get all PR comments (general + inline code review) with unified format (id, type, user, body, path, line, created_at). Auto-permit (read-only). Needed for PR feedback iteration.
-- [ ] **GitHub: `pr_view` enhanced** — add `reviewDecision`, `statusCheckRollup` fields; new `include_comments: bool` arg (default false) to optionally fetch comments. Avoids always fetching large comment data.
+- [x] **GitHub: `pr_reviews` operation** — get PR review details (id, user, state, body, submitted_at). Auto-permit (read-only). Needed for check PR status workflow.
+- [x] **GitHub: `pr_comments` operation** — get all PR comments (general + inline code review) with unified format (id, type, user, body, path, line, created_at). Auto-permit (read-only). Needed for PR feedback iteration.
+- [x] **GitHub: `pr_view` enhanced** — add `reviewDecision`, `statusCheckRollup` fields; new `include_comments: bool` arg (default false) to optionally fetch comments. Avoids always fetching large comment data.
 
 #### Phase 3 — Unblock Release Workflow
 

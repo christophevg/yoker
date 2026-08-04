@@ -571,16 +571,16 @@ class GitHubToolConfig(ToolConfig):
     timeout_ms: Default per-call timeout in milliseconds.
     max_results: Upper bound for the ``limit`` parameter on list operations.
     require_explicit_repo: If True, the ``repo`` parameter is required (gh
-      auto-detection from git remote is disabled).
-    max_output_kb: Per-stream (stdout/stderr) truncation limit in KB.
+      auto-detection from git remote is disabled).    max_output_kb: Per-stream (stdout/stderr) truncation limit in KB.
   """
-
   allowed_operations: tuple[str, ...] = (
     "repo_view",
     "issue_list",
     "issue_view",
     "pr_list",
     "pr_view",
+    "pr_reviews",
+    "pr_comments",
     "workflow_list",
     "workflow_view",
     "release_list",

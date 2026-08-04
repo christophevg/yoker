@@ -1,10 +1,11 @@
 """GitHub tool implementation for Yoker.
 
 Wraps the ``gh`` CLI for a fixed set of read-only GitHub operations. The
-operation enum is the security boundary: the agent can only invoke the nine
+operation enum is the security boundary: the agent can only invoke the
 hardcoded ``gh`` subcommands listed in ``_OPERATION_DISPATCH`` — never
-``gh api``, ``gh extension``, ``gh auth token``, or any write/destructive
-subcommand.
+``gh extension``, ``gh auth token``, or any write/destructive
+subcommand. The ``pr_reviews`` and ``pr_comments`` operations use
+``gh api`` with hardcoded REST endpoint templates (still read-only).
 
 Security model
 --------------
@@ -27,6 +28,7 @@ Security model
   ``os.environ`` is passed through unchanged so ``gh`` can find its config.
 """
 
+import json
 import os
 import re
 import signal
@@ -53,6 +55,8 @@ _GITHUB_OPERATIONS: frozenset[str] = frozenset(
     "issue_view",
     "pr_list",
     "pr_view",
+    "pr_reviews",
+    "pr_comments",
     "workflow_list",
     "workflow_view",
     "release_list",
@@ -87,6 +91,16 @@ _OPERATION_DISPATCH: dict[str, tuple[list[str], str, str | None]] = {
     "number,title,body,state,author,baseRefName,headRefName,mergeable,files,reviewDecision,statusCheckRollup",
     "number",
   ),
+  "pr_reviews": (
+    ["api", "repos/{repo}/pulls/{number}/reviews"],
+    "id,user,state,body,submitted_at",
+    "number",
+  ),
+  "pr_comments": (
+    ["api", "repos/{repo}/pulls/{number}/comments"],
+    "id,user,body,path,line,created_at",
+    "number",
+  ),
   "workflow_list": (
     ["run", "list"],
     "databaseId,name,status,conclusion,headBranch,createdAt",
@@ -100,6 +114,12 @@ _OPERATION_DISPATCH: dict[str, tuple[list[str], str, str | None]] = {
   ),
   "release_view": (["release", "view"], "tagName,name,body,assets", "tag"),
 }
+
+# Operations that use ``gh api`` instead of a regular ``gh`` subcommand.
+# For these, the dispatch prefix is a template with ``{repo}`` and/or
+# ``{number}`` placeholders, and the fields are passed via ``--jq`` instead
+# of ``--json``.
+_API_OPS: frozenset[str] = frozenset({"pr_reviews", "pr_comments"})
 
 # Operations that accept the named flag.
 _STATE_OPS: frozenset[str] = frozenset({"issue_list", "pr_list"})
@@ -143,6 +163,7 @@ async def github(
   limit: int = 30,
   state: str = "open",
   label: Annotated[str, Text("Filter by label (for issue_list)")] = "",
+  include_comments: bool = False,
   timeout_ms: int | None = None,
 ) -> ToolResult:
   """Perform a read-only GitHub operation via the ``gh`` CLI.
@@ -151,6 +172,10 @@ async def github(
   further gated by ``GitHubToolConfig.allowed_operations``. All commands
   run via ``subprocess`` with list args (no shell); timeout is enforced by
   killing the whole process group.
+
+  When ``include_comments=True`` (only for ``pr_view``), a second ``gh api``
+  call fetches PR comments and inline review comments, merged into the
+  result JSON under a ``comments`` key.
   """
   # --- 1. Config type check ---
   gh_config = ctx.config
@@ -175,8 +200,7 @@ async def github(
     logger.info(
       "github_rejected",
       reason="operation_not_allowed",
-      operation=operation,
-    )
+      operation=operation,    )
     return ToolResult(
       success=False,
       error=(f"Operation not allowed: {operation}. Allowed: {list(gh_config.allowed_operations)}"),
@@ -187,6 +211,20 @@ async def github(
   if param_error is not None:
     logger.info("github_rejected", reason="invalid_param", error=param_error)
     return ToolResult(success=False, error=param_error)
+
+  # --- 5b. include_comments only valid for pr_view ---
+  if include_comments and operation != "pr_view":
+    return ToolResult(
+      success=False,
+      error=f"Parameter 'include_comments' is only supported for 'pr_view', not '{operation}'",
+    )
+
+  # --- 5c. API ops require explicit repo (gh api has no auto-detect) ---
+  if operation in _API_OPS and not repo:
+    return ToolResult(
+      success=False,
+      error=f"Operation '{operation}' requires a 'repo' parameter (owner/name)",
+    )
 
   # --- 6. Required-parameter check ---
   _subcmd, _fields, required = _OPERATION_DISPATCH[operation]
@@ -270,9 +308,16 @@ async def github(
   truncated = stdout_truncated or stderr_truncated
 
   returncode = proc.returncode
-  gh_subcommand = f"gh {' '.join(_OPERATION_DISPATCH[operation][0])} --json"
+  if operation in _API_OPS:
+    gh_subcommand = f"gh api {_OPERATION_DISPATCH[operation][0][1]}"
+  else:
+    gh_subcommand = f"gh {' '.join(_OPERATION_DISPATCH[operation][0])} --json"
 
   if returncode == 0:
+    # --- pr_view with include_comments: fetch and merge comments ---
+    if operation == "pr_view" and include_comments and repo and number:
+      stdout_out = _merge_comments(stdout_out, repo, number, effective_timeout_ms)
+
     content_metadata = {
       "operation": "github",
       "path": repo or "default",
@@ -413,8 +458,18 @@ def _build_command(
   ``--`` separator is placed before the user-supplied positional (issue/PR
   number or release tag) so anything after it is treated as an operand,
   not a flag — defense in depth against flag injection.
+
+  For ``_API_OPS`` (``pr_reviews``, ``pr_comments``), the command uses
+  ``gh api`` with a URL template and ``--jq`` instead of ``--json``.
   """
   subcmd, fields, required = _OPERATION_DISPATCH[operation]
+
+  if operation in _API_OPS:
+    # subcmd is ["api", "repos/{repo}/pulls/{number}/reviews"] etc.
+    url_template = subcmd[1]
+    url = url_template.replace("{repo}", repo).replace("{number}", str(number))
+    return ["gh", "api", url, "--jq", _api_jq_fields(fields)]
+
   cmd: list[str] = ["gh", *subcmd]
 
   if repo:
@@ -435,6 +490,65 @@ def _build_command(
     cmd.extend(["--", tag])
 
   return cmd
+
+
+def _api_jq_fields(fields: str) -> str:
+  """Convert a comma-separated field list to a ``--jq`` expression for ``gh api``.
+
+  Maps field names to their JSON keys, handling ``user`` → ``.user.login``
+  and ``state`` → ``.state`` (already a string for reviews).
+  """
+  field_map = {
+    "id": ".id",
+    "user": ".user.login",
+    "state": ".state",
+    "body": ".body",
+    "submitted_at": ".submitted_at",
+    "path": ".path",
+    "line": ".line",
+    "created_at": ".created_at",
+  }
+  parts = [f"{f}: {field_map.get(f, f'.{f}')}" for f in fields.split(",")]
+  return "{" + ", ".join(parts) + "}"
+
+
+def _merge_comments(pr_json: str, repo: str, number: int, timeout_ms: int) -> str:
+  """Fetch PR comments via ``gh api`` and merge them into the PR JSON output.
+
+  Returns the original JSON if the comments fetch fails or the PR JSON is
+  unparseable — never raises.
+  """
+  url = f"repos/{repo}/pulls/{number}/comments"
+  jq = _api_jq_fields("id,user,body,path,line,created_at")
+  cmd = ["gh", "api", url, "--jq", jq]
+
+  try:
+    proc = subprocess.Popen(
+      cmd,
+      cwd=None,
+      env=os.environ,
+      stdout=subprocess.PIPE,
+      stderr=subprocess.PIPE,
+      text=True,
+      start_new_session=True,
+    )
+    stdout, _stderr = proc.communicate(timeout=timeout_ms / 1000)
+  except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+    return pr_json
+
+  if proc.returncode != 0:
+    return pr_json
+
+  stdout, _ = _redact(stdout or "")
+  _truncated, stdout = _truncate(stdout, 100 * 1024)
+
+  try:
+    pr_data = json.loads(pr_json)
+    comments = json.loads(stdout) if stdout.strip() else []
+    pr_data["comments"] = comments
+    return json.dumps(pr_data)
+  except (json.JSONDecodeError, TypeError):
+    return pr_json
 
 
 def _redact(text: str) -> tuple[str, int]:

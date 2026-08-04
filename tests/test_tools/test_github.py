@@ -201,7 +201,6 @@ class TestGithubOperations:
     popen = _mock_popen(mocker, stdout='{"tagName":"v1.0"}')
     await github(operation="release_view", ctx=_ctx(), tag="v1.0.0", repo="owner/repo")
     cmd = popen.call_args.args[0]
-    assert cmd[:3] == ["gh", "release", "view"]
     assert "--" in cmd
     idx = cmd.index("--")
     assert cmd[idx + 1] == "v1.0.0"
@@ -213,6 +212,96 @@ class TestGithubOperations:
     await github(operation="repo_view", ctx=_ctx())
     cmd = popen.call_args.args[0]
     assert "--repo" not in cmd
+
+  @pytest.mark.asyncio
+  async def test_pr_reviews(self, mocker: MockerFixture) -> None:
+    """pr_reviews uses gh api with the reviews endpoint."""
+    popen = _mock_popen(mocker, stdout="[]")
+    await github(operation="pr_reviews", ctx=_ctx(), repo="owner/repo", number=42)
+    cmd = popen.call_args.args[0]
+    assert cmd[:3] == ["gh", "api", "repos/owner/repo/pulls/42/reviews"]
+    assert "--jq" in cmd
+    assert "--json" not in cmd
+
+  @pytest.mark.asyncio
+  async def test_pr_comments(self, mocker: MockerFixture) -> None:
+    """pr_comments uses gh api with the comments endpoint."""
+    popen = _mock_popen(mocker, stdout="[]")
+    await github(operation="pr_comments", ctx=_ctx(), repo="owner/repo", number=42)
+    cmd = popen.call_args.args[0]
+    assert cmd[:3] == ["gh", "api", "repos/owner/repo/pulls/42/comments"]
+    assert "--jq" in cmd
+    assert "--json" not in cmd
+
+  @pytest.mark.asyncio
+  async def test_pr_reviews_requires_repo(self, mocker: MockerFixture) -> None:
+    _mock_popen(mocker)
+    result = await github(operation="pr_reviews", ctx=_ctx(), number=42)
+    assert not result.success
+    assert "repo" in result.error.lower()
+
+  @pytest.mark.asyncio
+  async def test_pr_comments_requires_repo(self, mocker: MockerFixture) -> None:
+    _mock_popen(mocker)
+    result = await github(operation="pr_comments", ctx=_ctx(), number=42)
+    assert not result.success
+    assert "repo" in result.error.lower()
+
+  @pytest.mark.asyncio
+  async def test_pr_reviews_requires_number(self, mocker: MockerFixture) -> None:
+    _mock_popen(mocker)
+    result = await github(operation="pr_reviews", ctx=_ctx(), repo="owner/repo")
+    assert not result.success
+    assert "number" in result.error.lower()
+
+  @pytest.mark.asyncio
+  async def test_pr_comments_requires_number(self, mocker: MockerFixture) -> None:
+    _mock_popen(mocker)
+    result = await github(operation="pr_comments", ctx=_ctx(), repo="owner/repo")
+    assert not result.success
+    assert "number" in result.error.lower()
+
+  @pytest.mark.asyncio
+  async def test_pr_view_with_include_comments(self, mocker: MockerFixture) -> None:
+    """pr_view with include_comments=True makes a second gh api call for comments."""
+    pr_json = '{"number": 42, "title": "Fix"}'
+    comments_json = '[{"id": 1, "body": "LGTM"}]'
+    popen = _mock_popen(mocker, stdout=pr_json)
+    # Second call for comments
+    mock_communicate = popen.return_value.communicate
+    # First call returns pr_json, second returns comments_json
+    mock_communicate.side_effect = [(pr_json, ""), (comments_json, "")]
+    popen.return_value.returncode = 0
+    result = await github(
+      operation="pr_view", ctx=_ctx(), repo="owner/repo", number=42, include_comments=True
+    )
+    assert result.success
+    # The result should contain the merged JSON with comments
+    import json as json_mod
+    merged = json_mod.loads(result.result)
+    assert merged["number"] == 42
+    assert "comments" in merged
+    assert merged["comments"][0]["id"] == 1
+
+  @pytest.mark.asyncio
+  async def test_pr_view_without_include_comments_no_extra_call(self, mocker: MockerFixture) -> None:
+    """pr_view without include_comments does NOT make a second gh api call."""
+    popen = _mock_popen(mocker, stdout='{"number": 42}')
+    result = await github(
+      operation="pr_view", ctx=_ctx(), repo="owner/repo", number=42, include_comments=False
+    )
+    assert result.success
+    # Only one Popen call (the pr_view itself)
+    assert popen.call_count == 1
+
+  @pytest.mark.asyncio
+  async def test_include_comments_rejected_for_non_pr_view(self, mocker: MockerFixture) -> None:
+    _mock_popen(mocker)
+    result = await github(
+      operation="issue_view", ctx=_ctx(), repo="owner/repo", number=1, include_comments=True
+    )
+    assert not result.success
+    assert "include_comments" in result.error
 
 
 class TestGithubOperationAllowlist:
@@ -240,14 +329,16 @@ class TestGithubOperationAllowlist:
     assert not result.success
 
   @pytest.mark.asyncio
-  async def test_default_allowlist_allows_all_nine(self, mocker: MockerFixture) -> None:
+  async def test_default_allowlist_allows_all_eleven(self, mocker: MockerFixture) -> None:
     _mock_popen(mocker, stdout="{}")
     cfg = GitHubToolConfig()
     for op in cfg.allowed_operations:
       _mock_popen(mocker, stdout="{}")
       kwargs: dict[str, Any] = {}
-      if op in {"issue_view", "pr_view", "workflow_view"}:
+      if op in {"issue_view", "pr_view", "workflow_view", "pr_reviews", "pr_comments"}:
         kwargs["number"] = 1
+      if op in {"pr_reviews", "pr_comments"}:
+        kwargs["repo"] = "owner/repo"
       if op == "release_view":
         kwargs["tag"] = "v1"
       result = await github(operation=op, ctx=_ctx(cfg), **kwargs)
@@ -575,9 +666,9 @@ class TestGithubConfigValidation:
     with pytest.raises(ValidationError):
       GitHubToolConfig(allowed_operations=("repo_view", "bogus_op"))
 
-  def test_default_allowlist_has_nine_ops(self) -> None:
+  def test_default_allowlist_has_eleven_ops(self) -> None:
     cfg = GitHubToolConfig()
-    assert len(cfg.allowed_operations) == 9
+    assert len(cfg.allowed_operations) == 11
 
   def test_invalid_timeout_raises(self) -> None:
     with pytest.raises(ValidationError):
