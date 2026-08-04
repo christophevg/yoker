@@ -50,6 +50,19 @@ class SimpleContextManager(BaseContextManager):
     return (
       f"You are running inside the Yoker agent harness ({harness_id}). "
       f"Current working directory: {Path.cwd()}. Model in use: {self._agent.model}."
+      "\n\n"
+      "IMPORTANT — post_filter: Tool outputs can be very large and consume your "
+      "context budget. EVERY tool accepts an optional `post_filter` parameter: "
+      "a regex pattern that filters the output line-by-line, keeping only matching "
+      "lines. You MUST use this proactively. Examples:\n"
+      "  - `post_filter: 'error|FAIL|Exception|assert'` on make/test calls to see "
+      "only failures\n"
+      "  - `post_filter: 'class |def |import '` on read/search calls to see only "
+      "structure\n"
+      "  - `post_filter: 'TODO|FIXME|HACK'` to find only markers\n"
+      "ALWAYS pass post_filter when you expect large output. This is critical for "
+      "keeping your session running longer. Not using it will cause context overflow "
+      "and premature session termination."
     )
 
   @property

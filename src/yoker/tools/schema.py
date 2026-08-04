@@ -147,6 +147,18 @@ def build_tool_spec(
     if param.default is inspect.Parameter.empty:
       required.append(param_name)
 
+  # Auto-inject post_filter: a grep-style regex pattern the LLM can use to
+  # filter tool output line-by-line before it is returned.  Applied centrally
+  # in _processing._execute_tool; never reaches the actual tool function.
+  properties["post_filter"] = {
+    "type": "string",
+    "description": (
+      "Optional regex pattern to filter the tool output. Only lines matching "
+      "this pattern are returned, reducing context size. Example: 'error|warning' "
+      "keeps only lines containing 'error' or 'warning'."
+    ),
+  }
+
   # Build the full tool name with namespace for the schema
   # Use __ instead of : to avoid confusing the model with colons
   tool_name = f"{namespace}__{resolved_name}" if namespace else resolved_name

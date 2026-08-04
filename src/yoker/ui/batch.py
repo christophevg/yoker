@@ -247,7 +247,7 @@ class BatchUIHandler(UIHandler):
     """
     if not self.show_tool_calls:
       return
-    args_str = " ".join(f"{k}={v}" for k, v in list(args.items())[:3])
+    args_str = " ".join(f"{k}={v}" for k, v in args.items())
     print(f"# Tool: {tool_name}({args_str})", file=self._stderr)
 
   def output_tool_result(self, tool_name: str, success: bool, result: str) -> None:

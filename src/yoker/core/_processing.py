@@ -991,15 +991,21 @@ async def _execute_tool(spec: ToolSpec, agent: Any, tool_args: dict[str, Any]) -
   """Execute a tool with proper argument binding and context injection.
 
   Handles:
+  - Extracting the auto-injected ``post_filter`` parameter before binding
   - Binding kwargs to the tool's signature
   - Injecting ToolContext if the tool expects it
   - Calling sync or async tools
   - Normalizing the result to ToolResult
+  - Applying post-filter to the result string (grep-style line filtering)
   """
   # Get the original tool signature
   if spec.execute is None:
     return ToolResult(success=False, error=f"Tool '{spec.name}' has no execute function")
   sig = inspect.signature(spec.execute)
+
+  # Extract post_filter before binding — it is auto-injected into the schema
+  # and not a real parameter on the tool function.
+  post_filter = tool_args.pop("post_filter", None)
 
   # Build kwargs, injecting context if needed
   kwargs = tool_args.copy()
@@ -1021,9 +1027,81 @@ async def _execute_tool(spec: ToolSpec, agent: Any, tool_args: dict[str, Any]) -
     result = await result
 
   # Normalize to ToolResult
-  if isinstance(result, ToolResult):
+  if not isinstance(result, ToolResult):
+    result = ToolResult(success=True, result=result)
+
+  # Apply post-filter to the result string (grep-style line filtering).
+  # Apply on both success and failure — on failure the error field carries
+  # the useful output (e.g. test failures) that the LLM wants to filter.
+  if post_filter:
+    result = _apply_post_filter(result, post_filter)
+
+  return result
+
+
+def _apply_post_filter(result: ToolResult, pattern: str) -> ToolResult:
+  """Filter a ToolResult's output line-by-line using a regex pattern.
+
+  Filters both ``result`` and ``error`` fields when they are strings. Dict
+  results (e.g. from the make tool) are left unchanged — the error field
+  typically carries the combined stdout+stderr that the LLM wants to grep.
+
+  Only lines matching the pattern are kept. A summary line is appended
+  showing how many lines were kept out of the total. If the pattern is
+  invalid regex, the original result is returned unchanged with a warning.
+  """
+  import re as _re
+
+  try:
+    regex = _re.compile(pattern)
+  except _re.error as e:
+    logger.warning("post_filter_invalid_regex", pattern=pattern, error=str(e))
     return result
-  return ToolResult(success=True, result=result)
+
+  new_result = result.result
+  new_error = result.error
+
+  # Filter the result field if it's a string
+  if isinstance(new_result, str) and new_result:
+    new_result, changed = _filter_lines(new_result, regex, pattern)
+  else:
+    changed = False
+
+  # Filter the error field if it's a string (failure case — e.g. make tool
+  # puts combined stdout+stderr in error on failure)
+  if isinstance(new_error, str) and new_error:
+    new_error, error_changed = _filter_lines(new_error, regex, pattern)
+    changed = changed or error_changed
+
+  if not changed:
+    return result
+
+  return ToolResult(
+    success=result.success,
+    result=new_result,
+    error=new_error,
+    content_metadata=result.content_metadata,
+  )
+
+
+def _filter_lines(content: str, regex, pattern: str) -> tuple[str, bool]:
+  """Filter ``content`` line-by-line, keeping only lines matching ``regex``.
+
+  Returns (filtered_content, changed). If all lines match, returns the
+  original content unchanged with changed=False (no summary appended).
+  """
+  lines = content.splitlines()
+  matched = [line for line in lines if regex.search(line)]
+  total = len(lines)
+  kept = len(matched)
+
+  if kept == total:
+    # No filtering happened — all lines matched.
+    return content, False
+
+  filtered = "\n".join(matched)
+  filtered += f"\n\n[post_filter: {kept}/{total} lines matched pattern: {pattern}]"
+  return filtered, True
 
 
 def _validate_tool_args(agent: Any, spec: ToolSpec, tool_args: dict[str, Any]) -> ValidationResult:
