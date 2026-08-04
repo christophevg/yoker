@@ -25,6 +25,7 @@ to ``auto_permission`` in ``yoker.toml``:
     auto_permission = ["status", "log", "diff", "branch", "show", "commit"]
 """
 
+import asyncio
 import re
 import subprocess
 from pathlib import Path
@@ -358,7 +359,7 @@ async def git(
   logger.info("git_executing", operation=operation, path=str(work_dir))
 
   try:
-    returncode, stdout, stderr = _execute_command(cmd, work_dir)
+    returncode, stdout, stderr = await _execute_command(cmd, work_dir)
 
     if returncode == 0:
       sanitized_output = _sanitize_output(stdout)
@@ -437,11 +438,11 @@ async def _check_approval(operation: str, ctx: ToolContext) -> tuple[bool, str |
 
   # Build a preview for the approval prompt.
   if operation == "commit":
-    preview = _staged_diff_preview()
+    preview = await _staged_diff_preview()
   elif operation == "push":
-    preview = _push_preview()
+    preview = await _push_preview()
   elif operation == "checkout":
-    preview = _checkout_preview()
+    preview = await _checkout_preview()
   else:
     preview = f"git {operation}"
 
@@ -456,23 +457,23 @@ async def _check_approval(operation: str, ctx: ToolContext) -> tuple[bool, str |
   return True, None
 
 
-def _staged_diff_preview() -> str:
+async def _staged_diff_preview() -> str:
   """Build a preview of staged changes for the approval prompt."""
   try:
-    _, stdout, _ = _execute_command(["git", "diff", "--no-color", "--cached"], Path.cwd())
+    _, stdout, _ = await _execute_command(["git", "diff", "--no-color", "--cached"], Path.cwd())
     if stdout.strip():
       return stdout[:4000]
     # No staged changes — show working tree status instead.
-    _, stdout, _ = _execute_command(["git", "status", "--short"], Path.cwd())
+    _, stdout, _ = await _execute_command(["git", "status", "--short"], Path.cwd())
     return f"(no staged changes)\n\nWorking tree:\n{stdout[:2000]}"
   except Exception:
     return "git commit"
 
 
-def _push_preview() -> str:
+async def _push_preview() -> str:
   """Build a preview of what would be pushed."""
   try:
-    _, stdout, _ = _execute_command(
+    _, stdout, _ = await _execute_command(
       ["git", "log", "--no-color", "--oneline", "-5", "@{push}.."], Path.cwd()
     )
     if stdout.strip():
@@ -481,7 +482,7 @@ def _push_preview() -> str:
   except Exception:
     # @{push} may not be available (no upstream) — fall back to unpushed commits
     try:
-      _, stdout, _ = _execute_command(
+      _, stdout, _ = await _execute_command(
         ["git", "log", "--no-color", "--oneline", "-5", "origin/HEAD.."], Path.cwd()
       )
       return f"Commits to be pushed:\n{stdout}" if stdout.strip() else "git push"
@@ -489,10 +490,10 @@ def _push_preview() -> str:
       return "git push"
 
 
-def _checkout_preview() -> str:
+async def _checkout_preview() -> str:
   """Build a preview of the working tree state for the approval prompt."""
   try:
-    _, stdout, _ = _execute_command(["git", "status", "--short"], Path.cwd())
+    _, stdout, _ = await _execute_command(["git", "status", "--short"], Path.cwd())
     if stdout.strip():
       return f"Working tree (uncommitted changes may be carried over):\n{stdout[:2000]}"
     return "git checkout (clean working tree)"
@@ -609,20 +610,30 @@ def _sanitize_arg(
   return str(value)
 
 
-def _execute_command(
+async def _execute_command(
   cmd: list[str],
   cwd: Path,
   timeout_seconds: int = 30,
 ) -> tuple[int, str, str]:
-  """Execute a Git command via subprocess."""
-  result = subprocess.run(
-    cmd,
-    cwd=str(cwd),
-    capture_output=True,
-    text=True,
-    timeout=timeout_seconds,
-  )
-  return result.returncode, result.stdout, result.stderr
+  """Execute a Git command via async subprocess."""
+  try:
+    proc = await asyncio.create_subprocess_exec(
+      *cmd,
+      cwd=str(cwd),
+      stdout=asyncio.subprocess.PIPE,
+      stderr=asyncio.subprocess.PIPE,
+    )
+  except FileNotFoundError:
+    raise
+  try:
+    stdout_b, stderr_b = await asyncio.wait_for(proc.communicate(), timeout=timeout_seconds)
+  except asyncio.TimeoutError:
+    proc.kill()
+    await proc.wait()
+    raise subprocess.TimeoutExpired(cmd=cmd, timeout=timeout_seconds) from None
+  stdout = stdout_b.decode("utf-8", errors="replace") if stdout_b else ""
+  stderr = stderr_b.decode("utf-8", errors="replace") if stderr_b else ""
+  return proc.returncode or 0, stdout, stderr
 
 
 def _sanitize_output(output: str) -> str:

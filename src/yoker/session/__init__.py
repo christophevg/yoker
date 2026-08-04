@@ -141,13 +141,17 @@ class Session:
     return handler
 
   def _emit(self, event: Event | SessionEvent) -> None:
-    """Fan an event out to all registered session handlers.
+    """Fan an event out to all registered session handlers (sync path).
 
-    Both sync and async handlers are supported. Async handlers are
-    scheduled on the running loop without awaiting (fire-and-forget);
-    sync handlers are invoked directly. ``event`` may be a bare session
-    event (``SessionStartEvent``, ``AgentSpawnedEvent``, ...) or a
-    :class:`SessionEvent` envelope wrapping an agent-emitted event
+    Handles sync handlers by calling them directly. Async handlers are
+    scheduled as fire-and-forget tasks tracked in ``self._tasks`` for
+    cleanup. Used by session-level event sites (``__aenter__``,
+    ``__aexit__``, ``spawn``, ``release``, ``send``).
+
+    For agent-event forwarding (the forwarding handler path from
+    ``_make_forwarding_handler``), use :meth:`_emit_async` which awaits
+    async handlers so the caller does not return until the UI has
+    rendered the event.
     """
     for handler in list(self._event_handlers):
       try:
@@ -157,6 +161,23 @@ class Session:
           task = asyncio.ensure_future(result)
           self._tasks.add(task)
           task.add_done_callback(self._tasks.discard)
+      except Exception:
+        logger.exception("session event handler raised")
+
+  async def _emit_async(self, event: Event | SessionEvent) -> None:
+    """Fan an event out to all registered session handlers (async path).
+
+    Awaits async handlers so the caller (the forwarding handler invoked
+    from ``emit()`` in ``_processing.py``) does not return until the UI
+    has actually rendered the event. Sync handlers are called directly.
+    This prevents tool-call events from being deferred until after the
+    tool finishes executing.
+    """
+    for handler in list(self._event_handlers):
+      try:
+        result = handler(event)
+        if asyncio.iscoroutine(result):
+          await result
       except Exception:
         logger.exception("session event handler raised")
 
@@ -462,7 +483,7 @@ class Session:
     async def forward(event: Event | SessionEvent) -> None:
       # Agents emit bare events; envelopes do not reach agent handlers.
       assert not isinstance(event, SessionEvent)
-      self._emit(SessionEvent(agent_id=agent_id, event=event))
+      await self._emit_async(SessionEvent(agent_id=agent_id, event=event))
 
     forward.__name__ = f"session_forward_{agent_id}"
     return forward

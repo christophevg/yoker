@@ -5,6 +5,7 @@ permission-required operations, security guardrails (injection prevention, path
 restrictions, output sanitization), and error handling.
 """
 
+import asyncio
 import subprocess
 import sys
 from pathlib import Path
@@ -1495,14 +1496,16 @@ class TestGitToolErrorHandling:
     spec = _git_spec(config=git_config)
     ctx = _git_context(config=git_config)
 
-    # Mock subprocess.run to raise TimeoutExpired
-    mock_run = mocker.MagicMock()
-    mock_run.side_effect = subprocess.TimeoutExpired(cmd=["git"], timeout=30)
-    mocker.patch.object(git_module, "subprocess")
-    git_module.subprocess.run = mock_run
-    # Keep the real exception classes
-    git_module.subprocess.TimeoutExpired = subprocess.TimeoutExpired
-    git_module.subprocess.CompletedProcess = subprocess.CompletedProcess
+    # Mock asyncio.create_subprocess_exec to simulate timeout
+    proc = mocker.MagicMock()
+    proc.communicate = mocker.AsyncMock(side_effect=asyncio.TimeoutError())
+    proc.wait = mocker.AsyncMock()
+    proc.kill = mocker.MagicMock()
+    mocker.patch.object(git_module.asyncio, "create_subprocess_exec", return_value=proc)
+    # Also mock asyncio.wait_for to propagate the TimeoutError
+    mocker.patch.object(
+      git_module.asyncio, "wait_for", side_effect=asyncio.TimeoutError()
+    )
 
     result = await spec.execute(operation="status", path=str(repo), ctx=ctx)
 
@@ -1524,14 +1527,9 @@ class TestGitToolErrorHandling:
     spec = _git_spec(config=git_config)
     ctx = _git_context(config=git_config)
 
-    # Mock subprocess.run to raise FileNotFoundError
-    mock_run = mocker.MagicMock()
-    mock_run.side_effect = FileNotFoundError()
-    mocker.patch.object(git_module, "subprocess")
-    git_module.subprocess.run = mock_run
-    # Keep the real exception classes
-    git_module.subprocess.TimeoutExpired = subprocess.TimeoutExpired
-    git_module.subprocess.CompletedProcess = subprocess.CompletedProcess
+    # Mock asyncio.create_subprocess_exec to raise FileNotFoundError
+    mock_create = mocker.patch.object(git_module.asyncio, "create_subprocess_exec")
+    mock_create.side_effect = FileNotFoundError()
 
     result = await spec.execute(operation="status", path=str(repo), ctx=ctx)
 
@@ -1869,7 +1867,7 @@ class TestGitToolSubprocessSecurity:
   async def test_no_shell_true_used(self, tmp_path: Path, mocker: MockerFixture) -> None:
     """
     Given: git tool executing a command
-    When: Checking subprocess.run call
+    When: Checking asyncio.create_subprocess_exec call
     Then: shell=True is NOT used
     """
     repo = tmp_path / "test_repo"
@@ -1880,30 +1878,23 @@ class TestGitToolSubprocessSecurity:
     spec = _git_spec(config=git_config)
     ctx = _git_context(config=git_config)
 
-    mock_run = mocker.MagicMock()
-    mock_run.return_value = subprocess.CompletedProcess(
-      args=["git", "status"],
-      returncode=0,
-      stdout="On branch main",
-      stderr="",
+    mock_create = mocker.patch.object(git_module.asyncio, "create_subprocess_exec")
+    mock_create.return_value.returncode = 0
+    mock_create.return_value.communicate = mocker.AsyncMock(
+      return_value=(b"On branch main", b"")
     )
-    mocker.patch.object(git_module, "subprocess")
-    git_module.subprocess.run = mock_run
-    # Keep the real exception classes
-    git_module.subprocess.TimeoutExpired = subprocess.TimeoutExpired
-    git_module.subprocess.CompletedProcess = subprocess.CompletedProcess
 
     await spec.execute(operation="status", path=str(repo), ctx=ctx)
 
-    # Verify shell=True was NOT passed
-    call_kwargs = mock_run.call_args.kwargs
-    assert "shell" not in call_kwargs or call_kwargs.get("shell") is not True
+    # asyncio.create_subprocess_exec has no shell parameter (inherently no-shell).
+    call_kwargs = mock_create.call_args.kwargs
+    assert "shell" not in call_kwargs
 
   @pytest.mark.asyncio
   async def test_command_as_list_not_string(self, tmp_path: Path, mocker: MockerFixture) -> None:
     """
     Given: git tool building a command
-    When: Passing to subprocess
+    When: Passing to asyncio.create_subprocess_exec
     Then: Command is a list of strings, not a single string
     """
     repo = tmp_path / "test_repo"
@@ -1914,25 +1905,18 @@ class TestGitToolSubprocessSecurity:
     spec = _git_spec(config=git_config)
     ctx = _git_context(config=git_config)
 
-    mock_run = mocker.MagicMock()
-    mock_run.return_value = subprocess.CompletedProcess(
-      args=["git", "status"],
-      returncode=0,
-      stdout="On branch main",
-      stderr="",
+    mock_create = mocker.patch.object(git_module.asyncio, "create_subprocess_exec")
+    mock_create.return_value.returncode = 0
+    mock_create.return_value.communicate = mocker.AsyncMock(
+      return_value=(b"On branch main", b"")
     )
-    mocker.patch.object(git_module, "subprocess")
-    git_module.subprocess.run = mock_run
-    # Keep the real exception classes
-    git_module.subprocess.TimeoutExpired = subprocess.TimeoutExpired
-    git_module.subprocess.CompletedProcess = subprocess.CompletedProcess
 
     await spec.execute(operation="status", path=str(repo), ctx=ctx)
 
-    # Verify first argument (command) is a list
-    call_args = mock_run.call_args.args
-    assert isinstance(call_args[0], list)
-    assert all(isinstance(item, str) for item in call_args[0])
+    # Verify first argument (command) is passed as individual string args
+    call_args = mock_create.call_args.args
+    assert all(isinstance(item, str) for item in call_args)
+    assert call_args[0] == "git"
 
 
 class TestGitToolIntegration:

@@ -5,6 +5,7 @@ value rules, output truncation, timeout enforcement with process-group
 kill (R4), error handling, and the structured ToolResult contract.
 """
 
+import asyncio
 import sys
 from pathlib import Path
 
@@ -458,8 +459,8 @@ class TestMakeToolErrorHandling:
     """FileNotFoundError → 'make is not installed or not found in PATH'."""
     _write_makefile(tmp_path, "check:\n\t@echo ok\n")
     mocker.patch.object(
-      make_module.subprocess,
-      "Popen",
+      make_module.asyncio,
+      "create_subprocess_exec",
       side_effect=FileNotFoundError(),
     )
     spec = _make_spec()
@@ -562,25 +563,24 @@ class TestMakeToolSubprocessSecurity:
 
   @pytest.mark.asyncio
   async def test_command_is_list_not_shell(self, tmp_path: Path, mocker: MockerFixture) -> None:
-    """Popen is called with a list argv, no shell=True."""
+    """create_subprocess_exec is called with list args, no shell=True."""
     _write_makefile(tmp_path, "check:\n\t@echo ok\n")
-    popen = mocker.patch.object(make_module.subprocess, "Popen")
-    # Make communicate a sync callable that returns (stdout, stderr)
-    popen.return_value.communicate = mocker.MagicMock(return_value=("ok\n", ""))
-    popen.return_value.returncode = 0
-    popen.return_value.pid = 12345
+    create_proc = mocker.patch.object(make_module.asyncio, "create_subprocess_exec")
+    create_proc.return_value.communicate = mocker.AsyncMock(return_value=(b"ok\n", b""))
+    create_proc.return_value.returncode = 0
+    create_proc.return_value.pid = 12345
 
     spec = _make_spec()
     ctx = _make_context()
     await spec.execute(target="check", ctx=ctx, cwd=str(tmp_path))
 
-    _args, kwargs = popen.call_args
-    # First positional arg is the command list
-    cmd = _args[0]
-    assert isinstance(cmd, list)
+    _args, kwargs = create_proc.call_args
+    # First positional arg is the command (passed as *args)
+    cmd = list(_args)
     assert all(isinstance(item, str) for item in cmd)
     assert cmd == ["make", "check"]
-    assert kwargs.get("shell") is not True
+    # asyncio.create_subprocess_exec has no shell parameter (inherently no-shell).
+    assert "shell" not in kwargs
     assert kwargs.get("start_new_session") is True
 
 

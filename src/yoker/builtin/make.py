@@ -31,10 +31,10 @@ not filter the inherited env. Operators should load sensitive API keys from
 a secrets store (not plain env vars) when running untrusted agents.
 """
 
+import asyncio
 import os
 import re
 import signal
-import subprocess
 import sys
 from pathlib import Path
 from typing import Annotated
@@ -155,16 +155,16 @@ async def make(
 
   logger.info("make_executing", target=target, cwd=str(resolved_cwd), env_keys=list(validated_env))
 
-  # --- Subprocess execution (Popen so we can kill the process group on timeout) ---
+  # --- Subprocess execution (async so the event loop stays responsive) ---
   env = {**os.environ, **validated_env}
   try:
-    proc = subprocess.Popen(
-      ["make", target],
+    proc = await asyncio.create_subprocess_exec(
+      "make",
+      target,
       cwd=str(resolved_cwd),
       env=env,
-      stdout=subprocess.PIPE,
-      stderr=subprocess.PIPE,
-      text=True,
+      stdout=asyncio.subprocess.PIPE,
+      stderr=asyncio.subprocess.PIPE,
       start_new_session=True,  # R4: child leads its own process group
     )
   except FileNotFoundError:
@@ -176,15 +176,21 @@ async def make(
   stdout = ""
   stderr = ""
   try:
-    stdout, stderr = proc.communicate(timeout=effective_timeout_seconds)
-  except subprocess.TimeoutExpired:
+    stdout_b, stderr_b = await asyncio.wait_for(
+      proc.communicate(), timeout=effective_timeout_seconds
+    )
+    stdout = stdout_b.decode("utf-8", errors="replace") if stdout_b else ""
+    stderr = stderr_b.decode("utf-8", errors="replace") if stderr_b else ""
+  except asyncio.TimeoutError:
     # R4: kill the whole process group (start_new_session created one).
     _kill_process_group(proc.pid)
     # Reap to avoid zombie; collect any partial output the child produced.
     try:
-      stdout, stderr = proc.communicate(timeout=5)
-    except subprocess.TimeoutExpired:
-      stdout, stderr = (stdout or "", stderr or "")
+      stdout_b, stderr_b = await asyncio.wait_for(proc.communicate(), timeout=5)
+      stdout = stdout_b.decode("utf-8", errors="replace") if stdout_b else ""
+      stderr = stderr_b.decode("utf-8", errors="replace") if stderr_b else ""
+    except asyncio.TimeoutError:
+      pass
     logger.warning("make_timeout", target=target, timeout_ms=effective_timeout_ms)
     return ToolResult(
       success=False,

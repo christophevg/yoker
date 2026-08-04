@@ -33,11 +33,11 @@ Security model
   ``os.environ`` is passed through unchanged so ``gh`` can find its config.
 """
 
+import asyncio
 import json
 import os
 import re
 import signal
-import subprocess
 import sys
 from typing import Annotated, Any
 
@@ -311,15 +311,14 @@ async def github(
     limit=effective_limit,
   )
 
-  # --- Subprocess execution (Popen so we can kill the process group on timeout) ---
+  # --- Subprocess execution (async so the event loop stays responsive) ---
   try:
-    proc = subprocess.Popen(
-      cmd,
+    proc = await asyncio.create_subprocess_exec(
+      *cmd,
       cwd=None,
       env=os.environ,
-      stdout=subprocess.PIPE,
-      stderr=subprocess.PIPE,
-      text=True,
+      stdout=asyncio.subprocess.PIPE,
+      stderr=asyncio.subprocess.PIPE,
       start_new_session=True,
     )
   except FileNotFoundError:
@@ -332,13 +331,19 @@ async def github(
   stdout = ""
   stderr = ""
   try:
-    stdout, stderr = proc.communicate(timeout=effective_timeout_ms / 1000)
-  except subprocess.TimeoutExpired:
+    stdout_b, stderr_b = await asyncio.wait_for(
+      proc.communicate(), timeout=effective_timeout_ms / 1000
+    )
+    stdout = stdout_b.decode("utf-8", errors="replace") if stdout_b else ""
+    stderr = stderr_b.decode("utf-8", errors="replace") if stderr_b else ""
+  except asyncio.TimeoutError:
     _kill_process_group(proc.pid)
     try:
-      stdout, stderr = proc.communicate(timeout=5)
-    except subprocess.TimeoutExpired:
-      stdout, stderr = (stdout or ""), (stderr or "")
+      stdout_b, stderr_b = await asyncio.wait_for(proc.communicate(), timeout=5)
+      stdout = stdout_b.decode("utf-8", errors="replace") if stdout_b else ""
+      stderr = stderr_b.decode("utf-8", errors="replace") if stderr_b else ""
+    except asyncio.TimeoutError:
+      pass
     logger.warning("github_timeout", operation=operation, timeout_ms=effective_timeout_ms)
     return ToolResult(
       success=False,
@@ -374,7 +379,7 @@ async def github(
   if returncode == 0:
     # --- pr_view with include_comments: fetch and merge comments ---
     if operation == "pr_view" and include_comments and repo and number:
-      stdout_out = _merge_comments(stdout_out, repo, number, effective_timeout_ms)
+      stdout_out = await _merge_comments(stdout_out, repo, number, effective_timeout_ms)
 
     # --- Write ops: gh outputs a URL, not JSON. Parse it into a JSON object. ---
     if operation in _WRITE_OPS:
@@ -738,7 +743,7 @@ def _parse_write_output(operation: str, stdout: str, tag: str) -> str:
   return json.dumps(result)
 
 
-def _merge_comments(pr_json: str, repo: str, number: int, timeout_ms: int) -> str:
+async def _merge_comments(pr_json: str, repo: str, number: int, timeout_ms: int) -> str:
   """Fetch PR comments via ``gh api`` and merge them into the PR JSON output.
 
   Returns the original JSON if the comments fetch fails or the PR JSON is
@@ -749,17 +754,17 @@ def _merge_comments(pr_json: str, repo: str, number: int, timeout_ms: int) -> st
   cmd = ["gh", "api", url, "--jq", jq]
 
   try:
-    proc = subprocess.Popen(
-      cmd,
+    proc = await asyncio.create_subprocess_exec(
+      *cmd,
       cwd=None,
       env=os.environ,
-      stdout=subprocess.PIPE,
-      stderr=subprocess.PIPE,
-      text=True,
+      stdout=asyncio.subprocess.PIPE,
+      stderr=asyncio.subprocess.PIPE,
       start_new_session=True,
     )
-    stdout, _stderr = proc.communicate(timeout=timeout_ms / 1000)
-  except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+    stdout_b, _stderr_b = await asyncio.wait_for(proc.communicate(), timeout=timeout_ms / 1000)
+    stdout = stdout_b.decode("utf-8", errors="replace") if stdout_b else ""
+  except (FileNotFoundError, asyncio.TimeoutError, OSError):
     return pr_json
 
   if proc.returncode != 0:

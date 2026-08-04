@@ -7,7 +7,7 @@ truncation, the Windows platform gate, and the flat ``content_metadata``
 shape consumed by ``core/_processing.py``.
 """
 
-import subprocess
+import asyncio
 import sys
 from typing import Any
 
@@ -37,6 +37,10 @@ def _ctx(config: GitHubToolConfig | None = None) -> ToolContext:
   )
 
 
+async def _async_return(value: Any) -> Any:
+  return value
+
+
 def _mock_popen(
   mocker: MockerFixture,
   stdout: str = "",
@@ -45,16 +49,41 @@ def _mock_popen(
   pid: int = 12345,
   timeout: bool = False,
 ) -> Any:
-  """Patch subprocess.Popen to a controllable mock. Returns the popen mock."""
-  popen = mocker.patch.object(github_module.subprocess, "Popen")
-  proc = popen.return_value
+  """Patch asyncio.create_subprocess_exec to a controllable mock. Returns the mock.
+
+  The mock captures the command as a list in ``call_args.args[0]`` so tests
+  can inspect it the same way they did with ``subprocess.Popen``.
+  """
+  proc = mocker.MagicMock()
   proc.pid = pid
   proc.returncode = returncode
   if timeout:
-    proc.communicate.side_effect = subprocess.TimeoutExpired(cmd=["gh"], timeout=1)
+    proc.communicate = mocker.AsyncMock(side_effect=asyncio.TimeoutError())
   else:
-    proc.communicate.return_value = (stdout, stderr)
-  return popen
+    proc.communicate = mocker.AsyncMock(
+      return_value=(stdout.encode("utf-8"), stderr.encode("utf-8"))
+    )
+
+  # Wrap so call_args.args[0] is the command list (matching old Popen interface)
+  original_mock = mocker.patch.object(
+    github_module.asyncio, "create_subprocess_exec"
+  )
+  original_mock.side_effect = lambda *args, **kwargs: proc
+  # Override call_args to present args as a single list (first positional)
+  original_mock.call_args = None  # will be set after first call
+
+  # Use a wrapper to track calls in list form
+  calls: list = []
+  real_side = original_mock.side_effect
+
+  def wrapped(*args: Any, **kwargs: Any) -> Any:
+    calls.append(mocker.call(list(args), **kwargs))
+    original_mock.call_args = calls[-1]
+    original_mock.call_args_list = calls
+    return real_side(*args, **kwargs)
+
+  original_mock.side_effect = wrapped
+  return original_mock
 
 
 # POSIX-only: the github tool uses os.killpg + SIGKILL + start_new_session
@@ -286,12 +315,26 @@ class TestGithubOperations:
     """pr_view with include_comments=True makes a second gh api call for comments."""
     pr_json = '{"number": 42, "title": "Fix"}'
     comments_json = '[{"id": 1, "body": "LGTM"}]'
-    popen = _mock_popen(mocker, stdout=pr_json)
-    # Second call for comments
-    mock_communicate = popen.return_value.communicate
-    # First call returns pr_json, second returns comments_json
-    mock_communicate.side_effect = [(pr_json, ""), (comments_json, "")]
-    popen.return_value.returncode = 0
+    proc1 = mocker.MagicMock()
+    proc1.returncode = 0
+    proc1.communicate = mocker.AsyncMock(
+      return_value=(pr_json.encode("utf-8"), b"")
+    )
+    proc2 = mocker.MagicMock()
+    proc2.returncode = 0
+    proc2.communicate = mocker.AsyncMock(
+      return_value=(comments_json.encode("utf-8"), b"")
+    )
+    procs = [proc1, proc2]
+    captured_calls: list[Any] = []
+
+    def _create(*args: Any, **kwargs: Any) -> Any:
+      captured_calls.append(mocker.call(list(args), **kwargs))
+      return procs.pop(0)
+
+    mocker.patch.object(
+      github_module.asyncio, "create_subprocess_exec", side_effect=_create
+    )
     result = await github(
       operation="pr_view", ctx=_ctx(), repo="owner/repo", number=42, include_comments=True
     )
@@ -1022,7 +1065,7 @@ class TestGithubErrorMapping:
 
   @pytest.mark.asyncio
   async def test_gh_not_installed(self, mocker: MockerFixture) -> None:
-    mocker.patch.object(github_module.subprocess, "Popen", side_effect=FileNotFoundError())
+    mocker.patch.object(github_module.asyncio, "create_subprocess_exec", side_effect=FileNotFoundError())
     result = await github(operation="repo_view", ctx=_ctx())
     assert not result.success
     assert "not found" in result.error.lower()
@@ -1064,12 +1107,13 @@ class TestGithubSubprocessSecurity:
   async def test_command_is_list_no_shell(self, mocker: MockerFixture) -> None:
     popen = _mock_popen(mocker, stdout="{}", returncode=0)
     await github(operation="repo_view", ctx=_ctx())
-    _args, kwargs = popen.call_args
-    cmd = _args[0]
+    cmd = popen.call_args.args[0]
+    kwargs = popen.call_args.kwargs
     assert isinstance(cmd, list)
     assert all(isinstance(item, str) for item in cmd)
     assert cmd[0] == "gh"
-    assert kwargs.get("shell") is not True
+    # asyncio.create_subprocess_exec has no shell parameter (inherently no-shell).
+    assert "shell" not in kwargs
     assert kwargs.get("start_new_session") is True
 
   @pytest.mark.asyncio
@@ -1077,7 +1121,7 @@ class TestGithubSubprocessSecurity:
     """The agent cannot inject env vars; only os.environ is inherited."""
     popen = _mock_popen(mocker, stdout="{}", returncode=0)
     await github(operation="repo_view", ctx=_ctx())
-    _args, kwargs = popen.call_args
+    kwargs = popen.call_args.kwargs
     # env is os.environ (no agent-supplied additions).
     assert kwargs.get("env") is github_module.os.environ
 
@@ -1125,8 +1169,8 @@ class TestWindowsPlatformGate:
 
   @pytest.mark.asyncio
   async def test_github_rejected_on_windows(self, mocker: MockerFixture) -> None:
-    # Popen must NOT be invoked on Windows.
-    popen = mocker.patch.object(github_module.subprocess, "Popen")
+    # create_subprocess_exec must NOT be invoked on Windows.
+    popen = mocker.patch.object(github_module.asyncio, "create_subprocess_exec")
     result = await github(operation="repo_view", ctx=_ctx())
     assert not result.success
     assert "not available on Windows" in result.error

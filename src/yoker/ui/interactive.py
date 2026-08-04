@@ -110,6 +110,9 @@ class InteractiveUIHandler(UIHandler):
 
     # Single "Processing..." status line, replaced on first chunk.
     self._processing_status: Status | None = None
+    # Tool-execution spinner — started after tool call is rendered,
+    # stopped when the tool result arrives.
+    self._tool_execution_status: Status | None = None
 
     # Optional predefined input source for scripted/demo usage.
     self._input_source: list[str] | None = None
@@ -187,6 +190,20 @@ class InteractiveUIHandler(UIHandler):
     if self._processing_status is not None:
       self._processing_status.stop()
       self._processing_status = None
+
+  def _start_tool_execution_status(self, tool_name: str) -> None:
+    """Start a spinner indicating a tool is executing."""
+    # Stop any existing processing or tool-execution spinner first.
+    self._stop_processing_status()
+    self._stop_tool_execution_status()
+    self._tool_execution_status = self.console.status(f"Running {tool_name}...", spinner="dots")
+    self._tool_execution_status.start()
+
+  def _stop_tool_execution_status(self) -> None:
+    """Stop the tool-execution spinner if active."""
+    if self._tool_execution_status is not None:
+      self._tool_execution_status.stop()
+      self._tool_execution_status = None
 
   def start_processing(self) -> None:
     """Start the "Processing..." status spinner.
@@ -432,6 +449,7 @@ class InteractiveUIHandler(UIHandler):
 
   def start_content_stream(self) -> None:
     """Start streaming content."""
+    self._stop_tool_execution_status()
     self._stop_processing_status()
     self.console.print("⏺ ", end="", style=CONTENT_STYLE)
 
@@ -460,6 +478,7 @@ class InteractiveUIHandler(UIHandler):
     """Start streaming thinking."""
     if not self.show_thinking:
       return
+    self._stop_tool_execution_status()
     self._stop_processing_status()
     self.console.print("⏺ ", end="", style=THINKING_STYLE)
 
@@ -493,6 +512,7 @@ class InteractiveUIHandler(UIHandler):
     Args:
       name: The session-assigned id of the spawned agent.
     """
+    self._stop_tool_execution_status()
     self._stop_processing_status()
     self.console.print(f"[cyan]↳ Agent spawned:[/cyan] {name}")
 
@@ -502,6 +522,7 @@ class InteractiveUIHandler(UIHandler):
     Args:
       name: The session-assigned id of the finished agent.
     """
+    self._stop_tool_execution_status()
     self._stop_processing_status()
     self.console.print(f"[dim]↳ Agent finished:[/dim] {name}")
 
@@ -567,6 +588,9 @@ class InteractiveUIHandler(UIHandler):
     ``old_string`` / ``new_string`` are suppressed (the diff is shown
     separately via ``output_tool_content``).
 
+    After rendering the call line, starts a spinner indicating the tool
+    is executing. The spinner is stopped by ``output_tool_result``.
+
     Args:
       tool_name: Name of tool being called.
       args: Tool arguments (may be truncated for display).
@@ -577,9 +601,12 @@ class InteractiveUIHandler(UIHandler):
     self.console.print(f"⏺ {tool_name}", end="", style=TOOL_STYLE)
     details = self._format_tool_details(tool_name, args)
     self.console.print(f"({details})")
+    self._start_tool_execution_status(tool_name)
 
   def output_tool_result(self, tool_name: str, success: bool, result: str) -> None:
     """Output tool result status.
+
+    Stops the tool-execution spinner if active before rendering the result.
 
     Args:
       tool_name: Name of tool.
@@ -588,6 +615,7 @@ class InteractiveUIHandler(UIHandler):
     """
     if not self.show_tool_calls:
       return
+    self._stop_tool_execution_status()
     self._stop_processing_status()
     if success:
       self.console.print("  [green]✓ Success[/green]", end="")
@@ -617,10 +645,9 @@ class InteractiveUIHandler(UIHandler):
     """
     if not self.show_tool_calls:
       return
+    self._stop_tool_execution_status()
     self._stop_processing_status()
     filename = Path(path).name
-
-    # Dispatch based on content_type
     if content_type == "application/x-summary":
       self._show_summary(operation, filename, metadata)
     elif content_type in ("diff", "text/x-diff"):
