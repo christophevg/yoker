@@ -2,6 +2,7 @@
 
 import inspect
 import json
+import re
 from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any, TypedDict, cast
 
@@ -1091,7 +1092,7 @@ def _apply_post_filter(result: ToolResult, pattern: str) -> ToolResult:
   )
 
 
-def _filter_lines(content: str, regex, pattern: str) -> tuple[str, bool]:
+def _filter_lines(content: str, regex: re.Pattern[str], pattern: str) -> tuple[str, bool]:
   """Filter ``content`` line-by-line, keeping only lines matching ``regex``.
 
   Returns (filtered_content, changed). If all lines match, returns the
@@ -1136,6 +1137,7 @@ def _enforce_output_limit(result: ToolResult, agent: Any, spec: ToolSpec) -> Too
 
   # Check the relevant string field(s). On success, check result.result;
   # on failure, check result.error (the field the LLM sees).
+  field_val: str | dict[str, Any] | None
   if result.success:
     field_val = result.result
   else:
