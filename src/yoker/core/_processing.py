@@ -1050,9 +1050,16 @@ async def _execute_tool(spec: ToolSpec, agent: Any, tool_args: dict[str, Any]) -
 def _apply_post_filter(result: ToolResult, pattern: str) -> ToolResult:
   """Filter a ToolResult's output line-by-line using a regex pattern.
 
-  Filters both ``result`` and ``error`` fields when they are strings. Dict
-  results (e.g. from the make tool) are left unchanged — the error field
-  typically carries the combined stdout+stderr that the LLM wants to grep.
+  Filters both ``result`` and ``error`` fields:
+
+  - **String results**: filtered line-by-line directly.
+  - **Dict results** (e.g. from the make tool): each string value within the
+    dict is filtered line-by-line. This is necessary because ``str(dict)``
+    or ``json.dumps(dict)`` produces a single-line repr with escaped newlines
+    for embedded string values, making line-based filtering useless. By
+    filtering individual string values (e.g. ``stdout``, ``stderr``), the
+    line structure of the original output is preserved.
+  - **Error field**: filtered line-by-line if it's a string (failure case).
 
   Only lines matching the pattern are kept. A summary line is appended
   showing how many lines were kept out of the total. If the pattern is
@@ -1069,9 +1076,11 @@ def _apply_post_filter(result: ToolResult, pattern: str) -> ToolResult:
   new_result = result.result
   new_error = result.error
 
-  # Filter the result field if it's a string
+  # Filter the result field.
   if isinstance(new_result, str) and new_result:
     new_result, changed = _filter_lines(new_result, regex, pattern)
+  elif isinstance(new_result, dict) and new_result:
+    new_result, changed = _filter_dict_values(new_result, regex, pattern)
   else:
     changed = False
 
@@ -1112,6 +1121,38 @@ def _filter_lines(content: str, regex: re.Pattern[str], pattern: str) -> tuple[s
   return filtered, True
 
 
+def _filter_dict_values(
+  data: dict[str, Any], regex: re.Pattern[str], pattern: str
+) -> tuple[dict[str, Any], bool]:
+  """Filter string values within a dict result line-by-line.
+
+  Tools like ``make`` return a dict (e.g. ``{"exit_code": 0, "stdout": "...",
+  "stderr": "..."}``). Converting the entire dict to ``str()`` or ``json.dumps``
+  produces a single-line repr with escaped newlines for embedded strings,
+  making line-based filtering useless. Instead, we filter each string value
+  individually, preserving the dict structure and the line structure of the
+  original content.
+
+  Non-string values (ints, bools, None) are left unchanged.
+
+  Returns (new_dict, changed). If no values were filtered, returns the
+  original dict unchanged with changed=False.
+  """
+  changed = False
+  new_data: dict[str, Any] = {}
+  for key, value in data.items():
+    if isinstance(value, str) and value:
+      filtered, val_changed = _filter_lines(value, regex, pattern)
+      if val_changed:
+        new_data[key] = filtered
+        changed = True
+      else:
+        new_data[key] = value
+    else:
+      new_data[key] = value
+  return new_data, changed
+
+
 def _enforce_output_limit(result: ToolResult, agent: Any, spec: ToolSpec) -> ToolResult:
   """Check if the result's string fields exceed the tool's max_output_kb.
 
@@ -1137,11 +1178,16 @@ def _enforce_output_limit(result: ToolResult, agent: Any, spec: ToolSpec) -> Too
 
   # Check the relevant string field(s). On success, check result.result;
   # on failure, check result.error (the field the LLM sees).
+  # Dict results (e.g. from the make tool) are converted to string — matching
+  # what _run_tool does at line 863 (str(tool_result.result)).
   field_val: str | dict[str, Any] | None
   if result.success:
     field_val = result.result
   else:
     field_val = result.error
+
+  if isinstance(field_val, dict):
+    field_val = str(field_val)
 
   if not isinstance(field_val, str) or not field_val:
     return result

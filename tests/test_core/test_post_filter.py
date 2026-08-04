@@ -409,6 +409,40 @@ class TestPostFilterExecution:
     assert "post_filter" in tool_args
     assert tool_args["post_filter"] == "ok"
 
+  @pytest.mark.asyncio
+  async def test_post_filter_dict_result_filters_string_values(self) -> None:
+    """post_filter filters individual string values within dict results.
+
+    This reproduces the bug where make check with post_filter=FAILED
+    returned 281K characters unfiltered — the dict result was not filtered
+    because _apply_post_filter only operated on string results.
+    """
+    from yoker.core._processing import _execute_tool
+
+    async def make_like_tool() -> ToolResult:
+      """Simulate a make-tool-style dict result."""
+      return ToolResult(
+        success=True,
+        result={
+          "exit_code": 0,
+          "stdout": "test_1 PASSED\ntest_2 FAILED\ntest_3 PASSED",
+          "stderr": "",
+        },
+      )
+
+    spec = build_tool_spec(make_like_tool)
+    agent = MagicMock()
+    result = await _execute_tool(spec, agent, {"post_filter": "FAILED"})
+
+    assert result.success
+    # Result is still a dict, but stdout is filtered
+    assert isinstance(result.result, dict)
+    assert result.result["exit_code"] == 0
+    assert "test_2 FAILED" in result.result["stdout"]
+    assert "test_1 PASSED" not in result.result["stdout"]
+    assert "test_3 PASSED" not in result.result["stdout"]
+    assert "[post_filter: 1/3" in result.result["stdout"]
+
 
 # ---------------------------------------------------------------------------
 # Unit tests for _enforce_output_limit
@@ -487,19 +521,21 @@ class TestEnforceOutputLimit:
     assert not out.success
     assert "exceeds" in out.error.lower()
 
-  def test_dict_result_not_checked(self) -> None:
-    """Dict results (e.g. from make) are not string-checked."""
+  def test_dict_result_converted_and_checked(self) -> None:
+    """Dict results (e.g. from make) are converted to string and checked."""
     from yoker.core._processing import _enforce_output_limit
 
     spec = self._make_spec()
     config = MagicMock()
-    config.max_output_kb = 1
+    config.max_output_kb = 1  # 1KB limit
     agent = MagicMock()
     agent.config.tools.__getitem__ = MagicMock(return_value=config)
 
     result = ToolResult(success=True, result={"exit_code": 0, "stdout": "x" * 500000})
     out = _enforce_output_limit(result, agent, spec)
-    assert out is result  # unchanged — dict not checked
+    assert not out.success
+    assert "exceeds" in (out.error or "").lower()
+    assert "post_filter" in (out.error or "").lower()
 
 
 # ---------------------------------------------------------------------------
@@ -569,13 +605,31 @@ class TestApplyPostFilter:
     filtered = _apply_post_filter(result, "error")
     assert filtered.content_metadata == metadata
 
-  def test_filter_dict_result_returns_original(self) -> None:
-    """post_filter on a dict result (not a string) returns the original."""
+  def test_filter_dict_result_filters_string_values(self) -> None:
+    """post_filter on a dict result filters individual string values.
+
+    Dict results (e.g. from the make tool: {"exit_code": 0, "stdout": "...",
+    "stderr": "..."}) have their string values filtered line-by-line.
+    Non-string values (exit_code, etc.) are preserved unchanged.
+    """
     from yoker.core._processing import _apply_post_filter
 
-    result = ToolResult(success=True, result={"matches": []})
+    result = ToolResult(
+      success=True,
+      result={
+        "exit_code": 0,
+        "stdout": "error: something\nok: fine\nerror: other",
+        "stderr": "",
+      },
+    )
     filtered = _apply_post_filter(result, "error")
-    assert filtered.result == {"matches": []}
+    # Result remains a dict with filtered string values
+    assert isinstance(filtered.result, dict)
+    assert filtered.result["exit_code"] == 0
+    assert "error: something" in filtered.result["stdout"]
+    assert "error: other" in filtered.result["stdout"]
+    assert "ok: fine" not in filtered.result["stdout"]
+    assert "[post_filter: 2/3" in filtered.result["stdout"]
 
   def test_filter_error_field_on_failure(self) -> None:
     """post_filter filters the error field on failure results.
@@ -613,18 +667,46 @@ class TestApplyPostFilter:
     assert "ok: error line" not in (filtered.error or "")
 
   def test_filter_dict_result_but_filters_error(self) -> None:
-    """post_filter on dict result still filters the error field."""
+    """post_filter on dict result filters dict string values and error field."""
     from yoker.core._processing import _apply_post_filter
 
     result = ToolResult(
       success=False,
-      result={"exit_code": 1, "stdout": "...", "stderr": "..."},
+      result={
+        "exit_code": 1,
+        "stdout": "error: stdout line\nok: stdout line",
+        "stderr": "...",
+      },
       error="line1: error\nline2: ok",
     )
     filtered = _apply_post_filter(result, "error")
-    # Dict result is unchanged
+    # Dict result remains a dict, with stdout filtered
     assert isinstance(filtered.result, dict)
     assert filtered.result["exit_code"] == 1
+    assert "error: stdout line" in filtered.result["stdout"]
+    assert "ok: stdout line" not in filtered.result["stdout"]
     # Error field is filtered
     assert "line1: error" in (filtered.error or "")
+
+  def test_filter_dict_result_make_tool_scenario(self) -> None:
+    """post_filter on a make-tool-style dict result with large stdout.
+
+    This reproduces the bug where make check with post_filter=FAILED
+    returned 281K characters unfiltered — the dict result's string values
+    were not filtered line-by-line.
+    """
+    from yoker.core._processing import _apply_post_filter
+
+    # Simulate a make check success result with lots of stdout
+    big_stdout = "\n".join(f"test_{i} PASSED" for i in range(1000))
+    result = ToolResult(
+      success=True,
+      result={"exit_code": 0, "stdout": big_stdout, "stderr": ""},
+    )
+    filtered = _apply_post_filter(result, "FAILED")
+    # The result is still a dict, but stdout is filtered
+    assert isinstance(filtered.result, dict)
+    # No lines should match "FAILED" since all tests passed
+    assert "PASSED" not in filtered.result["stdout"]
+    assert "[post_filter: 0/" in filtered.result["stdout"]
     assert "line2: ok" not in (filtered.error or "")
