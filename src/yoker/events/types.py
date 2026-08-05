@@ -84,8 +84,10 @@ class TurnEndEvent(Event):
   # Ollama-native token statistics
   prompt_eval_count: int = 0
   eval_count: int = 0
-  # Duration in milliseconds (Ollama-native)
+  # Duration in milliseconds (wall-clock, provider-independent)
   total_duration_ms: int = 0
+  # API usage limits from the backend (Ollama cloud usage API)
+  usage_limits: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)

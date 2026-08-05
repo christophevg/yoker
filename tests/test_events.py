@@ -130,6 +130,21 @@ class TestEventClasses:
     assert event.eval_count == 20
     assert event.total_duration_ms == 500
 
+  def test_turn_end_event_with_usage_limits(self) -> None:
+    """Test TurnEndEvent with usage_limits field."""
+    limits = {"session": {"usage": 0.975}, "weekly": {"usage": 0.531}}
+    event = TurnEndEvent(
+      type=EventType.TURN_END,
+      response="Response",
+      usage_limits=limits,
+    )
+    assert event.usage_limits == limits
+
+  def test_turn_end_event_usage_limits_defaults_none(self) -> None:
+    """Test TurnEndEvent usage_limits defaults to None."""
+    event = TurnEndEvent(type=EventType.TURN_END, response="Response")
+    assert event.usage_limits is None
+
   def test_thinking_chunk_event(self) -> None:
     """Test ThinkingChunkEvent creation."""
     event = ThinkingChunkEvent(type=EventType.THINKING_CHUNK, text="thinking...")

@@ -8,6 +8,25 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Ollama API usage in status line**: When using the Ollama backend with an
+  API key configured, the status line now shows session and weekly usage
+  percentages from the Ollama cloud API (`https://ollama.com/api/usage`).
+  This requires `httpx` (already a dependency) and the `api_key` field set
+  in the Ollama provider config.
+
+- **Wall-clock elapsed time**: The status line now reports wall-clock
+  elapsed time for the entire turn (stream + tool calls), measured with
+  `time.monotonic()`. This replaces the backend-reported
+  `total_duration_ms` which only reflected the last chunk's latency, not
+  the full turn duration. The timing is provider-independent.
+
+### Changed
+
+- **`output_stats` signature**: The `UIHandler.output_stats` method now
+  accepts an optional `usage_limits: dict[str, object] | None` parameter.
+  All implementations (`InteractiveUIHandler`, `BatchUIHandler`) and
+  test mocks have been updated.
+
 - **`update` tool: `line_range` parameter**: The `replace` and `delete`
   operations now accept a `line_range` parameter (`[start, end]`, 1-indexed,
   inclusive) to edit a range of lines directly without string matching. This

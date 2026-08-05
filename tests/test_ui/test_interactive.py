@@ -797,6 +797,41 @@ class TestInteractiveUIHandlerStats:
 
     assert "tokens" not in output.getvalue()
 
+  def test_output_stats_with_usage_limits(self):
+    """output_stats should include session and weekly usage percentages."""
+    output = StringIO()
+    handler = InteractiveUIHandler()
+    handler.console = make_console(output)
+
+    handler.output_stats(
+      1500,
+      50,
+      100,
+      usage_limits={"session": {"usage": 0.975}, "weekly": {"usage": 0.531}},
+    )
+
+    text = output.getvalue()
+    assert "1.5s" in text
+    assert "150 tokens" in text
+    assert "session" in text
+    assert "98%" in text
+    assert "weekly" in text
+    assert "53%" in text
+
+  def test_output_stats_without_usage_limits(self):
+    """output_stats should not show usage when usage_limits is None."""
+    output = StringIO()
+    handler = InteractiveUIHandler()
+    handler.console = make_console(output)
+
+    handler.output_stats(1500, 50, 100, usage_limits=None)
+
+    text = output.getvalue()
+    assert "1.5s" in text
+    assert "150 tokens" in text
+    assert "session" not in text
+    assert "weekly" not in text
+
 
 class TestInteractiveUIHandlerErrors:
   """Tests for InteractiveUIHandler error display."""

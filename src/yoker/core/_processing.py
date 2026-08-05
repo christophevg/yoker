@@ -3,6 +3,7 @@
 import inspect
 import json
 import re
+import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any, TypedDict, cast
 
@@ -242,6 +243,11 @@ async def process_message(
   await emit(TurnStartEvent(type=EventType.TURN_START, message=message), agent._event_handlers)
   agent.context.start_turn(message)
 
+  # Wall-clock timing for the entire turn (all stream iterations + tool
+  # calls).  Provider-supplied total_duration_ms only covers the last
+  # chunk's latency; this measures the real elapsed time the user waited.
+  turn_start = time.monotonic()
+
   # Last captured UsageStats.input_tokens — the primary signal for the
   # hybrid size check. Updated each turn from _consume_stream's stats.
   last_input_tokens: int | None = None
@@ -265,7 +271,12 @@ async def process_message(
 
     if not tool_calls:
       agent.context.end_turn(content, thinking=thinking or None)
-      await emit(_turn_end_event(content, tool_calls, stats), agent._event_handlers)
+      elapsed_ms = int((time.monotonic() - turn_start) * 1000)
+      usage_data = await _fetch_backend_usage(agent)
+      await emit(
+        _turn_end_event(content, tool_calls, stats, elapsed_ms, usage_data),
+        agent._event_handlers,
+      )
       logger.info("turn_completed", response_length=len(content), tool_calls_count=0)
       return content
 
@@ -724,17 +735,44 @@ async def _close_streams(
     )
 
 
-def _turn_end_event(response: str, tool_calls: list[Any], stats: dict[str, int]) -> TurnEndEvent:
-  """Build a TurnEndEvent from consumed stream stats."""
+async def _fetch_backend_usage(agent: Any) -> dict[str, Any] | None:
+  """Fetch backend API usage data when available.
+
+  Currently only the Ollama backend exposes a ``fetch_usage`` method.
+  Returns ``None`` for backends that don't provide one.
+  """
+  fetch = getattr(agent._backend, "fetch_usage", None)
+  if not inspect.iscoroutinefunction(fetch):
+    return None
+  result = await fetch()
+  return result if isinstance(result, dict) else None
+
+
+def _turn_end_event(
+  response: str,
+  tool_calls: list[Any],
+  stats: dict[str, int],
+  elapsed_ms: int = 0,
+  usage_data: dict[str, Any] | None = None,
+) -> TurnEndEvent:
+  """Build a TurnEndEvent from consumed stream stats.
+
+  Uses ``elapsed_ms`` (wall-clock) for ``total_duration_ms`` rather than
+  the backend-reported value, which may only reflect the last chunk.
+  """
+  limits = None
+  if usage_data and "limits" in usage_data:
+    limits = usage_data["limits"]
   return TurnEndEvent(
     type=EventType.TURN_END,
     response=response,
     tool_calls_count=len(tool_calls),
     prompt_eval_count=stats["prompt_eval_count"],
     eval_count=stats["eval_count"],
-    total_duration_ms=stats["total_duration_ms"],
+    total_duration_ms=elapsed_ms,
     input_tokens=stats["input_tokens"],
     output_tokens=stats["output_tokens"],
+    usage_limits=limits,
   )
 
 

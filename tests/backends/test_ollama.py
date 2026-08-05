@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
+import httpx
 import pytest
 
 from yoker.backends.ollama import OllamaBackend
@@ -325,3 +326,85 @@ class TestOllamaBackend:
       assert call_kwargs["tools"] == tools
       assert call_kwargs["think"] is True
       assert call_kwargs["stream"] is True
+
+
+class TestOllamaBackendFetchUsage:
+  """Tests for OllamaBackend.fetch_usage method."""
+
+  @pytest.mark.asyncio
+  async def test_fetch_usage_returns_none_without_api_key(self):
+    """fetch_usage returns None when no API key is configured."""
+    config = _create_mock_config()  # No api_key set
+    with patch("yoker.backends.ollama.AsyncClient"):
+      backend = OllamaBackend(config)
+    result = await backend.fetch_usage()
+    assert result is None
+
+  @pytest.mark.asyncio
+  async def test_fetch_usage_returns_data_with_api_key(self):
+    """fetch_usage returns parsed JSON when API key is set."""
+    config = Config(
+      backend=BackendConfig(
+        provider="ollama",
+        ollama=OllamaConfig(
+          model="test-model",
+          base_url="http://localhost:11434",
+          api_key="test-token",
+        ),
+      )
+    )
+
+    class FakeResponse:
+      def raise_for_status(self) -> None:
+        pass
+
+      def json(self) -> dict[str, Any]:
+        return {"limits": {"session": {"usage": 0.975}, "weekly": {"usage": 0.531}}}
+
+    class FakeClient:
+      async def __aenter__(self):
+        return self
+
+      async def __aexit__(self, *args):
+        return None
+
+      async def get(self, url, headers=None):
+        return FakeResponse()
+
+    with patch("yoker.backends.ollama.AsyncClient"):
+      backend = OllamaBackend(config)
+    with patch("yoker.backends.ollama.httpx.AsyncClient", return_value=FakeClient()):
+      result = await backend.fetch_usage()
+    assert result is not None
+    assert "limits" in result
+    assert result["limits"]["session"]["usage"] == 0.975
+
+  @pytest.mark.asyncio
+  async def test_fetch_usage_returns_none_on_error(self):
+    """fetch_usage returns None on network error."""
+    config = Config(
+      backend=BackendConfig(
+        provider="ollama",
+        ollama=OllamaConfig(
+          model="test-model",
+          base_url="http://localhost:11434",
+          api_key="test-token",
+        ),
+      )
+    )
+
+    class FailingClient:
+      async def __aenter__(self):
+        return self
+
+      async def __aexit__(self, *args):
+        return None
+
+      async def get(self, url, headers=None):
+        raise httpx.ConnectError("fail")
+
+    with patch("yoker.backends.ollama.AsyncClient"):
+      backend = OllamaBackend(config)
+    with patch("yoker.backends.ollama.httpx.AsyncClient", return_value=FailingClient()):
+      result = await backend.fetch_usage()
+    assert result is None

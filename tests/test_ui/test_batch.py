@@ -255,6 +255,34 @@ class TestBatchUIHandlerStats:
     handler.output_stats(1500, 50, 100)
     assert stderr.getvalue() == ""
 
+  def test_stats_with_usage_limits(self):
+    """Stats should include usage percentages when usage_limits is provided."""
+    stderr = StringIO()
+    handler = BatchUIHandler(show_stats=True, stderr=stderr)
+
+    handler.output_stats(
+      1500,
+      50,
+      100,
+      usage_limits={"session": {"usage": 0.975}, "weekly": {"usage": 0.531}},
+    )
+    text = stderr.getvalue()
+    assert "1.5s" in text
+    assert "150 tokens" in text
+    assert "session 98%" in text
+    assert "weekly 53%" in text
+
+  def test_stats_without_usage_limits(self):
+    """Stats should not include usage when usage_limits is None."""
+    stderr = StringIO()
+    handler = BatchUIHandler(show_stats=True, stderr=stderr)
+
+    handler.output_stats(1500, 50, 100, usage_limits=None)
+    text = stderr.getvalue()
+    assert "1.5s" in text
+    assert "150 tokens" in text
+    assert "session" not in text
+
 
 class TestBatchUIHandlerErrors:
   """Tests for BatchUIHandler error output."""

@@ -9,6 +9,7 @@ import json
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any, cast
 
+import httpx
 from ollama import AsyncClient
 
 from yoker.backends.protocol import (
@@ -50,6 +51,33 @@ class OllamaBackend(ModelBackend):
       host=ollama_config.base_url,
       timeout=ollama_config.timeout_seconds,
     )
+
+  async def fetch_usage(self) -> dict[str, Any] | None:
+    """Fetch API usage limits from the Ollama cloud API.
+
+    Calls ``https://ollama.com/api/usage`` with the configured API key
+    and returns the parsed JSON response. Returns ``None`` when no API
+    key is configured or the request fails.
+
+    Returns:
+      Parsed usage response dict, or None.
+    """
+    ollama_config = cast("OllamaConfig", self.config.backend.config)
+    if not ollama_config.api_key:
+      return None
+    try:
+      async with httpx.AsyncClient(timeout=10) as client:
+        resp = await client.get(
+          "https://ollama.com/api/usage",
+          headers={"Authorization": f"Bearer {ollama_config.api_key}"},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        if isinstance(data, dict):
+          return data
+        return None
+    except Exception:
+      return None
 
   def create_tool_backends(self) -> dict[str, Any]:
     """Create tool backends for web tools.

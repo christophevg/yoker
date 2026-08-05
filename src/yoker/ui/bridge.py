@@ -135,10 +135,12 @@ class UIBridge:
     stop = getattr(self.ui, "stop_processing", None)
     if stop is not None:
       stop()
+    usage_limits = getattr(event, "usage_limits", None)
     self.ui.output_stats(
       duration_ms=event.total_duration_ms,  # type: ignore[attr-defined]
       prompt_tokens=event.prompt_eval_count,  # type: ignore[attr-defined]
       eval_tokens=event.eval_count,  # type: ignore[attr-defined]
+      usage_limits=usage_limits,
     )
 
   def _maybe_start_processing(self) -> None:

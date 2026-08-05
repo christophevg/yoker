@@ -172,13 +172,21 @@ class UIHandler(Protocol):
     """
     ...
 
-  def output_stats(self, duration_ms: int, prompt_tokens: int, eval_tokens: int) -> None:
+  def output_stats(
+    self,
+    duration_ms: int,
+    prompt_tokens: int,
+    eval_tokens: int,
+    usage_limits: dict[str, object] | None = None,
+  ) -> None:
     """Output turn statistics.
 
     Args:
       duration_ms: Duration in milliseconds.
       prompt_tokens: Number of prompt tokens.
       eval_tokens: Number of evaluation tokens.
+      usage_limits: Optional backend API usage limits (e.g. Ollama cloud
+        session/weekly usage percentages). None when unavailable.
     """
     ...
 

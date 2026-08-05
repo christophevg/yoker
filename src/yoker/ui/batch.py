@@ -294,19 +294,34 @@ class BatchUIHandler(UIHandler):
 
   # === Stats Output (stderr) ===
 
-  def output_stats(self, duration_ms: int, prompt_tokens: int, eval_tokens: int) -> None:
+  def output_stats(
+    self,
+    duration_ms: int,
+    prompt_tokens: int,
+    eval_tokens: int,
+    usage_limits: dict[str, object] | None = None,
+  ) -> None:
     """Output turn statistics.
 
     Args:
       duration_ms: Duration in milliseconds.
       prompt_tokens: Number of prompt tokens.
       eval_tokens: Number of evaluation tokens.
+      usage_limits: Optional backend API usage limits.
     """
     if not self.show_stats:
       return
     total = prompt_tokens + eval_tokens
     duration_s = duration_ms / 1000.0
-    print(f"# Stats: {duration_s:.1f}s, {total} tokens", file=self._stderr)
+    parts = [f"{duration_s:.1f}s", f"{total} tokens"]
+    if usage_limits:
+      session = usage_limits.get("session")
+      if isinstance(session, dict) and isinstance(session.get("usage"), int | float):
+        parts.append(f"session {session['usage']:.0%}")
+      weekly = usage_limits.get("weekly")
+      if isinstance(weekly, dict) and isinstance(weekly.get("usage"), int | float):
+        parts.append(f"weekly {weekly['usage']:.0%}")
+    print(f"# Stats: {', '.join(parts)}", file=self._stderr)
 
   # === Error Output (stderr) ===
 

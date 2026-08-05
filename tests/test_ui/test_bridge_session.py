@@ -42,8 +42,14 @@ class RecordingHandler:
   def start_thinking_stream(self) -> None:
     self.calls.append("start_thinking_stream")
 
-  def output_stats(self, duration_ms: int, prompt_tokens: int, eval_tokens: int) -> None:
-    self.calls.append(("output_stats", duration_ms, prompt_tokens, eval_tokens))
+  def output_stats(
+    self,
+    duration_ms: int,
+    prompt_tokens: int,
+    eval_tokens: int,
+    usage_limits: dict | None = None,
+  ) -> None:
+    self.calls.append(("output_stats", duration_ms, prompt_tokens, eval_tokens, usage_limits))
 
   def output_command_result(self, result: str) -> None:
     self.calls.append(("output_command_result", result))
@@ -177,7 +183,13 @@ class TestUIBridgeSessionLifecycle:
       def start_thinking_stream(self) -> None:
         pass
 
-      def output_stats(self, duration_ms: int, prompt_tokens: int, eval_tokens: int) -> None:
+      def output_stats(
+        self,
+        duration_ms: int,
+        prompt_tokens: int,
+        eval_tokens: int,
+        usage_limits: dict | None = None,
+      ) -> None:
         pass
 
       def output_command_result(self, result: str) -> None:

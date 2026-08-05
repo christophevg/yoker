@@ -50,6 +50,25 @@ _TOOL_SUPPRESS_LARGE_FIELDS = ("write", "update")
 _BANNER_TOOL_LIMIT = 8
 
 
+def _extract_usage_pct(limits: dict[str, Any], period: str) -> float | None:
+  """Extract the usage percentage for a given period from usage limits.
+
+  Args:
+    limits: The ``limits`` dict from the Ollama usage API.
+    period: The period key — ``"session"`` or ``"weekly"``.
+
+  Returns:
+    Usage as a 0–1 float, or None when unavailable.
+  """
+  entry = limits.get(period)
+  if not isinstance(entry, dict):
+    return None
+  usage = entry.get("usage")
+  if not isinstance(usage, int | float):
+    return None
+  return float(usage)
+
+
 class InteractiveUIHandler(UIHandler):
   """Interactive UI with lazy prompt_toolkit input and Rich append-only output.
 
@@ -664,19 +683,35 @@ class InteractiveUIHandler(UIHandler):
 
   # === Stats Output ===
 
-  def output_stats(self, duration_ms: int, prompt_tokens: int, eval_tokens: int) -> None:
+  def output_stats(
+    self,
+    duration_ms: int,
+    prompt_tokens: int,
+    eval_tokens: int,
+    usage_limits: dict[str, Any] | None = None,
+  ) -> None:
     """Output turn statistics.
 
     Args:
       duration_ms: Duration in milliseconds.
       prompt_tokens: Number of prompt tokens.
       eval_tokens: Number of evaluation tokens.
+      usage_limits: Optional backend API usage limits with session/weekly
+        usage percentages.
     """
     self._stop_processing_status()
     if self.show_stats:
       total = prompt_tokens + eval_tokens
       duration_s = duration_ms / 1000.0
-      self.console.print(f"📊 {duration_s:.1f}s, {total} tokens", style=STATS_STYLE)
+      parts = [f"📊 {duration_s:.1f}s, {total} tokens"]
+      if usage_limits:
+        session_pct = _extract_usage_pct(usage_limits, "session")
+        weekly_pct = _extract_usage_pct(usage_limits, "weekly")
+        if session_pct is not None:
+          parts.append(f"session {session_pct:.0%}")
+        if weekly_pct is not None:
+          parts.append(f"weekly {weekly_pct:.0%}")
+      self.console.print(" | ".join(parts), style=STATS_STYLE)
 
   # === Error Output ===
 
