@@ -268,8 +268,11 @@ async def git(
   if resolved_path.is_file():
     file_operations = {"diff", "show"}
     if operation in file_operations:
-      work_dir = resolved_path.parent
-      file_arg = resolved_path.name
+      repo_root = _find_git_root(resolved_path)
+      if repo_root is None:
+        return ToolResult(success=False, error="Not a Git repository")
+      work_dir = repo_root
+      file_arg = str(resolved_path.relative_to(repo_root))
     else:
       return ToolResult(
         success=False,
@@ -399,6 +402,17 @@ async def git(
     return ToolResult(success=False, error=f"Error executing Git command: {e}")
 
 
+def _find_git_root(path: Path) -> Path | None:
+  """Walk up from *path* to find the nearest ancestor containing ``.git``."""
+  current = path.parent if path.is_file() else path
+  while True:
+    if (current / ".git").exists():
+      return current
+    if current.parent == current:
+      return None  # Reached filesystem root
+    current = current.parent
+
+
 def _validate_repository_path(path: str) -> ValidationResult:
   """Validate that the path is within an allowed Git repository."""
   try:
@@ -409,9 +423,7 @@ def _validate_repository_path(path: str) -> ValidationResult:
   if not resolved.exists():
     return ValidationResult(valid=False, reason="Path does not exist")
 
-  check_dir = resolved.parent if resolved.is_file() else resolved
-
-  if not (check_dir / ".git").exists():
+  if _find_git_root(resolved) is None:
     return ValidationResult(valid=False, reason="Not a Git repository")
 
   return ValidationResult(valid=True)

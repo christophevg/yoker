@@ -377,6 +377,91 @@ class TestGitToolReadOnlyOperations:
     assert "README.md" in result.result
     # name_only should not produce diff headers like +++ or ---
     assert "+++" not in result.result
+    # name_only should not produce diff headers like +++ or ---
+    assert "+++" not in result.result
+
+  @pytest.mark.asyncio
+  async def test_git_diff_on_file_in_subdirectory(self, git_repo: Path) -> None:
+    """
+    Given: A Git repo with a modified file in a nested subdirectory
+    When: Executing git diff with path pointing to that file
+    Then: Returns the diff for that specific file (repo root auto-detected)
+    """
+    subdir = git_repo / "src" / "deep" / "module"
+    subdir.mkdir(parents=True)
+    tracked_file = subdir / "code.py"
+    tracked_file.write_text("# original\n")
+    subprocess.run(
+      ["git", "add", "src/deep/module/code.py"],
+      cwd=git_repo,
+      check=True,
+      capture_output=True,
+    )
+    subprocess.run(
+      ["git", "commit", "-m", "Add nested file"],
+      cwd=git_repo,
+      check=True,
+      capture_output=True,
+    )
+    tracked_file.write_text("# modified\n")
+
+    config = GitToolConfig()
+    spec = _git_spec()
+    ctx = _git_context(config=config)
+    result = await spec.execute(operation="diff", path=str(tracked_file), ctx=ctx)
+
+    assert result.success
+    assert "# modified" in result.result
+    assert "# original" in result.result
+
+  @pytest.mark.asyncio
+  async def test_git_show_on_file_in_subdirectory(self, git_repo: Path) -> None:
+    """
+    Given: A Git repo with a committed file in a nested subdirectory
+    When: Executing git show with path pointing to that file
+    Then: Returns commit details scoped to that file (repo root auto-detected)
+    """
+    subdir = git_repo / "src" / "deep" / "module"
+    subdir.mkdir(parents=True)
+    tracked_file = subdir / "code.py"
+    tracked_file.write_text("# version 1\n")
+    subprocess.run(
+      ["git", "add", "src/deep/module/code.py"],
+      cwd=git_repo,
+      check=True,
+      capture_output=True,
+    )
+    subprocess.run(
+      ["git", "commit", "-m", "Add nested file for show"],
+      cwd=git_repo,
+      check=True,
+      capture_output=True,
+    )
+
+    config = GitToolConfig()
+    spec = _git_spec()
+    ctx = _git_context(config=config)
+    result = await spec.execute(operation="show", path=str(tracked_file), ctx=ctx)
+
+    assert result.success
+    assert "Add nested file for show" in result.result
+
+  @pytest.mark.asyncio
+  async def test_git_diff_on_file_at_repo_root(self, git_repo: Path) -> None:
+    """
+    Given: A Git repo with a modified file at the repo root
+    When: Executing git diff with path pointing to that file
+    Then: Returns the diff for that specific file
+    """
+    (git_repo / "README.md").write_text("# Modified\n")
+
+    config = GitToolConfig()
+    spec = _git_spec()
+    ctx = _git_context(config=config)
+    result = await spec.execute(operation="diff", path=str(git_repo / "README.md"), ctx=ctx)
+
+    assert result.success
+    assert "# Modified" in result.result
 
   @pytest.mark.asyncio
   async def test_git_branch_lists_branches(self, git_repo: Path) -> None:
