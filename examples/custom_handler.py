@@ -9,7 +9,6 @@ Run with:
 """
 
 import asyncio
-from typing import Any
 
 from yoker import __version__
 from yoker.core import Agent
@@ -107,7 +106,7 @@ class PrintUIHandler:
     """
     print(f"[command] {result}")
 
-  def output_tool_call(self, tool_name: str, args: dict[str, Any]) -> None:
+  def output_tool_call(self, tool_name: str, args: dict[str, object]) -> None:
     """Print a tool call.
 
     Args:
@@ -133,7 +132,7 @@ class PrintUIHandler:
     path: str,
     content: str | None,
     content_type: str,
-    metadata: dict[str, Any],
+    metadata: dict[str, object],
   ) -> None:
     """Print tool content metadata.
 
@@ -147,13 +146,21 @@ class PrintUIHandler:
     """
     print(f"[tool content] {tool_name} {operation} {path} ({content_type}) metadata={metadata}")
 
-  def output_stats(self, duration_ms: int, prompt_tokens: int, eval_tokens: int) -> None:
+  def output_stats(
+    self,
+    duration_ms: int,
+    prompt_tokens: int,
+    eval_tokens: int,
+    usage_limits: dict[str, object] | None = None,
+  ) -> None:
     """Print turn statistics.
 
     Args:
       duration_ms: Duration in milliseconds.
       prompt_tokens: Number of prompt tokens.
       eval_tokens: Number of evaluation tokens.
+      usage_limits: Optional backend API usage limits (e.g. Ollama cloud
+        session/weekly usage percentages). None when unavailable.
     """
     print(f"[stats] {duration_ms}ms, prompt_tokens={prompt_tokens}, eval_tokens={eval_tokens}")
 
