@@ -31,7 +31,14 @@ class TestSkillsCommand:
     agent.skills = skills if skills is not None else SkillRegistry()
     agent.config = MagicMock()
     agent.config.skills = MagicMock()
-    agent.config.skills.directories = directories if directories is not None else []
+    dirs = directories if directories is not None else []
+    agent.config.skills.directories = dirs
+    if dirs:
+      from yoker.config import _iter_directories
+
+      agent.config.skills.iter_directories = lambda: _iter_directories(dirs)
+    else:
+      agent.config.skills.iter_directories = lambda: ()
     return agent
 
   @pytest.mark.asyncio

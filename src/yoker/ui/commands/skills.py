@@ -33,7 +33,9 @@ async def handle(args: str, agent: "Agent", ui: "UIHandler") -> str:
     lines.append("  No skills loaded.")
     lines.append("")
     if agent.config.skills.directories:
-      lines.append(f"  Configured directories: {', '.join(agent.config.skills.directories)}")
+      dirs = agent.config.skills.iter_directories()
+      dir_display = ", ".join(f"{ns}:{p}" for ns, p in dirs)
+      lines.append(f"  Configured directories: {dir_display}")
     else:
       lines.append("  No skill directories configured.")
     return "\n".join(lines)

@@ -232,3 +232,77 @@ class TestSingleDefaultModel:
       if "llama3.2:latest" in text:
         stale.append(str(path.relative_to(src_root)))
     assert not stale, f"stale default literal found in: {stale}"
+
+
+class TestDirectoriesNamespaceConfig:
+  """Tests for the directories field accepting both list and dict forms."""
+
+  def test_agents_directories_list_form_default(self) -> None:
+    """List form: default namespace is the leaf folder name."""
+    from yoker.config import AgentsConfig
+
+    config = AgentsConfig(directories=("/path/to/myagents",))
+    pairs = config.iter_directories()
+    assert pairs == (("myagents", "/path/to/myagents"),)
+
+  def test_agents_directories_dict_form_explicit_namespace(self) -> None:
+    """Dict form: key is the namespace, value is the path."""
+    from yoker.config import AgentsConfig
+
+    config = AgentsConfig(directories={"c3": "../c3/agents"})
+    pairs = config.iter_directories()
+    assert pairs == (("c3", "../c3/agents"),)
+
+  def test_skills_directories_list_form_default(self) -> None:
+    """List form: default namespace is the leaf folder name."""
+    from yoker.config import SkillsConfig
+
+    config = SkillsConfig(directories=("/path/to/myskills",))
+    pairs = config.iter_directories()
+    assert pairs == (("myskills", "/path/to/myskills"),)
+
+  def test_skills_directories_dict_form_explicit_namespace(self) -> None:
+    """Dict form: key is the namespace, value is the path."""
+    from yoker.config import SkillsConfig
+
+    config = SkillsConfig(directories={"c3": "../c3/skills"})
+    pairs = config.iter_directories()
+    assert pairs == (("c3", "../c3/skills"),)
+
+  def test_directories_empty_list(self) -> None:
+    """Empty list yields no pairs."""
+    from yoker.config import AgentsConfig
+
+    config = AgentsConfig(directories=())
+    assert config.iter_directories() == ()
+
+  def test_directories_empty_dict(self) -> None:
+    """Empty dict yields no pairs."""
+    from yoker.config import AgentsConfig
+
+    config = AgentsConfig(directories={})
+    assert config.iter_directories() == ()
+
+  def test_directories_multiple_dict_entries(self) -> None:
+    """Dict form supports multiple namespace->path mappings."""
+    from yoker.config import AgentsConfig
+
+    config = AgentsConfig(directories={"c3": "../c3/agents", "other": "/opt/other"})
+    pairs = config.iter_directories()
+    assert ("c3", "../c3/agents") in pairs
+    assert ("other", "/opt/other") in pairs
+    assert len(pairs) == 2
+
+  def test_directories_truthiness_list(self) -> None:
+    """Non-empty list is truthy for the UI display check."""
+    from yoker.config import SkillsConfig
+
+    config = SkillsConfig(directories=("/some/dir",))
+    assert config.directories
+
+  def test_directories_truthiness_dict(self) -> None:
+    """Non-empty dict is truthy for the UI display check."""
+    from yoker.config import SkillsConfig
+
+    config = SkillsConfig(directories={"c3": "/some/dir"})
+    assert config.directories

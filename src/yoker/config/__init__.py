@@ -790,22 +790,75 @@ class ToolsSharedConfig:
   content_display: ContentDisplayConfig = field(default_factory=ContentDisplayConfig)
 
 
+DirectoriesConfig = "tuple[str, ...] | dict[str, str]"
+"""Type for the ``directories`` field on AgentsConfig and SkillsConfig.
+
+Accepts either:
+- A list/tuple of paths (backward compatible). The leaf folder name is used
+  as the namespace for agents/skills in each path.
+- A dict mapping namespace → path. The key is used as the namespace,
+  giving explicit control over the namespace name.
+
+In TOML, the dict form is expressed as a sub-table:
+
+    [agents.directories]
+    c3 = "../c3/agents"
+
+    [skills.directories]
+    c3 = "../c3/skills"
+
+The list form remains supported:
+
+    [agents]
+    directories = ["../c3/agents"]
+"""
+
+
+def _iter_directories(
+  directories: "tuple[str, ...] | dict[str, str]",
+) -> tuple[tuple[str, str], ...]:
+  """Yield (namespace, path) pairs from a directories config value.
+
+  For the list form, the namespace defaults to the leaf folder name
+  (``Path(path).name``). For the dict form, the key is the namespace.
+
+  Args:
+    directories: Either a list of paths or a dict mapping namespace → path.
+
+  Returns:
+    Tuple of (namespace, path) pairs.
+  """
+  if isinstance(directories, dict):
+    return tuple(directories.items())
+  return tuple((Path(d).name, d) for d in directories)
+
+
 @dataclass
 class AgentsConfig:
   """Agent definition settings.
 
   Attributes:
-    directories: Directories containing agent definition files.
+    directories: Directories containing agent definition files. Accepts a
+      list of paths (namespace = leaf folder name) or a dict mapping
+      namespace → path for explicit namespace control.
     definition: Path to a specific agent definition file.
   """
 
-  directories: tuple[str, ...] = ()
+  directories: tuple[str, ...] | dict[str, str] = ()
   definition: str = ""
 
   def __post_init__(self) -> None:
     """Validate agents configuration."""
-    for directory in self.directories:
+    for _namespace, directory in _iter_directories(self.directories):
       validate_directory_exists(directory, "agents.directories")
+
+  def iter_directories(self) -> tuple[tuple[str, str], ...]:
+    """Yield (namespace, path) pairs for each configured directory.
+
+    For the list form, the namespace is the leaf folder name.
+    For the dict form, the key is the namespace.
+    """
+    return _iter_directories(self.directories)
 
 
 @dataclass
@@ -813,12 +866,22 @@ class SkillsConfig:
   """Skills configuration.
 
   Attributes:
-    directories: Directories containing skill definition files.
+    directories: Directories containing skill definition files. Accepts a
+      list of paths (namespace = leaf folder name) or a dict mapping
+      namespace → path for explicit namespace control.
     discovery: Whether to show skill discovery block on startup.
   """
 
-  directories: tuple[str, ...] = ()
+  directories: tuple[str, ...] | dict[str, str] = ()
   discovery: bool = True
+
+  def iter_directories(self) -> tuple[tuple[str, str], ...]:
+    """Yield (namespace, path) pairs for each configured directory.
+
+    For the list form, the namespace is the leaf folder name.
+    For the dict form, the key is the namespace.
+    """
+    return _iter_directories(self.directories)
 
 
 @dataclass

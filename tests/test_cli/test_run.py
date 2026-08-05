@@ -429,6 +429,16 @@ class TestDeepMerge:
     result = deep_merge(target, overrides)
     assert result["agents"]["directories"] == ["c"]
 
+  def test_dict_directories_merge(self) -> None:
+    """Dict-form directories merge keys (not replace like lists)."""
+    from clevis import deep_merge
+
+    target = {"agents": {"directories": {"c3": "../c3/agents"}}}
+    overrides = {"agents": {"directories": {"other": "../other/agents"}}}
+    result = deep_merge(target, overrides)
+    assert result["agents"]["directories"]["c3"] == "../c3/agents"
+    assert result["agents"]["directories"]["other"] == "../other/agents"
+
   def test_inputs_not_mutated(self) -> None:
     """clevis.deep_merge returns a new dict; inputs are not modified."""
     from clevis import deep_merge

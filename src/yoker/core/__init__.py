@@ -602,11 +602,11 @@ class Agent:
 
   def _load_skills(self) -> None:
     """Load skills from configured directories into the registry."""
-    for directory in self.config.skills.directories:
+    for namespace, directory in self.config.skills.iter_directories():
       try:
-        new_skills = load_skills(directory).items()
+        new_skills = load_skills(directory, namespace=namespace).items()
         for _, skill in new_skills:
           self.skills.register(skill)
-        logger.info("skills loaded", count=len(new_skills), source=directory)
+        logger.info("skills loaded", count=len(new_skills), source=directory, namespace=namespace)
       except Exception as e:
         logger.warning("loading skills failed", directory=directory, error=str(e))

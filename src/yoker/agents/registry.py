@@ -68,10 +68,10 @@ class AgentRegistry(UserDict[str, AgentDefinition]):
         self.register_all(plugin.agents, namespace=plugin.source)
 
   def register_config_agents(self, config: Config) -> None:
-    for directory in config.agents.directories:
+    for namespace, directory in config.agents.iter_directories():
       try:
-        logger.info("loading configured agents", source=directory)
-        for agent in load_agent_definitions(directory):
+        logger.info("loading configured agents", source=directory, namespace=namespace)
+        for agent in load_agent_definitions(directory, namespace=namespace):
           self.register(agent)
       except Exception as e:
         logger.warning("loading agents failed", directory=directory, error=str(e))

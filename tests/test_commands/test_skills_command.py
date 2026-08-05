@@ -16,6 +16,12 @@ class TestSkillsCommand:
     agent = Mock()
     agent.skills = skills
     agent.config.skills.directories = directories
+    if directories:
+      from yoker.config import _iter_directories
+
+      agent.config.skills.iter_directories = lambda: _iter_directories(directories)
+    else:
+      agent.config.skills.iter_directories = lambda: ()
     return agent
 
   @pytest.mark.asyncio
