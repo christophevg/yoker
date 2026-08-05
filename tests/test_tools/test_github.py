@@ -221,6 +221,15 @@ class TestGithubOperations:
     assert "--" in cmd and "99" in cmd
 
   @pytest.mark.asyncio
+  async def test_workflow_logs(self, mocker: MockerFixture) -> None:
+    popen = _mock_popen(mocker, stdout="some log output")
+    await github(operation="workflow_logs", ctx=_ctx(), number=99, repo="owner/repo")
+    cmd = popen.call_args.args[0]
+    assert cmd[:4] == ["gh", "run", "view", "--log-failed"]
+    assert "--json" not in cmd
+    assert "--" in cmd and "99" in cmd
+
+  @pytest.mark.asyncio
   async def test_release_list(self, mocker: MockerFixture) -> None:
     popen = _mock_popen(mocker, stdout="[]")
     await github(operation="release_list", ctx=_ctx(), repo="owner/repo")
@@ -787,13 +796,20 @@ class TestGithubOperationAllowlist:
     assert not result.success
 
   @pytest.mark.asyncio
-  async def test_default_allowlist_allows_all_eleven(self, mocker: MockerFixture) -> None:
+  async def test_default_allowlist_allows_all_twelve(self, mocker: MockerFixture) -> None:
     _mock_popen(mocker, stdout="{}")
     cfg = GitHubToolConfig()
     for op in cfg.allowed_operations:
       _mock_popen(mocker, stdout="{}")
       kwargs: dict[str, Any] = {}
-      if op in {"issue_view", "pr_view", "workflow_view", "pr_reviews", "pr_comments"}:
+      if op in {
+        "issue_view",
+        "pr_view",
+        "workflow_view",
+        "workflow_logs",
+        "pr_reviews",
+        "pr_comments",
+      }:
         kwargs["number"] = 1
       if op in {"pr_reviews", "pr_comments"}:
         kwargs["repo"] = "owner/repo"
@@ -995,27 +1011,27 @@ class TestGithubOutputRedaction:
     assert "AKIAIOSFODNN7EXAMPLE" not in result.result
 
 
-class TestGithubOutputTruncation:
-  """Per-stream truncation at max_output_kb * 1024 bytes."""
+class TestGithubOutputNoTruncation:
+  """The github tool returns full output — size enforcement is handled
+  centrally by _execute_tool after post_filter is applied (same pattern
+  as the make tool)."""
 
   @pytest.mark.asyncio
-  async def test_stdout_truncated_when_over_limit(self, mocker: MockerFixture) -> None:
+  async def test_large_output_returned_in_full(self, mocker: MockerFixture) -> None:
     big = "x" * (150 * 1024)
     _mock_popen(mocker, stdout=big, returncode=0)
-    cfg = GitHubToolConfig(max_output_kb=100)
+    cfg = GitHubToolConfig(max_output_kb=20)
     result = await github(operation="repo_view", ctx=_ctx(cfg))
     assert result.success
-    md = result.content_metadata
-    assert md["metadata"]["truncated"] is True
-    assert "[truncated]" in md["content"]
-    assert len(md["content"].encode("utf-8")) <= 100 * 1024 + len("\n... [truncated]\n") + 4
+    assert result.result == big
+    assert "[truncated]" not in result.result
 
   @pytest.mark.asyncio
-  async def test_small_output_not_truncated(self, mocker: MockerFixture) -> None:
+  async def test_small_output_returned_as_is(self, mocker: MockerFixture) -> None:
     _mock_popen(mocker, stdout='{"name":"r"}', returncode=0)
     result = await github(operation="repo_view", ctx=_ctx())
     assert result.success
-    assert result.content_metadata["metadata"]["truncated"] is False
+    assert "truncated" not in result.content_metadata["metadata"]
 
 
 class TestGithubResultShape:
@@ -1034,7 +1050,6 @@ class TestGithubResultShape:
     assert md["content"] == '{"name":"r"}'
     inner = md["metadata"]
     assert inner["returncode"] == 0
-    assert inner["truncated"] is False
     assert inner["repo"] == "owner/repo"
     assert "gh_subcommand" in inner
 
@@ -1127,9 +1142,9 @@ class TestGithubConfigValidation:
     with pytest.raises(ValidationError):
       GitHubToolConfig(allowed_operations=("repo_view", "bogus_op"))
 
-  def test_default_allowlist_has_eleven_ops(self) -> None:
+  def test_default_allowlist_has_twelve_ops(self) -> None:
     cfg = GitHubToolConfig()
-    assert len(cfg.allowed_operations) == 11
+    assert len(cfg.allowed_operations) == 12
     # Write ops are NOT in the default allowlist
     assert "pr_create" not in cfg.allowed_operations
     assert "release_create" not in cfg.allowed_operations

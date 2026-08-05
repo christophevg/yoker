@@ -64,6 +64,7 @@ _GITHUB_OPERATIONS: frozenset[str] = frozenset(
     "pr_comments",
     "workflow_list",
     "workflow_view",
+    "workflow_logs",
     "release_list",
     "release_view",
     "pr_create",
@@ -120,6 +121,7 @@ _OPERATION_DISPATCH: dict[str, tuple[list[str], str, str | None]] = {
     None,
   ),
   "workflow_view": (["run", "view"], "databaseId,name,status,conclusion,jobs", "number"),
+  "workflow_logs": (["run", "view", "--log-failed"], "", "number"),
   "release_list": (
     ["release", "list"],
     "tagName,name,isDraft,isPrerelease,createdAt",
@@ -143,6 +145,10 @@ _OPERATION_DISPATCH: dict[str, tuple[list[str], str, str | None]] = {
 # ``{number}`` placeholders, and the fields are passed via ``--jq`` instead
 # of ``--json``.
 _API_OPS: frozenset[str] = frozenset({"pr_reviews", "pr_comments"})
+
+# Operations that return plain text (not JSON). These skip ``--json`` —
+# ``gh`` outputs raw log lines directly to stdout.
+_PLAINTEXT_OPS: frozenset[str] = frozenset({"workflow_logs"})
 
 # Operations that accept the named flag.
 _STATE_OPS: frozenset[str] = frozenset({"issue_list", "pr_list"})
@@ -191,6 +197,7 @@ _REDACT_REPLACEMENT = "<redacted>"
     "  pr_comments    — List PR inline review comments. Required: repo, number.\n"
     "  workflow_list  — List workflow runs (CI). Optional: repo, limit.\n"
     "  workflow_view  — View a workflow run (CI). Required: number (run ID). Optional: repo.\n"
+    "  workflow_logs  — View failed-step logs of a workflow run. Required: number (run ID). Optional: repo.\n"
     "  release_list   — List releases. Optional: repo, limit.\n"
     "  release_view   — View a release. Required: tag. Optional: repo.\n"
     "  pr_create      — Create a PR. Required: repo, title, body. Optional: head, base.\n"
@@ -205,7 +212,9 @@ _REDACT_REPLACEMENT = "<redacted>"
     "  timeout_ms — Override default timeout in milliseconds (clamped to config ceiling).\n"
     "  draft   — Mark release as draft (only for release_create).\n"
     "  prerelease — Mark release as prerelease (only for release_create).\n"
-    "  post_filter — Optional regex to filter output lines (e.g. 'error|warning')."
+    "  post_filter — Optional regex to filter output lines. Use specific patterns: "
+    "'FAILED|CalledProcessError|short test summary' for CI logs, 'class |def ' for "
+    "code structure. Avoid broad terms like 'error' that match test names."
   )
 )
 async def github(
@@ -214,7 +223,7 @@ async def github(
     Text(
       "GitHub operation. One of: repo_view, issue_list, issue_view, pr_list, "
       "pr_view, pr_reviews, pr_comments, workflow_list, workflow_view, "
-      "release_list, release_view, pr_create, release_create."
+      "workflow_logs, release_list, release_view, pr_create, release_create."
     ),
   ],
   ctx: ToolContext,
@@ -402,7 +411,9 @@ async def github(
       error=f"GitHub operation timed out after {effective_timeout_ms}ms",
     )
 
-  # --- Redact secrets BEFORE truncation (so a secret just past the cut is not kept) ---
+  # --- Redact secrets BEFORE returning (no truncation here — the framework
+  # enforces output limits centrally in _execute_tool AFTER post_filter is
+  # applied, so the LLM can use post_filter to narrow large outputs). ---
   stdout, redactions_out = _redact(stdout or "")
   stderr, redactions_err = _redact(stderr or "")
   total_redactions = redactions_out + redactions_err
@@ -414,16 +425,15 @@ async def github(
       stderr_redactions=redactions_err,
     )
 
-  # --- Per-stream truncation on a UTF-8 boundary ---
-  max_output_bytes = gh_config.max_output_kb * 1024
-  stdout_truncated, stdout_out = _truncate(stdout, max_output_bytes)
-  stderr_truncated, stderr_out = _truncate(stderr, max_output_bytes)
-  truncated = stdout_truncated or stderr_truncated
+  stdout_out = stdout
+  stderr_out = stderr
 
   returncode = proc.returncode
   if operation in _API_OPS:
     gh_subcommand = f"gh api {_OPERATION_DISPATCH[operation][0][1]}"
   elif operation in _WRITE_OPS:
+    gh_subcommand = f"gh {' '.join(_OPERATION_DISPATCH[operation][0])}"
+  elif operation in _PLAINTEXT_OPS:
     gh_subcommand = f"gh {' '.join(_OPERATION_DISPATCH[operation][0])}"
   else:
     gh_subcommand = f"gh {' '.join(_OPERATION_DISPATCH[operation][0])} --json"
@@ -437,10 +447,11 @@ async def github(
     if operation in _WRITE_OPS:
       stdout_out = _parse_write_output(operation, stdout_out, tag)
 
+    content_type = "text/plain" if operation in _PLAINTEXT_OPS else "application/json"
     content_metadata = {
       "operation": "github",
       "path": repo or "default",
-      "content_type": "application/json",
+      "content_type": content_type,
       "content": stdout_out,
       "metadata": {
         "gh_subcommand": gh_subcommand,
@@ -451,7 +462,6 @@ async def github(
         "state": state if operation in _STATE_OPS else None,
         "label": label if operation in _LABEL_OPS else None,
         "returncode": returncode,
-        "truncated": truncated,
       },
     }
     return ToolResult(
@@ -467,7 +477,6 @@ async def github(
     operation=operation,
     returncode=returncode,
     redactions=total_redactions,
-    truncated=truncated,
   )
   return ToolResult(success=False, error=friendly)
 
@@ -740,7 +749,8 @@ def _build_command(
 
   # Write operations (pr_create, release_create) don't support --json;
   # they output a URL on success which is parsed separately.
-  if operation not in _WRITE_OPS:
+  # Plaintext operations (workflow_logs) return raw text, not JSON.
+  if operation not in _WRITE_OPS and operation not in _PLAINTEXT_OPS:
     cmd.extend(["--json", fields])
 
   if required == "number":

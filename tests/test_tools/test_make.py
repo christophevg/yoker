@@ -354,13 +354,13 @@ class TestMakeToolOutputNoTruncation:
   @pytest.mark.asyncio
   async def test_large_output_returned_in_full(self, tmp_path: Path) -> None:
     """stdout exceeding max_output_kb is returned in full (no truncation)."""
-    # Generate ~200KB of output; default cap is 100KB.
+    # Generate ~200KB of output; cap is 20KB.
     _write_makefile(
       tmp_path,
       "check:\n\t@python3 -c \"print('x' * 200000)\"\n",
     )
     spec = _make_spec()
-    ctx = _make_context(MakeToolConfig(max_output_kb=100))
+    ctx = _make_context(MakeToolConfig(max_output_kb=20))
     result = await spec.execute(target="check", ctx=ctx, cwd=str(tmp_path))
     assert result.success
     # No truncation — full output returned

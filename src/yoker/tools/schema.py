@@ -154,8 +154,9 @@ def build_tool_spec(
     "type": "string",
     "description": (
       "Optional regex pattern to filter the tool output. Only lines matching "
-      "this pattern are returned, reducing context size. Example: 'error|warning' "
-      "keeps only lines containing 'error' or 'warning'."
+      "this pattern are returned, reducing context size. Use specific patterns "
+      "to avoid noise — 'error' matches test names; prefer 'FAILED|Traceback|assert'. "
+      "Example: 'FAILED|short test summary' keeps only test failure lines."
     ),
   }
 

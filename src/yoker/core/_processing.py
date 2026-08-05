@@ -1198,9 +1198,11 @@ def _enforce_output_limit(result: ToolResult, agent: Any, spec: ToolSpec) -> Too
 
   actual_kb = len(encoded) // 1024
   error_msg = (
-    f"Output exceeds {max_output_kb}KB limit ({actual_kb}KB). "
-    f"Use post_filter to narrow the output to relevant lines only. "
-    f"Example: post_filter='FAILED|ERROR|assert|Summary' for test output."
+    f"Output exceeds {max_output_kb}KB limit ({actual_kb}KB after post_filter). "
+    f"Use a more specific post_filter pattern to narrow the output. "
+    f"Avoid broad terms like 'error' that match test names. "
+    f"Good patterns: 'FAILED|Traceback|assert|short test summary' for tests, "
+    f"'class |def |import ' for code structure, 'CalledProcessError|exit code' for CI."
   )
   return ToolResult(success=False, error=error_msg)
 

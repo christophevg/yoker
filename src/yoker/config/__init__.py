@@ -530,9 +530,10 @@ class MakeToolConfig(ToolConfig):
 
   Attributes:
     timeout_ms: Default timeout in milliseconds.
-    max_output_kb: Maximum output size in KB. Enforced centrally in
-      _execute_tool after post_filter is applied. If the (filtered) output
+    max_output_kb: Maximum output size in KB (default 20). Enforced centrally
+      in _execute_tool after post_filter is applied. If the (filtered) output
       exceeds this limit, an error is returned instead of silent truncation.
+      Use specific post_filter patterns to keep output well under this limit.
     allowed_env_vars: Per-target allowlist of env var names. Keys are
       Makefile target names; values are the env var names that target is
       permitted to receive. Targets not in the dict deny all env vars
@@ -541,7 +542,7 @@ class MakeToolConfig(ToolConfig):
   """
 
   timeout_ms: int = 300000
-  max_output_kb: int = 100
+  max_output_kb: int = 20
   allowed_env_vars: dict[str, tuple[str, ...]] = field(default_factory=dict)
   max_env_var_bytes: int = 4096
 
@@ -576,7 +577,10 @@ class GitHubToolConfig(ToolConfig):
     max_results: Upper bound for the ``limit`` parameter on list operations.
     require_explicit_repo: If True, the ``repo`` parameter is required (gh
       auto-detection from git remote is disabled).
-    max_output_kb: Per-stream (stdout/stderr) truncation limit in KB.
+    max_output_kb: Maximum output size in KB (default 20). Enforced centrally
+      in _execute_tool after post_filter is applied. If the (filtered) output
+      exceeds this limit, an error is returned instead of silent truncation.
+      Use specific post_filter patterns to keep output well under this limit.
 
   To enable write operations (PR creation, release creation), add them to
   ``allowed_operations`` in ``yoker.toml``:
@@ -587,7 +591,7 @@ class GitHubToolConfig(ToolConfig):
       allowed_operations = [
         "repo_view", "issue_list", "issue_view", "pr_list", "pr_view",
         "pr_reviews", "pr_comments",
-        "workflow_list", "workflow_view",
+        "workflow_list", "workflow_view", "workflow_logs",
         "release_list", "release_view",
         "pr_create", "release_create"
       ]
@@ -603,13 +607,14 @@ class GitHubToolConfig(ToolConfig):
     "pr_comments",
     "workflow_list",
     "workflow_view",
+    "workflow_logs",
     "release_list",
     "release_view",
   )
   timeout_ms: int = 30000
   max_results: int = 100
   require_explicit_repo: bool = False
-  max_output_kb: int = 100
+  max_output_kb: int = 20
 
   def __post_init__(self) -> None:
     """Validate GitHub tool configuration."""
