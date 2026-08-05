@@ -306,3 +306,42 @@ class TestDirectoriesNamespaceConfig:
 
     config = SkillsConfig(directories={"c3": "/some/dir"})
     assert config.directories
+
+  def test_directories_dict_form_preserved_through_dacite(self) -> None:
+    """Dict-form directories survive dacite from_dict without being
+    converted to a tuple of characters.
+
+    This is a regression test for a bug where dacite's union resolution
+    matched dict data against ``tuple[str, ...]`` first (because dict is
+    a Collection and tuple is a Collection), iterating the dict's keys
+    character-by-character.  Putting ``dict[str, str]`` first in the
+    union type ensures dacite tries the dict branch first.
+    """
+    from dacite import Config as DaciteConfig, from_dict
+
+    from yoker.config import AgentsConfig
+
+    data = {"directories": {"c3": "../c3/agents"}}
+    config = from_dict(
+      data_class=AgentsConfig,
+      data=data,
+      config=DaciteConfig(cast=[tuple, set]),
+    )
+    assert isinstance(config.directories, dict)
+    assert config.directories == {"c3": "../c3/agents"}
+    assert config.iter_directories() == (("c3", "../c3/agents"),)
+
+  def test_directories_list_form_preserved_through_dacite(self) -> None:
+    """List-form directories survive dacite from_dict as a tuple."""
+    from dacite import Config as DaciteConfig, from_dict
+
+    from yoker.config import AgentsConfig
+
+    data = {"directories": ["../c3/agents", "./agents"]}
+    config = from_dict(
+      data_class=AgentsConfig,
+      data=data,
+      config=DaciteConfig(cast=[tuple, set]),
+    )
+    assert isinstance(config.directories, tuple)
+    assert config.directories == ("../c3/agents", "./agents")

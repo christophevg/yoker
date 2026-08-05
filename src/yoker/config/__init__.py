@@ -790,7 +790,7 @@ class ToolsSharedConfig:
   content_display: ContentDisplayConfig = field(default_factory=ContentDisplayConfig)
 
 
-DirectoriesConfig = "tuple[str, ...] | dict[str, str]"
+DirectoriesConfig = "dict[str, str] | tuple[str, ...]"
 """Type for the ``directories`` field on AgentsConfig and SkillsConfig.
 
 Accepts either:
@@ -815,7 +815,7 @@ The list form remains supported:
 
 
 def _iter_directories(
-  directories: "tuple[str, ...] | dict[str, str]",
+  directories: "dict[str, str] | tuple[str, ...]",
 ) -> tuple[tuple[str, str], ...]:
   """Yield (namespace, path) pairs from a directories config value.
 
@@ -844,7 +844,7 @@ class AgentsConfig:
     definition: Path to a specific agent definition file.
   """
 
-  directories: tuple[str, ...] | dict[str, str] = ()
+  directories: dict[str, str] | tuple[str, ...] = ()
   definition: str = ""
 
   def __post_init__(self) -> None:
@@ -872,7 +872,7 @@ class SkillsConfig:
     discovery: Whether to show skill discovery block on startup.
   """
 
-  directories: tuple[str, ...] | dict[str, str] = ()
+  directories: dict[str, str] | tuple[str, ...] = ()
   discovery: bool = True
 
   def iter_directories(self) -> tuple[tuple[str, str], ...]:
