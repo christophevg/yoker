@@ -604,7 +604,6 @@ def _build_write_args(
 
   if operation == "release_create":
     args = [
-      "--",
       tag,
       f"--title={title}",
       f"--notes={notes}",

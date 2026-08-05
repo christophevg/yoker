@@ -549,10 +549,8 @@ class TestGithubWriteOperations:
     cmd = popen.call_args.args[0]
     assert cmd[:3] == ["gh", "release", "create"]
     assert "--repo" in cmd and "owner/repo" in cmd
-    # tag is positional after --
-    assert "--" in cmd
-    idx = cmd.index("--")
-    assert cmd[idx + 1] == "v1.0.0"
+    # tag is positional (no -- separator, avoids --title/--notes being treated as positional)
+    assert "v1.0.0" in cmd
     assert "--title=Release v1.0.0" in cmd
     assert "--notes=Changes here." in cmd
     assert "--json" not in cmd
