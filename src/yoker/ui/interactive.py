@@ -553,6 +553,7 @@ class InteractiveUIHandler(UIHandler):
     Returns:
       True if the user explicitly approved, False otherwise.
     """
+    self._stop_tool_execution_status()
     self._stop_processing_status()
     if kind == "git":
       title = "Git operation"
