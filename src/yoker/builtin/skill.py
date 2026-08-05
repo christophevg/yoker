@@ -24,8 +24,16 @@ def make_skill_tool(skill_registry: "SkillRegistry") -> Any:
   async def skill(
     skill_name: Annotated[str, Text("Name of the skill to invoke")],
     args: Annotated[str, Text("Optional arguments")] = "",
+    resource: Annotated[
+      str, Text("Optional path to a resource file within the skill's directory")
+    ] = "",
   ) -> ToolResult:
-    """Invoke a skill by name to get its full instructions."""
+    """Invoke a skill by name to get its full instructions.
+
+    When ``resource`` is provided, returns the content of that resource
+    file instead of the skill's invocation block. Resource paths are
+    relative to the skill's base directory (e.g. ``"references/info.md"``).
+    """
     resolved_name = skill_registry.resolve(skill_name)
     s = skill_registry.data.get(resolved_name) if resolved_name else None
 
@@ -34,6 +42,44 @@ def make_skill_tool(skill_registry: "SkillRegistry") -> Any:
       error_msg = f"Unknown skill: {skill_name}. Available skills: {available_skills}"
       logger.warning("skill_not_found", skill_name=skill_name, available=available_skills)
       return ToolResult(success=False, error=error_msg)
+
+    # Resource mode: return the resource file content
+    if resource:
+      try:
+        content = s.get_resource(resource)
+      except FileNotFoundError as e:
+        logger.warning(
+          "skill_resource_not_found",
+          skill_name=skill_name,
+          resource=resource,
+          error=str(e),
+        )
+        return ToolResult(success=False, error=str(e))
+      except ValueError as e:
+        logger.warning(
+          "skill_resource_invalid",
+          skill_name=skill_name,
+          resource=resource,
+          error=str(e),
+        )
+        return ToolResult(success=False, error=str(e))
+      except Exception as e:
+        logger.warning(
+          "skill_resource_error",
+          skill_name=skill_name,
+          resource=resource,
+          error=str(e),
+        )
+        return ToolResult(success=False, error=str(e))
+
+      logger.info(
+        "skill() resource loaded",
+        skill_name=skill_name,
+        skill_full_name=s.name,
+        resolved_name=resolved_name,
+        resource=resource,
+      )
+      return ToolResult(success=True, result=content)
 
     invocation = format_invocation_block(s, args)
 

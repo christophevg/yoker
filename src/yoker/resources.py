@@ -141,8 +141,8 @@ def iter_nested(
   directory: Any,
   *,
   child_file: str = "SKILL.md",
-) -> Iterator[Any]:
-  """Yield ``child_file`` from each subdirectory that contains it.
+) -> Iterator[tuple[Any, Any]]:
+  """Yield ``(parent, child)`` pairs for each subdirectory containing ``child_file``.
 
   Supports nested resource layouts such as ``skills/<name>/SKILL.md``.
   Works for both ``pathlib.Path`` and ``Traversable``. Results are sorted by
@@ -153,7 +153,10 @@ def iter_nested(
     child_file: File name to look for inside each subdirectory.
 
   Yields:
-    Path or Traversable entries for each ``<subdir>/<child_file>`` found.
+    Tuples of ``(parent, child)`` where ``parent`` is the subdirectory
+    (``Path`` or ``Traversable``) and ``child`` is the ``<subdir>/<child_file>``
+    entry. The parent is useful for locating sibling resource files relative
+    to the skill definition.
   """
   if not is_dir(directory):
     return
@@ -162,7 +165,7 @@ def iter_nested(
       continue
     child = entry / child_file
     if is_file(child):
-      yield child
+      yield entry, child
 
 
 def is_dir(path: Any) -> bool:

@@ -32,11 +32,12 @@ from yoker.skills.loader import (
   parse_skill_frontmatter,
 )
 from yoker.skills.registry import SkillRegistry
-from yoker.skills.schema import Skill
+from yoker.skills.schema import MAX_RESOURCE_SIZE_KB, Skill
 
 __all__ = [
   # Schema
   "Skill",
+  "MAX_RESOURCE_SIZE_KB",
   # Registry
   "SkillRegistry",
   # Loader

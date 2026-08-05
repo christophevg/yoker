@@ -86,6 +86,7 @@ def _skill_from_content(
   content: str,
   source_path: str,
   namespace: str | None = None,
+  base_dir: Any = None,
 ) -> Skill:
   """Build a Skill from raw Markdown content (frontmatter + body).
 
@@ -93,6 +94,8 @@ def _skill_from_content(
     content: Raw file content (may contain frontmatter).
     source_path: Source path to record on the Skill.
     namespace: Optional namespace prefix (e.g. 'pkg' for 'pkg:skill').
+    base_dir: Base directory for resolving resource files (a ``Path`` or
+      ``Traversable``). ``None`` for inline skills without resources.
 
   Returns:
     Skill object with parsed frontmatter and body.
@@ -148,6 +151,7 @@ def _skill_from_content(
     tools=tools,
     source_path=source_path,
     namespace=namespace,
+    _base_dir=base_dir,
   )
 
 
@@ -210,7 +214,7 @@ def load_skill(
   if namespace is None:
     namespace = FILE_NAMESPACE
 
-  return _skill_from_content(content, str(file_path), namespace)
+  return _skill_from_content(content, str(file_path), namespace, base_dir=file_path.parent)
 
 
 def load_skills(
@@ -275,14 +279,26 @@ def load_skills(
 
   skills: dict[str, Skill] = {}
 
-  def _add(entry: Any) -> None:
-    """Read, validate, parse and register a single skill entry."""
+  def _add(entry: Any, base_dir: Any = None) -> None:
+    """Read, validate, parse and register a single skill entry.
+
+    Args:
+      entry: Path or Traversable pointing to the skill definition file.
+      base_dir: Base directory for resource resolution. For flat layouts
+        this is the skills directory itself; for nested layouts it is the
+        skill's subdirectory. Defaults to ``entry.parent`` for Path, or
+        ``None`` when not provided (e.g. for Traversable flat layouts where
+        ``.parent`` is unavailable).
+    """
+    if base_dir is None and isinstance(entry, Path):
+      base_dir = entry.parent
+
     try:
       content = entry.read_text(encoding="utf-8")
       if isinstance(entry, Path):
         # Enforce size limit on filesystem files (SEC-3)
         _validate_skill_size(content, entry)
-      skill = _skill_from_content(content, str(entry), namespace)
+      skill = _skill_from_content(content, str(entry), namespace, base_dir=base_dir)
     except ConfigurationError:
       raise
     except Exception as e:
@@ -300,9 +316,9 @@ def load_skills(
     skills[skill_key] = skill
 
   for entry in iter_files(dir_path, exclude=("SKILL.md",)):
-    _add(entry)
-  for entry in iter_nested(dir_path, child_file="SKILL.md"):
-    _add(entry)
+    _add(entry, base_dir=dir_path)
+  for parent, child in iter_nested(dir_path, child_file="SKILL.md"):
+    _add(child, base_dir=parent)
 
   return skills
 
