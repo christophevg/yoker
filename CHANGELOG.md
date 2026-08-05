@@ -4,7 +4,7 @@ All notable changes to yoker are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/).
 
-## Unreleased
+## 0.9.0 (2026-08-05)
 
 ### Added
 
@@ -19,6 +19,49 @@ adheres to [Semantic Versioning](https://semver.org/).
   `time.monotonic()`. This replaces the backend-reported
   `total_duration_ms` which only reflected the last chunk's latency, not
   the full turn duration. The timing is provider-independent.
+
+- **Session resume hint on shutdown**: When exiting an interactive session
+  with persistence enabled, a hint is printed showing the session ID and
+  the `--resume` command to continue the conversation later.
+
+- **AGENTS.md context injection**: If an `AGENTS.md` file exists in the
+  working directory, its contents are embedded directly into the system
+  prompt at startup, providing project-specific instructions to the agent.
+
+- **Dict-based agent/skill directories**: The `agents.directories` and
+  `skills.directories` config fields now accept a dict mapping
+  `namespace → path` (e.g., `[agents.directories]` / `c3 = "../c3/agents"`)
+  in addition to the list form. The dict form gives explicit control over
+  the namespace name.
+
+- **GitHub tool enhancements**: Added `workflow_logs` operation (fetches
+  failed-step logs), `pr_reviews` and `pr_comments` operations, and
+  `include_comments` option on `pr_view`. Removed internal output
+  truncation in favor of `post_filter` guidance.
+
+- **Git tool enhancements**: Added `pull`, `tag` (list/last), and
+  `branch show_current` operations. Git `diff` and `show` now support
+  files in subdirectories.
+
+- **Search tool accepts file paths**: The `search` tool now accepts a
+  single file path (not just directories) for targeted content search
+  within one file.
+
+- **Skill lazy resource loading**: Skills can now declare resources that
+  are loaded on-demand via the `skill` tool, rather than all being loaded
+  at startup.
+
+- **Bare skill name resolution**: Skills can now be referenced by their
+  bare name (without namespace prefix) when there is no ambiguity.
+
+- **File tool (copy/move/delete)**: New `file` tool for filesystem
+  operations (copy, move, delete) with recursive support.
+
+- **`make clean-sessions`**: New Makefile target to delete session `.jsonl`
+  files older than a configurable age.
+
+- **Custom Yoker badge**: Added a custom SVG badge for README
+  documentation.
 
 ### Changed
 
@@ -44,7 +87,11 @@ adheres to [Semantic Versioning](https://semver.org/).
   percentage. When multiple matches are found, the error lists the line
   numbers of all occurrences and suggests using `line_range`.
 
-### Changed
+- **`update` tool: `insert`/`append` operations**: Replaced
+  `insert_before`/`insert_after` with a cleaner set: `insert` (content
+  appears at `line_number`, pushing existing lines down) and `append` (add
+  content at end of file, no `line_number` needed). Operations are now:
+  `replace`, `insert`, `append`, `delete`.
 
 - **Default Tools Behavior (M.2, Option C)**: Agent definitions without a
   `tools:` line now grant ALL config-enabled tools at runtime. Previously,
@@ -56,17 +103,19 @@ adheres to [Semantic Versioning](https://semver.org/).
   omission, so operators can spot agents that silently broadened on upgrade.
   The `ALL_TOOLS` sentinel is a module-level `[]` (empty list) in
   `yoker.agents.schema`, used as the default value of
-  `AgentDefinition.tools`. It distinguishes "no `tools` line" (`ALL_TOOLS` —
+  `AgentDefinition.tools`. It distinguishes "no `tools:` line" (`ALL_TOOLS` —
   all tools) from "tools explicitly empty" (`[]` — no tools) via identity
   (`is ALL_TOOLS`). The sentinel is resolved in exactly ONE place —
   `Agent._filter_tools_by_definition` — which replaces it with the real list
   of all tool names from the registry; everywhere else, `tools` is just a
   list.
+
 - **Validator on runtime path**: `validate_agent_definition` is now called
   during `Agent` construction (warnings only; never blocks). Unknown bare
   tool names and disabled tools produce warnings instead of raising. The
   runtime `_warn_missing_tools` check stays authoritative for tool
   availability.
+
 - **Thin API tools contract aligned with `AgentDefinition` (M.2)**: The
   `yoker.agent()` / `yoker.process()` / `yoker.do()` / `yoker.session()`
   `tools` kwarg now defaults to the `ALL_TOOLS` sentinel (all tools) and is
@@ -77,12 +126,64 @@ adheres to [Semantic Versioning](https://semver.org/).
   arg (or pass `ALL_TOOLS` explicitly) for all tools; `tools=[]` also
   disables all tools; `tools=["read", ...]` filters as before.
 
+- **Builtin tool names namespaced**: Built-in tools are now prefixed with
+  `yoker:` namespace (e.g., `yoker:read`, `yoker:write`) for consistency
+  with agent and skill namespacing.
+
+- **Async subprocess execution for tool calls**: Tool calls are now rendered
+  immediately in the UI while subprocess execution runs asynchronously,
+  improving responsiveness.
+
+- **Post-filter improvements**: `post_filter` now applies on failure results,
+  filters the `error` field, and enforces output limits after filtering.
+  Tool args are no longer mutated. Content metadata content is also filtered.
+
+- **Git flag naming**: Underscores in git flag names are now converted to
+  dashes (e.g., `show_current` → `show-current`) for consistency with Git CLI
+  conventions.
+
+### Fixed
+
+- **Config union type corruption**: Reordered `directories` field type from
+  `tuple[str, ...] | dict[str, str]` to `dict[str, str] | tuple[str, ...]`
+  to prevent dacite from matching TOML dicts against the tuple type first
+  (which iterated dict keys character-by-character, corrupting
+  `{"c3": "../c3/agents"}` into `("c", "3")`).
+
+- **Agent process-consumer task leak**: The process-consumer task is now
+  properly cancelled when an agent is released, preventing asyncio warnings.
+
+- **Tool-execution spinner during approval**: The spinner is now stopped
+  before the approval prompt is shown, preventing UI overlap.
+
+- **Windows CI failures**: Unix-only tests are now skipped on Windows to
+  fix CI. The `nul.txt` test fixture was renamed to avoid the Windows
+  reserved device name.
+
+- **GitHub workflow run IDs**: Raised `_MAX_NUMBER` to 64-bit to handle
+  large GitHub Actions workflow run IDs.
+
+- **GitHub empty array handling**: GitHub tool now handles empty arrays in
+  responses and removes `--json` flag for write operations.
+
+- **Session back-reference**: `agent._session` is now set for all agents,
+  fixing the `/agents` slash command.
+
+- **Agents allowlist default**: Agent definitions without an `agents`
+  allowlist in frontmatter now default to `ALL_AGENTS` instead of raising
+  an error.
+
 ### Upgrade Notes
 
 - **Plugins with a missing `tools:` line gain all tools on upgrade.** Add an
   explicit `tools: []` to agent definition files that should have no tools.
   The bundled `examples/plugins/demo/.../backwards.md` already uses
   `tools: []` as a regression guard.
+
+- **`update` tool: `insert_before`/`insert_after` removed.** Use `insert`
+  at `line_number` (content appears at that line) or `insert` at
+  `line_number + 1` to replicate `insert_after`. Use `append` to add
+  content at end of file.
 
 ## 0.8.0 (2026-07-15)
 
