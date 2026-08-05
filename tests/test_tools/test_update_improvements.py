@@ -579,8 +579,8 @@ class TestExistingBehaviorPreserved:
     assert test_file.read_text() == "Line 1\nLine 3\n"
 
   @pytest.mark.asyncio
-  async def test_insert_before_still_works(self, tmp_path: Path) -> None:
-    """Insert before still works."""
+  async def test_insert_still_works(self, tmp_path: Path) -> None:
+    """Insert at a line still works."""
     spec = _update_spec()
     ctx = _update_context()
     test_file = tmp_path / "test.txt"
@@ -588,7 +588,7 @@ class TestExistingBehaviorPreserved:
 
     result = await spec.execute(
       path=str(test_file),
-      operation="insert_before",
+      operation="insert",
       line_number=2,
       new_string="Inserted",
       ctx=ctx,
@@ -598,8 +598,8 @@ class TestExistingBehaviorPreserved:
     assert test_file.read_text() == "Line 1\nInserted\nLine 2\n"
 
   @pytest.mark.asyncio
-  async def test_insert_after_still_works(self, tmp_path: Path) -> None:
-    """Insert after still works."""
+  async def test_append_still_works(self, tmp_path: Path) -> None:
+    """Append at end of file still works."""
     spec = _update_spec()
     ctx = _update_context()
     test_file = tmp_path / "test.txt"
@@ -607,11 +607,10 @@ class TestExistingBehaviorPreserved:
 
     result = await spec.execute(
       path=str(test_file),
-      operation="insert_after",
-      line_number=1,
-      new_string="Inserted",
+      operation="append",
+      new_string="Appended",
       ctx=ctx,
     )
 
     assert result.success
-    assert test_file.read_text() == "Line 1\nInserted\nLine 2\n"
+    assert test_file.read_text() == "Line 1\nLine 2\nAppended\n"

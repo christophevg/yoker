@@ -10,8 +10,9 @@ The ``operation`` parameter (required) controls the edit mode:
 
 - ``replace`` — Replace text matched by ``old_string`` with ``new_string``.
   Alternatively, provide ``line_range`` to replace a range of lines directly.
-- ``insert_before`` — Insert ``new_string`` before ``line_number``.
-- ``insert_after`` — Insert ``new_string`` after ``line_number``.
+- ``insert`` — Insert ``new_string`` at ``line_number`` (content appears at
+  that line, pushing existing lines down). Requires ``line_number``.
+- ``append`` — Add ``new_string`` at the end of the file.
 - ``delete`` — Delete text matched by ``old_string``, or a single line via
   ``line_number``, or a range of lines via ``line_range``.
 
@@ -29,8 +30,8 @@ target text:
    (1-indexed, inclusive) to replace or delete a range of lines without
    needing to match any text. This avoids ambiguous matches in large files.
 
-The ``insert_before`` and ``insert_after`` operations already use
-``line_number`` to position new content.
+The ``insert`` operation uses ``line_number`` to position new content.
+The ``append`` operation requires no line number — content is added at end.
 """
 
 import difflib
@@ -69,9 +70,7 @@ async def update(
   ctx: ToolContext,
   operation: Annotated[
     str,
-    Text(
-      "File operation to execute. One of: 'replace', 'insert_before', 'insert_after', 'delete'."
-    ),
+    Text("File operation to execute. One of: 'replace', 'insert', 'append', 'delete'."),
   ],
   old_string: Annotated[
     str,
@@ -84,17 +83,16 @@ async def update(
   new_string: Annotated[
     str,
     Text(
-      "Replacement or insertion text (required for replace and insert). "
-      "For replace: replaces old_string with this. For insert_before/insert_after: "
-      "the content to insert at line_number."
+      "Replacement or insertion text (required for replace, insert, and append). "
+      "For replace: replaces old_string with this. For insert: the content to "
+      "insert at line_number. For append: the content to add at end of file."
     ),
   ] = "",
   line_number: Annotated[
     int | None,
     Text(
-      "Line number (1-indexed) for insert_before/insert_after (required) or "
-      "delete (optional: deletes that single line). Ignored for replace unless "
-      "line_range is also absent."
+      "Line number (1-indexed) for insert (required) or "
+      "delete (optional: deletes that single line). Ignored for replace, append."
     ),
   ] = None,
   line_range: Annotated[
@@ -121,10 +119,9 @@ async def update(
   - **replace**: Replace text found via ``old_string`` with ``new_string``.
     Alternatively, provide ``line_range`` to replace a range of lines
     directly (takes precedence over ``old_string``).
-  - **insert_before**: Insert ``new_string`` before ``line_number``.
-    Requires ``line_number``.
-  - **insert_after**: Insert ``new_string`` after ``line_number``.
-    Requires ``line_number``.
+  - **insert**: Insert ``new_string`` at ``line_number`` (content appears
+    at that line, pushing existing lines down). Requires ``line_number``.
+  - **append**: Add ``new_string`` at the end of the file.
   - **delete**: Delete text found via ``old_string``. Alternatively,
     provide ``line_number`` to delete a single line, or ``line_range``
     to delete a range of lines.
@@ -144,7 +141,7 @@ async def update(
     logger.warning("update_invalid_path_type", path_type=type(path).__name__)
     return ToolResult(success=False, error="Invalid path parameter")
 
-  valid_operations = {"replace", "insert_before", "insert_after", "delete"}
+  valid_operations = {"replace", "insert", "append", "delete"}
   if operation not in valid_operations:
     logger.warning("update_invalid_operation", operation=operation)
     return ToolResult(success=False, error="Invalid operation")
@@ -200,8 +197,10 @@ async def update(
   try:
     if operation == "replace":
       result_content = _do_replace(old_content, old_string, new_string, line_range, exact_match)
-    elif operation in ("insert_before", "insert_after"):
-      result_content = _do_insert(old_content, operation, line_number, new_string)
+    elif operation == "insert":
+      result_content = _do_insert(old_content, line_number, new_string)
+    elif operation == "append":
+      result_content = _do_append(old_content, new_string)
     elif operation == "delete":
       result_content = _do_delete(old_content, old_string, line_number, line_range, exact_match)
     else:
@@ -332,7 +331,7 @@ def _build_summary_metadata(
         "new_string": new_string,
       },
     }
-  elif operation in ("insert_before", "insert_after"):
+  elif operation in ("insert", "append"):
     line_num = int(line_number) if line_number is not None else 0
     return {
       "operation": operation,
@@ -419,9 +418,11 @@ def _build_content_or_diff_metadata(
           "new_content_lines": len(new_content.splitlines()) if new_content else 0,
         },
       }
-  elif operation in ("insert_before", "insert_after"):
+  elif operation in ("insert", "append"):
     line_num = int(line_number) if line_number is not None else 0
     old_lines = old_content.splitlines(keepends=True)
+    if operation == "append":
+      line_num = len(old_lines)
     context_before = old_lines[max(0, line_num - 3) : line_num]
     context_after = old_lines[line_num : min(len(old_lines), line_num + 3)]
 
@@ -588,11 +589,14 @@ def _fuzzy_replace(old_content: str, old_string: str, new_string: str) -> str:
 
 def _do_insert(
   old_content: str,
-  operation: str,
   line_number: Any,
   new_string: str,
 ) -> str:
-  """Insert new_string before or after a specific line."""
+  """Insert new_string at a specific line (content appears at that line).
+
+  The new content is inserted *before* the existing line at ``line_number``,
+  so it appears at that line number in the resulting file.
+  """
   if line_number is None:
     raise ValueError("line_number is required for insert operations")
 
@@ -615,12 +619,22 @@ def _do_insert(
   if lines and not lines[-1].endswith("\n"):
     lines[-1] = lines[-1] + "\n"
 
-  if operation == "insert_before":
-    lines.insert(line_num - 1, new_string + "\n")
-  else:  # insert_after
-    lines.insert(line_num, new_string + "\n")
-
+  lines.insert(line_num - 1, new_string + "\n")
   return "".join(lines)
+
+
+def _do_append(
+  old_content: str,
+  new_string: str,
+) -> str:
+  """Append new_string at the end of the file."""
+  if not old_content:
+    return new_string + "\n"
+
+  content = old_content
+  if not content.endswith("\n"):
+    content = content + "\n"
+  return content + new_string + "\n"
 
 
 def _do_delete(

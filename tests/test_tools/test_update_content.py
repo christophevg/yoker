@@ -191,9 +191,9 @@ class TestUpdateToolInsertOperation:
   """Test update tool insert operation content metadata."""
 
   @pytest.mark.asyncio
-  async def test_insert_before_content_metadata(self, tmp_path: Path) -> None:
+  async def test_insert_content_metadata(self, tmp_path: Path) -> None:
     """
-    Given: update tool insert_before operation
+    Given: update tool insert operation
     When: execute() is called
     Then: content_metadata includes inserted content and line_number
     """
@@ -205,13 +205,13 @@ class TestUpdateToolInsertOperation:
     ctx = _get_ctx(config)
 
     # Create file
-    test_file = tmp_path / "insert_before.txt"
+    test_file = tmp_path / "insert.txt"
     test_file.write_text("Line 1\nLine 2\n")
 
-    # Insert before line 2
+    # Insert at line 2
     result = await spec.execute(
       path=str(test_file),
-      operation="insert_before",
+      operation="insert",
       line_number=2,
       new_string="Inserted line",
       ctx=ctx,
@@ -220,15 +220,15 @@ class TestUpdateToolInsertOperation:
     # Verify result
     assert result.success
     assert result.content_metadata is not None
-    assert result.content_metadata["operation"] == "insert_before"
+    assert result.content_metadata["operation"] == "insert"
     assert result.content_metadata["metadata"]["line_number"] == 2
 
   @pytest.mark.asyncio
-  async def test_insert_after_content_metadata(self, tmp_path: Path) -> None:
+  async def test_append_content_metadata(self, tmp_path: Path) -> None:
     """
-    Given: update tool insert_after operation
+    Given: update tool append operation
     When: execute() is called
-    Then: content_metadata includes inserted content and line_number
+    Then: content_metadata includes inserted content
     """
     # Create update tool with content verbosity
     config = Config(
@@ -238,30 +238,28 @@ class TestUpdateToolInsertOperation:
     ctx = _get_ctx(config)
 
     # Create file
-    test_file = tmp_path / "insert_after.txt"
+    test_file = tmp_path / "append.txt"
     test_file.write_text("Line 1\nLine 2\n")
 
-    # Insert after line 1
+    # Append
     result = await spec.execute(
       path=str(test_file),
-      operation="insert_after",
-      line_number=1,
-      new_string="Inserted line",
+      operation="append",
+      new_string="Appended line",
       ctx=ctx,
     )
 
     # Verify result
     assert result.success
     assert result.content_metadata is not None
-    assert result.content_metadata["operation"] == "insert_after"
-    assert result.content_metadata["metadata"]["line_number"] == 1
+    assert result.content_metadata["operation"] == "append"
 
   @pytest.mark.asyncio
   async def test_insert_content_type(self, tmp_path: Path) -> None:
     """
     Given: update tool insert operation
     When: execute() is called
-    Then: content_metadata.content_type="full" (showing inserted content)
+    Then: content_metadata.content_type="text/plain" (showing inserted content)
     """
     # Create update tool with content verbosity
     config = Config(
@@ -274,9 +272,9 @@ class TestUpdateToolInsertOperation:
     test_file = tmp_path / "insert_type.txt"
     test_file.write_text("Line 1\n")
 
-    # Insert
+    # Insert at line 1 (content appears at line 1, pushing existing down)
     result = await spec.execute(
-      path=str(test_file), operation="insert_after", line_number=1, new_string="New line", ctx=ctx
+      path=str(test_file), operation="insert", line_number=1, new_string="New line", ctx=ctx
     )
 
     # Verify result
@@ -303,9 +301,9 @@ class TestUpdateToolInsertOperation:
     test_file = tmp_path / "insert_context.txt"
     test_file.write_text("Line 1\nLine 2\nLine 3\n")
 
-    # Insert
+    # Insert at line 3 (content appears at line 3, pushing existing down)
     result = await spec.execute(
-      path=str(test_file), operation="insert_after", line_number=2, new_string="Inserted", ctx=ctx
+      path=str(test_file), operation="insert", line_number=3, new_string="Inserted", ctx=ctx
     )
 
     # Verify result
@@ -586,7 +584,7 @@ class TestUpdateToolShowDiffFlag:
 
     # Insert
     result = await spec.execute(
-      path=str(test_file), operation="insert_after", line_number=1, new_string="New line", ctx=ctx
+      path=str(test_file), operation="insert", line_number=1, new_string="New line", ctx=ctx
     )
 
     # Verify result

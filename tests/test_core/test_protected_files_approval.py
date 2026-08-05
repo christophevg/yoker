@@ -100,14 +100,14 @@ class TestBuildApprovalDiff:
     )
     assert "-extra = 1" in diff
 
-  def test_update_insert_before_diff_shows_insert_in_context(self, tmp_path: Path) -> None:
+  def test_update_insert_diff_shows_insert_in_context(self, tmp_path: Path) -> None:
     target = tmp_path / "pyproject.toml"
     target.write_text("line1\nline2\nline3\n")
     diff = _build_approval_diff(
       "update",
       str(target),
       {
-        "operation": "insert_before",
+        "operation": "insert",
         "line_number": 2,
         "new_string": "INSERTED",
       },
@@ -118,24 +118,22 @@ class TestBuildApprovalDiff:
     assert "line2" in diff  # line2 still appears in the diff context
     assert "line1" in diff
 
-  def test_update_insert_after_diff_shows_insert_in_context(self, tmp_path: Path) -> None:
+  def test_update_append_diff_shows_insert_in_context(self, tmp_path: Path) -> None:
     target = tmp_path / "pyproject.toml"
     target.write_text("line1\nline2\nline3\n")
     diff = _build_approval_diff(
       "update",
       str(target),
       {
-        "operation": "insert_after",
-        "line_number": 2,
-        "new_string": "INSERTED",
+        "operation": "append",
+        "new_string": "APPENDED",
       },
     )
-    assert "+INSERTED" in diff
+    assert "+APPENDED" in diff
     assert "-line2" not in diff
-    assert "line2" in diff
     assert "line3" in diff
 
-  def test_update_insert_before_not_full_file_replacement(self, tmp_path: Path) -> None:
+  def test_update_insert_not_full_file_replacement(self, tmp_path: Path) -> None:
     """Regression: insert must not depict the whole file being replaced."""
     target = tmp_path / "pyproject.toml"
     target.write_text("line1\nline2\nline3\n")
@@ -143,7 +141,7 @@ class TestBuildApprovalDiff:
       "update",
       str(target),
       {
-        "operation": "insert_before",
+        "operation": "insert",
         "line_number": 2,
         "new_string": "INSERTED",
       },

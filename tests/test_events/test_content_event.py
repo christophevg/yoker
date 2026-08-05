@@ -127,19 +127,19 @@ class TestToolContentEventCreation:
     """
     Given: An update tool insert operation
     When: Creating a ToolContentEvent
-    Then: operation field is "insert_before" or "insert_after" with line_number
+    Then: operation field is "insert" with line_number
     """
     event = ToolContentEvent(
       type=EventType.TOOL_CONTENT,
       tool_name="update",
-      operation="insert_after",
+      operation="insert",
       path="/tmp/test.py",
       content_type="full",
       content="new line\n",
       metadata={"line_number": 5},
     )
 
-    assert event.operation == "insert_after"
+    assert event.operation == "insert"
     assert event.metadata["line_number"] == 5
 
   def test_content_event_with_delete_operation(self) -> None:

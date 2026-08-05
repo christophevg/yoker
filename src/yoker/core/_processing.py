@@ -970,17 +970,17 @@ def _build_approval_diff(tool_name: str, path: str, tool_args: dict[str, Any]) -
       new_content = old_content.replace(old_string, new_string, 1)
     elif operation == "delete":
       new_content = old_content.replace(old_string, "", 1)
-    elif operation in ("insert_before", "insert_after"):
-      # Reproduce the update tool's _do_insert so the approval diff shows
+    elif operation in ("insert", "append"):
+      # Reproduce the update tool's insert/append so the approval diff shows
       # the insertion in context rather than a misleading full-file
-      # replacement. line_number is required by _do_insert; without it the
-      # actual tool call would also fail validation, so fall back to the
-      # new string alone (defensive).
+      # replacement.
       line_number = tool_args.get("line_number")
-      if line_number is None:
+      if operation == "append":
+        new_content = _apply_append(old_content, new_string)
+      elif line_number is None:
         new_content = new_string
       else:
-        new_content = _apply_insert(old_content, operation, line_number, new_string)
+        new_content = _apply_insert(old_content, line_number, new_string)
     else:
       new_content = new_string
   else:  # write
@@ -993,15 +993,15 @@ def _build_approval_diff(tool_name: str, path: str, tool_args: dict[str, Any]) -
   return generate_diff(old_content, new_content, filename)
 
 
-def _apply_insert(old_content: str, operation: str, line_number: Any, new_string: str) -> str:
+def _apply_insert(old_content: str, line_number: Any, new_string: str) -> str:
   """Mirror ``yoker.builtin.update._do_insert`` for approval diff rendering.
 
-  Inserts ``new_string`` before/after the 1-based ``line_number`` in
-  ``old_content`` and returns the resulting full file content. Unlike
-  ``_do_insert``, this helper does not raise on out-of-range line numbers
-  — a bad range would make the diff unintelligible but the actual tool
-  call would fail validation anyway, so we fall back to appending at the
-  nearest boundary.
+  Inserts ``new_string`` at the 1-based ``line_number`` in ``old_content``
+  (content appears at that line, pushing existing lines down) and returns the
+  resulting full file content. Unlike ``_do_insert``, this helper does not
+  raise on out-of-range line numbers — a bad range would make the diff
+  unintelligible but the actual tool call would fail validation anyway, so we
+  fall back to appending at the nearest boundary.
   """
   try:
     line_num = int(line_number)
@@ -1018,12 +1018,19 @@ def _apply_insert(old_content: str, operation: str, line_number: Any, new_string
   total = len(lines)
   # Clamp to valid range so an out-of-range request still produces a
   # readable diff rather than raising.
-  if operation == "insert_before":
-    idx = max(0, min(line_num - 1, total))
-  else:  # insert_after
-    idx = max(0, min(line_num, total))
+  idx = max(0, min(line_num - 1, total))
   lines.insert(idx, new_string + "\n")
   return "".join(lines)
+
+
+def _apply_append(old_content: str, new_string: str) -> str:
+  """Mirror ``yoker.builtin.update._do_append`` for approval diff rendering."""
+  if not old_content:
+    return new_string + "\n"
+  content = old_content
+  if not content.endswith("\n"):
+    content = content + "\n"
+  return content + new_string + "\n"
 
 
 async def _execute_tool(spec: ToolSpec, agent: Any, tool_args: dict[str, Any]) -> ToolResult:

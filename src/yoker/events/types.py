@@ -162,7 +162,7 @@ class ToolContentEvent(Event):
 
   Attributes:
     tool_name: Name of the tool (e.g., "write", "update").
-    operation: Operation type (e.g., "write", "replace", "insert_before", "insert_after", "delete").
+    operation: Operation type (e.g., "write", "replace", "insert", "append", "delete").
     path: Resolved file path.
     content_type: MIME type of the content. Common values:
       - "text/plain": Plain text content (default)

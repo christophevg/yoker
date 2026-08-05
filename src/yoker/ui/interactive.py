@@ -837,7 +837,7 @@ class InteractiveUIHandler(UIHandler):
       else:
         self.console.print(f"  Overwriting {filename} ({lines} lines)")
 
-    elif operation in ("insert_before", "insert_after"):
+    elif operation in ("insert", "append"):
       line_number = metadata.get("line_number", 0)
       inserted_lines = metadata.get("inserted_lines", 1)
       self.console.print(f"  Insert at line {line_number} in {filename}: {inserted_lines} line(s)")

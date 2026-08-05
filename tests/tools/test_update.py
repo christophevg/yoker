@@ -146,39 +146,37 @@ class TestUpdateTool:
     assert file_path.read_text() == "world hello hello"
 
   @pytest.mark.asyncio
-  async def test_insert_before(self, tmp_path: Path) -> None:
-    """update tool inserts before a line."""
+  async def test_insert(self, tmp_path: Path) -> None:
+    """update tool inserts at a line (content appears at that line)."""
     file_path = tmp_path / "test.txt"
     file_path.write_text("line2\nline3\n")
     spec = _update_spec()
     ctx = _update_context()
     result = await spec.execute(
       path=str(file_path),
-      operation="insert_before",
+      operation="insert",
       line_number=1,
       new_string="line1",
       ctx=ctx,
     )
     assert result.success is True
-    # Insert before line 1 adds it at the beginning
+    # Insert at line 1 adds it at the beginning
     assert file_path.read_text() == "line1\nline2\nline3\n"
 
   @pytest.mark.asyncio
-  async def test_insert_after(self, tmp_path: Path) -> None:
-    """update tool inserts after a line."""
+  async def test_append(self, tmp_path: Path) -> None:
+    """update tool appends at end of file."""
     file_path = tmp_path / "test.txt"
     file_path.write_text("line1\nline2\n")
     spec = _update_spec()
     ctx = _update_context()
     result = await spec.execute(
       path=str(file_path),
-      operation="insert_after",
-      line_number=2,
+      operation="append",
       new_string="line3",
       ctx=ctx,
     )
     assert result.success is True
-    # Insert after line 2 adds it at the end
     assert file_path.read_text() == "line1\nline2\nline3\n"
 
   @pytest.mark.asyncio

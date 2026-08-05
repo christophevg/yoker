@@ -263,7 +263,7 @@ class TestToolResultContentMetadataUpdate:
       success=True,
       result="File updated successfully",
       content_metadata={
-        "operation": "insert_after",
+        "operation": "insert",
         "path": "/tmp/test.py",
         "content_type": "full",
         "content": "new line\n",
