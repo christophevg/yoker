@@ -59,7 +59,8 @@ async def search(
   path: Annotated[
     str,
     PathArg(
-      "Directory to search in (must be a directory, not a file). To read a specific file, use the read tool instead."
+      "Directory or file to search in. Can be a directory (recursively searches all files) "
+      "or a single file path (searches just that file)."
     ),
   ],
   ctx: ToolContext,
@@ -82,10 +83,11 @@ async def search(
 ) -> ToolResult:
   """Search for patterns in files.
 
-  The 'path' parameter must be a directory — to read a specific file, use the read tool instead.
+  The 'path' parameter can be a directory (recursively searches all files) or a
+  single file (searches just that file).
 
   Args:
-    path: Directory to search in.
+    path: Directory or file to search in.
     ctx: Tool execution context with configuration.
     pattern: Search pattern (regex for content, glob for filename).
     type: Search type - 'content' or 'filename'.
@@ -165,10 +167,10 @@ async def search(
     resolved = Path(path)
     if not resolved.exists():
       return ToolResult(success=False, error=f"Path not found: {path}")
-    if not resolved.is_dir():
+    if not resolved.is_dir() and not resolved.is_file():
       return ToolResult(
         success=False,
-        error=f"Path is not a directory: {path}. The search tool only accepts directories. To read a specific file, use the read tool instead.",
+        error=f"Path is neither a file nor a directory: {path}",
       )
   except PermissionError:
     return ToolResult(success=False, error=f"Permission denied: {path}")
@@ -277,7 +279,15 @@ def _walk_files(
   include_pattern: str = "",
   exclude_pattern: str = "",
 ) -> Iterator[Path]:
-  """Walk directory tree, yielding files, applying optional glob filters on filename."""
+  """Walk directory tree, yielding files, applying optional glob filters on filename.
+
+  If ``root`` is a file (not a directory), yields just that file (ignoring
+  include/exclude patterns, since the caller explicitly chose this file).
+  """
+  if root.is_file():
+    yield root
+    return
+
   for dirpath, dirnames, filenames in os.walk(root):
     dirnames[:] = [d for d in dirnames if not d.startswith(".") and d not in SKIP_DIRS]
 

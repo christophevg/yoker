@@ -123,7 +123,7 @@ If it blocks the full Yoker development workflow, it's not ready for public anno
   - Implemented: (a) `line_range` parameter for line-number-based replace/delete; (b) `require_exact_match` per-call override with whitespace-insensitive matching; (c) better error messages showing closest match with similarity % and line numbers for multiple matches; (d) line-number-based insert mode (already existed)
   - Line-number-based mode also scopes updates to a specific region, avoiding ambiguous matches in large files
 
-- [ ] **`search` tool: accept file paths**
+- [x] **`search` tool: accept file paths**
   - Currently only accepts directories. Agent must `read` the whole file and scan visually, wasting context window.
   - Allow `search` to accept a file path and search just that file
 

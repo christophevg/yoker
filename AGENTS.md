@@ -136,7 +136,7 @@ src/yoker/
 │   ├── list.py              # list: directory contents
 │   ├── mkdir.py             # mkdir: create directories
 │   ├── existence.py         # existence: check files/folders exist
-│   ├── search.py            # search: file and content search (grep-like)
+│   ├── search.py            # search: file and content search (grep-like, accepts files and directories)
 │   ├── git.py               # git: Git operations (status, log, diff, branch, show, 
 │   │                        #   add, commit, push, checkout, rm, pull, tag)
 │   ├── github.py            # github: read-only GitHub operations via gh CLI
