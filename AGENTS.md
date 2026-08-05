@@ -7,6 +7,17 @@ documentation, see [README.md](README.md).
 
 We are in a dogfooding phase, so we're fixing problems in Yoker with Yoker. This means that you can't test fixes due to the new code not being loaded. If you want to test things, FIRST ASK me to restart the session. I can use the `--resume` argument to reload the current context, which allows me to stop and start with the new code active and the same context.
 
+YOU DON'T HAVE DIRECT CLI ACCESS! This is intentional.
+
+IF A TOOL IS MISSING: STOP!
+IF A TOOL FAILS: STOP!
+
+Don't look for workarounds!
+
+Address the problem first. You are working on your own codebase, so you can check the code of the tool yourself to confirm the failure. If sub-operation for a tool is missing: report it, so we can decide to add it first.
+
+Don't try to spawn a random agent to do something you don't have the right tool for.
+
 ## Positioning
 
 **USP:** Add LLM capabilities to your Python apps and modules without worrying
