@@ -4,6 +4,17 @@ Provides the ``update`` async function for editing existing file contents.
 Guardrails are enforced centrally by the harness based on the schema's
 ``path`` annotation.
 
+## Operations
+
+The ``operation`` parameter (required) controls the edit mode:
+
+- ``replace`` — Replace text matched by ``old_string`` with ``new_string``.
+  Alternatively, provide ``line_range`` to replace a range of lines directly.
+- ``insert_before`` — Insert ``new_string`` before ``line_number``.
+- ``insert_after`` — Insert ``new_string`` after ``line_number``.
+- ``delete`` — Delete text matched by ``old_string``, or a single line via
+  ``line_number``, or a range of lines via ``line_range``.
+
 ## Matching modes
 
 The ``replace`` and ``delete`` operations support two ways to identify the
@@ -56,22 +67,42 @@ def _truncate_diff(diff_lines: list[str], max_lines: int) -> tuple[str, bool, in
 async def update(
   path: Annotated[str, PathArg("Path to the file to update")],
   ctx: ToolContext,
-  operation: str,
+  operation: Annotated[
+    str,
+    Text(
+      "File operation to execute. One of: 'replace', 'insert_before', 'insert_after', 'delete'."
+    ),
+  ],
   old_string: Annotated[
     str,
     Text(
-      "Text to find (required for replace and delete). Must match exactly when require_exact_match is true."
+      "Text to find (required for replace and delete). Must match exactly when "
+      "require_exact_match is true. When false, whitespace is normalized for "
+      "matching and multiple matches use the first occurrence."
     ),
   ] = "",
   new_string: Annotated[
-    str, Text("Replacement or insertion text (required for replace and insert)")
+    str,
+    Text(
+      "Replacement or insertion text (required for replace and insert). "
+      "For replace: replaces old_string with this. For insert_before/insert_after: "
+      "the content to insert at line_number."
+    ),
   ] = "",
-  line_number: int | None = None,
+  line_number: Annotated[
+    int | None,
+    Text(
+      "Line number (1-indexed) for insert_before/insert_after (required) or "
+      "delete (optional: deletes that single line). Ignored for replace unless "
+      "line_range is also absent."
+    ),
+  ] = None,
   line_range: Annotated[
     list[int] | None,
     Text(
-      "Line range [start, end] (1-indexed, inclusive) for line-based replace or delete. "
-      "When provided, replaces or deletes those lines directly without string matching."
+      "Line range [start, end] (1-indexed, inclusive) for line-based replace or "
+      "delete. When provided, replaces or deletes those lines directly without "
+      "string matching. Takes precedence over old_string for both operations."
     ),
   ] = None,
   require_exact_match: Annotated[
@@ -82,7 +113,22 @@ async def update(
     ),
   ] = None,
 ) -> ToolResult:
-  """Update an existing file by replacing, inserting, or deleting content."""
+  """Update an existing file by replacing, inserting, or deleting content.
+
+  The ``operation`` parameter is required and determines which other
+  parameters are needed:
+
+  - **replace**: Replace text found via ``old_string`` with ``new_string``.
+    Alternatively, provide ``line_range`` to replace a range of lines
+    directly (takes precedence over ``old_string``).
+  - **insert_before**: Insert ``new_string`` before ``line_number``.
+    Requires ``line_number``.
+  - **insert_after**: Insert ``new_string`` after ``line_number``.
+    Requires ``line_number``.
+  - **delete**: Delete text found via ``old_string``. Alternatively,
+    provide ``line_number`` to delete a single line, or ``line_range``
+    to delete a range of lines.
+  """
   update_config = ctx.config
   if not isinstance(update_config, UpdateToolConfig):
     logger.warning("update_invalid_config_type", config_type=type(update_config).__name__)
