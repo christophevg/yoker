@@ -32,6 +32,7 @@ from typing import TYPE_CHECKING, Annotated, Any
 
 from structlog import get_logger
 
+from yoker.agents.schema import ALL_AGENTS
 from yoker.tools.annotations import Text
 from yoker.tools.schema import ToolResult
 
@@ -68,13 +69,17 @@ def make_spawn_agent_tool(session: "Session", requester: "Agent") -> Any:
   """
   # Bake available agent names from the requester's allowlist intersected
   # with the session registry (only allowlisted names are shown to the model).
-  allowlist = tuple(requester.definition.agents or ())
+  allowlist = requester.definition.agents
   registry_names = set(session.agents.names) if session.agents else set()
-  available = [n for n in allowlist if n in registry_names]
+  if allowlist is ALL_AGENTS:
+    # Any registered agent may be spawned — show the full registry.
+    available = sorted(registry_names)
+  else:
+    available = [n for n in allowlist if n in registry_names]
   if not available:
     # Fall back to the full allowlist when the registry isn't populated yet
     # (e.g. agents loaded lazily). The allowlist is the authoritative gate.
-    available = list(allowlist)
+    available = list(allowlist) if allowlist is not ALL_AGENTS else []
 
   label = "Name of the agent to spawn"
   if available:

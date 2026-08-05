@@ -20,6 +20,7 @@ from typing import Any
 from structlog import get_logger
 
 from yoker.agents import AgentDefinition, AgentRegistry, load_agent_definition
+from yoker.agents.schema import ALL_AGENTS
 from yoker.backends import ModelBackend, create_backend
 from yoker.config import Config
 from yoker.context import create_context_manager
@@ -343,9 +344,11 @@ class Session:
     # Allowlist check — only for spawned children.
     if requester is not None and name is not None:
       allowed = requester.definition.agents
-      if len(allowed) == 0:
+      if allowed is ALL_AGENTS:
+        pass  # any registered agent may be spawned
+      elif len(allowed) == 0:
         raise ValueError(f"Agent '{requester.definition.name}' has no allowed spawns.")
-      if name not in allowed:
+      elif name not in allowed:
         raise ValueError(f"Agent '{name}' is not in '{requester.definition.name}' allowlist.")
 
     # max_agents cap — session-wide resource limit (primary is the first agent, so

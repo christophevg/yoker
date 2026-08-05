@@ -15,7 +15,7 @@ from typing import Any
 
 from structlog import get_logger
 
-from yoker.agents.schema import ALL_TOOLS, AgentDefinition
+from yoker.agents.schema import ALL_AGENTS, ALL_TOOLS, AgentDefinition
 from yoker.exceptions import ConfigurationError, FileNotFoundError
 from yoker.resources import (
   is_dir,
@@ -190,16 +190,26 @@ def parse_agent_definition(
     model = str(model)
 
   # Extract optional agents allowlist:
-  # the list of agent names this agent is permitted to spawn via the Session.
-  agents_raw = frontmatter.get("agents")
-  if agents_raw is None:
-    agents: tuple[str, ...] = ()
-  elif isinstance(agents_raw, str):
-    agents = tuple(a.strip() for a in agents_raw.split(",") if a.strip())
-  elif isinstance(agents_raw, list):
-    agents = tuple(str(a).strip() for a in agents_raw if a)
+  # Distinguish "no `agents:` line" (ALL_AGENTS — any registered agent may be
+  # spawned) from "agents: present-but-empty" (no spawns allowed), mirroring
+  # the tools field's ALL_TOOLS/[] distinction.
+  if "agents" not in frontmatter:
+    agents: tuple[str, ...] = ALL_AGENTS
   else:
-    agents = ()
+    agents_raw = frontmatter["agents"]
+    if agents_raw is None:
+      agents = ()
+      logger.warning(
+        "agent_spawns_explicit_null_treated_as_empty",
+        agent=name,
+        setting="agents",
+      )
+    elif isinstance(agents_raw, str):
+      agents = tuple(a.strip() for a in agents_raw.split(",") if a.strip())
+    elif isinstance(agents_raw, list):
+      agents = tuple(str(a).strip() for a in agents_raw if a)
+    else:
+      agents = ()
 
   return AgentDefinition(
     simple_name=str(name),
