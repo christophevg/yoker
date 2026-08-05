@@ -3,6 +3,7 @@
 [![PyPI](https://img.shields.io/pypi/v/yoker.svg)][pypi]
 [![Python](https://img.shields.io/pypi/pyversions/yoker.svg)][pypi]
 [![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)][uv]
+[![Yoker](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/christophevg/yoker/master/media/badge/v0.json)][yoker]
 [![CI](https://img.shields.io/github/actions/workflow/status/christophevg/yoker/test.yaml.svg)][ci]
 [![Coverage](https://img.shields.io/coveralls/github/christophevg/yoker.svg)][coveralls]
 [![License](https://img.shields.io/github/license/christophevg/yoker.svg)][license]
@@ -781,6 +782,7 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 [pypi]: https://pypi.org/project/yoker/
 [uv]: https://docs.astral.sh/uv/
+[yoker]: https://yoker.dev
 [ci]: https://github.com/christophevg/yoker/actions
 [coveralls]: https://coveralls.io/github/christophevg/yoker
 [license]: https://github.com/christophevg/yoker/blob/main/LICENSE
