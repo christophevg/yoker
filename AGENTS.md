@@ -38,6 +38,37 @@ capabilities into regular Python code seamlessly.
 - **Commit attribution**: Use `🤖 Implemented together with Yoker` as the trailer line on agent-made commits. No `Co-authored-by` format.
 - **Fully qualified imports**: `from yoker.backends.protocol import ChatChunk` — not `from yoker.backends import ChatChunk`.
 
+## Makefile
+
+The Makefile has many targets that are useful and available through the `make` tool:
+
+```
+build           Build distribution packages
+check-all       Run all quality checks and test all
+check           Run all quality checks and test
+clean-all       Remove virtualenv and lock file
+clean-sessions  Delete session .jsonl files older than $(SESSION_MAX_AGE_DAYS) days
+clean           Remove build artifacts
+demo            Generate main session screenshot (media/session.svg)
+demos           Generate all demo screenshots
+docs-view       Build and open documentation
+docs            Build HTML documentation
+env-dev         Install all dependencies (dev + docs)
+env-run         Install runtime dependencies only
+format-check    Run all quality checks
+format          Format code and fix linting issues
+install-pythons Install Python 3.10, 3.11, 3.12
+lint            Check code for linting issues
+pre-publish     Pre-publication checks (run before publishing)
+publish-test    Publish to TestPyPI
+publish         Publish to PyPI (runs pre-publish checks)
+run             Run the application
+test-all        Run tests on all Python versions
+test-cov        Run tests with coverage
+test            Run tests (usage: make test / optional: TEST=file|file:test_name)
+typecheck       Run type checking
+```
+
 ## Tool Output Discipline
 
 **Always use `post_filter` on every tool call** to keep only lines relevant to
