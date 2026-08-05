@@ -664,8 +664,8 @@ class TestGitToolPermissionRequiredOperations:
     When: Committing with a message containing a NUL byte
     Then: Returns error about NUL byte
     """
-    (git_repo / "nul.txt").write_text("content")
-    subprocess.run(["git", "add", "nul.txt"], cwd=git_repo, check=True, capture_output=True)
+    (git_repo / "content.txt").write_text("content")
+    subprocess.run(["git", "add", "content.txt"], cwd=git_repo, check=True, capture_output=True)
 
     config = GitToolConfig(
       allowed_commands=("status", "log", "commit"),
