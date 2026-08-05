@@ -1,7 +1,7 @@
 YOKER_FROM = .
 -include ~/.yoker/Makefile
 
-.PHONY: env-dev env-run install-pythons test test-cov test-all test-file test-one format lint typecheck check run docs docs-view build publish publish-test pre-publish clean clean-all help demo demos
+.PHONY: env-dev env-run install-pythons test test-cov test-all test-file test-one format lint typecheck check run docs docs-view build publish publish-test pre-publish clean clean-all clean-sessions help demo demos
 
 yoker:
 	uv run yoker
@@ -108,3 +108,16 @@ clean: ## Remove build artifacts
 
 clean-all: clean ## Remove virtualenv and lock file
 	rm -rf .venv uv.lock
+
+# Session cleanup configuration
+SESSION_DIR ?= ./context
+SESSION_MAX_AGE_DAYS ?= 5
+
+clean-sessions: ## Delete session .jsonl files older than $(SESSION_MAX_AGE_DAYS) days
+	@dir=$(SESSION_DIR); \
+	if [ ! -d "$$dir" ]; then \
+		echo "Session directory $$dir does not exist. Nothing to clean."; \
+	else \
+		echo "Cleaning session files older than $(SESSION_MAX_AGE_DAYS) days in $$dir..."; \
+		find "$$dir" -name '*.jsonl' -type f -mtime +$(SESSION_MAX_AGE_DAYS) -print -delete; \
+	fi
