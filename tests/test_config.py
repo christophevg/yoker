@@ -317,7 +317,8 @@ class TestDirectoriesNamespaceConfig:
     character-by-character.  Putting ``dict[str, str]`` first in the
     union type ensures dacite tries the dict branch first.
     """
-    from dacite import Config as DaciteConfig, from_dict
+    from dacite import Config as DaciteConfig
+    from dacite import from_dict
 
     from yoker.config import AgentsConfig
 
@@ -333,7 +334,8 @@ class TestDirectoriesNamespaceConfig:
 
   def test_directories_list_form_preserved_through_dacite(self) -> None:
     """List-form directories survive dacite from_dict as a tuple."""
-    from dacite import Config as DaciteConfig, from_dict
+    from dacite import Config as DaciteConfig
+    from dacite import from_dict
 
     from yoker.config import AgentsConfig
 
