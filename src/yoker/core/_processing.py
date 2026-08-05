@@ -1050,7 +1050,7 @@ async def _execute_tool(spec: ToolSpec, agent: Any, tool_args: dict[str, Any]) -
 def _apply_post_filter(result: ToolResult, pattern: str) -> ToolResult:
   """Filter a ToolResult's output line-by-line using a regex pattern.
 
-  Filters both ``result`` and ``error`` fields:
+  Filters ``result``, ``error``, and ``content_metadata.content`` fields:
 
   - **String results**: filtered line-by-line directly.
   - **Dict results** (e.g. from the make tool): each string value within the
@@ -1060,6 +1060,11 @@ def _apply_post_filter(result: ToolResult, pattern: str) -> ToolResult:
     filtering individual string values (e.g. ``stdout``, ``stderr``), the
     line structure of the original output is preserved.
   - **Error field**: filtered line-by-line if it's a string (failure case).
+  - **content_metadata.content**: when it mirrors ``result.result`` (same
+    string), the already-filtered result is reused — no duplicate work.
+    When it differs (e.g. write tool: result is a summary, content is a
+    diff), it is filtered separately. This ensures the UI display matches
+    what the LLM receives without filtering the same content twice.
 
   Only lines matching the pattern are kept. A summary line is appended
   showing how many lines were kept out of the total. If the pattern is
@@ -1075,6 +1080,7 @@ def _apply_post_filter(result: ToolResult, pattern: str) -> ToolResult:
 
   new_result = result.result
   new_error = result.error
+  new_metadata = result.content_metadata
 
   # Filter the result field.
   if isinstance(new_result, str) and new_result:
@@ -1090,6 +1096,22 @@ def _apply_post_filter(result: ToolResult, pattern: str) -> ToolResult:
     new_error, error_changed = _filter_lines(new_error, regex, pattern)
     changed = changed or error_changed
 
+  # Sync content_metadata.content with the filtered result.
+  # When result.result is a string and content_metadata.content is the same
+  # content (e.g. github workflow_logs, read tool), reuse the already-filtered
+  # string instead of filtering again. When they differ (e.g. write tool
+  # where result is a summary but content is a diff), filter content separately.
+  if new_metadata is not None:
+    md_content = new_metadata.get("content")
+    if isinstance(md_content, str) and md_content:
+      if isinstance(new_result, str) and md_content == result.result:
+        # Same content — reuse the filtered result, no duplicate work.
+        new_metadata = {**new_metadata, "content": new_result}
+      else:
+        md_content, md_changed = _filter_lines(md_content, regex, pattern)
+        if md_changed:
+          new_metadata = {**new_metadata, "content": md_content}
+
   if not changed:
     return result
 
@@ -1097,7 +1119,7 @@ def _apply_post_filter(result: ToolResult, pattern: str) -> ToolResult:
     success=result.success,
     result=new_result,
     error=new_error,
-    content_metadata=result.content_metadata,
+    content_metadata=new_metadata,
   )
 
 

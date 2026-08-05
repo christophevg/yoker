@@ -281,6 +281,43 @@ class TestPostFilterExecution:
     assert result.content_metadata["operation"] == "read"
 
   @pytest.mark.asyncio
+  async def test_post_filter_filters_content_metadata_content(self) -> None:
+    """post_filter also filters content_metadata.content so the UI display
+    matches what the LLM receives. Without this, the terminal shows full
+    unfiltered output while the LLM only sees filtered lines."""
+    from yoker.core._processing import _execute_tool
+
+    async def my_tool() -> ToolResult:
+      """Return a result with content metadata mirroring the result."""
+      return ToolResult(
+        success=True,
+        result="line1: error\nline2: ok\nline3: error here",
+        content_metadata={
+          "operation": "github",
+          "path": "default",
+          "content_type": "text/plain",
+          "content": "line1: error\nline2: ok\nline3: error here",
+          "metadata": {"returncode": 0},
+        },
+      )
+
+    spec = build_tool_spec(my_tool)
+    agent = MagicMock()
+    result = await _execute_tool(spec, agent, {"post_filter": "error"})
+
+    assert result.success
+    # result.result is filtered
+    assert "line1: error" in result.result
+    assert "line3: error here" in result.result
+    assert "line2: ok" not in result.result
+    # content_metadata.content is also filtered
+    assert result.content_metadata is not None
+    md_content = result.content_metadata.get("content", "")
+    assert "line1: error" in md_content
+    assert "line3: error here" in md_content
+    assert "line2: ok" not in md_content
+
+  @pytest.mark.asyncio
   async def test_post_filter_case_sensitive_by_default(self) -> None:
     """post_filter regex is case-sensitive by default."""
     from yoker.core._processing import _execute_tool
