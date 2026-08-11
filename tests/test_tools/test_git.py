@@ -829,6 +829,19 @@ class TestGitToolPermissionRequiredOperations:
       assert "approval" not in result.error.lower()
       assert "permission" not in result.error.lower()
 
+  def test_git_push_tags_builds_correct_command(self) -> None:
+    """_build_command for push with tags=true should produce git push --tags."""
+    from yoker.builtin.git import _build_command
+
+    cmd = _build_command(
+      "push",
+      {"tags": True},
+      ("status", "log", "push"),
+    )
+    assert cmd[0] == "git"
+    assert cmd[1] == "push"
+    assert "--tags" in cmd
+
   @pytest.mark.asyncio
   async def test_git_checkout_create_branch(self, git_repo: Path) -> None:
     """
@@ -2560,8 +2573,68 @@ class TestGitTagOperation:
 
     assert result.success
 
+  async def test_tag_create_annotated_tag(self, git_repo_with_tags: Path) -> None:
+    """tag create creates an annotated tag with name and message."""
+    spec = _git_spec()
+    ctx = _git_context()
 
-class TestGitBranchShowCurrent:
+    result = await spec.execute(
+      operation="tag",
+      path=str(git_repo_with_tags),
+      ctx=ctx,
+      args={"create": True, "name": "v9.9.9", "message": "Release v9.9.9"},
+    )
+
+    assert result.success
+    # Verify the tag was created
+    import subprocess
+
+    tag_output = subprocess.run(
+      ["git", "tag", "-l", "v9.9.9"],
+      cwd=git_repo_with_tags,
+      capture_output=True,
+      text=True,
+    )
+    assert "v9.9.9" in tag_output.stdout
+    # Verify it's annotated (has a message)
+    tag_msg = subprocess.run(
+      ["git", "tag", "-l", "--format=%(contents:subject)", "v9.9.9"],
+      cwd=git_repo_with_tags,
+      capture_output=True,
+      text=True,
+    )
+    assert "Release v9.9.9" in tag_msg.stdout
+
+  async def test_tag_create_requires_name(self, git_repo_with_tags: Path) -> None:
+    """tag create without name returns error."""
+    spec = _git_spec()
+    ctx = _git_context()
+
+    result = await spec.execute(
+      operation="tag",
+      path=str(git_repo_with_tags),
+      ctx=ctx,
+      args={"create": True, "message": "msg"},
+    )
+
+    assert not result.success
+    assert "name" in result.error.lower()
+
+  async def test_tag_create_requires_message(self, git_repo_with_tags: Path) -> None:
+    """tag create without message returns error."""
+    spec = _git_spec()
+    ctx = _git_context()
+
+    result = await spec.execute(
+      operation="tag",
+      path=str(git_repo_with_tags),
+      ctx=ctx,
+      args={"create": True, "name": "v1.0.0"},
+    )
+
+    assert not result.success
+    assert "message" in result.error.lower()
+
   """Tests for the branch show_current argument."""
 
   @pytest.fixture

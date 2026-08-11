@@ -83,6 +83,21 @@ OPERATION_ARGS: dict[str, dict[str, dict[str, Any]]] = {
       "type": "boolean",
       "description": "Return only the most recent tag (equivalent to git describe --tags --abbrev=0). Returns empty if no tags exist.",
     },
+    "create": {
+      "type": "boolean",
+      "description": "Create a new annotated tag with the given name and message",
+    },
+    "name": {
+      "type": "string",
+      "description": "Tag name (required when create=true)",
+      "max_length": 200,
+    },
+    "message": {
+      "type": "string",
+      "description": "Annotation message for the tag (required when create=true, supports multi-line)",
+      "unsafe_content": True,
+      "max_length": 2000,
+    },
   },
   "show": {
     "format": {"type": "string", "description": "Pretty format string"},
@@ -205,7 +220,7 @@ async def git(
       "checkout: {branch: str (required), create: bool (create new branch with -b), startpoint: str (base for new branch)}\n"
       "rm: {cached: bool (untrack without deleting), r: bool (recursive), files: [str] (required, specific file paths to remove)}\n"
       "pull: *(no args)* — sync current branch with remote upstream\n"
-      "tag: {list: bool (all tags sorted desc), last: bool (most recent tag only)}"
+      "tag: {list: bool (all tags sorted desc), last: bool (most recent tag only), create: bool (create annotated tag), name: str (tag name, required for create), message: str (annotation message, required for create)}"
     ),
   ] = None,
 ) -> ToolResult:
@@ -338,9 +353,12 @@ async def git(
   # branch --show-current: short-circuit to just the branch name.
   if operation == "branch" and args.get("show_current"):
     cmd = ["git", "branch", "--show-current"]
-  # tag: needs special command building (list vs last vs default).
+  # tag: needs special command building (list vs last vs create vs default).
   elif operation == "tag":
-    cmd = _build_tag_command(args)
+    try:
+      cmd = _build_tag_command(args)
+    except ValueError as e:
+      return ToolResult(success=False, error=str(e))
   # pull: no args, just git pull.
   elif operation == "pull":
     cmd = ["git", "pull"]
@@ -558,12 +576,21 @@ def _build_command(
 def _build_tag_command(args: dict[str, Any]) -> list[str]:
   """Build a git tag command.
 
+  - ``create: true`` → ``git tag -a <name> -m <message>`` (annotated tag)
   - ``last: true`` → ``git describe --tags --abbrev=0`` (most recent tag)
   - ``list: true`` or no args → ``git tag --sort=-creatordate`` (all tags, newest first)
 
   Returns the command list. Caller handles the non-zero exit for ``last``
   when no tags exist.
   """
+  if args.get("create", False):
+    name = args.get("name", "")
+    message = args.get("message", "")
+    if not name:
+      raise ValueError("Argument 'name' is required for tag create")
+    if not message:
+      raise ValueError("Argument 'message' is required for tag create")
+    return ["git", "tag", "-a", name, "-m", message]
   if args.get("last", False):
     return ["git", "describe", "--tags", "--abbrev=0"]
   # Default to list when neither is set, or when list is explicitly true.
