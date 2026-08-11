@@ -46,7 +46,7 @@ from yoker.exceptions import (
 )
 from yoker.session import Session
 
-__version__ = "0.9.0"
+__version__ = "0.10.0"
 __author__ = "Christophe VG"
 
 __all__ = [

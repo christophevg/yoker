@@ -4,6 +4,101 @@ All notable changes to yoker are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## 0.10.0 (2026-09-16)
+
+### Added
+
+- **Config `enabled` master switch**: New `enabled` field on `Config` acts as
+  a global on/off switch for the agent system. When set to `false`, the agent
+  short-circuits without making any backend calls, useful for feature
+  flagging and testing.
+
+- **Markdown streaming with timestamps and MotD**: The interactive UI now
+  supports markdown streaming with live rendering, conversation timestamps,
+  and a configurable Message of the Day (MotD) banner displayed on startup.
+
+- **Gitignore-aware search and list**: The `search` and `list` tools now
+  respect `.gitignore` patterns by default, preventing noisy results from
+  build artifacts, virtual environments, and other ignored paths.
+
+- **Sleep tool**: New `sleep` tool allows agents to pause execution for
+  1–300 seconds, enabling polling workflows and wait-for-state patterns.
+
+- **Git tag creation**: The `git` tool now supports creating annotated tags
+  (`tag create`) and pushing tags to remote, completing the tag lifecycle
+  alongside the existing `tag list` and `tag last` operations.
+
+- **`make verify-wheel` target**: New Makefile target to verify built wheel
+  contents before publishing, complementing the existing `build` target.
+
+- **Unified tool output formatting**: Tool call results now render with
+  middle-collapse previews — long outputs are truncated in the middle with
+  a `…` marker, keeping both the head and tail visible.
+
+- **Show spinners flag**: `InteractiveUIHandler` now accepts a
+  `show_spinners` flag to suppress spinner animations, useful for session
+  recording and demo generation.
+
+### Fixed
+
+- **Malformed JSON in tool call arguments**: The agent processing loop now
+  detects and repairs malformed JSON in tool call arguments (e.g., unescaped
+  quotes, trailing commas) and returns descriptive error messages instead
+  of crashing the tool execution loop.
+
+- **Post-filter error preservation**: Short error messages are no longer
+  stripped by `post_filter` — the filter now preserves the error field while
+  still truncating oversized output.
+
+- **Bootstrap wizard config path**: The wizard now shows the actual config
+  file path in its opening step, clarifying where the configuration will be
+  written.
+
+- **Bootstrap model list**: Updated curated Ollama models from GLM-5 to
+  GLM-5.2.
+
+- **Ollama API key**: `OLLAMA_API_KEY` is now set from the config's
+  `api_key` field, enabling authenticated Ollama cloud API usage.
+
+- **List tool `max_depth` semantics**: Changed `max_depth` semantics so
+  `1` means root-only (listing just the directory's immediate contents),
+  matching user expectations.
+
+- **Session file check**: Moved the session file existence check inside the
+  `Session` context manager, preventing premature file access errors.
+
+- **GitHub release notes**: Markdown characters in release notes and PR text
+  are now properly escaped, preventing CLI parsing issues.
+
+- **Demo screenshot regeneration**: Fixed demo scripts to use `Session`
+  for proper `agent`/`send_message` tool injection, route `MarkdownStreamer`
+  output through the recording console, show the MotD banner, and suppress
+  spinners for clean recordings.
+
+- **Search path normalization**: Paths in search results are now normalized
+  to POSIX format, and trailing whitespace in formatting output is removed.
+
+- **Tool call display**: `post_filter` is now shown in the tool call display,
+  and an inline width threshold prevents excessively wide output.
+
+- **Multi-line argument indentation**: Stripped braces and fixed
+  multi-line argument indentation in tool call rendering.
+
+- **Markdown double styling**: Rendered output is now written via `print`
+  to avoid double Rich styling on markdown content.
+
+- **mypy compliance**: Resolved `no-any-return` warning in
+  `_is_skill_discovery_block`.
+
+### Changed
+
+- **Documentation overhaul**: Unified tagline to "Python-first agent harness
+  framework", updated all documentation for 0.10.0, cleaned up TODO.md,
+  and noted the cosmetic asyncio traceback in test stderr as a known issue.
+
+- **Demo screenshots regenerated**: All demo screenshots refreshed to
+  reflect the current UI state.
+
 ## 0.9.0 (2026-08-05)
 
 ### Added
