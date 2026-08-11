@@ -442,6 +442,9 @@ class ContentDisplayConfig:
     max_diff_lines: Maximum lines in diff display.
     max_arg_inline_chars: Maximum string length for inline argument display.
       Strings longer than this are rendered as head/tail previews.
+    max_inline_args_width: Maximum total width of the inline ``key=value`` string
+      (excluding tool name and timestamp). When exceeded, arguments are rendered
+      as a multi-line block even if each individual value is short.
     arg_preview_head: Characters shown from the start of a long string argument.
     arg_preview_tail: Characters shown from the end of a long string argument.
     multiline_arg_threshold: Number of argument keys beyond which a multi-line
@@ -458,6 +461,7 @@ class ContentDisplayConfig:
   show_diff_for_updates: bool = True
   max_diff_lines: int = 30
   max_arg_inline_chars: int = 60
+  max_inline_args_width: int = 80
   arg_preview_head: int = 30
   arg_preview_tail: int = 30
   multiline_arg_threshold: int = 3

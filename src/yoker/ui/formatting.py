@@ -50,23 +50,22 @@ def format_tool_args(
     Formatted string for display.
   """
   cfg = config if config is not None else _DEFAULTS
-  filtered = {k: v for k, v in args.items() if k != "post_filter"}
 
   # Special-case: git tool — show operation, path, args compactly.
   if tool_name == "git":
-    return _format_git_args(filtered, cfg)
+    return _format_git_args(args, cfg)
 
   # Special-case: websearch — show the query prominently.
   if tool_name == "websearch":
-    query = filtered.get("query", "")
+    query = args.get("query", "")
     if query:
       return _format_scalar("query", str(query), cfg)
-    return _format_inline(filtered, cfg)
+    return _format_inline(args, cfg)
 
   # Decide inline vs. multi-line.
-  if _should_inline(filtered, cfg):
-    return _format_inline(filtered, cfg)
-  return _format_multiline(filtered, cfg)
+  if _should_inline(args, cfg):
+    return _format_inline(args, cfg)
+  return _format_multiline(args, cfg)
 
 
 def truncate_content_preview(
@@ -120,20 +119,27 @@ def _should_inline(args: dict[str, Any], cfg: ContentDisplayConfig) -> bool:
   """Decide whether arguments can be rendered inline.
 
   Inline when: few keys AND all values are short scalars (no newlines,
-  not longer than ``max_arg_inline_chars``).
+  not longer than ``max_arg_inline_chars``) AND the combined inline
+  representation fits within ``max_inline_args_width``.
   """
   if len(args) > cfg.multiline_arg_threshold:
     return False
-  for v in args.values():
+  # Estimate the total inline width: sum of key=value pairs with separators.
+  total_width = 0
+  for k, v in args.items():
     if isinstance(v, str):
       if "\n" in v or len(v) > cfg.max_arg_inline_chars:
         return False
+      total_width += len(k) + 2 + len(v) + 2  # key="value", 
     elif isinstance(v, (dict, list)):
       return False
     else:
       s = str(v)
       if len(s) > cfg.max_arg_inline_chars:
         return False
+      total_width += len(k) + 1 + len(s) + 2  # key=value, 
+  if total_width > cfg.max_inline_args_width:
+    return False
   return True
 
 
