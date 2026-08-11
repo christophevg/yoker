@@ -158,19 +158,17 @@ async def run_demo_session(
     persist: Whether to persist session for resumption.
     resume: Session ID to resume (if set, loads previous session).
     output: Output path for SVG (overrides script.output).
-    skills_dir: Path to directory containing skill files (sets YOKER_SKILLS_PATH).
+    skills_dir: Path to directory containing skill files (overrides config).
       If None, uses script.skills_dir if available.
 
   Returns:
     Path to the generated SVG file.
   """
-  # Set skills path environment variable if provided
-  # Priority: command-line arg > script frontmatter
+  # Determine skills directory: command-line arg > script frontmatter
+  # When set, overrides config skill directories to load only that directory.
+  # When not set, skill directories are cleared to avoid loading the project's
+  # c3 skills (53 skills) which would exceed Ollama's request body size limit.
   effective_skills_dir = skills_dir or (Path(script.skills_dir) if script.skills_dir else None)
-  if effective_skills_dir:
-    import os
-
-    os.environ["YOKER_SKILLS_PATH"] = str(effective_skills_dir.resolve())
 
   # Clean up temp files/directories before starting (ensure clean state)
   _cleanup_temp_files()
@@ -185,6 +183,7 @@ async def run_demo_session(
     show_thinking=True,
     show_tool_calls=True,
     show_stats=True,
+    show_spinners=False,
   )
   bridge = UIBridge(ui)
 
@@ -223,6 +222,21 @@ async def run_demo_session(
   # Load configuration using Clevis (handles env vars, user config, project config)
   from yoker.config import get_yoker_config
   config = get_yoker_config(cli=False)
+
+  # Override skill directories for the demo:
+  # - If effective_skills_dir is set, use only that directory
+  # - Otherwise clear all skill directories to avoid loading the project's
+  #   c3 skills (53 skills) which exceed Ollama's request body size limit
+  if effective_skills_dir:
+    config.skills.directories = {"skills": str(effective_skills_dir.resolve())}
+  else:
+    config.skills.directories = {}
+
+  # Demo sessions should always start fresh — never resume a stale session
+  # file that may have accumulated framework-generated messages (e.g. skill
+  # discovery blocks) from prior runs.
+  if not resume:
+    config.context.fresh = True
 
   # Create context manager for persistence or resumption
   if persist or resume:
@@ -409,7 +423,7 @@ def main() -> None:
     "--skills-dir",
     type=Path,
     default=None,
-    help="Path to directory containing skill files (sets YOKER_SKILLS_PATH)",
+    help="Path to directory containing skill files (overrides config)",
   )
   args = parser.parse_args()
 

@@ -111,6 +111,28 @@ class TestInteractiveUIHandlerInitialization:
     handler = InteractiveUIHandler(console=console)
     assert handler.console is console
 
+  def test_init_spinners_default_true(self):
+    """Spinners are enabled by default."""
+    handler = InteractiveUIHandler()
+    assert handler._show_spinners is True
+
+  def test_init_spinners_can_be_disabled(self):
+    """Setting show_spinners=False suppresses status spinners."""
+    handler = InteractiveUIHandler(show_spinners=False)
+    assert handler._show_spinners is False
+
+  def test_start_processing_no_op_when_spinners_disabled(self):
+    """start_processing should not create a Status when spinners are off."""
+    handler = InteractiveUIHandler(show_spinners=False)
+    handler.start_processing()
+    assert handler._processing_status is None
+
+  def test_start_tool_execution_no_op_when_spinners_disabled(self):
+    """Tool-execution spinner should not start when spinners are off."""
+    handler = InteractiveUIHandler(show_spinners=False)
+    handler._start_tool_execution_status("read")
+    assert handler._tool_execution_status is None
+
 
 class TestInteractiveUIHandlerLifecycle:
   """Tests for InteractiveUIHandler lifecycle methods."""

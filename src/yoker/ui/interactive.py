@@ -115,6 +115,7 @@ class InteractiveUIHandler(UIHandler):
     show_time: bool = True,
     console: Console | None = None,
     content_display: ContentDisplayConfig | None = None,
+    show_spinners: bool = True,
   ) -> None:
     """Initialize the interactive UI handler.
 
@@ -132,6 +133,9 @@ class InteractiveUIHandler(UIHandler):
       console: Optional Rich console (default: new Console).
       content_display: Content display config for argument rendering and
         content preview truncation. Defaults to ``ContentDisplayConfig()``.
+      show_spinners: Whether to display Rich status spinners ("Processing..."
+        and tool-execution feedback). Set to False for scripted/recording
+        scenarios where the spinner output interferes with captured output.
     """
     self.console = console if console is not None else Console()
     # If history_file is None, use default path. If it's a Path or string
@@ -153,6 +157,9 @@ class InteractiveUIHandler(UIHandler):
     self._content_display = (
       content_display if content_display is not None else ContentDisplayConfig()
     )
+
+    # When False, suppress Rich status spinners (for scripted/recording use).
+    self._show_spinners = show_spinners
 
     # Lazy prompt session — created on first input/approval call.
     self._session: PromptSession[str] | None = None
@@ -237,6 +244,8 @@ class InteractiveUIHandler(UIHandler):
 
   def _start_processing_status(self) -> None:
     """Start the single "Processing..." status line if not already active."""
+    if not self._show_spinners:
+      return
     if self._processing_status is None:
       self._processing_status = self.console.status("Processing...", spinner="dots")
       self._processing_status.start()
@@ -249,6 +258,8 @@ class InteractiveUIHandler(UIHandler):
 
   def _start_tool_execution_status(self, tool_name: str) -> None:
     """Start a spinner indicating a tool is executing."""
+    if not self._show_spinners:
+      return
     # Stop any existing processing or tool-execution spinner first.
     self._stop_processing_status()
     self._stop_tool_execution_status()
