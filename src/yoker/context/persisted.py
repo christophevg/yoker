@@ -59,7 +59,7 @@ def _is_skill_discovery_block(msg: dict[str, Any]) -> bool:
   if msg.get("role") != "user":
     return False
   content = msg.get("content", "")
-  return content.startswith("<system-reminder>")
+  return str(content).startswith("<system-reminder>")
 
 
 class Persisted(ContextManagerWrapper):
