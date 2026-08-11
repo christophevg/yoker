@@ -226,17 +226,17 @@ class TestAgentContentEventEmission:
   ) -> None:
     """
     Given: Agent processes tool result without content_metadata
-    When: ToolResult.content_metadata is None
+    When: ToolResult.content_metadata is None (e.g. existence tool)
     Then: Agent does not emit ToolContentEvent
     """
-    # Create the file so read succeeds
+    # Create the file so existence succeeds
     (tmp_path / "test.txt").write_text("content")
 
     # Create mock backend that returns tool call, then final response
     mock_backend = MagicMock()
 
     chunks_sequence = create_tool_then_response_chunks(
-      tool_name="yoker:read",
+      tool_name="yoker:existence",
       tool_args={"path": str(tmp_path / "test.txt")},
     )
 
@@ -253,9 +253,9 @@ class TestAgentContentEventEmission:
     collector = TestEventCollector()
     agent.on_event(collector)
 
-    asyncio.run(agent.process("Read a file"))
+    asyncio.run(agent.process("Check if file exists"))
 
-    # Check that no ToolContentEvent was emitted
+    # Check that no ToolContentEvent was emitted (existence has no content_metadata)
     content_events = collector.events_of_type(EventType.TOOL_CONTENT)
     assert len(content_events) == 0
 
@@ -582,9 +582,9 @@ class TestAgentContentEventEmissionOrder:
 
   def test_event_sequence_for_read_operation(self, tmp_path: Path, mocker: MockerFixture) -> None:
     """
-    Given: Agent processes a read operation (no content_metadata)
+    Given: Agent processes a read operation (now always has content_metadata)
     When: Events are emitted
-    Then: No ToolContent event is emitted
+    Then: A ToolContent event is emitted after the ToolResult event
     """
     # Create the file to read
     (tmp_path / "test.txt").write_text("Hello World")
@@ -612,9 +612,9 @@ class TestAgentContentEventEmissionOrder:
 
     asyncio.run(agent.process("Read the file"))
 
-    # Verify no ToolContent event
+    # Verify a ToolContent event is emitted (read now always provides metadata)
     content_events = collector.events_of_type(EventType.TOOL_CONTENT)
-    assert len(content_events) == 0
+    assert len(content_events) == 1
 
 
 class TestAgentContentEventWithMultipleTools:
@@ -666,7 +666,7 @@ class TestAgentContentEventWithMultipleTools:
     """
     Given: Agent executes write then read operations
     When: Operations complete
-    Then: Only write produces ToolContentEvent
+    Then: Both produce ToolContentEvent (read now always provides metadata)
     """
     # Create the file for reading
     (tmp_path / "readme.txt").write_text("Content to read")
@@ -701,10 +701,11 @@ class TestAgentContentEventWithMultipleTools:
 
     asyncio.run(agent.process("Write then read"))
 
-    # Only one ToolContentEvent from write
+    # Both write and read produce ToolContentEvent
     content_events = collector.events_of_type(EventType.TOOL_CONTENT)
-    assert len(content_events) == 1
+    assert len(content_events) == 2
     assert content_events[0].operation == "write"
+    assert content_events[1].operation == "read"
 
 
 class TestAgentContentEventErrorHandling:

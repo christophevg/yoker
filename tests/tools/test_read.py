@@ -229,8 +229,9 @@ class TestReadOffsetLimit:
   """Tests for the offset/limit pagination parameters of the read tool."""
 
   @pytest.mark.asyncio
+  @pytest.mark.asyncio
   async def test_default_path_unchanged(self, tmp_path: Path) -> None:
-    """Default path (offset=limit=None) returns raw content, no metadata."""
+    """Default path (offset=limit=None) returns raw content with UI metadata."""
     content = "line1\nline2\nline3\n"
     file_path = tmp_path / "test.txt"
     file_path.write_text(content)
@@ -239,7 +240,10 @@ class TestReadOffsetLimit:
     result = await spec.execute(path=str(file_path), ctx=ctx)
     assert result.success is True
     assert result.result == content
-    assert result.content_metadata is None
+    # content_metadata is now always provided for UI preview (middle-collapse).
+    assert result.content_metadata is not None
+    assert result.content_metadata["operation"] == "read"
+    assert result.content_metadata["content"] == content
 
   @pytest.mark.asyncio
   async def test_offset_only(self, tmp_path: Path) -> None:
@@ -443,12 +447,10 @@ class TestReadOffsetLimit:
     assert meta["metadata"]["returned_lines"] == 2
     assert meta["metadata"]["offset"] == 1
     assert meta["metadata"]["limit"] == 2
-    # No stray top-level read envelope.
-    assert "read" not in meta
 
   @pytest.mark.asyncio
   async def test_existing_default_assertions_still_pass(self, tmp_path: Path) -> None:
-    """Reading without offset/limit returns raw content (no prefix, no metadata)."""
+    """Reading without offset/limit returns raw content (no prefix, with UI metadata)."""
     content = "line1\nline2\nline3"
     file_path = tmp_path / "test.txt"
     file_path.write_text(content)
@@ -457,7 +459,9 @@ class TestReadOffsetLimit:
     result = await spec.execute(path=str(file_path), ctx=ctx)
     assert result.success is True
     assert result.result == content
-    assert result.content_metadata is None
+    # content_metadata is now always provided for UI preview (middle-collapse).
+    assert result.content_metadata is not None
+    assert result.content_metadata["operation"] == "read"
 
   @pytest.mark.asyncio
   async def test_plugin_url_with_offset_limit(self) -> None:

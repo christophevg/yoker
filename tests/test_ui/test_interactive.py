@@ -597,8 +597,8 @@ class TestInteractiveUIHandlerToolOutput:
     handler.output_tool_call("read", {"path": "/tmp/file.txt"})
 
     text = output.getvalue()
-    assert "⏺ read" in text
-    assert "path=/tmp/file.txt" in text
+    assert "read" in text
+    assert "/tmp/file.txt" in text
 
   def test_output_tool_call_suppressed_when_disabled(self):
     """output_tool_call should not print when disabled."""
@@ -611,7 +611,7 @@ class TestInteractiveUIHandlerToolOutput:
     assert output.getvalue() == ""
 
   def test_output_tool_call_caps_long_value(self):
-    """output_tool_call should summarize values > 60 chars as N chars."""
+    """output_tool_call should summarize long values with a preview."""
     output = StringIO()
     handler = InteractiveUIHandler(show_tool_calls=True)
     handler.console = make_console(output)
@@ -623,8 +623,8 @@ class TestInteractiveUIHandlerToolOutput:
     assert "100 chars" in text
     assert long_value not in text
 
-  def test_output_tool_call_suppresses_content_for_write(self):
-    """output_tool_call should suppress content/old/new for write/update."""
+  def test_output_tool_call_shows_preview_for_write(self):
+    """output_tool_call should show a preview for write/update content args."""
     output = StringIO()
     handler = InteractiveUIHandler(show_tool_calls=True)
     handler.console = make_console(output)
@@ -635,10 +635,11 @@ class TestInteractiveUIHandlerToolOutput:
     )
 
     text = output.getvalue()
-    assert "path=/tmp/file.txt" in text
-    # content field is suppressed (the diff is shown separately).
-    assert "content=" not in text
-    assert "line1" not in text
+    assert "/tmp/file.txt" in text
+    # content is shown as a preview (not suppressed), with char count.
+    assert "17 chars" in text
+    # The full content with newlines should not appear inline.
+    assert "line1\nline2\nline3" not in text
 
   def test_output_tool_call_websearch_shows_query(self):
     """output_tool_call for websearch should show the query."""

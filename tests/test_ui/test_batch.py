@@ -184,7 +184,8 @@ class TestBatchUIHandlerToolOutput:
     handler = BatchUIHandler(show_tool_calls=True, stderr=stderr)
 
     handler.output_tool_call("read", {"path": "/tmp/file.txt"})
-    assert "# Tool: read(path=/tmp/file.txt)" in stderr.getvalue()
+    assert "# Tool: read(path=" in stderr.getvalue()
+    assert "/tmp/file.txt" in stderr.getvalue()
 
   def test_tool_call_suppressed_when_disabled(self):
     """Tool call should be suppressed when disabled."""

@@ -103,6 +103,7 @@ def create_ui(config: Config) -> UIHandler:
       show_thinking=config.ui.show_thinking,
       show_tool_calls=config.ui.show_tool_calls,
       show_stats=config.ui.show_stats,
+      content_display=config.tools_shared.content_display,
     )
   return BatchUIHandler()
 

@@ -434,6 +434,16 @@ class ContentDisplayConfig:
     max_content_bytes: Maximum bytes to show before truncation.
     show_diff_for_updates: Whether to show before/after for update operations.
     max_diff_lines: Maximum lines in diff display.
+    max_arg_inline_chars: Maximum string length for inline argument display.
+      Strings longer than this are rendered as head/tail previews.
+    arg_preview_head: Characters shown from the start of a long string argument.
+    arg_preview_tail: Characters shown from the end of a long string argument.
+    multiline_arg_threshold: Number of argument keys beyond which a multi-line
+      JSON-like block is used instead of inline ``key=value`` formatting.
+    preview_head_lines: Lines shown from the top when content is truncated
+      using middle-collapse.
+    preview_tail_lines: Lines shown from the bottom when content is truncated
+      using middle-collapse.
   """
 
   verbosity: str = "summary"  # "silent", "summary", "content"
@@ -441,6 +451,12 @@ class ContentDisplayConfig:
   max_content_bytes: int = 4096
   show_diff_for_updates: bool = True
   max_diff_lines: int = 30
+  max_arg_inline_chars: int = 60
+  arg_preview_head: int = 30
+  arg_preview_tail: int = 30
+  multiline_arg_threshold: int = 3
+  preview_head_lines: int = 5
+  preview_tail_lines: int = 5
 
 
 @dataclass

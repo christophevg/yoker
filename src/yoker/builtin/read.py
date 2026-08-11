@@ -102,14 +102,33 @@ def _finalize_read(
 ) -> ToolResult:
   """Build the final ToolResult, applying offset/limit if requested.
 
-  When neither ``offset`` nor ``limit`` is set, returns the raw content with
-  no metadata (byte-identical to the historical behavior). Otherwise renders
-  the slice ``cat -n`` style and attaches the flat ``content_metadata``.
+  When neither ``offset`` nor ``limit`` is set, returns the raw content as
+  the result string (byte-identical for the LLM) and attaches
+  ``content_metadata`` so the UI can render a middle-collapse preview.
+  When either is provided, the result is formatted ``cat -n`` style and
+  the flat ``content_metadata`` describes the slice.
   """
   if offset is None and limit is None:
-    return ToolResult(success=True, result=content)
-  metadata = _apply_offset_limit(content, offset, limit, resolved_path)
-  return ToolResult(success=True, result=metadata["content"], content_metadata=metadata)
+    # Result string is the raw content (byte-identical for the LLM).
+    # Attach content_metadata for UI preview (middle-collapse).
+    lines = content.splitlines(keepends=True)
+    metadata = {
+      "operation": "read",
+      "path": resolved_path,
+      "content_type": "text/plain",
+      "content": content,
+      "metadata": {
+        "offset": 1,
+        "limit": None,
+        "total_lines": len(lines),
+        "returned_lines": len(lines),
+      },
+    }
+    return ToolResult(success=True, result=content, content_metadata=metadata)
+  read_metadata = _apply_offset_limit(content, offset, limit, resolved_path)
+  return ToolResult(
+    success=True, result=str(read_metadata["content"]), content_metadata=read_metadata
+  )
 
 
 async def _read_plugin_resource(url: str, offset: int | None, limit: int | None) -> ToolResult:

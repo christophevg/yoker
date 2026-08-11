@@ -390,7 +390,22 @@ async def git(
         path=str(work_dir),
         output_length=len(sanitized_output),
       )
-      return ToolResult(success=True, result=sanitized_output.strip() or "(no output)")
+      content = sanitized_output.strip() or "(no output)"
+      content_metadata = {
+        "operation": "git",
+        "path": str(work_dir),
+        "content_type": "text/plain",
+        "content": content,
+        "metadata": {
+          "git_operation": operation,
+          "args": args,
+        },
+      }
+      return ToolResult(
+        success=True,
+        result=content,
+        content_metadata=content_metadata,
+      )
     else:
       # tag last: git describe fails when no tags exist — return empty, not error.
       if operation == "tag" and args.get("last"):

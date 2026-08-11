@@ -383,27 +383,20 @@ def _build_content_or_diff_metadata(
       new_lines = new_content.splitlines(keepends=True)
 
       diff_text = generate_diff(old_content, new_content, resolved_path.name)
-      diff_lines = diff_text.splitlines(keepends=True)
-      diff_content, was_truncated, original_count = _truncate_diff(
-        diff_lines,
-        content_display.max_diff_lines,
-      )
 
+      # Pass full diff to the UI — truncation (middle-collapse) is handled
+      # by the UI layer using ContentDisplayConfig settings.
       metadata = {
         "lines_modified": 1,
         "old_content_lines": len(old_lines),
         "new_content_lines": len(new_lines),
       }
 
-      if was_truncated:
-        metadata["truncated"] = True
-        metadata["original_diff_lines"] = original_count
-
       return {
         "operation": operation,
         "path": str(resolved_path),
         "content_type": "text/x-diff",
-        "content": diff_content,
+        "content": diff_text,
         "metadata": metadata,
       }
     else:
@@ -442,15 +435,7 @@ def _build_content_or_diff_metadata(
     }
   else:  # delete
     if use_diff and content_display.show_diff_for_updates:
-      old_lines = old_content.splitlines(keepends=True)
-      new_lines = new_content.splitlines(keepends=True)
-
       diff_text = generate_diff(old_content, new_content, resolved_path.name)
-      diff_lines = diff_text.splitlines(keepends=True)
-      diff_content, was_truncated, original_count = _truncate_diff(
-        diff_lines,
-        content_display.max_diff_lines,
-      )
 
       del_metadata = {
         "line_number": int(line_number) if line_number is not None else 0,
@@ -458,15 +443,11 @@ def _build_content_or_diff_metadata(
         "deleted_content": old_string,
       }
 
-      if was_truncated:
-        del_metadata["truncated"] = True
-        del_metadata["original_diff_lines"] = original_count
-
       return {
         "operation": operation,
         "path": str(resolved_path),
         "content_type": "text/x-diff",
-        "content": diff_content,
+        "content": diff_text,
         "metadata": del_metadata,
       }
     else:

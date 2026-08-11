@@ -198,12 +198,8 @@ def _build_content_metadata(
       },
     }
 
-  truncated_content, was_truncated, _, _ = _truncate_content(
-    content,
-    content_display.max_content_lines,
-    content_display.max_content_bytes,
-  )
-
+  # Pass full content to the UI — truncation (middle-collapse) is handled
+  # by the UI layer using ContentDisplayConfig settings.
   metadata: dict[str, Any] = {
     "lines": line_count,
     "bytes": byte_size,
@@ -212,15 +208,11 @@ def _build_content_metadata(
     "is_empty": is_empty,
   }
 
-  if was_truncated:
-    metadata["truncated"] = True
-    metadata["original_line_count"] = line_count
-
   return {
     "operation": "write",
     "path": str(resolved_path),
     "content_type": "text/plain",
-    "content": truncated_content,
+    "content": content,
     "metadata": metadata,
   }
 

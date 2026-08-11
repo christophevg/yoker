@@ -7,10 +7,12 @@ user interface concerns. It includes:
 - UIBridge: Event dispatcher bridging events to UI methods
 - InteractiveUIHandler: Interactive terminal UI using prompt_toolkit and Rich
 - BatchUIHandler: Non-interactive UI using stdin/stdout/stderr
+- formatting: Shared tool output formatting (argument rendering, content preview)
 """
 
 from yoker.ui.batch import BatchUIHandler
 from yoker.ui.bridge import UIBridge
+from yoker.ui.formatting import format_tool_args, truncate_content_preview
 from yoker.ui.handler import UIHandler
 from yoker.ui.interactive import InteractiveUIHandler
 
@@ -19,4 +21,6 @@ __all__ = [
   "UIBridge",
   "InteractiveUIHandler",
   "BatchUIHandler",
+  "format_tool_args",
+  "truncate_content_preview",
 ]

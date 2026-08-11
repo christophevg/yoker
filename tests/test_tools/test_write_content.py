@@ -135,14 +135,19 @@ class TestWriteToolContentMetadataEmission:
 
 
 class TestWriteToolContentTruncation:
-  """Test write tool content truncation for large files."""
+  """Test write tool content handling for large files.
+
+  The write tool now passes full content to the UI — truncation
+  (middle-collapse) is handled by the UI layer using
+  ContentDisplayConfig settings.
+  """
 
   @pytest.mark.asyncio
-  async def test_truncation_for_large_files(self, tmp_path: Path) -> None:
+  async def test_full_content_for_large_files(self, tmp_path: Path) -> None:
     """
     Given: write tool writing content exceeding max_content_lines
     When: execute() is called
-    Then: content_metadata.content is truncated
+    Then: content_metadata.content contains the full content (UI handles truncation)
     """
     # Create write tool with small max_content_lines
     config = Config(
@@ -158,21 +163,18 @@ class TestWriteToolContentTruncation:
     content = "\n".join(f"Line {i}" for i in range(10))
     result = await spec.execute(path=str(test_file), content=content, ctx=ctx)
 
-    # Verify result
+    # Verify result — full content is passed (UI truncates for display)
     assert result.success
     assert result.content_metadata is not None
     assert result.content_metadata["content_type"] == "text/plain"
-    # Content should be truncated
-    truncated_content = result.content_metadata["content"]
-    assert truncated_content is not None
-    assert truncated_content.count("\n") <= 5
+    assert result.content_metadata["content"] == content
 
   @pytest.mark.asyncio
-  async def test_truncation_metadata(self, tmp_path: Path) -> None:
+  async def test_no_truncation_metadata(self, tmp_path: Path) -> None:
     """
-    Given: write tool writing large content that is truncated
+    Given: write tool writing large content
     When: execute() is called
-    Then: content_metadata.metadata includes truncated=True and original_line_count
+    Then: content_metadata.metadata does not include truncated flag (UI handles it)
     """
     # Create write tool with small max_content_lines
     config = Config(
@@ -188,11 +190,10 @@ class TestWriteToolContentTruncation:
     content = "\n".join(f"Line {i}" for i in range(10))
     result = await spec.execute(path=str(test_file), content=content, ctx=ctx)
 
-    # Verify result
+    # Verify result — no tool-side truncation metadata
     assert result.success
     assert result.content_metadata is not None
-    assert result.content_metadata["metadata"].get("truncated") is True
-    assert result.content_metadata["metadata"].get("original_line_count") == 10
+    assert result.content_metadata["metadata"].get("truncated") is None
 
   @pytest.mark.asyncio
   async def test_no_truncation_for_small_files(self, tmp_path: Path) -> None:
@@ -220,11 +221,11 @@ class TestWriteToolContentTruncation:
     assert result.content_metadata["metadata"].get("truncated") is None
 
   @pytest.mark.asyncio
-  async def test_truncation_respects_max_content_bytes(self, tmp_path: Path) -> None:
+  async def test_full_content_respects_max_content_bytes(self, tmp_path: Path) -> None:
     """
     Given: write tool writing content exceeding max_content_bytes
     When: execute() is called
-    Then: content_metadata.content is truncated to max_content_bytes
+    Then: content_metadata.content contains full content (UI handles truncation)
     """
     # Create write tool with small max_content_bytes
     config = Config(
@@ -242,12 +243,10 @@ class TestWriteToolContentTruncation:
     content = "x" * 200
     result = await spec.execute(path=str(test_file), content=content, ctx=ctx)
 
-    # Verify result
+    # Verify result — full content is passed (UI truncates for display)
     assert result.success
     assert result.content_metadata is not None
-    truncated = result.content_metadata["content"]
-    assert truncated is not None
-    assert len(truncated) <= 100
+    assert result.content_metadata["content"] == content
 
 
 class TestWriteToolEmptyFile:

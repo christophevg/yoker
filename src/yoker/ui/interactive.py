@@ -32,9 +32,11 @@ from rich.text import Text
 from rich.theme import Theme
 
 from yoker import __version__
+from yoker.config import ContentDisplayConfig
 from yoker.core import Agent
 from yoker.exceptions import NetworkError, ToolError
 from yoker.markdown import MarkdownStreamer
+from yoker.ui.formatting import format_tool_args, truncate_content_preview
 from yoker.ui.handler import UIHandler
 
 # Styles for console output
@@ -68,10 +70,6 @@ THINKING_THEME = Theme(
 )
 
 
-# Inline tool-arg display caps.
-_TOOL_ARG_MAX_CHARS = 60
-_TOOL_LARGE_FIELDS = ("content", "old_string", "new_string")
-_TOOL_SUPPRESS_LARGE_FIELDS = ("write", "update")
 _BANNER_TOOL_LIMIT = 8
 
 
@@ -114,6 +112,7 @@ class InteractiveUIHandler(UIHandler):
     show_stats: bool = True,
     show_time: bool = True,
     console: Console | None = None,
+    content_display: ContentDisplayConfig | None = None,
   ) -> None:
     """Initialize the interactive UI handler.
 
@@ -129,6 +128,8 @@ class InteractiveUIHandler(UIHandler):
       show_stats: Whether to display turn statistics.
       show_time: Whether to display timing info
       console: Optional Rich console (default: new Console).
+      content_display: Content display config for argument rendering and
+        content preview truncation. Defaults to ``ContentDisplayConfig()``.
     """
     self.console = console if console is not None else Console()
     # If history_file is None, use default path. If it's a Path or string
@@ -147,6 +148,9 @@ class InteractiveUIHandler(UIHandler):
     self.show_tool_calls = show_tool_calls
     self.show_stats = show_stats
     self.show_time = show_time
+    self._content_display = (
+      content_display if content_display is not None else ContentDisplayConfig()
+    )
 
     # Lazy prompt session — created on first input/approval call.
     self._session: PromptSession[str] | None = None
@@ -657,11 +661,10 @@ class InteractiveUIHandler(UIHandler):
   def output_tool_call(self, tool_name: str, args: dict[str, Any]) -> None:
     """Output tool call information.
 
-    Renders inline as ``⏺ name(key=value, ...)`` with all key=value pairs
-    shown. Multi-line or long (>60 chars) values are summarized as
-    ``N chars``. For ``write``/``update`` tools, ``content`` /
-    ``old_string`` / ``new_string`` are suppressed (the diff is shown
-    separately via ``output_tool_content``).
+    Renders as a tool call line using the shared formatting module.
+    When arguments are few and short, they appear inline as ``key=value``.
+    When there are many keys or long/multi-line values, a multi-line
+    indented block is rendered instead.
 
     After rendering the call line, starts a spinner indicating the tool
     is executing. The spinner is stopped by ``output_tool_result``.
@@ -673,9 +676,15 @@ class InteractiveUIHandler(UIHandler):
     if not self.show_tool_calls:
       return
     self._stop_processing_status()
-    self.console.print(f"⏺ {self._ts()}{tool_name}", end="", style=TOOL_STYLE)
-    details = self._format_tool_details(tool_name, args)
-    self.console.print(f"({details})")
+    details = format_tool_args(tool_name, args, self._content_display)
+    if "\n" in details:
+      self.console.print(f"⏺ {self._ts()}{tool_name}(", style=TOOL_STYLE)
+      for line in details.splitlines():
+        self.console.print(f"  {line}", style=TOOL_STYLE)
+      self.console.print(")", style=TOOL_STYLE)
+    else:
+      self.console.print(f"⏺ {self._ts()}{tool_name}", end="", style=TOOL_STYLE)
+      self.console.print(f"({details})")
     self._start_tool_execution_status(tool_name)
 
   def output_tool_result(self, tool_name: str, success: bool, result: str) -> None:
@@ -825,61 +834,6 @@ class InteractiveUIHandler(UIHandler):
     self.console.print(Panel(msg, title="ERROR", style=ERROR_STYLE))
     self.console.print()
 
-  def _format_tool_details(self, tool_name: str, arguments: dict[str, Any]) -> str:
-    """Format tool arguments for inline display.
-
-    Shows all ``key=value`` pairs. Multi-line or long (>60 chars) values are
-    summarized as ``N chars``. For ``write``/``update`` tools,
-    ``content``/``old_string``/``new_string`` are suppressed (the diff is
-    shown separately).
-
-    Args:
-      tool_name: Name of the tool.
-      arguments: Tool arguments dictionary.
-
-    Returns:
-      Formatted string showing relevant arguments.
-    """
-    # Special formatting for git tool: show operation, path, and args.
-    if tool_name == "git":
-      operation = arguments.get("operation", "")
-      path = arguments.get("path", "")
-      args = arguments.get("args", {})
-
-      parts = [str(operation)] if operation else []
-      if path:
-        parts.append(f"on {path}")
-      if args:
-        args_str = ", ".join(f"{k}={v}" for k, v in list(args.items())[:2])
-        if len(args) > 2:
-          args_str += ", ..."
-        parts.append(f"({args_str})")
-
-      return " ".join(parts) if parts else str(arguments)
-
-    # Special formatting for websearch: show query.
-    if tool_name == "websearch":
-      query = arguments.get("query", "")
-      if query:
-        return str(query)
-      return str(arguments)
-
-    # Suppress large content fields for write/update (diff shown separately).
-    if tool_name in _TOOL_SUPPRESS_LARGE_FIELDS:
-      arguments = {k: v for k, v in arguments.items() if k not in _TOOL_LARGE_FIELDS}
-
-    def str_summary(value: Any) -> str:
-      if isinstance(value, str):
-        if "\n" in value or len(value) > _TOOL_ARG_MAX_CHARS:
-          return f"{len(value)} chars"
-        return value
-      s = str(value)
-      if len(s) > _TOOL_ARG_MAX_CHARS:
-        return f"{len(s)} chars"
-      return s
-
-    return " ".join(key + "=" + str_summary(value) for key, value in arguments.items())
-
   def _show_summary(
     self,
     operation: str,
@@ -930,7 +884,10 @@ class InteractiveUIHandler(UIHandler):
     operation: str,
     metadata: dict[str, Any],
   ) -> None:
-    """Show full content with line numbers.
+    """Show full content with middle-collapse truncation.
+
+    When the content exceeds ``max_content_lines``, a head/tail preview is
+    shown with a marker in between.
 
     Args:
       content: Content text (may be None for summary fallback).
@@ -942,17 +899,24 @@ class InteractiveUIHandler(UIHandler):
       self._show_summary(operation, filename, metadata)
       return
 
-    self.console.print(f"\n  {filename}")
+    cd = self._content_display
+    previewed, was_truncated, total = truncate_content_preview(
+      content, cd.max_content_lines, cd.preview_head_lines, cd.preview_tail_lines
+    )
 
-    lines = content.splitlines()
-    for i, line in enumerate(lines, start=1):
+    if was_truncated:
+      shown = cd.preview_head_lines + cd.preview_tail_lines
+      self.console.print(f"\n  {filename}  ({total} lines, showing {shown} of {total})")
+    else:
+      self.console.print(f"\n  {filename}")
+
+    for line in previewed.splitlines():
       escaped_line = line.replace("[", "\\[").replace("]", "\\]")
-      self.console.print(f"  {i:4d}│{escaped_line}")
+      if line.startswith("... ") and "lines hidden" in line:
+        self.console.print(f"  [dim]{escaped_line}[/dim]")
+      else:
+        self.console.print(f"  {escaped_line}")
 
-    if metadata.get("truncated"):
-      original_lines = metadata.get("original_line_count", 0)
-      remaining = original_lines - len(lines)
-      self.console.print(f"  ... ({remaining} more lines)")
   def _build_preview_text(self, content: str | None, filename: str) -> Text:
     """Build a Rich Text renderable from preview content with diff coloring.
 
@@ -991,7 +955,6 @@ class InteractiveUIHandler(UIHandler):
 
     return text
 
-
   def _show_diff_content(
     self,
     content: str | None,
@@ -999,7 +962,10 @@ class InteractiveUIHandler(UIHandler):
     operation: str,
     metadata: dict[str, Any],
   ) -> None:
-    """Show unified diff with colors.
+    """Show unified diff with colors and middle-collapse truncation.
+
+    When the diff exceeds ``max_diff_lines``, a head/tail preview is shown
+    with a marker in between.
 
     Args:
       content: Diff content text (may be None for summary fallback).
@@ -1011,10 +977,18 @@ class InteractiveUIHandler(UIHandler):
       self._show_summary(operation, filename, metadata)
       return
 
-    self.console.print(f"  {filename}")
+    cd = self._content_display
+    previewed, was_truncated, total = truncate_content_preview(
+      content, cd.max_diff_lines, cd.preview_head_lines, cd.preview_tail_lines
+    )
 
-    lines = content.splitlines()
-    for line in lines:
+    if was_truncated:
+      shown = cd.preview_head_lines + cd.preview_tail_lines
+      self.console.print(f"  {filename}  (diff: {total} lines, showing {shown} of {total})")
+    else:
+      self.console.print(f"  {filename}")
+
+    for line in previewed.splitlines():
       if line.startswith("--- ") or line.startswith("+++ "):
         continue
       if line.startswith("diff --"):
@@ -1022,7 +996,9 @@ class InteractiveUIHandler(UIHandler):
 
       escaped_line = line.replace("[", "\\[").replace("]", "\\]")
 
-      if line.startswith("@@"):
+      if line.startswith("... ") and "lines hidden" in line:
+        self.console.print(f"  [dim]{escaped_line}[/dim]")
+      elif line.startswith("@@"):
         self.console.print(f"  [cyan]{escaped_line}[/]")
       elif line.startswith("-"):
         self.console.print(f"  [red]{escaped_line}[/]")
@@ -1030,8 +1006,3 @@ class InteractiveUIHandler(UIHandler):
         self.console.print(f"  [green]{escaped_line}[/]")
       else:
         self.console.print(f"  {escaped_line}")
-
-    if metadata.get("truncated"):
-      original_lines = metadata.get("original_diff_lines", 0)
-      remaining = original_lines - len(lines)
-      self.console.print(f"  ... ({remaining} more lines)")

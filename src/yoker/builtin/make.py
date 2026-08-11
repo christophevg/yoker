@@ -37,7 +37,7 @@ import re
 import signal
 import sys
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 from structlog import get_logger
 
@@ -240,10 +240,21 @@ async def make(
       combined if combined.strip() else f"make '{target}' failed with exit code {exit_code}"
     )
 
+  # Build content_metadata for UI display (middle-collapse preview).
+  content_metadata = _build_make_content_metadata(
+    target=target,
+    cwd=str(resolved_cwd),
+    exit_code=exit_code,
+    stdout=stdout_out,
+    stderr=stderr_out,
+    ctx=ctx,
+  )
+
   return ToolResult(
     success=success,
     result=result,
     error=error_msg,
+    content_metadata=content_metadata,
   )
 
 
@@ -256,3 +267,49 @@ def _kill_process_group(pid: int) -> None:
 
 
 __all__ = ["make"]
+
+
+def _build_make_content_metadata(
+  target: str,
+  cwd: str,
+  exit_code: int | None,
+  stdout: str,
+  stderr: str,
+  ctx: ToolContext | None,
+) -> dict[str, Any]:
+  """Build content_metadata for the make tool's ToolResult.
+
+  Renders a combined stdout/stderr preview for the UI. The content is the
+  full output — the UI applies middle-collapse truncation.
+
+  Args:
+    target: Make target name.
+    cwd: Working directory.
+    exit_code: Process exit code (may be None on timeout).
+    stdout: Raw stdout.
+    stderr: Raw stderr.
+    ctx: Tool context (for content_display config access).
+
+  Returns:
+    Flat content_metadata dict consumed by ToolContentEvent.
+  """
+  # Combine stdout + stderr for display (stdout first, stderr after separator).
+  parts = []
+  if stdout.strip():
+    parts.append(stdout.rstrip())
+  if stderr.strip():
+    parts.append(f"--- stderr ---\n{stderr.rstrip()}")
+  combined = "\n".join(parts) if parts else "(no output)"
+
+  return {
+    "operation": "make",
+    "path": cwd,
+    "content_type": "text/plain",
+    "content": combined,
+    "metadata": {
+      "target": target,
+      "exit_code": exit_code,
+      "stdout_lines": len(stdout.splitlines()) if stdout else 0,
+      "stderr_lines": len(stderr.splitlines()) if stderr else 0,
+    },
+  }

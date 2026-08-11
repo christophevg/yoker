@@ -10,6 +10,7 @@ import sys
 from typing import Any, TextIO
 
 from yoker.core import Agent
+from yoker.ui.formatting import format_tool_args
 from yoker.ui.handler import UIHandler
 
 
@@ -237,7 +238,6 @@ class BatchUIHandler(UIHandler):
       print(file=self._stderr)
 
   # === Tool Output (stderr) ===
-
   def output_tool_call(self, tool_name: str, args: dict[str, Any]) -> None:
     """Output tool call information.
 
@@ -247,7 +247,8 @@ class BatchUIHandler(UIHandler):
     """
     if not self.show_tool_calls:
       return
-    args_str = " ".join(f"{k}={v}" for k, v in args.items())
+    args_str = format_tool_args(tool_name, args)
+    print(f"# Tool: {tool_name}({args_str})", file=self._stderr)
     print(f"# Tool: {tool_name}({args_str})", file=self._stderr)
 
   def output_tool_result(self, tool_name: str, success: bool, result: str) -> None:

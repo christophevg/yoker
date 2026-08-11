@@ -122,7 +122,22 @@ async def list(
     if truncated:
       lines.append(f"... ({truncated} more entries truncated, max_entries={effective_max_entries})")
 
-    return ToolResult(success=True, result="\n".join(lines))
+    content = "\n".join(lines)
+    content_metadata = {
+      "operation": "list",
+      "path": str(resolved),
+      "content_type": "text/plain",
+      "content": content,
+      "metadata": {
+        "total_entries": total,
+        "file_count": file_count,
+        "dir_count": dir_count,
+        "truncated": truncated,
+        "max_depth": effective_max_depth,
+        "max_entries": effective_max_entries,
+      },
+    }
+    return ToolResult(success=True, result=content, content_metadata=content_metadata)
   except PermissionError:
     return ToolResult(success=False, error=f"Permission denied: {path}")
   except Exception as e:
