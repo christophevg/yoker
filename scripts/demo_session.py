@@ -21,9 +21,9 @@ from pathlib import Path
 
 from rich.console import Console
 
-from yoker.core import Agent
+from yoker.session import Session
 from yoker.ui.commands import create_default_registry
-from yoker.context import Persisted, SimpleContextManager
+from yoker.context import Persisted
 from yoker_demo import DemoScript, load_demo_script, load_demo_scripts
 from yoker.events import (
   CommandEvent,
@@ -215,9 +215,6 @@ async def run_demo_session(
   # Event recorder for --log mode
   event_recorder: EventRecorder | None = None
 
-  # Initialize context manager
-  context_manager: Persisted | None = None
-
   # Real LLM mode
   # Load configuration using Clevis (handles env vars, user config, project config)
   from yoker.config import get_yoker_config
@@ -237,99 +234,105 @@ async def run_demo_session(
   # discovery blocks) from prior runs.
   if not resume:
     config.context.fresh = True
+  else:
+    config.context.fresh = False
 
-  # Create context manager for persistence or resumption
+  # Enable persistence when --persist or --resume is used so Session creates
+  # a Persisted context manager via the factory.
   if persist or resume:
-    session_id = resume if resume else "auto"
-    context_manager = Persisted(
-      SimpleContextManager(),
-      storage_path=Path(config.context.storage_path),
-      session_id=session_id,
-    )
-    if resume:
-      loaded = context_manager.load()
-      if not loaded:
-        ui.console.print(f"[yellow]Warning: Session {resume} not found. Starting fresh.[/]\n")
+    config.context.persist_after_turn = True
 
-  # Create agent with event-driven architecture
-  agent = Agent(
+  # Determine session id for persistence or resumption
+  session_id = resume if resume else None
+
+  # Create and enter the Session — Session owns the agent, injects the
+  # `agent` and `send_message` tools, and manages the context manager.
+  async with Session(
     config=config,
+    session_id=session_id,
     agent_path=agent_path,
-    context_manager=context_manager,
-  )
-  agent.on_event(bridge)
+  ) as session:
+    agent = session.agent
 
-  # Show the full MOTD banner (same as interactive chat sessions)
-  await ui.start(agent)
+    # Wire event bridge and approval handler (same as interactive chat)
+    session.on_event(bridge)
+    if hasattr(ui, "confirm_approval"):
+      agent._approval_handler = ui.confirm_approval
+      agent.guardrail.interactive_approvals = True
 
-  # Show session info
-  if context_manager:
-    stats = context_manager.get_statistics()
-    ui.console.print(f"[dim]Session ID: {context_manager.get_session_id()}[/]")
-    if resume and stats.turn_count > 0:
+    # Show the full MOTD banner (same as interactive chat sessions)
+    await ui.start(agent)
+
+    # Show session info
+    cm = agent.context
+    if isinstance(cm, Persisted):
+      stats = cm.get_statistics()
+      ui.console.print(f"[dim]Session ID: {cm.get_session_id()}[/]")
+      if resume and stats.turn_count > 0:
+        ui.console.print(
+          f"[dim]Resumed: {stats.turn_count} turns, {stats.tool_call_count} tool calls[/]"
+        )
+      ui.console.print("")
+
+    # Add event recorder if requested
+    if log and script.events:
+      events_file = Path(script.events)
+      events_file.parent.mkdir(parents=True, exist_ok=True)
+      event_recorder = EventRecorder(events_file)
+      agent.on_event(event_recorder)
+
+    # Create input function from script messages
+    messages = list(script.messages)
+    get_input = PredefinedInput(messages)
+
+    # Feed predefined messages to the UI handler so it does not read from terminal
+    ui.set_input_messages(get_input.messages)
+
+    # Create command registry using the UI-layer command hierarchy
+    command_registry = create_default_registry()
+
+    # Print mode-specific info
+    if log:
+      ui.console.print(f"[dim]Logging events to {script.events}[/]")
+
+    # Process each message
+    for message in get_input.messages if hasattr(get_input, "messages") else []:
+      # User input should be plain text in the SVG recording
+      # Use console.print with all Rich features disabled
+      ui.console.print(f"> {message}", markup=False, highlight=False)
+
+      # Check if this is a command
+      if message.startswith("/"):
+        # Dispatch via the UI-layer command registry.
+        # Skill commands are invoked dynamically through the skill registry.
+        result = await command_registry.dispatch(message, agent, ui)
+        if result:
+          ui.output_command_result(result)
+          # Log command event if logging is enabled
+          if event_recorder is not None:
+            command_event = CommandEvent(
+              type=EventType.COMMAND,
+              command=message,
+              result=result,
+            )
+            event_recorder(command_event)
+        continue
+
+      await agent.process(message)
+      # Events are emitted by Agent; the UIBridge routes them to the UI handler.
+
+    # Print session footer
+    ui.console.print("\n[bold cyan]Session complete.[/]")
+
+    # Show statistics if context manager was used
+    cm = agent.context
+    if isinstance(cm, Persisted):
+      stats = cm.get_statistics()
+      ui.console.print(f"[dim]Session: {cm.get_session_id()}[/]")
       ui.console.print(
-        f"[dim]Resumed: {stats.turn_count} turns, {stats.tool_call_count} tool calls[/]"
+        f"[dim]Statistics: {stats.turn_count} turns, "
+        f"{stats.message_count} messages, {stats.tool_call_count} tool calls[/]"
       )
-    ui.console.print("")
-
-  # Add event recorder if requested
-  if log and script.events:
-    events_file = Path(script.events)
-    events_file.parent.mkdir(parents=True, exist_ok=True)
-    event_recorder = EventRecorder(events_file)
-    agent.on_event(event_recorder)
-
-  # Create input function from script messages
-  messages = list(script.messages)
-  get_input = PredefinedInput(messages)
-
-  # Feed predefined messages to the UI handler so it does not read from terminal
-  ui.set_input_messages(get_input.messages)
-
-  # Create command registry using the UI-layer command hierarchy
-  command_registry = create_default_registry()
-
-  # Print mode-specific info
-  if log:
-    ui.console.print(f"[dim]Logging events to {script.events}[/]")
-
-  # Process each message
-  for message in get_input.messages if hasattr(get_input, "messages") else []:
-    # User input should be plain text in the SVG recording
-    # Use console.print with all Rich features disabled
-    ui.console.print(f"> {message}", markup=False, highlight=False)
-
-    # Check if this is a command
-    if message.startswith("/"):
-      # Dispatch via the UI-layer command registry.
-      # Skill commands are invoked dynamically through the skill registry.
-      result = await command_registry.dispatch(message, agent, ui)
-      if result:
-        ui.output_command_result(result)
-        # Log command event if logging is enabled
-        if event_recorder is not None:
-          command_event = CommandEvent(
-            type=EventType.COMMAND,
-            command=message,
-            result=result,
-          )
-          event_recorder(command_event)
-      continue
-
-    await agent.process(message)
-    # Events are emitted by Agent; the UIBridge routes them to the UI handler.
-
-  # Print session footer
-  ui.console.print("\n[bold cyan]Session complete.[/]")
-
-  # Show statistics if context manager was used
-  if context_manager is not None:
-    stats = context_manager.get_statistics()
-    ui.console.print(f"[dim]Session: {context_manager.get_session_id()}[/]")
-    ui.console.print(
-      f"[dim]Statistics: {stats.turn_count} turns, "
-      f"{stats.message_count} messages, {stats.tool_call_count} tool calls[/]"
-    )
 
   # Save SVG
   console.save_svg(str(svg_path), code_format=EMOJI_SVG_FORMAT)
