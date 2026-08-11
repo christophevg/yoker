@@ -7,4 +7,4 @@ events: media/events-list-tool.jsonl
 
 ## Messages
 
-- List files matching "CLAUDE*" in the current directory. Reply in 2 lines or less.
+- List files matching "AGENTS*" in the current directory. Reply in 2 lines or less.

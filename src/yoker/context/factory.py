@@ -5,6 +5,7 @@ instance; persisted agents get a per-agent JSONL file via a configurable
 filename pattern.
 """
 
+import uuid
 from pathlib import Path
 
 from yoker.config import Config
@@ -24,12 +25,22 @@ def create_context_manager(config: Config, agent_id: str) -> ContextManager:
   conversation history is loaded from disk (resume). When persistence is
   disabled a bare :class:`SimpleContextManager` is returned.
 
+  When ``session_id`` is ``"auto"`` (the config default), a UUID is generated
+  and stamped back onto ``config.context.session_id`` so every standalone
+  agent gets a unique session file — mirroring what ``Session.__init__`` does
+  for session-scoped agents.
+
   No agent wiring or registration — callers set ``.agent`` after assignment.
   """
   ctx = config.context
   # option 1: in-memory only
   if not ctx.persist_after_turn:
     return SimpleContextManager()
+
+  # Resolve "auto" to a UUID so standalone agents get unique session files.
+  # Session.__init__ does the same stamping for session-scoped agents.
+  if ctx.session_id == "auto":
+    ctx.session_id = uuid.uuid4().hex
 
   # option 2: per-agent JSONL file
   safe_agent_id = _sanitize_agent_id(agent_id)

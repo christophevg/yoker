@@ -9,6 +9,6 @@ events: media/events-session.jsonl
 
 - /help
 - /think silent
-- List files matching "CLAUDE*" in the current directory. Answer in 1 line.
+- List files matching "AGENTS*" in the current directory. Answer in 1 line.
 - /think on
 - What is this project? Answer in 1 sentence.

@@ -68,11 +68,17 @@ docs-view: docs ## Build and open documentation
 
 ## Demo Screenshots
 
+DEMO ?= session
+
 demo: ## Generate main session screenshot (media/session.svg)
-	uv run python scripts/demo_session.py --script demos/session.md
+	uv run python scripts/demo_session.py --script demos/$(DEMO).md
 
 demos: ## Generate all demo screenshots
 	uv run python scripts/demo_session.py --scripts-dir demos/
+
+demos-to-docs:  ## Copy the generated demo files to the docs/_static folder
+	cp media/demo-*.svg docs/_static/
+	cp media/session.svg docs/_static/
 
 ## Build & Publish
 

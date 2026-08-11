@@ -213,6 +213,8 @@ def load_demo_scripts(directory: Path | str) -> dict[str, DemoScript]:
   scripts: dict[str, DemoScript] = {}
 
   for md_file in sorted(dir_path.glob("*.md")):
+    if md_file.name == "README.md":
+      continue
     try:
       script = load_demo_script(md_file)
       if script.title in scripts:
@@ -221,9 +223,7 @@ def load_demo_scripts(directory: Path | str) -> dict[str, DemoScript]:
           message=f"Duplicate demo title '{script.title}' in {md_file}",
         )
       scripts[script.title] = script
-    except ConfigurationError:
-      raise
-    except Exception as e:
+    except (ConfigurationError, Exception) as e:
       raise ConfigurationError(
         setting=str(md_file),
         message=f"Failed to load demo script: {e}",
