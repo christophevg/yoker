@@ -1316,7 +1316,7 @@ class TestSearchEnhancementsFileFiltering:
 
     assert result.success
     files = {m["file"] for m in result.result["matches"]}
-    assert files == {str(temp_search_dir / "utils.py")}
+    assert files == {(temp_search_dir / "utils.py").as_posix()}
 
   @pytest.mark.asyncio
   async def test_include_pattern_filename_search(self, temp_search_dir: Path) -> None:
@@ -1378,8 +1378,8 @@ class TestSearchEnhancementsCountOnly:
     assert "counts" in data
     # main.py has 2 TODOs, utils.py has 1
     assert data["total_matches"] == 3
-    main_key = str(temp_search_dir / "main.py")
-    utils_key = str(temp_search_dir / "utils.py")
+    main_key = (temp_search_dir / "main.py").as_posix()
+    utils_key = (temp_search_dir / "utils.py").as_posix()
     assert data["counts"][main_key] == 2
     assert data["counts"][utils_key] == 1
 
@@ -1581,7 +1581,7 @@ class TestSearchToolFilePath:
     assert result.success
     matches = result.result["matches"]
     assert len(matches) == 1
-    assert matches[0]["file"] == str(file_path)
+    assert matches[0]["file"] == file_path.as_posix()
     assert matches[0]["line"] == 2
     assert "TODO" in matches[0]["content"]
     assert result.result["files_searched"] == 1
@@ -1660,7 +1660,7 @@ class TestSearchToolFilePath:
     )
 
     assert result.success
-    assert result.result["counts"][str(file_path)] == 3
+    assert result.result["counts"][file_path.as_posix()] == 3
     assert result.result["total_matches"] == 3
     assert result.result["files_searched"] == 1
 
@@ -1677,7 +1677,7 @@ class TestSearchToolFilePath:
     assert result.success
     matches = result.result["matches"]
     assert len(matches) == 1
-    assert matches[0]["file"] == str(file_path)
+    assert matches[0]["file"] == file_path.as_posix()
 
   @pytest.mark.asyncio
   async def test_file_path_filename_search_no_match(self, tmp_path: Path) -> None:
