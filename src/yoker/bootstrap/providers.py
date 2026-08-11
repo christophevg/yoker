@@ -82,8 +82,8 @@ PROVIDERS: dict[str, ProviderInfo] = {
         note="fast cloud model, excellent tool calling and reasoning",
       ),
       CuratedModel(
-        model_id="glm-5:cloud",
-        label="GLM-5 Cloud",
+        model_id="glm-5.2:cloud",
+        label="GLM-5.2 Cloud",
         note="capable cloud model with strong coding abilities",
       ),
       CuratedModel(

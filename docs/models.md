@@ -22,7 +22,7 @@ tier.
 | Model ID | Label | Note |
 |----------|-------|------|
 | `qwen3.5:cloud` | Qwen 3.5 Cloud (default) | fast cloud model, excellent tool calling and reasoning |
-| `glm-5:cloud` | GLM-5 Cloud | capable cloud model with strong coding abilities |
+| `glm-5.2:cloud` | GLM-5.2 Cloud | capable cloud model with strong coding abilities |
 | `kimi-k2.6:cloud` | Kimi K2.6 Cloud | advanced cloud model with large context window |
 | `gemma4:31b-cloud` | Gemma 4 31B Cloud | larger cloud model for complex reasoning tasks |
 
