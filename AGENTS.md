@@ -128,8 +128,8 @@ src/yoker/
 │   └── modellist.py          # Model list rendering
 │
 ├── builtin/                 # Built-in tools registered via __YOKER_MANIFEST__
-│   ├── __init__.py          # Manifest declaring read, write, git, github, make, 
-│   │                        #   websearch, webfetch, search, list, mkdir, existence, skill
+│   ├── __init__.py          # Manifest declaring read, write, git, github, make,
+│   │                        #   websearch, webfetch, search, list, mkdir, existence, sleep, skill
 │   ├── read.py              # read: file contents (offset/limit slicing)
 │   ├── write.py             # write: file contents
 │   ├── update.py            # update: edit existing file contents (diff-based)
@@ -137,6 +137,7 @@ src/yoker/
 │   ├── mkdir.py             # mkdir: create directories
 │   ├── existence.py         # existence: check files/folders exist
 │   ├── search.py            # search: file and content search (grep-like, accepts files and directories)
+│   ├── sleep.py             # sleep: pause execution (1–300s) for polling/waiting
 │   ├── git.py               # git: Git operations (status, log, diff, branch, show, 
 │   │                        #   add, commit, push, checkout, rm, pull, tag)
 │   ├── github.py            # github: read-only GitHub operations via gh CLI

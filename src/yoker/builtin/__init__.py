@@ -18,6 +18,7 @@ from yoker.builtin.mkdir import mkdir
 from yoker.builtin.read import read
 from yoker.builtin.search import search
 from yoker.builtin.skill import make_skill_tool
+from yoker.builtin.sleep import sleep
 from yoker.builtin.update import update
 from yoker.builtin.webfetch import webfetch
 from yoker.builtin.websearch import websearch
@@ -34,6 +35,7 @@ __all__ = [
   "mkdir",
   "read",
   "search",
+  "sleep",
   "update",
   "webfetch",
   "websearch",
@@ -58,6 +60,7 @@ __YOKER_MANIFEST__ = PluginManifest(
     mkdir,
     read,
     search,
+    sleep,
     update,
     webfetch,
     websearch,

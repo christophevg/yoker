@@ -481,6 +481,7 @@ See [docs/rationale.md](docs/rationale.md) for the full rationale and comparison
 - [x] `make` tool - Execute Makefile targets (e.g., `make check`, `make test`) with target validation, per-target env var allowlist, and process-group timeout enforcement.
 - [x] `websearch` tool - Web search with SSRF protection, domain filtering, and rate limiting
 - [x] `webfetch` tool - Fetch web content with SSRF protection, URL validation, and size limits
+- [x] `sleep` tool - Pause execution (1–300s) for polling intervals between checks
 - [x] `agent` tool - Spawn subagents with isolated context and recursion limits
 - [x] `skill` tool - Invoke skills dynamically by name with full content loading
 - [x] Slash commands - Built-in commands: `/help`, `/think on|off|silent`, `/skills`, `/context`, `/tools`, `/agents`
