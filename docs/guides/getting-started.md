@@ -248,19 +248,25 @@ Once the wizard finishes, yoker drops you straight into an interactive chat
 session. You should see a prompt like:
 
 ```text
-╭───────────────────────────────── 👋 Welcome... ─────────────────────────────────╮
-│ __   __    _                                                                    │
-│ \ \ / /__ | | _____ _ __                                                        │
-│  \ V / _ \| |/ / _ \ '__|                                                       │
-│   | | (_) |   <  __/ |                                                          │
-│   |_|\___/|_|\_\___|_| 0.5.0                                                    │
-│ Model: gemini-2.5-flash-lite (provider: gemini)                                 │
-│ Harness: yoker-dev v1.0 by Christophe VG                                        │
-│ Thinking: on (use /think on|off|silent to toggle)                               │
-│ Agent: default - The default/minimal Yoker agent.                               │
-│ Type /help for available commands.                                              │
-│ Press Ctrl+D (or Ctrl+Z on Windows) to quit.                                    │
-╰─────────────────────────────────────────────────────────────────────────────────╯
+╭────────────────────────────────── 👋 Welcome... ──────────────────────────────────╮
+│ __   __    _                                                                      │
+│ \ \ / /__ | | _____ _ __                                                          │
+│  \ V / _ \| |/ / _ \ '__|                                                         │
+│   | | (_) |   <  __/ |                                                            │
+│   |_|\___/|_|\_\___|_| 0.10.0                                                     │
+│ Model: gemini-2.5-flash-lite (provider: gemini)                                   │
+│ Harness: yoker-dev v1.0 by Christophe VG                                          │
+│ Session: Started '6040702bff5045b29e5528a723e1398c'                               │
+│ Agent: default                                                                    │
+│ The default/minimal Yoker agent.                                                  │
+│ Tools: existence, file, git, github, list, make, mkdir, read +7 more (use /tools  │
+│ for full list)                                                                    │
+│ Skills: example, sing, analysis-integration, api2mod, baseweb, bug-fixing,        │
+│ bug-hunting, commit +45 more (use /skills for full list)                          │
+│ Thinking: on (use /think on|off|silent to toggle)                                 │
+│ Type /help for available commands.                                                │
+│ Press Ctrl+D (or Ctrl+Z on Windows) to quit.                                      │
+╰───────────────────────────────────────────────────────────────────────────────────╯
 
 >
 ```

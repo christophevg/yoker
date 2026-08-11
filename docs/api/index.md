@@ -79,7 +79,19 @@ Handlers are plain callables that receive `Event` objects. Register them with `a
 
 ### `yoker.ui`
 
-User interface layer. Provides `UIHandler` implementations and the `UIBridge` that routes agent events to UI methods.
+User interface layer. Provides `UIHandler` implementations and the `UIBridge`
+that routes agent events to UI methods.
+
+- `InteractiveUIHandler` — Terminal UI using `prompt_toolkit` and Rich
+- `BatchUIHandler` — Non-interactive UI using stdin/stdout/stderr
+- `UIBridge` — Event dispatcher that converts agent events into UI method calls
+
+```{eval-rst}
+.. automodule:: yoker.ui
+   :members:
+   :undoc-members:
+   :show-inheritance:
+```
 
 ### `yoker.tools`
 

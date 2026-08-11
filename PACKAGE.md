@@ -1,20 +1,20 @@
 # Yoker
 
-> A Python agent harness with configurable tools and guardrails - one who yokes agents together.
+> A Python agent harness with configurable tools and guardrails — one who yokes agents together.
 
 ## Overview
 
 Yoker is a library-first, event-driven agent harness for Python that integrates with multiple LLM providers. It provides a transparent, configurable runtime for AI agents with structured tool execution, guardrails, event emission, and a pluggable UI layer. Unlike CLI-first agent frameworks, Yoker is designed to be embedded in applications with full visibility into agent operations.
 
 Key differentiators:
-- **Library-first** - Embed in applications, not locked into CLI
-- **Multi-provider** - Ollama (native SDK), OpenAI, Anthropic, Gemini, and 100+ providers via LiteLLM
-- **Event-driven** - Subscribe to thinking, content, and tool events
-- **UI layer** - Swap interactive TUI, batch mode, or custom handlers
-- **Plugin system** - Load namespaced tools, skills, and agents from Python packages
-- **Async-native** - All I/O operations are async
-- **Static permissions** - Deterministic boundaries via configuration
-- **Transparent** - All prompts visible, editable, configurable
+- **Library-first** — Embed in applications, not locked into a CLI
+- **Multi-provider** — Ollama (native SDK), OpenAI, Anthropic, Gemini, and 100+ providers via LiteLLM
+- **Event-driven** — Subscribe to thinking, content, and tool events
+- **UI layer** — Swap interactive TUI, batch mode, or custom handlers
+- **Plugin system** — Load namespaced tools, skills, and agents from Python packages
+- **Async-native** — All I/O operations are async
+- **Static permissions** — Deterministic boundaries via configuration
+- **Transparent** — All prompts visible, editable, configurable
 
 ## Installation
 
@@ -36,7 +36,8 @@ pip install yoker[magic]
 python -m yoker
 ```
 
-Loads `yoker.toml` from the current directory if present.
+Loads `yoker.toml` from the current directory if present, then `~/.yoker.toml`,
+then built-in defaults.
 
 ### Batch mode
 
@@ -58,38 +59,128 @@ printf "Summarize README.md" | python -m yoker --ui-mode batch --agents-definiti
 
 ## Library Usage
 
-### Default usage
+### Python API (recommended)
+
+The top-level `yoker` package exposes a thin Pythonic facade over the `Agent`
+and `Session` classes:
+
+| Function | Use |
+|----------|-----|
+| `yoker.process(prompt, **kwargs)` | One-shot turn; returns the response string. |
+| `yoker.do(skill_name, prompt, args="", **kwargs)` | One-shot skill invocation. |
+| `yoker.agent(**kwargs) -> Agent` | Builder that returns a reusable `Agent`. |
+| `yoker.session(id=..., *, persist=True, fresh=False, **kwargs)` | Async context manager yielding a multi-turn `Session` with context persistence. |
+| `yoker.run_sync(coro)` | Wraps `asyncio.run` for synchronous callers (scripts, notebooks, REPLs). |
+
+All builder kwargs (`model`, `provider`, `system_prompt`, `tools`, `skills`,
+`plugins`, `thinking`, `event_handler`, `config`, ...) are accepted by `process`,
+`do`, `agent`, and `session`.
+
+One-shot, single response:
 
 ```python
 import asyncio
-
-from yoker import Agent
+import yoker
 
 async def main():
-  agent = Agent()  # loads yoker.toml configuration by default
-  response = await agent.process("What files are in this directory?")
-  print(response)
+    answer = await yoker.process("What is 2+2?")
+    print(answer)
 
 asyncio.run(main())
 ```
 
-### Batch mode
+Synchronous caller (scripts, notebooks):
+
+```python
+import yoker
+
+answer = yoker.run_sync(yoker.process("What files are in the current directory?"))
+print(answer)
+```
+
+A reusable, configured agent:
 
 ```python
 import asyncio
+import yoker
+from yoker.events import ToolCallEvent
 
+async def main():
+    reviewer = yoker.agent(
+        model="qwen3.5:cloud",
+        system_prompt="You are a security-focused code reviewer. Cite file:line.",
+        tools=["read", "search", "list"],
+        thinking="visible",
+    )
+
+    def log_tools(event):
+        if isinstance(event, ToolCallEvent):
+            print(f"[tool] {event.tool_name}({event.arguments})")
+
+    reviewer.on_event(log_tools)
+
+    report = await reviewer.process("Review src/yoker/plugins/security.py for vulnerabilities.")
+    print(report)
+
+asyncio.run(main())
+```
+
+Multi-turn conversation with automatic context persistence:
+
+```python
+import asyncio
+import yoker
+
+async def main():
+    async with yoker.session(id="refactor-auth") as session:
+        await session.agent.process("Read src/auth.py and identify the main responsibilities.")
+        await session.agent.process("Suggest a refactor that splits authentication from session management.")
+
+asyncio.run(main())
+```
+
+Invoke a skill by name as a one-shot command:
+
+```python
+import asyncio
+import yoker
+
+async def main():
+    result = await yoker.do("commit", "stage and commit current changes")
+    print(result)
+
+asyncio.run(main())
+```
+
+For the full set of examples, see `examples/python_api/` (`one_shot.py`,
+`agent_builder.py`, `session.py`, `run_skill.py`, `workflow.py`,
+`event_handling.py`, `sync_usage.py`).
+
+### Low-level event-driven API (advanced)
+
+For full control — custom rendering, non-terminal surfaces, or when you need
+to drive the UI lifecycle yourself — use the `Agent` class directly with a
+`UIHandler` and `UIBridge`.
+
+```python
+import asyncio
 from yoker import Agent
+from yoker.config import get_yoker_config
 from yoker.ui import BatchUIHandler, UIBridge
 
 async def main():
-  agent = Agent()
-  ui = BatchUIHandler(show_tool_calls=True)
-  bridge = UIBridge(ui)
-  agent.add_event_handler(bridge)
+    config = get_yoker_config(cli=False)
+    agent = Agent(config=config)
 
-  await ui.start(agent)
-  await agent.process("Summarize README.md")
-  await ui.shutdown("complete")
+    ui = BatchUIHandler(show_thinking=True, show_tool_calls=True)
+    bridge = UIBridge(ui)
+    agent.on_event(bridge)
+
+    await ui.start(agent)
+    try:
+        await agent.process("What is 2+2?")
+    finally:
+        await ui.shutdown("complete")
 
 asyncio.run(main())
 ```
@@ -98,20 +189,19 @@ asyncio.run(main())
 
 ```python
 import asyncio
-
 from yoker import Agent
 from yoker.events import ContentChunkEvent, Event, ToolCallEvent
 
 async def handler(event: Event) -> None:
-  if isinstance(event, ContentChunkEvent):
-    print(event.text, end="", flush=True)
-  elif isinstance(event, ToolCallEvent):
-    print(f"\n[tool] {event.tool_name}({event.arguments})")
+    if isinstance(event, ContentChunkEvent):
+        print(event.text, end="", flush=True)
+    elif isinstance(event, ToolCallEvent):
+        print(f"\n[tool] {event.tool_name}({event.arguments})")
 
 async def main():
-  agent = Agent()
-  agent.add_event_handler(handler)
-  await agent.process("What is 2+2?")
+    agent = Agent()
+    agent.on_event(handler)
+    await agent.process("What is 2+2?")
 
 asyncio.run(main())
 ```
@@ -122,86 +212,85 @@ Implement the `UIHandler` protocol and wire it to the agent with `UIBridge`:
 
 ```python
 from typing import Any
-
-from yoker.agent import Agent
+from yoker import Agent
 from yoker.ui import UIHandler
 
 class MyUIHandler:
-  """A minimal UIHandler implementation for custom integrations."""
+    """A minimal UIHandler implementation for custom integrations."""
 
-  async def start(self, agent: Agent) -> None:
-    print(f"Session started: {agent.model}")
+    async def start(self, agent: Agent) -> None:
+        print(f"Session started: {agent.model}")
 
-  async def shutdown(self, reason: str) -> None:
-    print(f"Session ended: {reason}")
+    async def shutdown(self, reason: str) -> None:
+        print(f"Session ended: {reason}")
 
-  async def get_input(self, prompt: str = "> ") -> str | None:
-    return input(prompt)
+    async def get_input(self, prompt: str = "> ") -> str | None:
+        return input(prompt)
 
-  async def get_secret_input(self, prompt: str = "> ") -> str | None:
-    return input(prompt)
+    async def get_secret_input(self, prompt: str = "> ") -> str | None:
+        return input(prompt)
 
-  def output_info(self, text: str) -> None:
-    print(text)
+    def output_info(self, text: str) -> None:
+        print(text)
 
-  async def output_step_title(self, step: int, total: int, title: str) -> None:
-    print(f"Step {step}/{total}: {title}")
+    async def output_step_title(self, step: int, total: int, title: str) -> None:
+        print(f"Step {step}/{total}: {title}")
 
-  def output_content(self, content: str, content_type: str = "text/plain") -> None:
-    print(content)
+    def output_content(self, content: str, content_type: str = "text/plain") -> None:
+        print(content)
 
-  def output_command_result(self, result: str) -> None:
-    print(result)
+    def output_command_result(self, result: str) -> None:
+        print(result)
 
-  def output_thinking(self, text: str) -> None:
-    print(text)
+    def output_thinking(self, text: str) -> None:
+        print(text)
 
-  def output_tool_call(self, tool_name: str, args: dict[str, object]) -> None:
-    print(f"Tool: {tool_name}({args})")
+    def output_tool_call(self, tool_name: str, args: dict[str, object]) -> None:
+        print(f"Tool: {tool_name}({args})")
 
-  def output_tool_result(self, tool_name: str, success: bool, result: str) -> None:
-    status = "OK" if success else "FAIL"
-    print(f"Result: {status} {tool_name} -> {result}")
+    def output_tool_result(self, tool_name: str, success: bool, result: str) -> None:
+        status = "OK" if success else "FAIL"
+        print(f"Result: {status} {tool_name} -> {result}")
 
-  def output_tool_content(
-    self,
-    tool_name: str,
-    operation: str,
-    path: str,
-    content: str | None,
-    content_type: str,
-    metadata: dict[str, object],
-  ) -> None:
-    print(f"{tool_name} {operation} {path}")
+    def output_tool_content(
+        self,
+        tool_name: str,
+        operation: str,
+        path: str,
+        content: str | None,
+        content_type: str,
+        metadata: dict[str, object],
+    ) -> None:
+        print(f"{tool_name} {operation} {path}")
 
-  def output_stats(self, duration_ms: int, prompt_tokens: int, eval_tokens: int) -> None:
-    print(f"Stats: {duration_ms}ms, {prompt_tokens} + {eval_tokens} tokens")
+    def output_stats(self, duration_ms: int, prompt_tokens: int, eval_tokens: int) -> None:
+        print(f"Stats: {duration_ms}ms, {prompt_tokens} + {eval_tokens} tokens")
 
-  def output_error(self, error: Exception, include_traceback: bool = False) -> None:
-    print(f"Error: {error}")
+    def output_error(self, error: Exception, include_traceback: bool = False) -> None:
+        print(f"Error: {error}")
 
-  def start_content_stream(self) -> None:
-    pass
+    def start_content_stream(self) -> None:
+        pass
 
-  def stream_content(self, chunk: str, content_type: str = "text/plain") -> None:
-    print(chunk, end="", flush=True)
+    def stream_content(self, chunk: str, content_type: str = "text/plain") -> None:
+        print(chunk, end="", flush=True)
 
-  def end_content_stream(self, total_length: int) -> None:
-    print()
+    def end_content_stream(self, total_length: int) -> None:
+        print()
 
-  def start_thinking_stream(self) -> None:
-    pass
+    def start_thinking_stream(self) -> None:
+        pass
 
-  def stream_thinking(self, chunk: str) -> None:
-    print(chunk, end="", flush=True)
+    def stream_thinking(self, chunk: str) -> None:
+        print(chunk, end="", flush=True)
 
-  def end_thinking_stream(self, total_length: int) -> None:
-    print()
+    def end_thinking_stream(self, total_length: int) -> None:
+        print()
 ```
 
 ## Key Components
 
-### `yoker.agent.Agent`
+### `yoker.Agent` (from `yoker.core`)
 
 The async agent that chats with model backends and uses tools.
 
@@ -213,23 +302,45 @@ agent = Agent(agent_path="agents/researcher.md")
 print(agent.model)          # Resolved model name
 print(agent.tools.names)    # Available tools (namespaced)
 print(agent.context)        # Conversation history
-print(agent.definition)    # Loaded agent definition (if any)
-print(agent.skills.names)  # Available skills (namespaced)
+print(agent.definition)     # Loaded agent definition (if any)
+print(agent.skills.names)   # Available skills (namespaced)
 ```
 
 **Key methods:**
-- `process(message)` - Process a message, handle tool calls, return response
-- `add_event_handler(handler)` - Subscribe to events
-- `remove_event_handler(handler)` - Unsubscribe from events
-- `inject_skill_context(skill_name, args)` - Inject a skill into the conversation
+- `process(message)` — Process a message, handle tool calls, return response
+- `do(skill_name, prompt, args="")` — Inject a skill and process the prompt
+- `on_event(handler)` — Subscribe to events (returns the handler for chaining)
+- `inject_skill_context(skill_name, args)` — Inject a skill into the conversation
+
+### `yoker.Session` (from `yoker.session`)
+
+Multi-turn session construct: an async context manager owning a team of agents.
+The primary agent is available via `Session.agent`; sub-agents can be spawned
+via `Session.spawn()`. Inter-agent messaging uses
+`Session.send(*, to, from_, content)` with plain strings.
+
+```python
+from yoker import Session
+from yoker.config import get_yoker_config
+
+config = get_yoker_config(cli=False)
+
+async with Session(config=config) as session:
+    await session.agent.process("Analyze the codebase.")
+    # Spawn a sub-agent for a specialized task
+    researcher = await session.spawn("researcher")
+    response = await researcher.process("Summarize README.md")
+    # Inter-agent messaging
+    reply = await session.send(to=researcher, from_=session.agent, content="Follow up?")
+```
 
 ### UI layer
 
-- `yoker.ui.UIHandler` - Protocol defining the UI interface
-- `yoker.ui.UIBridge` - Event dispatcher that converts agent events into UI method calls
-- `yoker.ui.InteractiveUIHandler` - Terminal UI using `prompt_toolkit` and Rich
-- `yoker.ui.BatchUIHandler` - Non-interactive UI using stdin/stdout/stderr
-- `yoker.ui.commands.CommandRegistry` - Slash-command registry
+- `yoker.ui.UIHandler` — Protocol defining the UI interface
+- `yoker.ui.UIBridge` — Event dispatcher that converts agent events into UI method calls
+- `yoker.ui.InteractiveUIHandler` — Terminal UI using `prompt_toolkit` and Rich
+- `yoker.ui.BatchUIHandler` — Non-interactive UI using stdin/stdout/stderr
+- `yoker.ui.commands.CommandRegistry` — Slash-command registry
 
 Attach a UI to an agent:
 
@@ -237,7 +348,7 @@ Attach a UI to an agent:
 from yoker.ui import UIBridge
 
 bridge = UIBridge(ui)
-agent.add_event_handler(bridge)
+agent.on_event(bridge)
 ```
 
 ### `yoker.config.get_yoker_config`
@@ -254,30 +365,26 @@ config = get_yoker_config(cli=False)
 config = get_yoker_config(cli=True)
 ```
 
-Configuration hierarchy (highest to lowest):
-1. Environment variables (`YOKER_*`)
-2. CLI arguments (when `cli=True`)
-3. `./yoker.toml`
-4. `~/.yoker.toml`
-5. Default values from `Config`
+Configuration discovery order (highest to lowest priority):
+1. CLI arguments (when `cli=True`)
+2. `./yoker.toml` — current directory
+3. `~/.yoker.toml` — user home directory
+4. Default values from `Config`
 
 ### `yoker.context.ContextManager`
 
-- `BasicContextManager` - In-memory conversation history
-- `PersistenceContextManager` - JSONL-persisted session context
+- `SimpleContextManager` — In-memory conversation history (from `yoker.context.basic`)
+- `Persisted` — JSONL-persisted session context (wraps a base context manager, from `yoker.context.persisted`)
 
 ```python
 from yoker import Agent
-from yoker.context import BasicContextManager, PersistenceContextManager
+from yoker.context import SimpleContextManager, Persisted
 
 # In-memory context
-context = BasicContextManager()
+context = SimpleContextManager()
 
 # Persisted JSONL context
-context = PersistenceContextManager(session_id="my-session")
-
-# Resume existing session
-context = PersistenceContextManager.resume("my-session")
+context = Persisted(SimpleContextManager(), session_id="my-session")
 
 agent = Agent(context_manager=context)
 ```
@@ -286,29 +393,32 @@ agent = Agent(context_manager=context)
 
 ```python
 from yoker.events import (
-  Event,
-  EventType,
-  TurnStartEvent,
-  TurnEndEvent,
-  ThinkingStartEvent,
-  ThinkingChunkEvent,
-  ThinkingEndEvent,
-  ContentStartEvent,
-  ContentChunkEvent,
-  ContentEndEvent,
-  ToolCallEvent,
-  ToolContentEvent,
-  ToolResultEvent,
-  CommandEvent,
+    Event,
+    EventType,
+    TurnStartEvent,
+    TurnEndEvent,
+    ThinkingStartEvent,
+    ThinkingChunkEvent,
+    ThinkingEndEvent,
+    ContentStartEvent,
+    ContentChunkEvent,
+    ContentEndEvent,
+    ToolCallEvent,
+    ToolContentEvent,
+    ToolResultEvent,
+    CommandEvent,
 )
 ```
 
 **Event types:**
-- `TURN_START/END` - Turn lifecycle (user message to response)
-- `THINKING_START/CHUNK/END` - LLM reasoning trace
-- `CONTENT_START/CHUNK/END` - Response text streaming
-- `TOOL_CALL/RESULT/CONTENT` - Tool execution and display
-- `COMMAND` - Slash-command result
+- `TURN_START/END` — Turn lifecycle (user message to response)
+- `THINKING_START/CHUNK/END` — LLM reasoning trace
+- `CONTENT_START/CHUNK/END` — Response text streaming
+- `TOOL_CALL/RESULT/CONTENT` — Tool execution and display
+- `COMMAND` — Slash-command result
+
+Handlers are plain callables that receive `Event` objects. Register them with
+`agent.on_event(...)` (or `session.on_event(...)` for session-scoped handlers).
 
 ### Tools
 
@@ -320,12 +430,12 @@ from yoker.tools.annotations import Path, Text
 from yoker.tools import ToolRegistry
 
 def read_file(
-  path: Annotated[str, Path("Path to the file to read")],
-  encoding: Annotated[str, Text("File encoding")] = "utf-8",
+    path: Annotated[str, Path("Path to the file to read")],
+    encoding: Annotated[str, Text("File encoding")] = "utf-8",
 ) -> str:
-  """Read a file and return its contents."""
-  with open(path, encoding=encoding) as f:
-    return f.read()
+    """Read a file and return its contents."""
+    with open(path, encoding=encoding) as f:
+        return f.read()
 
 registry = ToolRegistry()
 registry.register(read_file)
@@ -346,7 +456,7 @@ Yoker uses a schema-driven guardrail system. String parameters are annotated wit
 | `Query` | Web search queries (`WebGuardrail.validate`) |
 | `Text` | Plain text; no guardrail |
 
-When a callable is registered, `build_tool_spec()` extracts the marker from each `Annotated[str, Marker(...)]` parameter and stores its functional type in the resulting `ToolSpec.guards`. The marker description is kept in the JSON schema; the guardrail metadata is stripped before the schema is sent to the model, keeping it Ollama-compatible. At execution time, the harness dispatches the matching guardrail centrally, so the tool itself stays a plain function.
+When a callable is registered, `build_tool_spec()` extracts the marker from each `Annotated[str, Marker(...)]` parameter and stores its functional type in the resulting `ToolSpec.guards`. The marker description is kept in the JSON schema; the guardrail metadata is stripped before the schema is sent to the model. At execution time, the harness dispatches the matching guardrail centrally, so the tool itself stays a plain function.
 
 Plugin and custom tool authors should annotate all string parameters with the appropriate marker. Plain `str` parameters without a marker are accepted but produce a warning, indicating that the parameter is not covered by a guardrail.
 
@@ -405,11 +515,11 @@ from yoker.tools.annotations import Text
 from yoker.plugins import PluginManifest
 
 def echo(message: Annotated[str, Text("Message to echo")]) -> str:
-  """Echo back the input message."""
-  return f"Echo: {message}"
+    """Echo back the input message."""
+    return f"Echo: {message}"
 
 __YOKER_MANIFEST__ = PluginManifest(
-  tools=[echo],
+    tools=[echo],
 )
 ```
 
@@ -424,8 +534,9 @@ Or via `yoker.toml`:
 ```toml
 [plugins]
 enabled = true
-packages = ["pkgq"]
-trusted = { pkgq = true }
+
+[plugins.trusted]
+pkgq = true
 ```
 
 Plugin components are namespaced:
@@ -455,7 +566,7 @@ Or set the environment variable `YOKER_LOGGING_LEVEL=INFO`.
 Programmatically:
 
 ```python
-from yoker import configure_logging
+from yoker.logging import configure_logging
 configure_logging(level="INFO")
 ```
 
@@ -481,11 +592,11 @@ from yoker.ui import BatchUIHandler, UIBridge
 
 agent = Agent()
 ui = BatchUIHandler(show_tool_calls=True)
-agent.add_event_handler(UIBridge(ui))
+agent.on_event(UIBridge(ui))
 
 ui.set_input_messages([
-  "Read README.md",
-  "Summarize it in one paragraph",
+    "Read README.md",
+    "Summarize it in one paragraph",
 ])
 ```
 
@@ -505,12 +616,12 @@ agent.inject_skill_context("pkgq:commit", "write a concise commit message")
 
 ### Subagent spawning
 
-The `yoker:agent` tool spawns isolated subagents. Recursion depth is tracked automatically.
+The `yoker:agent` tool spawns isolated subagents. Recursion depth is tracked automatically. Sub-agents inherit guardrails from their parent and get an isolated context.
 
 ```python
 parent = Agent()
-# Subagent is spawned via the agent tool
-# Inherits guardrails, has isolated context, respects max_recursion_depth
+# Subagent is spawned via the agent tool (called by the LLM)
+# or programmatically via Session.spawn()
 ```
 
 ## Slash Commands
@@ -543,108 +654,149 @@ All built-in tools are registered with the `yoker:` namespace.
 | `yoker:search` | Search file contents (regex, glob) with complexity limits |
 | `yoker:existence` | Check file/folder existence |
 | `yoker:mkdir` | Create directories with depth limits |
-| `yoker:git` | Git operations (status, log, diff, branch, show) |
-| `yoker:agent` | Spawn subagents with recursion limits |
+| `yoker:git` | Git operations (status, log, diff, branch, show, add, commit, push, pull, tag, checkout, rm) |
+| `yoker:github` | Read-only GitHub operations via `gh` CLI (issues, PRs, workflows, reviews) |
+| `yoker:make` | Execute Makefile targets with per-target env var allowlist and timeout enforcement |
 | `yoker:websearch` | Web search with SSRF protection and rate limiting |
 | `yoker:webfetch` | Fetch web content with URL validation and guardrails |
+| `yoker:agent` | Spawn subagents with recursion limits |
 | `yoker:skill` | Invoke registered skills by name |
+| `yoker:sleep` | Pause execution (1–300s) for polling intervals |
 
 ## Architecture
 
 ```
 src/yoker/
-├── __init__.py          # Public API exports
-├── __main__.py          # CLI entry point
-├── agent/               # Agent implementation
-│   ├── __init__.py      # Public Agent class
-│   ├── _plugins.py      # Plugin loading helpers
-│   ├── _processing.py   # Message/tool processing
-│   ├── _setup.py        # Client, guardrail, registry setup
-│   ├── _tools.py        # Built-in tool filtering
-│   └── thinking.py      # Thinking mode enum
-├── agents/              # Agent definition parsing
-├── backends/            # Provider-neutral backend layer
-│   ├── protocol.py      # ModelBackend Protocol, ChatChunk, UsageStats
-│   ├── factory.py       # create_backend() dispatch
-│   ├── ollama.py        # OllamaBackend (native SDK)
-│   ├── litellm.py       # LitellmBackend (OpenAI, Anthropic, Gemini, 100+)
-│   └── trust.py         # Custom base URL trust validation
-├── bootstrap/           # First-run bootstrap wizard
-│   ├── wizard.py        # Wizard orchestration
-│   ├── steps.py         # Provider-specific setup steps
-│   ├── providers.py     # Curated model lists and provider metadata
-│   ├── detect.py        # Config detection
-│   └── modellist.py     # Model list rendering
-├── builtin/             # Built-in tools (read, write, git, websearch, ...)
-├── config/              # Configuration system (Clevis)
-│   ├── __init__.py      # Config dataclasses, get_yoker_config()
-│   ├── providers.py     # Provider configs (Ollama, OpenAI, Anthropic, Gemini, Generic)
-│   ├── validators.py    # Field validators
-│   └── writer.py        # TOML writer with chmod 600
-├── context/             # Context management
-│   ├── basic.py
-│   ├── interface.py
-│   ├── manager.py
-│   └── persistence.py
-├── events/              # Event types and recording/replay
-├── exceptions.py        # Exception hierarchy (incl. NetworkError)
-├── logging.py           # Structured logging
-├── plugins/             # Plugin loading and registration
-│   ├── __init__.py
-│   ├── agents.py        # Agent definition loading
-│   ├── builtin.py       # Built-in yoker plugin manifest
-│   ├── loader.py        # Plugin package discovery
-│   ├── manifest.py
-│   ├── registration.py  # Component registration
-│   ├── resources.py     # Package resource helpers
-│   ├── security.py      # Plugin trust checks
-│   ├── skills.py        # Plugin skill discovery
-│   └── urls.py          # plugin:// URL parsing
-├── schema.py            # NameSpaced base class
-├── skills/              # Skill definitions and registry
-├── tools/               # Tool framework
-│   ├── annotations.py   # Path, Url, Query, Text markers + @tool decorator
-│   ├── schema.py        # ToolSpec, build_tool_spec()
-│   ├── registry.py      # ToolRegistry
-│   ├── guardrails/      # PathGuardrail, WebGuardrail
-│   └── web/             # Web tool backends
-└── ui/                  # UI layer
-    ├── base.py
-    ├── batch.py
-    ├── bridge.py
-    ├── handler.py
-    ├── interactive.py
-    ├── spinner.py
-    └── commands/        # UI slash-command registry
+├── __init__.py              # Public API exports (Agent, Session, Config, process, do,
+│                            #   agent, session, run_sync, ThinkingLiteral)
+├── __main__.py              # CLI entry point — dispatches to subcommand handlers
+├── api.py                   # Thin Pythonic API facade: process(), do(), agent(),
+│                            #   session(), run_sync() — no private helpers
+├── exceptions.py            # Exception hierarchy (NetworkError, ValidationError, ...)
+├── logging.py               # Structured logging (structlog)
+├── resources.py             # Resource location for definition files (skills, agents)
+├── schema.py                # NameSpaced base class for namespaced dataclasses
+├── py.typed                 # PEP 561 typed-package marker
+│
+├── core/                    # Agent layer (no UI, no Session coupling)
+│   ├── __init__.py          # Unified Agent class — async, event-emitting, Session-agnostic
+│   ├── _processing.py       # Message processing, streaming, tool loop
+│   ├── _setup.py            # Client, guardrail, registry setup
+│   └── thinking.py          # Thinking mode enum
+│
+├── agents/                  # Agent definition parsing (schema, loader, registry)
+│   ├── schema.py            # AgentDefinition frozen dataclass (from Markdown+frontmatter)
+│   ├── loader.py            # Parse Markdown+YAML frontmatter; load from dirs/packages
+│   ├── registry.py          # AgentRegistry (UserDict keyed by namespaced name)
+│   └── validator.py         # validate_agent_definition against config constraints
+│
+├── backends/                # Provider-neutral backend layer
+│   ├── protocol.py          # ModelBackend Protocol, ChatChunk, UsageStats
+│   ├── factory.py           # create_backend() dispatch from Config
+│   ├── ollama.py            # OllamaBackend (native SDK)
+│   ├── litellm.py           # LitellmBackend (OpenAI, Anthropic, Gemini, 100+)
+│   └── trust.py             # Custom base URL trust validation
+│
+├── bootstrap/               # First-run bootstrap wizard
+│   ├── wizard.py            # Wizard orchestration
+│   ├── steps.py             # Provider-specific setup steps
+│   ├── providers.py         # Curated model lists and provider metadata
+│   ├── detect.py            # Existing-config detection
+│   └── modellist.py         # Model list rendering
+│
+├── builtin/                 # Built-in tools registered via __YOKER_MANIFEST__
+│   ├── __init__.py          # Manifest declaring read, write, git, github, make,
+│   │                        #   websearch, webfetch, search, list, mkdir, existence, sleep, skill
+│   ├── read.py              # read: file contents (offset/limit slicing)
+│   ├── write.py             # write: file contents
+│   ├── update.py            # update: edit existing file contents (diff-based)
+│   ├── list.py              # list: directory contents
+│   ├── mkdir.py             # mkdir: create directories
+│   ├── existence.py         # existence: check files/folders exist
+│   ├── search.py            # search: file and content search (grep-like)
+│   ├── sleep.py             # sleep: pause execution (1–300s)
+│   ├── git.py               # git: Git operations (status, log, diff, branch, show,
+│   │                        #   add, commit, push, checkout, pull, tag, rm)
+│   ├── github.py            # github: read-only GitHub operations via gh CLI
+│   ├── make.py              # make: Makefile target execution
+│   ├── webfetch.py          # webfetch: fetch web content through a backend
+│   ├── websearch.py         # websearch: search the web through a backend
+│   └── skill.py            # make_skill_tool factory (skill invocation tool)
+│
+├── config/                  # Configuration system (Clevis-based)
+│   ├── __init__.py          # Config dataclasses, get_yoker_config()
+│   ├── providers.py         # Provider configs (Ollama, OpenAI, Anthropic, Gemini, Generic)
+│   ├── validators.py        # Field validators
+│   └── writer.py            # TOML writer with chmod 600
+│
+├── context/                 # Context managers (Protocol-based)
+│   ├── protocol.py          # ContextManager @runtime_checkable Protocol
+│   ├── manager.py           # BaseContextManager (in-memory base)
+│   ├── basic.py             # SimpleContextManager (env reminder + system prompt)
+│   ├── wrapper.py           # ContextManagerWrapper (pure proxy)
+│   ├── persisted.py         # Persisted (JSONL persistence via bulk-rewrite)
+│   ├── factory.py           # Context manager factory — agent-scoped from Config
+│   ├── interface.py         # ContextStatistics, SessionMetadata dataclasses
+│   ├── session.py           # list_sessions, load_session_metadata (JSONL utilities)
+│   └── validator.py         # validate_session_id, validate_storage_path, is_safe_path
+│
+├── events/                  # Event types and serialization
+│   ├── types.py             # Event dataclasses (Message, Tool, Error, Stats, ...)
+│   ├── session_event.py     # SessionEvent envelope (tags Event with agent_id)
+│   └── recorder.py          # EventRecorder, serialize/deserialize_event (JSONL)
+│
+├── plugins/                 # Plugin system (discover, manifest, trust)
+│   ├── loader.py            # Plugin package discovery via __YOKER_MANIFEST__
+│   ├── manifest.py          # PluginManifest dataclass (tools, skills, agents declarations)
+│   ├── file_manifest.py     # File-based manifest (agent.toml) parser
+│   └── security.py          # Plugin trust checks (global opt-in + per-plugin trust table)
+│
+├── skills/                  # Skill definitions and registry
+│   ├── schema.py            # Skill dataclass (from Markdown+frontmatter)
+│   ├── loader.py            # Parse Markdown+YAML frontmatter into Skill objects
+│   ├── registry.py          # SkillRegistry: lookup skills by name
+│   └── injection.py         # Skill discovery + invocation context blocks
+│
+├── tools/                   # Tool framework
+│   ├── annotations.py       # Path, Url, Query, Text markers + @tool decorator
+│   ├── schema.py            # ToolSpec, build_tool_spec() (function→tool introspection)
+│   ├── registry.py          # ToolRegistry (UserDict of ToolSpec)
+│   ├── context.py           # Tool execution context (config/backends without exposing Agent)
+│   ├── content_type.py      # Content type detection from file content and path extension
+│   ├── diff.py              # generate_diff() — shared unified-diff helper
+│   ├── ignore.py            # IgnoreMatcher — gitignore-style pattern matching for search/list
+│   ├── guardrails/          # Guardrail framework
+│   │   ├── env.py           # EnvGuardrail (env var allowlist + hard denylist)
+│   │   └── path.py          # PathGuardrail (traversal, size, extension, protected_files)
+│   └── web/                 # Web tool backends and guardrails
+│       ├── backend.py       # Web search/fetch backend protocol and implementations
+│       ├── guardrail.py     # Web guardrail (SSRF, domain allow/deny lists)
+│       └── types.py         # SearchResult dataclass, WebSearchError
+│
+├── session/                 # Session construct (team-of-agents coordinator)
+│   ├── __init__.py          # Session: async context manager owning a team of agents;
+│   │                        #   spawn(), release(), send(), agent property, inject_tools()
+│   └── tools.py             # Session-injected tools: agent + send_message factories
+│
+├── cli/                     # CLI subcommand config classes + handlers
+│   ├── commands.py          # @configclass(cmd=...) subcommand configs registered with Clevis
+│   ├── shared.py            # load_subcommand_config() + manifest variant
+│   ├── chat.py              # yoker chat: interactive REPL (default subcommand)
+│   ├── run.py               # yoker run: load source + trust gate + non-interactive execution
+│   ├── config_cmd.py        # yoker config: display effective config
+│   ├── init.py              # yoker init: generate default config
+│   ├── inspect.py           # yoker inspect: read-only source report
+│   ├── loop.py              # yoker loop: interval execution
+│   ├── container.py         # yoker container: Dockerfile/Containerfile generation
+│   └── sources.py           # resolve_source() + load_source() — two-phase source resolution
+│
+└── ui/                      # UI layer (strictly separated from the Agent layer)
+    ├── handler.py           # UIHandler protocol
+    ├── bridge.py            # UIBridge: events -> UIHandler method calls
+    ├── interactive.py       # InteractiveUIHandler (Rich append-only + prompt_toolkit)
+    ├── batch.py             # BatchUIHandler (stdin/stdout/stderr for pipelines)
+    └── commands/            # Slash commands (/help, /agents, /skills, /tools, /think, /context, /config)
 ```
-
-## Version Notes
-
-**Current stable version:** 0.5.0
-
-Major features in 0.5.0:
-- Multi-provider backend architecture: Ollama (native SDK), OpenAI, Anthropic,
-  Gemini, and any LiteLLM-supported provider
-- Bootstrap wizard for interactive first-run setup (writes `~/.yoker.toml`)
-- Dual backend: `OllamaBackend` (native SDK) and `LitellmBackend` (100+ providers)
-- Provider configs: `OllamaConfig`, `OpenAIConfig`, `AnthropicConfig`,
-  `GeminiConfig`, `GenericConfig`
-- Removed `begin_session()` / `end_session()` and session lifecycle events
-- UI layer (`yoker/ui/`) with `UIHandler`, `UIBridge`, `InteractiveUIHandler`,
-  and `BatchUIHandler`
-- Plugin system (`yoker/plugins/`) with `--with`, `__YOKER_MANIFEST__`, and
-  namespaced tools/skills/agents
-- Content type detection with optional `[magic]` extras
-- Config loading through `get_yoker_config()` from Clevis
-- CLI flag `--agents-definition` replaces `--agent`
-- `NetworkError` with user-friendly messages (`__str__`) and debug messages
-  (`get_debug_message()`)
-- Secure API key handling: masked input during bootstrap, `chmod 600` on config
-  files
-- `OLLAMA_API_KEY` env var removed; configure `backend.ollama.api_key` instead
-
-See [GitHub Releases](https://github.com/christophevg/yoker/releases) for full
-version history.
 
 ## References
 
@@ -652,4 +804,5 @@ version history.
 - **Documentation**: https://yoker.readthedocs.io/
 - **Repository**: https://github.com/christophevg/yoker
 - **Issues**: https://github.com/christophevg/yoker/issues
-- **Rationale**: docs/rationale.md - Why Yoker exists and how it compares
+- **Rationale**: docs/rationale.md — Why Yoker exists and how it compares
+- **Disclaimer**: DISCLAIMER.md — What Yoker is, does, and the risks involved

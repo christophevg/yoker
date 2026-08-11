@@ -178,7 +178,7 @@ async with Session(config=config) as session:
 ```
 
 The `Session` owns the team: every spawned agent is a full
-:class:`yoker.agent.Agent` instance with its own context, model, tools,
+:class:`yoker.core.Agent` instance with its own context, model, tools,
 and event stream. Sub-agents are addressable by a unique name the Session
 generates (Decision 2), the Session enforces recursion-depth and
 `max_agents` caps, and sub-agent events are aggregated to session-level

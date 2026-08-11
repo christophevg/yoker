@@ -51,6 +51,7 @@ clean-sessions  Delete session .jsonl files older than $(SESSION_MAX_AGE_DAYS) d
 clean           Remove build artifacts
 demo            Generate main session screenshot (media/session.svg)
 demos           Generate all demo screenshots
+demos-to-docs   Copy generated demo files to docs/_static folder
 docs-view       Build and open documentation
 docs            Build HTML documentation
 env-dev         Install all dependencies (dev + docs)
@@ -68,6 +69,10 @@ test-cov        Run tests with coverage
 test            Run tests (usage: make test / optional: TEST=file|file:test_name)
 typecheck       Run type checking
 ```
+
+!!! IMPORTANT !!!
+There are a lot of tests!
+When  doing tests (`make(test)`, `make(check)`), set a higher `timeout_ms`, e.g. 300000.
 
 ## Tool Output Discipline
 

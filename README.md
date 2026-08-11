@@ -491,6 +491,7 @@ See [docs/rationale.md](docs/rationale.md) for the full rationale and comparison
 - [x] `existence` tool - Check if files or folders exist with security hardening
 - [x] `mkdir` tool - Create directories with recursive parent creation and depth limits
 - [x] `git` tool - Git operations (status, log, diff, branch, show) with permission-controlled commit/push
+- [x] `github` tool - Read-only GitHub operations via `gh` CLI (issues, PRs, workflows, reviews, comments)
 - [x] `make` tool - Execute Makefile targets (e.g., `make check`, `make test`) with target validation, per-target env var allowlist, and process-group timeout enforcement.
 - [x] `websearch` tool - Web search with SSRF protection, domain filtering, and rate limiting
 - [x] `webfetch` tool - Fetch web content with SSRF protection, URL validation, and size limits
@@ -578,6 +579,14 @@ python scripts/demo_session.py --script demos/session.md --replay
 
 # With an agent definition
 python scripts/demo_session.py --script demos/session.md --agent examples/agents/markdown.md
+```
+
+Or via Makefile targets:
+
+```bash
+make demo          # Generate main session screenshot
+make demos         # Generate all demo screenshots
+make demos-to-docs # Copy generated screenshots to docs/_static/
 ```
 
 ## Configuration
@@ -762,6 +771,8 @@ injected from environment variables using Clevis interpolation
 - [Creating agentic packages](docs/guides/creating-agentic-packages.md) - `agent.toml` manifest format and trust model
 - [Model catalog](docs/models.md) - Curated models per provider
 - [Why Yoker?](docs/rationale.md) - Project rationale and comparison
+- [Disclaimer](DISCLAIMER.md) - What Yoker is, does, and the risks involved
+- [Contributing](CONTRIBUTING.md) - How to contribute to Yoker
 - [Architecture](https://github.com/christophevg/yoker/blob/master/analysis/architecture.md)
 
 ## Development
@@ -780,7 +791,10 @@ Requires Python 3.10+. Uses [uv](https://docs.astral.sh/uv/) for dependency mana
 
 ## Contributing
 
-Contributions welcome! Please read [AGENTS.md](AGENTS.md) for project conventions and development guidelines.
+Contributions welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for the
+full guide on setting up a development environment, code conventions, and the
+pull request process. See [AGENTS.md](AGENTS.md) for project conventions and
+development guidelines.
 
 ## Changelog
 

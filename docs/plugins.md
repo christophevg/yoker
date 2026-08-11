@@ -152,14 +152,20 @@ Use the `/tools` command to see all available tools:
 Known tools:
 
 Built-in:
+  ✗ yoker:agent     - Spawn a sub-agent to perform a specific task.
   ✗ yoker:existence - Check if a file or folder exists at the given path.
   ✗ yoker:git       - Execute a Git operation on a repository.
+  ✗ yoker:github    - Read-only GitHub operations via gh CLI.
   ✗ yoker:list      - List files and directories.
+  ✗ yoker:make      - Execute a Makefile target.
   ✗ yoker:mkdir     - Create a directory at the given path.
   ✗ yoker:read      - Read the contents of a file.
   ✗ yoker:search    - Search for patterns in files.
   ✗ yoker:skill     - Invoke a skill by name to get its full instructions.
+  ✗ yoker:sleep     - Pause execution for a number of seconds.
   ✗ yoker:update    - Update an existing file by replacing, inserting, or delet...
+  ✗ yoker:webfetch  - Fetch content from a web URL.
+  ✗ yoker:websearch - Search the web for information.
   ✗ yoker:write     - Write content to a file.
 
 Plugins:

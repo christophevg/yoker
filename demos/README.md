@@ -76,11 +76,11 @@ uv run python scripts/skill_demo.py
 The skills demo shows how Yoker's skill system works:
 
 ```bash
-# Run the skills demo (requires --skills-dir to load skill files)
-uv run python scripts/demo_session.py --script demos/skills.md --skills-dir examples/skills
+# Run the skills demo (loads skill files from examples/skills via frontmatter)
+uv run python scripts/demo_session.py --script demos/skills.md
 
 # With logging for replay
-uv run python scripts/demo_session.py --script demos/skills.md --skills-dir examples/skills --log
+uv run python scripts/demo_session.py --script demos/skills.md --log
 ```
 
 This demo demonstrates:
@@ -90,8 +90,10 @@ This demo demonstrates:
 3. **Context Injection** - Skill content injected into LLM context when invoked
 4. **Minimal Demo Scripts** - Demo runner handles setup, scripts stay minimal
 
-The `--skills-dir` flag points the demo runner at a directory of skill files
-(see `examples/skills/` for example skill definitions).
+The `skills_dir` frontmatter field (or `--skills-dir` CLI flag) points the
+demo runner at a directory of skill files (see `examples/skills/` for example
+skill definitions). When no `skills_dir` is specified, skill directories are
+cleared to keep the request body small.
 
 For implementation details, see:
 - `src/yoker/skills/` - Core skill infrastructure (schema, loader, injection, registry)
@@ -136,6 +138,9 @@ make demos
 
 # Or individually
 uv run python scripts/demo_session.py --script demos/list-tool.md
+
+# Copy generated screenshots to docs/_static/
+make demos-to-docs
 ```
 
 Output files:

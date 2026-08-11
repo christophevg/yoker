@@ -250,9 +250,25 @@ to a separate executor.
 ### Interactive Session
 
 ```
-Yoker v0.5.0 - Using model: qwen3.5:cloud
-Type /help for available commands.
-Press Ctrl+D (or Ctrl+Z on Windows) to quit.
+╭────────────────────────────────── 👋 Welcome... ──────────────────────────────────╮
+│ __   __    _                                                                      │
+│ \ \ / /__ | | _____ _ __                                                          │
+│  \ V / _ \| |/ / _ \ '__|                                                         │
+│   | | (_) |   <  __/ |                                                            │
+│   |_|\___/|_|\_\___|_| 0.10.0                                                     │
+│ Model: gemini-2.5-flash-lite (provider: gemini)                                   │
+│ Harness: yoker-dev v1.0 by Christophe VG                                          │
+│ Session: Started '6040702bff5045b29e5528a723e1398c'                               │
+│ Agent: default                                                                    │
+│ The default/minimal Yoker agent.                                                  │
+│ Tools: existence, file, git, github, list, make, mkdir, read +7 more (use /tools  │
+│ for full list)                                                                    │
+│ Skills: example, sing, analysis-integration, api2mod, baseweb, bug-fixing,        │
+│ bug-hunting, commit +45 more (use /skills for full list)                          │
+│ Thinking: on (use /think on|off|silent to toggle)                                 │
+│ Type /help for available commands.                                                │
+│ Press Ctrl+D (or Ctrl+Z on Windows) to quit.                                      │
+╰───────────────────────────────────────────────────────────────────────────────────╯
 
 > /help
 
@@ -410,7 +426,7 @@ asyncio.run(main())
 
 ## Tools
 
-Yoker provides several tools for file operations, web access, and subagent spawning:
+Yoker provides several tools for file operations, web access, code execution, and subagent spawning:
 
 | Tool | Description |
 |------|-------------|
@@ -422,10 +438,13 @@ Yoker provides several tools for file operations, web access, and subagent spawn
 | `existence` | Check if files or folders exist |
 | `mkdir` | Create directories with parent creation |
 | `git` | Git operations with permission-controlled commit/push |
+| `github` | Read-only GitHub operations via `gh` CLI |
+| `make` | Execute Makefile targets with env var allowlist and timeout enforcement |
 | `agent` | Spawn subagents with isolated context |
 | `skill` | Invoke skills dynamically by name |
 | `websearch` | Web search with SSRF protection and domain filtering |
 | `webfetch` | Fetch web content with SSRF protection and URL validation |
+| `sleep` | Pause execution (1–300s) for polling intervals |
 
 ### Agent Tool
 
@@ -637,11 +656,14 @@ python -m yoker --config path/to/config.toml
 | `search` | Search file contents with regex or filenames with glob |
 | `existence` | Check if a file or folder exists |
 | `mkdir` | Create directories with parent creation |
-| `git` | Git operations (status, log, diff, branch, show) |
+| `git` | Git operations (status, log, diff, branch, show, add, commit, push, pull, tag, checkout, rm) |
+| `github` | Read-only GitHub operations via `gh` CLI (issues, PRs, workflows, reviews) |
+| `make` | Execute Makefile targets with per-target env var allowlist and timeout enforcement |
 | `agent` | Spawn subagents with isolated context |
 | `skill` | Invoke skills dynamically by name |
 | `websearch` | Web search with SSRF protection |
 | `webfetch` | Fetch web content with URL validation |
+| `sleep` | Pause execution (1–300s) for polling intervals |
 
 ## Tool Examples
 
