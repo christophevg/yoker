@@ -486,15 +486,15 @@ class TestGithubWriteOperations:
     assert "body" in result.error.lower()
 
   @pytest.mark.asyncio
-  async def test_pr_create_rejects_shell_chars_in_title(self, mocker: MockerFixture) -> None:
-    """pr_create rejects shell metacharacters in title (except newlines)."""
+  async def test_pr_create_rejects_nul_in_title(self, mocker: MockerFixture) -> None:
+    """pr_create rejects NUL byte in title."""
     _mock_popen(mocker)
     cfg = GitHubToolConfig(allowed_operations=("pr_create",))
     result = await github(
       operation="pr_create",
       ctx=_ctx(cfg),
       repo="owner/repo",
-      title="Fix; rm -rf /",
+      title="Fix\x00evil",
       body="body",
     )
     assert not result.success
@@ -672,8 +672,8 @@ class TestGithubWriteOperations:
     assert "notes" in result.error.lower()
 
   @pytest.mark.asyncio
-  async def test_release_create_rejects_shell_chars_in_title(self, mocker: MockerFixture) -> None:
-    """release_create rejects shell metacharacters in title."""
+  async def test_release_create_rejects_nul_in_title(self, mocker: MockerFixture) -> None:
+    """release_create rejects NUL byte in title."""
     _mock_popen(mocker)
     cfg = GitHubToolConfig(allowed_operations=("release_create",))
     result = await github(
@@ -681,7 +681,7 @@ class TestGithubWriteOperations:
       ctx=_ctx(cfg),
       repo="owner/repo",
       tag="v1.0.0",
-      title="Release; cat /etc/passwd",
+      title="Release\x00evil",
       notes="Notes",
     )
     assert not result.success
@@ -704,6 +704,36 @@ class TestGithubWriteOperations:
     cmd = popen.call_args.args[0]
     notes_arg = [c for c in cmd if c.startswith("--notes=")][0]
     assert "\n" in notes_arg
+
+  @pytest.mark.asyncio
+  async def test_release_create_allows_markdown_in_notes(self, mocker: MockerFixture) -> None:
+    """release_create allows Markdown chars (backticks, pipes, etc.) in notes."""
+    popen = _mock_popen(mocker, stdout='{"url": "https://example.com"}')
+    cfg = GitHubToolConfig(allowed_operations=("release_create",))
+    markdown_notes = (
+      "## Changes\n\n"
+      "### Bug Fixes\n\n"
+      "- Fix `crash` on startup\n"
+      "- Fix `null` pointer | pipe issue\n\n"
+      "```python\nx = 1; y = 2\n```\n\n"
+      "Cost: $5 & $10\n"
+    )
+    result = await github(
+      operation="release_create",
+      ctx=_ctx(cfg),
+      repo="owner/repo",
+      tag="v1.0.0",
+      title="Release v1.0.0",
+      notes=markdown_notes,
+    )
+    assert result.success
+    cmd = popen.call_args.args[0]
+    notes_arg = [c for c in cmd if c.startswith("--notes=")][0]
+    assert "`crash`" in notes_arg
+    assert "|" in notes_arg
+    assert ";" in notes_arg
+    assert "$5" in notes_arg
+    assert "&" in notes_arg
 
   @pytest.mark.asyncio
   async def test_release_create_rejects_invalid_tag(self, mocker: MockerFixture) -> None:

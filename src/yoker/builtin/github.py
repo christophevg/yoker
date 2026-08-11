@@ -489,8 +489,10 @@ def _validate_text_field(
 ) -> str | None:
   """Validate a free-text field for write operations.
 
-  Uses the same forbidden-char checks as other params but allows newlines
-  (PR bodies and release notes are multi-line). Returns error string or None.
+  These fields (PR bodies, release notes, titles) are passed to the ``gh``
+  CLI via ``--flag=value`` format and executed via ``create_subprocess_exec``
+  (no shell), so shell metacharacters are not a concern. Only reject NUL
+  bytes. Returns error string or None.
   """
   if not value or not isinstance(value, str):
     return f"Parameter '{name}' is required"
@@ -498,9 +500,7 @@ def _validate_text_field(
     return f"Parameter '{name}' must be at least {min_len} character(s)"
   if len(value) > max_len:
     return f"Parameter '{name}' exceeds {max_len} characters"
-  # Reject NUL and shell metacharacters, but allow newlines and tabs.
-  forbidden = _FORBIDDEN_CHARS - {"\n", "\r"}
-  if any(c in value for c in forbidden):
+  if "\x00" in value:
     return f"Parameter '{name}' contains forbidden character"
   return None
 
