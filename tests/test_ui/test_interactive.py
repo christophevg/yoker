@@ -578,6 +578,27 @@ class TestInteractiveUIHandlerContentStreaming:
     assert "line 1" in output.getvalue()
     assert "line 2" in output.getvalue()
 
+  def test_stream_content_captured_by_recording_console(self):
+    """Streamed content must be captured by a recording console (for SVG export).
+
+    The MarkdownStreamer uses a separate themed Console for rendering, but
+    the final output must go through the handler's console so that
+    ``console.save_svg()`` (used by demo_session.py) captures it.
+    """
+    output = StringIO()
+    recording_console = Console(
+      record=True, file=output, force_terminal=True, color_system=None, highlight=False
+    )
+    handler = InteractiveUIHandler(console=recording_console)
+
+    handler.start_content_stream()
+    handler.stream_content("Hello World")
+    handler.end_content_stream(11)
+
+    # The recording console should have captured the rendered text.
+    exported = recording_console.export_text()
+    assert "Hello World" in exported
+
 
 class TestInteractiveUIHandlerThinkingStreaming:
   """Tests for InteractiveUIHandler thinking streaming."""

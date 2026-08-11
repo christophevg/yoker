@@ -1,6 +1,7 @@
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.style import Style
+from rich.text import Text
 
 LIST = "list"
 CODE_BLOCK = "code_block"
@@ -20,8 +21,10 @@ class MarkdownStreamer:
     console: Console | None = None,
     style: Style | None = None,
     code_theme: str | None = None,
+    output: Console | None = None,
   ) -> None:
     self.console = console or Console()
+    self.output = output or self.console
     self.style = style
     self.code_theme = code_theme or "default"
 
@@ -123,14 +126,16 @@ class MarkdownStreamer:
     if not block:
       return  # ignore, keep state
     if self.previous:
-      self.console.print()  # whitespace between blocks
+      self.output.print()  # whitespace between blocks
     # use capture to strip newline whitespace from output
     with self.console.capture() as capture:
       self.console.print(Markdown(block, code_theme=self.code_theme), style=self.style)
     # strip leading newlines and all trailing whitespace
     rendered_output = capture.get().lstrip("\n").rstrip()
     if rendered_output:
-      print(rendered_output, file=self.console.file)
+      # Convert ANSI-coded text to a styled Text so the output console
+      # records proper Segments (no double formatting, SVG export works).
+      self.output.print(Text.from_ansi(rendered_output), soft_wrap=True, end="")
       self.previous = True
     else:
       self.previous = False

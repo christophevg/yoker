@@ -818,7 +818,10 @@ class InteractiveUIHandler(UIHandler):
   def thinking_streamer(self) -> MarkdownStreamer:
     if self._thinking_streamer is None:
       self._thinking_streamer = MarkdownStreamer(
-        Console(theme=THINKING_THEME, file=self.console.file), THINKING_STYLE, "algol"
+        Console(theme=THINKING_THEME, file=self.console.file),
+        THINKING_STYLE,
+        "algol",
+        output=self.console,
       )
     return self._thinking_streamer
 
@@ -826,7 +829,10 @@ class InteractiveUIHandler(UIHandler):
   def response_streamer(self) -> MarkdownStreamer:
     if self._response_streamer is None:
       self._response_streamer = MarkdownStreamer(
-        Console(theme=RESPONSE_THEME, file=self.console.file), RESPONSE_STYLE, "default"
+        Console(theme=RESPONSE_THEME, file=self.console.file),
+        RESPONSE_STYLE,
+        "default",
+        output=self.console,
       )
     return self._response_streamer
 
