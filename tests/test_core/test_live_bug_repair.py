@@ -9,7 +9,7 @@ These tests simulate the exact scenarios from the bug report:
 
 import json
 
-from yoker.core._processing import _build_tool_call, _repair_json
+from yoker.core._processing import _build_tool_call
 
 
 class TestLiveBugReportScenarios:
@@ -121,3 +121,4 @@ class TestLiveBugReportScenarios:
 
     assert tc.parse_error is None
     assert tc.function.arguments["operation"] == "replace"
+
