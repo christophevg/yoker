@@ -140,8 +140,8 @@ If it blocks the full Yoker development workflow, it's not ready for public anno
 
 #### Medium Priority
 
-- [ ] **`list` tool: reduce noise**
-  - Respect `.gitignore` (optionally or by default)
+- [x] **`list` tool: reduce noise**
+  - Respect `.gitignore` (optionally or by default) — implemented via `IgnoreMatcher` in `tools/ignore.py`, configurable via `tools_shared.ignore`
   - Lower default `max_entries` from 2000 to ~200
 
 #### Low Priority (all needed for full workflow)

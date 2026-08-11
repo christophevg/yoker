@@ -187,6 +187,7 @@ src/yoker/
 │   ├── context.py           # Tool execution context (config/backends without exposing Agent)
 │   ├── content_type.py      # Content type detection from file content and path extension
 │   ├── diff.py              # generate_diff() — shared unified-diff helper
+│   ├── ignore.py            # IgnoreMatcher — gitignore-style pattern matching for search/list
 │   ├── guardrails/          # Guardrail framework
 │   │   ├── env.py           # EnvGuardrail (env var allowlist + hard denylist)
 │   │   └── path.py          # PathGuardrail (traversal, size, extension, protected_files)

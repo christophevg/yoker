@@ -444,6 +444,44 @@ class ContentDisplayConfig:
 
 
 @dataclass
+class IgnoreConfig:
+  """Ignore-pattern configuration for file traversal tools (search, list).
+
+  Controls which files and directories are excluded from search and list
+  results. By default, respects ``.gitignore`` files and skips common
+  build/dependency directories and dotfiles.
+
+  Attributes:
+    ignore_files: Filenames to parse for ignore patterns, walked from the
+      search root upward (like git). Default: ``(".gitignore",)``.
+    skip_dirs: Directory names always pruned from traversal, regardless of
+      ignore files.
+    skip_dotfiles: Whether to skip files/directories starting with ``.``.
+    respect_ignore_files: Whether to parse and apply ignore files. When
+      False, only ``skip_dirs`` and ``skip_dotfiles`` are used.
+  """
+
+  ignore_files: tuple[str, ...] = (".gitignore",)
+  skip_dirs: tuple[str, ...] = (
+    ".git",
+    "__pycache__",
+    "node_modules",
+    ".venv",
+    "venv",
+    "build",
+    "dist",
+    ".mypy_cache",
+    ".pytest_cache",
+    "htmlcov",
+    ".tox",
+    ".eggs",
+    ".nox",
+  )
+  skip_dotfiles: bool = True
+  respect_ignore_files: bool = True
+
+
+@dataclass
 class SearchToolConfig(ToolConfig):
   """Search tool configuration.
 
@@ -796,9 +834,12 @@ class ToolsSharedConfig:
 
   Attributes:
     content_display: Content display configuration for write/update tools.
+    ignore: Ignore-pattern configuration for file traversal tools
+      (search, list).
   """
 
   content_display: ContentDisplayConfig = field(default_factory=ContentDisplayConfig)
+  ignore: IgnoreConfig = field(default_factory=IgnoreConfig)
 
 
 DirectoriesConfig = "dict[str, str] | tuple[str, ...]"
@@ -1129,6 +1170,7 @@ __all__ = [
   "WebSearchToolConfig",
   "WebFetchToolConfig",
   "ContentDisplayConfig",
+  "IgnoreConfig",
   "SkillToolConfig",
   "ToolsConfig",
   "AgentsConfig",

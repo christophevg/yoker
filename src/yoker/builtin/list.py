@@ -18,6 +18,7 @@ from yoker.config import ListToolConfig
 from yoker.tools.annotations import Path as PathArg
 from yoker.tools.annotations import Text
 from yoker.tools.context import ToolContext
+from yoker.tools.ignore import IgnoreMatcher
 from yoker.tools.schema import ToolResult
 
 logger = get_logger(__name__)
@@ -34,11 +35,14 @@ async def list(
   max_depth: int | None = None,  # None means use config default
   max_entries: int | None = None,  # None means use config default
   pattern: Annotated[str, Text('Optional glob pattern to filter entries (e.g., "*.py")')] = "",
+  include_ignored: bool = False,
 ) -> ToolResult:
   """List files and directories.
 
   Supports optional recursion, entry limits, and glob pattern filtering.
   Configuration defaults come from ctx.config (ListToolConfig).
+  Files/directories matching ignore patterns (.gitignore, skip_dirs,
+  dotfiles) are excluded by default. Use include_ignored=True to show them.
 
   Args:
     path: Path to the directory to list.
@@ -46,6 +50,8 @@ async def list(
     max_depth: Maximum directory depth (None = use config default, 1 = root only).
     max_entries: Maximum entries to return (None = use config default).
     pattern: Optional glob pattern to filter entries.
+    include_ignored: Include files/directories that match ignore patterns
+      (.gitignore, skip_dirs, dotfiles). Default False.
 
   Returns:
     ToolResult with directory listing.
@@ -84,8 +90,30 @@ async def list(
         result=f"{resolved.name}\n\n1 entry total (1 file, 0 directories)",
       )
 
+    # Build ignore matcher from shared config
+    ignore_cfg = ctx.shared.ignore if ctx.shared else None
+    try:
+      if include_ignored or ignore_cfg is None:
+        matcher = IgnoreMatcher(
+          resolved,
+          ignore_files=(),
+          skip_dirs=(),
+          skip_dotfiles=False,
+          respect_ignore_files=False,
+        )
+      else:
+        matcher = IgnoreMatcher(
+          resolved,
+          ignore_files=ignore_cfg.ignore_files,
+          skip_dirs=ignore_cfg.skip_dirs,
+          skip_dotfiles=ignore_cfg.skip_dotfiles,
+          respect_ignore_files=ignore_cfg.respect_ignore_files,
+        )
+    except (PermissionError, OSError):
+      matcher = None
+
     lines, file_count, dir_count, truncated = _build_tree(
-      resolved, effective_max_depth, effective_max_entries, pattern
+      resolved, effective_max_depth, effective_max_entries, pattern, matcher
     )
 
     total = file_count + dir_count
@@ -98,6 +126,7 @@ async def list(
   except PermissionError:
     return ToolResult(success=False, error=f"Permission denied: {path}")
   except Exception as e:
+    logger.error("list_error", error=str(e))
     return ToolResult(success=False, error=f"Error listing directory: {e}")
 
 
@@ -111,6 +140,7 @@ def _build_tree(
   max_depth: int,
   max_entries: int,
   pattern: str,
+  matcher: IgnoreMatcher | None = None,
 ) -> tuple[builtins.list[str], int, int, int]:
   """Build tree listing.
 
@@ -143,13 +173,20 @@ def _build_tree(
         truncated += 1
         continue
 
+      is_dir = entry.is_dir() and not entry.is_symlink()
+
+      # Apply ignore filtering
+      if matcher is not None:
+        if matcher.should_ignore_path(entry, is_dir=is_dir):
+          continue
+
       if entry.is_symlink():
         lines.append(prefix + entry.name)
         file_count += 1
         entry_count += 1
         continue
 
-      if entry.is_dir():
+      if is_dir:
         lines.append(prefix + entry.name + "/")
         dir_count += 1
         entry_count += 1

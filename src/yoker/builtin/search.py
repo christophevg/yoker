@@ -20,6 +20,7 @@ from yoker.config import SearchToolConfig
 from yoker.tools.annotations import Path as PathArg
 from yoker.tools.annotations import Text
 from yoker.tools.context import ToolContext
+from yoker.tools.ignore import IgnoreMatcher
 from yoker.tools.schema import ToolResult
 
 logger = get_logger(__name__)
@@ -36,7 +37,8 @@ FORBIDDEN_PATTERNS: tuple[str, ...] = (
   r"\([^)]*\|[^)]*\)[+*]",
 )
 
-SKIP_DIRS: frozenset[str] = frozenset(
+# Fallback skip dirs when no IgnoreMatcher is provided (backward compat)
+_FALLBACK_SKIP_DIRS: frozenset[str] = frozenset(
   {
     ".git",
     "__pycache__",
@@ -50,7 +52,6 @@ SKIP_DIRS: frozenset[str] = frozenset(
     "htmlcov",
     ".tox",
     ".eggs",
-    "*.egg-info",
   }
 )
 
@@ -80,6 +81,7 @@ async def search(
   include_pattern: str = "",
   exclude_pattern: str = "",
   count_only: bool = False,
+  include_ignored: bool = False,
 ) -> ToolResult:
   """Search for patterns in files.
 
@@ -99,6 +101,8 @@ async def search(
     include_pattern: Glob filter for files to search (empty = no filter).
     exclude_pattern: Glob filter for files to skip (empty = no filter).
     count_only: Return per-file counts only, no matched content (content search only).
+    include_ignored: Include files/directories that match ignore patterns
+      (.gitignore, skip_dirs, dotfiles). Default False.
 
   Returns:
     ToolResult with search results. When any enhanced parameter is non-default,
@@ -177,6 +181,28 @@ async def search(
   except Exception as e:
     return ToolResult(success=False, error=f"Invalid path: {e}")
 
+  # Build ignore matcher from shared config
+  ignore_cfg = ctx.shared.ignore if ctx.shared else None
+  try:
+    if include_ignored or ignore_cfg is None:
+      matcher = IgnoreMatcher(
+        resolved,
+        ignore_files=(),
+        skip_dirs=(),
+        skip_dotfiles=False,
+        respect_ignore_files=False,
+      )
+    else:
+      matcher = IgnoreMatcher(
+        resolved,
+        ignore_files=ignore_cfg.ignore_files,
+        skip_dirs=ignore_cfg.skip_dirs,
+        skip_dotfiles=ignore_cfg.skip_dotfiles,
+        respect_ignore_files=ignore_cfg.respect_ignore_files,
+      )
+  except (PermissionError, OSError):
+    matcher = None
+
   try:
     if search_type == "content":
       matches, total, truncated, files_searched, counts = _search_content(
@@ -190,6 +216,7 @@ async def search(
         include_pattern=include_pattern,
         exclude_pattern=exclude_pattern,
         count_only=effective_count_only,
+        matcher=matcher,
       )
       if effective_count_only:
         result = {
@@ -215,6 +242,7 @@ async def search(
         case_insensitive=effective_case_insensitive,
         include_pattern=include_pattern,
         exclude_pattern=exclude_pattern,
+        matcher=matcher,
       )
       result = {
         "success": True,
@@ -278,22 +306,39 @@ def _walk_files(
   root: Path,
   include_pattern: str = "",
   exclude_pattern: str = "",
+  matcher: IgnoreMatcher | None = None,
 ) -> Iterator[Path]:
   """Walk directory tree, yielding files, applying optional glob filters on filename.
 
   If ``root`` is a file (not a directory), yields just that file (ignoring
   include/exclude patterns, since the caller explicitly chose this file).
+  When ``matcher`` is provided, directories and files matching ignore
+  patterns are pruned.
   """
   if root.is_file():
     yield root
     return
 
   for dirpath, dirnames, filenames in os.walk(root):
-    dirnames[:] = [d for d in dirnames if not d.startswith(".") and d not in SKIP_DIRS]
+    if matcher is not None:
+      # Prune ignored directories in-place
+      dirnames[:] = [
+        d
+        for d in dirnames
+        if not matcher.should_skip_dir(d)
+        and not matcher.should_ignore_path(Path(dirpath) / d, is_dir=True)
+      ]
+    else:
+      dirnames[:] = [d for d in dirnames if not d.startswith(".") and d not in _FALLBACK_SKIP_DIRS]
 
     for filename in filenames:
-      if filename.startswith("."):
-        continue
+      if matcher is not None:
+        file_path = Path(dirpath) / filename
+        if matcher.should_ignore_path(file_path, is_dir=False):
+          continue
+      else:
+        if filename.startswith("."):
+          continue
       if include_pattern and not fnmatch.fnmatchcase(filename, include_pattern):
         continue
       if exclude_pattern and fnmatch.fnmatchcase(filename, exclude_pattern):
@@ -325,6 +370,7 @@ def _search_content(
   include_pattern: str = "",
   exclude_pattern: str = "",
   count_only: bool = False,
+  matcher: IgnoreMatcher | None = None,
 ) -> tuple[list[dict[str, Any]], int, bool, int, dict[str, int]]:
   """Search file contents using regex."""
   matches: list[dict[str, Any]] = []
@@ -340,7 +386,7 @@ def _search_content(
   timeout_seconds = timeout_ms / 1000.0
   collect_context = (context_before > 0 or context_after > 0) and not count_only
 
-  for file_path in _walk_files(root, include_pattern, exclude_pattern):
+  for file_path in _walk_files(root, include_pattern, exclude_pattern, matcher=matcher):
     if time.monotonic() - start_time > timeout_seconds:
       truncated = True
       break
@@ -394,6 +440,7 @@ def _search_filename(
   case_insensitive: bool = False,
   include_pattern: str = "",
   exclude_pattern: str = "",
+  matcher: IgnoreMatcher | None = None,
 ) -> tuple[list[dict[str, Any]], int, bool]:
   """Search file names using glob pattern."""
   matches: list[dict[str, Any]] = []
@@ -402,7 +449,7 @@ def _search_filename(
 
   pattern_lower = pattern.lower() if case_insensitive else None
 
-  for file_path in _walk_files(root, include_pattern, exclude_pattern):
+  for file_path in _walk_files(root, include_pattern, exclude_pattern, matcher=matcher):
     name = file_path.name
     if pattern_lower is not None:
       matched = fnmatch.fnmatch(name.lower(), pattern_lower)
