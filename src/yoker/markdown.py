@@ -130,7 +130,7 @@ class MarkdownStreamer:
     # strip leading newlines and all trailing whitespace
     rendered_output = capture.get().lstrip("\n").rstrip()
     if rendered_output:
-      self.console.print(rendered_output)
+      print(rendered_output, file=self.console.file)
       self.previous = True
     else:
       self.previous = False
