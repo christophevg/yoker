@@ -24,10 +24,11 @@ from prompt_toolkit.key_binding import KeyBindings, KeyPressEvent
 from prompt_toolkit.shortcuts import PromptSession
 from pyfiglet import Figlet
 from rich import box
-from rich.console import Console
+from rich.console import Console, Group
 from rich.panel import Panel
 from rich.status import Status
 from rich.style import Style
+from rich.text import Text
 from rich.theme import Theme
 
 from yoker import __version__
@@ -603,8 +604,9 @@ class InteractiveUIHandler(UIHandler):
   async def confirm_approval(self, label: str, preview: str, kind: str = "file") -> bool:
     """Ask the user to approve a protected operation.
 
-    Renders a preview (unified diff for file writes, command preview for
-    git operations) with the colored diff renderer, then prompts y/N.
+    Renders a single Rich Panel containing the operation header and preview
+    (unified diff for file writes, command preview for git operations) with
+    colored diff lines, then prompts y/N below the panel.
     An empty response (Enter) or EOF counts as denial (fail-safe).
     ``Ctrl+C`` is caught and treated as denial so the turn resumes instead
     of crashing the session. The y/N prompt is NOT erased after submit
@@ -624,21 +626,21 @@ class InteractiveUIHandler(UIHandler):
     if kind == "git":
       title = "Git operation"
       prompt_label = label
-      panel_text = f"Agent wants to run [bold]{label}[/bold]"
+      header_text = f"Agent wants to run [bold]{label}[/bold]"
     else:
       title = "Protected file"
       prompt_label = Path(label).name
-      panel_text = f"Agent wants to modify [bold]{label}[/bold]"
+      header_text = f"Agent wants to modify [bold]{label}[/bold]"
+    # Build a single Panel containing the header and the preview content so
+    # the user sees the full approval context as one visual unit.
+    preview_renderable = self._build_preview_text(preview, prompt_label)
     self.console.print(
       Panel(
-        panel_text,
+        Group(Text.from_markup(header_text), Text(""), preview_renderable),
         title=title,
         style=TOOL_STYLE,
       )
     )
-    # Reuse the colored diff renderer. Synthesize a minimal metadata dict
-    # so _show_diff_content's truncation branch is not triggered.
-    self._show_diff_content(preview, prompt_label, "approve", metadata={})
     session = self._get_or_create_session()
     try:
       answer = await session.prompt_async(
@@ -951,6 +953,44 @@ class InteractiveUIHandler(UIHandler):
       original_lines = metadata.get("original_line_count", 0)
       remaining = original_lines - len(lines)
       self.console.print(f"  ... ({remaining} more lines)")
+  def _build_preview_text(self, content: str | None, filename: str) -> Text:
+    """Build a Rich Text renderable from preview content with diff coloring.
+
+    Applies the same line-by-line coloring as ``_show_diff_content`` but
+    returns a :class:`rich.text.Text` instead of printing directly, so the
+    result can be composed inside a :class:`rich.panel.Panel`.
+
+    Args:
+      content: Preview text (unified diff for file writes, plain text for
+        git operations). ``None`` produces a minimal placeholder.
+      filename: Basename shown as a leading label line.
+
+    Returns:
+      A ``Text`` renderable with colored diff/preview lines.
+    """
+    text = Text()
+    text.append(f"  {filename}\n")
+
+    if content is None:
+      return text
+
+    for line in content.splitlines():
+      if line.startswith("--- ") or line.startswith("+++ "):
+        continue
+      if line.startswith("diff --"):
+        continue
+
+      if line.startswith("@@"):
+        text.append(f"  {line}\n", style="cyan")
+      elif line.startswith("-"):
+        text.append(f"  {line}\n", style="red")
+      elif line.startswith("+"):
+        text.append(f"  {line}\n", style="green")
+      else:
+        text.append(f"  {line}\n")
+
+    return text
+
 
   def _show_diff_content(
     self,
