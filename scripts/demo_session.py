@@ -259,10 +259,8 @@ async def run_demo_session(
   )
   agent.on_event(bridge)
 
-  # Show agent info if loaded
-  ui.console.print(f"Loaded agent: {agent.definition.name}")
-  ui.console.print(f"  Description: {agent.definition.description}")
-  ui.console.print()
+  # Show the full MOTD banner (same as interactive chat sessions)
+  await ui.start(agent)
 
   # Show session info
   if context_manager:
