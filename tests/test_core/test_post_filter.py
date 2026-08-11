@@ -236,15 +236,23 @@ class TestPostFilterExecution:
     """post_filter IS applied to error results (e.g. make tool failures).
 
     Tools like make put combined stdout+stderr in the error field on failure.
-    The LLM needs to filter this to find relevant lines.
+    The LLM needs to filter this to find relevant lines. Only errors with
+    more than 3 lines are filtered — short tool-level diagnostics are
+    preserved in full.
     """
     from yoker.core._processing import _execute_tool
 
     async def my_tool() -> ToolResult:
-      """Return an error with multiple lines."""
+      """Return an error with multiple lines (like make tool output)."""
       return ToolResult(
         success=False,
-        error="line1: error something\nline2: all good\nline3: FAIL here",
+        error=(
+          "line1: error something\n"
+          "line2: all good\n"
+          "line3: FAIL here\n"
+          "line4: more output\n"
+          "line5: another line"
+        ),
       )
 
     spec = build_tool_spec(my_tool)
@@ -672,14 +680,15 @@ class TestApplyPostFilter:
     """post_filter filters the error field on failure results.
 
     Tools like make put combined stdout+stderr in error on failure.
-    The LLM needs to grep through this to find relevant lines.
+    The LLM needs to grep through this to find relevant lines. Only errors
+    with more than 3 lines are filtered (short diagnostics preserved).
     """
     from yoker.core._processing import _apply_post_filter
 
     result = ToolResult(
       success=False,
       result="",
-      error="line1: error\nline2: ok\nline3: FAIL",
+      error=("line1: error\nline2: ok\nline3: FAIL\nline4: more\nline5: extra"),
     )
     filtered = _apply_post_filter(result, "error|FAIL")
     assert not filtered.success
@@ -688,6 +697,26 @@ class TestApplyPostFilter:
     assert "line2: ok" not in (filtered.error or "")
     assert "[post_filter:" in (filtered.error or "")
 
+  def test_filter_short_error_field_preserved(self) -> None:
+    """post_filter does NOT filter short error messages (≤ 3 lines).
+
+    Tool-level diagnostics like "Agent not found: X. Available agents: ..."
+    are short structured messages the LLM must see in full. Filtering them
+    would strip the entire message, leaving an empty error.
+    """
+    from yoker.core._processing import _apply_post_filter
+
+    result = ToolResult(
+      success=False,
+      result="",
+      error="Agent not found: skill-adapter. Available agents: c3:api-architect, c3:bug-fixer",
+    )
+    filtered = _apply_post_filter(result, "updated|Error|error")
+    assert not filtered.success
+    # Error should be preserved unchanged — no filtering, no summary line
+    assert filtered.error == result.error
+    assert "[post_filter:" not in (filtered.error or "")
+
   def test_filter_both_result_and_error(self) -> None:
     """post_filter filters both result and error fields when both are strings."""
     from yoker.core._processing import _apply_post_filter
@@ -695,7 +724,7 @@ class TestApplyPostFilter:
     result = ToolResult(
       success=False,
       result="FAIL: result line\nok: result line",
-      error="FAIL: error line\nok: error line",
+      error=("FAIL: error line\nok: error line\nline3: more\nline4: extra"),
     )
     filtered = _apply_post_filter(result, "FAIL")
     assert "FAIL: result line" in filtered.result
@@ -714,7 +743,7 @@ class TestApplyPostFilter:
         "stdout": "error: stdout line\nok: stdout line",
         "stderr": "...",
       },
-      error="line1: error\nline2: ok",
+      error="line1: error\nline2: ok\nline3: more\nline4: extra",
     )
     filtered = _apply_post_filter(result, "error")
     # Dict result remains a dict, with stdout filtered

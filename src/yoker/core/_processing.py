@@ -1136,10 +1136,15 @@ def _apply_post_filter(result: ToolResult, pattern: str) -> ToolResult:
     changed = False
 
   # Filter the error field if it's a string (failure case — e.g. make tool
-  # puts combined stdout+stderr in error on failure)
+  # puts combined stdout+stderr in error on failure). Short error messages
+  # (≤ 3 lines) are tool-level diagnostics (e.g. "Agent not found: X.
+  # Available agents: ...") that the LLM must see in full — skip filtering
+  # to avoid stripping them to an empty string.
   if isinstance(new_error, str) and new_error:
-    new_error, error_changed = _filter_lines(new_error, regex, pattern)
-    changed = changed or error_changed
+    error_lines = len(new_error.splitlines())
+    if error_lines > 3:
+      new_error, error_changed = _filter_lines(new_error, regex, pattern)
+      changed = changed or error_changed
 
   # Sync content_metadata.content with the filtered result.
   # When result.result is a string and content_metadata.content is the same

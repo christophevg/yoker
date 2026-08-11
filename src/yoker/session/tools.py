@@ -125,8 +125,13 @@ def make_spawn_agent_tool(session: "Session", requester: "Agent") -> Any:
     except ValueError as e:
       # Allowlist rejection, unknown agent, depth/capacity violation.
       logger.warning("spawn_agent rejected", agent_name=agent_name, error=str(e))
-      hint = ", ".join(available) if available else "(none allowed)"
-      return ToolResult(success=False, error=f"{e}. Available agents: {hint}")
+      # Show all registered agent names so the LLM can self-correct.
+      registry_names = sorted(session.agents.names) if session.agents else []
+      hint = ", ".join(registry_names) if registry_names else "(none registered)"
+      return ToolResult(
+        success=False,
+        error=f"{e}. Available agents: {hint}",
+      )
     except Exception as e:
       logger.error("spawn_agent error", agent_name=agent_name, error=str(e))
       return ToolResult(success=False, error=f"Sub-agent error: {e}")
