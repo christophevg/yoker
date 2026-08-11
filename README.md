@@ -9,7 +9,7 @@
 [![License](https://img.shields.io/github/license/christophevg/yoker.svg)][license]
 [![Agentic](https://img.shields.io/badge/workflow-agentic-blueviolet?style=flat-square)](https://christophe.vg/about/Agentic-Workflow)
 
-A Python agent harness with configurable tools, guardrails, and multi-provider LLM backend integration.
+A Python-first agent harness framework with configurable tools, guardrails, and multi-provider LLM backend integration.
 
 ## Installation
 

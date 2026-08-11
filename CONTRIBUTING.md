@@ -6,8 +6,7 @@ submitting pull requests.
 
 ## Project Overview
 
-Yoker is a Python agent harness with configurable tools, guardrails, and
-multi-provider LLM backend integration. It lets developers enhance existing
+Yoker is a Python-first agent harness framework with configurable tools, guardrails, and multi-provider LLM backend integration. It lets developers enhance existing
 Python code with LLM-powered features without needing to build the underlying
 agent infrastructure.
 

@@ -1,6 +1,6 @@
 # Yoker
 
-> A Python agent harness with configurable tools and guardrails — one who yokes agents together.
+> A Python-first agent harness framework — one who yokes agents together.
 
 ## Overview
 

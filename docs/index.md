@@ -1,6 +1,6 @@
 # Yoker Documentation
 
-A Python agent harness with configurable tools, guardrails, and multi-provider LLM backend integration.
+A Python-first agent harness framework with configurable tools, guardrails, and multi-provider LLM backend integration.
 
 ## Why Yoker?
 

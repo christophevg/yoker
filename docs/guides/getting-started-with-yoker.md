@@ -10,7 +10,7 @@ explains it in plain terms and gets you through the one-time setup.
 
 ## What Yoker is
 
-Yoker is a **provider-neutral AI backend** for running agentic workflows. It is
+Yoker is a **Python-first agent harness framework** for running agentic workflows. It is
 the layer that sits between the app you are using and the language model that
 powers it. Instead of each app building its own agent plumbing, they all share
 Yoker.

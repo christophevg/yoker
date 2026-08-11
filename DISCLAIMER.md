@@ -2,7 +2,7 @@
 
 ## What Yoker Is
 
-Yoker is a **Python agent harness** — a library and CLI tool that lets you
+Yoker is a **Python-first agent harness framework** — a library and CLI tool that lets you
 embed LLM-powered agents into your Python applications. It provides the
 infrastructure: tool calling, guardrails, multi-provider backend integration,
 context management, and session orchestration. You bring the LLM; Yoker
