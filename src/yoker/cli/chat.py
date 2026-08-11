@@ -18,7 +18,7 @@ from structlog import get_logger
 from yoker.bootstrap import BootstrapResult, BootstrapWizard, config_provided
 from yoker.bootstrap.steps import DOCS_HOME_URL
 from yoker.cli.commands import ChatConfig
-from yoker.cli.shared import abort, load_subcommand_config
+from yoker.cli.shared import abort, check_enabled, load_subcommand_config
 from yoker.config import Config
 from yoker.core import Agent
 from yoker.exceptions import NetworkError, YokerError
@@ -77,6 +77,8 @@ def run_chat(plugin_packages: list[str]) -> None:
     config = load_subcommand_config(ChatConfig)
   except (ValueError, SecurityError) as e:
     abort(f"Error: {e}\n", 1)
+
+  check_enabled(config)
 
   CONSOLE_LOGGING = os.environ.get("YOKER_CONSOLE_LOGGING", "NO") != "NO"
   configure_logging(config.logging, console=CONSOLE_LOGGING)

@@ -48,6 +48,7 @@ class TestConfigSchema:
   def test_config_defaults(self) -> None:
     """Test Config default values."""
     config = Config()
+    assert config.enabled is False
     assert config.harness.name == "yoker"
     assert config.backend.provider == "ollama"
     assert config.backend.ollama.model == "qwen3.5:cloud"

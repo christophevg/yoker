@@ -6,6 +6,7 @@ Asynchronous Agent implementation for Yoker.
 
 import asyncio
 import inspect
+import os
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -27,7 +28,7 @@ from yoker.core._processing import process_message
 from yoker.core._setup import create_web_guardrails
 from yoker.core.thinking import ThinkingMode
 from yoker.events import EventCallback
-from yoker.exceptions import SkillError
+from yoker.exceptions import ConfigurationError, SkillError
 from yoker.logging import configure_logging
 from yoker.plugins import load_plugins, warn_plugins_disabled
 from yoker.skills import SkillRegistry, load_skills
@@ -83,6 +84,21 @@ class Agent:
 
     # adopt config or load yoker configuration
     self.config: Config = config if config else get_yoker_config(cli=parse_cli_args)
+
+    # master switch: refuse to run unless the user has explicitly enabled Yoker.
+    # Bypassed in dev/test mode (YOKER_DEV_MODE=1 or running under pytest),
+    # mirroring the security-bypass pattern in get_yoker_config.
+    _dev_mode = os.environ.get("YOKER_DEV_MODE") == "1" or bool(
+      os.environ.get("PYTEST_CURRENT_TEST")
+    )
+    if not self.config.enabled and not _dev_mode:
+      raise ConfigurationError(
+        "enabled",
+        "true",
+        "Yoker is not enabled. Set enabled = true in your config "
+        "(~/.yoker.toml or ./yoker.toml) to acknowledge the risks of running "
+        "an LLM-powered agent with filesystem, network, and code-execution tools.",
+      )
 
     # with config available, configure logging (will be skipped if already done)
     configure_logging(self.config.logging, console=console_logging)

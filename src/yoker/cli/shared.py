@@ -141,6 +141,44 @@ def load_subcommand_config_with_manifest(
   return from_dict(data_class=config_class, data=cfg, config=DaciteConfig(cast=[tuple, set]))
 
 
+def check_enabled(config: Any) -> None:
+  """Abort if Yoker is not explicitly enabled in the config.
+
+  The ``enabled`` field on :class:`~yoker.config.Config` defaults to ``False``.
+  The user must manually set ``enabled = true`` in their config file to
+  acknowledge the risks of running an LLM-powered agent. This function is the
+  gate: it calls :func:`abort` with a clear disclaimer message when the switch
+  is off.
+
+  Bypassed in dev/test mode (``YOKER_DEV_MODE=1`` or running under pytest),
+  mirroring the security-bypass pattern in :func:`get_yoker_config`.
+
+  Args:
+    config: A config object (anything with an ``enabled`` attribute, typically
+      a :class:`~yoker.config.Config` or subclass).
+  """
+  if getattr(config, "enabled", False):
+    return
+  if os.environ.get("YOKER_DEV_MODE") == "1" or os.environ.get("PYTEST_CURRENT_TEST"):
+    return
+  abort(
+    "Yoker is not enabled.\n"
+    "\n"
+    "Yoker gives an LLM agent access to your filesystem, network, and\n"
+    "code-execution tools. This carries real risks — the agent can read,\n"
+    "write, and modify files, run commands, and make network requests.\n"
+    "\n"
+    "To acknowledge these risks and enable Yoker, add this to your config\n"
+    "(~/.yoker.toml or ./yoker.toml):\n"
+    "\n"
+    "  enabled = true\n"
+    "\n"
+    "If you have not yet created a config file, run `yoker init` first,\n"
+    "then edit the generated file to set enabled = true.\n",
+    1,
+  )
+
+
 def abort(msg: str, code: int) -> None:
   """Write ``msg`` to stderr and exit with ``code``.
 
@@ -252,6 +290,7 @@ def resolve_agent_and_prompt(
 __all__ = [
   "MAX_PROMPT_BYTES",
   "abort",
+  "check_enabled",
   "get_security_config",
   "load_subcommand_config",
   "load_subcommand_config_with_manifest",

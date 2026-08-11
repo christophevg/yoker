@@ -36,6 +36,7 @@ from yoker.cli.commands import RunConfig
 from yoker.cli.shared import (
   MAX_PROMPT_BYTES,
   abort,
+  check_enabled,
   load_subcommand_config,
   load_subcommand_config_with_manifest,
   parse_run_overrides,
@@ -67,6 +68,8 @@ def run_run(plugin_packages: list[str]) -> None:
     config = load_subcommand_config(RunConfig)
   except (ValueError, SecurityError) as e:
     abort(f"Error: {e}\n", 1)
+
+  check_enabled(config)
 
   if not config.source:
     abort("Error: yoker run requires a source. Usage: yoker run <source>\n", 1)

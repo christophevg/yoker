@@ -63,13 +63,26 @@ class TestRenderBasics:
       assert lines[i - 1] == "", f"expected blank line before header at line {i}"
 
   def test_render_first_header_has_no_leading_blank(self) -> None:
-    """The very first table header is at the top of the document (no leading blank)."""
+    """The document starts with content (no leading blank line).
+
+    Top-level scalars (enabled, agent) appear before the first table header,
+    so the first line is a key=value, not a [header]. The point is that there
+    is no blank line at the very top.
+    """
     toml_text = render_config_toml(Config())
-    assert toml_text.startswith("[")
+    assert not toml_text.startswith("\n")
+    assert toml_text.startswith(("enabled", "agent", "["))
 
 
 class TestAnnotationDrivenComments:
   """Inline comments come from field metadata, not writer hardcoding."""
+
+  def test_help_comment_appears_for_enabled(self) -> None:
+    """The enabled field's help annotation must surface as an inline comment."""
+    toml_text = render_config_toml(Config())
+    enabled_line = next(line for line in toml_text.splitlines() if line.startswith("enabled ="))
+    assert "enabled = false" in enabled_line
+    assert "# Master switch" in enabled_line or "# master switch" in enabled_line.lower()
 
   def test_help_comment_appears_for_model(self) -> None:
     toml_text = render_config_toml(Config())

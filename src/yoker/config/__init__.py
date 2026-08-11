@@ -6,6 +6,12 @@ Uses Clevis for configuration management with:
   - Config file discovery (~/.yoker.toml, ./yoker.toml)
   - Layered merging (env interpolation > CLI args > project config > user config)
 
+Master Switch:
+    The ``enabled`` field on :class:`Config` defaults to ``False``. The user
+    must explicitly set ``enabled = true`` in their config file to acknowledge
+    the risks of running an LLM-powered agent with filesystem, network, and
+    code-execution tools. Without this, Yoker refuses to run.
+
 Example:
     from yoker.config import Config, get_yoker_config
 
@@ -1052,6 +1058,10 @@ class Config:
   """Root configuration container.
 
   Attributes:
+    enabled: Master switch. When ``False`` (the default), Yoker refuses to
+      run. The user must explicitly set ``enabled = true`` in their config
+      file to acknowledge the risks of running an LLM-powered agent with
+      filesystem, network, and code-execution tools.
     agent : the agent to use.
     harness: Harness metadata.
     backend: Backend provider configuration.
@@ -1065,6 +1075,16 @@ class Config:
     ui: UI layer configuration.
     session: Session configuration.
   """
+
+  enabled: bool = field(
+    default=False,
+    metadata={
+      "help": (
+        "Master switch — set to true to acknowledge the risks of running "
+        "an LLM-powered agent with filesystem, network, and code-execution tools"
+      ),
+    },
+  )
 
   agent: str | None = None
 

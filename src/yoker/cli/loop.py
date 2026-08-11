@@ -45,6 +45,7 @@ from yoker.cli.commands import LoopConfig
 from yoker.cli.shared import (
   MAX_PROMPT_BYTES,
   abort,
+  check_enabled,
   load_subcommand_config,
   load_subcommand_config_with_manifest,
   parse_run_overrides,
@@ -79,6 +80,8 @@ def run_loop(plugin_packages: list[str]) -> None:
     config = load_subcommand_config(LoopConfig)
   except (ValueError, SecurityError) as e:
     abort(f"Error: {e}\n", 1)
+
+  check_enabled(config)
 
   if not config.source:
     abort("Error: yoker loop requires a source. Usage: yoker loop <source>\n", 1)

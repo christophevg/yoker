@@ -54,7 +54,7 @@ class TestLiveBugReportScenarios:
 
   def test_garbage_json_returns_descriptive_error(self):
     """Completely unparseable JSON gets a descriptive parse_error."""
-    garbage = '{broken json !!!'
+    garbage = "{broken json !!!"
     tc = _build_tool_call({"id": "call_3", "name": "update", "arguments_json": garbage})
 
     assert tc.parse_error is not None
@@ -63,12 +63,14 @@ class TestLiveBugReportScenarios:
 
   def test_valid_json_with_unicode_preserved(self):
     """Valid JSON with ⏺ character passes through unchanged."""
-    valid_with_unicode = json.dumps({
-      "path": "/tmp/test.py",
-      "operation": "replace",
-      "old_string": "⏺ [10:44:18] old line",
-      "new_string": "⏺ [10:44:18] new line",
-    })
+    valid_with_unicode = json.dumps(
+      {
+        "path": "/tmp/test.py",
+        "operation": "replace",
+        "old_string": "⏺ [10:44:18] old line",
+        "new_string": "⏺ [10:44:18] new line",
+      }
+    )
     tc = _build_tool_call({"id": "call_4", "name": "update", "arguments_json": valid_with_unicode})
 
     assert tc.parse_error is None
@@ -121,4 +123,3 @@ class TestLiveBugReportScenarios:
 
     assert tc.parse_error is None
     assert tc.function.arguments["operation"] == "replace"
-

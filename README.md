@@ -201,6 +201,19 @@ Key flags:
 Written files always have `chmod 600` permissions. The `--path` flag rejects
 forbidden system prefixes (e.g. `/etc`, `/usr`).
 
+#### Master Switch: `enabled`
+
+Yoker gives an LLM agent access to your filesystem, network, and
+code-execution tools. This carries real risks. To acknowledge these risks and
+enable Yoker, set `enabled = true` in your config:
+
+```toml
+enabled = true  # Master switch — set to true to acknowledge the risks
+```
+
+Without this, Yoker refuses to run. The default `yoker init` output writes
+`enabled = false`; you must manually change it to `true`.
+
 ### `yoker config` — Display Effective Configuration
 
 Loads the merged config (user TOML + project TOML + CLI args) and prints it.

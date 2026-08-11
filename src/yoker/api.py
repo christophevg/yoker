@@ -20,6 +20,7 @@ notebooks, REPLs). It is the only sync entry point — there are no per-call
 from __future__ import annotations
 
 import asyncio
+import os
 from collections.abc import AsyncIterator, Coroutine
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -38,6 +39,7 @@ from yoker.context import ContextManager
 from yoker.core import Agent
 from yoker.core.thinking import ThinkingMode
 from yoker.events import EventCallback
+from yoker.exceptions import ConfigurationError
 from yoker.session import Session
 
 _T = TypeVar("_T")
@@ -50,6 +52,32 @@ _THINKING_MAP: dict[str, ThinkingMode] = {
   "off": ThinkingMode.OFF,
   "silent": ThinkingMode.SILENT,
 }
+
+_ENABLED_DISCLAIMER = (
+  "Yoker is not enabled. Set enabled = true in your config "
+  "(~/.yoker.toml or ./yoker.toml) to acknowledge the risks of running "
+  "an LLM-powered agent with filesystem, network, and code-execution tools."
+)
+
+
+def _check_enabled(config: Config | None) -> None:
+  """Raise ConfigurationError if Yoker is not explicitly enabled.
+
+  When ``config`` is None the check is deferred — the Agent constructor will
+  load config from the filesystem and the gate will fire there if needed.
+  When ``config`` is provided, check immediately so the error surfaces before
+  any agent construction begins.
+
+  Bypassed in dev/test mode (``YOKER_DEV_MODE=1`` or running under pytest),
+  mirroring the security-bypass pattern in :func:`get_yoker_config`.
+  """
+  if config is None:
+    return
+  if config.enabled:
+    return
+  if os.environ.get("YOKER_DEV_MODE") == "1" or os.environ.get("PYTEST_CURRENT_TEST"):
+    return
+  raise ConfigurationError("enabled", "true", _ENABLED_DISCLAIMER)
 
 
 def run_sync(coro: Coroutine[Any, Any, _T]) -> _T:
@@ -108,6 +136,9 @@ def _build_config_and_definition(
     base = Config()
   else:
     base = None
+
+  # gate: when an explicit config was provided, check the master switch early
+  _check_enabled(base)
 
   # apply model / provider overrides
   if (model is not None or provider is not None) and base is not None:
