@@ -248,6 +248,55 @@ class TestOllamaBackend:
       assert events[4].event == ChatChunkEvent.DONE
 
   @pytest.mark.asyncio
+  async def test_chat_stream_tool_call_with_string_arguments(self):
+    """OllamaBackend passes through string arguments without double-encoding.
+
+    Some cloud models may return tool call arguments as a JSON string
+    instead of a dict. The backend should pass it through as-is rather
+    than calling json.dumps on it (which would double-encode).
+    """
+    from ollama import AsyncClient
+
+    tool_call = MockToolCall(
+      id="call_456",
+      function=MockToolCallFunction(
+        name="get_weather",
+        arguments='{"location": "Paris"}',
+      ),
+    )
+
+    chunks = [
+      MockChunk(message=MockMessage(tool_calls=[tool_call])),
+      MockChunk(
+        message=MockMessage(),
+        done=True,
+        prompt_eval_count=5,
+        eval_count=1,
+        total_duration=20_000_000,
+      ),
+    ]
+
+    mock_client = AsyncMock(spec=AsyncClient)
+    mock_client.chat = AsyncMock(return_value=_async_iter(chunks))
+
+    config = _create_mock_config()
+
+    with patch("yoker.backends.ollama.AsyncClient", return_value=mock_client):
+      backend = OllamaBackend(config)
+
+      events = []
+      async for chunk in backend.chat_stream(
+        model="test-model",
+        messages=[{"role": "user", "content": "Weather?"}],
+        tools=[{"type": "function", "function": {"name": "get_weather"}}],
+      ):
+        events.append(chunk)
+
+      # The DELTA should contain the original string, not double-encoded.
+      delta_event = next(e for e in events if e.event == ChatChunkEvent.TOOL_CALL_DELTA)
+      assert delta_event.tool_call.arguments_delta == '{"location": "Paris"}'
+
+  @pytest.mark.asyncio
   async def test_chat_stream_handles_empty_content(self):
     """OllamaBackend.chat_stream handles chunks with no content."""
     from ollama import AsyncClient

@@ -237,8 +237,14 @@ class OllamaBackend(ModelBackend):
               ),
             )
             # Emit TOOL_CALL_DELTA with full arguments (as JSON string)
-            # Ollama returns arguments as a dict, convert to JSON string
-            args_json = json.dumps(tool_call.function.arguments)
+            # Ollama normally returns arguments as a dict, but some cloud
+            # models may return a JSON string — pass it through unchanged
+            # to avoid double-encoding.
+            raw_args = tool_call.function.arguments
+            if isinstance(raw_args, str):
+              args_json = raw_args
+            else:
+              args_json = json.dumps(raw_args)
             yield ChatChunk(
               event=ChatChunkEvent.TOOL_CALL_DELTA,
               index=index,

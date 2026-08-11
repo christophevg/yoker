@@ -156,8 +156,7 @@ def _format_multiline(args: dict[str, Any], cfg: ContentDisplayConfig) -> str:
   The outer braces are omitted -- the ``(`` and ``)`` from the tool
   call line already delimit the block.
   """
-  lines = []
-  lines = []
+  lines: list[str] = []
   for k, v in args.items():
     formatted = _format_value(v, cfg)
     lines.append(f"{k}: {formatted},")

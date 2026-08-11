@@ -690,22 +690,126 @@ async def _consume_stream(
   return content, thinking, tool_calls, stats
 
 
+def _repair_json(raw: str) -> str | None:
+  """Attempt to repair common LLM JSON mistakes.
+
+  Returns the repaired JSON string if a fix was applied, or ``None`` if
+  the raw string could not be repaired.  Only safe, well-understood
+  transformations are applied — we never guess at content.
+
+  Currently handles:
+  - Literal newlines inside JSON string values (replaced with ``\\n``).
+  - Literal tab characters inside JSON string values (replaced with ``\\t``).
+  - Literal carriage returns inside JSON string values (replaced with ``\\r``).
+  """
+  # Fast path: if there are no control chars, nothing to repair.
+  if not any(c in raw for c in "\n\t\r"):
+    return None
+
+  # Walk through the string, tracking whether we are inside a JSON string.
+  # When inside a string, replace literal control chars with their escape
+  # sequences.  This is safe because:
+  # - Inside a string, a literal newline/tab/CR is always invalid JSON.
+  # - Outside a string (in the structural part), whitespace is allowed
+  #   and we leave it untouched.
+  result: list[str] = []
+  in_string = False
+  escaped = False
+  changed = False
+
+  for ch in raw:
+    if in_string:
+      if escaped:
+        result.append(ch)
+        escaped = False
+        continue
+      if ch == "\\":
+        result.append(ch)
+        escaped = True
+        continue
+      if ch == '"':
+        result.append(ch)
+        in_string = False
+        continue
+      if ch == "\n":
+        result.append("\\n")
+        changed = True
+        continue
+      if ch == "\t":
+        result.append("\\t")
+        changed = True
+        continue
+      if ch == "\r":
+        result.append("\\r")
+        changed = True
+        continue
+      result.append(ch)
+    else:
+      if ch == '"':
+        in_string = True
+      result.append(ch)
+
+  if not changed:
+    return None
+  repaired = "".join(result)
+  # Validate the repair actually produces parseable JSON.
+  try:
+    json.loads(repaired)
+  except json.JSONDecodeError:
+    return None
+  return repaired
+
+
 def _build_tool_call(buffer: dict[str, Any]) -> Any:
   """Build a tool call object from accumulated buffer data.
 
   Returns an object compatible with the existing tool execution logic,
   with .id, .function.name, and .function.arguments attributes.
+
+  When the accumulated JSON string fails to parse, a lenient repair pass
+  is attempted (fixing literal control characters inside string values).
+  If that also fails, ``arguments`` is set to an empty dict and
+  ``parse_error`` is set to a descriptive message so the execution
+  pipeline can return a meaningful error to the LLM instead of a
+  confusing "missing required argument" message.
   """
 
   class Function:
     def __init__(self, name: str, arguments: str | dict[str, Any]):
       self.name = name
+      self.parse_error: str | None = None
       # Parse arguments if it's a JSON string, otherwise use as-is
       if isinstance(arguments, str):
+        if not arguments.strip():
+          self.arguments: dict[str, Any] = {}
+          return
         try:
-          self.arguments: dict[str, Any] = json.loads(arguments)
-        except json.JSONDecodeError:
-          self.arguments = {}
+          self.arguments = json.loads(arguments)
+        except json.JSONDecodeError as exc:
+          # Attempt lenient repair for common LLM mistakes (literal
+          # newlines/tabs/CRs inside string values).
+          repaired = _repair_json(arguments)
+          if repaired is not None:
+            logger.warning(
+              "tool_call_json_repaired",
+              tool=name,
+              error=str(exc),
+              raw_len=len(arguments),
+            )
+            self.arguments = json.loads(repaired)
+          else:
+            logger.warning(
+              "tool_call_json_parse_failed",
+              tool=name,
+              error=str(exc),
+              raw_len=len(arguments),
+              raw_preview=arguments[:200],
+            )
+            self.arguments = {}
+            self.parse_error = (
+              f"Failed to parse tool arguments as JSON: {exc.msg}. "
+              f"Raw arguments (truncated): {arguments[:500]}"
+            )
       else:
         self.arguments = arguments
 
@@ -715,6 +819,7 @@ def _build_tool_call(buffer: dict[str, Any]) -> Any:
     ):
       self.id = call_id or f"call_{id(self)}"
       self.function = Function(function_name, function_args)
+      self.parse_error = self.function.parse_error
 
   return ToolCall(buffer.get("id"), buffer.get("name", ""), buffer.get("arguments_json", ""))
 
@@ -834,7 +939,16 @@ async def _execute_single_tool_call(agent: Any, call: Any) -> None:
   )
   logger.debug("tool_call", tool=tool_name, args=tool_args)
 
-  result, success, tool_result = await _run_tool(agent, tool_name, tool_args)
+  # If JSON parsing failed in _build_tool_call, return a descriptive error
+  # to the LLM so it can self-correct instead of getting a confusing
+  # "missing required argument" message.
+  parse_error = getattr(call, "parse_error", None)
+  if parse_error:
+    result = f"Error: {parse_error}"
+    success = False
+    tool_result = None
+  else:
+    result, success, tool_result = await _run_tool(agent, tool_name, tool_args)
 
   logger.debug("tool_result", tool=tool_name, success=success)
   await emit(
@@ -847,7 +961,7 @@ async def _execute_single_tool_call(agent: Any, call: Any) -> None:
     agent._event_handlers,
   )
 
-  if success and tool_result.content_metadata is not None:
+  if success and tool_result is not None and tool_result.content_metadata is not None:
     await emit(
       ToolContentEvent(
         type=EventType.TOOL_CONTENT,
