@@ -32,9 +32,7 @@ def create_context_manager(config: Config, agent_id: str) -> ContextManager:
     return SimpleContextManager()
 
   # option 2: per-agent JSONL file
-  # Sanitize agent_id: namespaced ids (e.g. "file:researcher") contain colons
-  # that validate_session_id rejects. Replace with a safe separator.
-  safe_agent_id = agent_id.replace(":", "-")
+  safe_agent_id = _sanitize_agent_id(agent_id)
   # standalone agent: no session_id
   filename = (
     safe_agent_id
@@ -55,7 +53,15 @@ def create_context_manager(config: Config, agent_id: str) -> ContextManager:
   return persisted
 
 
-def _session_file_path(config: Config, session_id: str) -> Path:
+def _sanitize_agent_id(agent_id: str) -> str:
+  """
+  Sanitize agent_id: namespaced ids (e.g. "file:researcher") contain colons
+  that validate_session_id rejects. Replace with a safe separator.
+  """
+  return agent_id.replace(":", "-")
+
+
+def _session_file_path(config: Config, session_id: str, agent_id: str) -> Path:
   """Compute the JSONL file path for a session id.
 
   Uses the same filename pattern as :func:`create_context_manager`.
@@ -64,7 +70,8 @@ def _session_file_path(config: Config, session_id: str) -> Path:
   """
   ctx = config.context
   storage_path = Path(ctx.storage_path).expanduser()
-  filename = ctx.filename.format(session_id=session_id, agent_id="primary")
+  safe_agent_id = _sanitize_agent_id(agent_id)
+  filename = ctx.filename.format(session_id=session_id, agent_id=safe_agent_id)
   return storage_path / f"{filename}.jsonl"
 
 

@@ -123,23 +123,27 @@ async def _run_with_session(
     config.context.fresh = True
   else:
     sid = None
-    config.context.fresh = False
-
-  if config.resume:
-    # Graceful abort: check that the session file exists before entering
-    # the Session context manager (which would create an empty one).
-    from yoker.context.factory import _session_file_path
-
-    if sid is not None and not _session_file_path(config, sid).exists():
-      ui.output_info(f"No session '{sid}' found. Use --session-id {sid} to start a new one.")
-      await ui.shutdown("quit")
-      return
+    config.context.fresh = True
 
   async with Session(
     config=config,
     extra_plugins=tuple(plugin_packages),
     session_id=sid,
   ) as session:
+    if config.resume:
+      # Graceful abort: check that the session file exists before entering
+      # the Session context manager (which would create an empty one).
+      from yoker.context.factory import _session_file_path
+
+      if sid is not None:
+        session_file_path = _session_file_path(config, sid, session._id_of(session.agent))
+        if not session_file_path.exists():
+          ui.output_info(
+            f"No session '{sid}' found at {session_file_path}. Use --session-id {sid} to start a new one."
+          )
+          await ui.shutdown("quit")
+          return
+
     session.on_event(bridge)
     _wire_approval_handler(session.agent, ui)
     await _run_repl(session.agent, ui, commands)
