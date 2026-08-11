@@ -16,6 +16,7 @@ import asyncio
 import traceback
 from functools import partial
 from pathlib import Path
+from time import localtime, strftime
 from typing import Any
 
 from prompt_toolkit.history import FileHistory, History, InMemoryHistory
@@ -27,21 +28,44 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.status import Status
 from rich.style import Style
+from rich.theme import Theme
 
 from yoker import __version__
 from yoker.core import Agent
 from yoker.exceptions import NetworkError, ToolError
+from yoker.markdown import MarkdownStreamer
 from yoker.ui.handler import UIHandler
 
 # Styles for console output
 PROMPT_STYLE = Style(color="black", bgcolor="grey93")
 THINKING_STYLE = Style(color="grey66")
-CONTENT_STYLE = Style(color="black")
+RESPONSE_STYLE = Style(color="black")
 TOOL_STYLE = Style(color="cyan")
 TOOL_RESULT_STYLE = Style(color="bright_black")
 STATS_STYLE = Style(color="bright_blue", dim=True)
 ERROR_STYLE = Style(color="red", bold=True)
 STEP_TITLE_STYLE = Style(bold=True, underline=True)
+
+RESPONSE_THEME = Theme({"markdown.code": Style(color="dodger_blue1")})
+
+THINKING_THEME = Theme(
+  {
+    "markdown.code": "bold",
+    "markdown.code_block": "none",
+    "markdown.block_quote": "none",
+    "markdown.list": "none",
+    "markdown.item.number": "none",
+    "markdown.h2": "underline",
+    "markdown.h3": "bold",
+    "markdown.h4": "italic",
+    "markdown.link": "underline",
+    "markdown.link_url": "underline",
+    "markdown.table.border": "none",
+    "markdown.table.header": "bold",
+    "markdown.kbd": "bold",
+  }
+)
+
 
 # Inline tool-arg display caps.
 _TOOL_ARG_MAX_CHARS = 60
@@ -87,7 +111,7 @@ class InteractiveUIHandler(UIHandler):
     show_thinking: bool = True,
     show_tool_calls: bool = True,
     show_stats: bool = True,
-    show_time: bool = False,
+    show_time: bool = True,
     console: Console | None = None,
   ) -> None:
     """Initialize the interactive UI handler.
@@ -102,8 +126,7 @@ class InteractiveUIHandler(UIHandler):
       show_thinking: Whether to display thinking output.
       show_tool_calls: Whether to display tool call info.
       show_stats: Whether to display turn statistics.
-      show_time: Whether to display timing info (reserved; banner always
-        shows duration via output_stats when show_stats is True).
+      show_time: Whether to display timing info
       console: Optional Rich console (default: new Console).
     """
     self.console = console if console is not None else Console()
@@ -139,6 +162,10 @@ class InteractiveUIHandler(UIHandler):
 
     # Session id for the resume hint printed on shutdown.
     self._session_id: str | None = None
+
+    # setup markdown streamers (consoles created lazily to use the handler's console)
+    self._thinking_streamer: MarkdownStreamer | None = None
+    self._response_streamer: MarkdownStreamer | None = None
 
   def set_input_messages(self, messages: list[str]) -> None:
     """Set predefined input messages for scripted sessions.
@@ -246,7 +273,7 @@ class InteractiveUIHandler(UIHandler):
     self,
     agent: Agent,
     *,
-    title: str = "Yoker",
+    title: str | None = None,
     version: str | None = None,
     **_kwargs: Any,
   ) -> None:
@@ -254,13 +281,16 @@ class InteractiveUIHandler(UIHandler):
 
     Args:
       agent: The Agent instance this UI session is serving.
-      title: Banner title (defaults to "Yoker").
-      version: Banner version (defaults to ``yoker.__version__``).
+      title: Banner title
+      version: Banner version (defaults to Yoker's __version)
       **_kwargs: Ignored (backward compatibility for external callers).
     """
-    if version is None:
-      version = __version__
-    banner = str(Figlet(font="standard").renderText(title)).rstrip()
+    version = version or agent.config.motd.version or __version__
+    title = title or agent.config.motd.title or "Yoker"
+    font = agent.config.motd.font or "standard"
+    banner = str(Figlet(font=font).renderText(title)).rstrip()
+    max_width = self.console.width - 4
+    banner = "\n".join([line[:max_width] for line in banner.split("\n")])
     banner = f"[blue bold]{banner} {version}[/blue bold]"
 
     harness = agent.config.harness
@@ -281,15 +311,18 @@ class InteractiveUIHandler(UIHandler):
       f"[blue]Model[/blue]: {agent.model} (provider: {agent.config.backend.provider})",
       harness_line,
       f"[blue]Session[/blue]: {session_label} '{session_id}'",
-      f"[blue]Thinking[/blue]: {agent.thinking_mode.value} (use /think on|off|silent to toggle)",
       f"[blue]Agent[/blue]: {agent.definition.name}",
-      f"[dim]{agent.definition.description.strip()}[/dim]",
+      f"[dim italic]{agent.definition.description.strip()}[/dim italic]",
     ]
     if agent.definition.source_path:
-      motd_lines.append(f"[blue]Source[/blue]: {agent.definition.source_path}")
+      source_path = agent.definition.source_path
+      if len(source_path) > self.console.width - len(" Source: "):
+        showing = int((self.console.width - len("...") - len(" Source: ") - 2) / 2)
+        source_path = source_path[:showing] + "..." + source_path[-showing:]
+      motd_lines.append(f"[blue]Source[/blue]: {source_path}")
 
     if agent.tools:
-      tool_names = list(agent.tools.keys())
+      tool_names = [name.split(":", 1)[1] if ":" in name else name for name in agent.tools.keys()]
       if len(tool_names) > _BANNER_TOOL_LIMIT:
         shown = ", ".join(tool_names[:_BANNER_TOOL_LIMIT])
         extra = len(tool_names) - _BANNER_TOOL_LIMIT
@@ -297,6 +330,18 @@ class InteractiveUIHandler(UIHandler):
       else:
         motd_lines.append(f"[blue]Tools[/blue]: {', '.join(tool_names)}")
 
+    if agent.skills:
+      skill_names = [name.split(":", 1)[1] if ":" in name else name for name in agent.skills.keys()]
+      if len(skill_names) > _BANNER_TOOL_LIMIT:
+        shown = ", ".join(skill_names[:_BANNER_TOOL_LIMIT])
+        extra = len(skill_names) - _BANNER_TOOL_LIMIT
+        motd_lines.append(f"[blue]Skills[/blue]: {shown} +{extra} more (use /skills for full list)")
+      else:
+        motd_lines.append(f"[blue]Skills[/blue]: {', '.join(skill_names)}")
+
+    motd_lines.append(
+      f"[blue]Thinking[/blue]: {agent.thinking_mode.value} (use /think on|off|silent to toggle)"
+    )
     motd_lines.append("[dim]Type /help for available commands.")
     motd_lines.append("Press Ctrl+D (or Ctrl+Z on Windows) to quit.[/dim]")
 
@@ -476,17 +521,17 @@ class InteractiveUIHandler(UIHandler):
     """Start streaming content."""
     self._stop_tool_execution_status()
     self._stop_processing_status()
-    self.console.print("⏺ ", end="", style=CONTENT_STYLE)
+    self.response_streamer.append(f"⏺ {self._ts()}")
 
   def stream_content(self, chunk: str, content_type: str = "text/plain") -> None:
     """Stream a content chunk.
 
     Args:
       chunk: Content chunk (may contain ANSI from LLM).
-      content_type: MIME type of content.
+      content_type: MIME type of content. (Should be Markdown? ;-))
     """
     self._stop_processing_status()
-    self.console.print(chunk, end="", style=CONTENT_STYLE)
+    self.response_streamer.append(chunk)
 
   def end_content_stream(self, total_length: int) -> None:
     """End streaming content.
@@ -495,6 +540,7 @@ class InteractiveUIHandler(UIHandler):
       total_length: Total content length.
     """
     self._stop_processing_status()
+    self.response_streamer.flush()
     self.console.print()  # final newline
 
   # === Thinking Output ===
@@ -505,7 +551,7 @@ class InteractiveUIHandler(UIHandler):
       return
     self._stop_tool_execution_status()
     self._stop_processing_status()
-    self.console.print("⏺ ", end="", style=THINKING_STYLE)
+    self.thinking_streamer.append(f"⏺ {self._ts()}")
 
   def stream_thinking(self, chunk: str) -> None:
     """Stream a thinking chunk.
@@ -516,7 +562,7 @@ class InteractiveUIHandler(UIHandler):
     if not self.show_thinking:
       return
     self._stop_processing_status()
-    self.console.print(chunk, style=THINKING_STYLE, end="")
+    self.thinking_streamer.append(chunk)
 
   def end_thinking_stream(self, total_length: int) -> None:
     """End streaming thinking.
@@ -527,6 +573,7 @@ class InteractiveUIHandler(UIHandler):
     if not self.show_thinking:
       return
     self._stop_processing_status()
+    self.thinking_streamer.flush()
     self.console.print()
 
   # === Multi-agent lifecycle ===
@@ -539,7 +586,7 @@ class InteractiveUIHandler(UIHandler):
     """
     self._stop_tool_execution_status()
     self._stop_processing_status()
-    self.console.print(f"[cyan]↳ Agent spawned:[/cyan] {name}")
+    self.console.print(f"[cyan]↳ {self._ts()}Agent spawned:[/cyan] {name}")
 
   def agent_finished(self, name: str) -> None:
     """Surface that a sub-agent has finished and been removed.
@@ -549,7 +596,7 @@ class InteractiveUIHandler(UIHandler):
     """
     self._stop_tool_execution_status()
     self._stop_processing_status()
-    self.console.print(f"[dim]↳ Agent finished:[/dim] {name}")
+    self.console.print(f"[dim]↳ {self._ts()}Agent finished:[/dim] {name}")
 
   # === Protected-file / git-operation approval (MBI-009 T12) ===
 
@@ -624,7 +671,7 @@ class InteractiveUIHandler(UIHandler):
     if not self.show_tool_calls:
       return
     self._stop_processing_status()
-    self.console.print(f"⏺ {tool_name}", end="", style=TOOL_STYLE)
+    self.console.print(f"⏺ {self._ts()}{tool_name}", end="", style=TOOL_STYLE)
     details = self._format_tool_details(tool_name, args)
     self.console.print(f"({details})")
     self._start_tool_execution_status(tool_name)
@@ -703,7 +750,7 @@ class InteractiveUIHandler(UIHandler):
     if self.show_stats:
       total = prompt_tokens + eval_tokens
       duration_s = duration_ms / 1000.0
-      parts = [f"📊 {duration_s:.1f}s, {total} tokens"]
+      parts = [f"📊 {self._ts()}{duration_s:.1f}s, {total} tokens"]
       if usage_limits:
         session_pct = _extract_usage_pct(usage_limits, "session")
         weekly_pct = _extract_usage_pct(usage_limits, "weekly")
@@ -742,6 +789,28 @@ class InteractiveUIHandler(UIHandler):
       self._print_error(msg, error if include_traceback else None)
 
   # === Formatting Helpers ===
+
+  @property
+  def thinking_streamer(self) -> MarkdownStreamer:
+    if self._thinking_streamer is None:
+      self._thinking_streamer = MarkdownStreamer(
+        Console(theme=THINKING_THEME, file=self.console.file), THINKING_STYLE, "algol"
+      )
+    return self._thinking_streamer
+
+  @property
+  def response_streamer(self) -> MarkdownStreamer:
+    if self._response_streamer is None:
+      self._response_streamer = MarkdownStreamer(
+        Console(theme=RESPONSE_THEME, file=self.console.file), RESPONSE_STYLE, "default"
+      )
+    return self._response_streamer
+
+  def _ts(self) -> str:
+    ts = strftime("%H:%M:%S", localtime())
+    if self.show_time:
+      return f"[{ts}] "
+    return ""
 
   def _print_error(self, msg: str, exc: Exception | None = None) -> None:
     if exc:

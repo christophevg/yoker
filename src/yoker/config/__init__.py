@@ -124,6 +124,17 @@ class HarnessConfig:
     validate_non_empty_string(self.version, "harness.version")
 
 
+@dataclass
+class MotdConfig:
+  """
+  Message of the Day configuration.
+  """
+
+  title: str | None = "Yoker"
+  version: str | None = None
+  font: str | None = "standard"
+
+
 # Known backend providers with specific config classes
 KNOWN_PROVIDERS = ("ollama", "openai", "anthropic", "gemini")
 
@@ -1001,6 +1012,7 @@ class Config:
   agent: str | None = None
 
   harness: HarnessConfig = field(default_factory=HarnessConfig)
+  motd: MotdConfig = field(default_factory=MotdConfig)
   backend: BackendConfig = field(default_factory=BackendConfig)
   context: ContextConfig = field(default_factory=ContextConfig)
   permissions: PermissionsConfig = field(default_factory=PermissionsConfig)

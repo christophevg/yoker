@@ -125,10 +125,14 @@ class TestInteractiveUIHandlerLifecycle:
     agent.config.backend.provider = "ollama"
     agent.config.context.session_id = "test-session"
     agent.config.context.fresh = True
+    agent.config.motd.title = "Yoker"
+    agent.config.motd.version = None
+    agent.config.motd.font = "standard"
     agent.definition.name = "default"
     agent.definition.description = "An agent."
     agent.definition.source_path = None
     agent.tools = {}
+    agent.skills = {}
     return agent
 
   @pytest.mark.asyncio
@@ -587,7 +591,7 @@ class TestInteractiveUIHandlerToolOutput:
   def test_output_tool_call_inline_args(self):
     """output_tool_call should print inline key=value args."""
     output = StringIO()
-    handler = InteractiveUIHandler(show_tool_calls=True)
+    handler = InteractiveUIHandler(show_tool_calls=True, show_time=False)
     handler.console = make_console(output)
 
     handler.output_tool_call("read", {"path": "/tmp/file.txt"})
