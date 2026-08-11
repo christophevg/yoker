@@ -6,6 +6,8 @@ block boundaries.
 """
 
 import json
+import logging
+import os
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any, cast
 
@@ -22,6 +24,8 @@ from yoker.backends.protocol import (
 
 if TYPE_CHECKING:
   from yoker.config import Config, OllamaConfig
+
+logger = logging.getLogger(__name__)
 
 
 class OllamaBackend(ModelBackend):
@@ -46,6 +50,13 @@ class OllamaBackend(ModelBackend):
     # Validation happens in BackendConfig.__post_init__()
     # Type assertion: OllamaConfig is guaranteed non-None when provider='ollama'
     ollama_config = cast("OllamaConfig", config.backend.config)
+
+    # Ollama Clients ONLY gets the OLLAMA_API_KEY from the env, so we need to SET IT!
+    if ollama_config.api_key:
+      current_env_api_key = os.environ.get("OLLAMA_API_KEY", None)
+      if current_env_api_key and current_env_api_key != ollama_config.api_key:
+        logger.warning("OLLAMA_API_KEY in environment and Yoker config don't match!")
+      os.environ["OLLAMA_API_KEY"] = ollama_config.api_key
 
     self._client = AsyncClient(
       host=ollama_config.base_url,
