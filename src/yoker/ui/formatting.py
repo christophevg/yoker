@@ -150,19 +150,17 @@ def _format_multiline(args: dict[str, Any], cfg: ContentDisplayConfig) -> str:
 
   Output looks like::
 
-      {
-        key: value,
-        key: "preview..." (N chars),
-      }
+      key: value,
+      key: "preview..." (N chars)
+
+  The outer braces are omitted -- the ``(`` and ``)`` from the tool
+  call line already delimit the block.
   """
-  lines = ["{"]
+  lines = []
+  lines = []
   for k, v in args.items():
     formatted = _format_value(v, cfg)
-    lines.append(f"  {k}: {formatted},")
-  # Remove trailing comma on last line for cleanliness.
-  if lines[-1].endswith(","):
-    lines[-1] = lines[-1][:-1]
-  lines.append("}")
+    lines.append(f"{k}: {formatted},")
   return "\n".join(lines)
 
 

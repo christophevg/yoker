@@ -72,6 +72,8 @@ THINKING_THEME = Theme(
 
 _BANNER_TOOL_LIMIT = 8
 
+BULLET = "⏺ "
+
 
 def _extract_usage_pct(limits: dict[str, Any], period: str) -> float | None:
   """Extract the usage percentage for a given period from usage limits.
@@ -526,7 +528,7 @@ class InteractiveUIHandler(UIHandler):
     """Start streaming content."""
     self._stop_tool_execution_status()
     self._stop_processing_status()
-    self.response_streamer.append(f"⏺ {self._ts()}")
+    self.response_streamer.append(f"{BULLET}{self._ts()}")
 
   def stream_content(self, chunk: str, content_type: str = "text/plain") -> None:
     """Stream a content chunk.
@@ -556,7 +558,7 @@ class InteractiveUIHandler(UIHandler):
       return
     self._stop_tool_execution_status()
     self._stop_processing_status()
-    self.thinking_streamer.append(f"⏺ {self._ts()}")
+    self.thinking_streamer.append(f"{BULLET}{self._ts()}")
 
   def stream_thinking(self, chunk: str) -> None:
     """Stream a thinking chunk.
@@ -678,12 +680,12 @@ class InteractiveUIHandler(UIHandler):
     self._stop_processing_status()
     details = format_tool_args(tool_name, args, self._content_display)
     if "\n" in details:
-      self.console.print(f"⏺ {self._ts()}{tool_name}(", style=TOOL_STYLE)
+      self.console.print(f"{BULLET}{self._ts()}{tool_name}(", style=TOOL_STYLE)
       for line in details.splitlines():
-        self.console.print(f"  {line}", style=TOOL_STYLE)
-      self.console.print(")", style=TOOL_STYLE)
+        self.console.print(f"    {line}", style=TOOL_STYLE)
+      self.console.print("  )", style=TOOL_STYLE)
     else:
-      self.console.print(f"⏺ {self._ts()}{tool_name}", end="", style=TOOL_STYLE)
+      self.console.print(f"{BULLET}{self._ts()}{tool_name}", end="", style=TOOL_STYLE)
       self.console.print(f"({details})")
     self._start_tool_execution_status(tool_name)
 

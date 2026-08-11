@@ -620,7 +620,9 @@ class TestInteractiveUIHandlerToolOutput:
     handler.output_tool_call("read", {"content": long_value})
 
     text = output.getvalue()
-    assert "100 chars" in text
+    # Preview shows char count (may wrap across lines in narrow terminals).
+    assert "100" in text
+    assert "chars" in text
     assert long_value not in text
 
   def test_output_tool_call_shows_preview_for_write(self):
