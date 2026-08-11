@@ -401,7 +401,7 @@ def _search_content(
 
       content = file_path.read_text(encoding="utf-8", errors="replace")
       lines = content.splitlines()
-      file_str = str(file_path)
+      file_str = file_path.as_posix()
       file_count = 0
       for line_num, line in enumerate(lines, 1):
         if regex.search(line):
@@ -458,7 +458,7 @@ def _search_filename(
     if matched:
       total_count += 1
       if len(matches) < max_results:
-        matches.append({"file": str(file_path)})
+        matches.append({"file": file_path.as_posix()})
 
   if len(matches) < total_count:
     truncated = True

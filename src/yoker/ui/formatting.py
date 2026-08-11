@@ -130,14 +130,14 @@ def _should_inline(args: dict[str, Any], cfg: ContentDisplayConfig) -> bool:
     if isinstance(v, str):
       if "\n" in v or len(v) > cfg.max_arg_inline_chars:
         return False
-      total_width += len(k) + 2 + len(v) + 2  # key="value", 
+      total_width += len(k) + 2 + len(v) + 2  # key="value",
     elif isinstance(v, (dict, list)):
       return False
     else:
       s = str(v)
       if len(s) > cfg.max_arg_inline_chars:
         return False
-      total_width += len(k) + 1 + len(s) + 2  # key=value, 
+      total_width += len(k) + 1 + len(s) + 2  # key=value,
   if total_width > cfg.max_inline_args_width:
     return False
   return True
