@@ -163,7 +163,7 @@ class BootstrapWizard:
     """
     try:
       # Step 1 — explain yoker, state no config found, ask what to do.
-      choice = await step_opening(self._ui)
+      choice = await step_opening(self._ui, self._config_path)
       if choice == "manual":
         await step_manual(self._ui, self._config, self._config_path)
         return BootstrapResult.MANUAL

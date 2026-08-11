@@ -159,13 +159,18 @@ async def _open_docs_confirmed(ui: UIHandler, url: str, *, blurb: str = "") -> N
     raise WizardAbort
 
 
-async def step_opening(ui: UIHandler) -> str:
+async def step_opening(ui: UIHandler, config_path: Path) -> str:
   """Step 1: explain yoker, state that no config was found, and ask what to do.
 
   The wizard only appears because no yoker configuration was found at
-  ``~/.yoker.toml`` — that reason is stated here, alongside a link to the
+  ``config_path`` — that reason is stated here, alongside a link to the
   documentation so users who want to read first can visit it. The user is then
   asked whether they want to configure yoker now.
+
+  Args:
+    ui: The UI handler used for all IO.
+    config_path: The destination path the wizard will write to (may differ
+      from ``~/.yoker.toml`` when invoked via ``yoker init --path``).
 
   Returns:
     ``"guided"`` or ``"manual"``.
@@ -180,14 +185,14 @@ async def step_opening(ui: UIHandler) -> str:
     "Welcome to yoker — a provider-neutral AI backend for running agentic "
     "workflows.\nyoker connects to model providers and gives "
     "your tools, skills,\nand agents a single place to run.\n\n"
-    "No yoker configuration was found at ~/.yoker.toml — that's why this "
+    f"No yoker configuration was found at {config_path} — that's why this "
     "wizard is showing.\n"
     f"Docs: {DOCS_HOME_URL}\n\n"
     "Would you like to configure yoker now?\n"
     "  1) Guided setup (recommended) — I'll ask a few questions and write "
     "the config for you.\n"
     "  2) Manual setup — I'll print a config skeleton and a docs link, and "
-    "you author ~/.yoker.toml yourself.\n"
+    f"you author {config_path} yourself.\n"
     "  3) Visit the documentation first — I'll open the docs in your "
     "browser, then come back here.\n\n"
     "Ctrl+c interrupts the setup at any time, without writing anything.\n"
