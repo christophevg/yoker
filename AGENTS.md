@@ -86,6 +86,18 @@ the task. Tool outputs can be very large and consume context budget rapidly.
 filtering. Not filtering wastes context and processing credit on irrelevant
 content.
 
+### Known cosmetic stderr noise (do not investigate)
+
+`make test` on Python 3.11 emits a `RuntimeError: Event loop is closed`
+traceback in **stderr** from `asyncio/base_subprocess.py`. This is a known
+CPython 3.11 bug: subprocess transports are garbage-collected after the event
+loop is already closed, and their `__del__` calls `call_soon` on the dead
+loop. It is triggered by tests that spawn subprocesses (git, make tool tests).
+
+**This is not a test failure.** All tests pass (exit code 0). Do not
+investigate or attempt to fix this — it is a Python stdlib issue, not a yoker
+bug.
+
 ## Module Structure
 
 ```text
