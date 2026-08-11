@@ -79,6 +79,12 @@ demos: ## Generate all demo screenshots
 build: ## Build distribution packages
 	uv build
 
+verify-wheel: ## List contents of built wheels
+	@for f in dist/*.whl; do \
+		echo "=== $$f ==="; \
+		unzip -l "$$f"; \
+	done
+
 pre-publish: check ## Pre-publication checks (run before publishing)
 	@echo "Checking for relative image paths in README..."
 	@grep -n '!\[.*](media/' README.md && (echo "ERROR: Relative image paths found - use raw GitHub URLs for PyPI"; exit 1) || echo "OK: No relative image paths"
