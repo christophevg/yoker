@@ -43,7 +43,7 @@ async def list(
   Args:
     path: Path to the directory to list.
     ctx: Tool execution context with configuration.
-    max_depth: Maximum directory depth (None = use config default, 0 = root only).
+    max_depth: Maximum directory depth (None = use config default, 1 = root only).
     max_entries: Maximum entries to return (None = use config default).
     pattern: Optional glob pattern to filter entries.
 
@@ -65,7 +65,7 @@ async def list(
   effective_max_entries = max_entries if max_entries is not None else default_max_entries
 
   try:
-    effective_max_depth = _clamp(int(effective_max_depth), 0, ABSOLUTE_MAX_DEPTH)
+    effective_max_depth = _clamp(int(effective_max_depth), 1, ABSOLUTE_MAX_DEPTH)
     effective_max_entries = _clamp(int(effective_max_entries), 1, ABSOLUTE_MAX_ENTRIES)
   except (ValueError, TypeError):
     return ToolResult(success=False, error="Invalid numeric parameter")
@@ -122,9 +122,6 @@ def _build_tree(
   dir_count = 0
   entry_count = 0
   truncated = 0
-
-  if max_depth == 0:
-    return lines, file_count, dir_count, truncated
 
   def walk(current: Path, depth: int, prefix: str = "") -> None:
     nonlocal file_count, dir_count, entry_count, truncated

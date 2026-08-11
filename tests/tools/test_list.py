@@ -95,17 +95,21 @@ class TestListTool:
 
   @pytest.mark.asyncio
   async def test_list_max_depth_zero(self, tmp_path: Path) -> None:
-    """list tool with max_depth=0 shows only root."""
+    """list tool with max_depth=0 clamps to 1 (root only, showing immediate children)."""
     (tmp_path / "file.txt").write_text("hello")
     (tmp_path / "subdir").mkdir()
+    (tmp_path / "subdir" / "deep.txt").write_text("deep")
 
     spec = _list_spec()
     ctx = _list_context()
     result = await spec.execute(path=str(tmp_path), ctx=ctx, max_depth=0)
     assert result.success is True
     assert str(tmp_path).rstrip("/") + "/" in result.result
-    assert "file.txt" not in result.result
-    assert "0 entries total (0 files, 0 directories)" in result.result
+    # depth=0 clamps to 1: immediate children are shown
+    assert "file.txt" in result.result
+    assert "subdir" in result.result
+    # but deeper entries are not
+    assert "deep.txt" not in result.result
 
   @pytest.mark.asyncio
   async def test_list_max_entries_truncation(self, tmp_path: Path) -> None:
@@ -189,14 +193,18 @@ class TestListTool:
 
   @pytest.mark.asyncio
   async def test_list_clamps_negative_max_depth(self, tmp_path: Path) -> None:
-    """list tool clamps negative max_depth to 0."""
+    """list tool clamps negative max_depth to 1 (root only)."""
     (tmp_path / "file.txt").write_text("hello")
+    (tmp_path / "subdir").mkdir()
+    (tmp_path / "subdir" / "deep.txt").write_text("deep")
 
     spec = _list_spec()
     ctx = _list_context()
     result = await spec.execute(path=str(tmp_path), ctx=ctx, max_depth=-5)
     assert result.success is True
-    assert "file.txt" not in result.result
+    # negative depth clamps to 1: immediate children shown
+    assert "file.txt" in result.result
+    assert "deep.txt" not in result.result
 
   @pytest.mark.asyncio
   async def test_list_clamps_excessive_max_depth(self, tmp_path: Path) -> None:
