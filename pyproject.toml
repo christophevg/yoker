@@ -50,7 +50,7 @@ dev = [
   "tox>=4.0.0",
   "tox-uv>=1.0.0",
   "build>=1.0.0",
-  "twine>=5.0.0",
+  "twine>=6.0.0",
   "coveralls>=3.3.0",
 ]
 docs = [
@@ -72,8 +72,12 @@ Issues = "https://github.com/christophevg/yoker/issues"
 [project.scripts]
 yoker = "yoker.__main__:main"
 
+[tool.hatch.build.targets.sdist]
+core-metadata-version = "2.4"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/yoker"]
+core-metadata-version = "2.4"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
