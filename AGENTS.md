@@ -12,6 +12,29 @@ YOU DON'T HAVE DIRECT CLI ACCESS! This is intentional.
 IF A TOOL IS MISSING: STOP!
 IF A TOOL FAILS: STOP!
 
+### Retry Policy
+
+**Never retry the same failing command more than 3 times.** After 3 failed
+attempts, STOP and ask the user for permission before trying again. This gives
+the user a chance to intervene, investigate, or provide guidance.
+
+Repeatedly retrying a failing command wastes context budget and processing
+credit without making progress. Common scenarios where this happens:
+
+- `make publish` upload fails with HTTP 400 (version may already be on PyPI)
+- CI workflow check times out or returns transient errors
+- A tool produces output that exceeds size limits
+
+When a command fails:
+1. **First attempt**: Run it, observe the error.
+2. **Second attempt**: Adjust parameters (e.g. tighter `post_filter`, higher
+   `timeout_ms`) and try once more.
+3. **Third attempt**: Try a different approach if one is obvious.
+4. **Stop**: Ask the user — "I've tried 3 times and it's still failing with
+   [error]. Should I continue trying, or do you want to investigate?"
+
+Do NOT silently keep retrying with the same or slightly tweaked parameters.
+
 Don't look for workarounds!
 
 Address the problem first. You are working on your own codebase, so you can check the code of the tool yourself to confirm the failure. If sub-operation for a tool is missing: report it, so we can decide to add it first.
@@ -62,7 +85,8 @@ install-pythons Install Python 3.10, 3.11, 3.12
 lint            Check code for linting issues
 pre-publish     Pre-publication checks (run before publishing)
 publish-test    Publish to TestPyPI
-publish         Publish to PyPI (runs pre-publish checks)
+publish         Publish to PyPI (clean + build + pre-publish + upload)
+upload          Upload to PyPI only (DON'T USE DIRECTLY — use `publish` target)
 run             Run the application
 test-all        Run tests on all Python versions
 test-cov        Run tests with coverage
