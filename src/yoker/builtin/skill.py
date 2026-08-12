@@ -25,14 +25,13 @@ def make_skill_tool(skill_registry: "SkillRegistry") -> Any:
     skill_name: Annotated[str, Text("Name of the skill to invoke")],
     args: Annotated[str, Text("Optional arguments")] = "",
     resource: Annotated[
-      str, Text("Optional path to a resource file within the skill's directory")
+      str, Text("Optional name of a bundled reference file the skill provides (e.g., references/more-info.md). Use this — not `yoker:read` — to load skill reference files, because their filesystem location varies across local checkout, installed package, and zip distribution.")
     ] = "",
   ) -> ToolResult:
     """Invoke a skill by name to get its full instructions.
 
     When ``resource`` is provided, returns the content of that resource
-    file instead of the skill's invocation block. Resource paths are
-    relative to the skill's base directory (e.g. ``"references/info.md"``).
+    file instead of the skill's invocation block. (e.g. ``"references/info.md"``).
     """
     resolved_name = skill_registry.resolve(skill_name)
     s = skill_registry.data.get(resolved_name) if resolved_name else None
