@@ -104,9 +104,10 @@ pre-publish: check ## Pre-publication checks (run before publishing)
 	echo "OK: Versions match ($$VERSION_PY)"
 	@echo "Pre-publication checks passed"
 
-publish: clean build ## Publish to PyPI (runs pre-publish checks)
-	@$(MAKE) pre-publish
+upload: ## Upload to PyPI (DON'T USE UNLESS NEEDED - USE: publish target)
 	uv run twine upload dist/*
+
+publish: clean build pre-publish upload ## Publish to PyPI (runs pre-publish checks)
 
 publish-test: build ## Publish to TestPyPI
 	uv run twine upload --repository testpypi dist/*
