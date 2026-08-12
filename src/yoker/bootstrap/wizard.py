@@ -53,7 +53,7 @@ from yoker.ui.handler import UIHandler
 # points the client straight at the cloud API. This is the documented
 # endpoint for Ollama's cloud-hosted API; if it changes, update it here
 # (and only here).
-OLLAMA_CLOUD_BASE_URL = "https://api.ollama.com"
+OLLAMA_CLOUD_BASE_URL = "https://ollama.com"
 
 
 def build_bootstrap_overrides(
