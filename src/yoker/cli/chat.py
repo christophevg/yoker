@@ -55,7 +55,7 @@ def run_chat(plugin_packages: list[str]) -> None:
     # IMPORTANT: Use history_file="none" to prevent bootstrap prompts (including
     # API keys) from being persisted to ~/.yoker_history. Bootstrap is for
     # one-time configuration, not conversation, and should never log secrets.
-    bootstrap_ui = InteractiveUIHandler(history_file="none")
+    bootstrap_ui = InteractiveUIHandler(history_file="none", show_prompts=False)
     try:
       result = asyncio.run(BootstrapWizard(bootstrap_ui).run())
       if result != BootstrapResult.WRITTEN:

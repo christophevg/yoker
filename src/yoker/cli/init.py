@@ -115,7 +115,7 @@ def _run_interactive(path: Path, *, force: bool) -> None:
 
   # history_file="none" prevents bootstrap prompts (including API keys) from
   # being persisted to ~/.yoker_history.
-  ui = InteractiveUIHandler(history_file="none")
+  ui = InteractiveUIHandler(history_file="none", show_prompts=False)
   from yoker.bootstrap import BootstrapResult, BootstrapWizard
 
   try:

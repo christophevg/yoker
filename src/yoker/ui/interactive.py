@@ -113,6 +113,7 @@ class InteractiveUIHandler(UIHandler):
     show_tool_calls: bool = True,
     show_stats: bool = True,
     show_time: bool = True,
+    show_prompts: bool = True,
     console: Console | None = None,
     content_display: ContentDisplayConfig | None = None,
     show_spinners: bool = True,
@@ -154,6 +155,7 @@ class InteractiveUIHandler(UIHandler):
     self.show_tool_calls = show_tool_calls
     self.show_stats = show_stats
     self.show_time = show_time
+    self.show_prompts = show_prompts
     self._content_display = (
       content_display if content_display is not None else ContentDisplayConfig()
     )
@@ -469,7 +471,7 @@ class InteractiveUIHandler(UIHandler):
     Args:
       text: The submitted input text.
     """
-    if not text:
+    if not self.show_prompts or not text:
       return
     self.console.print()
     escaped = text.replace("[", "\\[").replace("]", "\\]")
