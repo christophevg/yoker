@@ -1,3 +1,14 @@
+## 0.10.1 (2026-08-12)
+### Fixed
+- **Ollama cloud base URL**: Corrected the Ollama cloud API endpoint in the
+  bootstrap wizard.
+### Added
+- **`show_prompts` parameter**: `InteractiveUIHandler` now accepts a
+  `show_prompts` flag (default `True`). When disabled, user input is not
+  echoed to the console. Bootstrap handlers in `chat` and `init` pass
+  `show_prompts=False` so API keys and other sensitive input are not
+  displayed during the wizard.
+
 # Changelog
 
 All notable changes to yoker are documented here. The format follows
