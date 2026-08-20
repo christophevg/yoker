@@ -167,30 +167,42 @@ class TestProtectedFilesReadNotChecked:
     assert result.valid is True
 
 
-class TestProtectedFilesInteractiveSkip:
-  """When interactive_approvals is True, the simple block is skipped."""
+class TestProtectedFilesSkipProtected:
+  """The ``skip_protected`` parameter skips the protected_files check.
 
-  def test_interactive_skips_block_on_write(self, tmp_path: Path) -> None:
+  This is used by the approval hook: when the user interactively approves
+  a protected-file write, the guardrail skips the check for that call.
+  Without ``skip_protected``, the guardrail always enforces.
+  """
+
+  def test_skip_protected_allows_write(self, tmp_path: Path) -> None:
     target = tmp_path / "Makefile"
     config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
     guardrail = PathGuardrail(config)
-    guardrail.interactive_approvals = True
-    result = guardrail.validate("write", {"path": str(target), "content": "x"})
+    result = guardrail.validate("write", {"path": str(target), "content": "x"}, skip_protected=True)
     assert result.valid is True
 
-  def test_interactive_skips_block_on_update(self, tmp_path: Path) -> None:
+  def test_skip_protected_allows_update(self, tmp_path: Path) -> None:
     # Use pyproject.toml — .toml is in the default allowed_extensions so
     # the read-extension check passes, isolating the protected_files skip.
     target = tmp_path / "pyproject.toml"
     target.write_text("old")
     config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
     guardrail = PathGuardrail(config)
-    guardrail.interactive_approvals = True
     result = guardrail.validate(
       "update",
       {"path": str(target), "operation": "replace", "old_string": "old", "new_string": "new"},
+      skip_protected=True,
     )
     assert result.valid is True
+
+  def test_no_skip_protected_blocks_write(self, tmp_path: Path) -> None:
+    """Without skip_protected, the guardrail always blocks protected files."""
+    target = tmp_path / "Makefile"
+    config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
+    guardrail = PathGuardrail(config)
+    result = guardrail.validate("write", {"path": str(target), "content": "x"})
+    assert result.valid is False
 
 
 class TestIsProtectedPublic:

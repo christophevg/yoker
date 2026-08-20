@@ -13,7 +13,7 @@ from typing import Any
 import pytest
 
 from yoker.config import Config, PermissionsConfig
-from yoker.core._processing import _build_approval_diff, _maybe_block_protected
+from yoker.core._processing import _build_approval_diff, _maybe_approve_protected
 from yoker.tools.diff import generate_diff
 
 
@@ -22,7 +22,6 @@ class _FakeGuardrail:
 
   def __init__(self, protected: bool) -> None:
     self._protected = protected
-    self.interactive_approvals = False
 
   def is_protected(self, _path: str) -> bool:
     return self._protected
@@ -153,23 +152,25 @@ class TestBuildApprovalDiff:
 
 
 # ---------------------------------------------------------------------------
-# _maybe_block_protected — interactive approval gate
+# _maybe_approve_protected — interactive approval gate
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_approval_not_needed_for_non_write_tool() -> None:
   agent = _FakeAgent(handler=None, protected=True)
-  result = await _maybe_block_protected(agent, "read", {"path": "/x/Makefile"})
-  assert result is None
+  result = await _maybe_approve_protected(agent, "read", {"path": "/x/Makefile"})
+  assert result is False
 
 
 @pytest.mark.asyncio
 async def test_approval_not_needed_when_no_handler_wired() -> None:
   agent = _FakeAgent(handler=None, protected=True)
-  result = await _maybe_block_protected(agent, "write", {"path": "/x/Makefile", "content": "all:"})
-  # No handler → simple block fallback handles it; the hook returns None.
-  assert result is None
+  result = await _maybe_approve_protected(
+    agent, "write", {"path": "/x/Makefile", "content": "all:"}
+  )
+  # No handler → guardrail handles it; the hook returns False.
+  assert result is False
 
 
 @pytest.mark.asyncio
@@ -178,12 +179,12 @@ async def test_approval_not_needed_when_path_not_protected() -> None:
     return True
 
   agent = _FakeAgent(handler=handler, protected=False)
-  result = await _maybe_block_protected(agent, "write", {"path": "/x/foo.txt", "content": "hi"})
-  assert result is None
+  result = await _maybe_approve_protected(agent, "write", {"path": "/x/foo.txt", "content": "hi"})
+  assert result is False
 
 
 @pytest.mark.asyncio
-async def test_approval_approved_returns_none(tmp_path: Path) -> None:
+async def test_approval_approved_returns_true(tmp_path: Path) -> None:
   target = tmp_path / "Makefile"
   target.write_text("old:\n\techo old\n")
 
@@ -195,29 +196,26 @@ async def test_approval_approved_returns_none(tmp_path: Path) -> None:
     return True
 
   agent = _FakeAgent(handler=handler, protected=True)
-  result = await _maybe_block_protected(
+  result = await _maybe_approve_protected(
     agent, "write", {"path": str(target), "content": "new:\n\techo new\n"}
   )
-  assert result is None  # approved → fall through to _execute_tool
+  assert result is True  # approved → skip guardrail protected_files
   assert captured["path"] == str(target)
   assert "+new:" in captured["diff"]
 
 
 @pytest.mark.asyncio
-async def test_approval_denied_returns_blocked_message(tmp_path: Path) -> None:
+async def test_approval_denied_returns_false(tmp_path: Path) -> None:
   target = tmp_path / "Makefile"
 
   async def handler(_path: str, _diff: str, _kind: str = "file") -> bool:
     return False
 
   agent = _FakeAgent(handler=handler, protected=True)
-  result = await _maybe_block_protected(agent, "write", {"path": str(target), "content": "new:\n"})
-  assert result is not None
-  message, success, raw = result
-  assert success is False
-  assert raw is None
-  assert "denied" in message.lower()
-  assert str(target) in message
+  result = await _maybe_approve_protected(
+    agent, "write", {"path": str(target), "content": "new:\n"}
+  )
+  assert result is False  # denied → guardrail will block
 
 
 @pytest.mark.asyncio
@@ -228,14 +226,12 @@ async def test_approval_handler_exception_treated_as_denial(tmp_path: Path) -> N
     raise RuntimeError("boom")
 
   agent = _FakeAgent(handler=handler, protected=True)
-  result = await _maybe_block_protected(
+  result = await _maybe_approve_protected(
     agent,
     "update",
     {"path": str(target), "operation": "replace", "old_string": "a", "new_string": "b"},
   )
-  assert result is not None
-  _message, success, _raw = result
-  assert success is False
+  assert result is False  # exception → denial
 
 
 @pytest.mark.asyncio
@@ -246,8 +242,7 @@ async def test_namespaced_tool_name_handled(tmp_path: Path) -> None:
     return False
 
   agent = _FakeAgent(handler=handler, protected=True)
-  result = await _maybe_block_protected(
+  result = await _maybe_approve_protected(
     agent, "yoker:write", {"path": str(target), "content": "new:\n"}
   )
-  assert result is not None
-  assert result[1] is False  # denied
+  assert result is False  # denied

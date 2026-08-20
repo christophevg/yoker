@@ -28,12 +28,17 @@ class Guardrail(ABC):
   """
 
   @abstractmethod
-  def validate(self, tool_name: str, value: str | dict[str, Any]) -> ValidationResult:
+  def validate(
+    self, tool_name: str, value: str | dict[str, Any], *, skip_protected: bool = False
+  ) -> ValidationResult:
     """Validate tool parameters.
 
     Args:
       tool_name: Name of the tool being validated.
       value: Either the extracted parameter value or the full params dict.
+      skip_protected: When True, skip the protected_files check (user
+        approved interactively). The guardrail is responsible for honoring
+        this flag.
 
     Returns:
       ValidationResult indicating whether parameters are valid.

@@ -281,15 +281,15 @@ class UIHandler(Protocol):
   # dispatched via :class:`yoker.ui.bridge.UIBridge`), ``confirm_approval`` is
   # wired directly onto ``Agent._approval_handler`` by
   # ``yoker.cli.chat._wire_approval_handler`` and awaited from
-  # ``yoker.core._processing._maybe_block_protected`` (with ``kind="file"``)
+  # ``yoker.core._processing._maybe_approve_protected`` (with ``kind="file"``)
   # and from ``yoker.builtin.git._check_approval`` (with ``kind="git"``) —
   # :class:`UIBridge` is not involved. The wiring is gated by ``hasattr(ui,
   # "confirm_approval")`` so handlers that do not opt in are not wired;
   # for those handlers the :class:`yoker.tools.guardrails.path.PathGuardrail`
-  # simple block handles protected writes (no interactive prompt).
+  # blocks protected writes (no interactive prompt).
   #
   # :class:`yoker.ui.batch.BatchUIHandler` does **not** implement it
-  # (non-interactive: protected writes are blocked by the simple block).
+  # (non-interactive: protected writes are blocked by the guardrail).
   # :class:`yoker.ui.interactive.InteractiveUIHandler` implements it to
   # render the unified diff / command preview and prompt y/N (empty/EOF/
   # Ctrl+C = deny, fail-safe).

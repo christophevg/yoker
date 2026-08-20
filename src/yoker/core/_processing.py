@@ -991,22 +991,22 @@ async def _run_tool(agent: Any, tool_name: str, tool_args: dict[str, Any]) -> tu
     logger.warning(f"available: {list(agent.tools.keys())}")
     return f"Error: Unknown tool '{tool_name}'", False, None
 
-  validation = _validate_tool_args(agent, spec, tool_args)
+  # Protected-file approval hook. When an approval handler is wired on the
+  # agent (interactive mode), it runs BEFORE the guardrail. This gives the
+  # user a chance to approve a protected-file write interactively. On
+  # approval, the guardrail's protected_files check is skipped for this
+  # call. On denial, the guardrail blocks the operation. When no handler
+  # is wired (subagents, batch mode), the guardrail's protected_files
+  # check is the sole enforcement point — it always blocks.
+  skip_protected = await _maybe_approve_protected(agent, tool_name, tool_args)
+
+  validation = _validate_tool_args(agent, spec, tool_args, skip_protected=skip_protected)
   if not validation.valid:
     logger.warning("guardrail_blocked", tool=tool_name, reason=validation.reason)
     return f"Error: {validation.reason}", False, None
 
   if agent.config.logging.include_permission_checks:
     logger.info("guardrail_allowed", tool=tool_name, path=tool_args.get("path"))
-
-  # Protected-file approval hook (MBI-009 T12). When an approval handler is
-  # wired on the agent, the PathGuardrail simple block is skipped and this
-  # hook handles protected write/update interactively. On denial, return a
-  # blocked ToolResult without executing the tool. On exception in the
-  # handler, fail-safe to denial. On approval, fall through to _execute_tool.
-  approval_block = await _maybe_block_protected(agent, tool_name, tool_args)
-  if approval_block is not None:
-    return approval_block
 
   try:
     with log_timing("tool_execution", tool=tool_name):
@@ -1019,30 +1019,33 @@ async def _run_tool(agent: Any, tool_name: str, tool_args: dict[str, Any]) -> tu
     return f"Error executing tool: {e}", False, None
 
 
-async def _maybe_block_protected(
-  agent: Any, tool_name: str, tool_args: dict[str, Any]
-) -> tuple[str, bool, Any] | None:
-  """Run the interactive approval flow for protected write/update, if active.
+async def _maybe_approve_protected(agent: Any, tool_name: str, tool_args: dict[str, Any]) -> bool:
+  """Run the interactive approval flow for protected write/update.
+
+  Runs BEFORE the guardrail so that, when an approval handler is wired
+  (interactive mode), the user can approve a protected-file write. On
+  approval, returns ``True`` so the caller skips the guardrail's
+  protected_files check for this call. On denial, logs the denial and
+  returns ``False`` — the guardrail will then block the operation.
+  When no handler is wired (subagents, batch mode), returns ``False``
+  — the guardrail is the sole enforcement point.
 
   Returns:
-    - ``None`` when no approval is needed (non-protected path, no handler
-      wired, or tool is not write/update) — the caller proceeds to execute
-      the tool. Also ``None`` on approval.
-    - A blocked ``(message, False, None)`` tuple when the user denies (or
-      the handler raises) — the caller returns it directly.
+    ``True`` when the user approved (skip guardrail protected_files),
+    ``False`` when no approval flow is active or the user denied.
   """
   base_name = tool_name.split(":")[-1] if ":" in tool_name else tool_name
   if base_name not in ("write", "update"):
-    return None
+    return False
   handler = getattr(agent, "_approval_handler", None)
   if handler is None:
-    return None
+    return False
   path = tool_args.get("path")
   if not isinstance(path, str):
-    return None
+    return False
   guardrail = agent._guardrails.get("path")
   if guardrail is None or not guardrail.is_protected(path):
-    return None
+    return False
 
   diff = _build_approval_diff(base_name, path, tool_args)
   try:
@@ -1052,8 +1055,8 @@ async def _maybe_block_protected(
     approved = False
 
   if not approved:
-    return f"Error: User denied write to protected file: {path}", False, None
-  return None
+    logger.info("protected_file_denied", tool=tool_name, path=path)
+  return bool(approved)
 
 
 def _build_approval_diff(tool_name: str, path: str, tool_args: dict[str, Any]) -> str:
@@ -1393,8 +1396,19 @@ def _enforce_output_limit(result: ToolResult, agent: Any, spec: ToolSpec) -> Too
   return ToolResult(success=False, error=error_msg)
 
 
-def _validate_tool_args(agent: Any, spec: ToolSpec, tool_args: dict[str, Any]) -> ValidationResult:
-  """Validate tool arguments using schema-driven guardrails."""
+def _validate_tool_args(
+  agent: Any, spec: ToolSpec, tool_args: dict[str, Any], *, skip_protected: bool = False
+) -> ValidationResult:
+  """Validate tool arguments using schema-driven guardrails.
+
+  Passes ``spec.simple_name`` (not the namespaced ``spec.name``) to the
+  guardrail so tool-name checks inside the guardrail match against simple
+  names (e.g. ``"write"``, not ``"yoker:write"``).
+
+  When ``skip_protected`` is True (user approved interactively), the
+  guardrail's protected_files check is skipped for this call. The guardrail
+  is responsible for honoring this flag.
+  """
   for param_name, guard_type in spec.guards.items():
     value = tool_args.get(param_name)
     if value is None:
@@ -1404,7 +1418,9 @@ def _validate_tool_args(agent: Any, spec: ToolSpec, tool_args: dict[str, Any]) -
     if not guardrail:
       continue
 
-    validation = guardrail.validate(spec.name, value)
+    validation = guardrail.validate(
+      spec.simple_name or spec.name, value, skip_protected=skip_protected
+    )
     if not validation.valid:
       return validation
 

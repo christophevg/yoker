@@ -138,7 +138,9 @@ class WebGuardrail(Guardrail):
     self._rate_limit_lock = Lock()
     self._rate_limits: dict[str, RateLimitState] = defaultdict(RateLimitState)
 
-  def validate(self, tool_name: str, value: str | dict[str, str]) -> ValidationResult:
+  def validate(
+    self, tool_name: str, value: str | dict[str, str], *, skip_protected: bool = False
+  ) -> ValidationResult:
     """Validate web search parameters.
 
     Steps:
@@ -588,7 +590,9 @@ class QueryWebGuardrail(WebGuardrail):
 
 
 class UrlWebGuardrail(WebGuardrail):
-  def validate(self, tool_name: str, value: str | dict[str, str]) -> ValidationResult:
+  def validate(
+    self, tool_name: str, value: str | dict[str, str], *, skip_protected: bool = False
+  ) -> ValidationResult:
     """Validate a URL for web fetch.
 
     Steps:

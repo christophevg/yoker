@@ -148,28 +148,28 @@ async def _run_with_session(
           return
 
     session.on_event(bridge)
-    _wire_approval_handler(session.agent, ui)
+    _wire_approval_handler(session, ui)
     await _run_repl(session.agent, ui, commands)
 
 
-def _wire_approval_handler(agent: Agent, ui: UIHandler) -> None:
-  """Wire the approval handler when the UI opts in.
+def _wire_approval_handler(session: Session, ui: UIHandler) -> None:
+  """Wire the approval handler on the session when the UI opts in.
 
   ``confirm_approval`` is an optional ``UIHandler`` method (see
   :mod:`yoker.ui.handler`). Handlers that do not provide it are not wired,
-  and the :class:`yoker.tools.guardrails.path.PathGuardrail` simple block
-  handles protected writes (no interactive prompt). When ``ui`` provides
-  ``confirm_approval``, the handler is wired onto
-  ``Agent._approval_handler`` and the guardrail's
-  ``interactive_approvals`` flag is set so the simple block is skipped and
-  the approval hook in ``_run_tool`` handles protected writes (with
-  ``kind="file"``). The git tool also uses this handler for non-auto-
+  and the :class:`yoker.tools.guardrails.path.PathGuardrail` handles
+  protected writes (block without interactive prompt). When ``ui``
+  provides ``confirm_approval``, the handler is stored on the session
+  so it is propagated to every agent created via ``_create_agent`` —
+  the primary agent and all spawned subagents get the same interactive
+  approval flow. The git tool also uses this handler for non-auto-
   permissioned operations (with ``kind="git"``).
   """
   if not hasattr(ui, "confirm_approval"):
     return
-  agent._approval_handler = ui.confirm_approval
-  agent.guardrail.interactive_approvals = True
+  session._approval_handler = ui.confirm_approval
+  # Also wire on the primary agent (already constructed in __init__).
+  session.agent._approval_handler = ui.confirm_approval
 
 
 async def _run_repl(agent: Agent, ui: UIHandler, commands: CommandRegistry) -> None:

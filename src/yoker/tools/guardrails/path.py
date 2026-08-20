@@ -29,11 +29,6 @@ from yoker.tools.schema import ValidationResult
 
 logger = get_logger(__name__)
 
-# Tools that operate on filesystem paths
-_FILESYSTEM_TOOLS = frozenset(
-  {"read", "list", "write", "update", "search", "existence", "mkdir", "git", "make", "file"}
-)
-
 
 class PathGuardrail(Guardrail):
   """Concrete guardrail for filesystem tool validation.
@@ -78,24 +73,30 @@ class PathGuardrail(Guardrail):
       Path(root).resolve() for root in self._permissions.filesystem_paths
     )
 
-    # When True, the protected_files simple block is skipped in ``validate``
-    # so the processing loop's approval hook can handle it interactively.
-    # Set by the CLI on the primary agent when an approval handler is wired.
-    self.interactive_approvals: bool = False
-
-  def validate(self, tool_name: str, value: str | dict[str, Any]) -> ValidationResult:
+  def validate(
+    self, tool_name: str, value: str | dict[str, Any], *, skip_protected: bool = False
+  ) -> ValidationResult:
     """Validate tool parameters against permission boundaries.
 
+    The guardrail is only invoked for parameters annotated with ``Path``
+    (via ``ToolSpec.guards``), so every call is already a filesystem path
+    — no tool-name allowlist is needed.
+
     Steps:
-      1. Skip non-filesystem tools immediately.
-      2. Extract and validate the path parameter.
-      3. Resolve the path to an absolute real path.
-      4. Check the path is within allowed roots.
-      5. Check blocked patterns.
-      6. For read tool: check extension and file size.
+      1. Extract the path parameter (from string or dict).
+      2. Resolve to an absolute real path.
+      3. Check the path is within allowed roots.
+      4. Check blocked patterns.
+      5. Tool-specific checks (read: extension/size, write: protected/
+         extension/content-size, update: protected/extension/diff-size,
+         file: protected, mkdir: depth).
+
+    The ``tool_name`` is the **simple** name (e.g. ``"write"``), not the
+    namespaced name (e.g. ``"yoker:write"``). The caller
+    (``_validate_tool_args``) is responsible for stripping the namespace.
 
     Args:
-      tool_name: Name of the tool being validated.
+      tool_name: Simple name of the tool being validated.
       value: Either a path string or a dict of tool parameters.
         When called from _validate_tool_args, this is the extracted path string.
         When called directly in tests, this may be the full params dict.
@@ -103,10 +104,6 @@ class PathGuardrail(Guardrail):
     Returns:
       ValidationResult indicating whether parameters are valid.
     """
-    # Skip non-filesystem tools immediately
-    if tool_name not in _FILESYSTEM_TOOLS:
-      return ValidationResult(valid=True)
-
     # Extract path from value (handle both dict and string)
     if isinstance(value, dict):
       path_param = value.get("path", "")
@@ -116,7 +113,6 @@ class PathGuardrail(Guardrail):
     # Git tool allows missing path (defaults to ".")
     if not path_param:
       if tool_name == "git":
-        # Git tool will default to "."
         return ValidationResult(valid=True)
       return ValidationResult(valid=False, reason="Missing required parameter: path")
 
@@ -152,7 +148,6 @@ class PathGuardrail(Guardrail):
 
     # Read-specific checks
     if tool_name == "read":
-      # File must exist
       if not resolved.exists():
         return ValidationResult(valid=False, reason=f"File not found: {path_param}")
 
@@ -166,10 +161,7 @@ class PathGuardrail(Guardrail):
 
     # Write-specific checks
     if tool_name == "write":
-      # Protected files check: skipped in interactive mode (the processing
-      # loop's approval hook handles it then). The simple block stays as the
-      # non-interactive fallback / safety net.
-      if not self.interactive_approvals:
+      if not skip_protected:
         protected_reason = self._check_protected_files(resolved)
         if protected_reason:
           return ValidationResult(valid=False, reason=protected_reason)
@@ -178,7 +170,6 @@ class PathGuardrail(Guardrail):
       if ext_reason:
         return ValidationResult(valid=False, reason=ext_reason)
 
-      # Only check content size if we have full params dict
       if isinstance(value, dict):
         size_reason = self._check_write_content_size(value)
         if size_reason:
@@ -186,42 +177,32 @@ class PathGuardrail(Guardrail):
 
     # Update-specific checks
     if tool_name == "update":
-      # File must exist
       if not resolved.exists():
         return ValidationResult(valid=False, reason=f"File not found: {path_param}")
       if not resolved.is_file():
         return ValidationResult(valid=False, reason=f"Path is not a file: {path_param}")
 
-      # Protected files check: skipped in interactive mode (the processing
-      # loop's approval hook handles it then). The simple block stays as the
-      # non-interactive fallback / safety net.
-      if not self.interactive_approvals:
+      if not skip_protected:
         protected_reason = self._check_protected_files(resolved)
         if protected_reason:
           return ValidationResult(valid=False, reason=protected_reason)
 
-      # Apply read extension checks (can only update allowed file types)
       ext_reason = self._check_read_extension(resolved)
       if ext_reason:
         return ValidationResult(valid=False, reason=ext_reason)
 
-      # Apply write blocked extension checks
       ext_reason = self._check_write_extension(resolved)
       if ext_reason:
         return ValidationResult(valid=False, reason=ext_reason)
 
-      # Check diff size - only if we have full params dict
       if isinstance(value, dict):
         size_reason = self._check_update_diff_size(value)
         if size_reason:
           return ValidationResult(valid=False, reason=size_reason)
 
     # File tool checks: protected files guardrail on all paths.
-    # The file tool's delete operation should not delete protected files,
-    # and copy/move should not overwrite protected files (though the tool
-    # itself already refuses to overwrite existing files).
     if tool_name == "file":
-      if not self.interactive_approvals:
+      if not skip_protected:
         protected_reason = self._check_protected_files(resolved)
         if protected_reason:
           return ValidationResult(valid=False, reason=protected_reason)

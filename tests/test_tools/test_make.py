@@ -172,11 +172,19 @@ class TestMakeToolTargetValidation:
 class TestMakeToolPathGuardrail:
   """R1: PathGuardrail on cwd."""
 
-  def test_make_in_filesystem_tools(self) -> None:
-    """make is in _FILESYSTEM_TOOLS so PathGuardrail fires on cwd."""
-    from yoker.tools.guardrails.path import _FILESYSTEM_TOOLS
+  def test_make_path_guardrail_fires(self) -> None:
+    """make's cwd parameter has a Path annotation so PathGuardrail fires.
 
-    assert "make" in _FILESYSTEM_TOOLS
+    The guardrail is invoked for any parameter annotated with ``Path``
+    (via ``ToolSpec.guards``). There is no hardcoded tool-name list —
+    the annotation is the sole dispatch mechanism.
+    """
+    from yoker.builtin.make import make
+    from yoker.tools.schema import build_tool_spec
+
+    spec = build_tool_spec(make, namespace="yoker")
+    assert "cwd" in spec.guards
+    assert spec.guards["cwd"].value == "path"
 
   def test_guardrail_blocks_cwd_outside_allowed(self, tmp_path: Path) -> None:
     """cwd outside allowed paths is rejected (R1)."""

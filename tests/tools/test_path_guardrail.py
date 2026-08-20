@@ -20,11 +20,21 @@ class TestPathGuardrail:
   """Tests for PathGuardrail."""
 
   def test_non_filesystem_tool_allowed(self) -> None:
-    """Non-filesystem tools pass through without path validation."""
+    """The guardrail only receives Path-annotated parameters.
+
+    With the hardcoded _FILESYSTEM_TOOLS list removed, the guardrail no
+    longer gates on tool name. It always validates the path parameter it
+    receives. A dict without a 'path' key is rejected (missing path).
+    This is correct: the guardrail is only invoked for Path-annotated
+    parameters, so a non-filesystem tool like 'agent' would never reach
+    the PathGuardrail.
+    """
     config = Config()
     guardrail = PathGuardrail(config)
+    # A dict without 'path' → missing path parameter (not a non-filesystem skip)
     result = guardrail.validate("agent", {"prompt": "hello"})
-    assert result.valid is True
+    assert result.valid is False
+    assert "path" in (result.reason or "").lower()
 
   def test_missing_path_parameter(self) -> None:
     """Blocks when path parameter is missing."""

@@ -14,6 +14,7 @@ import asyncio
 import copy
 import os
 import uuid
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
@@ -85,6 +86,12 @@ class Session:
     self._tasks: set[asyncio.Task] = set()
     # Tracks disambiguation suffix counters per definition name.
     self._name_counters: dict[str, int] = {}
+    # Session-wide approval handler for interactive protected-file / git
+    # operation approval. Wired by the CLI (``_wire_approval_handler``)
+    # after construction. Propagated to every agent created via
+    # ``_create_agent`` so subagents get the same interactive approval
+    # flow as the primary agent.
+    self._approval_handler: Callable[[str, str, str], Awaitable[bool]] | None = None
 
     configure_logging(self.config.logging, console=console_logging)
 
@@ -384,6 +391,11 @@ class Session:
     if thinking_mode is not None:
       kwargs["thinking_mode"] = thinking_mode
     agent = Agent(**kwargs)
+
+    # Propagate the session-wide approval handler so subagents get the
+    # same interactive approval flow as the primary agent.
+    if self._approval_handler is not None:
+      agent._approval_handler = self._approval_handler
 
     # Back-reference so UI commands (e.g. /agents) can reach the session's
     # AgentRegistry through agent._session.
