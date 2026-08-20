@@ -189,10 +189,6 @@ class PathGuardrail(Guardrail):
           return ValidationResult(valid=False, reason=protected_reason)
 
       if not skip_protected:
-        ext_reason = self._check_read_extension(resolved)
-        if ext_reason:
-          return ValidationResult(valid=False, reason=ext_reason)
-
         ext_reason = self._check_write_extension(resolved)
         if ext_reason:
           return ValidationResult(valid=False, reason=ext_reason)
