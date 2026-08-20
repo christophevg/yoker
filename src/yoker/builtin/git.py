@@ -378,7 +378,8 @@ async def git(
     # Flag injection is already prevented by _sanitize_arg (rejects leading '-').
     cmd.extend(checkout_pathspecs)
 
-  logger.info("git_executing", operation=operation, path=str(work_dir))
+  cmd_str = " ".join(cmd)
+  logger.info("git_executing", operation=operation, path=str(work_dir), cmd=cmd_str)
 
   try:
     returncode, stdout, stderr = await _execute_command(cmd, work_dir)
@@ -390,6 +391,7 @@ async def git(
         operation=operation,
         path=str(work_dir),
         output_length=len(sanitized_output),
+        cmd=cmd_str,
       )
       content = sanitized_output.strip() or "(no output)"
       content_metadata = {
@@ -400,6 +402,7 @@ async def git(
         "metadata": {
           "git_operation": operation,
           "args": args,
+          "cmd": cmd_str,
         },
       }
       return ToolResult(
@@ -419,10 +422,11 @@ async def git(
         path=str(work_dir),
         returncode=returncode,
         stderr=sanitized_stderr,
+        cmd=cmd_str,
       )
       return ToolResult(
         success=False,
-        error=sanitized_stderr.strip() or f"Git command failed with code {returncode}",
+        error=f"[cmd: {cmd_str}]\n{sanitized_stderr.strip() or f'Git command failed with code {returncode}'}",
       )
 
   except subprocess.TimeoutExpired:
