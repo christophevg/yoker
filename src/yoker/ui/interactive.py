@@ -762,6 +762,7 @@ class InteractiveUIHandler(UIHandler):
     prompt_tokens: int,
     eval_tokens: int,
     usage_limits: dict[str, Any] | None = None,
+    agent_id: str | None = None,
   ) -> None:
     """Output turn statistics.
 
@@ -771,12 +772,18 @@ class InteractiveUIHandler(UIHandler):
       eval_tokens: Number of evaluation tokens.
       usage_limits: Optional backend API usage limits with session/weekly
         usage percentages.
+      agent_id: The agent that produced this turn, or None for the primary
+        agent. Shown in the stats line for multi-agent sessions.
     """
     self._stop_processing_status()
     if self.show_stats:
       total = prompt_tokens + eval_tokens
       duration_s = duration_ms / 1000.0
-      parts = [f"📊 {self._ts()}{duration_s:.1f}s, {total} tokens"]
+      ts = self._ts()
+      if agent_id:
+        parts = [f"📊 {ts}{agent_id}: {duration_s:.1f}s, {total} tokens"]
+      else:
+        parts = [f"📊 {ts}{duration_s:.1f}s, {total} tokens"]
       if usage_limits:
         session_pct = _extract_usage_pct(usage_limits, "session")
         weekly_pct = _extract_usage_pct(usage_limits, "weekly")

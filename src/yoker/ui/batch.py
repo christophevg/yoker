@@ -301,6 +301,7 @@ class BatchUIHandler(UIHandler):
     prompt_tokens: int,
     eval_tokens: int,
     usage_limits: dict[str, object] | None = None,
+    agent_id: str | None = None,
   ) -> None:
     """Output turn statistics.
 
@@ -309,12 +310,16 @@ class BatchUIHandler(UIHandler):
       prompt_tokens: Number of prompt tokens.
       eval_tokens: Number of evaluation tokens.
       usage_limits: Optional backend API usage limits.
+      agent_id: The agent that produced this turn, or None for the primary
+        agent.
     """
     if not self.show_stats:
       return
     total = prompt_tokens + eval_tokens
     duration_s = duration_ms / 1000.0
     parts = [f"{duration_s:.1f}s", f"{total} tokens"]
+    if agent_id:
+      parts.insert(0, agent_id)
     if usage_limits:
       session = usage_limits.get("session")
       if isinstance(session, dict) and isinstance(session.get("usage"), int | float):

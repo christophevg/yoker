@@ -141,6 +141,7 @@ class UIBridge:
       prompt_tokens=event.prompt_eval_count,  # type: ignore[attr-defined]
       eval_tokens=event.eval_count,  # type: ignore[attr-defined]
       usage_limits=usage_limits,
+      agent_id=self._current_agent_id,
     )
 
   def _maybe_start_processing(self) -> None:
