@@ -152,6 +152,7 @@ class PrintUIHandler:
     prompt_tokens: int,
     eval_tokens: int,
     usage_limits: dict[str, object] | None = None,
+    agent_id: str | None = None,
   ) -> None:
     """Print turn statistics.
 
@@ -161,6 +162,8 @@ class PrintUIHandler:
       eval_tokens: Number of evaluation tokens.
       usage_limits: Optional backend API usage limits (e.g. Ollama cloud
         session/weekly usage percentages). None when unavailable.
+      agent_id: The agent that produced this turn, or None for the primary
+        agent.
     """
     print(f"[stats] {duration_ms}ms, prompt_tokens={prompt_tokens}, eval_tokens={eval_tokens}")
 
