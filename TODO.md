@@ -1,8 +1,55 @@
 # TODO
 
-All pre-release work for 0.10.0 is complete. Items below are deferred to post-release.
+## Backlog
 
-## Post-Release
+### Agent Behavior & Instructions
+
+- [ ] **Agent boundary awareness — stop guessing agents and seeking shell access**
+  - Agents attempt to spawn non-existent agents to access capabilities they lack (e.g. shell commands)
+  - Agents persistently try to find workarounds to run shell commands despite not having a shell tool
+  - Agents attempt workarounds instead of escalating to the user when blocked
+  - **Fix:** Strengthen `agent` tool description ("Only spawn agents from the list above. Do NOT guess agent names."); add explicit "no shell access" instruction to system prompt / env reminder; add "stop and ask" instruction ("If a tool fails or you cannot accomplish something with available tools, STOP. Do not try workarounds. Ask the user for direction."); consider a retry-limit mechanism in the tool loop that forces escalation after N consecutive failures
+  - **Priority:** High
+  - **Severity:** High — wastes tokens, causes repeated failures, degrades user experience
+
+- [ ] **Spawned agents released immediately — parent cannot send follow-up messages**
+  - After a spawned agent completes its task, `spawn_agent` calls `session.release(child)` in a `finally` block, removing it from the active map. If the parent then tries `send_message` to the finished agent, it fails with "No active agent with id"
+  - **Fix:** Don't auto-release spawned agents. Keep them in the active map until the session ends or an explicit release is called. The session's `__aexit__` already cleans up all outstanding agents
+  - **Priority:** High
+  - **Severity:** High — breaks the common "spawn → get result → ask follow-up" workflow
+
+### Tool Enhancements
+
+- [ ] **`update` tool: infer `operation` from arguments when omitted**
+  - The `update` tool requires `operation` as a mandatory argument. When an LLM provides `old_string` + `new_string` + `path` but omits `operation`, the tool rejects the call. Since `old_string` + `new_string` unambiguously means "replace", requiring `operation` is redundant. The LLM frequently omits it, causing failures
+  - **Fix:** Make `operation` optional (default `None`). Infer: `old_string` + `new_string` → `"replace"`; `line_number` + `new_string` → `"insert"`; `new_string` only → `"append"`; `old_string` only → `"delete"`
+  - **Priority:** Critical
+  - **Severity:** High — very common operation that fails frequently, wasting a round-trip each time
+
+- [ ] **`search` tool: `include_pattern` for directories** — cannot search within a specific subdirectory pattern
+- [ ] **`read` tool: binary file detection** — reading a binary file returns garbled content. Should detect and warn/skip like `search` does
+- [ ] **`git` tool: `git merge` operation** — complete the branch workflow (create → work → commit → switch → merge)
+- [ ] **`git` tool: `git restore` / `git stash`** — `checkout` is done, but `restore` (discard changes) and `stash` (temporarily shelve work) are still missing
+- [ ] **`write` tool: per-call `overwrite` flag** — `allow_overwrite` is project-level config. Agent cannot overwrite even when it explicitly wants to
+- [ ] **`make` tool: arbitrary target args** — some Makefile targets need arguments that aren't env vars (e.g. `make clean V=1`). Consider `make_args` parameter with sanitization
+- [ ] **`github` tool: `issue_create` operation** — currently read-only (except pr_create/pr_comment/release_create). Add issue creation with approval model
+- [ ] **`file` tool: `stat`/`info` sub-operation** — return file size, type, modification time without reading content
+- [ ] **`file` tool: `diff` sub-operation** — compare two files without reading both into context
+
+### UX Polish
+
+- [ ] **Config file permission errors produce raw stacktrace — add graceful error handling**
+  - When `yoker.toml` has incorrect file permissions (not `0600`), Yoker crashes with a raw Python stacktrace instead of a clean, user-friendly error message
+  - **Fix:** Catch the permission/security error during config loading and present a clean message: "Your config file at {path} has insecure permissions (expected 600). Run: chmod 600 {path}"
+  - **Priority:** Medium
+
+- [ ] **Git commit approval dialog shows raw data — format clean commit overview**
+  - When the git commit operation requires interactive approval, the approval dialog shows raw internal commit data rather than a clean, human-readable summary of what files will change and what the commit message will be
+  - **Fix:** Enhance the commit approval preview to show: staged files (list), commit message (formatted), and a clear Y/N prompt
+  - **Priority:** Low
+
+- [ ] **`yoker chat` initial prompt option** — accept an option to provide an initial prompt to start the chat with
+- [ ] **Interactive UI handler Panel output** — the interactive UI handler outputs responses in a Panel. Fine for chat but not for the bootstrap wizard.
 
 ### Context Management & Usage
 
@@ -18,11 +65,6 @@ All pre-release work for 0.10.0 is complete. Items below are deferred to post-re
   - Add to stats: total session/weekly cost, turn cost, cost per tokens
   - Track context size as a statistic alongside usage
 
-### UX Polish
-
-- [ ] **`yoker chat` initial prompt option** — accept an option to provide an initial prompt to start the chat with
-- [ ] **Interactive UI handler Panel output** — the interactive UI handler outputs responses in a Panel. Fine for chat but not for the bootstrap wizard.
-
 ### C3 Migration
 
 - [ ] **C3 toolset evaluation**
@@ -36,18 +78,6 @@ All pre-release work for 0.10.0 is complete. Items below are deferred to post-re
   - Include instructions to "ask for tools/more options" if yoker toolset limits the LLM
   - Open question: where to host yoker-specific vs claude-specific definitions
   - **Depends on:** C3 toolset evaluation
-
-### Tool Enhancements
-
-- [ ] **`search` tool: `include_pattern` for directories** — cannot search within a specific subdirectory pattern
-- [ ] **`read` tool: binary file detection** — reading a binary file returns garbled content. Should detect and warn/skip like `search` does
-- [ ] **`git` tool: `git merge` operation** — complete the branch workflow (create → work → commit → switch → merge)
-- [ ] **`git` tool: `git restore` / `git stash`** — `checkout` is done, but `restore` (discard changes) and `stash` (temporarily shelve work) are still missing
-- [ ] **`write` tool: per-call `overwrite` flag** — `allow_overwrite` is project-level config. Agent cannot overwrite even when it explicitly wants to
-- [ ] **`make` tool: arbitrary target args** — some Makefile targets need arguments that aren't env vars (e.g. `make clean V=1`). Consider `make_args` parameter with sanitization
-- [ ] **`github` tool: `issue_create` operation** — currently read-only (except pr_create/release_create). Add issue creation with approval model
-- [ ] **`file` tool: `stat`/`info` sub-operation** — return file size, type, modification time without reading content
-- [ ] **`file` tool: `diff` sub-operation** — compare two files without reading both into context
 
 ### Network Resilience
 
