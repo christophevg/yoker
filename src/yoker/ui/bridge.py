@@ -30,17 +30,20 @@ class UIBridge:
   independent of UI implementation details.
   """
 
-  def __init__(self, ui_handler: UIHandler):
+  def __init__(self, ui_handler: UIHandler, primary_agent_id: str | None = None):
     """Initialize bridge with UI handler.
 
     Args:
       ui_handler: The UI handler to dispatch events to.
+      primary_agent_id: The primary agent's id, used for display in the
+        stats line when bare events (not wrapped in SessionEvent) arrive.
     """
     self.ui = ui_handler
-    # The agent_id from the most recent SessionEvent envelope, or None when
-    # the bridge is on the single-agent (bare event) path. Available for
-    # tagging/display by UI handlers that opt in.
-    self._current_agent_id: str | None = None
+    # The agent_id from the most recent SessionEvent envelope, or the
+    # primary agent's id when the bridge is on the single-agent (bare event)
+    # path. Available for tagging/display by UI handlers that opt in.
+    self._primary_agent_id: str | None = primary_agent_id
+    self._current_agent_id: str | None = primary_agent_id
 
   async def __call__(self, event: Event | SessionEvent) -> None:
     """Handle event by dispatching to UI handler.
@@ -63,7 +66,7 @@ class UIBridge:
       self._current_agent_id = event.agent_id
       await self._dispatch(inner)
       return
-    self._current_agent_id = None
+    self._current_agent_id = self._primary_agent_id
     await self._dispatch(event)
 
   async def _dispatch(self, event: Event) -> None:

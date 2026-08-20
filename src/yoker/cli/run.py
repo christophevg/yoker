@@ -180,6 +180,8 @@ async def _run_source(
     )
     bridge = UIBridge(ui)
     session.on_event(bridge)
+    bridge._primary_agent_id = session._id_of(session.agent)
+    bridge._current_agent_id = bridge._primary_agent_id
 
     await ui.start(session.agent)
     try:

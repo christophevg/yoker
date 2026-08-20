@@ -148,6 +148,8 @@ async def _run_with_session(
           return
 
     session.on_event(bridge)
+    bridge._primary_agent_id = session._id_of(session.agent)
+    bridge._current_agent_id = bridge._primary_agent_id
     _wire_approval_handler(session, ui)
     await _run_repl(session.agent, ui, commands)
 
