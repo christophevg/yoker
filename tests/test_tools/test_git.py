@@ -842,6 +842,55 @@ class TestGitToolPermissionRequiredOperations:
     assert cmd[1] == "push"
     assert "--tags" in cmd
 
+  @pytest.mark.asyncio
+  async def test_git_push_set_upstream_appends_origin_head(self, git_repo: Path) -> None:
+    """push with set_upstream=true should build command: git push --set-upstream origin HEAD.
+
+    Without the positional remote+branch args, git fails with
+    "no upstream branch". The tool must append them.
+    """
+    config = GitToolConfig(
+      allowed_commands=("status", "log", "push"),
+      auto_permission=("status", "log", "push"),
+    )
+    spec = _git_spec()
+    ctx = _git_context(config=config)
+
+    result = await spec.execute(
+      operation="push",
+      path=str(git_repo),
+      args={"set_upstream": True},
+      ctx=ctx,
+    )
+    # Push will fail (no remote configured), but the error should contain
+    # the command string showing --set-upstream origin HEAD.
+    assert not result.success
+    assert "[cmd:" in result.error
+    assert "--set-upstream" in result.error
+    assert "origin" in result.error
+    assert "HEAD" in result.error
+
+  @pytest.mark.asyncio
+  async def test_git_push_with_explicit_remote_and_branch(self, git_repo: Path) -> None:
+    """push with explicit remote and branch should use them as positional args."""
+    config = GitToolConfig(
+      allowed_commands=("status", "log", "push"),
+      auto_permission=("status", "log", "push"),
+    )
+    spec = _git_spec()
+    ctx = _git_context(config=config)
+
+    result = await spec.execute(
+      operation="push",
+      path=str(git_repo),
+      args={"remote": "myremote", "branch": "mybranch"},
+      ctx=ctx,
+    )
+    assert not result.success  # no remote configured
+    assert "[cmd:" in result.error
+    assert "myremote" in result.error
+    assert "mybranch" in result.error
+
   def test_git_push_set_upstream_builds_correct_command(self) -> None:
     """_build_command for push with set_upstream=true should produce git push --set-upstream."""
     from yoker.builtin.git import _build_command

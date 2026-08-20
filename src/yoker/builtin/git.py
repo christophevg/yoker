@@ -130,6 +130,8 @@ OPERATION_ARGS: dict[str, dict[str, dict[str, Any]]] = {
     "tags": {"type": "boolean", "description": "Push tags"},
     "force": {"type": "boolean", "description": "Force push (dangerous)"},
     "set_upstream": {"type": "boolean", "description": "Set upstream for the current branch (-u)"},
+    "remote": {"type": "string", "description": "Remote to push to (default: origin)"},
+    "branch": {"type": "string", "description": "Branch to push (default: current branch)"},
   },
   "checkout": {
     "branch": {
@@ -217,7 +219,7 @@ async def git(
       "  - To show a specific file, set the 'path' parameter to the file path.\n"
       "add: {all: bool (stage everything), update: bool (stage tracked only), files: [str] (specific files)}\n"
       "commit: {message: str (supports multi-line), all: bool, amend: bool}\n"
-      "push: {all: bool, tags: bool, force: bool, set_upstream: bool (-u, set upstream for current branch)}\n"
+      "push: {all: bool, tags: bool, force: bool, set_upstream: bool (-u, set upstream for current branch), remote: str (default: origin), branch: str (default: current branch)}\n"
       "checkout: {branch: str (required), create: bool (create new branch with -b), startpoint: str (base for new branch)}\n"
       "rm: {cached: bool (untrack without deleting), r: bool (recursive), files: [str] (required, specific file paths to remove)}\n"
       "pull: *(no args)* — sync current branch with remote upstream\n"
@@ -328,6 +330,28 @@ async def git(
     # Remove 'files' from args so _build_command doesn't try to process it.
     args = {k: v for k, v in args.items() if k != "files"}
 
+  # Extract remote and branch for 'push' — they are positional args
+  # (e.g. `git push origin main`), not flags. When set_upstream is true
+  # but no explicit remote/branch is provided, default to "origin HEAD"
+  # so git knows where to push and what to set as upstream.
+  push_positional: list[str] = []
+  if operation == "push":
+    remote = args.get("remote")
+    branch = args.get("branch")
+    if remote or branch or args.get("set_upstream"):
+      if not remote:
+        remote = "origin"
+      if not branch:
+        branch = "HEAD"
+      push_str_schema = {"type": "string", "max_length": 200}
+      try:
+        push_positional.append(_sanitize_arg("remote", remote, push_str_schema))
+        push_positional.append(_sanitize_arg("branch", branch, push_str_schema))
+      except ValueError as e:
+        return ToolResult(success=False, error=str(e))
+    # Remove remote/branch from args so _build_command doesn't make flags.
+    args = {k: v for k, v in args.items() if k not in ("remote", "branch")}
+
   # Extract branch and startpoint for 'checkout' — they are positional
   # args appended after '--' on the command line.
   checkout_pathspecs: list[str] = []
@@ -368,6 +392,10 @@ async def git(
       cmd = _build_command(operation, args, allowed_commands)
     except ValueError as e:
       return ToolResult(success=False, error=str(e))
+
+  # push: append remote and branch as positional arguments (not flags).
+  if operation == "push" and push_positional:
+    cmd.extend(push_positional)
 
   if file_arg is not None:
     cmd.extend(["--", file_arg])
