@@ -550,8 +550,11 @@ class TestGithubWriteOperations:
     assert cmd[:3] == ["gh", "pr", "comment"]
     assert "--body=LGTM!" in cmd
     assert "--json" not in cmd
-    assert "--" in cmd  # separator before positional number
-    assert "42" in cmd
+    # The -- separator and positional number must come AFTER --body
+    sep_idx = cmd.index("--")
+    body_idx = cmd.index("--body=LGTM!")
+    assert body_idx < sep_idx, "--body must come before -- separator"
+    assert str(42) in cmd[sep_idx + 1 :], "number must come after -- separator"
 
   @pytest.mark.asyncio
   async def test_pr_comment_with_repo(self, mocker: MockerFixture) -> None:

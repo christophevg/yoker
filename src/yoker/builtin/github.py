@@ -382,7 +382,21 @@ async def github(
   effective_limit = max(1, min(limit, gh_config.max_results))
 
   cmd = _build_command(operation, repo, number, tag, effective_limit, state, label)
-  cmd.extend(_build_write_args(operation, title, body, head, base, notes, draft, prerelease, tag))
+  write_args = _build_write_args(operation, title, body, head, base, notes, draft, prerelease, tag)
+  # For write ops with a required positional (pr_comment), insert write args
+  # (flags like --body=...) BEFORE the -- separator + positional arg.
+  # For write ops without a required positional (pr_create, release_create),
+  # _build_command already returned the full command; write_args are appended
+  # after (they're all flags, no positional needed).
+  # For release_create, the positional tag is already in the command from
+  # _build_command, and write_args (--title, --notes, --draft, --prerelease)
+  # are flags that go after.
+  if operation == "pr_comment":
+    # cmd is ["gh", "pr", "comment", "--repo", repo] (no -- separator yet)
+    cmd.extend(write_args)
+    cmd.extend(["--", str(number)])
+  else:
+    cmd.extend(write_args)
 
   logger.info(
     "github_executing",
@@ -780,13 +794,17 @@ def _build_command(
   if operation in _LIMIT_OPS:
     cmd.extend(["--limit", str(limit)])
 
-  # Write operations (pr_create, release_create) don't support --json;
-  # they output a URL on success which is parsed separately.
+  # Write operations (pr_create, pr_comment, release_create) don't support
+  # --json; they output a URL on success which is parsed separately.
   # Plaintext operations (workflow_logs) return raw text, not JSON.
   if operation not in _WRITE_OPS and operation not in _PLAINTEXT_OPS:
     cmd.extend(["--json", fields])
 
-  if required == "number":
+  # For write ops with a required positional (pr_comment needs the PR number),
+  # the -- separator and positional are added by the caller AFTER write
+  # args (flags) so that --body=... is treated as a flag, not a positional.
+  # For non-write ops, the -- separator is added here.
+  if required == "number" and operation not in _WRITE_OPS:
     cmd.extend(["--", str(number)])
   elif required == "tag":
     cmd.extend(["--", tag])
