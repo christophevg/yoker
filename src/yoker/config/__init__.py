@@ -638,7 +638,7 @@ class GitHubToolConfig(ToolConfig):
       subcommand-blocking security boundary. Defaults to the full read-only
       MVP set. Operations in the fixed enum but not in this list are
       rejected. Write operations (``pr_create``, ``pr_comment``,
-      ``release_create``) are in the enum but NOT in the default allowlist — the config owner must
+      ``pr_ready``, ``release_create``) are in the enum but NOT in the default allowlist — the config owner must
       explicitly add them to enable write operations. An empty list
       disables the tool effectively (when combined with ``enabled = true``;
       setting ``enabled = false`` is the cleaner off-switch).
@@ -662,7 +662,7 @@ class GitHubToolConfig(ToolConfig):
         "pr_reviews", "pr_comments",
         "workflow_list", "workflow_view", "workflow_logs",
         "release_list", "release_view",
-        "pr_create", "pr_comment", "release_create"
+        "pr_create", "pr_comment", "pr_ready", "release_create"
       ]
   """
 

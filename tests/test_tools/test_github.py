@@ -629,6 +629,78 @@ class TestGithubWriteOperations:
     parsed = json.loads(result.result)
     assert parsed["url"] == url
 
+  # --- pr_ready ---
+
+  @pytest.mark.asyncio
+  async def test_pr_ready_builds_correct_command(self, mocker: MockerFixture) -> None:
+    """pr_ready builds gh pr ready <number>, no --json."""
+    popen = _mock_popen(mocker, stdout="")
+    cfg = GitHubToolConfig(allowed_operations=("pr_ready",))
+    await github(
+      operation="pr_ready",
+      ctx=_ctx(cfg),
+      number=42,
+    )
+    cmd = popen.call_args.args[0]
+    assert cmd[:3] == ["gh", "pr", "ready"]
+    assert "--json" not in cmd
+    assert "--" in cmd
+    assert "42" in cmd
+
+  @pytest.mark.asyncio
+  async def test_pr_ready_with_repo(self, mocker: MockerFixture) -> None:
+    """pr_ready includes --repo when provided."""
+    popen = _mock_popen(mocker, stdout="")
+    cfg = GitHubToolConfig(allowed_operations=("pr_ready",))
+    await github(
+      operation="pr_ready",
+      ctx=_ctx(cfg),
+      repo="owner/repo",
+      number=42,
+    )
+    cmd = popen.call_args.args[0]
+    assert "--repo" in cmd and "owner/repo" in cmd
+
+  @pytest.mark.asyncio
+  async def test_pr_ready_not_in_default_allowlist(self, mocker: MockerFixture) -> None:
+    """pr_ready is rejected with default config (not in default allowlist)."""
+    _mock_popen(mocker)
+    result = await github(
+      operation="pr_ready",
+      ctx=_ctx(),
+      number=42,
+    )
+    assert not result.success
+    assert "not allowed" in result.error.lower() or "allowed" in result.error.lower()
+
+  @pytest.mark.asyncio
+  async def test_pr_ready_requires_number(self, mocker: MockerFixture) -> None:
+    """pr_ready requires a positive number."""
+    _mock_popen(mocker)
+    cfg = GitHubToolConfig(allowed_operations=("pr_ready",))
+    result = await github(
+      operation="pr_ready",
+      ctx=_ctx(cfg),
+    )
+    assert not result.success
+    assert "number" in result.error.lower()
+
+  @pytest.mark.asyncio
+  async def test_pr_ready_returns_success(self, mocker: MockerFixture) -> None:
+    """pr_ready returns success with ready=true."""
+    _mock_popen(mocker, stdout="")
+    cfg = GitHubToolConfig(allowed_operations=("pr_ready",))
+    result = await github(
+      operation="pr_ready",
+      ctx=_ctx(cfg),
+      number=42,
+    )
+    assert result.success
+    import json
+
+    parsed = json.loads(result.result)
+    assert parsed["ready"] is True
+
   @pytest.mark.asyncio
   async def test_release_create_builds_correct_command(self, mocker: MockerFixture) -> None:
     """release_create builds gh release create with tag, --title=, --notes=, no --json."""
@@ -1272,14 +1344,16 @@ class TestGithubConfigValidation:
     # Write ops are NOT in the default allowlist
     assert "pr_create" not in cfg.allowed_operations
     assert "pr_comment" not in cfg.allowed_operations
+    assert "pr_ready" not in cfg.allowed_operations
     assert "release_create" not in cfg.allowed_operations
 
   def test_write_ops_allowed_when_explicitly_configured(self) -> None:
     cfg = GitHubToolConfig(
-      allowed_operations=("repo_view", "pr_create", "pr_comment", "release_create")
+      allowed_operations=("repo_view", "pr_create", "pr_comment", "pr_ready", "release_create")
     )
     assert "pr_create" in cfg.allowed_operations
     assert "pr_comment" in cfg.allowed_operations
+    assert "pr_ready" in cfg.allowed_operations
     assert "release_create" in cfg.allowed_operations
 
   def test_invalid_timeout_raises(self) -> None:

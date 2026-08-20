@@ -69,6 +69,7 @@ _GITHUB_OPERATIONS: frozenset[str] = frozenset(
     "release_view",
     "pr_create",
     "pr_comment",
+    "pr_ready",
     "release_create",
   }
 )
@@ -77,7 +78,7 @@ _GITHUB_OPERATIONS: frozenset[str] = frozenset(
 # ``GitHubToolConfig.allowed_operations`` — they are NOT in the default
 # allowlist. Even when allowed, they are never auto-permitted (the config
 # owner must consciously add them).
-_WRITE_OPS: frozenset[str] = frozenset({"pr_create", "pr_comment", "release_create"})
+_WRITE_OPS: frozenset[str] = frozenset({"pr_create", "pr_comment", "pr_ready", "release_create"})
 
 # (gh_subcommand_prefix, --json fields, required_param)
 _OPERATION_DISPATCH: dict[str, tuple[list[str], str, str | None]] = {
@@ -136,6 +137,11 @@ _OPERATION_DISPATCH: dict[str, tuple[list[str], str, str | None]] = {
   ),
   "pr_comment": (
     ["pr", "comment"],
+    "",
+    "number",
+  ),
+  "pr_ready": (
+    ["pr", "ready"],
     "",
     "number",
   ),
@@ -208,6 +214,7 @@ _REDACT_REPLACEMENT = "<redacted>"
     "  release_view   — View a release. Required: tag. Optional: repo.\n"
     "  pr_create      — Create a PR. Required: repo, title, body. Optional: head, base.\n"
     "  pr_comment     — Add a comment to a PR. Required: number, body. Optional: repo.\n"
+    "  pr_ready       — Convert a draft PR to ready for review. Required: number. Optional: repo.\n"
     "  release_create — Create a release. Required: repo, tag, title, notes. Optional: draft, prerelease.\n"
     "\n"
     "Common parameters:\n"
@@ -231,7 +238,7 @@ async def github(
       "GitHub operation. One of: repo_view, issue_list, issue_view, pr_list, "
       "pr_view, pr_reviews, pr_comments, workflow_list, workflow_view, "
       "workflow_logs, release_list, release_view, pr_create, pr_comment, "
-      "release_create."
+      "pr_ready, release_create."
     ),
   ],
   ctx: ToolContext,
@@ -273,7 +280,8 @@ async def github(
 
   Read operations are restricted to a fixed enum (the security boundary)
   and further gated by ``GitHubToolConfig.allowed_operations``. Write
-  operations (``pr_create``, ``pr_comment``, ``release_create``) require
+  operations (``pr_create``, ``pr_comment``, ``pr_ready``,
+  ``release_create``) require
   explicit opt-in via ``allowed_operations`` — they are NOT in the default
   allowlist. All commands
   run via ``subprocess`` with list args (no shell); timeout is enforced by
@@ -391,8 +399,8 @@ async def github(
   # For release_create, the positional tag is already in the command from
   # _build_command, and write_args (--title, --notes, --draft, --prerelease)
   # are flags that go after.
-  if operation == "pr_comment":
-    # cmd is ["gh", "pr", "comment", "--repo", repo] (no -- separator yet)
+  if operation in ("pr_comment", "pr_ready"):
+    # cmd is ["gh", "pr", "<subcmd>", "--repo", repo] (no -- separator yet)
     cmd.extend(write_args)
     cmd.extend(["--", str(number)])
   else:
@@ -853,6 +861,9 @@ def _parse_write_output(operation: str, stdout: str, tag: str) -> str:
   elif operation == "pr_comment":
     # gh pr comment outputs the comment URL: .../pull/42#issuecomment-123
     result["url"] = url
+  elif operation == "pr_ready":
+    # gh pr ready outputs nothing on success
+    result = {"ready": True}
   elif operation == "release_create":
     result["tagName"] = tag
 
