@@ -355,23 +355,14 @@ class ReadToolConfig(ToolConfig):
   """Read tool configuration.
 
   Attributes:
-    allowed_extensions: Allowed file extensions.
+    allowed_extensions: Allowed file extensions. When empty (default), all
+      extensions are allowed — the ``blocked_patterns`` denylist is the
+      sole filter. When non-empty, only files with these extensions pass
+      the read guardrail.
     blocked_patterns: Blocked file patterns.
   """
 
-  allowed_extensions: tuple[str, ...] = (
-    ".txt",
-    ".md",
-    ".json",
-    ".yaml",
-    ".yml",
-    ".toml",
-    ".py",
-    ".js",
-    ".ts",
-    ".html",
-    ".css",
-  )
+  allowed_extensions: tuple[str, ...] = ()
   blocked_patterns: tuple[str, ...] = (
     r"\.env",  # Environment files
     r"\.git",  # Git directories
