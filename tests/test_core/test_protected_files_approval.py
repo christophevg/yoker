@@ -223,6 +223,23 @@ async def test_approval_not_needed_for_non_write_tool() -> None:
 
 
 @pytest.mark.asyncio
+async def test_read_never_triggers_approval_even_with_handler() -> None:
+  """Read on a protected file must NOT trigger the approval flow.
+
+  The guardrail never blocks reads of protected files, so the approval
+  hook must not fire for read-only tools (read, list, search, existence).
+  """
+
+  async def handler(_path: str, _diff: str, _kind: str = "file") -> bool:
+    raise AssertionError("Approval handler should not be called for read")
+
+  agent = _FakeAgent(handler=handler, protected=True)
+  spec = _make_spec(_dummy_read, "read")
+  result = await _maybe_approve_protected(agent, spec, {"path": "/x/Makefile"})
+  assert result is False
+
+
+@pytest.mark.asyncio
 async def test_approval_not_needed_when_no_handler_wired() -> None:
   agent = _FakeAgent(handler=None, protected=True)
   spec = _make_spec(_dummy_write, "write")

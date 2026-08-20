@@ -1050,6 +1050,14 @@ async def _maybe_approve_protected(agent: Any, spec: ToolSpec, tool_args: dict[s
 
   simple_name = spec.simple_name or spec.name
 
+  # Only tools that the guardrail actually blocks on protected files
+  # should trigger the interactive approval flow. Read-only tools
+  # (read, list, search, existence, git, make) are never blocked by
+  # the protected_files check, so asking for approval is wrong.
+  _PROTECTED_FILE_TOOLS = frozenset({"write", "update", "file"})
+  if simple_name not in _PROTECTED_FILE_TOOLS:
+    return False
+
   # Find all Path-annotated parameters that resolve to a protected file.
   protected_paths: list[str] = []
   for param_name, guard_type in spec.guards.items():
