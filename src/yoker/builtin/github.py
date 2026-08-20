@@ -68,6 +68,7 @@ _GITHUB_OPERATIONS: frozenset[str] = frozenset(
     "release_list",
     "release_view",
     "pr_create",
+    "pr_comment",
     "release_create",
   }
 )
@@ -76,7 +77,7 @@ _GITHUB_OPERATIONS: frozenset[str] = frozenset(
 # ``GitHubToolConfig.allowed_operations`` — they are NOT in the default
 # allowlist. Even when allowed, they are never auto-permitted (the config
 # owner must consciously add them).
-_WRITE_OPS: frozenset[str] = frozenset({"pr_create", "release_create"})
+_WRITE_OPS: frozenset[str] = frozenset({"pr_create", "pr_comment", "release_create"})
 
 # (gh_subcommand_prefix, --json fields, required_param)
 _OPERATION_DISPATCH: dict[str, tuple[list[str], str, str | None]] = {
@@ -132,6 +133,11 @@ _OPERATION_DISPATCH: dict[str, tuple[list[str], str, str | None]] = {
     ["pr", "create"],
     "number,url,title,state",
     None,
+  ),
+  "pr_comment": (
+    ["pr", "comment"],
+    "",
+    "number",
   ),
   "release_create": (
     ["release", "create"],
@@ -201,6 +207,7 @@ _REDACT_REPLACEMENT = "<redacted>"
     "  release_list   — List releases. Optional: repo, limit.\n"
     "  release_view   — View a release. Required: tag. Optional: repo.\n"
     "  pr_create      — Create a PR. Required: repo, title, body. Optional: head, base.\n"
+    "  pr_comment     — Add a comment to a PR. Required: number, body. Optional: repo.\n"
     "  release_create — Create a release. Required: repo, tag, title, notes. Optional: draft, prerelease.\n"
     "\n"
     "Common parameters:\n"
@@ -223,7 +230,8 @@ async def github(
     Text(
       "GitHub operation. One of: repo_view, issue_list, issue_view, pr_list, "
       "pr_view, pr_reviews, pr_comments, workflow_list, workflow_view, "
-      "workflow_logs, release_list, release_view, pr_create, release_create."
+      "workflow_logs, release_list, release_view, pr_create, pr_comment, "
+      "release_create."
     ),
   ],
   ctx: ToolContext,
@@ -251,7 +259,9 @@ async def github(
   ] = None,
   # --- pr_create parameters ---
   title: Annotated[str, Text("PR title (for pr_create)")] = "",
-  body: Annotated[str, Text("PR body/description (for pr_create)")] = "",
+  body: Annotated[
+    str, Text("PR body/description (for pr_create) or comment body (for pr_comment)")
+  ] = "",
   head: Annotated[str, Text("Source branch for PR (for pr_create)")] = "",
   base: Annotated[str, Text("Target branch for PR (for pr_create)")] = "",
   # --- release_create parameters ---
@@ -263,8 +273,9 @@ async def github(
 
   Read operations are restricted to a fixed enum (the security boundary)
   and further gated by ``GitHubToolConfig.allowed_operations``. Write
-  operations (``pr_create``, ``release_create``) require explicit opt-in via
-  ``allowed_operations`` — they are NOT in the default allowlist. All commands
+  operations (``pr_create``, ``pr_comment``, ``release_create``) require
+  explicit opt-in via ``allowed_operations`` — they are NOT in the default
+  allowlist. All commands
   run via ``subprocess`` with list args (no shell); timeout is enforced by
   killing the whole process group.
 
@@ -275,6 +286,10 @@ async def github(
   ``pr_create`` requires ``repo``, ``title``, and ``body``. Optional ``head``
   (source branch) and ``base`` (target branch) default to the current branch
   and repo default respectively.
+
+  ``pr_comment`` requires ``number`` and ``body``. Optional ``repo`` defaults
+  to the current git repo. The comment is posted as a regular PR comment
+  (not an inline review comment).
 
   ``release_create`` requires ``repo``, ``tag``, ``title``, and ``notes``.
   Optional ``draft`` and ``prerelease`` flags default to false.
@@ -334,6 +349,12 @@ async def github(
     werr = _validate_pr_create_params(repo, title, body, head, base)
     if werr is not None:
       logger.info("github_rejected", reason="invalid_pr_create_param", error=werr)
+      return ToolResult(success=False, error=werr)
+
+  if operation == "pr_comment":
+    werr = _validate_pr_comment_params(body)
+    if werr is not None:
+      logger.info("github_rejected", reason="invalid_pr_comment_param", error=werr)
       return ToolResult(success=False, error=werr)
 
   if operation == "release_create":
@@ -544,6 +565,16 @@ def _validate_pr_create_params(
   return None
 
 
+def _validate_pr_comment_params(body: str) -> str | None:
+  """Validate parameters for pr_comment operation."""
+  if not body or not isinstance(body, str):
+    return "Parameter 'body' is required for pr_comment"
+  err = _validate_text_field("body", body, max_len=100000)
+  if err is not None:
+    return err
+  return None
+
+
 def _validate_release_create_params(repo: str, tag: str, title: str, notes: str) -> str | None:
   """Validate parameters for release_create operation."""
   if not repo:
@@ -601,6 +632,9 @@ def _build_write_args(
     if base:
       args.append(f"--base={base}")
     return args
+
+  if operation == "pr_comment":
+    return [f"--body={body}"]
 
   if operation == "release_create":
     args = [
@@ -798,6 +832,9 @@ def _parse_write_output(operation: str, stdout: str, tag: str) -> str:
     match = re.search(r"/pull/(\d+)", url)
     if match:
       result["number"] = int(match.group(1))
+  elif operation == "pr_comment":
+    # gh pr comment outputs the comment URL: .../pull/42#issuecomment-123
+    result["url"] = url
   elif operation == "release_create":
     result["tagName"] = tag
 

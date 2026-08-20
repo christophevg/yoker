@@ -533,6 +533,99 @@ class TestGithubWriteOperations:
     assert not result.success
     assert "dash" in result.error.lower() or "-" in result.error
 
+  # --- pr_comment ---
+
+  @pytest.mark.asyncio
+  async def test_pr_comment_builds_correct_command(self, mocker: MockerFixture) -> None:
+    """pr_comment builds gh pr comment <number> --body=..., no --json."""
+    popen = _mock_popen(mocker, stdout="https://github.com/owner/repo/pull/42#issuecomment-123")
+    cfg = GitHubToolConfig(allowed_operations=("pr_comment",))
+    await github(
+      operation="pr_comment",
+      ctx=_ctx(cfg),
+      number=42,
+      body="LGTM!",
+    )
+    cmd = popen.call_args.args[0]
+    assert cmd[:3] == ["gh", "pr", "comment"]
+    assert "--body=LGTM!" in cmd
+    assert "--json" not in cmd
+    assert "--" in cmd  # separator before positional number
+    assert "42" in cmd
+
+  @pytest.mark.asyncio
+  async def test_pr_comment_with_repo(self, mocker: MockerFixture) -> None:
+    """pr_comment includes --repo when provided."""
+    popen = _mock_popen(mocker, stdout="https://github.com/owner/repo/pull/42#issuecomment-123")
+    cfg = GitHubToolConfig(allowed_operations=("pr_comment",))
+    await github(
+      operation="pr_comment",
+      ctx=_ctx(cfg),
+      repo="owner/repo",
+      number=42,
+      body="Comment",
+    )
+    cmd = popen.call_args.args[0]
+    assert "--repo" in cmd and "owner/repo" in cmd
+
+  @pytest.mark.asyncio
+  async def test_pr_comment_not_in_default_allowlist(self, mocker: MockerFixture) -> None:
+    """pr_comment is rejected with default config (not in default allowlist)."""
+    _mock_popen(mocker)
+    result = await github(
+      operation="pr_comment",
+      ctx=_ctx(),  # default config
+      number=42,
+      body="LGTM!",
+    )
+    assert not result.success
+    assert "not allowed" in result.error.lower() or "allowed" in result.error.lower()
+
+  @pytest.mark.asyncio
+  async def test_pr_comment_requires_body(self, mocker: MockerFixture) -> None:
+    """pr_comment requires a non-empty body."""
+    _mock_popen(mocker)
+    cfg = GitHubToolConfig(allowed_operations=("pr_comment",))
+    result = await github(
+      operation="pr_comment",
+      ctx=_ctx(cfg),
+      number=42,
+      body="",
+    )
+    assert not result.success
+    assert "body" in result.error.lower()
+
+  @pytest.mark.asyncio
+  async def test_pr_comment_requires_number(self, mocker: MockerFixture) -> None:
+    """pr_comment requires a positive number."""
+    _mock_popen(mocker)
+    cfg = GitHubToolConfig(allowed_operations=("pr_comment",))
+    result = await github(
+      operation="pr_comment",
+      ctx=_ctx(cfg),
+      body="LGTM!",
+    )
+    assert not result.success
+    assert "number" in result.error.lower()
+
+  @pytest.mark.asyncio
+  async def test_pr_comment_returns_success_with_url(self, mocker: MockerFixture) -> None:
+    """pr_comment returns success with the comment URL."""
+    url = "https://github.com/owner/repo/pull/42#issuecomment-123"
+    _mock_popen(mocker, stdout=url)
+    cfg = GitHubToolConfig(allowed_operations=("pr_comment",))
+    result = await github(
+      operation="pr_comment",
+      ctx=_ctx(cfg),
+      number=42,
+      body="LGTM!",
+    )
+    assert result.success
+    import json
+
+    parsed = json.loads(result.result)
+    assert parsed["url"] == url
+
   @pytest.mark.asyncio
   async def test_release_create_builds_correct_command(self, mocker: MockerFixture) -> None:
     """release_create builds gh release create with tag, --title=, --notes=, no --json."""
@@ -1175,11 +1268,15 @@ class TestGithubConfigValidation:
     assert len(cfg.allowed_operations) == 12
     # Write ops are NOT in the default allowlist
     assert "pr_create" not in cfg.allowed_operations
+    assert "pr_comment" not in cfg.allowed_operations
     assert "release_create" not in cfg.allowed_operations
 
   def test_write_ops_allowed_when_explicitly_configured(self) -> None:
-    cfg = GitHubToolConfig(allowed_operations=("repo_view", "pr_create", "release_create"))
+    cfg = GitHubToolConfig(
+      allowed_operations=("repo_view", "pr_create", "pr_comment", "release_create")
+    )
     assert "pr_create" in cfg.allowed_operations
+    assert "pr_comment" in cfg.allowed_operations
     assert "release_create" in cfg.allowed_operations
 
   def test_invalid_timeout_raises(self) -> None:
