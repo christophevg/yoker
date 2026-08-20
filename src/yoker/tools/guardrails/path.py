@@ -329,13 +329,25 @@ class PathGuardrail(Guardrail):
     return self._check_protected_files(resolved) is not None
 
   def _check_read_extension(self, resolved: Path) -> str | None:
-    """Check if a file extension is allowed for reading.
+    """Check if a file extension or name is allowed for reading.
+
+    The ``allowed_extensions`` list supports two kinds of entries:
+
+    - **Extension entries** starting with ``.`` (e.g. ``".py"``, ``".md"``):
+      matched against the file's suffix.
+    - **Filename entries** without a leading dot (e.g. ``"Makefile"``,
+      ``"Dockerfile"``, ``"LICENSE"``): matched against the file's name.
+
+    This allows users to include extensionless files in the allowlist
+    alongside traditional extension entries. An empty list (default)
+    means all files are allowed — the ``blocked_patterns`` denylist is
+    the sole filter.
 
     Args:
       resolved: The resolved file path.
 
     Returns:
-      Error message if extension not allowed, None if allowed.
+      Error message if extension/name not allowed, None if allowed.
     """
     read_config = self._get_tool_config("read")
     if not isinstance(read_config, ReadToolConfig):
@@ -345,10 +357,18 @@ class PathGuardrail(Guardrail):
     if not allowed:
       return None
 
+    name = resolved.name
     ext = resolved.suffix.lower()
-    if ext not in allowed:
-      return f"Extension not allowed: {ext} (allowed: {', '.join(allowed)})"
-    return None
+
+    for entry in allowed:
+      if entry.startswith("."):
+        if ext == entry.lower():
+          return None
+      else:
+        if name.lower() == entry.lower():
+          return None
+
+    return f"Extension not allowed: {ext or '(none)'} (allowed: {', '.join(allowed)})"
 
   def _check_file_size(self, resolved: Path) -> str | None:
     """Check if a file exceeds the maximum allowed size.

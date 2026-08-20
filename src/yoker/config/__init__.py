@@ -355,10 +355,13 @@ class ReadToolConfig(ToolConfig):
   """Read tool configuration.
 
   Attributes:
-    allowed_extensions: Allowed file extensions. When empty (default), all
-      extensions are allowed — the ``blocked_patterns`` denylist is the
-      sole filter. When non-empty, only files with these extensions pass
-      the read guardrail.
+    allowed_extensions: Allowed file extensions and/or filenames. When
+      empty (default), all files are allowed — the ``blocked_patterns``
+      denylist is the sole filter. When non-empty, only files matching an
+      entry pass the read guardrail. Entries starting with ``.`` (e.g.
+      ``".py"``) are matched as extensions; entries without a leading dot
+      (e.g. ``"Makefile"``, ``"Dockerfile"``) are matched as exact
+      filenames. This allows including extensionless files in the list.
     blocked_patterns: Blocked file patterns.
   """
 
