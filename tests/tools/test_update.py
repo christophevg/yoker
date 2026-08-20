@@ -245,6 +245,22 @@ class TestUpdateTool:
     assert "delete" in result.error.lower()
 
   @pytest.mark.asyncio
+  async def test_infer_replace_with_empty_new_string(self, tmp_path: Path) -> None:
+    """old_string + new_string='' (explicit empty) infers replace, clearing the text."""
+    file_path = tmp_path / "test.txt"
+    file_path.write_text("hello world")
+    spec = _update_spec()
+    ctx = _update_context()
+    result = await spec.execute(
+      path=str(file_path),
+      old_string="world",
+      new_string="",
+      ctx=ctx,
+    )
+    assert result.success is True
+    assert file_path.read_text() == "hello "
+
+  @pytest.mark.asyncio
   async def test_explicit_delete_still_works(self, tmp_path: Path) -> None:
     """Explicit operation='delete' still works as before."""
     file_path = tmp_path / "test.txt"

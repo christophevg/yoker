@@ -87,13 +87,15 @@ async def update(
     ),
   ] = "",
   new_string: Annotated[
-    str,
+    str | None,
     Text(
       "Replacement or insertion text (required for replace, insert, and append). "
       "For replace: replaces old_string with this. For insert: the content to "
-      "insert at line_number. For append: the content to add at end of file."
+      "insert at line_number. For append: the content to add at end of file. "
+      "An empty string is a valid value (clears text for replace). When omitted "
+      "(None), the operation cannot be inferred as replace/insert/append."
     ),
-  ] = "",
+  ] = None,
   line_number: Annotated[
     int | None,
     Text(
@@ -160,13 +162,13 @@ async def update(
   # Delete is never inferred — it must always be explicit to prevent
   # accidental data loss from ambiguous arguments.
   if not operation:
-    if line_number is not None and new_string:
+    if line_number is not None and new_string is not None:
       operation = "insert"
-    elif old_string and new_string:
+    elif old_string and new_string is not None:
       operation = "replace"
-    elif new_string and not old_string:
+    elif new_string is not None and not old_string:
       operation = "append"
-    elif line_range is not None and new_string:
+    elif line_range is not None and new_string is not None:
       operation = "replace"
     else:
       # No inference possible — arguments don't match a safe operation.
@@ -188,9 +190,12 @@ async def update(
   if not isinstance(old_string, str):
     logger.warning("update_invalid_old_string_type", old_string_type=type(old_string).__name__)
     return ToolResult(success=False, error="Invalid old_string parameter")
-  if not isinstance(new_string, str):
+  if new_string is not None and not isinstance(new_string, str):
     logger.warning("update_invalid_new_string_type", new_string_type=type(new_string).__name__)
     return ToolResult(success=False, error="Invalid new_string parameter")
+  # Normalize None to empty string for the execution path.
+  # For delete, new_string is irrelevant; for replace, an explicit "" is valid.
+  new_string = new_string or ""
 
   try:
     original_path = Path(path)
