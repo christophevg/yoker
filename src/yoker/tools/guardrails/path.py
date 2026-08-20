@@ -449,25 +449,15 @@ class PathGuardrail(Guardrail):
     """Get tool-specific configuration by name.
 
     Args:
-      tool_name: Name of the tool.
+      tool_name: Simple name of the tool (e.g. ``"write"``, ``"file"``).
 
     Returns:
       ToolConfig subclass instance, or None if not found.
     """
-    tools = self._config.tools
-    mapping: dict[str, ToolConfig] = {
-      "list": tools.list,
-      "read": tools.read,
-      "write": tools.write,
-      "update": tools.update,
-      "search": tools.search,
-      "agent": tools.agent,
-      "git": tools.git,
-      "mkdir": tools.mkdir,
-      "make": tools.make,
-      "file": tools.file,
-    }
-    return mapping.get(tool_name)
+    try:
+      return self._config.tools[tool_name]
+    except (AttributeError, KeyError):
+      return None
 
   def _check_mkdir_depth(self, resolved: Path) -> str | None:
     """Check if path depth exceeds maximum allowed from allowed root.

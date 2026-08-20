@@ -197,7 +197,7 @@ class TestWebToolExecutionViaAgent:
       registry = ToolRegistry()
       spec = registry.register(websearch, name="websearch")
 
-      ctx = _build_tool_context(agent, "websearch")
+      ctx = _build_tool_context(agent, spec)
       result = await spec.execute(query="test query", ctx=ctx)
 
       assert result.success
@@ -226,7 +226,7 @@ class TestWebToolExecutionViaAgent:
       registry = ToolRegistry()
       spec = registry.register(webfetch, name="webfetch")
 
-      ctx = _build_tool_context(agent, "webfetch")
+      ctx = _build_tool_context(agent, spec)
       result = await spec.execute(url="https://example.com", ctx=ctx)
 
       assert result.success
@@ -258,7 +258,7 @@ class TestWebToolExecutionViaAgent:
       registry = ToolRegistry()
       spec = registry.register(websearch, name="websearch")
 
-      ctx = _build_tool_context(agent, "websearch")
+      ctx = _build_tool_context(agent, spec)
       result = await spec.execute(query="test query", ctx=ctx)
 
       assert not result.success

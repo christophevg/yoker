@@ -998,7 +998,7 @@ async def _run_tool(agent: Any, tool_name: str, tool_args: dict[str, Any]) -> tu
   # call. On denial, the guardrail blocks the operation. When no handler
   # is wired (subagents, batch mode), the guardrail's protected_files
   # check is the sole enforcement point — it always blocks.
-  skip_protected = await _maybe_approve_protected(agent, tool_name, tool_args)
+  skip_protected = await _maybe_approve_protected(agent, spec, tool_args)
 
   validation = _validate_tool_args(agent, spec, tool_args, skip_protected=skip_protected)
   if not validation.valid:
@@ -1019,8 +1019,8 @@ async def _run_tool(agent: Any, tool_name: str, tool_args: dict[str, Any]) -> tu
     return f"Error executing tool: {e}", False, None
 
 
-async def _maybe_approve_protected(agent: Any, tool_name: str, tool_args: dict[str, Any]) -> bool:
-  """Run the interactive approval flow for protected write/update.
+async def _maybe_approve_protected(agent: Any, spec: ToolSpec, tool_args: dict[str, Any]) -> bool:
+  """Run the interactive approval flow for protected-file operations.
 
   Runs BEFORE the guardrail so that, when an approval handler is wired
   (interactive mode), the user can approve a protected-file write. On
@@ -1030,32 +1030,49 @@ async def _maybe_approve_protected(agent: Any, tool_name: str, tool_args: dict[s
   When no handler is wired (subagents, batch mode), returns ``False``
   — the guardrail is the sole enforcement point.
 
+  Iterates over ``spec.guards`` to find all ``Path``-annotated parameters
+  (not just ``"path"``), so tools like ``file`` (with ``source`` and
+  ``destination``) and ``make`` (with ``cwd``) are covered.
+
   Returns:
     ``True`` when the user approved (skip guardrail protected_files),
     ``False`` when no approval flow is active or the user denied.
   """
-  base_name = tool_name.split(":")[-1] if ":" in tool_name else tool_name
-  if base_name not in ("write", "update"):
-    return False
+  from yoker.tools.annotations import GuardType
+
   handler = getattr(agent, "_approval_handler", None)
   if handler is None:
     return False
-  path = tool_args.get("path")
-  if not isinstance(path, str):
-    return False
+
   guardrail = agent._guardrails.get("path")
-  if guardrail is None or not guardrail.is_protected(path):
+  if guardrail is None:
     return False
 
-  diff = _build_approval_diff(base_name, path, tool_args)
+  simple_name = spec.simple_name or spec.name
+
+  # Find all Path-annotated parameters that resolve to a protected file.
+  protected_paths: list[str] = []
+  for param_name, guard_type in spec.guards.items():
+    if guard_type != GuardType.PATH:
+      continue
+    value = tool_args.get(param_name)
+    if not isinstance(value, str):
+      continue
+    if guardrail.is_protected(value):
+      protected_paths.append(value)
+
+  if not protected_paths:
+    return False
+
+  diff = _build_approval_diff(simple_name, protected_paths[0], tool_args)
   try:
-    approved = await handler(path, diff, "file")
+    approved = await handler(protected_paths[0], diff, "file")
   except Exception as e:
-    logger.warning("approval_handler_error", tool=tool_name, error=str(e))
+    logger.warning("approval_handler_error", tool=spec.name, error=str(e))
     approved = False
 
   if not approved:
-    logger.info("protected_file_denied", tool=tool_name, path=path)
+    logger.info("protected_file_denied", tool=spec.name, path=protected_paths[0])
   return bool(approved)
 
 
@@ -1068,6 +1085,12 @@ def _build_approval_diff(tool_name: str, path: str, tool_args: dict[str, Any]) -
     an existing file, so this is unreachable in practice).
   - ``write``: diffs the current file content (if any) against the new
     content. New files produce an all-additions diff.
+  - ``file``: shows the operation (copy/move/delete) and the source path.
+    For ``delete``, the diff shows the file being removed. For ``copy``
+    and ``move``, a brief summary is shown (no content diff, since the
+    destination may not exist yet).
+  - Other tools (e.g. ``make`` with ``cwd``): produces a simple summary
+    diff showing the protected path and the operation.
   """
   from pathlib import Path
 
@@ -1100,12 +1123,31 @@ def _build_approval_diff(tool_name: str, path: str, tool_args: dict[str, Any]) -
         new_content = _apply_insert(old_content, line_number, new_string)
     else:
       new_content = new_string
-  else:  # write
+  elif tool_name == "write":
     new_content = tool_args.get("content", "")
     try:
       old_content = Path(path).read_text(encoding="utf-8")
     except OSError:
       old_content = ""
+  elif tool_name == "file":
+    operation = tool_args.get("operation", "unknown")
+    destination = tool_args.get("destination", "")
+    if operation == "delete":
+      try:
+        old_content = Path(path).read_text(encoding="utf-8")
+      except OSError:
+        old_content = ""
+      new_content = ""
+    else:
+      # copy or move: show a summary rather than a content diff
+      old_content = f"[{operation}] {path}"
+      new_content = (
+        f"[{operation}] {path} -> {destination}" if destination else f"[{operation}] {path}"
+      )
+  else:
+    # Fallback for any other tool with a Path-annotated parameter
+    old_content = f"[{tool_name}] {path}"
+    new_content = f"[{tool_name}] {path} (approved)"
 
   return generate_diff(old_content, new_content, filename)
 
@@ -1173,7 +1215,7 @@ async def _execute_tool(spec: ToolSpec, agent: Any, tool_args: dict[str, Any]) -
   post_filter = tool_args.get("post_filter", None)
   kwargs = {k: v for k, v in tool_args.items() if k != "post_filter"}
   if _tool_needs_context(spec):
-    kwargs["ctx"] = _build_tool_context(agent, spec.name)
+    kwargs["ctx"] = _build_tool_context(agent, spec)
 
   # Bind arguments
   try:
@@ -1453,18 +1495,18 @@ def _tool_needs_context(spec: ToolSpec) -> bool:
     return False
 
 
-def _build_tool_context(agent: Any, tool_name: str) -> ToolContext:
+def _build_tool_context(agent: Any, spec: ToolSpec) -> ToolContext:
   """Build a ToolContext for the given tool.
 
   Args:
     agent: The agent instance.
-    tool_name: The tool name (may include namespace prefix like "yoker:write").
+    spec: The ToolSpec for the tool being executed.
 
   Returns:
     ToolContext with tool-specific config, shared config, and backends.
   """
-  # Extract base tool name (remove namespace prefix)
-  base_name = tool_name.split(":")[-1] if ":" in tool_name else tool_name
+  # Use the simple name (without namespace prefix) for config lookup.
+  base_name = spec.simple_name or spec.name
 
   # Get tool-specific config from config.tools
   tool_config = agent.config.tools[base_name]
