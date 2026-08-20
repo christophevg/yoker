@@ -166,9 +166,10 @@ class PathGuardrail(Guardrail):
         if protected_reason:
           return ValidationResult(valid=False, reason=protected_reason)
 
-      ext_reason = self._check_write_extension(resolved)
-      if ext_reason:
-        return ValidationResult(valid=False, reason=ext_reason)
+      if not skip_protected:
+        ext_reason = self._check_write_extension(resolved)
+        if ext_reason:
+          return ValidationResult(valid=False, reason=ext_reason)
 
       if isinstance(value, dict):
         size_reason = self._check_write_content_size(value)
@@ -187,13 +188,14 @@ class PathGuardrail(Guardrail):
         if protected_reason:
           return ValidationResult(valid=False, reason=protected_reason)
 
-      ext_reason = self._check_read_extension(resolved)
-      if ext_reason:
-        return ValidationResult(valid=False, reason=ext_reason)
+      if not skip_protected:
+        ext_reason = self._check_read_extension(resolved)
+        if ext_reason:
+          return ValidationResult(valid=False, reason=ext_reason)
 
-      ext_reason = self._check_write_extension(resolved)
-      if ext_reason:
-        return ValidationResult(valid=False, reason=ext_reason)
+        ext_reason = self._check_write_extension(resolved)
+        if ext_reason:
+          return ValidationResult(valid=False, reason=ext_reason)
 
       if isinstance(value, dict):
         size_reason = self._check_update_diff_size(value)

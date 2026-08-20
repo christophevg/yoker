@@ -72,6 +72,7 @@ class MockUIHandler:
     prompt_tokens: int,
     eval_tokens: int,
     usage_limits: dict | None = None,
+    agent_id: str | None = None,
   ) -> None:
     self.calls.append(("output_stats", duration_ms, prompt_tokens, eval_tokens, usage_limits))
 
