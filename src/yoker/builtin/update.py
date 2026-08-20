@@ -70,8 +70,14 @@ async def update(
   ctx: ToolContext,
   operation: Annotated[
     str,
-    Text("File operation to execute. One of: 'replace', 'insert', 'append', 'delete'."),
-  ],
+    Text(
+      "File operation to execute. One of: 'replace', 'insert', 'append', 'delete'. "
+      "When omitted, the operation is inferred from the other arguments: "
+      "old_string + new_string → 'replace', new_string only → 'append', "
+      "line_number + new_string → 'insert'. 'delete' is never inferred — "
+      "it must always be specified explicitly."
+    ),
+  ] = "",
   old_string: Annotated[
     str,
     Text(
@@ -113,18 +119,26 @@ async def update(
 ) -> ToolResult:
   """Update an existing file by replacing, inserting, or deleting content.
 
-  The ``operation`` parameter is required and determines which other
-  parameters are needed:
+  The ``operation`` parameter is optional and can be inferred from the
+  other arguments when omitted:
 
-  - **replace**: Replace text found via ``old_string`` with ``new_string``.
+  - **replace** (default when ``old_string`` + ``new_string`` provided):
+    Replace text found via ``old_string`` with ``new_string``.
     Alternatively, provide ``line_range`` to replace a range of lines
     directly (takes precedence over ``old_string``).
-  - **insert**: Insert ``new_string`` at ``line_number`` (content appears
+  - **insert** (inferred when ``line_number`` + ``new_string`` provided):
+    Insert ``new_string`` at ``line_number`` (content appears
     at that line, pushing existing lines down). Requires ``line_number``.
-  - **append**: Add ``new_string`` at the end of the file.
-  - **delete**: Delete text found via ``old_string``. Alternatively,
+  - **append** (inferred when only ``new_string`` is provided):
+    Add ``new_string`` at the end of the file.
+  - **delete** (NEVER inferred — must always be explicit):
+    Delete text found via ``old_string``. Alternatively,
     provide ``line_number`` to delete a single line, or ``line_range``
     to delete a range of lines.
+
+  When ``operation`` is omitted and the arguments don't match any
+  inference rule (e.g. ``old_string`` without ``new_string``), an error
+  is returned suggesting ``operation='delete'``.
   """
   update_config = ctx.config
   if not isinstance(update_config, UpdateToolConfig):
@@ -140,6 +154,31 @@ async def update(
   if not isinstance(path, str) or not path.strip():
     logger.warning("update_invalid_path_type", path_type=type(path).__name__)
     return ToolResult(success=False, error="Invalid path parameter")
+
+  # Infer operation when not explicitly provided.
+  # Safe operations (replace, insert, append) can be inferred from arguments.
+  # Delete is never inferred — it must always be explicit to prevent
+  # accidental data loss from ambiguous arguments.
+  if not operation:
+    if line_number is not None and new_string:
+      operation = "insert"
+    elif old_string and new_string:
+      operation = "replace"
+    elif new_string and not old_string:
+      operation = "append"
+    elif line_range is not None and new_string:
+      operation = "replace"
+    else:
+      # No inference possible — arguments don't match a safe operation.
+      return ToolResult(
+        success=False,
+        error=(
+          "Parameter 'operation' is required for this combination of arguments. "
+          "Did you mean operation='delete'? Delete is never inferred — it must "
+          "always be specified explicitly to prevent accidental data loss."
+        ),
+      )
+    logger.info("update_operation_inferred", operation=operation)
 
   valid_operations = {"replace", "insert", "append", "delete"}
   if operation not in valid_operations:

@@ -55,7 +55,7 @@ class TestUpdateTool:
     assert "old_string" in props
     assert "new_string" in props
     assert "path" in func["parameters"]["required"]
-    assert "operation" in func["parameters"]["required"]
+    assert "operation" not in func["parameters"]["required"]  # optional, inferred
 
   @pytest.mark.asyncio
   async def test_replace_success(self, tmp_path: Path) -> None:
@@ -173,6 +173,105 @@ class TestUpdateTool:
     result = await spec.execute(
       path=str(file_path),
       operation="append",
+      new_string="line3",
+      ctx=ctx,
+    )
+    assert result.success is True
+    assert file_path.read_text() == "line1\nline2\nline3\n"
+
+  # --- Operation inference (operation omitted) ---
+
+  @pytest.mark.asyncio
+  async def test_infer_replace_from_old_and_new_string(self, tmp_path: Path) -> None:
+    """When operation is omitted and old_string + new_string are provided, infer replace."""
+    file_path = tmp_path / "test.txt"
+    file_path.write_text("hello world")
+    spec = _update_spec()
+    ctx = _update_context()
+    result = await spec.execute(
+      path=str(file_path),
+      old_string="world",
+      new_string="universe",
+      ctx=ctx,
+    )
+    assert result.success is True
+    assert file_path.read_text() == "hello universe"
+
+  @pytest.mark.asyncio
+  async def test_infer_append_from_new_string_only(self, tmp_path: Path) -> None:
+    """When operation is omitted and only new_string is provided, infer append."""
+    file_path = tmp_path / "test.txt"
+    file_path.write_text("line1\n")
+    spec = _update_spec()
+    ctx = _update_context()
+    result = await spec.execute(
+      path=str(file_path),
+      new_string="line2",
+      ctx=ctx,
+    )
+    assert result.success is True
+    assert file_path.read_text() == "line1\nline2\n"
+
+  @pytest.mark.asyncio
+  async def test_infer_insert_from_line_number_and_new_string(self, tmp_path: Path) -> None:
+    """When operation is omitted and line_number + new_string are provided, infer insert."""
+    file_path = tmp_path / "test.txt"
+    file_path.write_text("line2\nline3\n")
+    spec = _update_spec()
+    ctx = _update_context()
+    result = await spec.execute(
+      path=str(file_path),
+      line_number=1,
+      new_string="line1",
+      ctx=ctx,
+    )
+    assert result.success is True
+    assert file_path.read_text() == "line1\nline2\nline3\n"
+
+  @pytest.mark.asyncio
+  async def test_infer_error_when_old_string_without_new_string(self, tmp_path: Path) -> None:
+    """When operation is omitted and old_string without new_string, return error suggesting delete."""
+    file_path = tmp_path / "test.txt"
+    file_path.write_text("hello world")
+    spec = _update_spec()
+    ctx = _update_context()
+    result = await spec.execute(
+      path=str(file_path),
+      old_string="world",
+      ctx=ctx,
+    )
+    assert result.success is False
+    assert "operation" in result.error.lower()
+    assert "delete" in result.error.lower()
+
+  @pytest.mark.asyncio
+  async def test_explicit_delete_still_works(self, tmp_path: Path) -> None:
+    """Explicit operation='delete' still works as before."""
+    file_path = tmp_path / "test.txt"
+    file_path.write_text("hello world")
+    spec = _update_spec()
+    ctx = _update_context()
+    result = await spec.execute(
+      path=str(file_path),
+      operation="delete",
+      old_string="world",
+      ctx=ctx,
+    )
+    assert result.success is True
+    assert file_path.read_text() == "hello "
+
+  @pytest.mark.asyncio
+  async def test_explicit_operation_overrides_inference(self, tmp_path: Path) -> None:
+    """Explicit operation takes precedence over inference."""
+    file_path = tmp_path / "test.txt"
+    file_path.write_text("line1\nline2\n")
+    spec = _update_spec()
+    ctx = _update_context()
+    # old_string + new_string would infer replace, but explicit append overrides
+    result = await spec.execute(
+      path=str(file_path),
+      operation="append",
+      old_string="line1",
       new_string="line3",
       ctx=ctx,
     )
