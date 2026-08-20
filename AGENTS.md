@@ -41,6 +41,10 @@ Address the problem first. You are working on your own codebase, so you can chec
 
 Don't try to spawn a random agent to do something you don't have the right tool for.
 
+### Denied Permissions
+
+When the user denies the use of a tool, don't look for a work around. ASK what to do instead! There is a reason why the user denied the use of the tool.
+
 ## Positioning
 
 **USP:** Add LLM capabilities to your Python apps and modules without worrying
