@@ -1059,12 +1059,21 @@ async def _maybe_approve_protected(agent: Any, spec: ToolSpec, tool_args: dict[s
     return False
 
   # Find all Path-annotated parameters that resolve to a protected file.
+  # Skip paths that are outside the allowed scope — the guardrail will
+  # block them regardless, so asking for approval is misleading.
   protected_paths: list[str] = []
   for param_name, guard_type in spec.guards.items():
     if guard_type != GuardType.PATH:
       continue
     value = tool_args.get(param_name)
     if not isinstance(value, str):
+      continue
+    # Only trigger approval for paths within allowed scope AND protected.
+    # Out-of-scope paths are a hard security boundary — no approval possible.
+    resolved = guardrail._resolve_path(value)
+    if resolved is None:
+      continue
+    if not guardrail._is_within_allowed_paths(resolved):
       continue
     if guardrail.is_protected(value):
       protected_paths.append(value)

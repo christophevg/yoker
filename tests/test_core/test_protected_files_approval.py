@@ -21,13 +21,26 @@ from yoker.tools.schema import ToolSpec, build_tool_spec
 
 
 class _FakeGuardrail:
-  """Minimal stand-in for PathGuardrail exposing ``is_protected``."""
+  """Minimal stand-in for PathGuardrail exposing is_protected + scope checks."""
 
   def __init__(self, protected: bool) -> None:
     self._protected = protected
 
   def is_protected(self, _path: str) -> bool:
     return self._protected
+
+  def _resolve_path(self, path_str: str) -> Any:
+    import os
+    from pathlib import Path
+
+    try:
+      return Path(os.path.realpath(path_str))
+    except (OSError, ValueError):
+      return None
+
+  def _is_within_allowed_paths(self, _resolved: Any) -> bool:
+    # Tests use paths within "." — always allow in the fake.
+    return True
 
 
 class _FakeAgent:
