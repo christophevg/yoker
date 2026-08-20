@@ -129,6 +129,7 @@ OPERATION_ARGS: dict[str, dict[str, dict[str, Any]]] = {
     "all": {"type": "boolean", "description": "Push all branches"},
     "tags": {"type": "boolean", "description": "Push tags"},
     "force": {"type": "boolean", "description": "Force push (dangerous)"},
+    "set_upstream": {"type": "boolean", "description": "Set upstream for the current branch (-u)"},
   },
   "checkout": {
     "branch": {
@@ -216,7 +217,7 @@ async def git(
       "  - To show a specific file, set the 'path' parameter to the file path.\n"
       "add: {all: bool (stage everything), update: bool (stage tracked only), files: [str] (specific files)}\n"
       "commit: {message: str (supports multi-line), all: bool, amend: bool}\n"
-      "push: {all: bool, tags: bool, force: bool}\n"
+      "push: {all: bool, tags: bool, force: bool, set_upstream: bool (-u, set upstream for current branch)}\n"
       "checkout: {branch: str (required), create: bool (create new branch with -b), startpoint: str (base for new branch)}\n"
       "rm: {cached: bool (untrack without deleting), r: bool (recursive), files: [str] (required, specific file paths to remove)}\n"
       "pull: *(no args)* — sync current branch with remote upstream\n"

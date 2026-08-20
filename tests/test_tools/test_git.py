@@ -842,6 +842,33 @@ class TestGitToolPermissionRequiredOperations:
     assert cmd[1] == "push"
     assert "--tags" in cmd
 
+  def test_git_push_set_upstream_builds_correct_command(self) -> None:
+    """_build_command for push with set_upstream=true should produce git push --set-upstream."""
+    from yoker.builtin.git import _build_command
+
+    cmd = _build_command(
+      "push",
+      {"set_upstream": True},
+      ("status", "log", "push"),
+    )
+    assert cmd[0] == "git"
+    assert cmd[1] == "push"
+    assert "--set-upstream" in cmd
+
+  def test_git_push_force_and_set_upstream_combined(self) -> None:
+    """_build_command for push with force and set_upstream should produce both flags."""
+    from yoker.builtin.git import _build_command
+
+    cmd = _build_command(
+      "push",
+      {"force": True, "set_upstream": True},
+      ("status", "log", "push"),
+    )
+    assert cmd[0] == "git"
+    assert cmd[1] == "push"
+    assert "--force" in cmd
+    assert "--set-upstream" in cmd
+
   @pytest.mark.asyncio
   async def test_git_checkout_create_branch(self, git_repo: Path) -> None:
     """
