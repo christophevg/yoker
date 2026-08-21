@@ -33,7 +33,7 @@ class SimpleContextManager(BaseContextManager):
   def environment_reminder(self) -> str:
     """Build a system reminder with harness and environment details.
 
-    Loads the contents of ``AGENTS.md`` from the current working directory
+    Loads the contents of each file listed in ``config.context.files``
     (if it exists) and embeds them directly in the system prompt, so the
     LLM has the project context without needing an explicit tool call.
 
@@ -47,14 +47,14 @@ class SimpleContextManager(BaseContextManager):
     harness_version = f" v{harness.version}" if harness.version else ""
     harness_author = f" by {harness.author}" if harness.author else ""
     harness_id = f"{harness_name}{harness_version}{harness_author}"
-    agents_md_content = self._load_agents_md()
-    agents_md_block = (
+    context_content = self._load_context_files()
+    context_block = (
       f"""
 # Project Instructions
 This is information specific to this project. You should follow these instructions and use this information:
-{agents_md_content}
+{context_content}
 """
-      if agents_md_content
+      if context_content
       else ""
     )
 
@@ -72,18 +72,32 @@ Examples:
   - `post_filter: 'TODO|FIXME|HACK'` to find only markers
   - `post_filter: 'CalledProcessError|exit code|##\\[error\\]'` for CI logs
 **ALWAYS** pass post_filter when you expect large output. This is critical for keeping your session running longer. Not using it will cause context overflow and premature session termination.
-{agents_md_block}
+{context_block}
 """
 
-  @staticmethod
-  def _load_agents_md() -> str | None:
-    agents_md_path = Path.cwd() / "AGENTS.md"
-    if agents_md_path.is_file():
-      try:
-        return agents_md_path.read_text(encoding="utf-8")
-      except OSError:
-        return None
-    return None
+  def _load_context_files(self) -> str | None:
+    """Load and concatenate all configured context files.
+
+    Reads each path in ``config.context.files`` in order. Paths are
+    resolved relative to the working directory with ``~`` expansion.
+    Missing files are silently skipped. Returns ``None`` if no file
+    yields content.
+    """
+    if not self._agent:
+      return None
+    parts: list[str] = []
+    for file_path in self._agent.config.context.files:
+      resolved = Path(file_path).expanduser()
+      if not resolved.is_absolute():
+        resolved = Path.cwd() / resolved
+      if resolved.is_file():
+        try:
+          content = resolved.read_text(encoding="utf-8").strip()
+          if content:
+            parts.append(content)
+        except OSError:
+          pass
+    return "\n\n".join(parts) if parts else None
 
   @property
   def system_prompt(self) -> str:

@@ -416,3 +416,138 @@ class TestListSessions:
     """Test that resuming a nonexistent session raises SessionNotFoundError."""
     with pytest.raises(SessionNotFoundError):
       Persisted.resume("nonexistent", storage_path=tmp_path)
+
+
+class TestContextFilesConfig:
+  """Tests for configurable context files (config.context.files)."""
+
+  def test_default_files_includes_agents_md(self) -> None:
+    """Default config.context.files includes ./AGENTS.md."""
+    from yoker.config import ContextConfig
+
+    cfg = ContextConfig()
+    assert "./AGENTS.md" in cfg.files
+
+  def test_files_can_be_overridden(self) -> None:
+    """config.context.files can be set to a custom list."""
+    from yoker.config import ContextConfig
+
+    cfg = ContextConfig(files=("~/.config/yoker/AGENTS.md", "./AGENTS.md", "./CLAUDE.md"))
+    assert len(cfg.files) == 3
+    assert "./CLAUDE.md" in cfg.files
+
+  def test_load_context_files_single(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """_load_context_files reads a single configured file."""
+    agents_md = tmp_path / "AGENTS.md"
+    agents_md.write_text("# Project Rules\nBe helpful.")
+    monkeypatch.chdir(tmp_path)
+
+    cm = SimpleContextManager()
+    # Manually set agent with minimal config
+    from unittest.mock import MagicMock
+
+    agent = MagicMock()
+    agent.config.context.files = ("./AGENTS.md",)
+    cm._agent = agent
+
+    result = cm._load_context_files()
+    assert result is not None
+    assert "Be helpful." in result
+
+  def test_load_context_files_multiple(
+    self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+  ) -> None:
+    """_load_context_files reads and concatenates multiple files in order."""
+    f1 = tmp_path / "AGENTS.md"
+    f1.write_text("First file content.")
+    f2 = tmp_path / "CLAUDE.md"
+    f2.write_text("Second file content.")
+    monkeypatch.chdir(tmp_path)
+
+    from unittest.mock import MagicMock
+
+    cm = SimpleContextManager()
+    agent = MagicMock()
+    agent.config.context.files = ("./AGENTS.md", "./CLAUDE.md")
+    cm._agent = agent
+
+    result = cm._load_context_files()
+    assert result is not None
+    assert "First file content." in result
+    assert "Second file content." in result
+    # Files are concatenated in order
+    assert result.index("First file content.") < result.index("Second file content.")
+
+  def test_load_context_files_missing_skipped(
+    self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+  ) -> None:
+    """Missing files are silently skipped."""
+    f1 = tmp_path / "AGENTS.md"
+    f1.write_text("Exists.")
+    monkeypatch.chdir(tmp_path)
+
+    from unittest.mock import MagicMock
+
+    cm = SimpleContextManager()
+    agent = MagicMock()
+    agent.config.context.files = ("./AGENTS.md", "./NONEXISTENT.md")
+    cm._agent = agent
+
+    result = cm._load_context_files()
+    assert result is not None
+    assert "Exists." in result
+    assert "NONEXISTENT" not in result
+
+  def test_load_context_files_all_missing_returns_none(
+    self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+  ) -> None:
+    """When no configured files exist, returns None."""
+    monkeypatch.chdir(tmp_path)
+
+    from unittest.mock import MagicMock
+
+    cm = SimpleContextManager()
+    agent = MagicMock()
+    agent.config.context.files = ("./NOPE1.md", "./NOPE2.md")
+    cm._agent = agent
+
+    result = cm._load_context_files()
+    assert result is None
+
+  def test_load_context_files_empty_list_returns_none(
+    self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+  ) -> None:
+    """Empty files list returns None."""
+    monkeypatch.chdir(tmp_path)
+
+    from unittest.mock import MagicMock
+
+    cm = SimpleContextManager()
+    agent = MagicMock()
+    agent.config.context.files = ()
+    cm._agent = agent
+
+    result = cm._load_context_files()
+    assert result is None
+
+  def test_load_context_files_tilde_expansion(
+    self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+  ) -> None:
+    """Paths with ~ are expanded to the home directory."""
+    home_dir = tmp_path / "fakehome"
+    home_dir.mkdir()
+    home_file = home_dir / "global-agents.md"
+    home_file.write_text("Global rules.")
+    monkeypatch.setenv("HOME", str(home_dir))
+    monkeypatch.chdir(tmp_path)
+
+    from unittest.mock import MagicMock
+
+    cm = SimpleContextManager()
+    agent = MagicMock()
+    agent.config.context.files = ("~/global-agents.md",)
+    cm._agent = agent
+
+    result = cm._load_context_files()
+    assert result is not None
+    assert "Global rules." in result

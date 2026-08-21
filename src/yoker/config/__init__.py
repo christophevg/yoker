@@ -220,6 +220,10 @@ class ContextConfig:
     storage_path: Path to store context files.
     session_id: Session identifier ('auto' for generated).
     persist_after_turn: Whether to persist after each turn.
+    files: List of file paths whose contents are embedded in the system
+      context at startup. Files are loaded in order; missing files are
+      silently skipped. Paths are resolved relative to the working directory
+      with ``~`` expansion. Defaults to ``["./AGENTS.md"]``.
     max_tokens: Soft cap on estimated context tokens before overflow truncation
       kicks in. The size check uses last turn's ``UsageStats.input_tokens``
       when available, falling back to a char/4 heuristic. Defaults to 200_000.
@@ -236,6 +240,7 @@ class ContextConfig:
   persist_after_turn: bool = True
   filename: str = "{session_id}-{agent_id}"
   fresh: bool = False
+  files: tuple[str, ...] = ("./AGENTS.md",)
   max_tokens: int = 200_000
   overflow_keep_first_user: bool = True
 
@@ -638,7 +643,7 @@ class GitHubToolConfig(ToolConfig):
       subcommand-blocking security boundary. Defaults to the full read-only
       MVP set. Operations in the fixed enum but not in this list are
       rejected. Write operations (``pr_create``, ``pr_comment``,
-      ``pr_ready``, ``release_create``) are in the enum but NOT in the default allowlist — the config owner must
+      ``pr_ready``, ``pr_draft``, ``release_create``) are in the enum but NOT in the default allowlist — the config owner must
       explicitly add them to enable write operations. An empty list
       disables the tool effectively (when combined with ``enabled = true``;
       setting ``enabled = false`` is the cleaner off-switch).
@@ -662,7 +667,7 @@ class GitHubToolConfig(ToolConfig):
         "pr_reviews", "pr_comments",
         "workflow_list", "workflow_view", "workflow_logs",
         "release_list", "release_view",
-        "pr_create", "pr_comment", "pr_ready", "release_create"
+        "pr_create", "pr_comment", "pr_ready", "pr_draft", "release_create"
       ]
   """
 
