@@ -539,6 +539,7 @@ class TestContextFilesConfig:
     home_file = home_dir / "global-agents.md"
     home_file.write_text("Global rules.")
     monkeypatch.setenv("HOME", str(home_dir))
+    monkeypatch.setenv("USERPROFILE", str(home_dir))
     monkeypatch.chdir(tmp_path)
 
     from unittest.mock import MagicMock

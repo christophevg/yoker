@@ -4,7 +4,6 @@ These are logic tests (not IO): the boolean decision, file-existence checks,
 ``~`` expansion, override-path plumbing, and CLI-arg detection.
 """
 
-import os
 from pathlib import Path
 
 import pytest
@@ -153,15 +152,12 @@ class TestConfigProvidedCLI:
 class TestConfigProvidedPaths:
   """Path handling."""
 
-  @pytest.mark.skipif(
-    os.name == "nt",
-    reason="POSIX tilde expansion semantics not applicable on Windows",
-  )
   def test_tilde_expansion(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """``~`` in the user config path is expanded."""
     real = tmp_path / "realhome"
     real.mkdir()
     monkeypatch.setenv("HOME", str(real))
+    monkeypatch.setenv("USERPROFILE", str(real))
     user_path = Path("~/.yoker.toml")
     # File does not exist -> False via tilde-expanded path
     assert (
