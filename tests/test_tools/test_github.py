@@ -265,27 +265,81 @@ class TestGithubOperations:
 
   @pytest.mark.asyncio
   async def test_pr_comments(self, mocker: MockerFixture) -> None:
-    """pr_comments uses gh api with the comments endpoint."""
-    popen = _mock_popen(mocker, stdout="[]")
-    await github(operation="pr_comments", ctx=_ctx(), repo="owner/repo", number=42)
-    cmd = popen.call_args.args[0]
-    assert cmd[:3] == ["gh", "api", "repos/owner/repo/pulls/42/comments"]
-    assert "--jq" in cmd
-    assert "--json" not in cmd
+    """pr_comments uses gh api to fetch both issues and pulls comments endpoints."""
+    proc = mocker.MagicMock()
+    proc.pid = 12345
+    proc.returncode = 0
+    proc.communicate = mocker.AsyncMock(return_value=(b"[]", b""))
+    captured_calls: list[Any] = []
+
+    def _create(*args: Any, **kwargs: Any) -> Any:
+      captured_calls.append(mocker.call(list(args), **kwargs))
+      return proc
+
+    mocker.patch.object(github_module.asyncio, "create_subprocess_exec", side_effect=_create)
+    result = await github(operation="pr_comments", ctx=_ctx(), repo="owner/repo", number=42)
+    assert result.success
+    # Should make two API calls: one to issues comments, one to pulls comments
+    assert len(captured_calls) == 2, f"Expected 2 calls, got {len(captured_calls)}"
+    cmd1 = captured_calls[0].args[0]
+    cmd2 = captured_calls[1].args[0]
+    assert cmd1[:4] == ["gh", "api", "repos/owner/repo/issues/42/comments", "--jq"]
+    assert cmd2[:4] == ["gh", "api", "repos/owner/repo/pulls/42/comments", "--jq"]
+
+  @pytest.mark.asyncio
+  async def test_pr_comments_merges_both_types(self, mocker: MockerFixture) -> None:
+    """pr_comments returns both conversation and review comments with type tags."""
+    conv_json = '[{"id": 1, "body": "plan approved", "user": "owner", "created_at": "2024-01-01"}]'
+    review_json = '[{"id": 2, "body": "nit: typo", "user": "reviewer", "path": "x.py", "line": 5, "created_at": "2024-01-02"}]'
+    call_count = 0
+
+    def side_effect(*args: Any, **kwargs: Any) -> Any:
+      nonlocal call_count
+      call_count += 1
+      proc = mocker.MagicMock()
+      proc.pid = 12345
+      proc.returncode = 0
+      if call_count == 1:
+        proc.communicate = mocker.AsyncMock(return_value=(conv_json.encode("utf-8"), b""))
+      else:
+        proc.communicate = mocker.AsyncMock(return_value=(review_json.encode("utf-8"), b""))
+      return proc
+
+    mocker.patch.object(github_module.asyncio, "create_subprocess_exec", side_effect=side_effect)
+    result = await github(operation="pr_comments", ctx=_ctx(), repo="owner/repo", number=42)
+    assert result.success
+    import json as json_mod
+
+    comments = json_mod.loads(result.result)
+    assert len(comments) == 2
+    types = {c["type"] for c in comments}
+    assert "conversation" in types
+    assert "review" in types
+    # Conversation comment should not have path/line
+    conv = [c for c in comments if c["type"] == "conversation"][0]
+    assert conv["body"] == "plan approved"
+    # Review comment should have path/line
+    rev = [c for c in comments if c["type"] == "review"][0]
+    assert rev["body"] == "nit: typo"
+    assert rev["path"] == "x.py"
+
+  @pytest.mark.asyncio
+  async def test_pr_comments_empty_returns_empty_array(self, mocker: MockerFixture) -> None:
+    """pr_comments with no comments on either endpoint returns empty array."""
+    proc = mocker.MagicMock()
+    proc.pid = 12345
+    proc.returncode = 0
+    proc.communicate = mocker.AsyncMock(return_value=(b"[]", b""))
+    mocker.patch.object(github_module.asyncio, "create_subprocess_exec", return_value=proc)
+    result = await github(operation="pr_comments", ctx=_ctx(), repo="owner/repo", number=42)
+    assert result.success
+    assert result.result == "[]"
 
   @pytest.mark.asyncio
   async def test_pr_reviews_empty_array_returns_success(self, mocker: MockerFixture) -> None:
     """pr_reviews with no reviews returns success (empty array from API)."""
     _mock_popen(mocker, stdout="[]")
     result = await github(operation="pr_reviews", ctx=_ctx(), repo="owner/repo", number=42)
-    assert result.success
-    assert result.result == "[]"
-
-  @pytest.mark.asyncio
-  async def test_pr_comments_empty_array_returns_success(self, mocker: MockerFixture) -> None:
-    """pr_comments with no comments returns success (empty array from API)."""
-    _mock_popen(mocker, stdout="[]")
-    result = await github(operation="pr_comments", ctx=_ctx(), repo="owner/repo", number=42)
     assert result.success
     assert result.result == "[]"
 
@@ -319,16 +373,20 @@ class TestGithubOperations:
 
   @pytest.mark.asyncio
   async def test_pr_view_with_include_comments(self, mocker: MockerFixture) -> None:
-    """pr_view with include_comments=True makes a second gh api call for comments."""
+    """pr_view with include_comments=True fetches both conversation and review comments."""
     pr_json = '{"number": 42, "title": "Fix"}'
-    comments_json = '[{"id": 1, "body": "LGTM"}]'
+    conv_comments = '[{"id": 1, "body": "LGTM", "user": "alice", "created_at": "2024-01-01"}]'
+    review_comments = '[{"id": 2, "body": "nit: fix typo", "user": "bob", "path": "src/x.py", "line": 5, "created_at": "2024-01-02"}]'
     proc1 = mocker.MagicMock()
     proc1.returncode = 0
     proc1.communicate = mocker.AsyncMock(return_value=(pr_json.encode("utf-8"), b""))
     proc2 = mocker.MagicMock()
     proc2.returncode = 0
-    proc2.communicate = mocker.AsyncMock(return_value=(comments_json.encode("utf-8"), b""))
-    procs = [proc1, proc2]
+    proc2.communicate = mocker.AsyncMock(return_value=(conv_comments.encode("utf-8"), b""))
+    proc3 = mocker.MagicMock()
+    proc3.returncode = 0
+    proc3.communicate = mocker.AsyncMock(return_value=(review_comments.encode("utf-8"), b""))
+    procs = [proc1, proc2, proc3]
     captured_calls: list[Any] = []
 
     def _create(*args: Any, **kwargs: Any) -> Any:
@@ -340,13 +398,15 @@ class TestGithubOperations:
       operation="pr_view", ctx=_ctx(), repo="owner/repo", number=42, include_comments=True
     )
     assert result.success
-    # The result should contain the merged JSON with comments
     import json as json_mod
 
     merged = json_mod.loads(result.result)
     assert merged["number"] == 42
     assert "comments" in merged
-    assert merged["comments"][0]["id"] == 1
+    # Should have both conversation and review comments
+    comment_types = {c.get("type") for c in merged["comments"]}
+    assert "conversation" in comment_types
+    assert "review" in comment_types
 
   @pytest.mark.asyncio
   async def test_pr_view_without_include_comments_no_extra_call(
@@ -701,6 +761,155 @@ class TestGithubWriteOperations:
     parsed = json.loads(result.result)
     assert parsed["ready"] is True
 
+  # --- pr_create with draft ---
+
+  @pytest.mark.asyncio
+  async def test_pr_create_with_draft(self, mocker: MockerFixture) -> None:
+    """pr_create includes --draft flag when draft=True."""
+    popen = _mock_popen(mocker, stdout="https://github.com/owner/repo/pull/42")
+    cfg = GitHubToolConfig(allowed_operations=("pr_create",))
+    await github(
+      operation="pr_create",
+      ctx=_ctx(cfg),
+      repo="owner/repo",
+      title="Fix",
+      body="body",
+      draft=True,
+    )
+    cmd = popen.call_args.args[0]
+    assert "--draft" in cmd
+
+  @pytest.mark.asyncio
+  async def test_pr_create_without_draft_omits_flag(self, mocker: MockerFixture) -> None:
+    """pr_create omits --draft when draft=False (default)."""
+    popen = _mock_popen(mocker, stdout="https://github.com/owner/repo/pull/42")
+    cfg = GitHubToolConfig(allowed_operations=("pr_create",))
+    await github(
+      operation="pr_create",
+      ctx=_ctx(cfg),
+      repo="owner/repo",
+      title="Fix",
+      body="body",
+    )
+    cmd = popen.call_args.args[0]
+    assert "--draft" not in cmd
+
+  # --- pr_draft ---
+
+  @pytest.mark.asyncio
+  async def test_pr_draft_not_in_default_allowlist(self, mocker: MockerFixture) -> None:
+    """pr_draft is rejected with default config (not in default allowlist)."""
+    _mock_popen(mocker)
+    result = await github(
+      operation="pr_draft",
+      ctx=_ctx(),
+      number=42,
+      repo="owner/repo",
+    )
+    assert not result.success
+    assert "not allowed" in result.error.lower() or "allowed" in result.error.lower()
+
+  @pytest.mark.asyncio
+  async def test_pr_draft_requires_number(self, mocker: MockerFixture) -> None:
+    """pr_draft requires a positive number."""
+    _mock_popen(mocker)
+    cfg = GitHubToolConfig(allowed_operations=("pr_draft",))
+    result = await github(
+      operation="pr_draft",
+      ctx=_ctx(cfg),
+      repo="owner/repo",
+    )
+    assert not result.success
+    assert "number" in result.error.lower()
+
+  @pytest.mark.asyncio
+  async def test_pr_draft_requires_repo(self, mocker: MockerFixture) -> None:
+    """pr_draft requires the repo parameter."""
+    _mock_popen(mocker)
+    cfg = GitHubToolConfig(allowed_operations=("pr_draft",))
+    result = await github(
+      operation="pr_draft",
+      ctx=_ctx(cfg),
+      number=42,
+    )
+    assert not result.success
+    assert "repo" in result.error.lower()
+
+  @pytest.mark.asyncio
+  async def test_pr_draft_success(self, mocker: MockerFixture) -> None:
+    """pr_draft succeeds with two-step API calls and returns draft=true."""
+    # _convert_to_draft makes two gh api calls sequentially.
+    # First: gh api repos/{repo}/pulls/{number} --jq .node_id → returns node_id
+    # Second: gh api graphql -f query=... → returns GraphQL result
+    call_count = 0
+
+    def side_effect(*args: Any, **kwargs: Any) -> Any:
+      nonlocal call_count
+      call_count += 1
+      proc = mocker.MagicMock()
+      proc.pid = 12345
+      proc.returncode = 0
+      if call_count == 1:
+        proc.communicate = mocker.AsyncMock(return_value=(b"PR_node_id_123", b""))
+      else:
+        proc.communicate = mocker.AsyncMock(
+          return_value=(
+            b'{"data":{"convertPullRequestToDraft":{"pullRequest":{"isDraft":true}}}}',
+            b"",
+          )
+        )
+      return proc
+
+    mocker.patch.object(github_module.asyncio, "create_subprocess_exec", side_effect=side_effect)
+    cfg = GitHubToolConfig(allowed_operations=("pr_draft",))
+    result = await github(
+      operation="pr_draft",
+      ctx=_ctx(cfg),
+      number=42,
+      repo="owner/repo",
+    )
+    assert result.success
+    import json as json_mod
+
+    parsed = json_mod.loads(result.result)
+    assert parsed["draft"] is True
+    assert parsed["number"] == 42
+
+  @pytest.mark.asyncio
+  async def test_pr_draft_first_call_fails(self, mocker: MockerFixture) -> None:
+    """pr_draft fails when the first API call (fetch node_id) returns error."""
+    proc = mocker.MagicMock()
+    proc.pid = 12345
+    proc.returncode = 1
+    proc.communicate = mocker.AsyncMock(return_value=(b"", b"not found"))
+    mocker.patch.object(github_module.asyncio, "create_subprocess_exec", return_value=proc)
+    cfg = GitHubToolConfig(allowed_operations=("pr_draft",))
+    result = await github(
+      operation="pr_draft",
+      ctx=_ctx(cfg),
+      number=42,
+      repo="owner/repo",
+    )
+    assert not result.success
+
+  @pytest.mark.asyncio
+  async def test_pr_draft_empty_node_id(self, mocker: MockerFixture) -> None:
+    """pr_draft fails when node_id is empty."""
+    proc = mocker.MagicMock()
+    proc.pid = 12345
+    proc.returncode = 0
+    proc.communicate = mocker.AsyncMock(return_value=(b"", b""))
+    mocker.patch.object(github_module.asyncio, "create_subprocess_exec", return_value=proc)
+    cfg = GitHubToolConfig(allowed_operations=("pr_draft",))
+    result = await github(
+      operation="pr_draft",
+      ctx=_ctx(cfg),
+      number=42,
+      repo="owner/repo",
+    )
+    assert not result.success
+    assert "node_id" in result.error.lower()
+
   @pytest.mark.asyncio
   async def test_release_create_builds_correct_command(self, mocker: MockerFixture) -> None:
     """release_create builds gh release create with tag, --title=, --notes=, no --json."""
@@ -993,10 +1202,11 @@ class TestGithubOperationAllowlist:
 
   @pytest.mark.asyncio
   async def test_default_allowlist_allows_all_twelve(self, mocker: MockerFixture) -> None:
-    _mock_popen(mocker, stdout="{}")
     cfg = GitHubToolConfig()
     for op in cfg.allowed_operations:
-      _mock_popen(mocker, stdout="{}")
+      # pr_comments and pr_reviews return arrays; others return objects
+      mock_stdout = "[]" if op in {"pr_reviews", "pr_comments"} else "{}"
+      _mock_popen(mocker, stdout=mock_stdout)
       kwargs: dict[str, Any] = {}
       if op in {
         "issue_view",
@@ -1345,15 +1555,24 @@ class TestGithubConfigValidation:
     assert "pr_create" not in cfg.allowed_operations
     assert "pr_comment" not in cfg.allowed_operations
     assert "pr_ready" not in cfg.allowed_operations
+    assert "pr_draft" not in cfg.allowed_operations
     assert "release_create" not in cfg.allowed_operations
 
   def test_write_ops_allowed_when_explicitly_configured(self) -> None:
     cfg = GitHubToolConfig(
-      allowed_operations=("repo_view", "pr_create", "pr_comment", "pr_ready", "release_create")
+      allowed_operations=(
+        "repo_view",
+        "pr_create",
+        "pr_comment",
+        "pr_ready",
+        "pr_draft",
+        "release_create",
+      )
     )
     assert "pr_create" in cfg.allowed_operations
     assert "pr_comment" in cfg.allowed_operations
     assert "pr_ready" in cfg.allowed_operations
+    assert "pr_draft" in cfg.allowed_operations
     assert "release_create" in cfg.allowed_operations
 
   def test_invalid_timeout_raises(self) -> None:

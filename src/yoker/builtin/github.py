@@ -70,6 +70,7 @@ _GITHUB_OPERATIONS: frozenset[str] = frozenset(
     "pr_create",
     "pr_comment",
     "pr_ready",
+    "pr_draft",
     "release_create",
   }
 )
@@ -78,7 +79,9 @@ _GITHUB_OPERATIONS: frozenset[str] = frozenset(
 # ``GitHubToolConfig.allowed_operations`` — they are NOT in the default
 # allowlist. Even when allowed, they are never auto-permitted (the config
 # owner must consciously add them).
-_WRITE_OPS: frozenset[str] = frozenset({"pr_create", "pr_comment", "pr_ready", "release_create"})
+_WRITE_OPS: frozenset[str] = frozenset(
+  {"pr_create", "pr_comment", "pr_ready", "pr_draft", "release_create"}
+)
 
 # (gh_subcommand_prefix, --json fields, required_param)
 _OPERATION_DISPATCH: dict[str, tuple[list[str], str, str | None]] = {
@@ -145,6 +148,11 @@ _OPERATION_DISPATCH: dict[str, tuple[list[str], str, str | None]] = {
     "",
     "number",
   ),
+  "pr_draft": (
+    ["pr", "draft"],
+    "",
+    "number",
+  ),
   "release_create": (
     ["release", "create"],
     "url,tagName,name,isDraft,isPrerelease",
@@ -156,7 +164,7 @@ _OPERATION_DISPATCH: dict[str, tuple[list[str], str, str | None]] = {
 # For these, the dispatch prefix is a template with ``{repo}`` and/or
 # ``{number}`` placeholders, and the fields are passed via ``--jq`` instead
 # of ``--json``.
-_API_OPS: frozenset[str] = frozenset({"pr_reviews", "pr_comments"})
+_API_OPS: frozenset[str] = frozenset({"pr_reviews"})
 
 # Operations that return plain text (not JSON). These skip ``--json`` —
 # ``gh`` outputs raw log lines directly to stdout.
@@ -206,15 +214,16 @@ _REDACT_REPLACEMENT = "<redacted>"
     "  pr_list        — List pull requests. Optional: repo, limit, state.\n"
     "  pr_view        — View a pull request. Required: number. Optional: repo, include_comments.\n"
     "  pr_reviews     — List PR reviews. Required: repo, number.\n"
-    "  pr_comments    — List PR inline review comments. Required: repo, number.\n"
+    "  pr_comments    — List all PR comments (conversation + inline review). Required: repo, number.\n"
     "  workflow_list  — List workflow runs (CI). Optional: repo, limit.\n"
     "  workflow_view  — View a workflow run (CI). Required: number (run ID). Optional: repo.\n"
     "  workflow_logs  — View failed-step logs of a workflow run. Required: number (run ID). Optional: repo.\n"
     "  release_list   — List releases. Optional: repo, limit.\n"
     "  release_view   — View a release. Required: tag. Optional: repo.\n"
-    "  pr_create      — Create a PR. Required: repo, title, body. Optional: head, base.\n"
+    "  pr_create      — Create a PR. Required: repo, title, body. Optional: head, base, draft.\n"
     "  pr_comment     — Add a comment to a PR. Required: number, body. Optional: repo.\n"
     "  pr_ready       — Convert a draft PR to ready for review. Required: number. Optional: repo.\n"
+    "  pr_draft       — Convert a PR to draft. Required: number, repo.\n"
     "  release_create — Create a release. Required: repo, tag, title, notes. Optional: draft, prerelease.\n"
     "\n"
     "Common parameters:\n"
@@ -224,7 +233,7 @@ _REDACT_REPLACEMENT = "<redacted>"
     "  limit   — Max items for list operations (default: 30, max: config ceiling).\n"
     "  include_comments — If True, fetch and merge PR comments into pr_view output (only for pr_view).\n"
     "  timeout_ms — Override default timeout in milliseconds (clamped to config ceiling).\n"
-    "  draft   — Mark release as draft (only for release_create).\n"
+    "  draft   — Create as draft (for pr_create or release_create).\n"
     "  prerelease — Mark release as prerelease (only for release_create).\n"
     "  post_filter — Optional regex to filter output lines. Use specific patterns: "
     "'FAILED|CalledProcessError|short test summary' for CI logs, 'class |def ' for "
@@ -238,7 +247,7 @@ async def github(
       "GitHub operation. One of: repo_view, issue_list, issue_view, pr_list, "
       "pr_view, pr_reviews, pr_comments, workflow_list, workflow_view, "
       "workflow_logs, release_list, release_view, pr_create, pr_comment, "
-      "pr_ready, release_create."
+      "pr_ready, pr_draft, release_create."
     ),
   ],
   ctx: ToolContext,
@@ -273,14 +282,14 @@ async def github(
   base: Annotated[str, Text("Target branch for PR (for pr_create)")] = "",
   # --- release_create parameters ---
   notes: Annotated[str, Text("Release notes body (for release_create)")] = "",
-  draft: Annotated[bool, Text("Mark release as draft (only for release_create)")] = False,
+  draft: Annotated[bool, Text("Create as draft (for pr_create or release_create)")] = False,
   prerelease: Annotated[bool, Text("Mark release as prerelease (only for release_create)")] = False,
 ) -> ToolResult:
   """Perform a GitHub operation via the ``gh`` CLI.
 
   Read operations are restricted to a fixed enum (the security boundary)
   and further gated by ``GitHubToolConfig.allowed_operations``. Write
-  operations (``pr_create``, ``pr_comment``, ``pr_ready``,
+  operations (``pr_create``, ``pr_comment``, ``pr_ready``, ``pr_draft``,
   ``release_create``) require
   explicit opt-in via ``allowed_operations`` — they are NOT in the default
   allowlist. All commands
@@ -293,7 +302,7 @@ async def github(
 
   ``pr_create`` requires ``repo``, ``title``, and ``body``. Optional ``head``
   (source branch) and ``base`` (target branch) default to the current branch
-  and repo default respectively.
+  and repo default respectively. Optional ``draft`` creates the PR as a draft.
 
   ``pr_comment`` requires ``number`` and ``body``. Optional ``repo`` defaults
   to the current git repo. The comment is posted as a regular PR comment
@@ -351,6 +360,12 @@ async def github(
       success=False,
       error=f"Operation '{operation}' requires a 'repo' parameter (owner/name)",
     )
+  # pr_comments also requires repo (uses gh api internally, no auto-detect)
+  if operation == "pr_comments" and not repo:
+    return ToolResult(
+      success=False,
+      error="Operation 'pr_comments' requires a 'repo' parameter (owner/name)",
+    )
 
   # --- 5d. Write-operation parameter validation ---
   if operation == "pr_create":
@@ -371,6 +386,10 @@ async def github(
       logger.info("github_rejected", reason="invalid_release_create_param", error=werr)
       return ToolResult(success=False, error=werr)
 
+  # pr_draft requires explicit repo (two-step API calls need it)
+  if operation == "pr_draft" and not repo:
+    return ToolResult(success=False, error="Parameter 'repo' is required for pr_draft")
+
   # --- 6. Required-parameter check ---
   _subcmd, _fields, required = _OPERATION_DISPATCH[operation]
   if required == "number" and (number is None or number < 1):
@@ -388,6 +407,63 @@ async def github(
   # --- Timeout clamp (caller may lower, never raise, the config ceiling) ---
   effective_timeout_ms = _clamp_timeout(timeout_ms, gh_config.timeout_ms)
   effective_limit = max(1, min(limit, gh_config.max_results))
+
+  # pr_draft is a two-step API operation (fetch node_id, then GraphQL mutation).
+  # It doesn't use _build_command — handle it separately.
+  if operation == "pr_draft":
+    assert number is not None and number >= 1  # validated at step 6
+    logger.info("github_executing", operation="pr_draft", repo=repo, number=number)
+    success, output = await _convert_to_draft(repo, number, effective_timeout_ms)
+    if success:
+      return ToolResult(
+        success=True,
+        result=output,
+        content_metadata={
+          "operation": "github",
+          "path": repo,
+          "content_type": "application/json",
+          "content": output,
+          "metadata": {
+            "gh_subcommand": "gh api (graphql convertPullRequestToDraft)",
+            "repo": repo,
+            "number": number,
+            "tag": None,
+            "limit": None,
+            "state": None,
+            "label": None,
+            "returncode": 0,
+          },
+        },
+      )
+    return ToolResult(success=False, error=output)
+
+  # pr_comments fetches both conversation comments (issues endpoint) and
+  # inline review comments (pulls endpoint), merging them with a type tag.
+  # It doesn't use _build_command — handle it separately.
+  if operation == "pr_comments":
+    assert number is not None and number >= 1  # validated at step 6
+    logger.info("github_executing", operation="pr_comments", repo=repo, number=number)
+    comments_json = await _fetch_all_comments(repo, number, effective_timeout_ms)
+    return ToolResult(
+      success=True,
+      result=comments_json,
+      content_metadata={
+        "operation": "github",
+        "path": repo,
+        "content_type": "application/json",
+        "content": comments_json,
+        "metadata": {
+          "gh_subcommand": "gh api (pulls + issues comments)",
+          "repo": repo,
+          "number": number,
+          "tag": None,
+          "limit": None,
+          "state": None,
+          "label": None,
+          "returncode": 0,
+        },
+      },
+    )
 
   cmd = _build_command(operation, repo, number, tag, effective_limit, state, label)
   write_args = _build_write_args(operation, title, body, head, base, notes, draft, prerelease, tag)
@@ -634,7 +710,7 @@ def _build_write_args(
   """Build the extra CLI args for write operations.
 
   For ``pr_create``: ``--title=...``, ``--body=...``, optional ``--head=...``,
-  ``--base=...``.
+  ``--base=...``, ``--draft``.
   For ``release_create``: positional tag, ``--title=...``, ``--notes=...``,
   optional ``--draft``, ``--prerelease``.
 
@@ -653,6 +729,8 @@ def _build_write_args(
       args.append(f"--head={head}")
     if base:
       args.append(f"--base={base}")
+    if draft:
+      args.append("--draft")
     return args
 
   if operation == "pr_comment":
@@ -864,22 +942,81 @@ def _parse_write_output(operation: str, stdout: str, tag: str) -> str:
   elif operation == "pr_ready":
     # gh pr ready outputs nothing on success
     result = {"ready": True}
+  elif operation == "pr_draft":
+    # pr_draft is handled by _convert_to_draft, output is JSON
+    result = {"draft": True}
   elif operation == "release_create":
     result["tagName"] = tag
 
   return json.dumps(result)
 
 
-async def _merge_comments(pr_json: str, repo: str, number: int, timeout_ms: int) -> str:
-  """Fetch PR comments via ``gh api`` and merge them into the PR JSON output.
+async def _convert_to_draft(repo: str, number: int, timeout_ms: int) -> tuple[bool, str]:
+  """Convert a PR to draft via GitHub GraphQL API.
 
-  Returns the original JSON if the comments fetch fails or the PR JSON is
-  unparseable — never raises.
+  gh has no ``pr draft`` subcommand, so this requires two API calls:
+  1. Fetch the PR's ``node_id`` via ``gh api repos/{repo}/pulls/{number}``
+  2. Call ``convertPullRequestToDraft`` GraphQL mutation with that node_id
+
+  Returns ``(success, message)``.
   """
-  url = f"repos/{repo}/pulls/{number}/comments"
-  jq = _api_jq_fields("id,user,body,path,line,created_at")
-  cmd = ["gh", "api", url, "--jq", jq]
+  # Step 1: Get the PR node_id
+  url = f"repos/{repo}/pulls/{number}"
+  cmd = ["gh", "api", url, "--jq", ".node_id"]
 
+  try:
+    proc = await asyncio.create_subprocess_exec(
+      *cmd,
+      cwd=None,
+      env=os.environ,
+      stdout=asyncio.subprocess.PIPE,
+      stderr=asyncio.subprocess.PIPE,
+      start_new_session=True,
+    )
+    stdout_b, stderr_b = await asyncio.wait_for(proc.communicate(), timeout=timeout_ms / 1000)
+    stdout = stdout_b.decode("utf-8", errors="replace") if stdout_b else ""
+    stderr = stderr_b.decode("utf-8", errors="replace") if stderr_b else ""
+  except (FileNotFoundError, asyncio.TimeoutError, OSError) as exc:
+    return False, f"Failed to fetch PR node_id: {exc}"
+
+  if proc.returncode != 0:
+    return False, _map_error(stderr, "pr_draft", repo, number, "")
+
+  node_id = stdout.strip()
+  if not node_id:
+    return False, f"Could not extract node_id for PR #{number} in {repo}"
+
+  # Step 2: Convert to draft via GraphQL mutation
+  mutation = (
+    "mutation ConvertToDraft { convertPullRequestToDraft("
+    f'input: {{pullRequestId: "{node_id}"}}) {{ pullRequest {{ isDraft }} }} }}'
+  )
+  cmd = ["gh", "api", "graphql", "-f", f"query={mutation}"]
+
+  try:
+    proc = await asyncio.create_subprocess_exec(
+      *cmd,
+      cwd=None,
+      env=os.environ,
+      stdout=asyncio.subprocess.PIPE,
+      stderr=asyncio.subprocess.PIPE,
+      start_new_session=True,
+    )
+    stdout_b, stderr_b = await asyncio.wait_for(proc.communicate(), timeout=timeout_ms / 1000)
+    stdout = stdout_b.decode("utf-8", errors="replace") if stdout_b else ""
+    stderr = stderr_b.decode("utf-8", errors="replace") if stderr_b else ""
+  except (FileNotFoundError, asyncio.TimeoutError, OSError) as exc:
+    return False, f"GraphQL mutation failed: {exc}"
+
+  if proc.returncode != 0:
+    return False, _map_error(stderr, "pr_draft", repo, number, "")
+
+  return True, json.dumps({"draft": True, "number": number})
+
+
+async def _fetch_api_comments(url: str, jq: str, timeout_ms: int) -> list[dict[str, Any]]:
+  """Fetch comments from a single gh api endpoint. Returns empty list on failure."""
+  cmd = ["gh", "api", url, "--jq", jq]
   try:
     proc = await asyncio.create_subprocess_exec(
       *cmd,
@@ -892,17 +1029,59 @@ async def _merge_comments(pr_json: str, repo: str, number: int, timeout_ms: int)
     stdout_b, _stderr_b = await asyncio.wait_for(proc.communicate(), timeout=timeout_ms / 1000)
     stdout = stdout_b.decode("utf-8", errors="replace") if stdout_b else ""
   except (FileNotFoundError, asyncio.TimeoutError, OSError):
-    return pr_json
+    return []
 
   if proc.returncode != 0:
-    return pr_json
+    return []
 
   stdout, _ = _redact(stdout or "")
   _truncated, stdout = _truncate(stdout, 100 * 1024)
 
   try:
+    return json.loads(stdout) if stdout.strip() else []
+  except (json.JSONDecodeError, TypeError):
+    return []
+
+
+async def _fetch_all_comments(repo: str, number: int, timeout_ms: int) -> str:
+  """Fetch both conversation and inline review comments for a PR.
+
+  GitHub PRs have two separate comment endpoints:
+  - ``repos/{repo}/issues/{number}/comments`` — conversation comments (general PR discussion)
+  - ``repos/{repo}/pulls/{number}/comments`` — inline review comments (attached to code lines)
+
+  Both are fetched and merged into a single JSON array. Each comment gets a
+  ``type`` field: ``"conversation"`` or ``"review"``.
+  """
+  # Conversation comments (issue comments on the PR)
+  conv_jq = _api_jq_fields("id,user,body,created_at")
+  conversation = await _fetch_api_comments(
+    f"repos/{repo}/issues/{number}/comments", conv_jq, timeout_ms
+  )
+  for c in conversation:
+    c["type"] = "conversation"
+
+  # Inline review comments (comments on specific code lines)
+  review_jq = _api_jq_fields("id,user,body,path,line,created_at")
+  review = await _fetch_api_comments(f"repos/{repo}/pulls/{number}/comments", review_jq, timeout_ms)
+  for c in review:
+    c["type"] = "review"
+
+  return json.dumps(conversation + review)
+
+
+async def _merge_comments(pr_json: str, repo: str, number: int, timeout_ms: int) -> str:
+  """Fetch both conversation and inline review comments and merge into PR JSON.
+
+  Uses ``_fetch_all_comments`` to get comments from both GitHub endpoints
+  (issues + pulls). Returns the original JSON if the PR JSON is unparseable
+  — never raises.
+  """
+  comments_json = await _fetch_all_comments(repo, number, timeout_ms)
+
+  try:
     pr_data = json.loads(pr_json)
-    comments = json.loads(stdout) if stdout.strip() else []
+    comments = json.loads(comments_json) if comments_json.strip() else []
     pr_data["comments"] = comments
     return json.dumps(pr_data)
   except (json.JSONDecodeError, TypeError):
