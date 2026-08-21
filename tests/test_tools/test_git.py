@@ -533,6 +533,170 @@ class TestGitToolReadOnlyOperations:
     assert "Initial commit" in result.result
 
 
+class TestGitToolRefArgument:
+  """Tests for the 'ref' argument on log, diff, and show operations."""
+
+  @pytest.fixture
+  def git_repo(self, tmp_path: Path) -> Path:
+    """Create a temporary Git repo with two branches and multiple commits."""
+    repo = tmp_path / "test_repo"
+    repo.mkdir()
+    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+      ["git", "config", "user.name", "Test"], cwd=repo, check=True, capture_output=True
+    )
+    subprocess.run(
+      ["git", "config", "user.email", "test@test.com"], cwd=repo, check=True, capture_output=True
+    )
+    (repo / "README.md").write_text("# Test\n")
+    subprocess.run(["git", "add", "README.md"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+      ["git", "commit", "-m", "Initial commit on main"], cwd=repo, check=True, capture_output=True
+    )
+    # Create a feature branch with additional commits
+    subprocess.run(["git", "checkout", "-b", "feature"], cwd=repo, check=True, capture_output=True)
+    (repo / "feature.txt").write_text("feature\n")
+    subprocess.run(["git", "add", "feature.txt"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+      ["git", "commit", "-m", "Add feature file"], cwd=repo, check=True, capture_output=True
+    )
+    (repo / "feature.txt").write_text("feature updated\n")
+    subprocess.run(["git", "add", "feature.txt"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+      ["git", "commit", "-m", "Update feature file"], cwd=repo, check=True, capture_output=True
+    )
+    # Switch back to main
+    subprocess.run(["git", "checkout", "master"], cwd=repo, check=True, capture_output=True)
+    return repo
+
+  @pytest.mark.asyncio
+  async def test_log_with_ref_shows_commits_on_branch(self, git_repo: Path) -> None:
+    """log with ref='feature' shows commits on the feature branch."""
+    config = GitToolConfig()
+    spec = _git_spec()
+    ctx = _git_context(config=config)
+    result = await spec.execute(
+      operation="log", path=str(git_repo), ctx=ctx, args={"ref": "feature", "oneline": True}
+    )
+    assert result.success
+    assert "Add feature file" in result.result
+    assert "Update feature file" in result.result
+
+  @pytest.mark.asyncio
+  async def test_log_with_ref_range_shows_commits_between_branches(self, git_repo: Path) -> None:
+    """log with ref='master..feature' shows commits on feature not on master."""
+    config = GitToolConfig()
+    spec = _git_spec()
+    ctx = _git_context(config=config)
+    result = await spec.execute(
+      operation="log", path=str(git_repo), ctx=ctx, args={"ref": "master..feature", "oneline": True}
+    )
+    assert result.success
+    assert "Add feature file" in result.result
+    assert "Update feature file" in result.result
+    # Should NOT include the initial commit on master
+    assert "Initial commit on main" not in result.result
+
+  @pytest.mark.asyncio
+  async def test_diff_with_ref_shows_diff_between_branches(self, git_repo: Path) -> None:
+    """diff with ref='master..feature' shows the diff between the two branches."""
+    config = GitToolConfig()
+    spec = _git_spec()
+    ctx = _git_context(config=config)
+    result = await spec.execute(
+      operation="diff", path=str(git_repo), ctx=ctx, args={"ref": "master..feature", "stat": True}
+    )
+    assert result.success
+    assert "feature.txt" in result.result
+
+  @pytest.mark.asyncio
+  async def test_diff_with_ref_without_stat(self, git_repo: Path) -> None:
+    """diff with ref shows full diff content (not just stat)."""
+    config = GitToolConfig()
+    spec = _git_spec()
+    ctx = _git_context(config=config)
+    result = await spec.execute(
+      operation="diff", path=str(git_repo), ctx=ctx, args={"ref": "master..feature"}
+    )
+    assert result.success
+    assert "feature.txt" in result.result
+    assert "feature" in result.result
+
+  @pytest.mark.asyncio
+  async def test_show_with_ref_shows_specific_commit(self, git_repo: Path) -> None:
+    """show with ref='feature' shows the latest commit on feature branch."""
+    config = GitToolConfig()
+    spec = _git_spec()
+    ctx = _git_context(config=config)
+    result = await spec.execute(
+      operation="show", path=str(git_repo), ctx=ctx, args={"ref": "feature", "stat": True}
+    )
+    assert result.success
+    assert "Update feature file" in result.result
+
+  @pytest.mark.asyncio
+  async def test_log_ref_rejects_flag_injection(self, git_repo: Path) -> None:
+    """log ref rejects values starting with dash (flag injection)."""
+    config = GitToolConfig()
+    spec = _git_spec()
+    ctx = _git_context(config=config)
+    result = await spec.execute(
+      operation="log", path=str(git_repo), ctx=ctx, args={"ref": "--evil"}
+    )
+    assert not result.success
+    assert "dash" in result.error.lower() or "-" in result.error
+
+  @pytest.mark.asyncio
+  async def test_diff_ref_rejects_forbidden_chars(self, git_repo: Path) -> None:
+    """diff ref rejects shell metacharacters."""
+    config = GitToolConfig()
+    spec = _git_spec()
+    ctx = _git_context(config=config)
+    result = await spec.execute(
+      operation="diff", path=str(git_repo), ctx=ctx, args={"ref": "main; rm -rf /"}
+    )
+    assert not result.success
+    assert "forbidden" in result.error.lower() or "forbidden" in result.error
+
+  @pytest.mark.asyncio
+  async def test_log_without_ref_works_as_before(self, git_repo: Path) -> None:
+    """log without ref still works (backward compatibility)."""
+    config = GitToolConfig()
+    spec = _git_spec()
+    ctx = _git_context(config=config)
+    result = await spec.execute(
+      operation="log", path=str(git_repo), ctx=ctx, args={"oneline": True}
+    )
+    assert result.success
+    assert "Initial commit on main" in result.result
+
+  @pytest.mark.asyncio
+  async def test_diff_without_ref_works_as_before(self, git_repo: Path) -> None:
+    """diff without ref still shows uncommitted changes (backward compatibility)."""
+    (git_repo / "README.md").write_text("# Modified\n")
+    config = GitToolConfig()
+    spec = _git_spec()
+    ctx = _git_context(config=config)
+    result = await spec.execute(operation="diff", path=str(git_repo), ctx=ctx)
+    assert result.success
+    assert "# Modified" in result.result
+
+
+class TestGitToolPathErrorMessage:
+  """Tests for the improved error message when path is not a filesystem path."""
+
+  @pytest.mark.asyncio
+  async def test_nonexistent_path_error_mentions_ref(self, tmp_path: Path) -> None:
+    """Error message guides the agent to use 'ref' for branch names."""
+    git_config = GitToolConfig()
+    spec = _git_spec(config=git_config)
+    ctx = _git_context(config=git_config)
+    result = await spec.execute(operation="log", path=str(tmp_path / "feature-branch"), ctx=ctx)
+    assert not result.success
+    assert "ref" in result.error.lower()
+    assert "filesystem" in result.error.lower() or "branch" in result.error.lower()
+
+
 class TestGitToolPermissionRequiredOperations:
   """Tests for operations that require approval (not in auto_permission)."""
 

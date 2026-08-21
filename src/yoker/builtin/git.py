@@ -58,11 +58,21 @@ OPERATION_ARGS: dict[str, dict[str, dict[str, Any]]] = {
     "until": {"type": "string", "description": "Show commits until date/commit"},
     "author": {"type": "string", "description": "Filter by author"},
     "format": {"type": "string", "description": "Pretty format string"},
+    "ref": {
+      "type": "string",
+      "description": "Git revision range, branch, or commit to show (e.g. 'main..feature', 'HEAD~5', 'v1.0')",
+      "max_length": 200,
+    },
   },
   "diff": {
     "cached": {"type": "boolean", "description": "Show staged changes"},
     "stat": {"type": "boolean", "description": "Show diffstat output"},
     "name_only": {"type": "boolean", "description": "Show only names of changed files"},
+    "ref": {
+      "type": "string",
+      "description": "Git revision range, branch, or commit to diff (e.g. 'main..feature', 'HEAD~3', 'v1.0')",
+      "max_length": 200,
+    },
   },
   "branch": {
     "list": {"type": "boolean", "description": "List branches"},
@@ -102,6 +112,11 @@ OPERATION_ARGS: dict[str, dict[str, dict[str, Any]]] = {
   "show": {
     "format": {"type": "string", "description": "Pretty format string"},
     "stat": {"type": "boolean", "description": "Show diffstat output"},
+    "ref": {
+      "type": "string",
+      "description": "Git revision to show (e.g. 'HEAD~3', 'v1.0', 'abc123')",
+      "max_length": 200,
+    },
   },
   "add": {
     "all": {"type": "boolean", "description": "Stage all changes in the working tree"},
@@ -202,7 +217,10 @@ async def git(
     ),
   ],
   path: Annotated[
-    str, PathArg("Path to the Git repository, or file for diff/show operations")
+    str,
+    PathArg(
+      "Filesystem path to the Git repository, or file for diff/show operations. NOT for branch names or revision ranges — use 'ref' in args for those."
+    ),
   ] = ".",
   ctx: ToolContext = None,  # type: ignore[assignment]
   args: Annotated[
@@ -211,11 +229,12 @@ async def git(
       "Operation-specific arguments.\n"
       "\n"
       "status: {short: bool, porcelain: bool}\n"
-      "log: {oneline: bool, n: int (1-100), since: str, until: str, author: str, format: str}\n"
-      "diff: {cached: bool (staged changes), stat: bool (diffstat), name_only: bool}\n"
+      "log: {oneline: bool, n: int (1-100), since: str, until: str, author: str, format: str, ref: str (git revision/branch/range, e.g. 'main..feature', 'HEAD~5')}\n"
+      "diff: {cached: bool (staged changes), stat: bool (diffstat), name_only: bool, ref: str (git revision/branch/range, e.g. 'main..feature', 'v1.0')}\n"
       "  - To diff a specific file, set the 'path' parameter to the file path, not an arg.\n"
+      "  - Use 'ref' in args to diff between branches/commits. Do NOT put branch names in 'path'.\n"
       "branch: {list: bool, all: bool, remotes: bool, show_current: bool (current branch name only)}\n"
-      "show: {format: str, stat: bool}\n"
+      "show: {format: str, stat: bool, ref: str (git revision, e.g. 'HEAD~3', 'v1.0')}\n"
       "  - To show a specific file, set the 'path' parameter to the file path.\n"
       "add: {all: bool (stage everything), update: bool (stage tracked only), files: [str] (specific files)}\n"
       "commit: {message: str (supports multi-line), all: bool, amend: bool}\n"
@@ -237,6 +256,12 @@ async def git(
   For diff and show, to scope to a specific file, pass the file path as the
   'path' parameter (not as an arg). Example: git(operation='diff',
   path='src/main.py') shows changes for that file only.
+
+  For log and diff, to specify a branch, commit, or revision range, use the
+  'ref' argument in 'args'. Example: git(operation='log', args={'ref':
+  'main..feature', 'oneline': True}) shows commits on feature not on main.
+  Do NOT put branch names or revision ranges in the 'path' parameter —
+  'path' is a filesystem path only.
   """
   git_config = ctx.config
   if not isinstance(git_config, GitToolConfig):
@@ -375,6 +400,17 @@ async def git(
       checkout_pathspecs.append(sanitized_sp)
       args = {k: v for k, v in args.items() if k != "startpoint"}
 
+  # Extract ref for log/diff/show — it's a positional argument (revision/range),
+  # not a flag. It goes after flags but before the '--' file separator.
+  ref_positional: str | None = None
+  if operation in ("log", "diff", "show") and args.get("ref"):
+    ref_schema = OPERATION_ARGS[operation]["ref"]
+    try:
+      ref_positional = _sanitize_arg("ref", args["ref"], ref_schema)
+    except ValueError as e:
+      return ToolResult(success=False, error=str(e))
+    args = {k: v for k, v in args.items() if k != "ref"}
+
   # branch --show-current: short-circuit to just the branch name.
   if operation == "branch" and args.get("show_current"):
     cmd = ["git", "branch", "--show-current"]
@@ -396,6 +432,11 @@ async def git(
   # push: append remote and branch as positional arguments (not flags).
   if operation == "push" and push_positional:
     cmd.extend(push_positional)
+
+  # log/diff/show: append ref (revision range) before the '--' file separator.
+  # e.g. git log --oneline -50 main..feature -- src/main.py
+  if ref_positional is not None:
+    cmd.append(ref_positional)
 
   if file_arg is not None:
     cmd.extend(["--", file_arg])
@@ -487,7 +528,15 @@ def _validate_repository_path(path: str) -> ValidationResult:
     return ValidationResult(valid=False, reason="Invalid path")
 
   if not resolved.exists():
-    return ValidationResult(valid=False, reason="Path does not exist")
+    return ValidationResult(
+      valid=False,
+      reason=(
+        f"Path does not exist: {path!r}. The 'path' parameter must be a filesystem "
+        "path to a Git repository or file, not a branch name or revision range. "
+        "Use the 'ref' argument in 'args' to specify branches, commits, or ranges "
+        "(e.g. ref: 'main..feature')."
+      ),
+    )
 
   if _find_git_root(resolved) is None:
     return ValidationResult(valid=False, reason="Not a Git repository")
