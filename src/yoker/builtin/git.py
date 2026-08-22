@@ -178,6 +178,13 @@ OPERATION_ARGS: dict[str, dict[str, dict[str, Any]]] = {
       "description": "Specific file paths to remove (relative to the repo path). Required.",
     },
   },
+  "rebase": {
+    "onto": {
+      "type": "string",
+      "description": "Branch or commit to rebase onto (e.g. 'master', 'origin/main', 'HEAD~3')",
+      "max_length": 200,
+    },
+  },
 }
 
 DANGEROUS_OPTIONS: frozenset[str] = frozenset(
@@ -242,6 +249,7 @@ async def git(
       "checkout: {branch: str (required), create: bool (create new branch with -b), startpoint: str (base for new branch)}\n"
       "rm: {cached: bool (untrack without deleting), r: bool (recursive), files: [str] (required, specific file paths to remove)}\n"
       "pull: *(no args)* — sync current branch with remote upstream\n"
+      "rebase: {onto: str (branch/commit to rebase onto, e.g. 'master', 'origin/main')}\n"
       "tag: {list: bool (all tags sorted desc), last: bool (most recent tag only), create: bool (create annotated tag), name: str (tag name, required for create), message: str (annotation message, required for create)}"
     ),
   ] = None,
@@ -250,8 +258,8 @@ async def git(
 
   Read-only operations (status, log, diff, branch, show) are auto-approved.
   Staging operations (add, rm) are auto-approved. Write operations (commit,
-  push, checkout) require interactive approval unless explicitly added to
-  ``auto_permission`` in config.
+  push, checkout, rebase) require interactive approval unless explicitly
+  added to ``auto_permission`` in config.
 
   For diff and show, to scope to a specific file, pass the file path as the
   'path' parameter (not as an arg). Example: git(operation='diff',
@@ -411,6 +419,16 @@ async def git(
       return ToolResult(success=False, error=str(e))
     args = {k: v for k, v in args.items() if k != "ref"}
 
+  # Extract onto for 'rebase' — it's a positional argument (upstream branch).
+  rebase_onto: str | None = None
+  if operation == "rebase" and args.get("onto"):
+    onto_schema = OPERATION_ARGS["rebase"]["onto"]
+    try:
+      rebase_onto = _sanitize_arg("onto", args["onto"], onto_schema)
+    except ValueError as e:
+      return ToolResult(success=False, error=str(e))
+    args = {k: v for k, v in args.items() if k != "onto"}
+
   # branch --show-current: short-circuit to just the branch name.
   if operation == "branch" and args.get("show_current"):
     cmd = ["git", "branch", "--show-current"]
@@ -437,6 +455,11 @@ async def git(
   # e.g. git log --oneline -50 main..feature -- src/main.py
   if ref_positional is not None:
     cmd.append(ref_positional)
+
+  # rebase: append onto as a positional argument (upstream branch).
+  # e.g. git rebase master
+  if rebase_onto is not None:
+    cmd.append(rebase_onto)
 
   if file_arg is not None:
     cmd.extend(["--", file_arg])
@@ -570,6 +593,8 @@ async def _check_approval(operation: str, ctx: ToolContext) -> tuple[bool, str |
     preview = await _push_preview()
   elif operation == "checkout":
     preview = await _checkout_preview()
+  elif operation == "rebase":
+    preview = await _rebase_preview()
   else:
     preview = f"git {operation}"
 
@@ -626,6 +651,22 @@ async def _checkout_preview() -> str:
     return "git checkout (clean working tree)"
   except Exception:
     return "git checkout"
+
+
+async def _rebase_preview() -> str:
+  """Build a preview showing current branch and upcoming rebase for approval."""
+  try:
+    _, branch_stdout, _ = await _execute_command(["git", "branch", "--show-current"], Path.cwd())
+    branch = branch_stdout.strip() or "(detached HEAD)"
+    _, status_stdout, _ = await _execute_command(["git", "status", "--short"], Path.cwd())
+    if status_stdout.strip():
+      return (
+        f"Current branch: {branch}\n"
+        f"Uncommitted changes (may cause conflict):\n{status_stdout[:2000]}"
+      )
+    return f"Current branch: {branch} (clean working tree)"
+  except Exception:
+    return "git rebase"
 
 
 def _build_command(

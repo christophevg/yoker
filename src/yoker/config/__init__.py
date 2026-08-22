@@ -586,6 +586,7 @@ class GitToolConfig(ToolConfig):
     "checkout",
     "rm",
     "pull",
+    "rebase",
     "tag",
   )
   auto_permission: tuple[str, ...] = (

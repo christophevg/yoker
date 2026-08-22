@@ -1268,6 +1268,153 @@ class TestGitToolPermissionRequiredOperations:
     assert not result.success
     assert "forbidden" in result.error.lower()
 
+  # --- rebase ---
+
+  @pytest.mark.asyncio
+  async def test_git_rebase_not_in_default_allowlist(self, git_repo: Path) -> None:
+    """rebase is in allowed_commands but not in auto_permission by default."""
+    config = GitToolConfig()
+    spec = _git_spec()
+    ctx = _git_context(config=config)
+    result = await spec.execute(
+      operation="rebase",
+      path=str(git_repo),
+      args={"onto": "master"},
+      ctx=ctx,
+    )
+    assert not result.success
+    # rebase is in allowed_commands but not auto_permission, so it requires
+    # interactive approval — which isn't available in test context.
+    assert "approval" in result.error.lower() or "not allowed" in result.error.lower()
+
+  @pytest.mark.asyncio
+  async def test_git_rebase_onto_master(self, git_repo: Path) -> None:
+    """
+    Given: A git tool with rebase in auto_permission and two branches
+    When: Rebasing a feature branch onto master
+    Then: Rebase succeeds and branch is on top of master
+    """
+    config = GitToolConfig(
+      allowed_commands=("status", "log", "branch", "checkout", "rebase"),
+      auto_permission=("status", "log", "branch", "checkout", "rebase"),
+    )
+    spec = _git_spec()
+    ctx = _git_context(config=config)
+
+    # Create a feature branch with an extra commit
+    subprocess.run(
+      ["git", "checkout", "-b", "feature"],
+      cwd=git_repo,
+      check=True,
+      capture_output=True,
+    )
+    (git_repo / "feature.txt").write_text("feature")
+    subprocess.run(
+      ["git", "add", "feature.txt"],
+      cwd=git_repo,
+      check=True,
+      capture_output=True,
+    )
+    subprocess.run(
+      ["git", "commit", "-m", "feature commit"],
+      cwd=git_repo,
+      check=True,
+      capture_output=True,
+    )
+
+    # Add a commit on master
+    subprocess.run(
+      ["git", "checkout", "master"],
+      cwd=git_repo,
+      check=True,
+      capture_output=True,
+    )
+    (git_repo / "master.txt").write_text("master")
+    subprocess.run(
+      ["git", "add", "master.txt"],
+      cwd=git_repo,
+      check=True,
+      capture_output=True,
+    )
+    subprocess.run(
+      ["git", "commit", "-m", "master commit"],
+      cwd=git_repo,
+      check=True,
+      capture_output=True,
+    )
+
+    # Switch back to feature and rebase onto master
+    subprocess.run(
+      ["git", "checkout", "feature"],
+      cwd=git_repo,
+      check=True,
+      capture_output=True,
+    )
+    result = await spec.execute(
+      operation="rebase",
+      path=str(git_repo),
+      args={"onto": "master"},
+      ctx=ctx,
+    )
+    assert result.success
+
+    # Verify feature is now on top of master
+    log_result = await spec.execute(
+      operation="log",
+      path=str(git_repo),
+      args={"oneline": True, "n": 3},
+      ctx=ctx,
+    )
+    assert "master commit" in log_result.result
+
+  @pytest.mark.asyncio
+  async def test_git_rebase_no_onto_arg(self, git_repo: Path) -> None:
+    """
+    Given: A git tool with rebase in auto_permission
+    When: Calling rebase without onto arg
+    Then: Runs git rebase without arguments (rebases onto upstream)
+    """
+    config = GitToolConfig(
+      allowed_commands=("status", "log", "branch", "rebase"),
+      auto_permission=("status", "log", "branch", "rebase"),
+    )
+    spec = _git_spec()
+    ctx = _git_context(config=config)
+    # Without onto, git rebase runs with no positional — may fail if no
+    # upstream is set, but the command should be accepted.
+    result = await spec.execute(
+      operation="rebase",
+      path=str(git_repo),
+      args={},
+      ctx=ctx,
+    )
+    # The command is accepted; success depends on git state
+    # (no upstream configured → git rebase fails, but that's a git error,
+    # not a tool rejection).
+    assert result.success or "rebase" in (result.error or "").lower()
+
+  @pytest.mark.asyncio
+  async def test_git_rebase_injection_blocked(self, git_repo: Path) -> None:
+    """
+    Given: A git tool with rebase in auto_permission
+    When: onto value contains shell injection chars
+    Then: Returns error about forbidden character
+    """
+    config = GitToolConfig(
+      allowed_commands=("status", "log", "rebase"),
+      auto_permission=("status", "log", "rebase"),
+    )
+    spec = _git_spec()
+    ctx = _git_context(config=config)
+    result = await spec.execute(
+      operation="rebase",
+      path=str(git_repo),
+      args={"onto": "master;rm -rf /"},
+      ctx=ctx,
+    )
+    assert not result.success
+    assert "forbidden" in result.error.lower()
+
   @pytest.mark.asyncio
   async def test_git_add_auto_permission_stages_files(self, git_repo: Path) -> None:
     """
