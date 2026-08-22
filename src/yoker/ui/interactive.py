@@ -822,11 +822,11 @@ class InteractiveUIHandler(UIHandler):
       # Print the agent tag separately (without STATS_STYLE's dim) so
       # colored tags are as vibrant as in content/tool-call lines.
       if agent:
-        prefix = f"📊 {ts}"
+        prefix = f"{BULLET}{ts}"
         self.console.print(f"{prefix}{tag}", end="")
         parts = [f"{duration_s:.1f}s, {total} tokens"]
       else:
-        parts = [f"📊 {ts}{duration_s:.1f}s, {total} tokens"]
+        parts = [f"{BULLET}{ts}{duration_s:.1f}s, {total} tokens"]
       if usage_limits:
         session_pct = _extract_usage_pct(usage_limits, "session")
         weekly_pct = _extract_usage_pct(usage_limits, "weekly")
