@@ -33,31 +33,25 @@ FILE_NAMESPACE = "file"
 # Backward-compatible alias
 parse_frontmatter = parse_yaml_frontmatter
 
-# Known yoker builtin tool simple names. Bare tool names in agent definitions
-# that match a builtin are prefixed with ``yoker:`` instead of the collection
-# namespace. This set mirrors the tools registered in
-# ``yoker.builtin.__YOKER_MANIFEST__`` plus the session-injected
-# ``agent``/``send_message`` and the factory-registered ``skill`` tool.
-_YOKER_BUILTIN_TOOLS: frozenset[str] = frozenset(
-  {
-    "existence",
-    "file",
-    "git",
-    "github",
-    "list",
-    "make",
-    "mkdir",
-    "read",
-    "search",
-    "update",
-    "webfetch",
-    "websearch",
-    "write",
-    "agent",
-    "send_message",
-    "skill",
-  }
-)
+# Session-injected and factory-registered tool names that are NOT in the
+# builtin manifest but are always available to agents in a session.
+_SESSION_INJECTED_TOOLS: frozenset[str] = frozenset({"agent", "send_message", "skill"})
+
+
+def _builtin_tool_names() -> frozenset[str]:
+  """Derive the set of known yoker builtin tool simple names.
+
+  Combines the tool callables declared in ``yoker.builtin.__YOKER_MANIFEST__``
+  with the session-injected ``agent``/``send_message`` and the
+  factory-registered ``skill`` tool. This is the single authoritative
+  source — no manual list to keep in sync.
+  """
+  from yoker.builtin import __YOKER_MANIFEST__
+
+  manifest_names = frozenset(
+    getattr(tool, "__yoker_name__", None) or tool.__name__ for tool in __YOKER_MANIFEST__.tools
+  )
+  return manifest_names | _SESSION_INJECTED_TOOLS
 
 
 def _apply_namespace(name: str, namespace: str | None) -> str:
@@ -90,7 +84,7 @@ def _namespace_tools(tools: "list[str] | tuple[str, ...]", namespace: str | None
         result.append(f"{namespace}:{tool_name}")
       else:
         result.append(tool_str)
-    elif tool_str.lower() in _YOKER_BUILTIN_TOOLS:
+    elif tool_str.lower() in _builtin_tool_names():
       # Bare name matching a yoker builtin → prefix with yoker:
       result.append(f"yoker:{tool_str}")
     else:

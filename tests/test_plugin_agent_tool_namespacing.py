@@ -164,6 +164,52 @@ System prompt here."""
     # local_tool gets demo: namespace
     assert "demo:local_tool" in agent_def.tools
 
+  def test_sleep_tool_namespaced_as_builtin(self) -> None:
+    """The sleep tool (added after the original hardcoded list) is correctly namespaced as a yoker builtin."""
+    from yoker.agents.loader import parse_agent_definition
+    from yoker.resources import parse_yaml_frontmatter
+
+    content = """---
+name: demo
+description: Test agent
+tools:
+  - sleep
+---
+System prompt here."""
+
+    frontmatter, body = parse_yaml_frontmatter(content)
+    agent_def = parse_agent_definition(frontmatter, body, source_path="test.md", namespace="demo")
+
+    assert agent_def is not None
+    # sleep is a yoker builtin, so it gets yoker: prefix (not plugin namespace)
+    assert "yoker:sleep" in agent_def.tools
+    assert "demo:sleep" not in agent_def.tools
+
+  def test_builtin_tool_names_derived_from_manifest(self) -> None:
+    """_builtin_tool_names is dynamically derived from the builtin manifest.
+
+    This ensures the set stays in sync with the manifest automatically —
+    no manual list to update when tools are added.
+    """
+    from yoker.agents.loader import _builtin_tool_names
+    from yoker.builtin import __YOKER_MANIFEST__
+
+    names = _builtin_tool_names()
+
+    # Every manifest tool must be present
+    for tool in __YOKER_MANIFEST__.tools:
+      expected = getattr(tool, "__yoker_name__", None) or tool.__name__
+      assert expected in names, f"Manifest tool {expected!r} missing from _builtin_tool_names()"
+
+    # Session-injected tools must be present
+    assert "agent" in names
+    assert "send_message" in names
+    assert "skill" in names
+
+    # Specifically verify sleep is included (the tool that was missing
+    # in the old hardcoded list)
+    assert "sleep" in names
+
 
 class TestToolAvailability:
   """Test that tool availability checks work correctly."""
