@@ -23,7 +23,7 @@ from yoker.events import (
   TurnEndEvent,
   TurnStartEvent,
 )
-from yoker.ui import UIBridge
+from yoker.ui import AgentDisplay, UIBridge
 
 
 class PrintUIHandler:
@@ -106,7 +106,9 @@ class PrintUIHandler:
     """
     print(f"[command] {result}")
 
-  def output_tool_call(self, tool_name: str, args: dict[str, object]) -> None:
+  def output_tool_call(
+    self, tool_name: str, args: dict[str, object], agent: AgentDisplay | None = None
+  ) -> None:
     """Print a tool call.
 
     Args:
@@ -152,7 +154,7 @@ class PrintUIHandler:
     prompt_tokens: int,
     eval_tokens: int,
     usage_limits: dict[str, object] | None = None,
-    agent_id: str | None = None,
+    agent: AgentDisplay | None = None,
   ) -> None:
     """Print turn statistics.
 
@@ -197,7 +199,7 @@ class PrintUIHandler:
     self.stream_thinking(text)
     self.end_thinking_stream(len(text))
 
-  def start_content_stream(self) -> None:
+  def start_content_stream(self, agent: AgentDisplay | None = None) -> None:
     """Start streaming content."""
     print("[content start]", end="")
 
@@ -218,7 +220,7 @@ class PrintUIHandler:
     """
     print(f"\n[content end length={total_length}]")
 
-  def start_thinking_stream(self) -> None:
+  def start_thinking_stream(self, agent: AgentDisplay | None = None) -> None:
     """Start streaming thinking."""
     print("[thinking start]", end="")
 

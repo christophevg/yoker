@@ -30,7 +30,7 @@ class RecordingHandler:
     self._implement_lifecycle = implement_lifecycle
 
   # Minimal surface used by the bridge dispatch tests.
-  def start_content_stream(self) -> None:
+  def start_content_stream(self, agent=None) -> None:
     self.calls.append("start_content_stream")
 
   def stream_content(self, chunk: str, content_type: str = "text/plain") -> None:
@@ -39,7 +39,7 @@ class RecordingHandler:
   def end_content_stream(self, total_length: int) -> None:
     self.calls.append(("end_content_stream", total_length))
 
-  def start_thinking_stream(self) -> None:
+  def start_thinking_stream(self, agent=None) -> None:
     self.calls.append("start_thinking_stream")
 
   def output_stats(
@@ -48,13 +48,14 @@ class RecordingHandler:
     prompt_tokens: int,
     eval_tokens: int,
     usage_limits: dict | None = None,
+    agent=None,
   ) -> None:
     self.calls.append(("output_stats", duration_ms, prompt_tokens, eval_tokens, usage_limits))
 
   def output_command_result(self, result: str) -> None:
     self.calls.append(("output_command_result", result))
 
-  def output_tool_call(self, tool_name: str, args: dict) -> None:
+  def output_tool_call(self, tool_name: str, args: dict, agent=None) -> None:
     self.calls.append(("output_tool_call", tool_name, args))
 
   def output_tool_result(self, tool_name: str, success: bool, result: str) -> None:
@@ -63,13 +64,13 @@ class RecordingHandler:
   def output_tool_content(self, *args, **kwargs) -> None:
     self.calls.append(("output_tool_content", args, kwargs))
 
-  def agent_spawned(self, name: str) -> None:
+  def agent_spawned(self, agent) -> None:
     if self._implement_lifecycle:
-      self.calls.append(("agent_spawned", name))
+      self.calls.append(("agent_spawned", agent))
 
-  def agent_finished(self, name: str) -> None:
+  def agent_finished(self, agent) -> None:
     if self._implement_lifecycle:
-      self.calls.append(("agent_finished", name))
+      self.calls.append(("agent_finished", agent))
 
 
 @pytest.mark.asyncio
@@ -134,7 +135,7 @@ class TestUIBridgeSessionLifecycle:
   """Tests for AGENT_SPAWNED / AGENT_FINISHED / SESSION_* handling."""
 
   async def test_agent_spawned_dispatches_to_handler(self) -> None:
-    """AGENT_SPAWNED calls ui.agent_spawned(name) when implemented."""
+    """AGENT_SPAWNED calls ui.agent_spawned(agent_display) when implemented."""
     handler = RecordingHandler()
     bridge = UIBridge(handler)
     await bridge(
@@ -145,10 +146,15 @@ class TestUIBridgeSessionLifecycle:
         definition_name="researcher",
       )
     )
-    assert ("agent_spawned", "researcher") in handler.calls
+    # Without a resolver, the bridge creates a fallback AgentDisplay
+    assert len(handler.calls) == 1
+    call_name, call_arg = handler.calls[0]
+    assert call_name == "agent_spawned"
+    assert call_arg.id == "researcher"
+    assert call_arg.name == "researcher"
 
   async def test_agent_finished_dispatches_to_handler(self) -> None:
-    """AGENT_FINISHED calls ui.agent_finished(name) when implemented."""
+    """AGENT_FINISHED calls ui.agent_finished(agent_display) when implemented."""
     handler = RecordingHandler()
     bridge = UIBridge(handler)
     await bridge(
@@ -158,7 +164,10 @@ class TestUIBridgeSessionLifecycle:
         agent_id="researcher",
       )
     )
-    assert ("agent_finished", "researcher") in handler.calls
+    assert len(handler.calls) == 1
+    call_name, call_arg = handler.calls[0]
+    assert call_name == "agent_finished"
+    assert call_arg.id == "researcher"
 
   async def test_handler_without_lifecycle_methods_not_broken(self) -> None:
     """A handler missing agent_spawned/agent_finished is not broken.
@@ -171,7 +180,7 @@ class TestUIBridgeSessionLifecycle:
     class NoLifecycleHandler:
       """Structural handler that omits the optional lifecycle methods."""
 
-      def start_content_stream(self) -> None:
+      def start_content_stream(self, agent=None) -> None:
         pass
 
       def stream_content(self, chunk: str, content_type: str = "text/plain") -> None:
@@ -180,7 +189,7 @@ class TestUIBridgeSessionLifecycle:
       def end_content_stream(self, total_length: int) -> None:
         pass
 
-      def start_thinking_stream(self) -> None:
+      def start_thinking_stream(self, agent=None) -> None:
         pass
 
       def output_stats(
@@ -189,13 +198,14 @@ class TestUIBridgeSessionLifecycle:
         prompt_tokens: int,
         eval_tokens: int,
         usage_limits: dict | None = None,
+        agent=None,
       ) -> None:
         pass
 
       def output_command_result(self, result: str) -> None:
         pass
 
-      def output_tool_call(self, tool_name: str, args: dict) -> None:
+      def output_tool_call(self, tool_name: str, args: dict, agent=None) -> None:
         pass
 
       def output_tool_result(self, tool_name: str, success: bool, result: str) -> None:
@@ -267,7 +277,10 @@ class TestUIBridgeSessionLifecycle:
       definition_name="researcher",
     )
     await bridge(SessionEvent(agent_id="researcher", event=inner))
-    assert ("agent_spawned", "researcher") in handler.calls
+    assert len(handler.calls) == 1
+    call_name, call_arg = handler.calls[0]
+    assert call_name == "agent_spawned"
+    assert call_arg.id == "researcher"
     assert bridge._current_agent_id == "researcher"
 
 

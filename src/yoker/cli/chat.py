@@ -25,6 +25,7 @@ from yoker.exceptions import NetworkError, YokerError
 from yoker.logging import configure_logging
 from yoker.session import Session
 from yoker.ui import BatchUIHandler, InteractiveUIHandler, UIBridge, UIHandler
+from yoker.ui.agent_display import AgentDisplay
 from yoker.ui.commands import CommandRegistry, create_default_registry
 
 logger = get_logger(__name__)
@@ -150,6 +151,23 @@ async def _run_with_session(
     session.on_event(bridge)
     bridge._primary_agent_id = session._id_of(session.agent)
     bridge._current_agent_id = bridge._primary_agent_id
+
+    # Wire agent resolver so the bridge can build AgentDisplay for UI tagging.
+    def _resolve_agent(agent_id: str) -> AgentDisplay | None:
+      agent = session._agents_map.get(agent_id)
+      if agent is None:
+        return None
+      d = agent.definition
+      return AgentDisplay(
+        id=agent_id,
+        name=d.simple_name or agent_id,
+        color=d.color,
+        model=getattr(agent, "model", None),
+        description=d.description,
+      )
+
+    bridge.set_agent_resolver(_resolve_agent)
+
     _wire_approval_handler(session, ui)
     await _run_repl(session.agent, ui, commands)
 

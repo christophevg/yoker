@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Protocol
 
+from yoker.ui.agent_display import AgentDisplay
+
 if TYPE_CHECKING:
   from yoker.core import Agent
 
@@ -132,12 +134,16 @@ class UIHandler(Protocol):
     """
     ...
 
-  def output_tool_call(self, tool_name: str, args: dict[str, object]) -> None:
+  def output_tool_call(
+    self, tool_name: str, args: dict[str, object], agent: AgentDisplay | None = None
+  ) -> None:
     """Output tool call information.
 
     Args:
       tool_name: Name of tool being called.
       args: Tool arguments (may be truncated for display).
+      agent: The agent making this tool call, or None for the primary
+        agent. Used for display in multi-agent sessions.
     """
     ...
 
@@ -178,7 +184,7 @@ class UIHandler(Protocol):
     prompt_tokens: int,
     eval_tokens: int,
     usage_limits: dict[str, object] | None = None,
-    agent_id: str | None = None,
+    agent: AgentDisplay | None = None,
   ) -> None:
     """Output turn statistics.
 
@@ -188,7 +194,7 @@ class UIHandler(Protocol):
       eval_tokens: Number of evaluation tokens.
       usage_limits: Optional backend API usage limits (e.g. Ollama cloud
         session/weekly usage percentages). None when unavailable.
-      agent_id: The agent that produced this turn, or None for the primary
+      agent: The agent that produced this turn, or None for the primary
         agent. Used for display in multi-agent sessions.
     """
     ...
@@ -203,8 +209,13 @@ class UIHandler(Protocol):
 
   # === Streaming ===
 
-  def start_content_stream(self) -> None:
-    """Start streaming content."""
+  def start_content_stream(self, agent: AgentDisplay | None = None) -> None:
+    """Start streaming content.
+
+    Args:
+      agent: The agent producing this content, or None for the primary
+        agent. Used for display in multi-agent sessions.
+    """
     ...
 
   def stream_content(self, chunk: str, content_type: str = "text/plain") -> None:
@@ -224,8 +235,13 @@ class UIHandler(Protocol):
     """
     ...
 
-  def start_thinking_stream(self) -> None:
-    """Start streaming thinking."""
+  def start_thinking_stream(self, agent: AgentDisplay | None = None) -> None:
+    """Start streaming thinking.
+
+    Args:
+      agent: The agent producing this thinking, or None for the primary
+        agent. Used for display in multi-agent sessions.
+    """
     ...
 
   def stream_thinking(self, chunk: str) -> None:
@@ -257,10 +273,12 @@ class UIHandler(Protocol):
   # is recreated.
   #
   # When implemented:
-  #   agent_spawned(name)  - called when a sub-agent is spawned into the
-  #     session; ``name`` is the spawned agent's session-assigned id.
-  #   agent_finished(name) - called when a sub-agent finishes and is
-  #     removed from the active list; ``name`` is the finished agent's id.
+  #   agent_spawned(agent: AgentDisplay)  - called when a sub-agent is spawned
+  #     into the session; ``agent`` carries the spawned agent's id, name,
+  #     color, model, and description.
+  #   agent_finished(agent: AgentDisplay) - called when a sub-agent finishes
+  #     and is removed from the active list; ``agent`` carries the finished
+  #     agent's display info.
 
   # === Processing feedback (optional) ===
   #

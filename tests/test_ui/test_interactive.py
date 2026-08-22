@@ -12,7 +12,7 @@ from rich.console import Console
 from yoker import __version__
 from yoker.core.thinking import ThinkingMode
 from yoker.exceptions import NetworkError, ToolError
-from yoker.ui import InteractiveUIHandler
+from yoker.ui import AgentDisplay, InteractiveUIHandler
 
 if sys.platform == "win32":
   pytest.skip(
@@ -947,7 +947,7 @@ class TestInteractiveUIHandlerAgentLifecycle:
     handler = InteractiveUIHandler()
     handler.console = make_console(output)
 
-    handler.agent_spawned("child-1")
+    handler.agent_spawned(AgentDisplay(id="child-1", name="child"))
 
     text = output.getvalue()
     assert "Agent spawned" in text
@@ -958,11 +958,55 @@ class TestInteractiveUIHandlerAgentLifecycle:
     handler = InteractiveUIHandler()
     handler.console = make_console(output)
 
-    handler.agent_finished("child-1")
+    handler.agent_finished(AgentDisplay(id="child-1", name="child"))
 
     text = output.getvalue()
     assert "Agent finished" in text
     assert "child-1" in text
+
+  def test_agent_spawned_with_color(self):
+    """agent_spawned renders the agent name with color when provided."""
+    output = StringIO()
+    handler = InteractiveUIHandler()
+    handler.console = make_console(output)
+
+    handler.agent_spawned(AgentDisplay(id="researcher", name="researcher", color="#FF6B35"))
+
+    text = output.getvalue()
+    assert "researcher" in text
+    assert "Agent spawned" in text
+
+  def test_agent_tag_none_returns_empty(self):
+    """_agent_tag returns empty string for None (primary agent)."""
+    handler = InteractiveUIHandler()
+    assert handler._agent_tag(None) == ""
+
+  def test_agent_tag_no_color(self):
+    """_agent_tag returns 'id: ' when no color is set."""
+    handler = InteractiveUIHandler()
+    tag = handler._agent_tag(AgentDisplay(id="researcher", name="researcher"))
+    assert tag == "researcher: "
+
+  def test_agent_tag_with_color(self):
+    """_agent_tag returns Rich markup with bg/fg when color is set."""
+    handler = InteractiveUIHandler()
+    tag = handler._agent_tag(AgentDisplay(id="researcher", name="researcher", color="#FF6B35"))
+    assert "researcher" in tag
+    assert "#FF6B35" in tag
+    # Should have Rich markup brackets
+    assert "[" in tag and "]" in tag
+
+  def test_agent_tag_dark_bg_uses_white_fg(self):
+    """_agent_tag uses white foreground for dark backgrounds."""
+    handler = InteractiveUIHandler()
+    tag = handler._agent_tag(AgentDisplay(id="r", name="r", color="#000000"))
+    assert "white" in tag
+
+  def test_agent_tag_light_bg_uses_black_fg(self):
+    """_agent_tag uses black foreground for light backgrounds."""
+    handler = InteractiveUIHandler()
+    tag = handler._agent_tag(AgentDisplay(id="r", name="r", color="#FFFFFF"))
+    assert "black" in tag
 
 
 class TestInteractiveUIHandlerOutputPrompt:

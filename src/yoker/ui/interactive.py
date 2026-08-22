@@ -36,6 +36,7 @@ from yoker.config import ContentDisplayConfig
 from yoker.core import Agent
 from yoker.exceptions import NetworkError, ToolError
 from yoker.markdown import MarkdownStreamer
+from yoker.ui.agent_display import AgentDisplay
 from yoker.ui.formatting import format_tool_args, truncate_content_preview
 from yoker.ui.handler import UIHandler
 
@@ -73,6 +74,33 @@ THINKING_THEME = Theme(
 _BANNER_TOOL_LIMIT = 8
 
 BULLET = "⏺ "
+
+
+def _hex_to_rgb(hex_color: str) -> tuple[int, int, int] | None:
+  """Convert a hex color string to an (r, g, b) tuple, or None if invalid."""
+  try:
+    h = hex_color.lstrip("#")
+    if len(h) == 6:
+      return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+  except (ValueError, IndexError):
+    pass
+  return None
+
+
+def _contrast_fg(bg_color: str) -> str:
+  """Compute a readable foreground color (black or white) for a background color.
+
+  Supports hex colors (``#FF6B35``) and falls back to ``white`` for unknown
+  formats (Rich named colors are left to Rich's own handling).
+  """
+  rgb = _hex_to_rgb(bg_color)
+  if rgb is None:
+    # Not a hex color — let Rich handle contrast for named colors.
+    # Default to white for dark backgrounds (common case).
+    return "white"
+  r, g, b = rgb
+  luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+  return "black" if luminance > 0.55 else "white"
 
 
 def _extract_usage_pct(limits: dict[str, Any], period: str) -> float | None:
@@ -537,11 +565,15 @@ class InteractiveUIHandler(UIHandler):
 
   # === Content Output ===
 
-  def start_content_stream(self) -> None:
+  def start_content_stream(self, agent: AgentDisplay | None = None) -> None:
     """Start streaming content."""
     self._stop_tool_execution_status()
     self._stop_processing_status()
-    self.response_streamer.append(f"{BULLET}{self._ts()}")
+    # Print the bullet + timestamp + agent tag via console (interprets Rich
+    # markup for colored tags), not via the Markdown streamer (which would
+    # treat markup as literal text).
+    tag = self._agent_tag(agent)
+    self.console.print(f"{BULLET}{self._ts()}{tag}", end="")
 
   def stream_content(self, chunk: str, content_type: str = "text/plain") -> None:
     """Stream a content chunk.
@@ -565,13 +597,14 @@ class InteractiveUIHandler(UIHandler):
 
   # === Thinking Output ===
 
-  def start_thinking_stream(self) -> None:
+  def start_thinking_stream(self, agent: AgentDisplay | None = None) -> None:
     """Start streaming thinking."""
     if not self.show_thinking:
       return
     self._stop_tool_execution_status()
     self._stop_processing_status()
-    self.thinking_streamer.append(f"{BULLET}{self._ts()}")
+    tag = self._agent_tag(agent)
+    self.console.print(f"{BULLET}{self._ts()}{tag}", end="", style=THINKING_STYLE)
 
   def stream_thinking(self, chunk: str) -> None:
     """Stream a thinking chunk.
@@ -598,25 +631,27 @@ class InteractiveUIHandler(UIHandler):
 
   # === Multi-agent lifecycle ===
 
-  def agent_spawned(self, name: str) -> None:
+  def agent_spawned(self, agent: AgentDisplay) -> None:
     """Surface that a sub-agent has been spawned into the session.
 
     Args:
-      name: The session-assigned id of the spawned agent.
+      agent: The spawned agent's display info (id, name, color, ...).
     """
     self._stop_tool_execution_status()
     self._stop_processing_status()
-    self.console.print(f"[cyan]↳ {self._ts()}Agent spawned:[/cyan] {name}")
+    tag = self._agent_tag(agent)
+    self.console.print(f"[cyan]↳ {self._ts()}{tag}Agent spawned[/cyan]")
 
-  def agent_finished(self, name: str) -> None:
+  def agent_finished(self, agent: AgentDisplay) -> None:
     """Surface that a sub-agent has finished and been removed.
 
     Args:
-      name: The session-assigned id of the finished agent.
+      agent: The finished agent's display info (id, name, color, ...).
     """
     self._stop_tool_execution_status()
     self._stop_processing_status()
-    self.console.print(f"[dim]↳ {self._ts()}Agent finished:[/dim] {name}")
+    tag = self._agent_tag(agent)
+    self.console.print(f"[dim]↳ {self._ts()}{tag}Agent finished[/dim]")
 
   # === Protected-file / git-operation approval (MBI-009 T12) ===
 
@@ -673,7 +708,9 @@ class InteractiveUIHandler(UIHandler):
 
   # === Tool Output ===
 
-  def output_tool_call(self, tool_name: str, args: dict[str, Any]) -> None:
+  def output_tool_call(
+    self, tool_name: str, args: dict[str, Any], agent: AgentDisplay | None = None
+  ) -> None:
     """Output tool call information.
 
     Renders as a tool call line using the shared formatting module.
@@ -692,13 +729,14 @@ class InteractiveUIHandler(UIHandler):
       return
     self._stop_processing_status()
     details = format_tool_args(tool_name, args, self._content_display)
+    tag = self._agent_tag(agent)
     if "\n" in details:
-      self.console.print(f"{BULLET}{self._ts()}{tool_name}(", style=TOOL_STYLE)
+      self.console.print(f"{BULLET}{self._ts()}{tag}{tool_name}(", style=TOOL_STYLE)
       for line in details.splitlines():
         self.console.print(f"    {line}", style=TOOL_STYLE)
       self.console.print("  )", style=TOOL_STYLE)
     else:
-      self.console.print(f"{BULLET}{self._ts()}{tool_name}", end="", style=TOOL_STYLE)
+      self.console.print(f"{BULLET}{self._ts()}{tag}{tool_name}", end="", style=TOOL_STYLE)
       self.console.print(f"({details})")
     self._start_tool_execution_status(tool_name)
 
@@ -762,7 +800,7 @@ class InteractiveUIHandler(UIHandler):
     prompt_tokens: int,
     eval_tokens: int,
     usage_limits: dict[str, Any] | None = None,
-    agent_id: str | None = None,
+    agent: AgentDisplay | None = None,
   ) -> None:
     """Output turn statistics.
 
@@ -772,7 +810,7 @@ class InteractiveUIHandler(UIHandler):
       eval_tokens: Number of evaluation tokens.
       usage_limits: Optional backend API usage limits with session/weekly
         usage percentages.
-      agent_id: The agent that produced this turn, or None for the primary
+      agent: The agent that produced this turn, or None for the primary
         agent. Shown in the stats line for multi-agent sessions.
     """
     self._stop_processing_status()
@@ -780,8 +818,13 @@ class InteractiveUIHandler(UIHandler):
       total = prompt_tokens + eval_tokens
       duration_s = duration_ms / 1000.0
       ts = self._ts()
-      if agent_id:
-        parts = [f"📊 {ts}{agent_id}: {duration_s:.1f}s, {total} tokens"]
+      tag = self._agent_tag(agent)
+      # Print the agent tag separately (without STATS_STYLE's dim) so
+      # colored tags are as vibrant as in content/tool-call lines.
+      if agent:
+        prefix = f"📊 {ts}"
+        self.console.print(f"{prefix}{tag}", end="")
+        parts = [f"{duration_s:.1f}s, {total} tokens"]
       else:
         parts = [f"📊 {ts}{duration_s:.1f}s, {total} tokens"]
       if usage_limits:
@@ -791,7 +834,11 @@ class InteractiveUIHandler(UIHandler):
           parts.append(f"session {session_pct:.0%}")
         if weekly_pct is not None:
           parts.append(f"weekly {weekly_pct:.0%}")
-      self.console.print(" | ".join(parts), style=STATS_STYLE)
+      if agent:
+        self.console.print(" | ".join(parts), style=STATS_STYLE, end="")
+        self.console.print()  # newline
+      else:
+        self.console.print(" | ".join(parts), style=STATS_STYLE)
 
   # === Error Output ===
 
@@ -844,6 +891,24 @@ class InteractiveUIHandler(UIHandler):
         output=self.console,
       )
     return self._response_streamer
+
+  def _agent_tag(self, agent: AgentDisplay | None) -> str:
+    """Build a Rich-markup agent tag string for output lines.
+
+    Returns a string like ``"release-manager: "`` when agent is non-None,
+    or an empty string when agent is None (primary agent, single-agent
+    sessions). When the agent definition has a color, the tag is rendered
+    with that color as the background and a contrasting foreground.
+
+    The returned string includes Rich markup tags so it must be used in
+    contexts that support Rich markup (console.print, streamer.append).
+    """
+    if agent is None:
+      return ""
+    if agent.color:
+      fg = _contrast_fg(agent.color)
+      return f"[{fg} on {agent.color}]{agent.id}[/] "
+    return f"{agent.id}: "
 
   def _ts(self) -> str:
     ts = strftime("%H:%M:%S", localtime())

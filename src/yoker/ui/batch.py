@@ -10,6 +10,7 @@ import sys
 from typing import Any, TextIO
 
 from yoker.core import Agent
+from yoker.ui.agent_display import AgentDisplay
 from yoker.ui.formatting import format_tool_args
 from yoker.ui.handler import UIHandler
 
@@ -160,7 +161,7 @@ class BatchUIHandler(UIHandler):
 
   # === Content Output (stdout) ===
 
-  def start_content_stream(self) -> None:
+  def start_content_stream(self, agent: AgentDisplay | None = None) -> None:
     """Start streaming content."""
     # No setup needed for batch mode
     pass
@@ -215,7 +216,7 @@ class BatchUIHandler(UIHandler):
 
   # === Thinking Output (stderr) ===
 
-  def start_thinking_stream(self) -> None:
+  def start_thinking_stream(self, agent: AgentDisplay | None = None) -> None:
     """Start streaming thinking."""
     pass
 
@@ -238,18 +239,21 @@ class BatchUIHandler(UIHandler):
       print(file=self._stderr)
 
   # === Tool Output (stderr) ===
-  def output_tool_call(self, tool_name: str, args: dict[str, Any]) -> None:
+  def output_tool_call(
+    self, tool_name: str, args: dict[str, Any], agent: AgentDisplay | None = None
+  ) -> None:
     """Output tool call information.
 
     Args:
       tool_name: Name of tool being called.
       args: Tool arguments (may be truncated for display).
+      agent: The agent making this tool call, or None.
     """
     if not self.show_tool_calls:
       return
     args_str = format_tool_args(tool_name, args)
-    print(f"# Tool: {tool_name}({args_str})", file=self._stderr)
-    print(f"# Tool: {tool_name}({args_str})", file=self._stderr)
+    agent_tag = f"[{agent.id}]" if agent else ""
+    print(f"# Tool{agent_tag}: {tool_name}({args_str})", file=self._stderr)
 
   def output_tool_result(self, tool_name: str, success: bool, result: str) -> None:
     """Output tool result status.
@@ -301,7 +305,7 @@ class BatchUIHandler(UIHandler):
     prompt_tokens: int,
     eval_tokens: int,
     usage_limits: dict[str, object] | None = None,
-    agent_id: str | None = None,
+    agent: AgentDisplay | None = None,
   ) -> None:
     """Output turn statistics.
 
@@ -310,16 +314,15 @@ class BatchUIHandler(UIHandler):
       prompt_tokens: Number of prompt tokens.
       eval_tokens: Number of evaluation tokens.
       usage_limits: Optional backend API usage limits.
-      agent_id: The agent that produced this turn, or None for the primary
-        agent.
+      agent: The agent that produced this turn, or None.
     """
     if not self.show_stats:
       return
     total = prompt_tokens + eval_tokens
     duration_s = duration_ms / 1000.0
     parts = [f"{duration_s:.1f}s", f"{total} tokens"]
-    if agent_id:
-      parts.insert(0, agent_id)
+    if agent:
+      parts.insert(0, agent.id)
     if usage_limits:
       session = usage_limits.get("session")
       if isinstance(session, dict) and isinstance(session.get("usage"), int | float):

@@ -14,11 +14,14 @@ received, the inner ``event`` is dispatched unchanged and the envelope's
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from yoker.events.session_event import SessionEvent
 from yoker.events.types import (
   Event,
   EventType,
 )
+from yoker.ui.agent_display import AgentDisplay
 from yoker.ui.handler import UIHandler
 
 
@@ -44,6 +47,35 @@ class UIBridge:
     # path. Available for tagging/display by UI handlers that opt in.
     self._primary_agent_id: str | None = primary_agent_id
     self._current_agent_id: str | None = primary_agent_id
+    # Callback to resolve agent_id → AgentDisplay. Set by the CLI after
+    # session construction via ``set_agent_resolver``.
+    self._agent_resolver: Callable[[str], AgentDisplay | None] | None = None
+    # Cached primary AgentDisplay (built once when the resolver is set).
+    self._primary_display: AgentDisplay | None = None
+
+  def set_agent_resolver(self, resolver: Callable[[str], AgentDisplay | None]) -> None:
+    """Set the callback that resolves agent_id strings to AgentDisplay.
+
+    Called by the CLI after session construction. The resolver typically
+    looks up the agent in the session's ``_agents_map`` and projects it
+    to an :class:`AgentDisplay`.
+
+    Args:
+      resolver: A callable that takes an agent_id string and returns an
+        ``AgentDisplay`` (or None if the agent is no longer active).
+    """
+    self._agent_resolver = resolver
+    if self._primary_agent_id is not None:
+      self._primary_display = resolver(self._primary_agent_id)
+
+  def _current_display(self) -> AgentDisplay | None:
+    """Resolve the current agent_id to an AgentDisplay, or None."""
+    aid = self._current_agent_id
+    if aid is None or self._agent_resolver is None:
+      return None
+    if aid == self._primary_agent_id:
+      return self._primary_display
+    return self._agent_resolver(aid)
 
   async def __call__(self, event: Event | SessionEvent) -> None:
     """Handle event by dispatching to UI handler.
@@ -71,19 +103,20 @@ class UIBridge:
 
   async def _dispatch(self, event: Event) -> None:
     """Dispatch a bare (unwrapped) event to the UI handler."""
+    agent = self._current_display()
     match event.type:
       case EventType.TURN_START:
         self._maybe_start_processing()
       case EventType.TURN_END:
         self._handle_turn_end(event)
       case EventType.THINKING_START:
-        self.ui.start_thinking_stream()
+        self.ui.start_thinking_stream(agent=agent)
       case EventType.THINKING_CHUNK:
         self.ui.stream_thinking(event.text)  # type: ignore[attr-defined]
       case EventType.THINKING_END:
         self.ui.end_thinking_stream(event.total_length)  # type: ignore[attr-defined]
       case EventType.CONTENT_START:
-        self.ui.start_content_stream()
+        self.ui.start_content_stream(agent=agent)
       case EventType.CONTENT_CHUNK:
         # Use getattr to safely access content_type with fallback
         content_type = getattr(event, "content_type", "text/plain")
@@ -94,6 +127,7 @@ class UIBridge:
         self.ui.output_tool_call(
           event.tool_name,  # type: ignore[attr-defined]
           event.arguments,  # type: ignore[attr-defined]
+          agent=agent,
         )
       case EventType.TOOL_RESULT:
         self.ui.output_tool_result(
@@ -144,7 +178,7 @@ class UIBridge:
       prompt_tokens=event.prompt_eval_count,  # type: ignore[attr-defined]
       eval_tokens=event.eval_count,  # type: ignore[attr-defined]
       usage_limits=usage_limits,
-      agent_id=self._current_agent_id,
+      agent=self._current_display(),
     )
 
   def _maybe_start_processing(self) -> None:
@@ -175,6 +209,14 @@ class UIBridge:
     handler = getattr(self.ui, method, None)
     if handler is None:
       return
-    # Both events carry ``agent_id``; pass it as the ``name`` argument.
+    # Both events carry ``agent_id``; resolve to AgentDisplay for the
+    # handler to render with name/color.
     agent_id = getattr(event, "agent_id", "")
-    handler(agent_id)
+    agent = None
+    if agent_id and self._agent_resolver is not None:
+      agent = self._agent_resolver(agent_id)
+    if agent is not None:
+      handler(agent)
+    else:
+      # Fallback: agent no longer active or resolver not set.
+      handler(AgentDisplay(id=agent_id, name=agent_id))

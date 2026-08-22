@@ -47,7 +47,7 @@ class MockUIHandler:
   def output_command_result(self, result: str) -> None:
     self.calls.append(("output_command_result", result))
 
-  def output_tool_call(self, tool_name: str, args: dict) -> None:
+  def output_tool_call(self, tool_name: str, args: dict, agent=None) -> None:
     self.calls.append(("output_tool_call", tool_name, args))
 
   def output_tool_result(self, tool_name: str, success: bool, result: str) -> None:
@@ -72,14 +72,14 @@ class MockUIHandler:
     prompt_tokens: int,
     eval_tokens: int,
     usage_limits: dict | None = None,
-    agent_id: str | None = None,
+    agent=None,
   ) -> None:
     self.calls.append(("output_stats", duration_ms, prompt_tokens, eval_tokens, usage_limits))
 
   def output_error(self, error: Exception, include_traceback: bool = False) -> None:
     self.calls.append(("output_error", error))
 
-  def start_content_stream(self) -> None:
+  def start_content_stream(self, agent=None) -> None:
     self.calls.append("start_content_stream")
 
   def stream_content(self, chunk: str, content_type: str = "text/plain") -> None:
@@ -88,7 +88,7 @@ class MockUIHandler:
   def end_content_stream(self, total_length: int) -> None:
     self.calls.append(("end_content_stream", total_length))
 
-  def start_thinking_stream(self) -> None:
+  def start_thinking_stream(self, agent=None) -> None:
     self.calls.append("start_thinking_stream")
 
   def stream_thinking(self, chunk: str) -> None:
