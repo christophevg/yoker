@@ -12,7 +12,7 @@
   - **Priority:** High
   - **Severity:** High — wastes tokens, causes repeated failures, degrades user experience
 
-- [ ] **Spawned agents released immediately — parent cannot send follow-up messages**
+- [x] **Spawned agents released immediately — parent cannot send follow-up messages**
   - After a spawned agent completes its task, `spawn_agent` calls `session.release(child)` in a `finally` block, removing it from the active map. If the parent then tries `send_message` to the finished agent, it fails with "No active agent with id"
   - **Fix:** Don't auto-release spawned agents. Keep them in the active map until the session ends or an explicit release is called. The session's `__aexit__` already cleans up all outstanding agents
   - **Priority:** High

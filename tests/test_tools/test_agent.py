@@ -183,7 +183,9 @@ class TestAgentToolDelegation:
     session._spawn_internal.assert_awaited_once()
     call_kwargs = session._spawn_internal.call_args.kwargs
     assert call_kwargs["requester"] is requester
-    session.release.assert_awaited_once_with(mock_child)
+    # The child should NOT be released — it stays active for send_message
+    # follow-up. The session's __aexit__ handles cleanup on exit.
+    session.release.assert_not_called()
 
   @pytest.mark.asyncio
   async def test_value_error_wrapped_as_failure(self) -> None:
@@ -293,8 +295,71 @@ class TestAgentToolDelegation:
     assert "researcher-2" in result.result
     assert "found it" in result.result
 
+  @pytest.mark.asyncio
+  async def test_spawned_agent_not_released(self) -> None:
+    """The spawned agent is NOT released — stays active for send_message."""
+    agent_def = AgentDefinition(
+      simple_name="researcher",
+      description="Researcher",
+      tools=("read",),
+    )
+    session = _make_session_with_registry(agent_def=agent_def)
+    mock_child = MagicMock()
+    mock_child.process = AsyncMock(return_value="initial response")
+    session._spawn_internal = AsyncMock(return_value=(mock_child, "researcher"))
+    session.release = AsyncMock()
+    session._agents_map = {}
+    requester = _make_requester(allowlist=("researcher",))
 
-class TestAgentToolDescription:
+    spec = _spawn_agent_spec(session=session, requester=requester)
+    result = await spec.execute(agent_name="researcher", prompt="find X")
+
+    assert result.success
+    # release must not have been called
+    session.release.assert_not_called()
+
+
+class TestSpawnThenSendFollowUp:
+  """Integration-style test: spawn agent, then send_message to it."""
+
+  @pytest.mark.asyncio
+  async def test_spawn_then_send_message_workflow(self) -> None:
+    """A spawned agent stays active and can receive follow-up messages."""
+    agent_def = AgentDefinition(
+      simple_name="researcher",
+      description="Researcher",
+      tools=("read",),
+    )
+    session = _make_session_with_registry(agent_def=agent_def)
+    mock_child = MagicMock()
+    mock_child.process = AsyncMock(return_value="initial response")
+    session._spawn_internal = AsyncMock(return_value=(mock_child, "researcher"))
+    session.release = AsyncMock()
+    session._agents_map = {}
+    session.send = AsyncMock(return_value="follow-up reply")
+    requester = _make_requester(allowlist=("researcher",))
+
+    # Step 1: spawn the agent
+    spawn_spec = _spawn_agent_spec(session=session, requester=requester)
+    spawn_result = await spawn_spec.execute(agent_name="researcher", prompt="find X")
+    assert spawn_result.success
+    assert "agent_id:" in spawn_result.result
+
+    # Simulate the agent being registered in the active map (as
+    # _spawn_internal would do in a real session)
+    session._agents_map["researcher"] = mock_child
+    session._agents_map["parent"] = requester
+
+    # Step 2: send a follow-up message to the spawned agent
+    send_spec = _send_message_spec(session=session, from_id="parent")
+    send_result = await send_spec.execute(to="researcher", message="tell me more")
+
+    assert send_result.success
+    assert send_result.result == "follow-up reply"
+    session.send.assert_awaited_once()
+    # The child was never released — it's still in the active map
+    session.release.assert_not_called()
+
   """Tests for the tool description baking (allowlist intersection)."""
 
   def test_description_lists_allowlisted_names(self) -> None:

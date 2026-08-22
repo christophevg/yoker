@@ -179,6 +179,34 @@ class TestSpawnAgentMap:
       assert agent_id == "researcher"
 
   @pytest.mark.asyncio
+  async def test_spawned_agent_stays_in_map_without_release(self) -> None:
+    """Agent remains in the active map when release is not called.
+
+    This verifies the behaviour expected by the ``agent`` tool: after
+    spawn + process, the agent stays active so the parent can send
+    follow-up messages via ``send_message``.
+    """
+    config = Config()
+    agent_def = AgentDefinition(
+      simple_name="researcher",
+      description="Researcher",
+      tools=("read",),
+    )
+    async with Session(config=config) as session:
+      session.agents.register(agent_def)
+      with patch("yoker.session.Agent") as mock_agent_cls:
+        mock_child = MagicMock()
+        mock_child.process = AsyncMock(return_value="ok")
+        mock_child.aclose = AsyncMock()
+        mock_child.tools = MagicMock()
+        mock_agent_cls.return_value = mock_child
+        child, agent_id = await session._spawn_internal("researcher")
+        await child.process("hi")
+        # Agent is still in the active map — no release was called
+        assert session.get_agent("researcher") is child
+      # __aexit__ will clean up the agent on session exit
+
+  @pytest.mark.asyncio
   async def test_duplicate_spawns_get_disambiguated(self) -> None:
     """Second spawn of the same definition name gets a -2 suffix."""
     config = Config()
