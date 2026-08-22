@@ -145,6 +145,8 @@ class MarkdownStreamer:
     # clean up remaining accumulated chars/tokens
     remaining = self._unbuffer()
     if self.accumulator:
+      if remaining:
+        remaining += "\n"
       remaining += self.accumulator
       self.accumulator = ""
     self.render(remaining)
