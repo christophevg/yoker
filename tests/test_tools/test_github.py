@@ -1175,6 +1175,171 @@ class TestGithubWriteOperations:
     assert parsed["url"] == release_url
     assert parsed["tagName"] == "v1.0.0"
 
+  # --- pr_edit ---
+
+  @pytest.mark.asyncio
+  async def test_pr_edit_not_in_default_allowlist(self, mocker: MockerFixture) -> None:
+    """pr_edit is rejected with default config (not in default allowlist)."""
+    _mock_popen(mocker)
+    result = await github(
+      operation="pr_edit",
+      ctx=_ctx(),
+      number=42,
+      add_assignee="user",
+    )
+    assert not result.success
+    assert "not allowed" in result.error.lower() or "allowed" in result.error.lower()
+
+  @pytest.mark.asyncio
+  async def test_pr_edit_requires_number(self, mocker: MockerFixture) -> None:
+    """pr_edit requires a positive number."""
+    _mock_popen(mocker)
+    cfg = GitHubToolConfig(allowed_operations=("pr_edit",))
+    result = await github(
+      operation="pr_edit",
+      ctx=_ctx(cfg),
+      add_assignee="user",
+    )
+    assert not result.success
+    assert "number" in result.error.lower()
+
+  @pytest.mark.asyncio
+  async def test_pr_edit_requires_at_least_one_param(self, mocker: MockerFixture) -> None:
+    """pr_edit requires at least one edit parameter."""
+    _mock_popen(mocker)
+    cfg = GitHubToolConfig(allowed_operations=("pr_edit",))
+    result = await github(
+      operation="pr_edit",
+      ctx=_ctx(cfg),
+      number=42,
+    )
+    assert not result.success
+    assert "at least one" in result.error.lower()
+
+  @pytest.mark.asyncio
+  async def test_pr_edit_add_assignee_builds_command(self, mocker: MockerFixture) -> None:
+    """pr_edit with add_assignee builds gh pr edit --add-assignee=user -- 42."""
+    popen = _mock_popen(mocker, stdout="")
+    cfg = GitHubToolConfig(allowed_operations=("pr_edit",))
+    await github(
+      operation="pr_edit",
+      ctx=_ctx(cfg),
+      number=42,
+      add_assignee="christophevg",
+    )
+    cmd = popen.call_args.args[0]
+    assert cmd[:3] == ["gh", "pr", "edit"]
+    assert "--add-assignee=christophevg" in cmd
+    assert "--json" not in cmd
+    assert "--" in cmd
+    assert "42" in cmd
+
+  @pytest.mark.asyncio
+  async def test_pr_edit_add_reviewer_builds_command(self, mocker: MockerFixture) -> None:
+    """pr_edit with add_reviewer builds gh pr edit --add-reviewer=user -- 42."""
+    popen = _mock_popen(mocker, stdout="")
+    cfg = GitHubToolConfig(allowed_operations=("pr_edit",))
+    await github(
+      operation="pr_edit",
+      ctx=_ctx(cfg),
+      number=42,
+      add_reviewer="christophevg",
+    )
+    cmd = popen.call_args.args[0]
+    assert "--add-reviewer=christophevg" in cmd
+
+  @pytest.mark.asyncio
+  async def test_pr_edit_add_label_builds_command(self, mocker: MockerFixture) -> None:
+    """pr_edit with add_label builds gh pr edit --add-label=label -- 42."""
+    popen = _mock_popen(mocker, stdout="")
+    cfg = GitHubToolConfig(allowed_operations=("pr_edit",))
+    await github(
+      operation="pr_edit",
+      ctx=_ctx(cfg),
+      number=42,
+      add_label="bug,wip",
+    )
+    cmd = popen.call_args.args[0]
+    assert "--add-label=bug,wip" in cmd
+
+  @pytest.mark.asyncio
+  async def test_pr_edit_multiple_params(self, mocker: MockerFixture) -> None:
+    """pr_edit with multiple edit params includes all flags."""
+    popen = _mock_popen(mocker, stdout="")
+    cfg = GitHubToolConfig(allowed_operations=("pr_edit",))
+    await github(
+      operation="pr_edit",
+      ctx=_ctx(cfg),
+      number=42,
+      add_assignee="user1",
+      add_reviewer="user2",
+      add_label="label1",
+    )
+    cmd = popen.call_args.args[0]
+    assert "--add-assignee=user1" in cmd
+    assert "--add-reviewer=user2" in cmd
+    assert "--add-label=label1" in cmd
+
+  @pytest.mark.asyncio
+  async def test_pr_edit_with_repo(self, mocker: MockerFixture) -> None:
+    """pr_edit includes --repo when provided."""
+    popen = _mock_popen(mocker, stdout="")
+    cfg = GitHubToolConfig(allowed_operations=("pr_edit",))
+    await github(
+      operation="pr_edit",
+      ctx=_ctx(cfg),
+      repo="owner/repo",
+      number=42,
+      add_assignee="user",
+    )
+    cmd = popen.call_args.args[0]
+    assert "--repo" in cmd and "owner/repo" in cmd
+
+  @pytest.mark.asyncio
+  async def test_pr_edit_returns_success(self, mocker: MockerFixture) -> None:
+    """pr_edit returns success on exit code 0."""
+    _mock_popen(mocker, stdout="")
+    cfg = GitHubToolConfig(allowed_operations=("pr_edit",))
+    result = await github(
+      operation="pr_edit",
+      ctx=_ctx(cfg),
+      number=42,
+      add_assignee="user",
+    )
+    assert result.success
+
+  @pytest.mark.asyncio
+  async def test_pr_edit_rejects_forbidden_char_in_assignee(self, mocker: MockerFixture) -> None:
+    """pr_edit rejects forbidden characters in add_assignee."""
+    _mock_popen(mocker)
+    cfg = GitHubToolConfig(allowed_operations=("pr_edit",))
+    result = await github(
+      operation="pr_edit",
+      ctx=_ctx(cfg),
+      number=42,
+      add_assignee="user;rm -rf",
+    )
+    assert not result.success
+    assert "forbidden" in result.error.lower()
+
+  @pytest.mark.asyncio
+  async def test_pr_edit_remove_params_builds_command(self, mocker: MockerFixture) -> None:
+    """pr_edit with remove_* params builds correct flags."""
+    popen = _mock_popen(mocker, stdout="")
+    cfg = GitHubToolConfig(allowed_operations=("pr_edit",))
+    await github(
+      operation="pr_edit",
+      ctx=_ctx(cfg),
+      number=42,
+      remove_assignee="user1",
+      remove_reviewer="user2",
+      remove_label="label1",
+    )
+    cmd = popen.call_args.args[0]
+    assert "--remove-assignee=user1" in cmd
+    assert "--remove-reviewer=user2" in cmd
+    assert "--remove-label=label1" in cmd
+
 
 class TestGithubOperationAllowlist:
   """Operation enum + allowlist (the security boundary)."""

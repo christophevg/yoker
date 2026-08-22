@@ -20,17 +20,14 @@
 
 ### Tool Enhancements
 
-- [ ] **`update` tool: infer `operation` from arguments when omitted**
-  - The `update` tool requires `operation` as a mandatory argument. When an LLM provides `old_string` + `new_string` + `path` but omits `operation`, the tool rejects the call. Since `old_string` + `new_string` unambiguously means "replace", requiring `operation` is redundant. The LLM frequently omits it, causing failures
-  - **Fix:** Make `operation` optional (default `None`). Infer: `old_string` + `new_string` → `"replace"`; `line_number` + `new_string` → `"insert"`; `new_string` only → `"append"`; `old_string` only → `"delete"`
-  - **Priority:** Critical
-  - **Severity:** High — very common operation that fails frequently, wasting a round-trip each time
+- [x] **`update` tool: infer `operation` from arguments when omitted**
+  - Already implemented: `operation` defaults to `""`, inference logic handles replace/insert/append. Delete must always be explicit. Tests cover all inference paths.
 
 - [ ] **`search` tool: `include_pattern` for directories** — cannot search within a specific subdirectory pattern
 - [ ] **`read` tool: binary file detection** — reading a binary file returns garbled content. Should detect and warn/skip like `search` does
 - [ ] **`git` tool: `git merge` operation** — complete the branch workflow (create → work → commit → switch → merge)
 - [ ] **`git` tool: `git restore` / `git stash`** — `checkout` is done, but `restore` (discard changes) and `stash` (temporarily shelve work) are still missing
-- [ ] **`write` tool: per-call `overwrite` flag** — `allow_overwrite` is project-level config. Agent cannot overwrite even when it explicitly wants to
+- [ ] **`write` tool: per-call `overwrite` flag** — ~~`allow_overwrite` is project-level config. Agent cannot overwrite even when it explicitly wants to~~  — **Decision: not implementing.** Project-level config is the correct security boundary; per-call override would bypass it.
 - [ ] **`make` tool: arbitrary target args** — some Makefile targets need arguments that aren't env vars (e.g. `make clean V=1`). Consider `make_args` parameter with sanitization
 - [ ] **`github` tool: `issue_create` operation** — currently read-only (except pr_create/pr_comment/release_create). Add issue creation with approval model
 - [ ] **`file` tool: `stat`/`info` sub-operation** — return file size, type, modification time without reading content

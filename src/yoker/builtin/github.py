@@ -71,6 +71,7 @@ _GITHUB_OPERATIONS: frozenset[str] = frozenset(
     "pr_comment",
     "pr_ready",
     "pr_draft",
+    "pr_edit",
     "release_create",
   }
 )
@@ -80,7 +81,7 @@ _GITHUB_OPERATIONS: frozenset[str] = frozenset(
 # allowlist. Even when allowed, they are never auto-permitted (the config
 # owner must consciously add them).
 _WRITE_OPS: frozenset[str] = frozenset(
-  {"pr_create", "pr_comment", "pr_ready", "pr_draft", "release_create"}
+  {"pr_create", "pr_comment", "pr_ready", "pr_draft", "pr_edit", "release_create"}
 )
 
 # (gh_subcommand_prefix, --json fields, required_param)
@@ -150,6 +151,11 @@ _OPERATION_DISPATCH: dict[str, tuple[list[str], str, str | None]] = {
   ),
   "pr_draft": (
     ["pr", "draft"],
+    "",
+    "number",
+  ),
+  "pr_edit": (
+    ["pr", "edit"],
     "",
     "number",
   ),
@@ -224,6 +230,7 @@ _REDACT_REPLACEMENT = "<redacted>"
     "  pr_comment     — Add a comment to a PR. Required: number, body. Optional: repo.\n"
     "  pr_ready       — Convert a draft PR to ready for review. Required: number. Optional: repo.\n"
     "  pr_draft       — Convert a PR to draft. Required: number, repo.\n"
+    "  pr_edit        — Edit a PR (assignees, reviewers, labels). Required: number. Optional: repo, add_assignee, remove_assignee, add_reviewer, remove_reviewer, add_label, remove_label.\n"
     "  release_create — Create a release. Required: repo, tag, title, notes. Optional: draft, prerelease.\n"
     "\n"
     "Common parameters:\n"
@@ -247,7 +254,7 @@ async def github(
       "GitHub operation. One of: repo_view, issue_list, issue_view, pr_list, "
       "pr_view, pr_reviews, pr_comments, workflow_list, workflow_view, "
       "workflow_logs, release_list, release_view, pr_create, pr_comment, "
-      "pr_ready, pr_draft, release_create."
+      "pr_ready, pr_draft, pr_edit, release_create."
     ),
   ],
   ctx: ToolContext,
@@ -284,6 +291,21 @@ async def github(
   notes: Annotated[str, Text("Release notes body (for release_create)")] = "",
   draft: Annotated[bool, Text("Create as draft (for pr_create or release_create)")] = False,
   prerelease: Annotated[bool, Text("Mark release as prerelease (only for release_create)")] = False,
+  # --- pr_edit parameters ---
+  add_assignee: Annotated[
+    str, Text("Comma-separated logins to add as assignees (for pr_edit)")
+  ] = "",
+  remove_assignee: Annotated[
+    str, Text("Comma-separated logins to remove as assignees (for pr_edit)")
+  ] = "",
+  add_reviewer: Annotated[
+    str, Text("Comma-separated logins to request reviews from (for pr_edit)")
+  ] = "",
+  remove_reviewer: Annotated[
+    str, Text("Comma-separated logins to remove review requests (for pr_edit)")
+  ] = "",
+  add_label: Annotated[str, Text("Comma-separated label names to add (for pr_edit)")] = "",
+  remove_label: Annotated[str, Text("Comma-separated label names to remove (for pr_edit)")] = "",
 ) -> ToolResult:
   """Perform a GitHub operation via the ``gh`` CLI.
 
@@ -307,6 +329,11 @@ async def github(
   ``pr_comment`` requires ``number`` and ``body``. Optional ``repo`` defaults
   to the current git repo. The comment is posted as a regular PR comment
   (not an inline review comment).
+
+  ``pr_edit`` requires ``number`` and at least one edit parameter
+  (``add_assignee``, ``remove_assignee``, ``add_reviewer``,
+  ``remove_reviewer``, ``add_label``, ``remove_label``). Values are
+  comma-separated logins (for assignees/reviewers) or label names.
 
   ``release_create`` requires ``repo``, ``tag``, ``title``, and ``notes``.
   Optional ``draft`` and ``prerelease`` flags default to false.
@@ -390,6 +417,39 @@ async def github(
   if operation == "pr_draft" and not repo:
     return ToolResult(success=False, error="Parameter 'repo' is required for pr_draft")
 
+  # pr_edit requires at least one edit parameter
+  if operation == "pr_edit":
+    edit_params = [
+      add_assignee,
+      remove_assignee,
+      add_reviewer,
+      remove_reviewer,
+      add_label,
+      remove_label,
+    ]
+    if not any(edit_params):
+      return ToolResult(
+        success=False,
+        error=(
+          "Operation 'pr_edit' requires at least one of: add_assignee, "
+          "remove_assignee, add_reviewer, remove_reviewer, add_label, remove_label"
+        ),
+      )
+    # Validate assignee/reviewer/label values for forbidden chars
+    for param_name, param_value in [
+      ("add_assignee", add_assignee),
+      ("remove_assignee", remove_assignee),
+      ("add_reviewer", add_reviewer),
+      ("remove_reviewer", remove_reviewer),
+      ("add_label", add_label),
+      ("remove_label", remove_label),
+    ]:
+      if param_value and _contains_forbidden(param_value):
+        return ToolResult(
+          success=False,
+          error=f"Parameter {param_name!r} contains forbidden character",
+        )
+
   # --- 6. Required-parameter check ---
   _subcmd, _fields, required = _OPERATION_DISPATCH[operation]
   if required == "number" and (number is None or number < 1):
@@ -466,7 +526,23 @@ async def github(
     )
 
   cmd = _build_command(operation, repo, number, tag, effective_limit, state, label)
-  write_args = _build_write_args(operation, title, body, head, base, notes, draft, prerelease, tag)
+  write_args = _build_write_args(
+    operation,
+    title,
+    body,
+    head,
+    base,
+    notes,
+    draft,
+    prerelease,
+    tag,
+    add_assignee,
+    remove_assignee,
+    add_reviewer,
+    remove_reviewer,
+    add_label,
+    remove_label,
+  )
   # For write ops with a required positional (pr_comment), insert write args
   # (flags like --body=...) BEFORE the -- separator + positional arg.
   # For write ops without a required positional (pr_create, release_create),
@@ -475,7 +551,7 @@ async def github(
   # For release_create, the positional tag is already in the command from
   # _build_command, and write_args (--title, --notes, --draft, --prerelease)
   # are flags that go after.
-  if operation in ("pr_comment", "pr_ready"):
+  if operation in ("pr_comment", "pr_ready", "pr_edit"):
     # cmd is ["gh", "pr", "<subcmd>", "--repo", repo] (no -- separator yet)
     cmd.extend(write_args)
     cmd.extend(["--", str(number)])
@@ -706,6 +782,12 @@ def _build_write_args(
   draft: bool,
   prerelease: bool,
   tag: str,
+  add_assignee: str = "",
+  remove_assignee: str = "",
+  add_reviewer: str = "",
+  remove_reviewer: str = "",
+  add_label: str = "",
+  remove_label: str = "",
 ) -> list[str]:
   """Build the extra CLI args for write operations.
 
@@ -713,6 +795,9 @@ def _build_write_args(
   ``--base=...``, ``--draft``.
   For ``release_create``: positional tag, ``--title=...``, ``--notes=...``,
   optional ``--draft``, ``--prerelease``.
+  For ``pr_edit``: optional ``--add-assignee=...``, ``--remove-assignee=...``,
+  ``--add-reviewer=...``, ``--remove-reviewer=...``, ``--add-label=...``,
+  ``--remove-label=...``.
 
   Uses ``=`` format (``--title=value``) so values starting with ``-`` are
   treated as the flag's value, not as a new flag. This is defense-in-depth:
@@ -735,6 +820,22 @@ def _build_write_args(
 
   if operation == "pr_comment":
     return [f"--body={body}"]
+
+  if operation == "pr_edit":
+    edit_args: list[str] = []
+    if add_assignee:
+      edit_args.append(f"--add-assignee={add_assignee}")
+    if remove_assignee:
+      edit_args.append(f"--remove-assignee={remove_assignee}")
+    if add_reviewer:
+      edit_args.append(f"--add-reviewer={add_reviewer}")
+    if remove_reviewer:
+      edit_args.append(f"--remove-reviewer={remove_reviewer}")
+    if add_label:
+      edit_args.append(f"--add-label={add_label}")
+    if remove_label:
+      edit_args.append(f"--remove-label={remove_label}")
+    return edit_args
 
   if operation == "release_create":
     args = [
