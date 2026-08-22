@@ -18,6 +18,26 @@
   - **Priority:** High
   - **Severity:** High — breaks the common "spawn → get result → ask follow-up" workflow
 
+- [ ] **Agent lifecycle management — spawn mode, per-type limits, terminate tool, and best practices**
+  - After the fix to keep spawned agents alive (see above), agents now spawn new agents until the session limit is reached, then fall back to sending messages. However, agents of a needed type may never have been spawned, leaving no active agent to send messages to. The agent lifecycle needs explicit controls and guidance.
+  - **Fix (multi-part):**
+    1. **Spawn mode flag** — add a `keep_alive` (or similar) boolean parameter to the `agent` (spawn) tool. When `True`, the agent persists in the active map for follow-up `send_message` calls (current behaviour). When `False`, the agent is a single-shot sub-agent that is automatically released after its first response (the old "fire-and-forget" behaviour). Default: `False` (single-shot) to prevent agents from consuming the agent limit unnecessarily.
+    2. **Best practices & instructions** — update agent/system prompt guidance on when to use single-shot vs. keep-alive spawning, how to plan agent usage to avoid hitting limits, and when to prefer `send_message` to an existing agent over spawning a new one. Include examples of optimal multi-agent workflows.
+    3. **Per-type agent limit** — consider a configurable per-type (agent definition) limit on concurrently active agents, so the global limit isn't exhausted by spawning many agents of the same type while a different type is needed.
+    4. **Terminate tool** — add a `release_agent` (or `terminate_agent`) tool that lets the parent agent explicitly release a keep-alive agent when it's no longer needed, freeing the slot for other agents.
+    5. **Other considerations:**
+       - Auto-release keep-alive agents after a configurable idle timeout (no messages for N turns)
+       - Surface active agent count and remaining capacity in the agent tool's result, so the LLM can make informed spawning decisions
+       - Surface which agent types are already active (and their IDs) to help the LLM choose `send_message` over spawning a duplicate
+  - **Priority:** High
+  - **Severity:** High — agents hit the limit before spawning the right types, breaking multi-agent workflows
+- [ ] **`/session` command — interactive overview of active agents in the session**
+  - `/agents` is already taken and shows the registry of known agent definitions (the catalog). There is no way to see which agents are actually active in the running session, what their IDs are, or how many slots remain.
+  - **Fix:** Add a `/session` slash command that shows: active agents (ID, agent definition name, status), remaining capacity vs. agent limit, and which agent types are currently available for `send_message`. This complements the lifecycle management work above by giving the user (and indirectly the LLM via tool results) visibility into session state.
+  - **Priority:** High
+  - **Severity:** Medium — no visibility into multi-agent session state; user cannot inspect or troubleshoot agent lifecycle issues
+
+
 ### Tool Enhancements
 
 - [x] **`update` tool: infer `operation` from arguments when omitted**
