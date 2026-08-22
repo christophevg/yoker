@@ -329,3 +329,53 @@ class TestPathGuardrail:
     # Use relative path from within allowed root
     result = guardrail.validate("read", {"path": str(test_file)})
     assert result.valid is True
+
+  def test_individual_file_path_allowed(self, tmp_path: Path) -> None:
+    """A single file in filesystem_paths allows access to that file only."""
+    allowed_file = tmp_path / "VOICE.md"
+    allowed_file.write_text("hello")
+    other_file = tmp_path / "OTHER.md"
+    other_file.write_text("world")
+    config = Config(permissions=PermissionsConfig(filesystem_paths=(str(allowed_file),)))
+    guardrail = PathGuardrail(config)
+    # The allowed file itself is accessible
+    result = guardrail.validate("read", {"path": str(allowed_file)})
+    assert result.valid is True
+    # A sibling file is NOT accessible (only the specific file is allowed)
+    result = guardrail.validate("read", {"path": str(other_file)})
+    assert result.valid is False
+    assert "outside allowed" in result.reason
+
+  def test_tilde_expansion_in_filesystem_paths(self, tmp_path: Path) -> None:
+    """~ in filesystem_paths is expanded to the user's home directory."""
+    # Use the real home directory to verify expanduser works
+    home = Path.home()
+    # Create a temp file in home (clean up after)
+    test_file = home / ".yoker_test_tilde_expand.md"
+    test_file.write_text("test")
+    try:
+      config = Config(
+        permissions=PermissionsConfig(filesystem_paths=("~/.yoker_test_tilde_expand.md",))
+      )
+      guardrail = PathGuardrail(config)
+      # Access via the absolute path (as the agent would after expansion)
+      result = guardrail.validate("read", {"path": str(test_file)})
+      assert result.valid is True
+    finally:
+      test_file.unlink(missing_ok=True)
+
+  def test_tilde_expansion_with_directory(self, tmp_path: Path) -> None:
+    """~ in a directory path is expanded and allows files beneath it."""
+    home = Path.home()
+    test_dir = home / ".yoker_test_tilde_dir"
+    test_dir.mkdir(exist_ok=True)
+    test_file = test_dir / "note.md"
+    test_file.write_text("test")
+    try:
+      config = Config(permissions=PermissionsConfig(filesystem_paths=("~/.yoker_test_tilde_dir",)))
+      guardrail = PathGuardrail(config)
+      result = guardrail.validate("read", {"path": str(test_file)})
+      assert result.valid is True
+    finally:
+      test_file.unlink(missing_ok=True)
+      test_dir.rmdir()

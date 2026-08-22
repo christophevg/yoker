@@ -68,9 +68,10 @@ class PathGuardrail(Guardrail):
         except re.error:
           logger.warning("invalid_blocked_pattern", pattern=pattern)
 
-    # Pre-resolve allowed paths to absolute paths
+    # Pre-resolve allowed paths to absolute paths.
+    # expanduser() handles ~/ prefix; resolve() collapses .. and symlinks.
     self._allowed_roots: tuple[Path, ...] = tuple(
-      Path(root).resolve() for root in self._permissions.filesystem_paths
+      Path(root).expanduser().resolve() for root in self._permissions.filesystem_paths
     )
 
   def validate(

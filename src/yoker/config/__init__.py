@@ -296,7 +296,10 @@ class PermissionsConfig:
   """Permission boundaries configuration.
 
   Attributes:
-    filesystem_paths: Allowed filesystem paths.
+    filesystem_paths: Allowed filesystem paths (directories or individual
+      files). ``~`` is expanded to the user's home directory. A directory
+      entry allows access to all files beneath it; a file entry allows
+      access to that file only.
     network_access: Network access level ('none', 'local', 'all').
     max_file_size_kb: Maximum file size in KB.
     handlers: Permission handler configurations.
