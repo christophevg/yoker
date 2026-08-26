@@ -37,7 +37,6 @@ coverage.xml
 docs/_build/
 
 # Project specific
-/context/
 logs/
 *.jsonl
 
@@ -50,5 +49,4 @@ logs/
 
 # folder for local transient files
 local/
-
-/.claude
+tmp/
