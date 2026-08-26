@@ -136,6 +136,7 @@ class TestCreateDefaultRegistry:
     assert "context" in names
     assert "tools" in names
     assert "agents" in names
+    assert "session" in names
 
   @pytest.mark.asyncio
   async def test_help_command_lists_all_commands(self):
