@@ -15,6 +15,7 @@ from yoker.builtin.github import github
 from yoker.builtin.list import list
 from yoker.builtin.make import make
 from yoker.builtin.mkdir import mkdir
+from yoker.builtin.notify import notify
 from yoker.builtin.read import read
 from yoker.builtin.search import search
 from yoker.builtin.skill import make_skill_tool
@@ -33,6 +34,7 @@ __all__ = [
   "list",
   "make",
   "mkdir",
+  "notify",
   "read",
   "search",
   "sleep",
@@ -58,6 +60,7 @@ __YOKER_MANIFEST__ = PluginManifest(
     list,
     make,
     mkdir,
+    notify,
     read,
     search,
     sleep,

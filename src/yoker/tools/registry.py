@@ -32,6 +32,7 @@ _TOOL_CONFIG_MAP = {
   "websearch": "websearch",
   "webfetch": "webfetch",
   "skill": "skill",
+  "notify": "notify",
 }
 
 # Tools that additionally require a backend API key

@@ -765,6 +765,17 @@ class SkillToolConfig(ToolConfig):
 
 
 @dataclass
+class NotifyToolConfig(ToolConfig):
+  """Notify tool configuration.
+
+  Attributes:
+    enabled: Whether the notify tool is enabled.
+  """
+
+  pass  # Inherits enabled: bool = True from ToolConfig
+
+
+@dataclass
 class WebSearchToolConfig(ToolConfig):
   """Web search tool configuration.
 
@@ -844,6 +855,7 @@ class ToolsConfig:
     make: Make tool config.
     github: GitHub tool config.
     file: File tool config.
+    notify: Notify tool config.
   """
 
   list: ListToolConfig = field(default_factory=ListToolConfig)
@@ -861,6 +873,7 @@ class ToolsConfig:
   make: MakeToolConfig = field(default_factory=MakeToolConfig)
   github: GitHubToolConfig = field(default_factory=GitHubToolConfig)
   file: FileToolConfig = field(default_factory=FileToolConfig)
+  notify: NotifyToolConfig = field(default_factory=NotifyToolConfig)
 
   def __getitem__(self, name: str) -> ToolConfig:
     return cast(ToolConfig, getattr(self, name))
