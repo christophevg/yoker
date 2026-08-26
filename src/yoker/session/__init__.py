@@ -39,7 +39,11 @@ from yoker.events import (
   SessionStartEvent,
 )
 from yoker.logging import configure_logging
-from yoker.session.tools import make_send_message_tool, make_spawn_agent_tool
+from yoker.session.tools import (
+  make_release_agent_tool,
+  make_send_message_tool,
+  make_spawn_agent_tool,
+)
 
 logger = get_logger(__name__)
 
@@ -466,14 +470,15 @@ class Session:
   def inject_tools(self, agent: Agent, agent_id: str) -> None:
     """Inject Session-injected tools onto an agent
 
-    Registers ``agent`` and ``send_message`` on the agent's tool
-    registry. The Session captures itself in the closure (back-reference)
-    so the tools can call ``session.spawn`` / ``session.send`` at execution
-    time. ``ListAgents`` is deferred and is NOT injected.
+    Registers ``agent``, ``send_message``, and ``release_agent`` on the
+    agent's tool registry. The Session captures itself in the closure
+    (back-reference) so the tools can call ``session.spawn`` /
+    ``session.send`` / ``session.release`` at execution time.
+    ``ListAgents`` is deferred and is NOT injected.
 
-    ``agent`` is gated by ``config.tools.agent.enabled`` (the existing
-    global kill-switch). ``send_message`` is always injected when an agent
-    is part of a session.
+    ``agent`` and ``release_agent`` are gated by ``config.tools.agent.enabled``
+    (the existing global kill-switch). ``send_message`` is always injected
+    when an agent is part of a session.
 
     Args:
       agent: The :class:`Agent` to inject tools onto.
@@ -485,6 +490,11 @@ class Session:
         make_spawn_agent_tool(self, agent),
         namespace="yoker",
         name="agent",
+      )
+      agent.tools.register(
+        make_release_agent_tool(self),
+        namespace="yoker",
+        name="release_agent",
       )
     agent.tools.register(
       make_send_message_tool(self, agent_id),

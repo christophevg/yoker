@@ -1,15 +1,18 @@
-"""Tests for the Session-injected ``agent`` and ``send_message`` tools.
+"""Tests for the Session-injected ``agent``, ``send_message``, and ``release_agent`` tools.
 
   - The ``agent`` tool is Session-injected (closure capture of the Session
     back-reference).
   - The ``send_message`` tool enables inter-agent messaging via tool calls.
+  - The ``release_agent`` tool lets the spawning agent explicitly terminate
+    a persistent spawned agent.
   - ``agent`` returns both the spawned agent's unique id and its
-    response string.
+    response string (when persistent), or just the response (when ephemeral).
 
 These tests verify the tool factories in :mod:`yoker.session.tools`:
 schema, parameter validation, delegation to ``session.spawn`` /
-``session.send``, and error wrapping. Deep behaviour (allowlist, depth,
-timeout, max_agents) is covered by ``tests/test_session/test_spawn.py``.
+``session.send`` / ``session.release``, and error wrapping. Deep behaviour
+(allowlist, depth, timeout, max_agents) is covered by
+``tests/test_session/test_spawn.py``.
 """
 
 from unittest.mock import AsyncMock, MagicMock
@@ -19,6 +22,7 @@ import pytest
 from yoker.agents import AgentDefinition
 from yoker.session.tools import (
   DEFAULT_TIMEOUT_SECONDS,
+  make_release_agent_tool,
   make_send_message_tool,
   make_spawn_agent_tool,
 )
@@ -56,6 +60,18 @@ def _send_message_spec(session=None, from_id="parent"):
     make_send_message_tool(session, from_id),
     namespace="yoker",
     name="send_message",
+  )
+
+
+def _release_agent_spec(session=None):
+  """Create and register the ``release_agent`` tool."""
+  registry = ToolRegistry()
+  if session is None:
+    session = MagicMock()
+  return registry.register(
+    make_release_agent_tool(session),
+    namespace="yoker",
+    name="release_agent",
   )
 
 
@@ -489,3 +505,156 @@ class TestSendMessageToolDelegation:
 
     assert not result.success
     assert "Send message error" in result.error
+
+
+class TestAgentToolEphemeral:
+  """Tests for the ``ephemeral`` parameter on the ``agent`` tool."""
+
+  @pytest.mark.asyncio
+  async def test_ephemeral_releases_agent(self) -> None:
+    """When ephemeral=True, the agent is released after responding."""
+    agent_def = AgentDefinition(
+      simple_name="researcher",
+      description="Researcher",
+      tools=("read",),
+    )
+    session = _make_session_with_registry(agent_def=agent_def)
+    mock_child = MagicMock()
+    mock_child.process = AsyncMock(return_value="quick answer")
+    session._spawn_internal = AsyncMock(return_value=(mock_child, "researcher"))
+    session.release = AsyncMock()
+    requester = _make_requester(allowlist=("researcher",))
+
+    spec = _spawn_agent_spec(session=session, requester=requester)
+    result = await spec.execute(agent_name="researcher", prompt="find X", ephemeral=True)
+
+    assert result.success
+    assert "quick answer" in result.result
+    # No agent_id in the result — agent is released, not addressable
+    assert "agent_id:" not in result.result
+    session.release.assert_awaited_once_with(mock_child)
+
+  @pytest.mark.asyncio
+  async def test_persistent_does_not_release_agent(self) -> None:
+    """When ephemeral=False (default), the agent is NOT released."""
+    agent_def = AgentDefinition(
+      simple_name="researcher",
+      description="Researcher",
+      tools=("read",),
+    )
+    session = _make_session_with_registry(agent_def=agent_def)
+    mock_child = MagicMock()
+    mock_child.process = AsyncMock(return_value="answer")
+    session._spawn_internal = AsyncMock(return_value=(mock_child, "researcher"))
+    session.release = AsyncMock()
+    requester = _make_requester(allowlist=("researcher",))
+
+    spec = _spawn_agent_spec(session=session, requester=requester)
+    result = await spec.execute(agent_name="researcher", prompt="find X", ephemeral=False)
+
+    assert result.success
+    assert "agent_id:" in result.result
+    session.release.assert_not_called()
+
+  @pytest.mark.asyncio
+  async def test_default_is_persistent(self) -> None:
+    """Default behavior (no ephemeral arg) is persistent — agent stays alive."""
+    agent_def = AgentDefinition(
+      simple_name="researcher",
+      description="Researcher",
+      tools=("read",),
+    )
+    session = _make_session_with_registry(agent_def=agent_def)
+    mock_child = MagicMock()
+    mock_child.process = AsyncMock(return_value="answer")
+    session._spawn_internal = AsyncMock(return_value=(mock_child, "researcher"))
+    session.release = AsyncMock()
+    requester = _make_requester(allowlist=("researcher",))
+
+    spec = _spawn_agent_spec(session=session, requester=requester)
+    result = await spec.execute(agent_name="researcher", prompt="find X")
+
+    assert result.success
+    assert "agent_id:" in result.result
+    session.release.assert_not_called()
+
+  def test_ephemeral_in_schema(self) -> None:
+    """The ephemeral parameter is present in the schema as a boolean."""
+    spec = _spawn_agent_spec()
+    schema = spec.schema
+    props = schema["function"]["parameters"]["properties"]
+    assert "ephemeral" in props
+    assert props["ephemeral"]["type"] == "boolean"
+
+
+class TestReleaseAgentToolSchema:
+  """Tests for the ``release_agent`` tool schema and properties."""
+
+  def test_name(self) -> None:
+    """Test tool name is release_agent."""
+    spec = _release_agent_spec()
+    assert spec.name == "yoker:release_agent"
+
+  def test_schema_structure(self) -> None:
+    """Test schema has agent_id parameter."""
+    spec = _release_agent_spec()
+    schema = spec.schema
+
+    assert schema["type"] == "function"
+    assert schema["function"]["name"] == "yoker__release_agent"
+    assert "agent_id" in schema["function"]["parameters"]["properties"]
+    assert schema["function"]["parameters"]["required"] == ["agent_id"]
+
+
+class TestReleaseAgentToolDelegation:
+  """Tests that the ``release_agent`` tool delegates to session.release."""
+
+  @pytest.mark.asyncio
+  async def test_delegates_to_session_release(self) -> None:
+    """Successful release returns ToolResult confirming the release."""
+    mock_agent = MagicMock(name="python-developer")
+    session = MagicMock()
+    session._agents_map = {"python-developer": mock_agent}
+    session.release = AsyncMock()
+
+    spec = _release_agent_spec(session=session)
+    result = await spec.execute(agent_id="python-developer")
+
+    assert result.success
+    assert "released" in result.result.lower()
+    session.release.assert_awaited_once_with(mock_agent)
+
+  @pytest.mark.asyncio
+  async def test_missing_agent_id_returns_error(self) -> None:
+    """Missing agent_id parameter returns a failure result."""
+    spec = _release_agent_spec()
+    result = await spec.execute(agent_id="")
+
+    assert not result.success
+    assert "agent_id" in result.error
+
+  @pytest.mark.asyncio
+  async def test_unknown_agent_id_returns_failure(self) -> None:
+    """An unknown agent_id (not in the active map) returns a failure result."""
+    session = MagicMock()
+    session._agents_map = {}
+
+    spec = _release_agent_spec(session=session)
+    result = await spec.execute(agent_id="ghost")
+
+    assert not result.success
+    assert "No active agent" in result.error
+
+  @pytest.mark.asyncio
+  async def test_generic_exception_wrapped_as_failure(self) -> None:
+    """Unexpected exceptions are wrapped, not re-raised."""
+    mock_agent = MagicMock(name="python-developer")
+    session = MagicMock()
+    session._agents_map = {"python-developer": mock_agent}
+    session.release = AsyncMock(side_effect=RuntimeError("boom"))
+
+    spec = _release_agent_spec(session=session)
+    result = await spec.execute(agent_id="python-developer")
+
+    assert not result.success
+    assert "Release agent error" in result.error

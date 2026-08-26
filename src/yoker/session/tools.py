@@ -1,6 +1,6 @@
-"""Session-injected tools: ``agent`` and ``send_message``
+"""Session-injected tools: ``agent``, ``send_message``, and ``release_agent``
 
-``agent`` and ``send_message`` are
+``agent``, ``send_message``, and ``release_agent`` are
 Session-injected tools — the :class:`yoker.session.Session` captures itself
 in the closure (back-reference) and registers the tools on Agents it owns.
 They are NOT registered by the Agent itself and are not part of the Agent's
@@ -9,13 +9,14 @@ static tool set loaded from plugins.
 ``agent``
   - Calls ``session._spawn_internal(name, requester=<calling agent>)``,
     runs the spawned agent's ``process(prompt)`` with a timeout.
-  - Does NOT release the spawned agent after completion — it remains in
-    the session's active map so the parent can send follow-up messages
-    via ``send_message``. The session's ``__aexit__`` cleans up all
-    agents on exit.
-  - Returns a ``ToolResult`` carrying both the spawned agent's unique id and
-    its response string (so the model can address the child later via
-    ``send_message``).
+  - When ``ephemeral=True``, the agent is automatically released after its
+    response (single-shot, no follow-up possible, no agent_id returned).
+  - When ``ephemeral=False`` (default), the agent remains in the session's
+    active map so the parent can send follow-up messages via
+    ``send_message``. The session's ``__aexit__`` cleans up all agents on
+    exit.
+  - Returns a ``ToolResult`` carrying the spawned agent's unique id (when
+    persistent) and its response string.
   - Available agent names are baked into the tool description from the
     calling agent's ``AgentDefinition.agents`` allowlist (intersected with
     ``session.agents.names``) — only allowlisted names are shown.
@@ -27,7 +28,17 @@ static tool set loaded from plugins.
   - ``from_id`` is the calling agent's runtime name (captured at injection
     time).
   - Returns the target agent's response string, or an error result when the
-    target is no longer active
+    target is no longer active.
+
+``release_agent``
+  - Releases a persistent spawned agent, freeing session capacity.
+  - Calls ``session.release(agent)``, which emits AGENT_FINISHED, cancels
+    the agent's consumer task, and removes it from the active map.
+  - After release, ``send_message`` to that agent will fail ("No active
+    agent with id ...").
+  - Useful for freeing session capacity when a persistent agent's work is
+    complete (e.g. after implementation + review feedback iteration is
+    done).
 """
 
 import asyncio
@@ -92,11 +103,21 @@ def make_spawn_agent_tool(session: "Session", requester: "Agent") -> Any:
     agent_name: Annotated[str, Text(label)],
     prompt: Annotated[str, Text("Task for the spawned agent")],
     timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
+    ephemeral: Annotated[
+      bool,
+      Text(
+        "When True, the agent is automatically released after its response "
+        "(single-shot, no follow-up possible). When False (default), the agent "
+        "stays active and can be addressed via send_message for follow-up work."
+      ),
+    ] = False,
   ) -> ToolResult:
     """Spawn a sub-agent to perform a specific task.
 
-    Returns the spawned agent's unique id and its response so you can
-    address it later via send_message.
+    When ephemeral=False (default), returns the spawned agent's unique id
+    and its response so you can address it later via send_message.
+    When ephemeral=True, the agent is released after responding and no
+    agent_id is returned (single-shot, no follow-up possible).
     """
     if not agent_name:
       return ToolResult(success=False, error="Missing required parameter: agent_name")
@@ -117,9 +138,17 @@ def make_spawn_agent_tool(session: "Session", requester: "Agent") -> Any:
         raise TimeoutError(
           f"Sub-agent '{agent_id}' timed out after {timeout_seconds} seconds"
         ) from e
-      # Deliberately do NOT release the child here. Keeping it in the active
-      # map allows the parent to send follow-up messages via send_message.
-      # The session's __aexit__ cleans up all agents on exit.
+
+      if ephemeral:
+        # Single-shot: release the agent immediately after its response.
+        # No agent_id is returned since the agent is no longer addressable.
+        await session.release(child)
+        logger.info("spawn_agent ephemeral response", agent_name=agent_name, response=response)
+        return ToolResult(success=True, result=response)
+
+      # Persistent: keep the agent in the active map so the parent can send
+      # follow-up messages via send_message. The session's __aexit__ cleans
+      # up all agents on exit.
       logger.info("spawn_agent response", agent_id=agent_id, response=response)
       rendered = f"agent_id: {agent_id}\n\n{response}" if agent_id else response
       return ToolResult(success=True, result=rendered)
@@ -212,9 +241,61 @@ def make_send_message_tool(session: "Session", from_id: str) -> Any:
   return send_message
 
 
+def make_release_agent_tool(session: "Session") -> Any:
+  """Build the Session-injected ``release_agent`` tool.
+
+  ``release_agent`` lets the spawning agent explicitly terminate a
+  persistent spawned agent, freeing session capacity. After release,
+  the agent's context is lost and ``send_message`` to it will fail.
+
+  Args:
+    session: The :class:`Session` that owns the agents (back-reference).
+
+  Returns:
+    The ``release_agent`` tool callable (async function).
+  """
+
+  async def release_agent(
+    agent_id: Annotated[
+      str,
+      Text(
+        "The agent_id of the active agent to release. "
+        "The agent's context is lost after release. "
+        "Use this to free session capacity when a persistent agent is no longer needed."
+      ),
+    ],
+  ) -> ToolResult:
+    """Release a spawned agent, freeing session capacity.
+
+    The agent's conversation context is lost after release.
+    Use this when a persistent agent's work is complete and you no longer
+    need to send it follow-up messages.
+    """
+    if not agent_id:
+      return ToolResult(success=False, error="Missing required parameter: agent_id")
+
+    target_agent = session._agents_map.get(agent_id)
+    if target_agent is None:
+      logger.warning("release_agent target not found", agent_id=agent_id)
+      return ToolResult(success=False, error=f"No active agent with id '{agent_id}'.")
+
+    try:
+      await session.release(target_agent)
+      logger.info("release_agent released", agent_id=agent_id)
+      return ToolResult(success=True, result=f"Agent '{agent_id}' released.")
+    except Exception as e:
+      logger.error("release_agent error", agent_id=agent_id, error=str(e))
+      return ToolResult(success=False, error=f"Release agent error: {e}")
+
+  release_agent.__name__ = "release_agent"
+  release_agent.__yoker_name__ = "release_agent"  # type: ignore[attr-defined]
+  return release_agent
+
+
 __all__ = [
   "DEFAULT_TIMEOUT_SECONDS",
   "ABSOLUTE_MAX_TIMEOUT_SECONDS",
   "make_spawn_agent_tool",
   "make_send_message_tool",
+  "make_release_agent_tool",
 ]
