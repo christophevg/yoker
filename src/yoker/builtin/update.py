@@ -41,9 +41,9 @@ from typing import TYPE_CHECKING, Annotated, Any
 
 from structlog import get_logger
 
+from yoker.builtin._validators import validate_update_diff_size
 from yoker.config import UpdateToolConfig
-from yoker.tools.annotations import Path as PathArg
-from yoker.tools.annotations import Text
+from yoker.tools.annotations import Text, WritePath
 from yoker.tools.context import ToolContext
 from yoker.tools.diff import generate_diff
 from yoker.tools.schema import ToolResult
@@ -66,7 +66,7 @@ def _truncate_diff(diff_lines: list[str], max_lines: int) -> tuple[str, bool, in
 
 
 async def update(
-  path: Annotated[str, PathArg("Path to the file to update")],
+  path: Annotated[str, WritePath("Path to the file to update")],
   ctx: ToolContext,
   operation: Annotated[
     str,
@@ -787,6 +787,9 @@ def _multiple_matches_error(old_content: str, old_string: str) -> str:
       f"Use line_range for line-based replace, or provide more context in old_string."
     )
   return "Search text appears multiple times; ambiguous match"
+
+
+update.__yoker_validators__ = [validate_update_diff_size]  # type: ignore[attr-defined]
 
 
 __all__ = ["update"]

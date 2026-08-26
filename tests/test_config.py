@@ -54,7 +54,7 @@ class TestConfigSchema:
     assert config.backend.ollama.model == "qwen3.5:cloud"
     assert config.context.manager == "basic_persistence"
     assert config.permissions.network_access == "none"
-    assert config.permissions.filesystem_paths == (".",)
+    assert config.permissions.filesystem_paths == (".", "plugin://")
     assert config.tools.list.enabled is True
     assert config.agents.directories == ()
     assert config.logging.format == "text"

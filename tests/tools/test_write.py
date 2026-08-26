@@ -10,7 +10,7 @@ from yoker.builtin import write as write_tool
 from yoker.config import Config, PermissionsConfig, ToolsConfig, WriteToolConfig
 from yoker.tools import ToolRegistry
 from yoker.tools.context import ToolContext
-from yoker.tools.guardrails.path import PathGuardrail
+from yoker.tools.guardrails.path import WritePathGuardrail
 from yoker.tools.schema import ToolResult
 
 
@@ -100,7 +100,7 @@ class TestWriteTool:
   async def test_write_with_guardrail_blocks(self, tmp_path: Path) -> None:
     """Path guardrail blocks paths outside allowed directories for write."""
     config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
-    guardrail = PathGuardrail(config)
+    guardrail = WritePathGuardrail(config)
     spec = _write_spec()
     validation = guardrail.validate(spec.name, {"path": "/etc/passwd", "content": "data"})
     assert not validation.valid
@@ -111,7 +111,7 @@ class TestWriteTool:
     """Path guardrail allows paths inside allowed directories for write."""
     file_path = tmp_path / "test.txt"
     config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
-    guardrail = PathGuardrail(config)
+    guardrail = WritePathGuardrail(config)
     spec = _write_spec()
     ctx = _write_context()
     validation = guardrail.validate(
@@ -279,7 +279,7 @@ class TestWriteTool:
   async def test_write_guardrail_passes_create_parents(self, tmp_path: Path) -> None:
     """Path guardrail validates write parameters including create_parents."""
     config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
-    guardrail = PathGuardrail(config)
+    guardrail = WritePathGuardrail(config)
     spec = _write_spec()
     ctx = _write_context()
     validation = guardrail.validate(

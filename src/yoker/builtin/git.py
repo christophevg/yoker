@@ -34,8 +34,7 @@ from typing import Annotated, Any
 from structlog import get_logger
 
 from yoker.config import GitToolConfig
-from yoker.tools.annotations import Path as PathArg
-from yoker.tools.annotations import Text
+from yoker.tools.annotations import Text, WritePath
 from yoker.tools.context import ToolContext
 from yoker.tools.schema import ToolResult, ValidationResult
 
@@ -225,7 +224,7 @@ async def git(
   ],
   path: Annotated[
     str,
-    PathArg(
+    WritePath(
       "Filesystem path to the Git repository, or file for diff/show operations. NOT for branch names or revision ranges — use 'ref' in args for those."
     ),
   ] = ".",

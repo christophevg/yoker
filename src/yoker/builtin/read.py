@@ -11,8 +11,9 @@ from typing import Annotated, Any
 
 from structlog import get_logger
 
+from yoker.builtin._validators import validate_read_file_size
 from yoker.resources import find_package_path, parse_plugin_url
-from yoker.tools.annotations import Path as PathArg
+from yoker.tools.annotations import ReadPath
 from yoker.tools.context import ToolContext
 from yoker.tools.schema import ToolResult
 
@@ -23,7 +24,7 @@ CAT_N_WIDTH = 6
 
 
 async def read(
-  path: Annotated[str, PathArg("Path to the file to read (or plugin:// URL)")],
+  path: Annotated[str, ReadPath("Path to the file to read (or plugin:// URL)")],
   ctx: ToolContext,
   offset: int | None = None,
   limit: int | None = None,
@@ -206,6 +207,9 @@ async def _read_file(path_str: str, offset: int | None, limit: int | None) -> To
 
   logger.info("read_success", path=str(resolved), bytes=len(content.encode("utf-8")))
   return _finalize_read(content, offset, limit, str(resolved))
+
+
+read.__yoker_validators__ = [validate_read_file_size]  # type: ignore[attr-defined]
 
 
 __all__ = ["read"]

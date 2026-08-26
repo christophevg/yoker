@@ -17,7 +17,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from yoker.tools.annotations import Path as PathArg
+from yoker.tools.annotations import ReadPath as PathArg
 from yoker.tools.annotations import Text
 from yoker.tools.context import ToolContext
 from yoker.tools.schema import ToolResult, build_tool_spec

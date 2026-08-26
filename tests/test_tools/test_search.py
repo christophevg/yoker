@@ -12,7 +12,7 @@ from yoker.builtin.search import (
 from yoker.config import Config, PermissionsConfig
 from yoker.tools import ToolRegistry
 from yoker.tools.context import ToolContext
-from yoker.tools.guardrails.path import PathGuardrail
+from yoker.tools.guardrails.path import ReadPathGuardrail
 from yoker.tools.schema import ToolResult
 
 
@@ -609,7 +609,7 @@ class TestSearchToolWithGuardrail:
     allowed_path = tmp_path / "allowed"
     allowed_path.mkdir()
     config = Config(permissions=PermissionsConfig(filesystem_paths=(str(allowed_path),)))
-    guardrail = PathGuardrail(config)
+    guardrail = ReadPathGuardrail(config)
 
     spec = _search_spec()
     _search_context()
@@ -624,7 +624,7 @@ class TestSearchToolWithGuardrail:
     (tmp_path / "test.txt").write_text("TODO: test\n")
 
     config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
-    guardrail = PathGuardrail(config)
+    guardrail = ReadPathGuardrail(config)
 
     spec = _search_spec()
     ctx = _search_context()

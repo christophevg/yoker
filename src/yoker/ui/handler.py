@@ -306,8 +306,8 @@ class UIHandler(Protocol):
   # and from ``yoker.builtin.git._check_approval`` (with ``kind="git"``) —
   # :class:`UIBridge` is not involved. The wiring is gated by ``hasattr(ui,
   # "confirm_approval")`` so handlers that do not opt in are not wired;
-  # for those handlers the :class:`yoker.tools.guardrails.path.PathGuardrail`
-  # blocks protected writes (no interactive prompt).
+  # for those handlers the :class:`yoker.tools.guardrails.path.WritePathGuardrail`
+  # blocks write-protected files (no interactive prompt).
   #
   # :class:`yoker.ui.batch.BatchUIHandler` does **not** implement it
   # (non-interactive: protected writes are blocked by the guardrail).

@@ -1,13 +1,31 @@
 """Path guardrail implementation for Yoker filesystem tools.
 
-Provides PathGuardrail, a concrete Guardrail that validates filesystem tool
-parameters against configured permission boundaries. Prevents path traversal,
-blocks sensitive patterns, enforces file size limits, filters by extension,
-and protects configured files (Makefile, pyproject.toml, ...) against agent
-writes via fnmatch glob matching.
+Provides ``ReadPathGuardrail`` and ``WritePathGuardrail``, concrete
+Guardrails that validate filesystem tool parameters against configured
+permission boundaries.
+
+The access control pipeline is three layers, checked in order:
+
+1. ``filesystem_paths`` (HARD) — spatial boundary: which roots are accessible
+2. ``blocked_paths`` (HARD) — universal denylist: what's blocked within roots
+3. ``blocked_write_paths`` (SOFT) — write-only denylist: additional blocks
+   for write operations (WritePathGuardrail only)
+
+``ReadPathGuardrail`` implements layers 1–2.
+``WritePathGuardrail`` subclasses it and adds layer 3.
+
+Glob patterns are matched case-insensitively against the relative path
+from the containing allowed root. Full glob support: ``*`` (one segment),
+``**`` (zero or more segments), ``?``, ``[...]``.
+
+Paths are resolved with ``os.path.realpath()`` before any checks, collapsing
+symlinks and ``..`` components. This prevents path traversal and symlink
+escape.
+
+The special ``"plugin://"`` entry in ``filesystem_paths`` allows read tools
+to access ``plugin://`` URLs (package resources, not filesystem paths).
 """
 
-import fnmatch
 import os
 import re
 from pathlib import Path
@@ -15,214 +33,249 @@ from typing import Any
 
 from structlog import get_logger
 
-from yoker.config import (
-  Config,
-  MkdirToolConfig,
-  PermissionsConfig,
-  ReadToolConfig,
-  ToolConfig,
-  UpdateToolConfig,
-  WriteToolConfig,
-)
+from yoker.config import Config, PermissionsConfig
 from yoker.tools.guardrails import Guardrail
 from yoker.tools.schema import ValidationResult
 
 logger = get_logger(__name__)
 
+# Prefix for plugin resource URLs — not a filesystem path.
+_PLUGIN_PREFIX = "plugin://"
 
-class PathGuardrail(Guardrail):
-  """Concrete guardrail for filesystem tool validation.
 
-  Validates tool parameters against permission boundaries defined in Config:
-  - Allowed filesystem paths (root containment)
-  - Blocked regex patterns (e.g., .env, credentials)
-  - Allowed file extensions (for read tool)
-  - Maximum file size (for read tool)
-  - Protected files (Makefile, pyproject.toml, ...) against agent writes
+def _glob_to_regex(pattern: str) -> re.Pattern[str]:
+  """Translate a glob pattern to a compiled case-insensitive regex.
 
-  Uses os.path.realpath() to resolve symlinks and normalize paths before
-  validation, preventing path traversal attacks.
+  Supports:
+    - ``**`` — zero or more path segments (including slashes)
+    - ``*`` — one path segment (no slashes)
+    - ``?`` — any single character (no slashes)
+    - ``[...]`` — character class
 
-  Example:
-    guardrail = PathGuardrail(config)
-    result = guardrail.validate("read", {"path": "/etc/passwd"})
-    # result.valid is False because /etc/passwd is outside allowed paths
+  Args:
+    pattern: Glob pattern string.
+
+  Returns:
+    Compiled case-insensitive regex pattern.
+  """
+  result: list[str] = ["(?i)"]
+  i = 0
+  while i < len(pattern):
+    c = pattern[i]
+    if c == "*":
+      if i + 1 < len(pattern) and pattern[i + 1] == "*":
+        # ** — matches anything including /
+        result.append(".*")
+        i += 2
+      else:
+        # * — matches one segment (no /)
+        result.append("[^/]*")
+        i += 1
+    elif c == "?":
+      result.append("[^/]")
+      i += 1
+    elif c == "[":
+      # Character class — find closing ]
+      j = i + 1
+      if j < len(pattern) and pattern[j] == "!":
+        j += 1
+      if j < len(pattern) and pattern[j] == "]":
+        j += 1
+      while j < len(pattern) and pattern[j] != "]":
+        j += 1
+      if j < len(pattern):
+        result.append(pattern[i : j + 1])
+        i = j + 1
+      else:
+        # No closing ] — treat [ as literal
+        result.append(re.escape(c))
+        i += 1
+    elif c == "/":
+      result.append("/")
+      i += 1
+    else:
+      result.append(re.escape(c))
+      i += 1
+  return re.compile("".join(result) + "$")
+
+
+def compile_blocked_patterns(patterns: tuple[str, ...]) -> list[re.Pattern[str]]:
+  """Compile a tuple of glob patterns into regex patterns for matching.
+
+  Used by tools that need to check ``blocked_paths`` internally during
+  traversal (e.g. ``search``, ``list``). The compiled patterns are passed
+  to :func:`is_path_blocked`.
+
+  Args:
+    patterns: Glob pattern strings from ``blocked_paths`` config.
+
+  Returns:
+    List of compiled case-insensitive regex patterns.
+  """
+  return [_glob_to_regex(p) for p in patterns]
+
+
+def is_path_blocked(
+  file_path: Path,
+  root: Path,
+  blocked_patterns: list[re.Pattern[str]],
+) -> bool:
+  """Check if a file's relative path matches any blocked_path pattern.
+
+  Used by traversal tools (``search``, ``list``) to enforce the universal
+  ``blocked_paths`` denylist on every file they touch — preventing bypass
+  via ``search`` reading content of files that would be blocked by the
+  guardrail.
+
+  Patterns are matched against the relative path from root AND the
+  absolute path. Matching a directory blocks it and everything beneath it
+  — so ``local`` blocks both ``local`` and ``local/hard.md``. This is
+  achieved by checking the full path AND every ancestor (prefix) against
+  each pattern.
+
+  Args:
+    file_path: Absolute path to the file/directory.
+    root: The traversal root (an allowed root).
+    blocked_patterns: Compiled glob regex patterns from ``compile_blocked_patterns``.
+
+  Returns:
+    True if the file should be skipped, False otherwise.
+  """
+  if not blocked_patterns:
+    return False
+
+  candidates: list[str] = []
+  try:
+    relative = file_path.relative_to(root).as_posix()
+    candidates.append(relative)
+  except ValueError:
+    pass  # Outside root — will be caught by absolute path check below
+  candidates.append(str(file_path))
+
+  for candidate in candidates:
+    parts = candidate.split("/")
+    for i in range(len(parts), 0, -1):
+      ancestor = "/".join(parts[:i])
+      for pattern in blocked_patterns:
+        if pattern.match(ancestor):
+          return True
+  return False
+
+
+class ReadPathGuardrail(Guardrail):
+  """Guardrail for read-only filesystem path validation.
+
+  Implements layers 1–2 of the access control pipeline:
+    1. Path must be within ``filesystem_paths`` (HARD)
+    2. Path must not match ``blocked_paths`` (HARD)
+
+  The ``"plugin://"`` special entry in ``filesystem_paths`` allows
+  ``plugin://`` URLs to pass through (they are package resources, not
+  filesystem paths).
   """
 
   def __init__(self, config: Config) -> None:
-    """Initialize the guardrail with configuration.
-
-    Args:
-      config: Yoker configuration containing permissions and tool settings.
-    """
     self._config = config
     self._permissions: PermissionsConfig = config.permissions
 
-    # Pre-compile blocked patterns for efficiency
-    self._blocked_patterns: list[re.Pattern[str]] = []
-    read_config = self._get_tool_config("read")
-    if isinstance(read_config, ReadToolConfig):
-      for pattern in read_config.blocked_patterns:
-        try:
-          self._blocked_patterns.append(re.compile(pattern))
-        except re.error:
-          logger.warning("invalid_blocked_pattern", pattern=pattern)
+    # Pre-compile blocked_paths glob patterns
+    self._blocked_path_patterns: list[re.Pattern[str]] = [
+      _glob_to_regex(p) for p in self._permissions.blocked_paths
+    ]
+    # Pre-resolve patterns that look like relative paths (contain / or ..)
+    # These are resolved relative to each allowed root, not cwd
+    self._blocked_path_resolved: list[Path] = []
+    fs_entries = [r for r in self._permissions.filesystem_paths if not r.startswith(_PLUGIN_PREFIX)]
+    allowed_roots_for_resolution = [Path(root).expanduser() for root in fs_entries]
+    for p in self._permissions.blocked_paths:
+      if "/" in p or p.startswith("..") or p.startswith("~"):
+        # Resolve relative to each allowed root
+        for root in allowed_roots_for_resolution:
+          try:
+            resolved_pattern = (root / p).expanduser().resolve()
+            self._blocked_path_resolved.append(resolved_pattern)
+          except (OSError, ValueError):
+            pass
+        # Also try resolving from cwd for absolute or ~ patterns
+        if not p.startswith(".."):
+          try:
+            resolved_pattern = Path(p).expanduser().resolve()
+            self._blocked_path_resolved.append(resolved_pattern)
+          except (OSError, ValueError):
+            pass
 
-    # Pre-resolve allowed paths to absolute paths.
-    # expanduser() handles ~/ prefix; resolve() collapses .. and symlinks.
+    # Separate filesystem roots from special entries (plugin://)
     self._allowed_roots: tuple[Path, ...] = tuple(
-      Path(root).expanduser().resolve() for root in self._permissions.filesystem_paths
+      Path(root).expanduser().resolve() for root in fs_entries
+    )
+    self._allows_plugin: bool = any(
+      r.startswith(_PLUGIN_PREFIX) for r in self._permissions.filesystem_paths
     )
 
   def validate(
-    self, tool_name: str, value: str | dict[str, Any], *, skip_protected: bool = False
+    self, tool_name: str, value: str | dict[str, Any], *, skip_blocks: bool = False
   ) -> ValidationResult:
-    """Validate tool parameters against permission boundaries.
-
-    The guardrail is only invoked for parameters annotated with ``Path``
-    (via ``ToolSpec.guards``), so every call is already a filesystem path
-    — no tool-name allowlist is needed.
-
-    Steps:
-      1. Extract the path parameter (from string or dict).
-      2. Resolve to an absolute real path.
-      3. Check the path is within allowed roots.
-      4. Check blocked patterns.
-      5. Tool-specific checks (read: extension/size, write: protected/
-         extension/content-size, update: protected/extension/diff-size,
-         file: protected, mkdir: depth).
-
-    The ``tool_name`` is the **simple** name (e.g. ``"write"``), not the
-    namespaced name (e.g. ``"yoker:write"``). The caller
-    (``_validate_tool_args``) is responsible for stripping the namespace.
+    """Validate a read-only filesystem path parameter.
 
     Args:
-      tool_name: Simple name of the tool being validated.
-      value: Either a path string or a dict of tool parameters.
-        When called from _validate_tool_args, this is the extracted path string.
-        When called directly in tests, this may be the full params dict.
+      tool_name: Simple tool name (unused — guardrail is tool-agnostic).
+      value: Path string or dict containing a "path" key.
+      skip_blocks: Ignored for read guardrail (no soft blocks).
 
     Returns:
-      ValidationResult indicating whether parameters are valid.
+      ValidationResult indicating whether the path is allowed.
     """
-    # Extract path from value (handle both dict and string)
-    if isinstance(value, dict):
-      path_param = value.get("path", "")
-    else:
-      path_param = value
-
-    # Git tool allows missing path (defaults to ".")
-    if not path_param:
-      if tool_name == "git":
-        return ValidationResult(valid=True)
+    path_param = self._extract_path(value)
+    if path_param is None:
       return ValidationResult(valid=False, reason="Missing required parameter: path")
 
-    # Handle whitespace-only string paths
-    if isinstance(path_param, str) and not path_param.strip():
+    if not path_param.strip():
       return ValidationResult(valid=False, reason="Path cannot be empty")
 
-    if not isinstance(path_param, str):
-      return ValidationResult(
-        valid=False, reason=f"Parameter 'path' must be a string, got {type(path_param).__name__}"
-      )
+    # plugin:// URLs — allowed if configured
+    if path_param.startswith(_PLUGIN_PREFIX):
+      if self._allows_plugin:
+        return ValidationResult(valid=True)
+      return ValidationResult(valid=False, reason=f"Plugin URLs not allowed: {path_param}")
 
-    # Resolve the path
     resolved = self._resolve_path(path_param)
     if resolved is None:
       return ValidationResult(valid=False, reason=f"Invalid or inaccessible path: {path_param}")
 
-    # Check allowed roots first (security boundary)
-    root_check = self._is_within_allowed_paths(resolved)
-    if not root_check:
+    # Layer 1: filesystem_paths (HARD)
+    if not self._is_within_allowed_paths(resolved):
       return ValidationResult(valid=False, reason=f"Path outside allowed directories: {path_param}")
 
-    # Check blocked patterns
-    blocked_reason = self._check_blocked_patterns(resolved)
+    # Layer 2: blocked_paths (HARD)
+    blocked_reason = self._check_blocked_paths(resolved)
     if blocked_reason:
       return ValidationResult(valid=False, reason=blocked_reason)
 
-    # Mkdir-specific checks
-    if tool_name == "mkdir":
-      depth_reason = self._check_mkdir_depth(resolved)
-      if depth_reason:
-        return ValidationResult(valid=False, reason=depth_reason)
-
-    # Read-specific checks
-    if tool_name == "read":
-      if not resolved.exists():
-        return ValidationResult(valid=False, reason=f"File not found: {path_param}")
-
-      ext_reason = self._check_read_extension(resolved)
-      if ext_reason:
-        return ValidationResult(valid=False, reason=ext_reason)
-
-      size_reason = self._check_file_size(resolved)
-      if size_reason:
-        return ValidationResult(valid=False, reason=size_reason)
-
-    # Write-specific checks
-    if tool_name == "write":
-      if not skip_protected:
-        protected_reason = self._check_protected_files(resolved)
-        if protected_reason:
-          return ValidationResult(valid=False, reason=protected_reason)
-
-      if not skip_protected:
-        ext_reason = self._check_write_extension(resolved)
-        if ext_reason:
-          return ValidationResult(valid=False, reason=ext_reason)
-
-      if isinstance(value, dict):
-        size_reason = self._check_write_content_size(value)
-        if size_reason:
-          return ValidationResult(valid=False, reason=size_reason)
-
-    # Update-specific checks
-    if tool_name == "update":
-      if not resolved.exists():
-        return ValidationResult(valid=False, reason=f"File not found: {path_param}")
-      if not resolved.is_file():
-        return ValidationResult(valid=False, reason=f"Path is not a file: {path_param}")
-
-      if not skip_protected:
-        protected_reason = self._check_protected_files(resolved)
-        if protected_reason:
-          return ValidationResult(valid=False, reason=protected_reason)
-
-      if not skip_protected:
-        ext_reason = self._check_write_extension(resolved)
-        if ext_reason:
-          return ValidationResult(valid=False, reason=ext_reason)
-
-      if isinstance(value, dict):
-        size_reason = self._check_update_diff_size(value)
-        if size_reason:
-          return ValidationResult(valid=False, reason=size_reason)
-
-    # File tool checks: protected files guardrail on all paths.
-    if tool_name == "file":
-      if not skip_protected:
-        protected_reason = self._check_protected_files(resolved)
-        if protected_reason:
-          return ValidationResult(valid=False, reason=protected_reason)
-
-    # Log allowed decision
     if self._config.logging.include_permission_checks:
       logger.info("guardrail_allowed", tool=tool_name, path=str(resolved))
 
     return ValidationResult(valid=True)
 
+  def _extract_path(self, value: str | dict[str, Any]) -> str | None:
+    """Extract the path string from a string or dict value."""
+    if isinstance(value, dict):
+      path_param = value.get("path", "")
+      if not path_param:
+        # Try "source" (file tool) or "cwd" (make tool)
+        path_param = value.get("source", value.get("cwd", ""))
+      # For file tool, also check "destination" (for copy/move operations)
+      if not path_param:
+        path_param = value.get("destination", "")
+      return path_param if isinstance(path_param, str) else None
+    if isinstance(value, str):
+      return value
+    return None
+
   def _resolve_path(self, path_str: str) -> Path | None:
     """Resolve a path string to an absolute real path.
 
-    Uses os.path.realpath() to collapse .. components and resolve symlinks.
-    Returns None if the path cannot be resolved.
-
-    Args:
-      path_str: The raw path string from tool parameters.
-
-    Returns:
-      Absolute resolved Path, or None on resolution failure.
+    Uses ``os.path.realpath()`` to collapse ``..`` components and resolve
+    symlinks. Returns None if the path cannot be resolved.
     """
     try:
       real = os.path.realpath(path_str)
@@ -231,14 +284,7 @@ class PathGuardrail(Guardrail):
       return None
 
   def _is_within_allowed_paths(self, resolved: Path) -> bool:
-    """Check if a resolved path is within allowed filesystem roots.
-
-    Args:
-      resolved: The resolved absolute path to check.
-
-    Returns:
-      True if the path is equal to or under an allowed root.
-    """
+    """Check if a resolved path is within allowed filesystem roots."""
     for root in self._allowed_roots:
       try:
         resolved.relative_to(root)
@@ -247,28 +293,10 @@ class PathGuardrail(Guardrail):
         continue
     return False
 
-  def _check_blocked_patterns(self, resolved: Path) -> str | None:
-    """Check if a path matches any blocked pattern.
+  def _relative_to_root(self, resolved: Path) -> str:
+    """Return the relative path (POSIX-style) from the containing allowed root.
 
-    Args:
-      resolved: The resolved absolute path to check.
-
-    Returns:
-      Error message if blocked, None if allowed.
-    """
-    path_str = str(resolved)
-    for pattern in self._blocked_patterns:
-      if pattern.search(path_str):
-        return f"Path matches blocked pattern: {pattern.pattern}"
-    return None
-
-  def _relative_for_protected(self, resolved: Path) -> str:
-    """Return the relative path from the containing allowed root.
-
-    Falls back to the basename when the path is not under any allowed root
-    (defensive — ``_is_within_allowed_paths`` already filters this upstream).
-    POSIX-style separators are used so glob patterns like ``.git/hooks/*``
-    match consistently across platforms.
+    Falls back to the basename when the path is not under any allowed root.
     """
     for root in self._allowed_roots:
       try:
@@ -277,235 +305,172 @@ class PathGuardrail(Guardrail):
         continue
     return resolved.name
 
-  def _check_protected_files(self, resolved: Path) -> str | None:
-    """Check if a resolved path matches a protected_files glob pattern.
+  def _check_blocked_paths(self, resolved: Path) -> str | None:
+    """Check if a path matches any blocked_paths glob pattern.
 
-    Matching strategy (per the owner's accepted T12 design):
-      - ``fnmatch.fnmatchcase`` against each entry in ``protected_files``.
-      - Matched against the relative path from the project root (the allowed
-        root) AND the basename (so ``Makefile`` matches at any depth, not
-        just root).
+    Patterns are matched against the relative path from the containing
+    allowed root AND the absolute path. This supports both root-relative
+    patterns (e.g. ``local``, ``.git``) and absolute/parent-relative
+    patterns (e.g. ``../yoker-test``, ``/etc/secrets``).
 
-    A ``protected_files = ()`` (empty tuple) disables all protections
-    (explicit opt-out).
-
-    Args:
-      resolved: The resolved absolute path to check.
-
-    Returns:
-      Error message if protected, None if allowed.
+    Case-insensitive. Matching a directory blocks it and everything beneath
+    — so ``local`` blocks both ``local`` and ``local/hard.md``. This is
+    achieved by checking the full path AND every ancestor (prefix) against
+    each pattern.
     """
-    patterns = self._permissions.protected_files
-    if not patterns:
-      return None
-
-    relative = self._relative_for_protected(resolved)
-    basename = resolved.name
-    for pattern in patterns:
-      if fnmatch.fnmatchcase(relative, pattern) or fnmatch.fnmatchcase(basename, pattern):
-        return f"File is protected against agent writes: {relative}"
+    result = self._match_patterns_with_ancestors(
+      resolved, self._blocked_path_patterns, "Path matches blocked pattern"
+    )
+    if result is not None:
+      return result
+    # Check resolved absolute patterns
+    for blocked_root in self._blocked_path_resolved:
+      if resolved == blocked_root or blocked_root in resolved.parents:
+        return f"Path matches blocked pattern: {self._relative_to_root(resolved)}"
     return None
 
-  def is_protected(self, path_str: str) -> bool:
-    """Return True if ``path_str`` resolves to a protected file.
+  def _match_patterns_with_ancestors(
+    self, resolved: Path, patterns: list[re.Pattern[str]], label: str
+  ) -> str | None:
+    """Match patterns against multiple path representations and ancestors.
 
-    Public entry point for the processing loop's interactive approval hook
-    (which needs to know whether to invoke the approval handler without
-    going through ``validate``). Performs the same fnmatch matching as
-    :meth:`_check_protected_files` but returns a bool.
+    Checks two representations of the path:
+    1. Relative path from the containing allowed root (e.g. ``local/hard.md``)
+    2. Absolute resolved path (e.g. ``/home/user/proj/local/hard.md``)
 
-    Args:
-      path_str: Raw path string from tool parameters.
+    For each representation, checks the full path AND every ancestor
+    directory prefix, so that matching a directory blocks everything
+    beneath it.
 
-    Returns:
-      True if the path matches a ``protected_files`` entry, False otherwise.
+    Glob patterns follow standard semantics:
+    - ``local`` matches only at root level
+    - ``**/local`` matches at any depth
+    - ``local/**`` matches everything under local/
+    """
+    candidates: list[str] = []
+    relative = self._relative_to_root(resolved)
+    if relative:
+      candidates.append(relative)
+    candidates.append(str(resolved))
+
+    for candidate in candidates:
+      parts = candidate.split("/")
+      for i in range(len(parts), 0, -1):
+        ancestor = "/".join(parts[:i])
+        for pattern in patterns:
+          if pattern.match(ancestor):
+            return f"{label}: {relative}"
+    return None
+
+
+class WritePathGuardrail(ReadPathGuardrail):
+  """Guardrail for write-mode filesystem path validation.
+
+  Subclasses ``ReadPathGuardrail`` and adds layer 3:
+    3. Path must not match ``blocked_write_paths`` (SOFT — user can approve
+       interactively; HARD in batch mode).
+
+  The ``skip_blocks`` flag (set by the interactive approval flow) skips
+  the ``blocked_write_paths`` check for this call.
+  """
+
+  def __init__(self, config: Config) -> None:
+    super().__init__(config)
+    self._blocked_write_path_patterns: list[re.Pattern[str]] = [
+      _glob_to_regex(p) for p in self._permissions.blocked_write_paths
+    ]
+    # Also pre-resolve patterns that look like relative paths (contain / or ..)
+    # to absolute paths, so they can be matched against absolute file paths.
+    # Resolve relative to each allowed root, not cwd
+    self._blocked_write_path_resolved: list[Path] = []
+    for p in self._permissions.blocked_write_paths:
+      if "/" in p or p.startswith("..") or p.startswith("~"):
+        # Resolve relative to each allowed root
+        for root in self._allowed_roots:
+          try:
+            resolved_pattern = (root / p).expanduser().resolve()
+            self._blocked_write_path_resolved.append(resolved_pattern)
+          except (OSError, ValueError):
+            pass
+        # Also try resolving from cwd for absolute or ~ patterns (not ..)
+        if not p.startswith(".."):
+          try:
+            resolved_pattern = Path(p).expanduser().resolve()
+            self._blocked_write_path_resolved.append(resolved_pattern)
+          except (OSError, ValueError):
+            pass
+
+  def validate(
+    self, tool_name: str, value: str | dict[str, Any], *, skip_blocks: bool = False
+  ) -> ValidationResult:
+    """Validate a write-mode filesystem path parameter.
+
+    Runs layers 1–2 from the read guardrail, then layer 3 (blocked_write_paths)
+    unless ``skip_blocks`` is True.
+    """
+    path_param = self._extract_path(value)
+    if path_param is None:
+      return ValidationResult(valid=False, reason="Missing required parameter: path")
+
+    if not path_param.strip():
+      return ValidationResult(valid=False, reason="Path cannot be empty")
+
+    # plugin:// URLs don't make sense for write operations
+    if path_param.startswith(_PLUGIN_PREFIX):
+      return ValidationResult(
+        valid=False, reason=f"Plugin URLs not supported for write operations: {path_param}"
+      )
+
+    resolved = self._resolve_path(path_param)
+    if resolved is None:
+      return ValidationResult(valid=False, reason=f"Invalid or inaccessible path: {path_param}")
+
+    # Layer 1: filesystem_paths (HARD)
+    if not self._is_within_allowed_paths(resolved):
+      return ValidationResult(valid=False, reason=f"Path outside allowed directories: {path_param}")
+
+    # Layer 2: blocked_paths (HARD)
+    blocked_reason = self._check_blocked_paths(resolved)
+    if blocked_reason:
+      return ValidationResult(valid=False, reason=blocked_reason)
+
+    # Layer 3: blocked_write_paths (SOFT — skipped when skip_blocks=True)
+    if not skip_blocks:
+      write_blocked_reason = self._check_blocked_write_paths(resolved)
+      if write_blocked_reason:
+        return ValidationResult(valid=False, reason=write_blocked_reason)
+
+    if self._config.logging.include_permission_checks:
+      logger.info("guardrail_allowed", tool=tool_name, path=str(resolved))
+
+    return ValidationResult(valid=True)
+
+  def _check_blocked_write_paths(self, resolved: Path) -> str | None:
+    """Check if a path matches any blocked_write_paths glob pattern.
+
+    Uses the same ancestor-prefix and dual-path matching as
+    ``_check_blocked_paths``. Additionally checks resolved absolute patterns
+    (patterns containing ``/`` or starting with ``.`` are resolved to
+    absolute paths and matched against the resolved file path).
+    """
+    result = self._match_patterns_with_ancestors(
+      resolved, self._blocked_write_path_patterns, "File is write-protected"
+    )
+    if result is not None:
+      return result
+    # Check resolved absolute patterns (e.g. "../yoker-test" → "/abs/path")
+    for blocked_root in self._blocked_write_path_resolved:
+      if resolved == blocked_root or blocked_root in resolved.parents:
+        return f"File is write-protected: {self._relative_to_root(resolved)}"
+    return None
+
+  def is_write_blocked(self, path_str: str) -> bool:
+    """Return True if ``path_str`` resolves to a write-protected file.
+
+    Public entry point for the processing loop's interactive approval hook.
+    Checks only ``blocked_write_paths`` — assumes layers 1–2 already passed.
     """
     resolved = self._resolve_path(path_str)
     if resolved is None:
       return False
-    return self._check_protected_files(resolved) is not None
-
-  def _check_read_extension(self, resolved: Path) -> str | None:
-    """Check if a file extension or name is allowed for reading.
-
-    The ``allowed_extensions`` list supports two kinds of entries:
-
-    - **Extension entries** starting with ``.`` (e.g. ``".py"``, ``".md"``):
-      matched against the file's suffix.
-    - **Filename entries** without a leading dot (e.g. ``"Makefile"``,
-      ``"Dockerfile"``, ``"LICENSE"``): matched against the file's name.
-
-    This allows users to include extensionless files in the allowlist
-    alongside traditional extension entries. An empty list (default)
-    means all files are allowed — the ``blocked_patterns`` denylist is
-    the sole filter.
-
-    Args:
-      resolved: The resolved file path.
-
-    Returns:
-      Error message if extension/name not allowed, None if allowed.
-    """
-    read_config = self._get_tool_config("read")
-    if not isinstance(read_config, ReadToolConfig):
-      return None
-
-    allowed = read_config.allowed_extensions
-    if not allowed:
-      return None
-
-    name = resolved.name
-    ext = resolved.suffix.lower()
-
-    for entry in allowed:
-      if entry.startswith("."):
-        if ext == entry.lower():
-          return None
-      else:
-        if name.lower() == entry.lower():
-          return None
-
-    return f"Extension not allowed: {ext or '(none)'} (allowed: {', '.join(allowed)})"
-
-  def _check_file_size(self, resolved: Path) -> str | None:
-    """Check if a file exceeds the maximum allowed size.
-
-    Args:
-      resolved: The resolved file path.
-
-    Returns:
-      Error message if file too large, None if within limits.
-    """
-    max_size_kb = self._permissions.max_file_size_kb
-    if max_size_kb <= 0:
-      return None
-
-    try:
-      size_bytes = resolved.stat().st_size
-    except OSError:
-      return None
-
-    size_kb = size_bytes / 1024
-    if size_kb > max_size_kb:
-      return f"File exceeds size limit: {size_kb:.1f}KB > {max_size_kb}KB"
-    return None
-
-  def _check_write_extension(self, resolved: Path) -> str | None:
-    """Check if a file extension is blocked for writing.
-
-    Args:
-      resolved: The resolved file path.
-
-    Returns:
-      Error message if extension is blocked, None if allowed.
-    """
-    write_config = self._get_tool_config("write")
-    if not isinstance(write_config, WriteToolConfig):
-      return None
-
-    blocked = write_config.blocked_extensions
-    if not blocked:
-      return None
-
-    ext = resolved.suffix.lower()
-    if ext in blocked:
-      return f"Extension blocked for writing: {ext}"
-    return None
-
-  def _check_write_content_size(self, params: dict[str, Any]) -> str | None:
-    """Check if write content exceeds the maximum allowed size.
-
-    Args:
-      params: Tool parameters dictionary containing 'content' key.
-
-    Returns:
-      Error message if content too large, None if within limits.
-    """
-    write_config = self._get_tool_config("write")
-    if not isinstance(write_config, WriteToolConfig):
-      return None
-
-    max_size_kb = write_config.max_size_kb
-    if max_size_kb <= 0:
-      return None
-
-    content = params.get("content", "")
-    if not isinstance(content, str):
-      return None
-
-    size_kb = len(content.encode("utf-8")) / 1024
-    if size_kb > max_size_kb:
-      return f"Content exceeds size limit: {size_kb:.1f}KB > {max_size_kb}KB"
-    return None
-
-  def _check_update_diff_size(self, params: dict[str, Any]) -> str | None:
-    """Check if update diff size exceeds the maximum allowed.
-
-    Args:
-      params: Tool parameters dictionary with old_string and new_string.
-
-    Returns:
-      Error message if diff too large, None if within limits.
-    """
-    update_config = self._get_tool_config("update")
-    if not isinstance(update_config, UpdateToolConfig):
-      return None
-
-    max_size_kb = update_config.max_diff_size_kb
-    if max_size_kb <= 0:
-      return None
-
-    new_string = params.get("new_string", "")
-    if not isinstance(new_string, str):
-      return None
-
-    size_kb = len(new_string.encode("utf-8")) / 1024
-    if size_kb > max_size_kb:
-      return f"Diff size exceeds limit: {size_kb:.1f}KB > {max_size_kb}KB"
-    return None
-
-  def _get_tool_config(self, tool_name: str) -> ToolConfig | None:
-    """Get tool-specific configuration by name.
-
-    Args:
-      tool_name: Simple name of the tool (e.g. ``"write"``, ``"file"``).
-
-    Returns:
-      ToolConfig subclass instance, or None if not found.
-    """
-    try:
-      return self._config.tools[tool_name]
-    except (AttributeError, KeyError):
-      return None
-
-  def _check_mkdir_depth(self, resolved: Path) -> str | None:
-    """Check if path depth exceeds maximum allowed from allowed root.
-
-    Args:
-      resolved: The resolved absolute path to check.
-
-    Returns:
-      Error message if depth exceeds limit, None if within limits.
-    """
-    mkdir_config = self._get_tool_config("mkdir")
-    if not isinstance(mkdir_config, MkdirToolConfig):
-      return None
-
-    max_depth = mkdir_config.max_depth
-    if max_depth <= 0:
-      return None
-
-    # Find the allowed root that contains this path
-    for root in self._allowed_roots:
-      try:
-        relative = resolved.relative_to(root)
-        # Count path components (depth from root)
-        depth = len(relative.parts)
-        if depth >= max_depth:
-          return f"Path depth exceeds limit: {depth} >= {max_depth}"
-        return None
-      except ValueError:
-        continue
-
-    # Path is not under any allowed root (shouldn't happen if _is_within_allowed_paths passed)
-    return None
+    return self._check_blocked_write_paths(resolved) is not None

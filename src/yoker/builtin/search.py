@@ -3,6 +3,10 @@
 Provides the ``search`` async function for searching files and their contents.
 Guardrails are enforced centrally by the harness based on the schema's
 ``path`` annotation.
+
+The ``blocked_path_patterns`` from ``ToolContext`` are checked internally
+for every file traversed, preventing bypass via search reading content
+of files that would be blocked by the guardrail.
 """
 
 import builtins
@@ -17,9 +21,9 @@ from typing import Annotated, Any
 from structlog import get_logger
 
 from yoker.config import SearchToolConfig
-from yoker.tools.annotations import Path as PathArg
-from yoker.tools.annotations import Text
+from yoker.tools.annotations import ReadPath, Text
 from yoker.tools.context import ToolContext
+from yoker.tools.guardrails.path import is_path_blocked
 from yoker.tools.ignore import IgnoreMatcher
 from yoker.tools.schema import ToolResult
 
@@ -59,7 +63,7 @@ _FALLBACK_SKIP_DIRS: frozenset[str] = frozenset(
 async def search(
   path: Annotated[
     str,
-    PathArg(
+    ReadPath(
       "Directory or file to search in. Can be a directory (recursively searches all files) "
       "or a single file path (searches just that file)."
     ),
@@ -203,6 +207,9 @@ async def search(
   except (PermissionError, OSError):
     matcher = None
 
+  # Get blocked_path patterns for internal enforcement
+  blocked_patterns = ctx.blocked_path_patterns if ctx else []
+
   try:
     if search_type == "content":
       matches, total, truncated, files_searched, counts = _search_content(
@@ -217,6 +224,7 @@ async def search(
         exclude_pattern=exclude_pattern,
         count_only=effective_count_only,
         matcher=matcher,
+        blocked_patterns=blocked_patterns,
       )
       if effective_count_only:
         result = {
@@ -243,6 +251,7 @@ async def search(
         include_pattern=include_pattern,
         exclude_pattern=exclude_pattern,
         matcher=matcher,
+        blocked_patterns=blocked_patterns,
       )
       result = {
         "success": True,
@@ -307,15 +316,21 @@ def _walk_files(
   include_pattern: str = "",
   exclude_pattern: str = "",
   matcher: IgnoreMatcher | None = None,
+  blocked_patterns: list[Any] | None = None,
 ) -> Iterator[Path]:
   """Walk directory tree, yielding files, applying optional glob filters on filename.
 
   If ``root`` is a file (not a directory), yields just that file (ignoring
   include/exclude patterns, since the caller explicitly chose this file).
   When ``matcher`` is provided, directories and files matching ignore
-  patterns are pruned.
+  patterns are pruned. When ``blocked_patterns`` is provided, files
+  matching blocked_path glob patterns are skipped (internal enforcement of
+  the universal denylist).
   """
   if root.is_file():
+    # Even single files must pass the blocked check
+    if blocked_patterns and is_path_blocked(root, root.parent, blocked_patterns):
+      return
     yield root
     return
 
@@ -331,6 +346,12 @@ def _walk_files(
     else:
       dirnames[:] = [d for d in dirnames if not d.startswith(".") and d not in _FALLBACK_SKIP_DIRS]
 
+    # Also prune blocked directories
+    if blocked_patterns:
+      dirnames[:] = [
+        d for d in dirnames if not is_path_blocked(Path(dirpath) / d, root, blocked_patterns)
+      ]
+
     for filename in filenames:
       if matcher is not None:
         file_path = Path(dirpath) / filename
@@ -344,6 +365,9 @@ def _walk_files(
       if exclude_pattern and fnmatch.fnmatchcase(filename, exclude_pattern):
         continue
       file_path = Path(dirpath) / filename
+      # Internal enforcement of blocked_paths
+      if blocked_patterns and is_path_blocked(file_path, root, blocked_patterns):
+        continue
       yield file_path
 
 
@@ -371,6 +395,7 @@ def _search_content(
   exclude_pattern: str = "",
   count_only: bool = False,
   matcher: IgnoreMatcher | None = None,
+  blocked_patterns: list[Any] | None = None,
 ) -> tuple[list[dict[str, Any]], int, bool, int, dict[str, int]]:
   """Search file contents using regex."""
   matches: list[dict[str, Any]] = []
@@ -386,7 +411,9 @@ def _search_content(
   timeout_seconds = timeout_ms / 1000.0
   collect_context = (context_before > 0 or context_after > 0) and not count_only
 
-  for file_path in _walk_files(root, include_pattern, exclude_pattern, matcher=matcher):
+  for file_path in _walk_files(
+    root, include_pattern, exclude_pattern, matcher=matcher, blocked_patterns=blocked_patterns
+  ):
     if time.monotonic() - start_time > timeout_seconds:
       truncated = True
       break
@@ -441,6 +468,7 @@ def _search_filename(
   include_pattern: str = "",
   exclude_pattern: str = "",
   matcher: IgnoreMatcher | None = None,
+  blocked_patterns: list[Any] | None = None,
 ) -> tuple[list[dict[str, Any]], int, bool]:
   """Search file names using glob pattern."""
   matches: list[dict[str, Any]] = []
@@ -449,7 +477,9 @@ def _search_filename(
 
   pattern_lower = pattern.lower() if case_insensitive else None
 
-  for file_path in _walk_files(root, include_pattern, exclude_pattern, matcher=matcher):
+  for file_path in _walk_files(
+    root, include_pattern, exclude_pattern, matcher=matcher, blocked_patterns=blocked_patterns
+  ):
     name = file_path.name
     if pattern_lower is not None:
       matched = fnmatch.fnmatch(name.lower(), pattern_lower)

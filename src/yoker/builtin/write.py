@@ -11,9 +11,9 @@ from typing import TYPE_CHECKING, Annotated, Any
 
 from structlog import get_logger
 
+from yoker.builtin._validators import validate_write_content_size
 from yoker.config import WriteToolConfig
-from yoker.tools.annotations import Path as PathArg
-from yoker.tools.annotations import Text
+from yoker.tools.annotations import Text, WritePath
 from yoker.tools.context import ToolContext
 from yoker.tools.schema import ToolResult
 
@@ -56,7 +56,7 @@ def _truncate_content(
 
 
 async def write(
-  path: Annotated[str, PathArg("Path to the file to write")],
+  path: Annotated[str, WritePath("Path to the file to write")],
   content: Annotated[str, Text("Content to write to the file")],
   ctx: ToolContext,
   create_parents: bool = False,
@@ -215,6 +215,9 @@ def _build_content_metadata(
     "content": content,
     "metadata": metadata,
   }
+
+
+write.__yoker_validators__ = [validate_write_content_size]  # type: ignore[attr-defined]
 
 
 __all__ = ["write"]

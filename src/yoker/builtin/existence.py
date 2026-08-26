@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Annotated
 
 from structlog import get_logger
 
-from yoker.tools.annotations import Path as PathArg
+from yoker.tools.annotations import ReadPath
 from yoker.tools.context import ToolContext
 from yoker.tools.schema import ToolResult
 
@@ -22,7 +22,7 @@ logger = get_logger(__name__)
 
 
 async def existence(
-  path: Annotated[str, PathArg("Path to check for existence")],
+  path: Annotated[str, ReadPath("Path to check for existence")],
   ctx: ToolContext,
 ) -> ToolResult:
   """Check if a file or folder exists at the given path.

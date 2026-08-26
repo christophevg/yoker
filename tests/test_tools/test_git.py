@@ -25,7 +25,7 @@ from yoker.config import (
 )
 from yoker.tools import ToolRegistry
 from yoker.tools.context import ToolContext
-from yoker.tools.guardrails.path import PathGuardrail
+from yoker.tools.guardrails.path import WritePathGuardrail
 
 # Import the actual module (not the function exported in __init__.py)
 git_module = sys.modules["yoker.builtin.git"]
@@ -1778,7 +1778,7 @@ class TestGitToolPathRestrictions:
     Then: Guardrail blocks the resolved path as outside allowed directories
     """
     config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
-    guardrail = PathGuardrail(config)
+    guardrail = WritePathGuardrail(config)
     git_config = GitToolConfig()
     spec = _git_spec(config=git_config)
 
@@ -1849,7 +1849,7 @@ class TestGitToolPathRestrictions:
     Then: Guardrail reports path outside allowed directories
     """
     config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
-    guardrail = PathGuardrail(config)
+    guardrail = WritePathGuardrail(config)
     git_config = GitToolConfig()
     spec = _git_spec(config=git_config)
 
@@ -2231,7 +2231,7 @@ class TestGitToolArgumentValidation:
 
 
 class TestGitToolGuardrailIntegration:
-  """Tests for guardrail integration with PathGuardrail."""
+  """Tests for guardrail integration with WritePathGuardrail."""
 
   @pytest.fixture
   def git_repo(self, tmp_path: Path) -> Path:
@@ -2249,7 +2249,7 @@ class TestGitToolGuardrailIntegration:
     Then: Guardrail reports path outside allowed directories
     """
     config = Config(permissions=PermissionsConfig(filesystem_paths=("/tmp/allowed",)))
-    guardrail = PathGuardrail(config)
+    guardrail = WritePathGuardrail(config)
     git_config = GitToolConfig()
     spec = _git_spec(config=git_config)
 
@@ -2266,7 +2266,7 @@ class TestGitToolGuardrailIntegration:
     Then: Operation succeeds
     """
     config = Config(permissions=PermissionsConfig(filesystem_paths=(str(git_repo),)))
-    guardrail = PathGuardrail(config)
+    guardrail = WritePathGuardrail(config)
     git_config = GitToolConfig()
     spec = _git_spec(config=git_config)
     ctx = _git_context(config=git_config)

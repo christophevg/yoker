@@ -19,9 +19,9 @@ class Guardrail(ABC):
   guardrail implementations (e.g., path restrictions for filesystem tools).
 
   Example:
-    class PathGuardrail(Guardrail):
-      def validate(self, tool_name: str, params: dict[str, Any]) -> ValidationResult:
-        path = params.get("path", "")
+    class MyGuardrail(Guardrail):
+      def validate(self, tool_name: str, value: str | dict[str, Any], *, skip_blocks: bool = False) -> ValidationResult:
+        path = value if isinstance(value, str) else value.get("path", "")
         if not path.startswith("/allowed"):
           return ValidationResult(valid=False, reason="Path not allowed")
         return ValidationResult(valid=True)
@@ -29,14 +29,14 @@ class Guardrail(ABC):
 
   @abstractmethod
   def validate(
-    self, tool_name: str, value: str | dict[str, Any], *, skip_protected: bool = False
+    self, tool_name: str, value: str | dict[str, Any], *, skip_blocks: bool = False
   ) -> ValidationResult:
     """Validate tool parameters.
 
     Args:
       tool_name: Name of the tool being validated.
       value: Either the extracted parameter value or the full params dict.
-      skip_protected: When True, skip the protected_files check (user
+      skip_blocks: When True, skip the soft-blocked check (user
         approved interactively). The guardrail is responsible for honoring
         this flag.
 

@@ -34,7 +34,7 @@ from yoker.plugins import load_plugins, warn_plugins_disabled
 from yoker.skills import SkillRegistry, load_skills
 from yoker.tools import ToolRegistry
 from yoker.tools.guardrails import Guardrail
-from yoker.tools.guardrails.path import PathGuardrail
+from yoker.tools.guardrails.path import ReadPathGuardrail, WritePathGuardrail
 
 if TYPE_CHECKING:
   from yoker.session import Session
@@ -152,7 +152,8 @@ class Agent:
     # prepare guardrails
     query_guardrail, url_guardrail = create_web_guardrails(self.config)
     self._guardrails: dict[str, Guardrail | None] = {
-      "path": PathGuardrail(self.config),
+      "path_read": ReadPathGuardrail(self.config),
+      "path_write": WritePathGuardrail(self.config),
       "query": query_guardrail,
       "url": url_guardrail,
     }
@@ -185,11 +186,11 @@ class Agent:
 
     # Protected-file / git-operation approval handler (MBI-009 T12). Optional
     # async callable wired by the CLI in interactive mode. When set, the
-    # processing loop invokes it before write/update on a protected file
+    # processing loop invokes it before write/update on a write-blocked file
     # (with kind="file") and the git tool invokes it for non-auto-permissioned
-    # operations (with kind="git"). The PathGuardrail simple block is skipped
+    # operations (with kind="git"). The WritePathGuardrail soft block is skipped
     # (interactive approval flow). When None (non-interactive / library use),
-    # the simple block fires for protected files and the git tool blocks.
+    # the soft block fires for write-blocked files and the git tool blocks.
     # Typed as a narrow callable so the Agent stays UI-agnostic.
     self._approval_handler: Callable[[str, str, str], Awaitable[bool]] | None = None
 
@@ -305,16 +306,16 @@ class Agent:
       del registry.data[key]
 
   @property
-  def guardrail(self) -> PathGuardrail:
-    """Return the path guardrail for file system operations.
+  def guardrail(self) -> ReadPathGuardrail:
+    """Return the read path guardrail for file system operations.
 
     Returns:
-        PathGuardrail: The guardrail instance for path validation.
+        ReadPathGuardrail: The guardrail instance for path validation.
     """
-    guardrail = self._guardrails.get("path")
+    guardrail = self._guardrails.get("path_read")
     if guardrail is None:
       raise RuntimeError("Path guardrail not initialized")
-    # Type narrow: we know path is always PathGuardrail
+    # Type narrow: we know path_read is always ReadPathGuardrail
     return guardrail  # type: ignore
 
   async def process(self, message: str) -> str:

@@ -16,12 +16,11 @@ from yoker.config import (
   Config,
   MkdirToolConfig,
   PermissionsConfig,
-  ReadToolConfig,
   ToolsConfig,
 )
 from yoker.tools import ToolRegistry
 from yoker.tools.context import ToolContext
-from yoker.tools.guardrails.path import PathGuardrail
+from yoker.tools.guardrails.path import WritePathGuardrail
 
 
 def _mkdir_spec():
@@ -343,7 +342,7 @@ class TestMkdirToolPathTraversal:
     """
     # Create config with restricted filesystem_paths
     config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
-    guardrail = PathGuardrail(config)
+    guardrail = WritePathGuardrail(config)
     spec = _mkdir_spec()
     _mkdir_context()
 
@@ -403,23 +402,22 @@ class TestMkdirToolBlockedPatterns:
 
   @pytest.fixture
   def config_with_blocked_patterns(self) -> Config:
-    """Create a config with blocked patterns."""
+    """Create a config with blocked paths."""
     return Config(
-      tools=ToolsConfig(
-        read=ReadToolConfig(
-          blocked_patterns=(r"\.git", r"\.ssh", r"\.aws", r"\.env", "credentials", "secrets")
-        )
+      permissions=PermissionsConfig(
+        filesystem_paths=(".",),
+        blocked_paths=(".git", ".ssh", ".aws", ".env", "credentials", "secrets"),
       )
     )
 
   @pytest.fixture
   def guardrail_with_blocked_patterns(
     self, config_with_blocked_patterns: Config, tmp_path: Path
-  ) -> PathGuardrail:
-    """Create a guardrail with blocked patterns."""
+  ) -> WritePathGuardrail:
+    """Create a guardrail with blocked paths."""
     config = config_with_blocked_patterns
     config.permissions.filesystem_paths = (str(tmp_path),)
-    return PathGuardrail(config)
+    return WritePathGuardrail(config)
 
   @pytest.mark.asyncio
   async def test_blocked_pattern_git_directory(self, tmp_path: Path) -> None:
@@ -429,10 +427,12 @@ class TestMkdirToolBlockedPatterns:
     Then: Guardrail reports a blocked pattern
     """
     config = Config(
-      permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)),
-      tools=ToolsConfig(read=ReadToolConfig(blocked_patterns=(r"\.git",))),
+      permissions=PermissionsConfig(
+        filesystem_paths=(str(tmp_path),),
+        blocked_paths=(".git",),
+      ),
     )
-    guardrail = PathGuardrail(config)
+    guardrail = WritePathGuardrail(config)
     spec = _mkdir_spec()
     _mkdir_context()
 
@@ -449,10 +449,12 @@ class TestMkdirToolBlockedPatterns:
     Then: Guardrail reports a blocked pattern
     """
     config = Config(
-      permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)),
-      tools=ToolsConfig(read=ReadToolConfig(blocked_patterns=(r"\.ssh",))),
+      permissions=PermissionsConfig(
+        filesystem_paths=(str(tmp_path),),
+        blocked_paths=(".ssh",),
+      ),
     )
-    guardrail = PathGuardrail(config)
+    guardrail = WritePathGuardrail(config)
     spec = _mkdir_spec()
     _mkdir_context()
 
@@ -469,10 +471,12 @@ class TestMkdirToolBlockedPatterns:
     Then: Guardrail reports a blocked pattern
     """
     config = Config(
-      permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)),
-      tools=ToolsConfig(read=ReadToolConfig(blocked_patterns=(r"\.aws",))),
+      permissions=PermissionsConfig(
+        filesystem_paths=(str(tmp_path),),
+        blocked_paths=(".aws",),
+      ),
     )
-    guardrail = PathGuardrail(config)
+    guardrail = WritePathGuardrail(config)
     spec = _mkdir_spec()
     _mkdir_context()
 
@@ -489,10 +493,12 @@ class TestMkdirToolBlockedPatterns:
     Then: Guardrail reports a blocked pattern
     """
     config = Config(
-      permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)),
-      tools=ToolsConfig(read=ReadToolConfig(blocked_patterns=(r"\.env", "credentials"))),
+      permissions=PermissionsConfig(
+        filesystem_paths=(str(tmp_path),),
+        blocked_paths=(".env", "credentials"),
+      ),
     )
-    guardrail = PathGuardrail(config)
+    guardrail = WritePathGuardrail(config)
     spec = _mkdir_spec()
     _mkdir_context()
 
@@ -503,7 +509,12 @@ class TestMkdirToolBlockedPatterns:
 
 
 class TestMkdirToolDepthLimit:
-  """Tests for maximum depth limit enforcement."""
+  """Tests for maximum depth limit enforcement.
+
+  Note: depth checks are no longer in the guardrail. The guardrail only
+  checks filesystem_paths, blocked_paths, and blocked_write_paths. The
+  mkdir tool itself enforces depth limits.
+  """
 
   @pytest.mark.asyncio
   async def test_depth_within_limit(self, tmp_path: Path) -> None:
@@ -525,56 +536,6 @@ class TestMkdirToolDepthLimit:
     assert path.is_dir()
 
   @pytest.mark.asyncio
-  async def test_depth_exceeds_limit_with_guardrail(self, tmp_path: Path) -> None:
-    """
-    Given: A guardrail with max_depth=5
-    When: Validating a deeply nested path (e.g., 10 levels)
-    Then: Guardrail reports depth limit exceeded
-    """
-    config = Config(
-      permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)),
-      tools=ToolsConfig(mkdir=MkdirToolConfig(max_depth=5)),
-    )
-    guardrail = PathGuardrail(config)
-    spec = _mkdir_spec()
-    _mkdir_context()
-
-    # Create path exceeding depth limit (10 levels deep)
-    path = tmp_path
-    for i in range(10):
-      path = path / f"level{i}"
-
-    validation = guardrail.validate(spec.name, {"path": str(path)})
-
-    assert not validation.valid
-    assert "depth" in validation.reason.lower()
-    assert "exceeds" in validation.reason.lower()
-
-  @pytest.mark.asyncio
-  async def test_depth_at_limit_with_guardrail(self, tmp_path: Path) -> None:
-    """
-    Given: A guardrail with max_depth=5
-    When: Validating a path exactly at the depth limit
-    Then: Guardrail rejects it (depth at limit exceeds it)
-    """
-    config = Config(
-      permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)),
-      tools=ToolsConfig(mkdir=MkdirToolConfig(max_depth=5)),
-    )
-    guardrail = PathGuardrail(config)
-    spec = _mkdir_spec()
-    _mkdir_context()
-
-    # Create path exactly at depth limit (5 levels)
-    path = tmp_path / "a" / "b" / "c" / "d" / "e"
-
-    validation = guardrail.validate(spec.name, {"path": str(path)})
-
-    assert not validation.valid
-    assert "depth" in validation.reason.lower()
-    assert "exceeds" in validation.reason.lower()
-
-  @pytest.mark.asyncio
   async def test_depth_below_limit_with_guardrail(self, tmp_path: Path) -> None:
     """
     Given: A guardrail with max_depth=5
@@ -585,7 +546,7 @@ class TestMkdirToolDepthLimit:
       permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)),
       tools=ToolsConfig(mkdir=MkdirToolConfig(max_depth=5)),
     )
-    guardrail = PathGuardrail(config)
+    guardrail = WritePathGuardrail(config)
     spec = _mkdir_spec()
     ctx = _mkdir_context()
 
@@ -607,7 +568,7 @@ class TestMkdirToolDepthLimit:
     Then: Guardrail allows the path and directories are created
     """
     config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
-    guardrail = PathGuardrail(config)
+    guardrail = WritePathGuardrail(config)
     spec = _mkdir_spec()
     ctx = _mkdir_context()
 
@@ -716,7 +677,7 @@ class TestMkdirToolWithGuardrail:
     allowed_path = tmp_path / "allowed"
     allowed_path.mkdir()
     config = Config(permissions=PermissionsConfig(filesystem_paths=(str(allowed_path),)))
-    guardrail = PathGuardrail(config)
+    guardrail = WritePathGuardrail(config)
     spec = _mkdir_spec()
     _mkdir_context()
 
@@ -735,7 +696,7 @@ class TestMkdirToolWithGuardrail:
     Then: Directory is created successfully
     """
     config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
-    guardrail = PathGuardrail(config)
+    guardrail = WritePathGuardrail(config)
     spec = _mkdir_spec()
     ctx = _mkdir_context()
 
@@ -772,7 +733,7 @@ class TestMkdirToolWithGuardrail:
     Then: Guardrail reports path outside allowed directories
     """
     config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
-    guardrail = PathGuardrail(config)
+    guardrail = WritePathGuardrail(config)
     spec = _mkdir_spec()
     _mkdir_context()
 
@@ -791,7 +752,7 @@ class TestMkdirToolWithGuardrail:
     Then: Guardrail rejects the path before any filesystem operations
     """
     config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
-    guardrail = PathGuardrail(config)
+    guardrail = WritePathGuardrail(config)
     spec = _mkdir_spec()
     _mkdir_context()
 

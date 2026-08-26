@@ -15,7 +15,7 @@ from yoker.builtin import make
 from yoker.config import Config, MakeToolConfig, PermissionsConfig, ToolsSharedConfig
 from yoker.tools import ToolRegistry
 from yoker.tools.context import ToolContext
-from yoker.tools.guardrails.path import PathGuardrail
+from yoker.tools.guardrails.path import WritePathGuardrail
 
 make_module = sys.modules["yoker.builtin.make"]
 
@@ -76,7 +76,7 @@ class TestMakeToolSchema:
     assert spec.guards.get("cwd") is not None
     from yoker.tools.annotations import GuardType
 
-    assert spec.guards["cwd"] == GuardType.PATH
+    assert spec.guards["cwd"] == GuardType.PATH_WRITE
 
 
 class TestMakeToolTargetValidation:
@@ -170,10 +170,10 @@ class TestMakeToolTargetValidation:
 
 
 class TestMakeToolPathGuardrail:
-  """R1: PathGuardrail on cwd."""
+  """R1: WritePathGuardrail on cwd."""
 
   def test_make_path_guardrail_fires(self) -> None:
-    """make's cwd parameter has a Path annotation so PathGuardrail fires.
+    """make's cwd parameter has a WritePath annotation so WritePathGuardrail fires.
 
     The guardrail is invoked for any parameter annotated with ``Path``
     (via ``ToolSpec.guards``). There is no hardcoded tool-name list —
@@ -184,26 +184,26 @@ class TestMakeToolPathGuardrail:
 
     spec = build_tool_spec(make, namespace="yoker")
     assert "cwd" in spec.guards
-    assert spec.guards["cwd"].value == "path"
+    assert spec.guards["cwd"].value == "path_write"
 
   def test_guardrail_blocks_cwd_outside_allowed(self, tmp_path: Path) -> None:
     """cwd outside allowed paths is rejected (R1)."""
     config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
-    guardrail = PathGuardrail(config)
+    guardrail = WritePathGuardrail(config)
     validation = guardrail.validate("make", "/etc")
     assert not validation.valid
 
   def test_guardrail_blocks_traversal(self, tmp_path: Path) -> None:
     """cwd traversal rejected (R1)."""
     config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
-    guardrail = PathGuardrail(config)
+    guardrail = WritePathGuardrail(config)
     validation = guardrail.validate("make", "../../")
     assert not validation.valid
 
   def test_guardrail_allows_cwd_inside_allowed(self, tmp_path: Path) -> None:
     """cwd inside allowed paths passes."""
     config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
-    guardrail = PathGuardrail(config)
+    guardrail = WritePathGuardrail(config)
     validation = guardrail.validate("make", str(tmp_path))
     assert validation.valid
 

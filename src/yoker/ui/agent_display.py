@@ -18,7 +18,7 @@ class AgentDisplay:
     name: The agent's simple name from its definition (e.g. ``"researcher"``).
     color: Optional display color from the agent definition frontmatter.
       May be a hex color (``"#FF6B35"``) or a named color (``"blue"``).
-    model: The model the agent is using (e.g. ``"llama3.2:latest"``).
+    model: The model the agent is using (e.g. ``"qwen3:latest"``).
     description: Short description from the agent definition.
   """
 

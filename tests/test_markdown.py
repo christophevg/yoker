@@ -62,9 +62,7 @@ class TestFlushNewlinePreservation:
     assert "First paragraph line." in rendered
     assert "Second paragraph line without newline" in rendered
     for line in rendered.splitlines():
-      assert "line.Second" not in line, (
-        f"Expected lines separated, but got: {line!r}"
-      )
+      assert "line.Second" not in line, f"Expected lines separated, but got: {line!r}"
 
   def test_flush_only_accumulator_no_buffer(self):
     """Flush with only accumulator content (no buffered block)."""

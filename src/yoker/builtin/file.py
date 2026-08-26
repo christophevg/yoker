@@ -19,8 +19,7 @@ from typing import Annotated
 from structlog import get_logger
 
 from yoker.config import FileToolConfig
-from yoker.tools.annotations import Path as PathArg
-from yoker.tools.annotations import Text
+from yoker.tools.annotations import Text, WritePath
 from yoker.tools.context import ToolContext
 from yoker.tools.schema import ToolResult
 
@@ -38,11 +37,11 @@ async def file(
     str,
     Text("File operation to execute. One of: copy, move, delete."),
   ],
-  source: Annotated[str, PathArg("Path to the source file or directory")],
+  source: Annotated[str, WritePath("Path to the source file or directory")],
   ctx: ToolContext,
   destination: Annotated[
     str | None,
-    PathArg("Destination path (required for copy and move, not used for delete)"),
+    WritePath("Destination path (required for copy and move, not used for delete)"),
   ] = None,
   recursive: bool = False,
 ) -> ToolResult:

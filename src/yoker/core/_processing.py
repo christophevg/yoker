@@ -991,16 +991,16 @@ async def _run_tool(agent: Any, tool_name: str, tool_args: dict[str, Any]) -> tu
     logger.warning(f"available: {list(agent.tools.keys())}")
     return f"Error: Unknown tool '{tool_name}'", False, None
 
-  # Protected-file approval hook. When an approval handler is wired on the
+  # Write-blocked-path approval hook. When an approval handler is wired on the
   # agent (interactive mode), it runs BEFORE the guardrail. This gives the
-  # user a chance to approve a protected-file write interactively. On
-  # approval, the guardrail's protected_files check is skipped for this
+  # user a chance to approve a write-blocked-path write interactively. On
+  # approval, the guardrail's blocked_write_paths check is skipped for this
   # call. On denial, the guardrail blocks the operation. When no handler
-  # is wired (subagents, batch mode), the guardrail's protected_files
+  # is wired (subagents, batch mode), the guardrail's blocked_write_paths
   # check is the sole enforcement point — it always blocks.
-  skip_protected = await _maybe_approve_protected(agent, spec, tool_args)
+  skip_blocks = await _maybe_approve_write_blocked(agent, spec, tool_args)
 
-  validation = _validate_tool_args(agent, spec, tool_args, skip_protected=skip_protected)
+  validation = _validate_tool_args(agent, spec, tool_args, skip_blocks=skip_blocks)
   if not validation.valid:
     logger.warning("guardrail_blocked", tool=tool_name, reason=validation.reason)
     return f"Error: {validation.reason}", False, None
@@ -1019,23 +1019,26 @@ async def _run_tool(agent: Any, tool_name: str, tool_args: dict[str, Any]) -> tu
     return f"Error executing tool: {e}", False, None
 
 
-async def _maybe_approve_protected(agent: Any, spec: ToolSpec, tool_args: dict[str, Any]) -> bool:
-  """Run the interactive approval flow for protected-file operations.
+async def _maybe_approve_write_blocked(
+  agent: Any, spec: ToolSpec, tool_args: dict[str, Any]
+) -> bool:
+  """Run the interactive approval flow for write-blocked-path operations.
 
   Runs BEFORE the guardrail so that, when an approval handler is wired
-  (interactive mode), the user can approve a protected-file write. On
+  (interactive mode), the user can approve a write-blocked-path write. On
   approval, returns ``True`` so the caller skips the guardrail's
-  protected_files check for this call. On denial, logs the denial and
+  blocked_write_paths check for this call. On denial, logs the denial and
   returns ``False`` — the guardrail will then block the operation.
   When no handler is wired (subagents, batch mode), returns ``False``
   — the guardrail is the sole enforcement point.
 
-  Iterates over ``spec.guards`` to find all ``Path``-annotated parameters
-  (not just ``"path"``), so tools like ``file`` (with ``source`` and
-  ``destination``) and ``make`` (with ``cwd``) are covered.
+  Iterates over ``spec.guards`` to find all ``WritePath``-annotated
+  parameters, so tools like ``file`` (with ``source`` and ``destination``)
+  and ``make`` (with ``cwd``) are covered. Any tool declaring ``WritePath``
+  gets the approval flow automatically — no hardcoded tool name list.
 
   Returns:
-    ``True`` when the user approved (skip guardrail protected_files),
+    ``True`` when the user approved (skip guardrail blocked_write_paths),
     ``False`` when no approval flow is active or the user denied.
   """
   from yoker.tools.annotations import GuardType
@@ -1044,52 +1047,43 @@ async def _maybe_approve_protected(agent: Any, spec: ToolSpec, tool_args: dict[s
   if handler is None:
     return False
 
-  guardrail = agent._guardrails.get("path")
+  guardrail = agent._guardrails.get("path_write")
   if guardrail is None:
     return False
 
-  simple_name = spec.simple_name or spec.name
-
-  # Only tools that the guardrail actually blocks on protected files
-  # should trigger the interactive approval flow. Read-only tools
-  # (read, list, search, existence, git, make) are never blocked by
-  # the protected_files check, so asking for approval is wrong.
-  _PROTECTED_FILE_TOOLS = frozenset({"write", "update", "file"})
-  if simple_name not in _PROTECTED_FILE_TOOLS:
-    return False
-
-  # Find all Path-annotated parameters that resolve to a protected file.
-  # Skip paths that are outside the allowed scope — the guardrail will
-  # block them regardless, so asking for approval is misleading.
-  protected_paths: list[str] = []
+  # Find all WritePath-annotated parameters that resolve to a write-blocked
+  # path. Skip paths that are outside the allowed scope — the guardrail
+  # will block them regardless, so asking for approval is misleading.
+  blocked_paths: list[str] = []
   for param_name, guard_type in spec.guards.items():
-    if guard_type != GuardType.PATH:
+    if guard_type != GuardType.PATH_WRITE:
       continue
     value = tool_args.get(param_name)
     if not isinstance(value, str):
       continue
-    # Only trigger approval for paths within allowed scope AND protected.
+    # Only trigger approval for paths within allowed scope AND write-blocked.
     # Out-of-scope paths are a hard security boundary — no approval possible.
     resolved = guardrail._resolve_path(value)
     if resolved is None:
       continue
     if not guardrail._is_within_allowed_paths(resolved):
       continue
-    if guardrail.is_protected(value):
-      protected_paths.append(value)
+    if guardrail.is_write_blocked(value):
+      blocked_paths.append(value)
 
-  if not protected_paths:
+  if not blocked_paths:
     return False
 
-  diff = _build_approval_diff(simple_name, protected_paths[0], tool_args)
+  simple_name = spec.simple_name or spec.name
+  diff = _build_approval_diff(simple_name, blocked_paths[0], tool_args)
   try:
-    approved = await handler(protected_paths[0], diff, "file")
+    approved = await handler(blocked_paths[0], diff, "file")
   except Exception as e:
     logger.warning("approval_handler_error", tool=spec.name, error=str(e))
     approved = False
 
   if not approved:
-    logger.info("protected_file_denied", tool=spec.name, path=protected_paths[0])
+    logger.info("write_blocked_denied", tool=spec.name, path=blocked_paths[0])
   return bool(approved)
 
 
@@ -1456,7 +1450,7 @@ def _enforce_output_limit(result: ToolResult, agent: Any, spec: ToolSpec) -> Too
 
 
 def _validate_tool_args(
-  agent: Any, spec: ToolSpec, tool_args: dict[str, Any], *, skip_protected: bool = False
+  agent: Any, spec: ToolSpec, tool_args: dict[str, Any], *, skip_blocks: bool = False
 ) -> ValidationResult:
   """Validate tool arguments using schema-driven guardrails.
 
@@ -1464,9 +1458,13 @@ def _validate_tool_args(
   guardrail so tool-name checks inside the guardrail match against simple
   names (e.g. ``"write"``, not ``"yoker:write"``).
 
-  When ``skip_protected`` is True (user approved interactively), the
-  guardrail's protected_files check is skipped for this call. The guardrail
-  is responsible for honoring this flag.
+  When ``skip_blocks`` is True (user approved interactively), the
+  guardrail's blocked_write_paths check is skipped for this call. The
+  guardrail is responsible for honoring this flag.
+
+  After the generic guardrail passes, tool-specific validators (file size,
+  content size, diff size, directory depth) are run. These live alongside
+  the tool definition and are discovered via ``__yoker_validators__``.
   """
   for param_name, guard_type in spec.guards.items():
     value = tool_args.get(param_name)
@@ -1477,11 +1475,18 @@ def _validate_tool_args(
     if not guardrail:
       continue
 
-    validation = guardrail.validate(
-      spec.simple_name or spec.name, value, skip_protected=skip_protected
-    )
+    validation = guardrail.validate(spec.simple_name or spec.name, value, skip_blocks=skip_blocks)
     if not validation.valid:
       return validation
+
+  # Run tool-specific validators (operational constraints)
+  if spec.validators:
+    base_name = spec.simple_name or spec.name
+    tool_config = agent.config.tools[base_name]
+    for validator in spec.validators:
+      validation = validator(tool_args, tool_config)
+      if not validation.valid:
+        return validation
 
   return ValidationResult(valid=True)
 
@@ -1537,10 +1542,18 @@ def _build_tool_context(agent: Any, spec: ToolSpec) -> ToolContext:
   # The Agent is Session-agnostic and does not carry a Session reference.
   # Session-aware tools (send_message, agent) capture the Session in their
   # closures at injection time, so ToolContext.session is left as None.
+  # Compile blocked_path_patterns from the read guardrail for traversal
+  # tools (search/list) to enforce internally on every file they touch.
+  blocked_path_patterns: list[Any] = []
+  read_guardrail = agent._guardrails.get("path_read")
+  if read_guardrail is not None:
+    blocked_path_patterns = list(getattr(read_guardrail, "_blocked_path_patterns", []))
+
   return ToolContext(
     config=tool_config,
     shared=shared_config,
     backends=backends,
     session=None,
     approval_handler=getattr(agent, "_approval_handler", None),
+    blocked_path_patterns=blocked_path_patterns,
   )

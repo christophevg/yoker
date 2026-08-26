@@ -6,6 +6,16 @@ metadata are derived through ``inspect`` and ``typing`` introspection.
 
 Also provides ``ToolResult`` and ``ValidationResult``, the return types used
 by tool execution and guardrail validation.
+
+Tool-specific validators are functions that check operational constraints
+(file size, content size, diff size, directory depth) after the generic
+guardrail has passed. They live alongside the tool definition and are
+discovered via the ``__yoker_validators__`` attribute on the tool callable.
+
+A validator has the signature ``(tool_args: dict[str, Any], config: ToolConfig) -> ValidationResult``.
+It receives the full tool arguments and the tool-specific config, and
+returns a :class:`ValidationResult` indicating whether the arguments
+satisfy the tool's operational constraints.
 """
 
 import inspect
@@ -19,6 +29,11 @@ from yoker.schema import NameSpaced
 from yoker.tools.annotations import GuardType, Text
 
 logger = get_logger(__name__)
+
+# A tool-specific validator checks operational constraints (file size,
+# content size, diff size, directory depth) after the generic guardrail
+# has passed. Returns a ValidationResult.
+ToolValidator = Callable[[dict[str, Any], Any], "ValidationResult"]
 
 
 @dataclass(frozen=True)
@@ -64,12 +79,15 @@ class ToolSpec(NameSpaced):
     schema: Ollama-compatible function schema with harness metadata stripped.
     guards: Mapping of parameter name to guardrail functional type.
     execute: The original tool function (sync or async).
+    validators: Tool-specific validators that check operational constraints
+      (file size, content size, etc.) after the generic guardrail passes.
   """
 
   description: str = ""
   schema: dict[str, Any] = field(default_factory=dict)
   guards: dict[str, GuardType] = field(default_factory=dict)
   execute: Callable[..., Any] | None = None
+  validators: list[ToolValidator] = field(default_factory=list)
 
   def __post_init__(self) -> None:
     if not self.description:
@@ -184,6 +202,7 @@ def build_tool_spec(
     schema=schema,
     guards=guards,
     execute=tool,
+    validators=getattr(tool, "__yoker_validators__", []),
   )
 
 
@@ -351,5 +370,6 @@ __all__ = [
   "ToolResult",
   "ValidationResult",
   "ToolSpec",
+  "ToolValidator",
   "build_tool_spec",
 ]

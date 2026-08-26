@@ -8,7 +8,7 @@ from yoker.builtin import file
 from yoker.config import Config, PermissionsConfig
 from yoker.tools import ToolRegistry
 from yoker.tools.context import ToolContext
-from yoker.tools.guardrails.path import PathGuardrail
+from yoker.tools.guardrails.path import WritePathGuardrail
 
 
 def _file_spec():
@@ -423,7 +423,7 @@ class TestFileGuardrailIntegration:
     outside.mkdir()
 
     config = Config(permissions=PermissionsConfig(filesystem_paths=(str(outside),)))
-    guardrail = PathGuardrail(config)
+    guardrail = WritePathGuardrail(config)
 
     spec = _file_spec()
     validation = guardrail.validate(spec.name, {"path": str(source)})
@@ -431,17 +431,17 @@ class TestFileGuardrailIntegration:
 
   @pytest.mark.asyncio
   async def test_guardrail_protects_makefile(self, tmp_path: Path) -> None:
-    """Test that protected files are guarded."""
+    """Test that write-blocked files are guarded."""
     makefile = tmp_path / "Makefile"
     makefile.write_text("all:")
 
     config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
-    guardrail = PathGuardrail(config)
+    guardrail = WritePathGuardrail(config)
 
     spec = _file_spec()
     validation = guardrail.validate(spec.name, str(makefile))
     assert not validation.valid
-    assert "protected" in validation.reason.lower()
+    assert "write-protected" in validation.reason.lower()
 
   @pytest.mark.asyncio
   async def test_guardrail_allows_normal_files(self, tmp_path: Path) -> None:
@@ -450,7 +450,7 @@ class TestFileGuardrailIntegration:
     source.write_text("content")
 
     config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
-    guardrail = PathGuardrail(config)
+    guardrail = WritePathGuardrail(config)
 
     spec = _file_spec()
     validation = guardrail.validate(spec.name, str(source))

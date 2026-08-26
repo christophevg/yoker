@@ -1,7 +1,6 @@
 # Yoker Agent Guide
 
-Essential context for working on the Yoker codebase. For user-facing
-documentation, see [README.md](README.md).
+Essential context for working on the Yoker codebase. For user-facing documentation, see [README.md](README.md).
 
 ## IMPORTANT CURRENT DEVELOPMENT PHASE
 
@@ -14,12 +13,9 @@ IF A TOOL FAILS: STOP!
 
 ### Retry Policy
 
-**Never retry the same failing command more than 3 times.** After 3 failed
-attempts, STOP and ask the user for permission before trying again. This gives
-the user a chance to intervene, investigate, or provide guidance.
+**Never retry the same failing command more than 3 times.** After 3 failed attempts, STOP and ask the user for permission before trying again. This gives the user a chance to intervene, investigate, or provide guidance.
 
-Repeatedly retrying a failing command wastes context budget and processing
-credit without making progress. Common scenarios where this happens:
+Repeatedly retrying a failing command wastes context budget and processing credit without making progress. Common scenarios where this happens:
 
 - `make publish` upload fails with HTTP 400 (version may already be on PyPI)
 - CI workflow check times out or returns transient errors
@@ -47,13 +43,9 @@ When the user denies the use of a tool, don't look for a work around. ASK what t
 
 ## Positioning
 
-**USP:** Add LLM capabilities to your Python apps and modules without worrying
-about the agentic foundations. Agentic Functions.
+**USP:** Add LLM capabilities to your Python apps and modules without worrying about the agentic foundations. Agentic Functions.
 
-Yoker lets developers enhance existing Python code with LLM-powered features
-without needing to understand or build the underlying agent infrastructure. The
-key differentiator is the concept of **Agentic Functions** — bringing LLM
-capabilities into regular Python code seamlessly.
+Yoker lets developers enhance existing Python code with LLM-powered features without needing to understand or build the underlying agent infrastructure. The key differentiator is the concept of **Agentic Functions** — bringing LLM capabilities into regular Python code seamlessly.
 
 ## Conventions
 
@@ -115,21 +107,13 @@ the task. Tool outputs can be very large and consume context budget rapidly.
 - `list` on large directories: use `pattern` or `post_filter` to avoid flooding
   context with thousands of entries.
 
-**Rule of thumb**: if you expect more than ~20 lines of output, you should be
-filtering. Not filtering wastes context and processing credit on irrelevant
-content.
+**Rule of thumb**: if you expect more than ~20 lines of output, you should be filtering. Not filtering wastes context and processing credit on irrelevant content.
 
 ### Known cosmetic stderr noise (do not investigate)
 
-`make test` on Python 3.11 emits a `RuntimeError: Event loop is closed`
-traceback in **stderr** from `asyncio/base_subprocess.py`. This is a known
-CPython 3.11 bug: subprocess transports are garbage-collected after the event
-loop is already closed, and their `__del__` calls `call_soon` on the dead
-loop. It is triggered by tests that spawn subprocesses (git, make tool tests).
+`make test` on Python 3.11 emits a `RuntimeError: Event loop is closed` traceback in **stderr** from `asyncio/base_subprocess.py`. This is a known CPython 3.11 bug: subprocess transports are garbage-collected after the event loop is already closed, and their `__del__` calls `call_soon` on the dead loop. It is triggered by tests that spawn subprocesses (git, make tool tests).
 
-**This is not a test failure.** All tests pass (exit code 0). Do not
-investigate or attempt to fix this — it is a Python stdlib issue, not a yoker
-bug.
+**This is not a test failure.** All tests pass (exit code 0). Do not investigate or attempt to fix this — it is a Python stdlib issue, not a yoker bug.
 
 ## Module Structure
 
@@ -279,9 +263,7 @@ Session Layer:    session/      — team coordinator, spawning, inter-agent mess
 UI Layer:         ui/           — presentation only, receives events via UIBridge
 ```
 
-**Agent** is async-only and emits `Event` objects via `Agent.on_event()`. It has
-no direct UI dependency. **Session** owns the team of agents — registry, spawning,
-backend sharing, event aggregation, and inter-agent messaging.
+**Agent** is async-only and emits `Event` objects via `Agent.on_event()`. It has no direct UI dependency. **Session** owns the team of agents — registry, spawning, backend sharing, event aggregation, and inter-agent messaging.
 
 ### Event Flow
 
@@ -294,32 +276,17 @@ envelopes before forwarding to session-level handlers.
 
 ### Trust Gate (Security Invariant)
 
-`yoker run` loads agentic packages from external sources. The trust gate is a
-**security invariant**: `load_source()` is NEVER called before
-`check_source_allowed()` returns True. Non-interactive mode rejects untrusted
-sources by default (`YOKER_TRUST_SOURCE=1` env var overrides). This ordering
-must be preserved in all code paths.
+`yoker run` loads agentic packages from external sources. The trust gate is a **security invariant**: `load_source()` is NEVER called before `check_source_allowed()` returns True. Non-interactive mode rejects untrusted sources by default (`YOKER_TRUST_SOURCE=1` env var overrides). This ordering must be preserved in all code paths.
 
 ### Tool Framework
 
-Tools are plain functions or callable classes. Guardrail metadata comes from
-`yoker.tools.annotations` markers (`Path`, `Url`, `Query`, `Text`). `ToolRegistry`
-stores `ToolSpec` objects built via `build_tool_spec()` which introspects the
-function signature.
+Tools are plain functions or callable classes. Guardrail metadata comes from `yoker.tools.annotations` markers (`Path`, `Url`, `Query`, `Text`). `ToolRegistry` stores `ToolSpec` objects built via `build_tool_spec()` which introspects the function signature.
 
-Built-in tools are registered via the plugin loader from
-`yoker.builtin.__YOKER_MANIFEST__`. The `agent` and `send_message` tools are
-session-injected (need runtime dependencies not available to the static manifest).
-The `skill` tool is added via the `make_skill_tool` factory.
+Built-in tools are registered via the plugin loader from `yoker.builtin.__YOKER_MANIFEST__`. The `agent` and `send_message` tools are session-injected (need runtime dependencies not available to the static manifest). The `skill` tool is added via the `make_skill_tool` factory.
 
 ### Protected Files Guardrail
 
-`PathGuardrail` enforces a `protected_files` denylist (default: `Makefile`,
-`pyproject.toml`, `yoker.toml`, `.git/config`, `.git/hooks/*`,
-`.github/workflows/*.yml`, `uv.lock`, etc.). The `write` and `update` tools are
-blocked; `read` is never blocked. In interactive mode, an approval handler can
-render a diff and prompt y/N. In batch mode, always blocked (fail-safe). An
-empty tuple disables all protections (explicit opt-out).
+`PathGuardrail` enforces a `blocked_write_paths` denylist (default: `Makefile`, `pyproject.toml`, `yoker.toml`, `.git/config`, `.git/hooks/*`, `.github/workflows/*.yml`, `uv.lock`, etc.). The `write` and `update` tools are blocked. In interactive mode, an approval handler can render a diff and prompt y/N. In batch mode, always blocked (fail-safe). An empty tuple disables all protections (explicit opt-out).
 
 ### Git Tool Permission Model
 
@@ -331,10 +298,7 @@ Git operations use an `auto_permission` allowlist:
 
 ### Context Persistence
 
-`Persisted` wraps a `BaseContextManager` and writes conversation history to
-JSONL. On resume (`fresh=False`), the `Persisted.agent` setter detects
-pre-loaded conversation history and preserves it — it does NOT call `clear()`
-when resuming. This is important: calling `clear()` would wipe loaded history.
+`Persisted` wraps a `BaseContextManager` and writes conversation history to JSONL. On resume (`fresh=False`), the `Persisted.agent` setter detects pre-loaded conversation history and preserves it — it does NOT call `clear()` when resuming. This is important: calling `clear()` would wipe loaded history.
 
 ## Public Python API
 
@@ -351,10 +315,7 @@ Exports from `yoker/__init__.py`:
 
 ## CLI
 
-CLI arguments are auto-generated by Clevis from the `Config` dataclass.
-Subcommands: `chat` (default), `run`, `init`, `config`, `inspect`, `loop`,
-`container`. Config-backed subcommands extend `Config`; standalone subcommands
-have their own fields.
+CLI arguments are auto-generated by Clevis from the `Config` dataclass. Subcommands: `chat` (default), `run`, `init`, `config`, `inspect`, `loop`, `container`. Config-backed subcommands extend `Config`; standalone subcommands have their own fields.
 
 Common UI-related flags:
 - `--ui-mode {interactive,batch}`

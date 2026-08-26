@@ -11,7 +11,7 @@ from yoker.builtin import existence
 from yoker.config import Config, PermissionsConfig
 from yoker.tools import ToolRegistry
 from yoker.tools.context import ToolContext
-from yoker.tools.guardrails.path import PathGuardrail
+from yoker.tools.guardrails.path import ReadPathGuardrail
 
 # Import the actual module (not the function exported in __init__.py)
 existence_module = sys.modules["yoker.builtin.existence"]
@@ -295,7 +295,7 @@ class TestExistenceToolWithGuardrail:
     allowed_path = tmp_path / "allowed"
     allowed_path.mkdir()
     config = Config(permissions=PermissionsConfig(filesystem_paths=(str(allowed_path),)))
-    guardrail = PathGuardrail(config)
+    guardrail = ReadPathGuardrail(config)
 
     spec = _existence_spec()
     _existence_context()
@@ -311,7 +311,7 @@ class TestExistenceToolWithGuardrail:
     (tmp_path / "test.txt").write_text("content")
 
     config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
-    guardrail = PathGuardrail(config)
+    guardrail = ReadPathGuardrail(config)
 
     spec = _existence_spec()
     ctx = _existence_context()
@@ -339,7 +339,7 @@ class TestExistenceToolWithGuardrail:
   async def test_guardrail_blocks_nonexistent_path(self, tmp_path: Path) -> None:
     """Test that the path guardrail blocks access to paths outside allowed directories."""
     config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
-    guardrail = PathGuardrail(config)
+    guardrail = ReadPathGuardrail(config)
 
     spec = _existence_spec()
     _existence_context()

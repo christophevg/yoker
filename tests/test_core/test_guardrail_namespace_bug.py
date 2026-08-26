@@ -1,7 +1,7 @@
 """Regression test: guardrail bypass via namespaced tool names.
 
 Bug: ``_validate_tool_args`` passed ``spec.name`` (e.g. ``"yoker:write"``)
-to ``PathGuardrail.validate()``, which checked ``tool_name not in
+to ``WritePathGuardrail.validate()``, which checked ``tool_name not in
 _FILESYSTEM_TOOLS`` — a set of simple names (``"write"``, ``"read"``, ...).
 The namespaced name was never in the set, so **all** path validation was
 skipped: protected_files, path traversal, blocked patterns, extensions,
@@ -9,7 +9,7 @@ file size — everything.
 
 This affected every agent (primary and subagent) for every namespaced
 tool. The primary agent in interactive mode was partially saved by the
-``_maybe_approve_protected`` approval hook (which strips the namespace),
+``_maybe_approve_write_blocked`` approval hook (which strips the namespace),
 but subagents and batch-mode agents had zero guardrail protection.
 
 The fix removes the ``_FILESYSTEM_TOOLS`` gate entirely (the guardrail is
@@ -26,9 +26,9 @@ import pytest
 
 from yoker.config import Config, PermissionsConfig
 from yoker.core._processing import _validate_tool_args
-from yoker.tools.annotations import Path as PathArg
 from yoker.tools.annotations import Text
-from yoker.tools.guardrails.path import PathGuardrail
+from yoker.tools.annotations import WritePath as PathArg
+from yoker.tools.guardrails.path import WritePathGuardrail
 from yoker.tools.schema import ToolSpec, build_tool_spec
 
 # ---------------------------------------------------------------------------
@@ -74,12 +74,12 @@ class _FakeAgent:
   """Minimal agent carrying guardrails and config for _validate_tool_args."""
 
   def __init__(self, config: Config) -> None:
-    self._guardrails: dict[str, Any] = {"path": PathGuardrail(config)}
+    self._guardrails: dict[str, Any] = {"path_write": WritePathGuardrail(config)}
     self.config = config
 
 
 # ---------------------------------------------------------------------------
-# Regression: namespaced tool name bypasses PathGuardrail.validate()
+# Regression: namespaced tool name bypasses WritePathGuardrail.validate()
 # ---------------------------------------------------------------------------
 
 
@@ -105,7 +105,7 @@ class TestNamespacedToolGuardrailBypass:
       "Namespaced write to Makefile must be blocked. "
       "If this passes, the guardrail is bypassed for namespaced tools."
     )
-    assert "protected" in (result.reason or "").lower()
+    assert "write-protected" in (result.reason or "").lower()
 
   @pytest.mark.asyncio
   async def test_namespaced_update_blocked_on_protected_file(self, tmp_path: Path) -> None:
@@ -125,7 +125,7 @@ class TestNamespacedToolGuardrailBypass:
     result = _validate_tool_args(agent, spec, tool_args)
 
     assert result.valid is False, "Namespaced update to pyproject.toml must be blocked."
-    assert "protected" in (result.reason or "").lower()
+    assert "write-protected" in (result.reason or "").lower()
 
   @pytest.mark.asyncio
   async def test_namespaced_write_path_traversal_blocked(self, tmp_path: Path) -> None:
@@ -164,7 +164,7 @@ class TestSubagentProtectedFiles:
   """Subagents must have the same guardrail protection as the primary agent.
 
   Before the fix, subagents had no approval handler wired, so
-  ``_maybe_approve_protected`` returned False (no handler → no skip),
+  ``_maybe_approve_write_blocked`` returned False (no handler → no skip),
   and the guardrail was bypassed by the namespace bug. The guardrail
   must be the single enforcement point — the approval hook is a UI
   enhancement, not a replacement for the guardrail.
@@ -261,31 +261,31 @@ class TestGuardrailAlwaysEnforces:
   created a gap: if the approval hook was not wired (subagents, batch
   mode), there was no protection at all.
 
-  After the fix, the guardrail always enforces. The ``skip_protected``
+  After the fix, the guardrail always enforces. The ``skip_blocks``
   parameter is the only way to skip the check, and it is only set when
-  the user interactively approves via ``_maybe_approve_protected``.
+  the user interactively approves via ``_maybe_approve_write_blocked``.
   """
 
   def test_guardrail_blocks_write_without_skip(self, tmp_path: Path) -> None:
-    """The guardrail must block protected files by default."""
+    """The guardrail must block write-blocked paths by default."""
     target = tmp_path / "Makefile"
     config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
-    guardrail = PathGuardrail(config)
+    guardrail = WritePathGuardrail(config)
 
     result = guardrail.validate("write", {"path": str(target), "content": "x"})
 
-    assert result.valid is False, "Guardrail must always enforce protected_files by default."
+    assert result.valid is False, "Guardrail must always enforce blocked_write_paths by default."
 
   def test_guardrail_blocks_update_without_skip(self, tmp_path: Path) -> None:
-    """The guardrail must block protected updates by default."""
+    """The guardrail must block write-blocked updates by default."""
     target = tmp_path / "pyproject.toml"
     target.write_text("old")
     config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
-    guardrail = PathGuardrail(config)
+    guardrail = WritePathGuardrail(config)
 
     result = guardrail.validate(
       "update",
       {"path": str(target), "operation": "replace", "old_string": "old", "new_string": "new"},
     )
 
-    assert result.valid is False, "Guardrail must always enforce protected_files on update."
+    assert result.valid is False, "Guardrail must always enforce blocked_write_paths on update."

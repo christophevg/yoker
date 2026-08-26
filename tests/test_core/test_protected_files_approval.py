@@ -1,7 +1,7 @@
 """Tests for the protected-file interactive approval flow (MBI-009 T12).
 
 Covers the processing-loop approval hook in :mod:`yoker.core._processing`
-and the diff helper in :mod:`yoker.tools.diff`. The PathGuardrail simple
+and the diff helper in :mod:`yoker.tools.diff`. The WritePathGuardrail simple
 block is covered in ``tests/tools/test_path_guardrail_protected.py``.
 """
 
@@ -13,20 +13,20 @@ from typing import Annotated, Any
 import pytest
 
 from yoker.config import Config, PermissionsConfig
-from yoker.core._processing import _build_approval_diff, _maybe_approve_protected
-from yoker.tools.annotations import Path as PathArg
-from yoker.tools.annotations import Text
+from yoker.core._processing import _build_approval_diff, _maybe_approve_write_blocked
+from yoker.tools.annotations import ReadPath, Text
+from yoker.tools.annotations import WritePath as PathArg
 from yoker.tools.diff import generate_diff
 from yoker.tools.schema import ToolSpec, build_tool_spec
 
 
 class _FakeGuardrail:
-  """Minimal stand-in for PathGuardrail exposing is_protected + scope checks."""
+  """Minimal stand-in for WritePathGuardrail exposing is_write_blocked + scope checks."""
 
   def __init__(self, protected: bool) -> None:
     self._protected = protected
 
-  def is_protected(self, _path: str) -> bool:
+  def is_write_blocked(self, _path: str) -> bool:
     return self._protected
 
   def _resolve_path(self, path_str: str) -> Any:
@@ -48,7 +48,7 @@ class _FakeAgent:
 
   def __init__(self, handler: Any, protected: bool) -> None:
     self._approval_handler = handler
-    self._guardrails = {"path": _FakeGuardrail(protected)}
+    self._guardrails = {"path_write": _FakeGuardrail(protected)}
     self.config = Config(permissions=PermissionsConfig(filesystem_paths=(".",)))
 
 
@@ -82,7 +82,7 @@ async def _dummy_update(
 
 
 async def _dummy_read(
-  path: Annotated[str, PathArg("Path to the file to read")],
+  path: Annotated[str, ReadPath("Path to the file to read")],
   ctx: Any = None,
   offset: int = 0,
   limit: int = 0,
@@ -223,7 +223,7 @@ class TestBuildApprovalDiff:
 
 
 # ---------------------------------------------------------------------------
-# _maybe_approve_protected — interactive approval gate
+# _maybe_approve_write_blocked — interactive approval gate
 # ---------------------------------------------------------------------------
 
 
@@ -231,15 +231,15 @@ class TestBuildApprovalDiff:
 async def test_approval_not_needed_for_non_write_tool() -> None:
   agent = _FakeAgent(handler=None, protected=True)
   spec = _make_spec(_dummy_read, "read")
-  result = await _maybe_approve_protected(agent, spec, {"path": "/x/Makefile"})
+  result = await _maybe_approve_write_blocked(agent, spec, {"path": "/x/Makefile"})
   assert result is False
 
 
 @pytest.mark.asyncio
 async def test_read_never_triggers_approval_even_with_handler() -> None:
-  """Read on a protected file must NOT trigger the approval flow.
+  """Read on a write-blocked path must NOT trigger the approval flow.
 
-  The guardrail never blocks reads of protected files, so the approval
+  The guardrail never blocks reads, so the approval
   hook must not fire for read-only tools (read, list, search, existence).
   """
 
@@ -248,7 +248,7 @@ async def test_read_never_triggers_approval_even_with_handler() -> None:
 
   agent = _FakeAgent(handler=handler, protected=True)
   spec = _make_spec(_dummy_read, "read")
-  result = await _maybe_approve_protected(agent, spec, {"path": "/x/Makefile"})
+  result = await _maybe_approve_write_blocked(agent, spec, {"path": "/x/Makefile"})
   assert result is False
 
 
@@ -256,7 +256,9 @@ async def test_read_never_triggers_approval_even_with_handler() -> None:
 async def test_approval_not_needed_when_no_handler_wired() -> None:
   agent = _FakeAgent(handler=None, protected=True)
   spec = _make_spec(_dummy_write, "write")
-  result = await _maybe_approve_protected(agent, spec, {"path": "/x/Makefile", "content": "all:"})
+  result = await _maybe_approve_write_blocked(
+    agent, spec, {"path": "/x/Makefile", "content": "all:"}
+  )
   # No handler → guardrail handles it; the hook returns False.
   assert result is False
 
@@ -268,7 +270,7 @@ async def test_approval_not_needed_when_path_not_protected() -> None:
 
   agent = _FakeAgent(handler=handler, protected=False)
   spec = _make_spec(_dummy_write, "write")
-  result = await _maybe_approve_protected(agent, spec, {"path": "/x/foo.txt", "content": "hi"})
+  result = await _maybe_approve_write_blocked(agent, spec, {"path": "/x/foo.txt", "content": "hi"})
   assert result is False
 
 
@@ -286,10 +288,10 @@ async def test_approval_approved_returns_true(tmp_path: Path) -> None:
 
   agent = _FakeAgent(handler=handler, protected=True)
   spec = _make_spec(_dummy_write, "write")
-  result = await _maybe_approve_protected(
+  result = await _maybe_approve_write_blocked(
     agent, spec, {"path": str(target), "content": "new:\n\techo new\n"}
   )
-  assert result is True  # approved → skip guardrail protected_files
+  assert result is True  # approved → skip guardrail blocked_write_paths
   assert captured["path"] == str(target)
   assert "+new:" in captured["diff"]
 
@@ -303,7 +305,9 @@ async def test_approval_denied_returns_false(tmp_path: Path) -> None:
 
   agent = _FakeAgent(handler=handler, protected=True)
   spec = _make_spec(_dummy_write, "write")
-  result = await _maybe_approve_protected(agent, spec, {"path": str(target), "content": "new:\n"})
+  result = await _maybe_approve_write_blocked(
+    agent, spec, {"path": str(target), "content": "new:\n"}
+  )
   assert result is False  # denied → guardrail will block
 
 
@@ -316,7 +320,7 @@ async def test_approval_handler_exception_treated_as_denial(tmp_path: Path) -> N
 
   agent = _FakeAgent(handler=handler, protected=True)
   spec = _make_spec(_dummy_update, "update")
-  result = await _maybe_approve_protected(
+  result = await _maybe_approve_write_blocked(
     agent,
     spec,
     {"path": str(target), "operation": "replace", "old_string": "a", "new_string": "b"},
@@ -333,18 +337,20 @@ async def test_namespaced_tool_name_handled(tmp_path: Path) -> None:
 
   agent = _FakeAgent(handler=handler, protected=True)
   spec = _make_spec(_dummy_write, "write")
-  result = await _maybe_approve_protected(agent, spec, {"path": str(target), "content": "new:\n"})
+  result = await _maybe_approve_write_blocked(
+    agent, spec, {"path": str(target), "content": "new:\n"}
+  )
   assert result is False  # denied
 
 
 # ---------------------------------------------------------------------------
-# _maybe_approve_protected — file tool (source/destination params)
+# _maybe_approve_write_blocked — file tool (source/destination params)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_approval_file_tool_delete_protected(tmp_path: Path) -> None:
-  """The file tool with a protected source must trigger the approval flow."""
+  """The file tool with a write-blocked source must trigger the approval flow."""
   target = tmp_path / "Makefile"
   target.write_text("all:\n\techo hi\n")
 
@@ -357,7 +363,7 @@ async def test_approval_file_tool_delete_protected(tmp_path: Path) -> None:
 
   agent = _FakeAgent(handler=handler, protected=True)
   spec = _make_spec(_dummy_file, "file")
-  result = await _maybe_approve_protected(
+  result = await _maybe_approve_write_blocked(
     agent, spec, {"operation": "delete", "source": str(target)}
   )
   assert result is True
@@ -367,7 +373,7 @@ async def test_approval_file_tool_delete_protected(tmp_path: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_approval_file_tool_move_protected(tmp_path: Path) -> None:
-  """The file tool moving a protected file must trigger approval."""
+  """The file tool moving a write-blocked file must trigger approval."""
   target = tmp_path / "Makefile"
   dest = tmp_path / "Makefile.bak"
 
@@ -376,7 +382,7 @@ async def test_approval_file_tool_move_protected(tmp_path: Path) -> None:
 
   agent = _FakeAgent(handler=handler, protected=True)
   spec = _make_spec(_dummy_file, "file")
-  result = await _maybe_approve_protected(
+  result = await _maybe_approve_write_blocked(
     agent, spec, {"operation": "move", "source": str(target), "destination": str(dest)}
   )
   assert result is False  # denied
@@ -389,7 +395,7 @@ async def test_approval_file_tool_no_handler_returns_false(tmp_path: Path) -> No
 
   agent = _FakeAgent(handler=None, protected=True)
   spec = _make_spec(_dummy_file, "file")
-  result = await _maybe_approve_protected(
+  result = await _maybe_approve_write_blocked(
     agent, spec, {"operation": "delete", "source": str(target)}
   )
   assert result is False

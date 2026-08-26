@@ -6,10 +6,10 @@ tool schemas and dispatch guardrails at execution time.
 
 Example:
   from typing import Annotated
-  from yoker.tools.annotations import Path, Text
+  from yoker.tools.annotations import ReadPath, WritePath, Text
 
   def read_file(
-    path: Annotated[str, Path("Path to the file to read")],
+    path: Annotated[str, ReadPath("Path to the file to read")],
     encoding: Annotated[str, Text("File encoding")] = "utf-8",
   ) -> str:
     ...
@@ -24,7 +24,8 @@ from typing import Any
 class GuardType(str, Enum):
   """Functional type of a guardrailed string parameter."""
 
-  PATH = "path"
+  PATH_READ = "path_read"
+  PATH_WRITE = "path_write"
   URL = "url"
   QUERY = "query"
   TEXT = "text"
@@ -44,10 +45,17 @@ class Text:
 
 
 @dataclass(frozen=True)
-class Path(Text):
-  """Marker for filesystem path parameters."""
+class ReadPath(Text):
+  """Marker for filesystem path parameters used in read-only fashion."""
 
-  yoker_type: GuardType = GuardType.PATH
+  yoker_type: GuardType = GuardType.PATH_READ
+
+
+@dataclass(frozen=True)
+class WritePath(Text):
+  """Marker for filesystem path parameters used in write fashion."""
+
+  yoker_type: GuardType = GuardType.PATH_WRITE
 
 
 @dataclass(frozen=True)
@@ -103,7 +111,8 @@ def tool(
 __all__ = [
   "GuardType",
   "Text",
-  "Path",
+  "ReadPath",
+  "WritePath",
   "Url",
   "Query",
   "tool",

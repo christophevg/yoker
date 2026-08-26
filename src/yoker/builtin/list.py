@@ -3,6 +3,10 @@
 Provides the ``list`` async function for listing directory contents.
 Guardrails are enforced centrally by the harness based on the schema's
 ``path`` annotation.
+
+The ``blocked_path_patterns`` from ``ToolContext`` are checked internally
+for every file/directory traversed, preventing bypass via list showing
+files that would be blocked by the guardrail.
 """
 
 from __future__ import annotations
@@ -10,14 +14,14 @@ from __future__ import annotations
 import builtins
 import fnmatch
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 from structlog import get_logger
 
 from yoker.config import ListToolConfig
-from yoker.tools.annotations import Path as PathArg
-from yoker.tools.annotations import Text
+from yoker.tools.annotations import ReadPath, Text
 from yoker.tools.context import ToolContext
+from yoker.tools.guardrails.path import is_path_blocked
 from yoker.tools.ignore import IgnoreMatcher
 from yoker.tools.schema import ToolResult
 
@@ -30,7 +34,7 @@ ABSOLUTE_MAX_ENTRIES: int = 5000
 # Keep function name as 'list' for backward compatibility with tool registry
 # (Python allows 'list' as function name, shadowing the builtin)
 async def list(
-  path: Annotated[str, PathArg("Path to the directory to list")],
+  path: Annotated[str, ReadPath("Path to the directory to list")],
   ctx: ToolContext,
   max_depth: int | None = None,  # None means use config default
   max_entries: int | None = None,  # None means use config default
@@ -112,8 +116,11 @@ async def list(
     except (PermissionError, OSError):
       matcher = None
 
+    # Get blocked_path patterns for internal enforcement
+    blocked_patterns = ctx.blocked_path_patterns if ctx else []
+
     lines, file_count, dir_count, truncated = _build_tree(
-      resolved, effective_max_depth, effective_max_entries, pattern, matcher
+      resolved, effective_max_depth, effective_max_entries, pattern, matcher, blocked_patterns
     )
 
     total = file_count + dir_count
@@ -156,6 +163,7 @@ def _build_tree(
   max_entries: int,
   pattern: str,
   matcher: IgnoreMatcher | None = None,
+  blocked_patterns: builtins.list[Any] | None = None,
 ) -> tuple[builtins.list[str], int, int, int]:
   """Build tree listing.
 
@@ -194,6 +202,10 @@ def _build_tree(
       if matcher is not None:
         if matcher.should_ignore_path(entry, is_dir=is_dir):
           continue
+
+      # Apply blocked_paths enforcement
+      if blocked_patterns and is_path_blocked(entry, root, blocked_patterns):
+        continue
 
       if entry.is_symlink():
         lines.append(prefix + entry.name)

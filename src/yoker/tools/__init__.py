@@ -6,14 +6,15 @@ annotation markers, and context. Built-in tools are in yoker.builtin.
 
 from yoker.tools.annotations import (
   GuardType,
-  Path,
   Query,
+  ReadPath,
   Text,
   Url,
+  WritePath,
 )
 from yoker.tools.context import ToolContext
 from yoker.tools.guardrails import Guardrail
-from yoker.tools.guardrails.path import PathGuardrail
+from yoker.tools.guardrails.path import ReadPathGuardrail, WritePathGuardrail
 from yoker.tools.registry import ToolRegistry
 from yoker.tools.schema import ToolResult, ValidationResult
 from yoker.tools.web import (
@@ -36,13 +37,15 @@ __all__ = [
   "ToolResult",
   "ValidationResult",
   "Guardrail",
-  "PathGuardrail",
+  "ReadPathGuardrail",
+  "WritePathGuardrail",
   "ToolRegistry",
   "ToolContext",
   # Annotations
   "GuardType",
   "Text",
-  "Path",
+  "ReadPath",
+  "WritePath",
   "Url",
   "Query",
   # Web framework

@@ -10,7 +10,7 @@ Security model
 - Target validation (R2/R3): target must match GNU make target syntax
   (``_TARGET_RE``), reject leading dashes (flag injection), reject
   shell metacharacters (``_FORBIDDEN_TARGET_CHARS``), length <= 256.
-- cwd (R1): resolved via ``Path.resolve()`` and validated by PathGuardrail
+- cwd (R1): resolved via ``Path.resolve()`` and validated by WritePathGuardrail
   against ``permissions.filesystem_paths``.
 - env_vars (Q1/Q2/Q4): per-target allowlist (deny-by-default) +
   framework hard-denylist (``yoker.tools.guardrails.env``) + value rules
@@ -42,8 +42,7 @@ from typing import Annotated, Any
 from structlog import get_logger
 
 from yoker.config import MakeToolConfig
-from yoker.tools.annotations import Path as PathArg
-from yoker.tools.annotations import Text
+from yoker.tools.annotations import Text, WritePath
 from yoker.tools.context import ToolContext
 from yoker.tools.guardrails.env import validate_env_vars
 from yoker.tools.schema import ToolResult
@@ -62,7 +61,7 @@ _FORBIDDEN_TARGET_CHARS: frozenset[str] = frozenset({";", "|", "&", "$", "`", "\
 async def make(
   target: Annotated[str, Text("Makefile target name (e.g., 'check', 'test')")],
   ctx: ToolContext,
-  cwd: Annotated[str, PathArg("Working directory containing the Makefile")] = ".",
+  cwd: Annotated[str, WritePath("Working directory containing the Makefile")] = ".",
   timeout_ms: int = 300000,
   env_vars: dict[str, str] | None = None,
   verbose: bool = False,
@@ -75,7 +74,7 @@ async def make(
       metacharacters are rejected.
     ctx: Tool execution context carrying the ``MakeToolConfig``.
     cwd: Working directory containing the Makefile. Resolved and checked
-      against ``permissions.filesystem_paths`` by PathGuardrail.
+      against ``permissions.filesystem_paths`` by WritePathGuardrail.
     timeout_ms: Per-call timeout in milliseconds. Clamped to
       ``[1000, make_config.timeout_ms]``.
     env_vars: Optional env vars to pass to make. Each name must be in the

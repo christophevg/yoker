@@ -6,10 +6,10 @@ from pathlib import Path
 import pytest
 
 from yoker.builtin import read as read_tool
-from yoker.config import Config, PermissionsConfig, ReadToolConfig, ToolsConfig
+from yoker.config import Config, PermissionsConfig
 from yoker.tools import ToolRegistry
 from yoker.tools.context import ToolContext
-from yoker.tools.guardrails.path import PathGuardrail
+from yoker.tools.guardrails.path import ReadPathGuardrail
 from yoker.tools.schema import ToolResult
 
 
@@ -89,7 +89,7 @@ class TestReadTool:
   async def test_read_with_guardrail_blocks(self, tmp_path: Path) -> None:
     """Path guardrail blocks paths outside allowed directories for read."""
     config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
-    guardrail = PathGuardrail(config)
+    guardrail = ReadPathGuardrail(config)
     spec = _read_spec()
     validation = guardrail.validate(spec.name, {"path": "/etc/passwd"})
     assert not validation.valid
@@ -101,7 +101,7 @@ class TestReadTool:
     file_path = tmp_path / "test.txt"
     file_path.write_text("allowed content")
     config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
-    guardrail = PathGuardrail(config)
+    guardrail = ReadPathGuardrail(config)
     spec = _read_spec()
     ctx = _read_context()
     validation = guardrail.validate(spec.name, {"path": str(file_path)})
@@ -164,14 +164,16 @@ class TestReadTool:
 
   @pytest.mark.asyncio
   async def test_read_guardrail_logs_blocked(self, tmp_path: Path) -> None:
-    """Path guardrail blocks read access to files matching blocked patterns."""
+    """Path guardrail blocks read access to files matching blocked_paths."""
     file_path = tmp_path / "test.txt"
     file_path.write_text("secret")
     config = Config(
-      permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)),
-      tools=ToolsConfig(read=ReadToolConfig(blocked_patterns=(r"test\.txt",))),
+      permissions=PermissionsConfig(
+        filesystem_paths=(str(tmp_path),),
+        blocked_paths=("test.txt",),
+      ),
     )
-    guardrail = PathGuardrail(config)
+    guardrail = ReadPathGuardrail(config)
     spec = _read_spec()
     validation = guardrail.validate(spec.name, {"path": str(file_path)})
     assert not validation.valid

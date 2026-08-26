@@ -20,10 +20,16 @@ The handler signature is ``(label: str, preview: str, kind: str) ->
 bool``. ``kind`` is ``"file"`` for protected-file writes (``label`` is a
 file path, ``preview`` is a unified diff) or ``"git"`` for git operations
 (``label`` is ``"git <operation>"``, ``preview`` is a command preview).
+
+``ToolContext`` also carries compiled ``blocked_paths`` glob patterns so
+that traversal tools (``search``, ``list``) can internally enforce the
+universal denylist on every file they touch — preventing bypass via
+``search`` reading content of files that would be blocked by the
+guardrail.
 """
 
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -50,6 +56,9 @@ class ToolContext:
     approval_handler: Optional async callable
       ``(label: str, preview: str, kind: str) -> bool`` for interactive
       approval. ``None`` in batch mode; tools must fail-safe to denial.
+    blocked_path_patterns: Compiled glob patterns for ``blocked_paths``
+      enforcement during file traversal (used by search/list). Empty list
+      when no blocked_paths are configured.
   """
 
   config: "ToolConfig"  # Tool-specific config (WriteToolConfig, etc.)
@@ -57,6 +66,7 @@ class ToolContext:
   backends: dict[str, Any]  # {"websearch": OllamaWebSearchBackend, ...}
   session: "Session | None" = None
   approval_handler: "ApprovalHandler | None" = None
+  blocked_path_patterns: list[Any] = field(default_factory=list)
 
 
 __all__ = ["ToolContext"]

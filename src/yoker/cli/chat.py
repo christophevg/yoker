@@ -177,8 +177,8 @@ def _wire_approval_handler(session: Session, ui: UIHandler) -> None:
 
   ``confirm_approval`` is an optional ``UIHandler`` method (see
   :mod:`yoker.ui.handler`). Handlers that do not provide it are not wired,
-  and the :class:`yoker.tools.guardrails.path.PathGuardrail` handles
-  protected writes (block without interactive prompt). When ``ui``
+  and the :class:`yoker.tools.guardrails.path.WritePathGuardrail` handles
+  write-protected files (block without interactive prompt). When ``ui``
   provides ``confirm_approval``, the handler is stored on the session
   so it is propagated to every agent created via ``_create_agent`` —
   the primary agent and all spawned subagents get the same interactive

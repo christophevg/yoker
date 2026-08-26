@@ -71,7 +71,6 @@ from yoker.config.validators import (
   validate_log_level,
   validate_non_empty_string,
   validate_positive_int,
-  validate_regex_patterns,
 )
 from yoker.exceptions import ValidationError
 
@@ -267,16 +266,40 @@ class HandlerConfig:
   message: str | None = None
 
 
-# SOFT guardrail: protects against powerful mistakes, not malicious agents.
-# Matched via fnmatch glob against the relative path from project root AND
-# the basename (so `Makefile` matches at any depth). An empty tuple disables
-# all protections (explicit opt-out).
-_DEFAULT_PROTECTED_FILES: tuple[str, ...] = (
+# Default blocked_paths — universal denylist (HARD, no override).
+# Glob patterns matched case-insensitively against the relative path from
+# each containing allowed root. Matching a directory blocks it and
+# everything beneath it. Also enforced internally by search/list for every
+# file they traverse.
+_DEFAULT_BLOCKED_PATHS: tuple[str, ...] = (
+  ".git",
+  ".venv",
+  "venv",
+  "context",
+  "local",
+  ".env",
+  ".env.*",
+  ".ssh",
+  ".aws",
+  ".gnupg",
+  "**/credentials",
+  "**/secrets",
+  "**/*.pem",
+  "**/*.key",
+  "**/id_rsa",
+  "**/id_ed25519",
+  "**/*.bak",
+  "**/*.old",
+)
+
+
+# Default blocked_write_paths — write-only denylist (SOFT in interactive
+# mode, HARD in batch mode). Same glob semantics as blocked_paths.
+# An empty tuple disables all write protections (explicit opt-out).
+_DEFAULT_BLOCKED_WRITE_PATHS: tuple[str, ...] = (
   "Makefile",
-  "makefile",
   "GNUmakefile",
   "Justfile",
-  "justfile",
   "Taskfile.yml",
   "pyproject.toml",
   "tox.ini",
@@ -295,32 +318,42 @@ _DEFAULT_PROTECTED_FILES: tuple[str, ...] = (
 class PermissionsConfig:
   """Permission boundaries configuration.
 
+  Three-layer access control, checked in order:
+
+  1. ``filesystem_paths`` (HARD) — spatial boundary: which roots are
+     accessible. Directories grant tree access; individual files grant
+     single-file access. ``~`` is expanded to the user's home directory.
+     The special entry ``"plugin://"`` allows read tools to access
+     ``plugin://`` URLs (package resources, not filesystem paths).
+  2. ``blocked_paths`` (HARD) — universal denylist: what's blocked within
+     those roots. Glob patterns matched case-insensitively against the
+     relative path from each containing allowed root. Matching a directory
+     blocks it and everything beneath it. Also enforced internally by
+     search/list for every file they traverse.
+  3. ``blocked_write_paths`` (SOFT) — write-only denylist: additional
+     blocks for write operations. Same glob semantics as ``blocked_paths``.
+     SOFT: user can approve interactively; HARD in batch mode (fail-safe).
+     An empty tuple disables all write protections (explicit opt-out).
+
   Attributes:
     filesystem_paths: Allowed filesystem paths (directories or individual
-      files). ``~`` is expanded to the user's home directory. A directory
-      entry allows access to all files beneath it; a file entry allows
-      access to that file only.
+      files). ``~`` is expanded to the user's home directory.
+    blocked_paths: Universal denylist (HARD, no override).
+    blocked_write_paths: Write-only denylist (SOFT in interactive, HARD in
+      batch mode).
     network_access: Network access level ('none', 'local', 'all').
-    max_file_size_kb: Maximum file size in KB.
     handlers: Permission handler configurations.
-    protected_files: Glob patterns (fnmatch) for files protected against
-      agent writes. Matched against the relative path from the project root
-      AND the basename. Applies to ``write`` and ``update`` only (reading
-      is safe). An empty tuple disables all protections (explicit opt-out).
-      SOFT guardrail: protects against powerful mistakes, not malicious
-      agents.
   """
 
-  filesystem_paths: tuple[str, ...] = (".",)
+  filesystem_paths: tuple[str, ...] = (".", "plugin://")
+  blocked_paths: tuple[str, ...] = _DEFAULT_BLOCKED_PATHS
+  blocked_write_paths: tuple[str, ...] = _DEFAULT_BLOCKED_WRITE_PATHS
   network_access: str = "none"
-  max_file_size_kb: int = 500
   handlers: dict[str, HandlerConfig] = field(default_factory=dict)
-  protected_files: tuple[str, ...] = _DEFAULT_PROTECTED_FILES
 
   def __post_init__(self) -> None:
     """Validate permissions configuration."""
     validate_choice(self.network_access, "permissions.network_access", ("none", "local", "all"))
-    validate_positive_int(self.max_file_size_kb, "permissions.max_file_size_kb")
     if not self.filesystem_paths:
       raise ValidationError(
         "permissions.filesystem_paths",
@@ -363,36 +396,14 @@ class ReadToolConfig(ToolConfig):
   """Read tool configuration.
 
   Attributes:
-    allowed_extensions: Allowed file extensions and/or filenames. When
-      empty (default), all files are allowed — the ``blocked_patterns``
-      denylist is the sole filter. When non-empty, only files matching an
-      entry pass the read guardrail. Entries starting with ``.`` (e.g.
-      ``".py"``) are matched as extensions; entries without a leading dot
-      (e.g. ``"Makefile"``, ``"Dockerfile"``) are matched as exact
-      filenames. This allows including extensionless files in the list.
-    blocked_patterns: Blocked file patterns.
+    max_file_size_kb: Maximum file size in KB for reading.
   """
 
-  allowed_extensions: tuple[str, ...] = ()
-  blocked_patterns: tuple[str, ...] = (
-    r"\.env",  # Environment files
-    r"\.git",  # Git directories
-    r"\.ssh",  # SSH directories
-    r"\.aws",  # AWS credentials
-    r"\.gnupg",  # GPG keys
-    "credentials",  # Credential files
-    r"secrets?",  # Secret files (singular/plural)
-    r"\.pem$",  # Certificate files
-    r"\.key$",  # Key files
-    "id_rsa",  # SSH private keys
-    "id_ed25519",  # Ed25519 keys
-    r"\.bak$",  # Backup files
-    r"\.old$",  # Old files
-  )
+  max_file_size_kb: int = 500
 
   def __post_init__(self) -> None:
     """Validate read tool configuration."""
-    validate_regex_patterns(self.blocked_patterns, "tools.read.blocked_patterns")
+    validate_positive_int(self.max_file_size_kb, "tools.read.max_file_size_kb")
 
 
 @dataclass
@@ -402,12 +413,10 @@ class WriteToolConfig(ToolConfig):
   Attributes:
     allow_overwrite: Whether to allow overwriting files.
     max_size_kb: Maximum file size to write in KB.
-    blocked_extensions: Blocked file extensions.
   """
 
   allow_overwrite: bool = False
   max_size_kb: int = 1000
-  blocked_extensions: tuple[str, ...] = (".exe", ".sh", ".bat")
 
   def __post_init__(self) -> None:
     """Validate write tool configuration."""

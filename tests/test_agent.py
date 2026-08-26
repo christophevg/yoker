@@ -229,12 +229,12 @@ class TestAgentSecurity:
 
   def test_agent_exposes_path_guardrail_mapping(self) -> None:
     """Agent exposes schema-driven guardrail mapping including the path guardrail."""
-    from yoker.tools.guardrails.path import PathGuardrail
+    from yoker.tools.guardrails.path import ReadPathGuardrail
 
     core = Agent(config=Config())
     assert hasattr(core, "_guardrails")
-    assert "path" in core._guardrails
-    assert isinstance(core._guardrails["path"], PathGuardrail)
+    assert "path_read" in core._guardrails
+    assert isinstance(core._guardrails["path_read"], ReadPathGuardrail)
 
   def test_each_core_is_independent(self) -> None:
     """Test that each Agent instance is independent (SEC-2)."""
@@ -296,11 +296,11 @@ class TestAgentGuardrailProperty:
     assert hasattr(core, "guardrail")
 
   def test_guardrail_property_returns_path_guardrail(self) -> None:
-    """Test that guardrail property returns PathGuardrail instance."""
-    from yoker.tools.guardrails.path import PathGuardrail
+    """Test that guardrail property returns ReadPathGuardrail instance."""
+    from yoker.tools.guardrails.path import ReadPathGuardrail
 
     core = Agent(config=Config())
-    assert isinstance(core.guardrail, PathGuardrail)
+    assert isinstance(core.guardrail, ReadPathGuardrail)
 
   def test_guardrail_property_is_read_only(self) -> None:
     """Test that guardrail property cannot be set directly."""
@@ -365,7 +365,7 @@ class TestAgentContextManager:
 
     custom_context = Persisted(
       SimpleContextManager(),
-      storage_path="custom_storage",
+      storage_path="tmp/custom_storage",
       session_id="custom-session-123",
     )
     core = Agent(config=Config(), context_manager=custom_context)
@@ -386,7 +386,7 @@ class TestAgentContextManager:
     )
     custom_context = Persisted(
       SimpleContextManager(),
-      storage_path="test_storage",
+      storage_path="tmp/test_storage",
       session_id="test-session",
     )
     core = Agent(config=Config(), agent_definition=agent_def, context_manager=custom_context)
@@ -560,7 +560,7 @@ class TestAgentGuardrailPropertyTypeAnnotation:
     # Check that the property exists and has correct type annotation
     import inspect
 
-    from yoker.tools.guardrails.path import PathGuardrail
+    from yoker.tools.guardrails.path import ReadPathGuardrail
 
     # Get the property descriptor
     guardrail_prop = getattr(Agent, "guardrail", None)
@@ -573,5 +573,5 @@ class TestAgentGuardrailPropertyTypeAnnotation:
     sig = inspect.signature(fget)
     # The annotation might be a forward reference string or the actual class
     annotation = sig.return_annotation
-    # Accept both string 'PathGuardrail' and the actual class
-    assert annotation in ("PathGuardrail", PathGuardrail)
+    # Accept both string 'ReadPathGuardrail' and the actual class
+    assert annotation in ("ReadPathGuardrail", ReadPathGuardrail)

@@ -11,7 +11,8 @@ from typing import TYPE_CHECKING, Annotated
 
 from structlog import get_logger
 
-from yoker.tools.annotations import Path as PathArg
+from yoker.builtin._validators import validate_mkdir_depth
+from yoker.tools.annotations import WritePath
 from yoker.tools.context import ToolContext
 from yoker.tools.schema import ToolResult
 
@@ -22,7 +23,7 @@ logger = get_logger(__name__)
 
 
 async def mkdir(
-  path: Annotated[str, PathArg("Path to the directory to create")],
+  path: Annotated[str, WritePath("Path to the directory to create")],
   ctx: ToolContext,
   recursive: bool = False,
 ) -> ToolResult:
@@ -100,6 +101,9 @@ async def mkdir(
   except OSError as e:
     logger.error("mkdir_os_error", path=str(resolved), error=str(e))
     return ToolResult(success=False, error="Error creating directory")
+
+
+mkdir.__yoker_validators__ = [validate_mkdir_depth]  # type: ignore[attr-defined]
 
 
 __all__ = ["mkdir"]
