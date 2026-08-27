@@ -373,7 +373,17 @@ class Agent:
         result = await process_message(self, message)
         if not future.done():
           future.set_result(result)
-      except Exception as exc:
+      except asyncio.CancelledError:
+        # External cancellation (not from aclose): propagate to the
+        # awaiting process() caller so it sees CancelledError, then
+        # re-raise to terminate the consumer.
+        if not future.done():
+          future.cancel()
+        raise
+      except BaseException as exc:
+        # Catch BaseException (not just Exception) so the future is
+        # always resolved — otherwise process() hangs forever waiting
+        # on an unresolved future and aclose() is never reached.
         if not future.done():
           future.set_exception(exc)
       finally:
@@ -388,6 +398,9 @@ class Agent:
     ``while True`` loop blocked on ``queue.get()`` — outlives the Agent object
     and triggers a ``"Task was destroyed but it is pending!"`` warning when
     the GC collects the agent.
+
+    A :meth:`__del__` safety net also cancels the task if aclose() was never
+    called (e.g. an exception prevented the finally block from running).
     """
     if self._process_task is not None and not self._process_task.done():
       self._process_task.cancel()
@@ -396,6 +409,24 @@ class Agent:
       except asyncio.CancelledError:
         pass
     self._process_task = None
+
+  def __del__(self) -> None:
+    """Safety net: cancel the process-consumer task if still pending.
+
+    If aclose() was never called (e.g. an exception prevented the finally
+    block from running, or the caller forgot to call aclose()), the
+    _process_consumer task — an infinite loop blocked on queue.get() —
+    would be destroyed by GC while still pending, triggering the
+    "Task was destroyed but it is pending!" warning.
+
+    This __del__ cancels the task as a last resort. It cannot await the
+    cancellation (no event loop in __del__), so it just calls cancel()
+    to mark the task for cancellation. The event loop will clean it up
+    during shutdown.
+    """
+    task = getattr(self, "_process_task", None)
+    if task is not None and not task.done():
+      task.cancel()
 
   def inject_skill_context(self, skill_name: str, args: str | None = None) -> None:
     """Inject skill context into the conversation."""
