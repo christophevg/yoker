@@ -169,7 +169,7 @@ async def _run_with_session(
     bridge.set_agent_resolver(_resolve_agent)
 
     _wire_approval_handler(session, ui)
-    await _run_repl(session.agent, ui, commands)
+    await _run_repl(session.agent, ui, commands, prompt=config.prompt)
 
 
 def _wire_approval_handler(session: Session, ui: UIHandler) -> None:
@@ -192,15 +192,39 @@ def _wire_approval_handler(session: Session, ui: UIHandler) -> None:
   session.agent._approval_handler = ui.confirm_approval
 
 
-async def _run_repl(agent: Agent, ui: UIHandler, commands: CommandRegistry) -> None:
+async def _run_repl(
+  agent: Agent, ui: UIHandler, commands: CommandRegistry, prompt: str = ""
+) -> None:
   """Run the interactive or batch REPL loop.
 
   Handles user input, command dispatch, agent processing, and errors. All
   output is produced through the UI handler. The UI is always shut down.
+
+  When ``prompt`` is non-empty, it is sent to the agent as the first message
+  before entering the REPL loop. The response is shown, then the user can
+  continue the conversation interactively.
   """
   await ui.start(agent)
 
   try:
+    if prompt.strip():
+      try:
+        await agent.process(prompt)
+      except NetworkError as e:
+        ui.output_error(e)
+        if not e.recoverable:
+          return
+      except ResponseError as e:
+        ui.output_error(e)
+      except YokerError as e:
+        ui.output_error(e)
+        return
+      except Exception as e:
+        ui.output_error(e)
+        return
+      except KeyboardInterrupt:
+        return
+
     while True:
       try:
         user_input = await ui.get_input()

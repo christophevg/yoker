@@ -42,6 +42,7 @@ class ChatConfig(Config):  # type: ignore[misc]
 
   session_id: str | None = None
   resume: str | None = None
+  prompt: str = ""
 
 
 @configclass(cmd="run", help="Run an agentic package non-interactively")  # type: ignore[arg-type]
