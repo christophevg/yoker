@@ -1341,6 +1341,170 @@ class TestGithubWriteOperations:
     assert "--remove-label=label1" in cmd
 
 
+class TestGithubIssueCreate:
+  """Tests for issue_create write operation."""
+
+  @pytest.mark.asyncio
+  async def test_issue_create_builds_correct_command(self, mocker: MockerFixture) -> None:
+    """issue_create builds gh issue create with --title= and --body=, no --json."""
+    popen = _mock_popen(mocker, stdout="https://github.com/owner/repo/issues/42")
+    cfg = GitHubToolConfig(allowed_operations=("issue_create",))
+    await github(
+      operation="issue_create",
+      ctx=_ctx(cfg),
+      repo="owner/repo",
+      title="Bug report",
+      body="Something is broken.",
+    )
+    cmd = popen.call_args.args[0]
+    assert cmd[:3] == ["gh", "issue", "create"]
+    assert "--repo" in cmd and "owner/repo" in cmd
+    assert "--title=Bug report" in cmd
+    assert "--body=Something is broken." in cmd
+    assert "--json" not in cmd
+
+  @pytest.mark.asyncio
+  async def test_issue_create_with_label_and_assignee(self, mocker: MockerFixture) -> None:
+    """issue_create includes --label and --assignee when provided."""
+    popen = _mock_popen(mocker, stdout="https://github.com/owner/repo/issues/42")
+    cfg = GitHubToolConfig(allowed_operations=("issue_create",))
+    await github(
+      operation="issue_create",
+      ctx=_ctx(cfg),
+      repo="owner/repo",
+      title="Bug",
+      body="Details.",
+      label="bug,priority",
+      assignee="user1,user2",
+    )
+    cmd = popen.call_args.args[0]
+    assert "--label" in cmd
+    label_idx = cmd.index("--label")
+    assert cmd[label_idx + 1] == "bug,priority"
+    assert "--assignee" in cmd
+    assignee_idx = cmd.index("--assignee")
+    assert cmd[assignee_idx + 1] == "user1,user2"
+
+  @pytest.mark.asyncio
+  async def test_issue_create_without_label_assignee_omits_them(
+    self, mocker: MockerFixture
+  ) -> None:
+    """issue_create omits --label and --assignee when not provided."""
+    popen = _mock_popen(mocker, stdout="https://github.com/owner/repo/issues/42")
+    cfg = GitHubToolConfig(allowed_operations=("issue_create",))
+    await github(
+      operation="issue_create",
+      ctx=_ctx(cfg),
+      repo="owner/repo",
+      title="Bug",
+      body="body",
+    )
+    cmd = popen.call_args.args[0]
+    assert "--label" not in cmd
+    assert "--assignee" not in cmd
+
+  @pytest.mark.asyncio
+  async def test_issue_create_not_in_default_allowlist(self, mocker: MockerFixture) -> None:
+    """issue_create is rejected with default config (not in default allowlist)."""
+    _mock_popen(mocker)
+    result = await github(
+      operation="issue_create",
+      ctx=_ctx(),
+      repo="owner/repo",
+      title="Bug",
+      body="body",
+    )
+    assert not result.success
+    assert "not allowed" in result.error.lower()
+
+  @pytest.mark.asyncio
+  async def test_issue_create_requires_repo(self, mocker: MockerFixture) -> None:
+    """issue_create requires the repo parameter."""
+    _mock_popen(mocker)
+    cfg = GitHubToolConfig(allowed_operations=("issue_create",))
+    result = await github(
+      operation="issue_create",
+      ctx=_ctx(cfg),
+      title="Bug",
+      body="body",
+    )
+    assert not result.success
+    assert "repo" in result.error.lower()
+
+  @pytest.mark.asyncio
+  async def test_issue_create_requires_title(self, mocker: MockerFixture) -> None:
+    """issue_create requires a non-empty title."""
+    _mock_popen(mocker)
+    cfg = GitHubToolConfig(allowed_operations=("issue_create",))
+    result = await github(
+      operation="issue_create",
+      ctx=_ctx(cfg),
+      repo="owner/repo",
+      title="",
+      body="body",
+    )
+    assert not result.success
+    assert "title" in result.error.lower()
+
+  @pytest.mark.asyncio
+  async def test_issue_create_requires_body(self, mocker: MockerFixture) -> None:
+    """issue_create requires a non-empty body."""
+    _mock_popen(mocker)
+    cfg = GitHubToolConfig(allowed_operations=("issue_create",))
+    result = await github(
+      operation="issue_create",
+      ctx=_ctx(cfg),
+      repo="owner/repo",
+      title="Bug",
+      body="",
+    )
+    assert not result.success
+    assert "body" in result.error.lower()
+
+  @pytest.mark.asyncio
+  async def test_issue_create_parses_url_output(self, mocker: MockerFixture) -> None:
+    """issue_create parses the issue URL into JSON with number and url."""
+    _mock_popen(mocker, stdout="https://github.com/owner/repo/issues/42")
+    cfg = GitHubToolConfig(allowed_operations=("issue_create",))
+    result = await github(
+      operation="issue_create",
+      ctx=_ctx(cfg),
+      repo="owner/repo",
+      title="Bug",
+      body="body",
+    )
+    assert result.success
+    import json as _json
+
+    parsed = _json.loads(result.result)
+    assert parsed["url"] == "https://github.com/owner/repo/issues/42"
+    assert parsed["number"] == 42
+
+  @pytest.mark.asyncio
+  async def test_issue_create_returns_success(self, mocker: MockerFixture) -> None:
+    """issue_create returns success on exit code 0."""
+    _mock_popen(mocker, stdout="https://github.com/owner/repo/issues/1")
+    cfg = GitHubToolConfig(allowed_operations=("issue_create",))
+    result = await github(
+      operation="issue_create",
+      ctx=_ctx(cfg),
+      repo="owner/repo",
+      title="Issue",
+      body="Body text.",
+    )
+    assert result.success
+
+  @pytest.mark.asyncio
+  async def test_issue_create_in_github_operations(self) -> None:
+    """issue_create is in the _GITHUB_OPERATIONS frozenset."""
+    assert "issue_create" in github_module._GITHUB_OPERATIONS
+
+  @pytest.mark.asyncio
+  async def test_issue_create_in_write_ops(self) -> None:
+    """issue_create is in the _WRITE_OPS frozenset (requires explicit opt-in)."""
+    assert "issue_create" in github_module._WRITE_OPS
+
+
 class TestGithubOperationAllowlist:
   """Operation enum + allowlist (the security boundary)."""
 

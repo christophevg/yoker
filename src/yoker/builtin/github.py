@@ -2,7 +2,8 @@
 
 Wraps the ``gh`` CLI for a fixed set of GitHub operations. Read operations
 are auto-permitted via the default allowlist. Write operations (``pr_create``,
-``release_create``) require explicit opt-in via ``allowed_operations`` in
+``release_create``, ``issue_create``) require explicit opt-in via
+``allowed_operations`` in
 config — they are never in the default allowlist. The operation enum is the
 security boundary: the agent can only invoke the hardcoded ``gh`` subcommands
 listed in ``_OPERATION_DISPATCH`` — never ``gh extension``, ``gh auth
@@ -73,6 +74,7 @@ _GITHUB_OPERATIONS: frozenset[str] = frozenset(
     "pr_draft",
     "pr_edit",
     "release_create",
+    "issue_create",
   }
 )
 
@@ -81,7 +83,7 @@ _GITHUB_OPERATIONS: frozenset[str] = frozenset(
 # allowlist. Even when allowed, they are never auto-permitted (the config
 # owner must consciously add them).
 _WRITE_OPS: frozenset[str] = frozenset(
-  {"pr_create", "pr_comment", "pr_ready", "pr_draft", "pr_edit", "release_create"}
+  {"pr_create", "pr_comment", "pr_ready", "pr_draft", "pr_edit", "release_create", "issue_create"}
 )
 
 # (gh_subcommand_prefix, --json fields, required_param)
@@ -164,6 +166,11 @@ _OPERATION_DISPATCH: dict[str, tuple[list[str], str, str | None]] = {
     "url,tagName,name,isDraft,isPrerelease",
     None,
   ),
+  "issue_create": (
+    ["issue", "create"],
+    "",
+    None,
+  ),
 }
 
 # Operations that use ``gh api`` instead of a regular ``gh`` subcommand.
@@ -232,6 +239,7 @@ _REDACT_REPLACEMENT = "<redacted>"
     "  pr_draft       — Convert a PR to draft. Required: number, repo.\n"
     "  pr_edit        — Edit a PR (assignees, reviewers, labels). Required: number. Optional: repo, add_assignee, remove_assignee, add_reviewer, remove_reviewer, add_label, remove_label.\n"
     "  release_create — Create a release. Required: repo, tag, title, notes. Optional: draft, prerelease.\n"
+    "  issue_create   — Create an issue. Required: repo, title, body. Optional: label, assignee.\n"
     "\n"
     "Common parameters:\n"
     '  repo    — "owner/name" (e.g. "octocat/Hello-World"). If omitted, uses current git repo.\n'
@@ -254,7 +262,7 @@ async def github(
       "GitHub operation. One of: repo_view, issue_list, issue_view, pr_list, "
       "pr_view, pr_reviews, pr_comments, workflow_list, workflow_view, "
       "workflow_logs, release_list, release_view, pr_create, pr_comment, "
-      "pr_ready, pr_draft, pr_edit, release_create."
+      "pr_ready, pr_draft, pr_edit, release_create, issue_create."
     ),
   ],
   ctx: ToolContext,
@@ -306,13 +314,14 @@ async def github(
   ] = "",
   add_label: Annotated[str, Text("Comma-separated label names to add (for pr_edit)")] = "",
   remove_label: Annotated[str, Text("Comma-separated label names to remove (for pr_edit)")] = "",
+  assignee: Annotated[str, Text("Comma-separated logins to assign (for issue_create)")] = "",
 ) -> ToolResult:
   """Perform a GitHub operation via the ``gh`` CLI.
 
   Read operations are restricted to a fixed enum (the security boundary)
   and further gated by ``GitHubToolConfig.allowed_operations``. Write
   operations (``pr_create``, ``pr_comment``, ``pr_ready``, ``pr_draft``,
-  ``release_create``) require
+  ``release_create``, ``issue_create``) require
   explicit opt-in via ``allowed_operations`` — they are NOT in the default
   allowlist. All commands
   run via ``subprocess`` with list args (no shell); timeout is enforced by
@@ -337,6 +346,10 @@ async def github(
 
   ``release_create`` requires ``repo``, ``tag``, ``title``, and ``notes``.
   Optional ``draft`` and ``prerelease`` flags default to false.
+
+  ``issue_create`` requires ``repo``, ``title``, and ``body``. Optional
+  ``label`` (comma-separated labels) and ``assignee`` (comma-separated
+  logins) add labels and assignees to the created issue.
   """
   # --- 1. Config type check ---
   gh_config = ctx.config
@@ -412,6 +425,19 @@ async def github(
     if werr is not None:
       logger.info("github_rejected", reason="invalid_release_create_param", error=werr)
       return ToolResult(success=False, error=werr)
+
+  if operation == "issue_create":
+    werr = _validate_issue_create_params(repo, title, body)
+    if werr is not None:
+      logger.info("github_rejected", reason="invalid_issue_create_param", error=werr)
+      return ToolResult(success=False, error=werr)
+
+  # issue_create: validate assignee for forbidden chars (label already validated)
+  if operation == "issue_create" and assignee and _contains_forbidden(assignee):
+    return ToolResult(
+      success=False,
+      error="Parameter 'assignee' contains forbidden character",
+    )
 
   # pr_draft requires explicit repo (two-step API calls need it)
   if operation == "pr_draft" and not repo:
@@ -542,11 +568,13 @@ async def github(
     remove_reviewer,
     add_label,
     remove_label,
+    label,
+    assignee,
   )
   # For write ops with a required positional (pr_comment), insert write args
   # (flags like --body=...) BEFORE the -- separator + positional arg.
-  # For write ops without a required positional (pr_create, release_create),
-  # _build_command already returned the full command; write_args are appended
+  # For write ops without a required positional (pr_create, release_create,
+  # issue_create), _build_command already returned the full command; write_args are appended
   # after (they're all flags, no positional needed).
   # For release_create, the positional tag is already in the command from
   # _build_command, and write_args (--title, --notes, --draft, --prerelease)
@@ -772,6 +800,19 @@ def _validate_release_create_params(repo: str, tag: str, title: str, notes: str)
   return None
 
 
+def _validate_issue_create_params(repo: str, title: str, body: str) -> str | None:
+  """Validate parameters for issue_create operation."""
+  if not repo:
+    return "Parameter 'repo' is required for issue_create"
+  err = _validate_text_field("title", title, max_len=1024)
+  if err is not None:
+    return err
+  err = _validate_text_field("body", body, max_len=100000)
+  if err is not None:
+    return err
+  return None
+
+
 def _build_write_args(
   operation: str,
   title: str,
@@ -788,6 +829,8 @@ def _build_write_args(
   remove_reviewer: str = "",
   add_label: str = "",
   remove_label: str = "",
+  label: str = "",
+  assignee: str = "",
 ) -> list[str]:
   """Build the extra CLI args for write operations.
 
@@ -795,6 +838,8 @@ def _build_write_args(
   ``--base=...``, ``--draft``.
   For ``release_create``: positional tag, ``--title=...``, ``--notes=...``,
   optional ``--draft``, ``--prerelease``.
+  For ``issue_create``: ``--title=...``, ``--body=...``, optional ``--label``,
+  ``--assignee``.
   For ``pr_edit``: optional ``--add-assignee=...``, ``--remove-assignee=...``,
   ``--add-reviewer=...``, ``--remove-reviewer=...``, ``--add-label=...``,
   ``--remove-label=...``.
@@ -847,6 +892,17 @@ def _build_write_args(
       args.append("--draft")
     if prerelease:
       args.append("--prerelease")
+    return args
+
+  if operation == "issue_create":
+    args = [
+      f"--title={title}",
+      f"--body={body}",
+    ]
+    if label:
+      args.extend(["--label", label])
+    if assignee:
+      args.extend(["--assignee", assignee])
     return args
 
   return []
@@ -920,10 +976,16 @@ def _validate_params(
       return "Parameter 'label' must be a string"
     if label.startswith("-"):
       return "Parameter 'label' must not start with '-'"
-    if len(label) > _MAX_TAG_LABEL_LEN:
-      return f"Parameter 'label' exceeds {_MAX_TAG_LABEL_LEN} characters"
-    if not _TAG_LABEL_RE.fullmatch(label):
-      return f"Invalid label format: {label!r}"
+    # For issue_list (filtering), label must match the strict single-label regex.
+    # For issue_create (adding labels), comma-separated labels are allowed.
+    if operation in _LABEL_OPS:
+      if len(label) > _MAX_TAG_LABEL_LEN:
+        return f"Parameter 'label' exceeds {_MAX_TAG_LABEL_LEN} characters"
+      if not _TAG_LABEL_RE.fullmatch(label):
+        return f"Invalid label format: {label!r}"
+    elif len(label) > _MAX_TAG_LABEL_LEN * 2:
+      # Allow longer comma-separated label lists for issue_create
+      return f"Parameter 'label' exceeds {_MAX_TAG_LABEL_LEN * 2} characters"
     if _contains_forbidden(label):
       return "Parameter 'label' contains forbidden character"
 
@@ -981,7 +1043,7 @@ def _build_command(
   if operation in _LIMIT_OPS:
     cmd.extend(["--limit", str(limit)])
 
-  # Write operations (pr_create, pr_comment, release_create) don't support
+  # Write operations (pr_create, pr_comment, release_create, issue_create) don't support
   # --json; they output a URL on success which is parsed separately.
   # Plaintext operations (workflow_logs) return raw text, not JSON.
   if operation not in _WRITE_OPS and operation not in _PLAINTEXT_OPS:
@@ -1048,6 +1110,11 @@ def _parse_write_output(operation: str, stdout: str, tag: str) -> str:
     result = {"draft": True}
   elif operation == "release_create":
     result["tagName"] = tag
+  elif operation == "issue_create":
+    # gh issue create outputs a URL: https://github.com/owner/repo/issues/42
+    match = re.search(r"/issues/(\d+)", url)
+    if match:
+      result["number"] = int(match.group(1))
 
   return json.dumps(result)
 
