@@ -443,6 +443,9 @@ class InteractiveUIHandler(UIHandler):
     except KeyboardInterrupt:
       self.console.print()  # Newline after ^C
       return None
+    except asyncio.CancelledError:
+      self._reset_prompt_app()
+      return None
     finally:
       session.app.erase_when_done = False
     if result:
@@ -483,6 +486,9 @@ class InteractiveUIHandler(UIHandler):
       return None
     except KeyboardInterrupt:
       self.console.print()
+      return None
+    except asyncio.CancelledError:
+      self._reset_prompt_app()
       return None
     finally:
       session.app.erase_when_done = False
@@ -695,16 +701,44 @@ class InteractiveUIHandler(UIHandler):
         style=TOOL_STYLE,
       )
     )
-    session = self._get_or_create_session()
+    # Use Python's built-in ``input()`` via ``asyncio.to_thread`` rather
+    # than the shared ``PromptSession``.  The approval prompt is a simple
+    # y/N — it doesn't need history, multiline, or other prompt_toolkit
+    # features.  Using ``input()`` avoids "Application is already running"
+    # errors that occur when the shared ``PromptSession``'s Application
+    # state is stale from the main REPL's ``get_input`` call.
     try:
-      answer = await session.prompt_async(
-        f"Approve {prompt_label}? [y/N] ",
-        is_password=False,
-      )
+      answer: str = await asyncio.to_thread(input, f"Approve {prompt_label}? [y/N] ")
     except (EOFError, KeyboardInterrupt):
       self.console.print()
       return False
+    except asyncio.CancelledError:
+      return False
     return answer.strip().lower() in ("y", "yes")
+
+  def _reset_prompt_app(self) -> None:
+    """Reset the cached PromptSession's Application after a CancelledError.
+
+    When a sub-agent task is cancelled while ``prompt_async`` is awaiting
+    user input, prompt_toolkit's Application is left in an inconsistent
+    "running" state. The next call to ``prompt_async`` or ``prompt`` finds
+    the Application already running and raises
+    ``RuntimeError("This application is already running")``.
+
+    This method resets the Application's internal ``_is_running`` flag so
+    subsequent calls work correctly. If the session is None or the reset
+    fails (unexpected API changes), we recreate the session from scratch.
+    """
+    if self._session is None:
+      return
+    app = self._session.app
+    try:
+      app._is_running = False
+      if hasattr(app, "future"):
+        app.future = None
+    except Exception:
+      # If the reset fails, recreate the session entirely.
+      self._session = None
 
   # === Tool Output ===
 

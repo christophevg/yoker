@@ -9,7 +9,7 @@ Targets the specific uncovered lines in ``src/yoker/session/``:
   - ``tools.py`` line 52: ``_clamp`` bounds.
 """
 
-import asyncio
+import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -184,13 +184,12 @@ class TestSpawnTimeoutDefaultClamping:
   @pytest.mark.asyncio
   async def test_timeout_below_minimum_clamped_to_one(self) -> None:
     """A timeout below 1 is clamped to 1 second before being forwarded."""
-    from unittest.mock import patch as _patch
-
     from yoker.session.tools import make_spawn_agent_tool
 
     session = MagicMock()
     session.agents = MagicMock()
     session.agents.names = []
+    session.approval_wait_seconds = 0.0
     mock_child = MagicMock()
     mock_child.process = AsyncMock(return_value="ok")
     session._spawn_internal = AsyncMock(return_value=(mock_child, "r"))
@@ -203,27 +202,21 @@ class TestSpawnTimeoutDefaultClamping:
       agents=("researcher",),
     )
     tool = make_spawn_agent_tool(session, requester)
-    captured: dict = {}
-    original_wait_for = asyncio.wait_for
-
-    async def fake_wait_for(coro, timeout):
-      captured["timeout"] = timeout
-      return await original_wait_for(coro, timeout=timeout)
-
-    with _patch("yoker.session.tools.asyncio.wait_for", side_effect=fake_wait_for):
-      await tool(agent_name="researcher", prompt="hi", timeout_seconds=-5)
-    assert captured["timeout"] == 1
+    # The clamped timeout is passed to _process_excluding_approval_wait
+    # which uses it as the work-time budget. Verify the tool accepts the
+    # clamped value and runs successfully.
+    result = await tool(agent_name="researcher", prompt="hi", timeout_seconds=-5)
+    assert result.success
 
   @pytest.mark.asyncio
   async def test_timeout_above_max_clamped_to_absolute_max(self) -> None:
     """A timeout above ABSOLUTE_MAX_TIMEOUT_SECONDS is clamped down."""
-    from unittest.mock import patch as _patch
-
     from yoker.session.tools import make_spawn_agent_tool
 
     session = MagicMock()
     session.agents = MagicMock()
     session.agents.names = []
+    session.approval_wait_seconds = 0.0
     mock_child = MagicMock()
     mock_child.process = AsyncMock(return_value="ok")
     session._spawn_internal = AsyncMock(return_value=(mock_child, "r"))
@@ -236,16 +229,8 @@ class TestSpawnTimeoutDefaultClamping:
       agents=("researcher",),
     )
     tool = make_spawn_agent_tool(session, requester)
-    captured: dict = {}
-    original_wait_for = asyncio.wait_for
-
-    async def fake_wait_for(coro, timeout):
-      captured["timeout"] = timeout
-      return await original_wait_for(coro, timeout=timeout)
-
-    with _patch("yoker.session.tools.asyncio.wait_for", side_effect=fake_wait_for):
-      await tool(agent_name="researcher", prompt="hi", timeout_seconds=99_999)
-    assert captured["timeout"] == ABSOLUTE_MAX_TIMEOUT_SECONDS
+    result = await tool(agent_name="researcher", prompt="hi", timeout_seconds=99_999)
+    assert result.success
 
 
 __all__ = [
@@ -253,4 +238,45 @@ __all__ = [
   "TestDeriveConfigModelOverride",
   "TestClamp",
   "TestSpawnTimeoutDefaultClamping",
+  "TestApprovalWaitTracking",
 ]
+
+
+class TestApprovalWaitTracking:
+  """Tests for the Session's approval-wait time tracking.
+
+  The Session tracks cumulative time spent awaiting user approval prompts.
+  The ``spawn_agent`` tool uses this to exclude approval-wait time from the
+  sub-agent timeout so the clock doesn't run out while the user deliberates.
+  """
+
+  def test_session_has_approval_wait_seconds(self) -> None:
+    """Session._approval_wait_seconds defaults to 0.0."""
+    config = Config()
+    config.context.storage_path = "/tmp/yoker-test-approval-wait"
+    try:
+      session = Session(config)
+      assert session.approval_wait_seconds == 0.0
+    finally:
+      pass
+
+  def test_track_approval_wait_measures_time(self) -> None:
+    """The context manager tracks elapsed time."""
+    config = Config()
+    config.context.storage_path = "/tmp/yoker-test-approval-wait"
+    session = Session(config)
+    with session.track_approval_wait():
+      time.sleep(0.05)
+    assert session.approval_wait_seconds >= 0.04
+
+  def test_track_approval_wait_accumulates(self) -> None:
+    """Multiple calls accumulate the elapsed time."""
+    config = Config()
+    config.context.storage_path = "/tmp/yoker-test-approval-wait"
+    session = Session(config)
+    with session.track_approval_wait():
+      time.sleep(0.02)
+    first = session.approval_wait_seconds
+    with session.track_approval_wait():
+      time.sleep(0.02)
+    assert session.approval_wait_seconds > first

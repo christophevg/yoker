@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from io import StringIO
 from types import SimpleNamespace
 from typing import Any
@@ -39,15 +40,17 @@ def test_batch_handler_does_not_provide_confirm_approval() -> None:
 
 @pytest.fixture
 def stub_session(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
-  """Patch ``PromptSession`` at module level with a stub for the test's duration.
+  """Patch ``input`` and ``PromptSession`` at module level for the test's duration.
 
-  The stub's ``prompt_async`` is a coroutine that returns ``""`` by default.
-  Tests reassign ``prompt_async`` (or set ``answers`` / ``raises``) to drive
-  the desired behavior.
+  ``confirm_approval`` uses the built-in ``input()`` (via ``asyncio.to_thread``)
+  for the y/N prompt — it doesn't need prompt_toolkit features.  Tests
+  configure the stub ``input`` behavior via ``answers`` / ``raises``.
+  ``PromptSession`` is still stubbed for ``get_input`` / ``get_secret_input``
+  tests that may run in the same session.
   """
   state: dict[str, Any] = {"answers": [], "raises": None}
 
-  async def _prompt_async(_prompt: str, is_password: bool = False, **_kw: Any) -> str:
+  def _input(_prompt: str) -> str:
     if state["raises"] is not None:
       raise state["raises"]()
     answers = state["answers"]
@@ -55,8 +58,19 @@ def stub_session(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
       return answers.pop(0)
     return ""
 
-  stub = SimpleNamespace(prompt_async=_prompt_async, is_password=False)
-  monkeypatch.setattr("yoker.ui.interactive.PromptSession", lambda *a, **kw: stub)
+  # Patch builtins.input for confirm_approval.
+  monkeypatch.setattr("builtins.input", _input)
+
+  # Still stub PromptSession for get_input/get_secret_input.
+  pt_stub = SimpleNamespace(
+    prompt=lambda *a, **kw: "",
+    is_password=False,
+    app=SimpleNamespace(_is_running=False, future=None, erase_when_done=False),
+  )
+  monkeypatch.setattr("yoker.ui.interactive.PromptSession", lambda *a, **kw: pt_stub)
+
+  stub = SimpleNamespace(_state=state)  # type: ignore[attr-defined]
+  return stub
   stub._state = state  # type: ignore[attr-defined]
   return stub
 
@@ -200,3 +214,52 @@ async def test_interactive_confirm_approval_file_default_kind(
   output = console.file.getvalue()
   assert "Protected file" in output
   assert "Agent wants to modify" in output
+
+
+# ---------------------------------------------------------------------------
+# CancelledError handling — sub-agent timeout while awaiting approval
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_interactive_confirm_approval_cancelled_returns_false(
+  stub_session: SimpleNamespace,
+) -> None:
+  """CancelledError during input is treated as denial."""
+  handler = _make_handler(stub_session, raises=asyncio.CancelledError)
+  result = await handler.confirm_approval("/x/Makefile", "+all:\n")
+  assert result is False
+
+
+@pytest.mark.asyncio
+async def test_interactive_confirm_approval_cancelled_then_next_call_works(
+  stub_session: SimpleNamespace,
+) -> None:
+  """After CancelledError, the next confirm_approval call works normally."""
+  call_count = [0]
+
+  def _flaky_input(_prompt: str) -> str:
+    call_count[0] += 1
+    if call_count[0] == 1:
+      raise asyncio.CancelledError()
+    return "y"
+
+  stub_session._state["raises"] = None  # type: ignore[attr-defined]
+
+  def _custom_input(prompt: str) -> str:
+    return _flaky_input(prompt)
+
+  # First call: CancelledError → returns False
+  handler = _make_handler(stub_session)
+  # We need to monkey-patch input for this test since the fixture already
+  # patched it. We'll use the handler's confirm_approval which calls input().
+  import unittest.mock
+
+  with unittest.mock.patch("builtins.input", side_effect=_custom_input):
+    result1 = await handler.confirm_approval("/x/Makefile", "+all:\n")
+  assert result1 is False
+
+  # Second call: should work (returns True)
+  with unittest.mock.patch("builtins.input", return_value="y"):
+    result2 = await handler.confirm_approval("/x/Makefile", "+all:\n")
+  assert result2 is True

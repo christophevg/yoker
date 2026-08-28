@@ -42,6 +42,7 @@ static tool set loaded from plugins.
 """
 
 import asyncio
+import time
 from typing import TYPE_CHECKING, Annotated, Any
 
 from structlog import get_logger
@@ -63,6 +64,50 @@ ABSOLUTE_MAX_TIMEOUT_SECONDS: int = 3600
 def _clamp(value: int, minimum: int, maximum: int) -> int:
   """Clamp a value to a range."""
   return max(minimum, min(value, maximum))
+
+
+async def _process_excluding_approval_wait(
+  child: "Agent",
+  prompt: str,
+  session: "Session",
+  approval_wait_baseline: float,
+  timeout_seconds: int,
+) -> str:
+  """Run ``child.process(prompt)`` with a timeout that excludes approval-wait time.
+
+  The effective budget is ``timeout_seconds`` of *work* time — time the
+  user spends on approval prompts (tracked on the session) does not count.
+  This prevents the sub-agent from timing out while blocked on user input.
+
+  The coroutine polls every 0.5s: if the work-time budget is exhausted,
+  it cancels the underlying ``process`` task and raises ``asyncio.TimeoutError``.
+  """
+  task = asyncio.create_task(child.process(prompt))
+  start = time.monotonic()
+
+  while True:
+    try:
+      # Wait for the task to complete, or poll after a short interval.
+      await asyncio.wait_for(asyncio.shield(task), timeout=0.5)
+      return task.result()
+    except asyncio.TimeoutError:
+      # Task didn't finish in 0.5s — check the *work-time* budget.
+      approval_wait = session.approval_wait_seconds - approval_wait_baseline
+      work_time = time.monotonic() - start - approval_wait
+      if work_time >= timeout_seconds:
+        task.cancel()
+        try:
+          await task
+        except (asyncio.CancelledError, Exception):
+          pass
+        raise asyncio.TimeoutError() from None
+    except asyncio.CancelledError:
+      task.cancel()
+      try:
+        await task
+      except (asyncio.CancelledError, Exception):
+        pass
+      raise
 
 
 def make_spawn_agent_tool(session: "Session", requester: "Agent") -> Any:
@@ -132,8 +177,19 @@ def make_spawn_agent_tool(session: "Session", requester: "Agent") -> Any:
 
     try:
       child, agent_id = await session._spawn_internal(agent_name, requester=requester)
+
+      # Record approval-wait baseline so we can exclude time the user spent
+      # deliberating on approval prompts from the sub-agent's wall-clock
+      # timeout.  Without this, a 300s timeout can fire while the agent is
+      # blocked waiting for the user to approve a git push.
+      approval_wait_before = session.approval_wait_seconds
       try:
-        response = await asyncio.wait_for(child.process(prompt), timeout=timeout_seconds)
+        response = await asyncio.wait_for(
+          _process_excluding_approval_wait(
+            child, prompt, session, approval_wait_before, timeout_seconds
+          ),
+          timeout=timeout_seconds + 3600,  # generous hard ceiling; real check is inside
+        )
       except asyncio.TimeoutError as e:
         raise TimeoutError(
           f"Sub-agent '{agent_id}' timed out after {timeout_seconds} seconds"

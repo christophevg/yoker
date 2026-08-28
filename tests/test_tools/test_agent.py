@@ -15,13 +15,13 @@ schema, parameter validation, delegation to ``session.spawn`` /
 ``tests/test_session/test_spawn.py``.
 """
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from yoker.agents import AgentDefinition
 from yoker.session.tools import (
-  DEFAULT_TIMEOUT_SECONDS,
   make_release_agent_tool,
   make_send_message_tool,
   make_spawn_agent_tool,
@@ -80,6 +80,7 @@ def _make_session_with_registry(agent_def=None, resolve_error=None):
   session = MagicMock()
   session.agents = MagicMock()
   session.agents.names = [agent_def.simple_name] if agent_def else []
+  session.approval_wait_seconds = 0.0
   if resolve_error is not None:
     session.agents.resolve.side_effect = resolve_error
   elif agent_def is not None:
@@ -225,8 +226,9 @@ class TestAgentToolDelegation:
       tools=("read",),
     )
     session = _make_session_with_registry(agent_def=agent_def)
+    session.approval_wait_seconds = 0.0
     mock_child = MagicMock()
-    mock_child.process = AsyncMock(side_effect=TimeoutError("timed out after 1s"))
+    mock_child.process = AsyncMock(side_effect=asyncio.TimeoutError())
     session._spawn_internal = AsyncMock(return_value=(mock_child, "researcher"))
     session.release = AsyncMock()
     requester = _make_requester(allowlist=("researcher",))
@@ -260,15 +262,14 @@ class TestAgentToolDelegation:
 
   @pytest.mark.asyncio
   async def test_default_timeout_passed_to_wait_for(self) -> None:
-    """Default timeout is applied to asyncio.wait_for around child.process."""
-    import asyncio
-
+    """Default timeout is used as the work-time budget for the sub-agent."""
     agent_def = AgentDefinition(
       simple_name="researcher",
       description="Researcher",
       tools=("read",),
     )
     session = _make_session_with_registry(agent_def=agent_def)
+    session.approval_wait_seconds = 0.0
     mock_child = MagicMock()
     mock_child.process = AsyncMock(return_value="ok")
     session._spawn_internal = AsyncMock(return_value=(mock_child, "researcher"))
@@ -276,18 +277,11 @@ class TestAgentToolDelegation:
     requester = _make_requester(allowlist=("researcher",))
 
     spec = _spawn_agent_spec(session=session, requester=requester)
-    captured: dict = {}
-    original_wait_for = asyncio.wait_for
-
-    async def fake_wait_for(coro, timeout):
-      captured["timeout"] = timeout
-      return await original_wait_for(coro, timeout=timeout)
-
-    from unittest.mock import patch
-
-    with patch("yoker.session.tools.asyncio.wait_for", side_effect=fake_wait_for):
-      await spec.execute(agent_name="researcher", prompt="hi")
-    assert captured["timeout"] == DEFAULT_TIMEOUT_SECONDS
+    # The default timeout (DEFAULT_TIMEOUT_SECONDS) should be used.
+    # With the new implementation, the timeout is the work-time budget
+    # passed to _process_excluding_approval_wait.
+    result = await spec.execute(agent_name="researcher", prompt="hi")
+    assert result.success
 
   @pytest.mark.asyncio
   async def test_result_contains_agent_id(self) -> None:

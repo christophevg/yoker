@@ -179,17 +179,28 @@ def _wire_approval_handler(session: Session, ui: UIHandler) -> None:
   :mod:`yoker.ui.handler`). Handlers that do not provide it are not wired,
   and the :class:`yoker.tools.guardrails.path.WritePathGuardrail` handles
   write-protected files (block without interactive prompt). When ``ui``
-  provides ``confirm_approval``, the handler is stored on the session
-  so it is propagated to every agent created via ``_create_agent`` —
-  the primary agent and all spawned subagents get the same interactive
-  approval flow. The git tool also uses this handler for non-auto-
-  permissioned operations (with ``kind="git"``).
+  provides ``confirm_approval``, the handler is wrapped so that time spent
+  awaiting user input is tracked on the session (excluded from sub-agent
+  timeouts). The handler is stored on the session so it is propagated to
+  every agent created via ``_create_agent`` — the primary agent and all
+  spawned subagents get the same interactive approval flow. The git tool
+  also uses this handler for non-auto-permissioned operations (with
+  ``kind="git"``).
   """
   if not hasattr(ui, "confirm_approval"):
     return
-  session._approval_handler = ui.confirm_approval
+
+  raw_handler = ui.confirm_approval
+
+  async def _tracking_approval_handler(label: str, preview: str, kind: str = "file") -> bool:
+    """Wrap the UI's ``confirm_approval`` to track elapsed time on the session."""
+    with session.track_approval_wait():
+      result: bool = await raw_handler(label, preview, kind)
+      return result
+
+  session._approval_handler = _tracking_approval_handler
   # Also wire on the primary agent (already constructed in __init__).
-  session.agent._approval_handler = ui.confirm_approval
+  session.agent._approval_handler = _tracking_approval_handler
 
 
 async def _run_repl(
