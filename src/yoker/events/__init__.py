@@ -19,6 +19,7 @@ from yoker.events.types import (
   ThinkingChunkEvent,
   ThinkingEndEvent,
   ThinkingStartEvent,
+  TimeoutEvent,
   ToolCallEvent,
   ToolContentEvent,
   ToolResultEvent,
@@ -54,6 +55,8 @@ __all__ = [
   "AgentSpawnedEvent",
   "AgentFinishedEvent",
   "AgentMessageEvent",
+  # Agent health
+  "TimeoutEvent",
   # Context management
   "ContextOverflowEvent",
   # Session event envelope

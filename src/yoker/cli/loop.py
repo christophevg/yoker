@@ -9,7 +9,7 @@ Security (M1 remediation):
   - ``--max-iterations`` defaults to a finite cap (100), not unlimited.
   - ``--max-duration`` provides a wall-clock timeout (optional).
   - The loop stops after 3 consecutive failures with exponential backoff.
-  - Per-iteration timeout reuses ``config.tools.agent.timeout_seconds``.
+  - Per-iteration timeout reuses ``config.agent.timeout_seconds``.
   - API cost warning is included in the docstring/help.
 
 Config cascade (corrected — same as run)::
@@ -134,8 +134,8 @@ def run_loop(plugin_packages: list[str]) -> None:
 
   session_id = config.session_id if config.persist else None
 
-  # Per-iteration timeout from agent tool config.
-  iteration_timeout = config.tools.agent.timeout_seconds
+  # Per-iteration timeout from agent config (idle-timeout semantics).
+  iteration_timeout = config.agent.timeout_seconds
 
   try:
     asyncio.run(

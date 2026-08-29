@@ -11,10 +11,8 @@ A :class:`Session` is the container+coordinator for a team of agents. It owns:
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import copy
 import os
-import time
 import uuid
 from collections.abc import Awaitable, Callable
 from pathlib import Path
@@ -98,16 +96,6 @@ class Session:
     # ``_create_agent`` so subagents get the same interactive approval
     # flow as the primary agent.
     self._approval_handler: Callable[[str, str, str], Awaitable[bool]] | None = None
-
-    # Tracks cumulative time (seconds) spent awaiting user approval across
-    # all agents in the session. Sub-agent timeouts subtract this from the
-    # wall-clock budget so waiting for user input doesn't count as work time.
-    self._approval_wait_seconds: float = 0.0
-    # Monotonic timestamp of the currently-active approval prompt's start,
-    # or None when no approval prompt is active.  Updated in real-time by
-    # ``track_approval_wait`` so the polling loop in ``_process_excluding``
-    # can see the in-progress wait even before the handler returns.
-    self._approval_wait_start: float | None = None
 
     configure_logging(self.config.logging, console=console_logging)
 
@@ -212,41 +200,6 @@ class Session:
     when the agent has finished and been removed.
     """
     return self._agents_map.get(name)
-
-  @contextlib.contextmanager
-  def track_approval_wait(self) -> Any:
-    """Context manager: track time spent awaiting user approval.
-
-    Usage::
-
-      with session.track_approval_wait():
-        approved = await handler(label, preview, kind)
-
-    The start time is recorded in ``_approval_wait_start`` so the polling
-    loop in ``_process_excluding_approval_wait`` can see the in-progress
-    wait in real-time (before the handler returns). On exit, the elapsed
-    seconds are accumulated into ``_approval_wait_seconds`` and the start
-    marker is cleared.
-    """
-    self._approval_wait_start = time.monotonic()
-    try:
-      yield
-    finally:
-      if self._approval_wait_start is not None:
-        self._approval_wait_seconds += time.monotonic() - self._approval_wait_start
-        self._approval_wait_start = None
-
-  @property
-  def approval_wait_seconds(self) -> float:
-    """Cumulative seconds spent awaiting user approval in this session.
-
-    Includes the currently-active approval wait (if any) so callers
-    polling this property see the real-time elapsed value.
-    """
-    total = self._approval_wait_seconds
-    if self._approval_wait_start is not None:
-      total += time.monotonic() - self._approval_wait_start
-    return total
 
   def _generate_agent_name(self, definition_name: str) -> str:
     """Disambiguate a definition name into a unique session agent name.
@@ -443,10 +396,11 @@ class Session:
       kwargs["thinking_mode"] = thinking_mode
     agent = Agent(**kwargs)
 
-    # Propagate the session-wide approval handler so subagents get the
-    # same interactive approval flow as the primary agent.
-    if self._approval_handler is not None:
-      agent._approval_handler = self._approval_handler
+    # Propagate the session-wide approval handler to the agent. The idle
+    # watchdog is scoped to the LLM streaming phase only, so approval
+    # prompts (which happen during tool execution, outside the watchdog
+    # window) never trigger a timeout. No wrapping is needed.
+    agent._approval_handler = self._approval_handler
 
     # Back-reference so UI commands (e.g. /agents) can reach the session's
     # AgentRegistry through agent._session.
@@ -470,7 +424,7 @@ class Session:
       return load_agent_definition(agent_path)
 
     # option 3: configured agent or the default definition
-    reference = self.config.agent or self.config.agents.definition or None
+    reference = self.config.agent.name or self.config.agents.definition or None
     if reference:
       # option 3a: a file path
       file_path = Path(reference).expanduser()

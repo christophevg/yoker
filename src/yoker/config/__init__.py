@@ -542,15 +542,14 @@ class SearchToolConfig(ToolConfig):
 class AgentToolConfig(ToolConfig):
   """Agent tool configuration.
 
-  Attributes:
-    timeout_seconds: Subagent timeout in seconds.
+  The idle-timeout configuration has moved to
+  :class:`AgentConfig.timeout_seconds` — it is now an agent-level
+  concern, not a tool-level concern.
   """
-
-  timeout_seconds: int = 300
 
   def __post_init__(self) -> None:
     """Validate agent tool configuration."""
-    validate_positive_int(self.timeout_seconds, "tools.agent.timeout_seconds")
+    pass
 
 
 # Matches valid Makefile target names per GNU make conventions.
@@ -1054,6 +1053,31 @@ class UIConfig:
 
 
 @dataclass
+class AgentConfig:
+  """Agent runtime configuration.
+
+  Applies to every :class:`yoker.core.Agent` — whether used standalone
+  or within a :class:`yoker.session.Session`.
+
+  Attributes:
+    name: Agent definition name or path. Resolved at construction time
+      to locate the agent definition (file path or registry name).
+    timeout_seconds: Idle-timeout in seconds. When an agent has not
+      received any activity (LLM data, tool execution) for this many
+      consecutive seconds, the idle watchdog cancels the in-flight
+      processing and emits a :class:`TimeoutEvent`. Awaiting user
+      approval does not count as idle time.
+  """
+
+  name: str = ""
+  timeout_seconds: int = 600
+
+  def __post_init__(self) -> None:
+    """Validate agent configuration."""
+    validate_positive_int(self.timeout_seconds, "agent.timeout_seconds")
+
+
+@dataclass
 class SessionConfig:
   """Session configuration.
 
@@ -1091,7 +1115,7 @@ class Config:
       run. The user must explicitly set ``enabled = true`` in their config
       file to acknowledge the risks of running an LLM-powered agent with
       filesystem, network, and code-execution tools.
-    agent : the agent to use.
+    agent: Agent runtime configuration (definition name, idle-timeout).
     harness: Harness metadata.
     backend: Backend provider configuration.
     context: Context management configuration.
@@ -1115,7 +1139,7 @@ class Config:
     },
   )
 
-  agent: str | None = None
+  agent: AgentConfig = field(default_factory=AgentConfig)
 
   harness: HarnessConfig = field(default_factory=HarnessConfig)
   motd: MotdConfig = field(default_factory=MotdConfig)

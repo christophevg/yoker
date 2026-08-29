@@ -56,6 +56,9 @@ class EventType(Enum):
   # Context management
   CONTEXT_OVERFLOW = auto()
 
+  # Agent health
+  AGENT_TIMEOUT = auto()
+
 
 @dataclass(frozen=True, kw_only=True)
 class Event:
@@ -279,3 +282,23 @@ class ContextOverflowEvent(Event):
   estimated_tokens: int
   max_tokens: int
   dropped_count: int
+
+
+@dataclass(frozen=True)
+class TimeoutEvent(Event):
+  """Emitted when the idle watchdog kills the agent's LLM streaming.
+
+  The agent's idle watchdog detects that the LLM backend has not produced
+  any data (content chunks, thinking, tool calls) for ``timeout_seconds``
+  consecutive seconds during the streaming phase. The watchdog cancels
+  the in-flight ``_consume_stream`` call, emits this event, and raises
+  ``TimeoutError`` to the ``process()`` caller. The agent stays alive —
+  the caller can retry with another ``process()`` call.
+
+  Attributes:
+    idle_seconds: How long the agent was idle before the timeout fired.
+    timeout_seconds: The configured idle-timeout threshold.
+  """
+
+  idle_seconds: float
+  timeout_seconds: int

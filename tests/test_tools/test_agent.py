@@ -15,7 +15,6 @@ schema, parameter validation, delegation to ``session.spawn`` /
 ``tests/test_session/test_spawn.py``.
 """
 
-import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -80,7 +79,6 @@ def _make_session_with_registry(agent_def=None, resolve_error=None):
   session = MagicMock()
   session.agents = MagicMock()
   session.agents.names = [agent_def.simple_name] if agent_def else []
-  session.approval_wait_seconds = 0.0
   if resolve_error is not None:
     session.agents.resolve.side_effect = resolve_error
   elif agent_def is not None:
@@ -123,16 +121,8 @@ class TestAgentToolSchema:
     assert schema["function"]["name"] == "yoker__agent"
     assert "agent_name" in schema["function"]["parameters"]["properties"]
     assert "prompt" in schema["function"]["parameters"]["properties"]
-    assert "timeout_seconds" in schema["function"]["parameters"]["properties"]
+    assert "ephemeral" in schema["function"]["parameters"]["properties"]
     assert schema["function"]["parameters"]["required"] == ["agent_name", "prompt"]
-
-  def test_timeout_in_schema(self) -> None:
-    """Test that timeout_seconds parameter is present with integer type."""
-    spec = _spawn_agent_spec()
-    schema = spec.schema
-
-    timeout_prop = schema["function"]["parameters"]["properties"]["timeout_seconds"]
-    assert timeout_prop["type"] == "integer"
 
 
 class TestAgentToolParameters:
@@ -157,19 +147,6 @@ class TestAgentToolParameters:
     assert not result.success
     assert "Missing required parameter" in result.error
     assert "prompt" in result.error
-
-  @pytest.mark.asyncio
-  async def test_invalid_timeout_string(self) -> None:
-    """Test error for invalid timeout_seconds parameter."""
-    spec = _spawn_agent_spec()
-    result = await spec.execute(
-      agent_name="test-agent",
-      prompt="Test",
-      timeout_seconds="not_a_number",
-    )
-
-    assert not result.success
-    assert "Invalid numeric parameter" in result.error
 
 
 class TestAgentToolDelegation:
@@ -226,15 +203,15 @@ class TestAgentToolDelegation:
       tools=("read",),
     )
     session = _make_session_with_registry(agent_def=agent_def)
-    session.approval_wait_seconds = 0.0
     mock_child = MagicMock()
-    mock_child.process = AsyncMock(side_effect=asyncio.TimeoutError())
+    mock_child.config.agent.timeout_seconds = 600
+    mock_child.process = AsyncMock(side_effect=TimeoutError("timed out"))
     session._spawn_internal = AsyncMock(return_value=(mock_child, "researcher"))
     session.release = AsyncMock()
     requester = _make_requester(allowlist=("researcher",))
 
     spec = _spawn_agent_spec(session=session, requester=requester)
-    result = await spec.execute(agent_name="researcher", prompt="hi", timeout_seconds=1)
+    result = await spec.execute(agent_name="researcher", prompt="hi")
 
     assert not result.success
     assert "timed out" in result.error.lower()
@@ -262,14 +239,13 @@ class TestAgentToolDelegation:
 
   @pytest.mark.asyncio
   async def test_default_timeout_passed_to_wait_for(self) -> None:
-    """Default timeout is used as the work-time budget for the sub-agent."""
+    """The agent's idle watchdog handles timeout — the tool just calls process()."""
     agent_def = AgentDefinition(
       simple_name="researcher",
       description="Researcher",
       tools=("read",),
     )
     session = _make_session_with_registry(agent_def=agent_def)
-    session.approval_wait_seconds = 0.0
     mock_child = MagicMock()
     mock_child.process = AsyncMock(return_value="ok")
     session._spawn_internal = AsyncMock(return_value=(mock_child, "researcher"))
@@ -277,9 +253,9 @@ class TestAgentToolDelegation:
     requester = _make_requester(allowlist=("researcher",))
 
     spec = _spawn_agent_spec(session=session, requester=requester)
-    # The default timeout (DEFAULT_TIMEOUT_SECONDS) should be used.
-    # With the new implementation, the timeout is the work-time budget
-    # passed to _process_excluding_approval_wait.
+    # The timeout is now handled by the Agent's idle watchdog, not by
+    # the tool. The tool simply calls child.process(prompt) and catches
+    # TimeoutError if the watchdog fires.
     result = await spec.execute(agent_name="researcher", prompt="hi")
     assert result.success
 

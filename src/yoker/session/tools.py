@@ -8,7 +8,18 @@ static tool set loaded from plugins.
 
 ``agent``
   - Calls ``session._spawn_internal(name, requester=<calling agent>)``,
-    runs the spawned agent's ``process(prompt)`` with a timeout.
+    then runs the spawned agent's ``process(prompt)`` directly.
+  - The idle-timeout watchdog lives on the Agent itself — it detects
+    LLM hangs during the streaming phase and cancels processing automatically.
+    The tool does NOT wrap the call with any timeout logic; it simply awaits
+    ``child.process(prompt)`` and catches ``TimeoutError`` if the watchdog fires.
+    The timeout duration is controlled by ``config.agent.timeout_seconds`` on
+    the child agent, not by the ``timeout_seconds`` parameter on this tool
+    (which is accepted for backward compatibility but no longer used).
+  - On timeout, the agent is **NOT released** — it stays in the active
+    map so the parent can retry (the timeout may be a transient LLM
+    server issue, same as a NetworkError). The parent can retry via
+    ``send_message`` or another ``agent`` call.
   - When ``ephemeral=True``, the agent is automatically released after its
     response (single-shot, no follow-up possible, no agent_id returned).
   - When ``ephemeral=False`` (default), the agent remains in the session's
@@ -41,8 +52,6 @@ static tool set loaded from plugins.
     done).
 """
 
-import asyncio
-import time
 from typing import TYPE_CHECKING, Annotated, Any
 
 from structlog import get_logger
@@ -56,58 +65,6 @@ if TYPE_CHECKING:
   from yoker.session import Session
 
 logger = get_logger(__name__)
-
-DEFAULT_TIMEOUT_SECONDS: int = 300
-ABSOLUTE_MAX_TIMEOUT_SECONDS: int = 3600
-
-
-def _clamp(value: int, minimum: int, maximum: int) -> int:
-  """Clamp a value to a range."""
-  return max(minimum, min(value, maximum))
-
-
-async def _process_excluding_approval_wait(
-  child: "Agent",
-  prompt: str,
-  session: "Session",
-  approval_wait_baseline: float,
-  timeout_seconds: int,
-) -> str:
-  """Run ``child.process(prompt)`` with a timeout that excludes approval-wait time.
-
-  The effective budget is ``timeout_seconds`` of *work* time — time the
-  user spends on approval prompts (tracked on the session) does not count.
-  This prevents the sub-agent from timing out while blocked on user input.
-
-  The coroutine polls every 0.5s: if the work-time budget is exhausted,
-  it cancels the underlying ``process`` task and raises ``asyncio.TimeoutError``.
-  """
-  task = asyncio.create_task(child.process(prompt))
-  start = time.monotonic()
-
-  while True:
-    try:
-      # Wait for the task to complete, or poll after a short interval.
-      await asyncio.wait_for(asyncio.shield(task), timeout=0.5)
-      return task.result()
-    except asyncio.TimeoutError:
-      # Task didn't finish in 0.5s — check the *work-time* budget.
-      approval_wait = session.approval_wait_seconds - approval_wait_baseline
-      work_time = time.monotonic() - start - approval_wait
-      if work_time >= timeout_seconds:
-        task.cancel()
-        try:
-          await task
-        except (asyncio.CancelledError, Exception):
-          pass
-        raise asyncio.TimeoutError() from None
-    except asyncio.CancelledError:
-      task.cancel()
-      try:
-        await task
-      except (asyncio.CancelledError, Exception):
-        pass
-      raise
 
 
 def make_spawn_agent_tool(session: "Session", requester: "Agent") -> Any:
@@ -147,7 +104,6 @@ def make_spawn_agent_tool(session: "Session", requester: "Agent") -> Any:
   async def spawn_agent(
     agent_name: Annotated[str, Text(label)],
     prompt: Annotated[str, Text("Task for the spawned agent")],
-    timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
     ephemeral: Annotated[
       bool,
       Text(
@@ -171,28 +127,17 @@ def make_spawn_agent_tool(session: "Session", requester: "Agent") -> Any:
       return ToolResult(success=False, error="Missing required parameter: prompt")
 
     try:
-      timeout_seconds = _clamp(int(timeout_seconds), 1, ABSOLUTE_MAX_TIMEOUT_SECONDS)
-    except (ValueError, TypeError):
-      return ToolResult(success=False, error="Invalid numeric parameter: timeout_seconds")
-
-    try:
       child, agent_id = await session._spawn_internal(agent_name, requester=requester)
 
-      # Record approval-wait baseline so we can exclude time the user spent
-      # deliberating on approval prompts from the sub-agent's wall-clock
-      # timeout.  Without this, a 300s timeout can fire while the agent is
-      # blocked waiting for the user to approve a git push.
-      approval_wait_before = session.approval_wait_seconds
       try:
-        response = await asyncio.wait_for(
-          _process_excluding_approval_wait(
-            child, prompt, session, approval_wait_before, timeout_seconds
-          ),
-          timeout=timeout_seconds + 3600,  # generous hard ceiling; real check is inside
-        )
-      except asyncio.TimeoutError as e:
+        response = await child.process(prompt)
+      except TimeoutError as e:
+        # The agent's idle watchdog fired — the LLM backend was unresponsive
+        # for longer than the configured timeout (config.agent.timeout_seconds).
+        # The agent is NOT released — it stays in the active map so the parent
+        # can retry (the timeout may be a transient LLM server issue).
         raise TimeoutError(
-          f"Sub-agent '{agent_id}' timed out after {timeout_seconds} seconds"
+          f"Sub-agent '{agent_id}' timed out after {child.config.agent.timeout_seconds} seconds"
         ) from e
 
       if ephemeral:
@@ -209,7 +154,7 @@ def make_spawn_agent_tool(session: "Session", requester: "Agent") -> Any:
       rendered = f"agent_id: {agent_id}\n\n{response}" if agent_id else response
       return ToolResult(success=True, result=rendered)
     except TimeoutError as e:
-      logger.warning("spawn_agent timeout", agent_name=agent_name, timeout_seconds=timeout_seconds)
+      logger.warning("spawn_agent timeout", agent_name=agent_name)
       return ToolResult(success=False, error=str(e))
     except ValueError as e:
       # Allowlist rejection, unknown agent, depth/capacity violation.
@@ -349,8 +294,6 @@ def make_release_agent_tool(session: "Session") -> Any:
 
 
 __all__ = [
-  "DEFAULT_TIMEOUT_SECONDS",
-  "ABSOLUTE_MAX_TIMEOUT_SECONDS",
   "make_spawn_agent_tool",
   "make_send_message_tool",
   "make_release_agent_tool",

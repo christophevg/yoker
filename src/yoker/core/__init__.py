@@ -7,6 +7,7 @@ Asynchronous Agent implementation for Yoker.
 import asyncio
 import inspect
 import os
+import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -24,10 +25,10 @@ from yoker.backends import ModelBackend, create_backend
 from yoker.builtin import make_skill_tool
 from yoker.config import Config, get_yoker_config
 from yoker.context import ContextManager, create_context_manager
-from yoker.core._processing import process_message
+from yoker.core._processing import emit, process_message
 from yoker.core._setup import create_web_guardrails
 from yoker.core.thinking import ThinkingMode
-from yoker.events import EventCallback
+from yoker.events import EventCallback, EventType, TimeoutEvent
 from yoker.exceptions import ConfigurationError, SkillError
 from yoker.logging import configure_logging
 from yoker.plugins import load_plugins, warn_plugins_disabled
@@ -184,6 +185,26 @@ class Agent:
     self._process_queue: asyncio.Queue[tuple[str, asyncio.Future[str]]] | None = None
     self._process_task: asyncio.Task[None] | None = None
 
+    # idle-timeout watchdog. The watchdog monitors the LLM streaming
+    # phase only (``_consume_stream``): if the agent has not received any
+    # data from the backend for ``timeout_seconds`` consecutive seconds,
+    # the watchdog cancels the in-flight stream, emits a TimeoutEvent, and
+    # raises TimeoutError to the process() caller.
+    #
+    # _last_activity is a monotonic timestamp updated by _touch_activity()
+    # on every chunk received from the backend. The watchdog is started
+    # before each ``_consume_stream`` call and stopped after it completes.
+    # Tool execution time is NOT monitored — the agent is actively working
+    # during tools, not idle.
+    self._last_activity: float = time.monotonic()
+    self._idle_watchdog_task: asyncio.Task[None] | None = None
+    # Set by the idle watchdog before cancelling the consumer, so the
+    # consumer can distinguish a timeout-induced cancellation from an
+    # external cancellation (e.g. aclose). On timeout the consumer sets
+    # TimeoutError on the future and goes back to waiting on the queue —
+    # the agent stays alive for the next ``process()`` call.
+    self._timed_out: bool = False
+
     # Protected-file / git-operation approval handler (MBI-009 T12). Optional
     # async callable wired by the CLI in interactive mode. When set, the
     # processing loop invokes it before write/update on a write-blocked file
@@ -318,6 +339,93 @@ class Agent:
     # Type narrow: we know path_read is always ReadPathGuardrail
     return guardrail  # type: ignore
 
+  # ------------------------------------------------------------------
+  # Idle-timeout tracking
+  # ------------------------------------------------------------------
+
+  @property
+  def idle_seconds(self) -> float:
+    """Seconds since the last activity (LLM chunk received from the backend)."""
+    return time.monotonic() - self._last_activity
+
+  def _touch_activity(self) -> None:
+    """Reset the idle timer to now.
+
+    Called from ``_processing.py`` on every ChatChunk received from the
+    backend during ``_consume_stream``. Also called once before starting
+    the watchdog to reset the timer at the beginning of each LLM streaming
+    cycle.
+    """
+    self._last_activity = time.monotonic()
+
+  def _start_idle_watchdog(self, timeout_seconds: int) -> None:
+    """Start the idle-timeout watchdog for the current LLM streaming cycle.
+
+    The watchdog polls ``idle_seconds`` every 0.5s. If the agent has
+    been idle for ``timeout_seconds`` or more, the watchdog:
+
+    1. Sets ``_timed_out = True`` and cancels ``_process_task``
+    3. Returns (the watchdog task completes)
+
+    The consumer catches the ``CancelledError``, sees ``_timed_out`` is
+    True, sets ``TimeoutError`` on the future, and goes back to waiting
+    on the queue — the agent stays alive for the next ``process()`` call.
+
+    The watchdog is started in ``process_message`` before each
+    ``_consume_stream`` call and stopped after it completes.
+    """
+    if self._idle_watchdog_task is not None and not self._idle_watchdog_task.done():
+      self._idle_watchdog_task.cancel()
+
+    self._idle_watchdog_task = asyncio.ensure_future(self._idle_watchdog(timeout_seconds))
+
+  def _stop_idle_watchdog(self) -> None:
+    """Cancel the idle-timeout watchdog (called after _consume_stream completes)."""
+    if self._idle_watchdog_task is not None and not self._idle_watchdog_task.done():
+      self._idle_watchdog_task.cancel()
+    self._idle_watchdog_task = None
+
+  async def _idle_watchdog(self, timeout_seconds: int) -> None:
+    """Poll ``idle_seconds`` and cancel the consumer on timeout.
+
+    Runs as a background task alongside ``process_message``. Polls
+    every 0.5s. When the idle threshold is reached:
+
+    1. Sets ``_timed_out = True`` so the consumer knows this cancellation
+       is a timeout (not an external aclose) and sets ``TimeoutError`` on
+       the future instead of ``CancelledError``.
+    2. Cancels ``_process_task`` (stops the in-flight ``_consume_stream``).
+    3. Fires a ``TimeoutEvent`` (fire-and-forget via
+       ``asyncio.ensure_future`` to avoid blocking on async event
+       handlers).
+
+    The consumer sets ``TimeoutError`` on the future and goes back to
+    waiting on the queue — the agent stays alive for the next
+    ``process()`` call.
+    """
+    try:
+      while True:
+        await asyncio.sleep(0.5)
+        if self.idle_seconds >= timeout_seconds:
+          self._timed_out = True
+          if self._process_task is not None and not self._process_task.done():
+            self._process_task.cancel()
+          idle = self.idle_seconds
+          asyncio.ensure_future(
+            emit(
+              TimeoutEvent(
+                type=EventType.AGENT_TIMEOUT,
+                idle_seconds=idle,
+                timeout_seconds=timeout_seconds,
+              ),
+              self._event_handlers,
+            )
+          )
+          return
+    except asyncio.CancelledError:
+      # Normal shutdown — the consumer completed or aclose was called.
+      pass
+
   async def process(self, message: str) -> str:
     """Process a single message and return the response.
 
@@ -352,11 +460,15 @@ class Agent:
     """Background consumer that processes queued requests one at a time.
 
     Loops indefinitely waiting on the queue; each (message, future) pair is
-    processed by :func:`process_message` and the result (or exception) is
+    processed by ``process_message`` and the result (or exception) is
     set on the future so the awaiting ``process()`` caller sees it. The
     consumer stays alive between requests (blocking on ``queue.get()``)
     and is cleaned up via task cancellation when the agent is garbage
     collected or the event loop closes.
+
+    The idle-timeout watchdog is managed inside ``process_message`` —
+    scoped to the LLM streaming phase only. Between requests (blocking on
+    ``queue.get()``), no watchdog runs.
     """
     assert self._process_queue is not None
     while True:
@@ -374,16 +486,27 @@ class Agent:
         if not future.done():
           future.set_result(result)
       except asyncio.CancelledError:
-        # External cancellation (not from aclose): propagate to the
-        # awaiting process() caller so it sees CancelledError, then
-        # re-raise to terminate the consumer.
-        if not future.done():
-          future.cancel()
-        raise
+        self._stop_idle_watchdog()
+        if self._timed_out:
+          # Idle-watchdog timeout: set TimeoutError on the future so the
+          # process() caller sees a recoverable error (not CancelledError).
+          # The consumer goes back to waiting on the queue — the agent
+          # stays alive for the next process() call.
+          self._timed_out = False
+          if not future.done():
+            future.set_exception(TimeoutError("Agent idle timeout"))
+        else:
+          # External cancellation (aclose or caller cancel): propagate
+          # CancelledError to the awaiting process() caller, then
+          # re-raise to terminate the consumer.
+          if not future.done():
+            future.cancel()
+          raise
       except BaseException as exc:
         # Catch BaseException (not just Exception) so the future is
         # always resolved — otherwise process() hangs forever waiting
         # on an unresolved future and aclose() is never reached.
+        self._stop_idle_watchdog()
         if not future.done():
           future.set_exception(exc)
       finally:
@@ -402,6 +525,7 @@ class Agent:
     A :meth:`__del__` safety net also cancels the task if aclose() was never
     called (e.g. an exception prevented the finally block from running).
     """
+    self._stop_idle_watchdog()
     if self._process_task is not None and not self._process_task.done():
       self._process_task.cancel()
       try:
@@ -411,7 +535,7 @@ class Agent:
     self._process_task = None
 
   def __del__(self) -> None:
-    """Safety net: cancel the process-consumer task if still pending.
+    """Safety net: cancel the process-consumer and watchdog tasks if still pending.
 
     If aclose() was never called (e.g. an exception prevented the finally
     block from running, or the caller forgot to call aclose()), the
@@ -419,14 +543,15 @@ class Agent:
     would be destroyed by GC while still pending, triggering the
     "Task was destroyed but it is pending!" warning.
 
-    This __del__ cancels the task as a last resort. It cannot await the
-    cancellation (no event loop in __del__), so it just calls cancel()
-    to mark the task for cancellation. The event loop will clean it up
-    during shutdown.
+    This __del__ cancels both the watchdog and consumer tasks as a last
+    resort. It cannot await the cancellation (no event loop in __del__),
+    so it just calls cancel() to mark the tasks for cancellation. The
+    event loop will clean them up during shutdown.
     """
-    task = getattr(self, "_process_task", None)
-    if task is not None and not task.done():
-      task.cancel()
+    for task_attr in ("_idle_watchdog_task", "_process_task"):
+      task = getattr(self, task_attr, None)
+      if task is not None and not task.done():
+        task.cancel()
 
   def inject_skill_context(self, skill_name: str, args: str | None = None) -> None:
     """Inject skill context into the conversation."""
@@ -566,7 +691,7 @@ class Agent:
     """Resolve the agent definition from explicit value, path, config or default.
 
     The Agent is Session-agnostic: it resolves definitions only from an
-    explicit ``definition``/``path`` argument or from ``config.agent`` /
+    explicit ``definition``/``path`` argument or from ``config.agent.name`` /
     ``config.agents.definition`` when they point at a filesystem path.
     Name-based registry resolution (through ``session.agents``) is handled by
     the Session layer, which passes the resolved ``agent_definition`` here.
@@ -578,8 +703,8 @@ class Agent:
     reference: str | None = None
     if path:
       reference = str(path)
-    elif self.config.agent:
-      reference = self.config.agent
+    elif self.config.agent.name:
+      reference = self.config.agent.name
     elif self.config.agents.definition:
       reference = self.config.agents.definition
     else:

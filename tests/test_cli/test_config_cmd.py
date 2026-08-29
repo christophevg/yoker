@@ -81,8 +81,11 @@ class TestDataclassToDict:
     """None values are omitted from the dict."""
     config = Config()
     result = _dataclass_to_dict(config)
-    # agent is None by default
-    assert "agent" not in result
+    # agent is now an AgentConfig dataclass (never None) — it should
+    # be present as a dict with name and timeout_seconds.
+    assert isinstance(result["agent"], dict)
+    assert "name" in result["agent"]
+    assert "timeout_seconds" in result["agent"]
 
 
 class TestRunConfigCmd:

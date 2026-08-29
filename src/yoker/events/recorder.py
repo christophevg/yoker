@@ -30,6 +30,7 @@ from yoker.events.types import (
   ThinkingChunkEvent,
   ThinkingEndEvent,
   ThinkingStartEvent,
+  TimeoutEvent,
   ToolCallEvent,
   ToolContentEvent,
   ToolResultEvent,
@@ -58,6 +59,7 @@ EVENT_CLASS_MAP: dict[EventType, type[Event]] = {
   EventType.AGENT_FINISHED: AgentFinishedEvent,
   EventType.AGENT_MESSAGE: AgentMessageEvent,
   EventType.CONTEXT_OVERFLOW: ContextOverflowEvent,
+  EventType.AGENT_TIMEOUT: TimeoutEvent,
 }
 
 

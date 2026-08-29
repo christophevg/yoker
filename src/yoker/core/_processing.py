@@ -260,8 +260,18 @@ async def process_message(
       last_input_tokens,
     )
 
-    stream = _chat_stream(agent)
-    content, thinking, tool_calls, stats = await _consume_stream(agent, stream)
+    # Start the idle watchdog scoped to the LLM streaming phase only.
+    # The watchdog detects when the backend stops sending data for
+    # ``timeout_seconds`` — an LLM server hang. Tool execution time is
+    # NOT monitored (the agent is actively working during tools).
+    timeout_seconds = agent.config.agent.timeout_seconds
+    agent._touch_activity()
+    agent._start_idle_watchdog(timeout_seconds)
+    try:
+      stream = _chat_stream(agent)
+      content, thinking, tool_calls, stats = await _consume_stream(agent, stream)
+    finally:
+      agent._stop_idle_watchdog()
 
     # Capture input_tokens for the next iteration's size check.
     if stats.get("input_tokens"):
@@ -589,6 +599,9 @@ async def _consume_stream(
   }
 
   async for chunk in stream:
+    # Reset the idle timer on every chunk received — the LLM backend is
+    # actively producing data, so the agent is not idle.
+    agent._touch_activity()
     if chunk.event == ChatChunkEvent.CONTENT_START:
       if in_thinking and agent.thinking_mode.is_visible:
         await emit(

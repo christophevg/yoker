@@ -153,6 +153,16 @@ class UIBridge:
         self._maybe_agent_lifecycle(event, "agent_spawned")
       case EventType.AGENT_FINISHED:
         self._maybe_agent_lifecycle(event, "agent_finished")
+      case EventType.AGENT_TIMEOUT:
+        # The idle watchdog fired — show a timeout notice if the handler
+        # supports it, otherwise let the TimeoutError propagate to the
+        # caller (which already handles it).
+        handler = getattr(self.ui, "agent_timeout", None)
+        if handler is not None:
+          agent = self._current_display()
+          if agent is None:
+            agent = AgentDisplay(id="", name="")
+          handler(agent)
       case EventType.SESSION_START | EventType.SESSION_END | EventType.AGENT_MESSAGE:
         # No UI action for these session-level events.
         pass
