@@ -29,6 +29,9 @@ test-cov: env-dev ## Run tests with coverage
 test-all: env-dev ## Run tests on all Python versions
 	uv run tox
 
+test-py310: env-dev ## Run tests on Python 3.10
+	uv run tox -e py310
+
 ## Code Quality
 
 format: env-dev ## Format code and fix linting issues
@@ -91,7 +94,7 @@ verify-wheel: ## List contents of built wheels
 		unzip -l "$$f"; \
 	done
 
-pre-publish: check ## Pre-publication checks (run before publishing)
+pre-publish: check-all ## Pre-publication checks (run before publishing, all Python versions)
 	@echo "Checking for relative image paths in README..."
 	@grep -n '!\[.*](media/' README.md && (echo "ERROR: Relative image paths found - use raw GitHub URLs for PyPI"; exit 1) || echo "OK: No relative image paths"
 	@echo "Checking version sync..."

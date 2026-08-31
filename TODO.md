@@ -2,6 +2,20 @@
 
 ## Backlog
 
+### Code Quality
+
+- [ ] **PathGuardrail refactor — eliminate duplicated validation blocks between Read/Write**
+  - `src/yoker/tools/guardrails/path.py`: `WritePathGuardrail.validate()` fully overrides `ReadPathGuardrail.validate()` (no `super()` call), producing large parallel blocks — empty-path check, null-byte check (added in 0.11.0), length/format checks etc. duplicated in both classes. Next safety check added to only one variant silently leaves the other unprotected (root cause of the Windows null-byte hole fixed in 0.11.0).
+  - **Fix:** Factor shared validation into the base class (common checks: empty, null-byte, structure) with polymorphic plugin-URL policy ("allowed if configured" for read / "never for write"). Regression proof to preserve: platform-agnostic null-byte tests incl. `test_write_rejects_null_byte`, plus 4-case parametrized security test.
+  - **Priority:** Medium
+  - **Severity:** Medium — architecture-level duplication makes future divergent-guardrail bugs likely
+
+### Tooling notes (from 0.11.0 release session)
+
+- [ ] **Makefile: generalize `test-py310` into parameterized `test-py VERSION=...`** — single target forwarding to `uv run tox -e py$(VERSION)`; add same for a per-leg `check` variant if useful.
+- [ ] **conftest.py plugin fallback is silent** — `tests/conftest.py` installs the demo plugin via subprocess with `check=False` and swallowed output (pytest-configure time); failures surface later as confusing `ModuleNotFoundError`/`PluginError` in tests. Make the fallback loud (fail with clear message) or remove it now that the plugin is a proper dev dependency.
+- [ ] **`session`/`sleep` shadowing smell** — public API functions re-exported from `__init__.py` shadow same-named submodules (`yoker.session`, `yoker.builtin.sleep`); caused 3.10 mock-target failures (`patch("yoker.session.Agent")` resolves to the function). Product rename is a breaking change — evaluate for a future major version; meanwhile tests must patch via explicit module refs (done in 0.11.0).
+
 ### Agent Behavior & Instructions
 
 - [ ] **Agent boundary awareness — stop guessing agents and seeking shell access**
