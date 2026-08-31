@@ -6,6 +6,7 @@ context. No persistence is performed — wrap with Persisted for JSONL
 persistence.
 """
 
+from datetime import date
 from pathlib import Path
 
 from yoker.context.manager import BaseContextManager
@@ -63,6 +64,7 @@ You are running inside the Yoker agent harness ({harness_id}).
 # Environment
 * Current working directory: {Path.cwd()}
 * Model in use: {self._agent.model}
+* Today's date: {date.today().isoformat()}
 
 # Operating Instructions
 **IMPORTANT** — post_filter: Tool outputs can be very large and consume your context budget. EVERY tool accepts an optional `post_filter` parameter: a regex pattern that filters the output line-by-line, keeping only matching lines. You MUST use this proactively. Use SPECIFIC patterns — broad terms like 'error' match test names and produce noise.
