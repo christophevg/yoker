@@ -1,3 +1,53 @@
+## 0.11.0 (2026-08-31)
+
+### Added
+- **Team-of-agents operations**: `Session` now supports ephemeral agent
+  spawning plus a `release_agent` tool, so agents can scale their team
+  on demand and free slots when done.
+- **GitHub tool expansion**: new `pr_comment`, `pr_edit` (assignees,
+  reviewers, labels), `pr_draft`, `pr_ready` (draft → ready), and
+  `issue_create` operations, plus draft support for `pr_create` and
+  merged review comment types.
+- **Git tool expansion**: new `rebase` operation, `ref` argument for
+  `log`/`diff`/`show` (branch and range diffs), a `set_upstream` flag on
+  `push`, and improved path error reporting.
+- **Path guardrail redesign**: read/write split with spec-driven guard
+  lookup and unified approval across all agents; approval prompts now
+  only trigger for write/update/file tools, and read `allowed_extensions`
+  supports filenames (defaults to allow-all).
+- **`update` tool operation inference**: the operation is inferred from
+  the arguments, while `delete` must always be requested explicitly.
+- **`notify` tool**: macOS notifications for long-running tasks.
+- **`/session` command**: lists active agents in the interactive UI,
+  with agent names shown (in color) in feedback and stats lines.
+- **`--prompt` option**: `yoker chat` now accepts a prompt argument.
+- **Configurable context files**: the hardcoded `AGENTS.md` context file
+  is replaced by a configurable context files list.
+- **Today's date** is injected into the agent's environment information.
+
+### Fixed
+- **GitHub**: `repo_view` passes the repo positionally again, list
+  operations control payload size, and `pr_comment` places the `--body`
+  flag correctly before `--`.
+- **Session**: sub-agent timeouts exclude approval-wait time, and spawned
+  agents stay active for follow-up messages.
+- **Core**: orphaned `_process_consumer` tasks no longer emit
+  "Task destroyed" warnings.
+- **Guardrails**: `~` is expanded in `filesystem_paths`, the allowed
+  scope is checked before prompting for approval, and extension checks
+  are skipped when the user approved a protected file.
+- **Markdown streaming**: preserved newline between buffer and
+  accumulator on flush.
+- **UI**: stats line uses a consistent BULLET prefix.
+- **Windows**: tilde-expansion tests set `USERPROFILE`; content-type
+  detection no longer hangs.
+- **Config**: read `allowed_extensions` defaults to empty (allow all).
+
+### Changed
+- **Liveness management** moved from `Session` to the `Agent` layer.
+- **Makefile**: `upload` target split from `publish` for granular PyPI
+  uploads.
+
 ## 0.10.1 (2026-08-12)
 ### Fixed
 - **Ollama cloud base URL**: Corrected the Ollama cloud API endpoint in the
