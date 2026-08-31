@@ -1,5 +1,6 @@
 """Tests for __main__.py and cli/chat.py helpers and session loop."""
 
+import importlib
 import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -8,6 +9,11 @@ import pytest
 from yoker.config import Config, UIConfig
 from yoker.exceptions import NetworkError, YokerError
 from yoker.ui import BatchUIHandler, InteractiveUIHandler
+
+# Explicit reference to the real yoker.session module — the package-level
+# `session` FUNCTION re-export (yoker.api) shadows the submodule attribute
+# on Python 3.10, so string patches like "yoker.session.Agent" fail there.
+session_module = importlib.import_module("yoker.session")
 
 # Skip interactive UI tests on Windows CI where no console is available
 skip_on_windows_no_console = pytest.mark.skipif(
@@ -282,12 +288,13 @@ class TestMainIntegration:
 
     with patch.object(sys, "argv", test_args):
       # main() constructs the primary Agent through Session._create_agent,
-      # which uses the yoker.session.Agent reference (bound at module import
-      # time from yoker.core.Agent). Patching yoker.core.Agent rebinds the
-      # attribute on yoker.core but yoker.session keeps its own already-bound
-      # reference, so the mock would be bypassed. Patch yoker.session.Agent
-      # instead — that is the reference the code under test actually calls.
-      with patch("yoker.session.Agent") as mock_agent_cls:
+      # which uses the Agent reference bound on the yoker.session module at
+      # import time (from yoker.core.Agent). Patching yoker.core.Agent rebinds
+      # the attribute on yoker.core but yoker.session keeps its own
+      # already-bound reference, so the mock would be bypassed. Patch
+      # session_module.Agent instead — that is the reference the code under
+      # test actually calls.
+      with patch.object(session_module, "Agent") as mock_agent_cls:
         mock_agent_instance = mock_agent_cls.return_value
         mock_agent_instance.aclose = AsyncMock()
         mock_agent_instance.config = Config(

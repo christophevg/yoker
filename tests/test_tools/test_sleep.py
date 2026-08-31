@@ -57,8 +57,9 @@ class TestSleepClamping:
   @pytest.mark.asyncio
   async def test_clamps_to_max(self) -> None:
     """Seconds above MAX_SLEEP_SECONDS are clamped down."""
+    # Patch "asyncio.sleep": on 3.10 yoker.builtin.sleep is the sleep function, not the module.
     with patch(
-      "yoker.builtin.sleep.asyncio.sleep",
+      "asyncio.sleep",
       new_callable=AsyncMock,
     ) as mock_sleep:
       result = await sleep(seconds=999, reason="waiting for CI")
@@ -73,7 +74,7 @@ class TestSleepClamping:
   async def test_exactly_max_not_clamped(self) -> None:
     """Seconds == MAX_SLEEP_SECONDS should not be clamped."""
     with patch(
-      "yoker.builtin.sleep.asyncio.sleep",
+      "asyncio.sleep",
       new_callable=AsyncMock,
     ) as mock_sleep:
       result = await sleep(seconds=MAX_SLEEP_SECONDS)
@@ -90,7 +91,7 @@ class TestSleepExecution:
   async def test_basic_sleep(self) -> None:
     """A valid sleep returns success with correct duration."""
     with patch(
-      "yoker.builtin.sleep.asyncio.sleep",
+      "asyncio.sleep",
       new_callable=AsyncMock,
     ) as mock_sleep:
       result = await sleep(seconds=30)
@@ -105,7 +106,7 @@ class TestSleepExecution:
   async def test_sleep_with_reason(self) -> None:
     """The reason field is echoed back in the result."""
     with patch(
-      "yoker.builtin.sleep.asyncio.sleep",
+      "asyncio.sleep",
       new_callable=AsyncMock,
     ):
       result = await sleep(seconds=10, reason="waiting for CI run #12345")
@@ -117,7 +118,7 @@ class TestSleepExecution:
   async def test_sleep_without_reason(self) -> None:
     """When no reason is given, result reason is None."""
     with patch(
-      "yoker.builtin.sleep.asyncio.sleep",
+      "asyncio.sleep",
       new_callable=AsyncMock,
     ):
       result = await sleep(seconds=5)
@@ -129,7 +130,7 @@ class TestSleepExecution:
   async def test_min_seconds_accepted(self) -> None:
     """MIN_SLEEP_SECONDS (1) is the smallest accepted value."""
     with patch(
-      "yoker.builtin.sleep.asyncio.sleep",
+      "asyncio.sleep",
       new_callable=AsyncMock,
     ) as mock_sleep:
       result = await sleep(seconds=MIN_SLEEP_SECONDS)

@@ -1,5 +1,6 @@
 """Tests for Session event aggregation."""
 
+import importlib
 import json
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -18,6 +19,11 @@ from yoker.events import (
 )
 from yoker.events.types import ContentChunkEvent, TurnStartEvent
 from yoker.session import Session
+
+# Explicit reference to the real yoker.session module — the package-level
+# `session` FUNCTION re-export (yoker.api) shadows the submodule attribute
+# on Python 3.10, so string patches like "yoker.session.Agent" fail there.
+session_module = importlib.import_module("yoker.session")
 
 
 def _register_researcher(session: Session) -> AgentDefinition:
@@ -68,9 +74,9 @@ class TestEventAggregation:
     """Events from a spawned agent reach session handlers wrapped in SessionEvent."""
     async with Session(config=Config()) as session:
       _register_researcher(session)
-      # Patch yoker.session.Agent — that is the reference Session._create_agent
+      # Patch session_module.Agent — that is the reference Session._create_agent
       # actually calls (yoker.session binds Agent at module import time).
-      with patch("yoker.session.Agent") as mock_cls:
+      with patch.object(session_module, "Agent") as mock_cls:
         mock_child = MagicMock()
         mock_child.process = AsyncMock(return_value="ok")
         mock_child.aclose = AsyncMock()
@@ -101,7 +107,7 @@ class TestEventAggregation:
     """The inner Event inside a SessionEvent is not modified."""
     async with Session(config=Config()) as session:
       _register_researcher(session)
-      with patch("yoker.session.Agent") as mock_cls:
+      with patch.object(session_module, "Agent") as mock_cls:
         mock_child = MagicMock()
         mock_child.process = AsyncMock(return_value="ok")
         mock_child.aclose = AsyncMock()
@@ -128,7 +134,7 @@ class TestEventAggregation:
     config = Config(session=SessionConfig(event_aggregation=False))
     async with Session(config=config) as session:
       _register_researcher(session)
-      with patch("yoker.session.Agent") as mock_cls:
+      with patch.object(session_module, "Agent") as mock_cls:
         mock_child = MagicMock()
         mock_child.process = AsyncMock(return_value="ok")
         mock_child.aclose = AsyncMock()
@@ -149,7 +155,7 @@ class TestEventAggregation:
       agent_def = _register_researcher(session)
       received: list = []
       session.on_event(lambda e: received.append(e))
-      with patch("yoker.session.Agent") as mock_cls:
+      with patch.object(session_module, "Agent") as mock_cls:
         mock_child = MagicMock()
         mock_child.process = AsyncMock(return_value="ok")
         mock_child.aclose = AsyncMock()
@@ -178,7 +184,7 @@ class TestEventAggregation:
       _register_researcher(session)
       received: list = []
       session.on_event(lambda e: received.append(e))
-      with patch("yoker.session.Agent") as mock_cls:
+      with patch.object(session_module, "Agent") as mock_cls:
         mock_child = MagicMock()
         mock_child.process = AsyncMock(return_value="ok")
         mock_child.aclose = AsyncMock()
@@ -211,14 +217,16 @@ class TestEventAggregation:
       _register_researcher(session)
       received: list = []
       session.on_event(lambda e: received.append(e))
-      with patch("yoker.session.Agent") as mock_cls:
+      with patch.object(session_module, "Agent") as mock_cls:
         mock_child = MagicMock()
         mock_child.process = AsyncMock(side_effect=slow_process)
         mock_child.aclose = AsyncMock()
         mock_child.on_event = MagicMock()
         mock_cls.return_value = mock_child
         child, _agent_id = await session._spawn_internal("researcher")
-        with pytest.raises(TimeoutError):
+        # asyncio.wait_for raises asyncio.TimeoutError, a distinct class from
+        # the builtin TimeoutError on Python 3.10 (they merged in 3.11+).
+        with pytest.raises(_asyncio.TimeoutError):
           await _asyncio.wait_for(child.process("hi"), timeout=0.05)
         await session.release(child)
       # Hardening: confirm the mock class was actually constructed. A stale

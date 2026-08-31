@@ -12,8 +12,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
-import tomllib
 
+from tests.tomllib_compat import tomllib
 from yoker.config import Config, OllamaConfig
 from yoker.config.writer import render_config_toml, write_config
 

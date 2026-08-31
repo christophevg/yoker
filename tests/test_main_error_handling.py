@@ -1,11 +1,17 @@
 """Tests for __main__.py error handling."""
 
+import importlib
 import sys
 from io import StringIO
 from unittest.mock import patch
 
 import pytest
 from clevis import SecurityError
+
+# Explicit reference to the real yoker.session module — the package-level
+# `session` FUNCTION re-export (yoker.api) shadows the submodule attribute
+# on Python 3.10, so string patches like "yoker.session.Agent" fail there.
+session_module = importlib.import_module("yoker.session")
 
 
 class TestMainErrorHandling:
@@ -20,8 +26,8 @@ class TestMainErrorHandling:
       with patch("sys.stderr", new_callable=StringIO) as mock_stderr:
         # The ValueError is raised by Session._resolve_definition (before
         # Agent construction), so the Agent mock is not exercised; patch
-        # yoker.session.Agent for consistency with the Session-based path.
-        with patch("yoker.session.Agent") as mock_agent_cls:
+        # session_module.Agent for consistency with the Session-based path.
+        with patch.object(session_module, "Agent") as mock_agent_cls:
           mock_agent_cls.side_effect = ValueError("Agent definition file not found")
           with pytest.raises(SystemExit) as exc_info:
             from yoker.__main__ import main
@@ -49,7 +55,7 @@ class TestMainErrorHandling:
     with patch.object(sys, "argv", test_args):
       with patch("sys.stderr", new_callable=StringIO) as mock_stderr:
         with patch("yoker.cli.chat.config_provided", return_value=True):
-          with patch("yoker.session.Agent") as mock_agent_cls:
+          with patch.object(session_module, "Agent") as mock_agent_cls:
             error_msg = (
               "Configuration file /path/to/yoker.toml is readable by group/other "
               "(mode 0o644). Use 'chmod 600 /path/to/yoker.toml' to fix."

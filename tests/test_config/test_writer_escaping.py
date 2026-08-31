@@ -4,8 +4,7 @@ This test suite verifies that the writer properly escapes special characters
 in string values according to TOML specification.
 """
 
-import tomllib
-
+from tests.tomllib_compat import tomllib
 from yoker.config import Config
 from yoker.config.writer import render_config_toml
 

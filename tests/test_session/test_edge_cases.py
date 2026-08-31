@@ -7,6 +7,7 @@ Targets the specific uncovered lines in ``src/yoker/session/``:
   - ``session.py`` lines 511-520: ``_derive_config`` model-override branch.
 """
 
+import importlib
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -14,6 +15,11 @@ import pytest
 from yoker.agents import AgentDefinition
 from yoker.config import Config
 from yoker.session import Session
+
+# Explicit reference to the real yoker.session module — the package-level
+# `session` FUNCTION re-export (yoker.api) shadows the submodule attribute
+# on Python 3.10, so string patches like "yoker.session.Agent" fail there.
+session_module = importlib.import_module("yoker.session")
 
 
 class TestSpawnResolutionFailure:
@@ -120,9 +126,9 @@ class TestDeriveConfigModelOverride:
     )
     async with Session(config=config) as session:
       session.agents.register(agent_def)
-      # Patch yoker.session.Agent — the reference Session._create_agent calls
+      # Patch session_module.Agent — the reference Session._create_agent calls
       # (yoker.session binds Agent at module import time from yoker.core).
-      with patch("yoker.session.Agent") as mock_agent_cls:
+      with patch.object(session_module, "Agent") as mock_agent_cls:
         mock_child = MagicMock()
         mock_child.process = AsyncMock(return_value="ok")
         mock_child.aclose = AsyncMock()
@@ -130,9 +136,9 @@ class TestDeriveConfigModelOverride:
         mock_agent_cls.return_value = mock_child
         # Patch create_backend to verify a fresh backend is created for the
         # new provider signature (model override → different cache key).
-        # yoker/session/session.py was collapsed into yoker/session/__init__.py,
-        # so create_backend now lives on yoker.session directly.
-        with patch("yoker.session.create_backend") as mock_create:
+        # yoker/session was collapsed into yoker/session/__init__.py, so
+        # create_backend lives on the yoker.session module directly.
+        with patch.object(session_module, "create_backend") as mock_create:
           mock_backend = MagicMock()
           mock_create.return_value = mock_backend
           await session._spawn_internal("researcher")

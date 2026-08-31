@@ -232,6 +232,11 @@ class ReadPathGuardrail(Guardrail):
     if not path_param.strip():
       return ValidationResult(valid=False, reason="Path cannot be empty")
 
+    # Null bytes are rejected on every platform — Windows swallowing them in
+    # path resolution would truncate the audited path at the NUL position.
+    if "\x00" in path_param:
+      return ValidationResult(valid=False, reason="Path contains null byte")
+
     # plugin:// URLs — allowed if configured
     if path_param.startswith(_PLUGIN_PREFIX):
       if self._allows_plugin:
@@ -414,6 +419,11 @@ class WritePathGuardrail(ReadPathGuardrail):
 
     if not path_param.strip():
       return ValidationResult(valid=False, reason="Path cannot be empty")
+
+    # Null bytes are rejected on every platform — Windows swallowing them in
+    # path resolution would truncate the audited path at the NUL position.
+    if "\x00" in path_param:
+      return ValidationResult(valid=False, reason="Path contains null byte")
 
     # plugin:// URLs don't make sense for write operations
     if path_param.startswith(_PLUGIN_PREFIX):

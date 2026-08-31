@@ -262,6 +262,17 @@ def _build_parameter_schema(
   description = ""
   guard_type: GuardType | None = None
 
+  # Resolve Optional[Annotated[T, marker]] shells: a parameter declared as
+  # ``Annotated[T, marker] | None`` resolves through get_type_hints to an
+  # Optional/Union wrapping the Annotated form (get_origin -> typing.Union,
+  # get_args -> (Annotated[T, marker], NoneType)). Unwrap the Optional shell
+  # first so the Text marker — carrying the parameter description and
+  # guardrail type — remains reachable on all Python versions.
+  if _is_optional(annotation):
+    non_none = [a for a in get_args(annotation) if a is not type(None)]
+    if len(non_none) == 1:
+      annotation = non_none[0]
+
   # Strip Annotated wrapper to find the base type and metadata markers.
   # Use ``get_args`` (not ``__args__``) so ``Annotated[T, marker]`` metadata
   # is included — ``__args__`` only returns the first type argument for

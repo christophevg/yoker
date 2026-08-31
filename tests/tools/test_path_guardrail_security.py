@@ -269,14 +269,34 @@ class TestUnicodeAndSpecialChars:
     result = guardrail.validate("read", {"path": str(zwj_file)})
     assert result.valid is True  # Within allowed path
 
-  def test_null_byte_in_path(self, tmp_path: Path) -> None:
-    """Null bytes in paths should be handled safely."""
+  @pytest.mark.parametrize(
+    ("description", "path"),
+    [
+      ("nul in filename", "test\x00.txt"),
+      (
+        "nul directly after prefix truncates path on Windows",
+        str(Path("%TEMP%") / "\x00" / "test.txt"),
+      ),
+      ("nul spoofing hidden extension", "test.txt\x00.exe"),
+      ("bare nul", "\x00"),
+    ],
+  )
+  def test_null_byte_rejected_on_all_platforms(
+    self, tmp_path: Path, description: str, path: str
+  ) -> None:
+    """Null bytes must be rejected identically on every platform.
+
+    Regression test: on Windows, ntpath.realpath() does not raise on
+    embedded NULs (the Win32 layer truncates at the NUL), so the path
+    slipped through resolution and was accepted. The guardrail must
+    reject NULs explicitly instead of relying on POSIX rejection.
+    """
     config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
     guardrail = ReadPathGuardrail(config)
-    # Null byte should either be rejected or ignored
-    result = guardrail.validate("read", {"path": str(tmp_path / "test\x00.txt")})
-    # Should not crash and should be blocked or handled
-    assert result.valid is False
+    # %TEMP% marker resolves inside tmp_path, so only the NUL itself makes it invalid
+    full_path = path.replace("%TEMP%", str(tmp_path))
+    result = guardrail.validate("read", {"path": full_path})
+    assert result.valid is False, f"{description} must be rejected"
 
   def test_newline_in_path(self, tmp_path: Path) -> None:
     """Newlines in paths should be handled safely."""
@@ -400,6 +420,15 @@ class TestWriteSpecificAttacks:
     result = guardrail.validate(
       "update",
       {"path": str(pyproject), "operation": "replace", "old_string": "old", "new_string": "new"},
+    )
+    assert result.valid is False
+
+  def test_write_rejects_null_byte(self, tmp_path: Path) -> None:
+    """Write guardrail must reject null bytes like the read guardrail."""
+    config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
+    guardrail = WritePathGuardrail(config)
+    result = guardrail.validate(
+      "write", {"path": str(tmp_path / "test\x00.txt"), "content": "test"}
     )
     assert result.valid is False
 

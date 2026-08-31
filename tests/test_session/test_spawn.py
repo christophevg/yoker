@@ -1,5 +1,6 @@
 """Tests for Session.spawn — allowlist, depth, max_agents, backend."""
 
+import importlib
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -7,6 +8,11 @@ import pytest
 from yoker.agents import AgentDefinition
 from yoker.config import Config
 from yoker.session import Session
+
+# Explicit reference to the real yoker.session module — the package-level
+# `session` FUNCTION re-export (yoker.api) shadows the submodule attribute
+# on Python 3.10, so string patches like "yoker.session.Agent" fail there.
+session_module = importlib.import_module("yoker.session")
 
 
 def _make_requester(allowlist=(), session=None):
@@ -35,8 +41,8 @@ class TestSpawnAllowlist:
     )
     async with Session(config=config) as session:
       session.agents.register(agent_def)
-      # Patch yoker.session.Agent — the reference Session._create_agent calls.
-      with patch("yoker.session.Agent") as mock_agent_cls:
+      # Patch session_module.Agent — the reference Session._create_agent calls.
+      with patch.object(session_module, "Agent") as mock_agent_cls:
         mock_child = MagicMock()
         mock_child.process = AsyncMock(return_value="ok")
         mock_child.aclose = AsyncMock()
@@ -89,7 +95,7 @@ class TestSpawnAllowlist:
     async with Session(config=config) as session:
       session.agents.register(agent_def)
       requester = _make_requester(allowlist=("researcher",), session=session)
-      with patch("yoker.session.Agent") as mock_agent_cls:
+      with patch.object(session_module, "Agent") as mock_agent_cls:
         mock_child = MagicMock()
         mock_child.process = AsyncMock(return_value="ok")
         mock_child.aclose = AsyncMock()
@@ -161,7 +167,7 @@ class TestSpawnAgentMap:
     )
     async with Session(config=config) as session:
       session.agents.register(agent_def)
-      with patch("yoker.session.Agent") as mock_agent_cls:
+      with patch.object(session_module, "Agent") as mock_agent_cls:
         mock_child = MagicMock()
         mock_child.process = AsyncMock(return_value="ok")
         mock_child.aclose = AsyncMock()
@@ -194,7 +200,7 @@ class TestSpawnAgentMap:
     )
     async with Session(config=config) as session:
       session.agents.register(agent_def)
-      with patch("yoker.session.Agent") as mock_agent_cls:
+      with patch.object(session_module, "Agent") as mock_agent_cls:
         mock_child = MagicMock()
         mock_child.process = AsyncMock(return_value="ok")
         mock_child.aclose = AsyncMock()
@@ -217,7 +223,7 @@ class TestSpawnAgentMap:
     )
     async with Session(config=config) as session:
       session.agents.register(agent_def)
-      with patch("yoker.session.Agent") as mock_agent_cls:
+      with patch.object(session_module, "Agent") as mock_agent_cls:
         mock_child = MagicMock()
         mock_child.process = AsyncMock(return_value="ok")
         mock_child.aclose = AsyncMock()
@@ -249,9 +255,9 @@ class TestSessionBackendFactory:
     # Session.__init__ already cached a backend for the primary agent; clear
     # the cache to test get_backend in isolation against the patched factory.
     session._backends.clear()
-    # yoker/session/session.py was collapsed into yoker/session/__init__.py,
-    # so create_backend now lives on yoker.session directly.
-    with patch("yoker.session.create_backend") as mock_create:
+    # yoker.session was collapsed into a single __init__.py, so create_backend
+    # lives on the yoker.session module directly.
+    with patch.object(session_module, "create_backend") as mock_create:
       mock_backend = MagicMock()
       mock_create.return_value = mock_backend
       b1 = session.get_backend(config)
@@ -270,7 +276,7 @@ class TestSessionBackendFactory:
     # Clear the cache populated by Session.__init__ so get_backend calls the
     # patched create_backend.
     session._backends.clear()
-    with patch("yoker.session.create_backend") as mock_create:
+    with patch.object(session_module, "create_backend") as mock_create:
       b_a = MagicMock()
       b_b = MagicMock()
       mock_create.side_effect = [b_a, b_b]
