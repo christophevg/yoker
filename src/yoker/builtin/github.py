@@ -188,6 +188,152 @@ _STATE_OPS: frozenset[str] = frozenset({"issue_list", "pr_list"})
 _LABEL_OPS: frozenset[str] = frozenset({"issue_list"})
 _LIMIT_OPS: frozenset[str] = frozenset({"issue_list", "pr_list", "workflow_list", "release_list"})
 
+# Operations that accept the ``fields`` parameter (gh ``--json`` field
+# selection). When ``fields`` is given, gh output is passed through raw —
+# the compact rollup compression is skipped.
+_FIELDS_OPS: frozenset[str] = frozenset({"pr_list", "issue_list", "pr_view"})
+
+# Operations where gh takes the repository as a POSITIONAL operand instead of
+# the ``--repo/-R`` flag. ``gh repo view [<repository>]`` is the only one.
+_POSITIONAL_REPO_OPS: frozenset[str] = frozenset({"repo_view"})
+
+# gh-supported ``--json`` field names per operation (from the gh manual:
+# https://cli.github.com/manual/gh_pr_list and gh_issue_list). This is the
+# whitelist for the ``fields`` parameter — unknown fields are rejected.
+_VALID_FIELDS: dict[str, frozenset[str]] = {
+  "pr_list": frozenset(
+    {
+      "additions",
+      "assignees",
+      "author",
+      "autoMergeRequest",
+      "baseRefName",
+      "baseRefOid",
+      "body",
+      "changedFiles",
+      "closed",
+      "closedAt",
+      "closingIssuesReferences",
+      "comments",
+      "commits",
+      "createdAt",
+      "deletions",
+      "files",
+      "fullDatabaseId",
+      "headRefName",
+      "headRefOid",
+      "headRepository",
+      "headRepositoryOwner",
+      "id",
+      "isCrossRepository",
+      "isDraft",
+      "labels",
+      "latestReviews",
+      "maintainerCanModify",
+      "mergeCommit",
+      "mergeStateStatus",
+      "mergeable",
+      "mergedAt",
+      "mergedBy",
+      "milestone",
+      "number",
+      "potentialMergeCommit",
+      "projectCards",
+      "projectItems",
+      "reactionGroups",
+      "reviewDecision",
+      "reviewRequests",
+      "reviews",
+      "state",
+      "statusCheckRollup",
+      "title",
+      "updatedAt",
+      "url",
+    }
+  ),
+  "pr_view": frozenset(
+    {
+      "additions",
+      "assignees",
+      "author",
+      "autoMergeRequest",
+      "baseRefName",
+      "baseRefOid",
+      "body",
+      "changedFiles",
+      "closed",
+      "closedAt",
+      "closingIssuesReferences",
+      "comments",
+      "commits",
+      "createdAt",
+      "deletions",
+      "files",
+      "fullDatabaseId",
+      "headRefName",
+      "headRefOid",
+      "headRepository",
+      "headRepositoryOwner",
+      "id",
+      "isCrossRepository",
+      "isDraft",
+      "labels",
+      "latestReviews",
+      "maintainerCanModify",
+      "mergeCommit",
+      "mergeStateStatus",
+      "mergeable",
+      "mergedAt",
+      "mergedBy",
+      "milestone",
+      "number",
+      "potentialMergeCommit",
+      "projectCards",
+      "projectItems",
+      "reactionGroups",
+      "reviewDecision",
+      "reviewRequests",
+      "reviews",
+      "state",
+      "statusCheckRollup",
+      "title",
+      "updatedAt",
+      "url",
+    }
+  ),
+  "issue_list": frozenset(
+    {
+      "assignees",
+      "author",
+      "blockedBy",
+      "blocking",
+      "body",
+      "closed",
+      "closedAt",
+      "closedByPullRequestsReferences",
+      "comments",
+      "createdAt",
+      "id",
+      "isPinned",
+      "issueType",
+      "labels",
+      "milestone",
+      "number",
+      "parent",
+      "projectCards",
+      "projectItems",
+      "reactionGroups",
+      "state",
+      "stateReason",
+      "subIssues",
+      "subIssuesSummary",
+      "title",
+      "updatedAt",
+      "url",
+    }
+  ),
+}
+
 # --- Validation regexes (tight allowlists) ---
 _REPO_RE = re.compile(r"^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$")
 _TAG_LABEL_RE = re.compile(r"^[A-Za-z0-9._-]+$")
@@ -224,8 +370,13 @@ _REDACT_REPLACEMENT = "<redacted>"
     "  repo_view      — View repository info. Optional: repo.\n"
     "  issue_list     — List issues. Optional: repo, limit, state, label.\n"
     "  issue_view     — View an issue. Required: number. Optional: repo.\n"
-    "  pr_list        — List pull requests. Optional: repo, limit, state.\n"
-    "  pr_view        — View a pull request. Required: number. Optional: repo, include_comments.\n"
+    "  pr_list        — List pull requests. Optional: repo, limit, state, fields.\n"
+    "                   Compact default: statusCheckRollup compressed into one ci verdict\n"
+    "                   field (see below), author reduced to login. Use fields=...\n"
+    '                   (e.g. fields="number,statusCheckRollup") for raw gh output.\n'
+    "  pr_view        — View a pull request. Required: number. Optional: repo, fields,\n"
+    "                   include_comments. Compact default: statusCheckRollup compressed\n"
+    "                   into a ci verdict field. Use fields=... for raw gh output.\n"
     "  pr_reviews     — List PR reviews. Required: repo, number.\n"
     "  pr_comments    — List all PR comments (conversation + inline review). Required: repo, number.\n"
     "  workflow_list  — List workflow runs (CI). Optional: repo, limit.\n"
@@ -247,12 +398,22 @@ _REDACT_REPLACEMENT = "<redacted>"
     '  state   — Filter: "open", "closed", or "all" (default: "open"). Only for list operations.\n'
     "  limit   — Max items for list operations (default: 30, max: config ceiling).\n"
     "  include_comments — If True, fetch and merge PR comments into pr_view output (only for pr_view).\n"
+    "  fields  — Comma-separated gh JSON fields (pr_list, issue_list, pr_view only).\n"
+    "            When omitted, pr_list/pr_view use a compact default: statusCheckRollup\n"
+    '            becomes a single ci verdict string — "12/12 ok" (all green),\n'
+    '            "3 failing / 9 ok" (failures), "2 pending / 9 ok" (running),\n'
+    '            "3 failing / 9 ok / 1 pending" (mixed), "none" (no checks). pr_list also\n'
+    "            reduces author to its login. Explicit fields returns raw gh output\n"
+    "            (includes full statusCheckRollup). Field names must be gh-supported\n"
+    "            JSON fields; invalid names are rejected with the allowed set.\n"
     "  timeout_ms — Override default timeout in milliseconds (clamped to config ceiling).\n"
     "  draft   — Create as draft (for pr_create or release_create).\n"
     "  prerelease — Mark release as prerelease (only for release_create).\n"
     "  post_filter — Optional regex to filter output lines. Use specific patterns: "
     "'FAILED|CalledProcessError|short test summary' for CI logs, 'class |def ' for "
-    "code structure. Avoid broad terms like 'error' that match test names."
+    "code structure. Avoid broad terms like 'error' that match test names. "
+    "Note: the github tool returns single-line JSON, so post_filter cannot "
+    "narrow it — rely on the compact default output or explicit fields instead."
   )
 )
 async def github(
@@ -282,6 +443,15 @@ async def github(
     ),
   ] = "open",
   label: Annotated[str, Text("Filter by label (for issue_list)")] = "",
+  fields: Annotated[
+    str | None,
+    Text(
+      "Comma-separated gh JSON fields to return (pr_list, issue_list, pr_view only). "
+      "When omitted, a compact default is used: statusCheckRollup is compressed "
+      "into a ci verdict (e.g. '12/12 ok', '3 failing / 9 ok') and pr_list author "
+      "is reduced to login. Explicit fields returns raw gh output."
+    ),
+  ] = None,
   include_comments: Annotated[
     bool, Text("If True, fetch and merge PR comments into pr_view output (only for pr_view)")
   ] = False,
@@ -393,6 +563,18 @@ async def github(
       success=False,
       error=f"Parameter 'include_comments' is only supported for 'pr_view', not '{operation}'",
     )
+
+  # --- 5b-2. fields only valid for list/view ops with gh JSON output ---
+  if fields is not None and operation not in _FIELDS_OPS:
+    return ToolResult(
+      success=False,
+      error=(f"Parameter 'fields' is only supported for {sorted(_FIELDS_OPS)}, not '{operation}'"),
+    )
+  if fields is not None:
+    ferr = _validate_fields(operation, fields)
+    if ferr is not None:
+      logger.info("github_rejected", reason="invalid_fields", error=ferr)
+      return ToolResult(success=False, error=ferr)
 
   # --- 5c. API ops require explicit repo (gh api has no auto-detect) ---
   if operation in _API_OPS and not repo:
@@ -551,7 +733,7 @@ async def github(
       },
     )
 
-  cmd = _build_command(operation, repo, number, tag, effective_limit, state, label)
+  cmd = _build_command(operation, repo, number, tag, effective_limit, state, label, fields)
   write_args = _build_write_args(
     operation,
     title,
@@ -665,6 +847,10 @@ async def github(
     # --- pr_view with include_comments: fetch and merge comments ---
     if operation == "pr_view" and include_comments and repo and number:
       stdout_out = await _merge_comments(stdout_out, repo, number, effective_timeout_ms)
+
+    # --- Compact defaults (--json rollup -> ci verdict) unless explicit fields ---
+    if operation in _FIELDS_OPS and fields is None:
+      stdout_out = _apply_compact_defaults(operation, stdout_out)
 
     # --- Write ops: gh outputs a URL, not JSON. Parse it into a JSON object. ---
     if operation in _WRITE_OPS:
@@ -997,6 +1183,30 @@ def _contains_forbidden(value: str) -> bool:
   return any(char in value for char in _FORBIDDEN_CHARS)
 
 
+def _validate_fields(operation: str, fields: str) -> str | None:
+  """Validate the ``fields`` parameter against the per-operation whitelist.
+
+  Returns an error string, or None when all fields are gh-supported. The
+  whitelist is gh's own supported ``--json`` field set (see the gh manual),
+  so any accepted value is guaranteed valid at the gh CLI level.
+  """
+  if not fields or not isinstance(fields, str):
+    return "Parameter 'fields' must be a non-empty string"
+  if len(fields) > 1000:
+    return "Parameter 'fields' exceeds 1000 characters"
+  if _contains_forbidden(fields):
+    return "Parameter 'fields' contains forbidden character"
+
+  valid = _VALID_FIELDS.get(operation, frozenset())
+  requested = [f.strip() for f in fields.split(",") if f.strip()]
+  if not requested:
+    return "Parameter 'fields' must contain at least one field name"
+  invalid = [f for f in requested if f not in valid]
+  if invalid:
+    return f"Invalid field(s) for '{operation}': {', '.join(invalid)}. Supported: {sorted(valid)}"
+  return None
+
+
 def _clamp_timeout(timeout_ms: int | None, ceiling_ms: int) -> int:
   """Clamp the caller-supplied timeout to [1000, ceiling_ms]."""
   if timeout_ms is None:
@@ -1012,6 +1222,7 @@ def _build_command(
   limit: int,
   state: str,
   label: str,
+  selected_fields: str | None = None,
 ) -> list[str]:
   """Build the gh command list from the operation's fixed template.
 
@@ -1022,19 +1233,27 @@ def _build_command(
 
   For ``_API_OPS`` (``pr_reviews``, ``pr_comments``), the command uses
   ``gh api`` with a URL template and ``--jq`` instead of ``--json``.
+
+  ``selected_fields`` (already whitelist-validated) overrides the
+  operation's default ``--json`` field list.
   """
-  subcmd, fields, required = _OPERATION_DISPATCH[operation]
+  subcmd, default_fields, required = _OPERATION_DISPATCH[operation]
 
   if operation in _API_OPS:
     # subcmd is ["api", "repos/{repo}/pulls/{number}/reviews"] etc.
     url_template = subcmd[1]
     url = url_template.replace("{repo}", repo).replace("{number}", str(number))
-    return ["gh", "api", url, "--jq", _api_jq_fields(fields)]
+    return ["gh", "api", url, "--jq", _api_jq_fields(default_fields)]
 
   cmd: list[str] = ["gh", *subcmd]
 
   if repo:
-    cmd.extend(["--repo", repo])
+    if operation in _POSITIONAL_REPO_OPS:
+      # gh repo view takes the repository as an operand, not a flag:
+      #   Usage: gh repo view [<repository>] [flags]
+      cmd.append(repo)
+    else:
+      cmd.extend(["--repo", repo])
 
   if operation in _STATE_OPS:
     cmd.extend(["--state", state])
@@ -1047,7 +1266,8 @@ def _build_command(
   # --json; they output a URL on success which is parsed separately.
   # Plaintext operations (workflow_logs) return raw text, not JSON.
   if operation not in _WRITE_OPS and operation not in _PLAINTEXT_OPS:
-    cmd.extend(["--json", fields])
+    # Explicit field selection overrides the operation's default field list.
+    cmd.extend(["--json", selected_fields if selected_fields else default_fields])
 
   # For write ops with a required positional (pr_comment needs the PR number),
   # the -- separator and positional are added by the caller AFTER write
@@ -1059,6 +1279,80 @@ def _build_command(
     cmd.extend(["--", tag])
 
   return cmd
+
+
+def _ci_verdict(rollup: Any) -> str:
+  """Compress a PR ``statusCheckRollup`` into a single verdict string.
+
+  Rollup entries are check-run dicts; the meaningful signal is ``conclusion``
+  (e.g. SUCCESS, FAILURE) or ``status`` (e.g. IN_PROGRESS, PENDING) while a
+  check is still running. Unknown or missing states count as pending.
+
+  Semantics (documented in the tool description):
+  - no rollup / empty list            -> ``"none"``
+  - any failing conclusion            -> ``"F failing / N ok"`` or
+                                         ``"F failing / N ok / P pending"``
+  - no failures, some pending         -> ``"P pending / N ok"``
+  - all checks concluded successfully -> ``"N ok"`` (SUCCESS/NEUTRAL/SKIPPED)
+  """
+  if not rollup or not isinstance(rollup, list):
+    return "none"
+  ok = failing = pending = 0
+  for check in rollup:
+    if not isinstance(check, dict):
+      pending += 1
+      continue
+    conclusion = str(check.get("conclusion", "") or "").upper()
+    if conclusion in ("SUCCESS", "NEUTRAL", "SKIPPED"):
+      ok += 1
+    elif conclusion in (
+      "FAILURE",
+      "TIMED_OUT",
+      "CANCELLED",
+      "ACTION_REQUIRED",
+      "STARTUP_FAILURE",
+      "STALE",
+    ):
+      failing += 1
+    else:
+      # No recognized conclusion, concluded or not (IN_PROGRESS, QUEUED,
+      # COMPLETED without a known conclusion, unknown states): pending.
+      pending += 1
+  if failing:
+    verdict = f"{failing} failing / {ok} ok"
+    if pending:
+      verdict += f" / {pending} pending"
+    return verdict
+  if pending:
+    return f"{pending} pending / {ok} ok"
+  return f"{ok} ok"
+
+
+def _apply_compact_defaults(operation: str, stdout: str) -> str:
+  """Post-process gh JSON output into the compact default shape.
+
+  Applied when ``fields`` is NOT explicitly given. For ``pr_list`` and
+  ``pr_view``, the raw ``statusCheckRollup`` array (one object per CI job)
+  is compressed into a single ``ci`` verdict field (see ``_ci_verdict``),
+  and for ``pr_list`` the ``author`` object is reduced to ``author.login``.
+  Malformed JSON passes through unchanged — never raises.
+  """
+  if operation not in ("pr_list", "pr_view"):
+    return stdout
+  try:
+    data = json.loads(stdout)
+  except (json.JSONDecodeError, TypeError):
+    return stdout
+
+  items = data if isinstance(data, list) else [data]
+  for item in items:
+    if not isinstance(item, dict):
+      continue
+    if "statusCheckRollup" in item:
+      item["ci"] = _ci_verdict(item.pop("statusCheckRollup"))
+    if operation == "pr_list" and isinstance(item.get("author"), dict):
+      item["author"] = item["author"].get("login", "")
+  return json.dumps(data)
 
 
 def _api_jq_fields(fields: str) -> str:

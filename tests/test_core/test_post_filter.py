@@ -12,6 +12,7 @@ These tests verify:
 5. post_filter does not interfere with tool execution on error results
 """
 
+import json
 from typing import Annotated
 from unittest.mock import MagicMock
 
@@ -581,6 +582,41 @@ class TestEnforceOutputLimit:
     assert not out.success
     assert "exceeds" in (out.error or "").lower()
     assert "post_filter" in (out.error or "").lower()
+
+  def test_single_line_output_gets_json_hint(self) -> None:
+    """Single-line output (e.g. JSON) gets a hint that post_filter cannot help."""
+    from yoker.core._processing import _enforce_output_limit
+
+    spec = self._make_spec()
+    config = MagicMock()
+    config.max_output_kb = 10
+    agent = MagicMock()
+    agent.config.tools.__getitem__ = MagicMock(return_value=config)
+
+    result = ToolResult(
+      success=True, result=json.dumps({"data": "x" * 50000}) + "\n"
+    )  # single line + trailing newline, as subprocess stdout
+    out = _enforce_output_limit(result, agent, spec)
+
+    assert not out.success
+    assert "single-line" in (out.error or "")
+    assert "limit/state" in (out.error or "")
+
+  def test_multiline_output_keeps_post_filter_advice(self) -> None:
+    """Multi-line output keeps the standard post_filter advice (no JSON hint)."""
+    from yoker.core._processing import _enforce_output_limit
+
+    spec = self._make_spec()
+    config = MagicMock()
+    config.max_output_kb = 10
+    agent = MagicMock()
+    agent.config.tools.__getitem__ = MagicMock(return_value=config)
+
+    result = ToolResult(success=True, result=("x" * 100 + "\n") * 500)  # multi-line, ~50KB
+    out = _enforce_output_limit(result, agent, spec)
+
+    assert not out.success
+    assert "single-line" not in (out.error or "")
 
 
 # ---------------------------------------------------------------------------

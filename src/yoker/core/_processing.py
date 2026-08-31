@@ -1459,6 +1459,11 @@ def _enforce_output_limit(result: ToolResult, agent: Any, spec: ToolSpec) -> Too
     f"Good patterns: 'FAILED|Traceback|assert|short test summary' for tests, "
     f"'class |def |import ' for code structure, 'CalledProcessError|exit code' for CI."
   )
+  if "\n" not in field_val.strip():
+    error_msg += (
+      " Note: single-line output (e.g. JSON) cannot be narrowed by post_filter — "
+      "reduce limit/state or request fewer fields instead."
+    )
   return ToolResult(success=False, error=error_msg)
 
 

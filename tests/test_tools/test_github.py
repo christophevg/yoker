@@ -8,6 +8,7 @@ shape consumed by ``core/_processing.py``.
 """
 
 import asyncio
+import json
 import sys
 from typing import Any
 
@@ -1934,3 +1935,231 @@ class TestWindowsPlatformGate:
     assert not result.success
     assert "not available on Windows" in result.error
     assert not popen.called
+
+
+class TestPositionalRepoOps:
+  """repo_view passes the repository as a positional operand (gh requirement)."""
+
+  @pytest.mark.asyncio
+  async def test_repo_view_with_repo_is_positional(self, mocker: MockerFixture) -> None:
+    """gh repo view [<repository>] — repo goes after the subcommand, not as --repo."""
+    popen = _mock_popen(mocker, stdout='{"name":"r"}')
+    result = await github(operation="repo_view", ctx=_ctx(), repo="owner/repo")
+    assert result.success
+    cmd = popen.call_args.args[0]
+    assert cmd[:4] == ["gh", "repo", "view", "owner/repo"]
+    assert "--repo" not in cmd
+
+  @pytest.mark.asyncio
+  async def test_repo_view_without_repo_auto_detects(self, mocker: MockerFixture) -> None:
+    """Without repo, no positional — gh auto-detects from the git remote."""
+    popen = _mock_popen(mocker, stdout='{"name":"r"}')
+    result = await github(operation="repo_view", ctx=_ctx())
+    assert result.success
+    cmd = popen.call_args.args[0]
+    assert cmd[:3] == ["gh", "repo", "view"]
+    assert "--repo" not in cmd
+    # No stray operand: subcommand is directly followed by flags
+    assert cmd[3] == "--json"
+
+  @pytest.mark.asyncio
+  async def test_other_ops_still_use_repo_flag(self, mocker: MockerFixture) -> None:
+    """pr_list/issue_list still pass --repo as a flag (gh supports -R there)."""
+    popen = _mock_popen(mocker, stdout="[]")
+    await github(operation="pr_list", ctx=_ctx(), repo="owner/repo")
+    cmd = popen.call_args.args[0]
+    assert "--repo" in cmd and "owner/repo" in cmd
+    # And the repo is NOT a positional right after the subcommand
+    assert cmd[3] == "--repo"
+
+
+class TestCiVerdict:
+  """_ci_verdict compresses statusCheckRollup arrays into verdict strings."""
+
+  def test_none_when_empty(self) -> None:
+    assert github_module._ci_verdict(None) == "none"
+    assert github_module._ci_verdict([]) == "none"
+    assert github_module._ci_verdict("not-a-list") == "none"
+
+  def test_all_ok(self) -> None:
+    assert github_module._ci_verdict([{"conclusion": "SUCCESS"}] * 12) == "12 ok"
+
+  def test_ok_counts_neutral_and_skipped(self) -> None:
+    rollup = [
+      {"conclusion": "SUCCESS"},
+      {"conclusion": "NEUTRAL"},
+      {"conclusion": "SKIPPED"},
+    ]
+    assert github_module._ci_verdict(rollup) == "3 ok"
+
+  def test_failures(self) -> None:
+    rollup = [{"conclusion": "SUCCESS"}] * 9 + [{"conclusion": "FAILURE"}] * 3
+    assert github_module._ci_verdict(rollup) == "3 failing / 9 ok"
+
+  def test_pending(self) -> None:
+    rollup = [{"conclusion": "SUCCESS"}] * 9 + [{"status": "IN_PROGRESS"}] * 2
+    assert github_module._ci_verdict(rollup) == "2 pending / 9 ok"
+
+  def test_mixed(self) -> None:
+    rollup = (
+      [{"conclusion": "SUCCESS"}] * 9 + [{"conclusion": "FAILURE"}] * 3 + [{"status": "QUEUED"}]
+    )
+    assert github_module._ci_verdict(rollup) == "3 failing / 9 ok / 1 pending"
+
+  def test_unknown_state_counts_pending(self) -> None:
+    rollup = [{"conclusion": "WEIRD"}, {"conclusion": "SUCCESS"}]
+    assert github_module._ci_verdict(rollup) == "1 pending / 1 ok"
+
+  def test_non_dict_entries_count_pending(self) -> None:
+    rollup = ["garbage", {"conclusion": "SUCCESS"}]
+    assert github_module._ci_verdict(rollup) == "1 pending / 1 ok"
+
+  def test_timed_out_counts_failing(self) -> None:
+    rollup = [{"conclusion": "TIMED_OUT"}, {"conclusion": "SUCCESS"}]
+    assert github_module._ci_verdict(rollup) == "1 failing / 1 ok"
+
+
+class TestCompactDefaults:
+  """Without explicit fields, pr_list/pr_view compress rollup and pr_list author."""
+
+  def _rollup_pr(self, number: int = 10) -> dict[str, Any]:
+    return {
+      "number": number,
+      "title": "T",
+      "state": "MERGED",
+      "reviewDecision": "APPROVED",
+      "headRefName": "feature",
+      "createdAt": "2026-01-01T00:00:00Z",
+      "author": {"login": "alice"},
+      "statusCheckRollup": [{"conclusion": "SUCCESS"}] * 12,
+    }
+
+  @pytest.mark.asyncio
+  async def test_pr_list_compacts_by_default(self, mocker: MockerFixture) -> None:
+    _mock_popen(mocker, stdout=json.dumps([self._rollup_pr()]))
+    result = await github(operation="pr_list", ctx=_ctx(), repo="owner/repo", state="all")
+    result = await github(operation="pr_list", ctx=_ctx(), repo="owner/repo", state="all")
+    assert result.success
+    items = json.loads(result.result)
+    assert items[0]["ci"] == "12 ok"
+    assert "statusCheckRollup" not in items[0]
+    assert items[0]["author"] == "alice"
+
+  @pytest.mark.asyncio
+  async def test_pr_view_compacts_by_default(self, mocker: MockerFixture) -> None:
+    _mock_popen(mocker, stdout=json.dumps(self._rollup_pr()))
+    result = await github(operation="pr_view", ctx=_ctx(), repo="owner/repo", number=10)
+    result = await github(operation="pr_view", ctx=_ctx(), repo="owner/repo", number=10)
+    assert result.success
+    item = json.loads(result.result)
+    assert item["ci"] == "12 ok"
+    assert "statusCheckRollup" not in item
+    # pr_view keeps the full author object
+    assert item["author"] == {"login": "alice"}
+
+  @pytest.mark.asyncio
+  async def test_explicit_fields_passthrough_raw(self, mocker: MockerFixture) -> None:
+    """With explicit fields, gh output is passed through untouched."""
+    popen = _mock_popen(mocker, stdout=json.dumps([self._rollup_pr()]))
+    result = await github(
+      operation="pr_list",
+      ctx=_ctx(),
+      repo="owner/repo",
+      fields="number,statusCheckRollup",
+    )
+    assert result.success
+    items = json.loads(result.result)
+    assert items[0]["statusCheckRollup"] == [{"conclusion": "SUCCESS"}] * 12
+    assert "ci" not in items[0]
+    # And the command used the explicit fields, not the default set
+    cmd = popen.call_args.args[0]
+    json_idx = cmd.index("--json")
+    assert cmd[json_idx + 1] == "number,statusCheckRollup"
+
+  @pytest.mark.asyncio
+  async def test_explicit_fields_pr_view_passthrough(self, mocker: MockerFixture) -> None:
+    _mock_popen(mocker, stdout=json.dumps(self._rollup_pr()))
+    result = await github(
+      operation="pr_view",
+      ctx=_ctx(),
+      repo="owner/repo",
+      number=10,
+      fields="number,title,statusCheckRollup",
+    )
+    assert result.success
+    item = json.loads(result.result)
+    assert "ci" not in item  # no compression key added
+    assert "statusCheckRollup" in item
+
+  @pytest.mark.asyncio
+  async def test_malformed_json_passthrough(self, mocker: MockerFixture) -> None:
+    """Malformed gh output passes through unchanged — never raises."""
+    _mock_popen(mocker, stdout="not json at all")
+    result = await github(operation="pr_list", ctx=_ctx(), repo="owner/repo")
+    assert result.success
+    assert result.result == "not json at all"
+
+  @pytest.mark.asyncio
+  async def test_empty_pr_list_stays_empty(self, mocker: MockerFixture) -> None:
+    _mock_popen(mocker, stdout="[]")
+    result = await github(operation="pr_list", ctx=_ctx(), repo="owner/repo")
+    assert result.success
+    assert result.result == "[]"
+
+
+class TestFieldsParameter:
+  """Validation of the fields parameter and its dispatch."""
+
+  @pytest.mark.asyncio
+  async def test_invalid_field_rejected_with_allowed_set(self, mocker: MockerFixture) -> None:
+    _mock_popen(mocker)
+    result = await github(
+      operation="pr_list", ctx=_ctx(), repo="owner/repo", fields="number,bogusField"
+    )
+    assert not result.success
+    assert "bogusField" in result.error
+    assert "statusCheckRollup" in result.error  # allowed set is listed
+
+  @pytest.mark.asyncio
+  async def test_fields_rejected_for_other_ops(self, mocker: MockerFixture) -> None:
+    _mock_popen(mocker)
+    result = await github(operation="repo_view", ctx=_ctx(), fields="number")
+    assert not result.success
+    assert "fields" in result.error
+
+  @pytest.mark.asyncio
+  async def test_fields_forbidden_chars_rejected(self, mocker: MockerFixture) -> None:
+    _mock_popen(mocker)
+    result = await github(operation="pr_list", ctx=_ctx(), repo="owner/repo", fields="number;ls")
+    assert not result.success
+    assert "forbidden" in result.error
+
+  @pytest.mark.asyncio
+  async def test_fields_only_field_names_dispatch(self, mocker: MockerFixture) -> None:
+    """Explicit valid fields reach gh as --json <fields>."""
+    popen = _mock_popen(mocker, stdout="[]")
+    await github(operation="issue_list", ctx=_ctx(), repo="owner/repo", fields="number,title")
+    cmd = popen.call_args.args[0]
+    json_idx = cmd.index("--json")
+    assert cmd[json_idx + 1] == "number,title"
+
+  def test_default_pr_list_fields_unchanged(self) -> None:
+    """The compact default still fetches the full default field set from gh."""
+    cmd = github_module._build_command("pr_list", "owner/repo", None, "", 30, "open", "", None)
+    json_idx = cmd.index("--json")
+    fields = cmd[json_idx + 1]
+    assert "reviewDecision" in fields
+    assert "statusCheckRollup" in fields
+
+  def test_dispatch_selects_explicit_fields(self) -> None:
+    cmd = github_module._build_command(
+      "pr_list", "owner/repo", None, "", 30, "open", "", "number,title"
+    )
+    json_idx = cmd.index("--json")
+    assert cmd[json_idx + 1] == "number,title"
+    assert "--repo" in cmd and "owner/repo" in cmd
+
+  def test_dispatch_repo_view_positional(self) -> None:
+    cmd = github_module._build_command("repo_view", "owner/repo", None, "", 30, "open", "", None)
+    assert cmd[:4] == ["gh", "repo", "view", "owner/repo"]
+    assert "--repo" not in cmd
