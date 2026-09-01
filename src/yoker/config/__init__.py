@@ -266,6 +266,20 @@ class HandlerConfig:
   message: str | None = None
 
 
+@dataclass
+class UsageConfig:
+  """Token usage logging configuration.
+
+  Attributes:
+    enabled: Whether per-API-call token usage is logged. Defaults to True —
+      collection starts immediately; the records land in a local file.
+    path: JSONL file usage records are appended to. Supports ``~`` expansion.
+  """
+
+  enabled: bool = True
+  path: str = "~/.yoker/usage.jsonl"
+
+
 # Default blocked_paths — universal denylist (HARD, no override).
 # Glob patterns matched case-insensitively against the relative path from
 # each containing allowed root. Matching a directory blocks it and
@@ -1124,6 +1138,7 @@ class Config:
     harness: Harness metadata.
     backend: Backend provider configuration.
     context: Context management configuration.
+    usage: Token usage logging configuration.
     permissions: Permission boundaries.
     tools: Tool configurations.
     agents: Agent definition settings.
@@ -1150,6 +1165,7 @@ class Config:
   motd: MotdConfig = field(default_factory=MotdConfig)
   backend: BackendConfig = field(default_factory=BackendConfig)
   context: ContextConfig = field(default_factory=ContextConfig)
+  usage: UsageConfig = field(default_factory=UsageConfig)
   permissions: PermissionsConfig = field(default_factory=PermissionsConfig)
   tools: ToolsConfig = field(default_factory=ToolsConfig)
   tools_shared: ToolsSharedConfig = field(default_factory=ToolsSharedConfig)

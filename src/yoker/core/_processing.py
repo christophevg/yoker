@@ -34,6 +34,7 @@ from yoker.logging import log_timing
 from yoker.tools.context import ToolContext
 from yoker.tools.guardrails import Guardrail
 from yoker.tools.schema import ToolResult, ToolSpec, ValidationResult
+from yoker.usage.logger import log_call_usage
 
 logger = get_logger(__name__)
 
@@ -278,6 +279,9 @@ async def process_message(
       last_input_tokens = stats["input_tokens"]
     elif stats.get("prompt_eval_count"):
       last_input_tokens = stats["prompt_eval_count"]
+
+    # Log per-API-call token usage (atomic JSONL append).
+    log_call_usage(agent, stats)
 
     if not tool_calls:
       agent.context.end_turn(content, thinking=thinking or None)
@@ -596,6 +600,8 @@ async def _consume_stream(
     "total_duration_ms": 0,
     "input_tokens": 0,
     "output_tokens": 0,
+    "thinking_chars": 0,
+    "content_chars": 0,
   }
 
   async for chunk in stream:
@@ -699,6 +705,11 @@ async def _consume_stream(
 
   # Close any open streams
   await _close_streams(agent, in_content, in_thinking, content, thinking)
+
+  # Token counts come from the API; chars are the client-side raw signal
+  # used for thinking-share estimation (see yoker.usage.report).
+  stats["thinking_chars"] = len(thinking)
+  stats["content_chars"] = len(content)
 
   return content, thinking, tool_calls, stats
 
