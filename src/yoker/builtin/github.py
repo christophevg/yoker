@@ -630,7 +630,11 @@ async def github(
     )
     return ToolResult(
       success=False,
-      error=(f"Operation not allowed: {operation}. Allowed: {list(gh_config.allowed_operations)}"),
+      error=(
+        f"Operation '{operation}' is not allowed — not in "
+        "tools.github.allowed_operations. Add it to [tools.github] "
+        "allowed_operations in yoker.toml to enable."
+      ),
     )
 
   # --- 5. Per-parameter validation ---

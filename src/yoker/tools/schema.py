@@ -171,10 +171,14 @@ def build_tool_spec(
   properties["post_filter"] = {
     "type": "string",
     "description": (
-      "Optional regex pattern to filter the tool output. Only lines matching "
-      "this pattern are returned, reducing context size. Use specific patterns "
-      "to avoid noise — 'error' matches test names; prefer 'FAILED|Traceback|assert'. "
-      "Example: 'FAILED|short test summary' keeps only test failure lines."
+      "Optional regex pattern to filter the tool output line-by-line "
+      "(substring matching: 'passed' also matches 'bypassed'; a bare '.' "
+      "matches every line). Only matching lines are returned, reducing context "
+      "size. Use specific patterns to avoid noise — 'error' matches test "
+      "names; prefer 'FAILED|Traceback|assert|ERROR collecting|short test "
+      "summary'. On sliced read output (offset/limit), lines carry a "
+      "right-aligned 'NNN\\t' number prefix, so ^-anchored patterns need "
+      "'^\\s*\\d+\\t' — plain substrings are safe."
     ),
   }
 

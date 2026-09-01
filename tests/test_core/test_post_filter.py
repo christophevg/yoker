@@ -72,6 +72,19 @@ class TestPostFilterInSchema:
     props = spec.schema["function"]["parameters"]["properties"]
     assert "post_filter" in props
 
+  def test_post_filter_description_warns_on_substring_matching(self) -> None:
+    """The injected description warns about substring false-positives (#60 A2)."""
+
+    async def my_tool() -> ToolResult:
+      """Simple tool."""
+      return ToolResult(success=True, result="ok")
+
+    spec = build_tool_spec(my_tool)
+    description = spec.schema["function"]["parameters"]["properties"]["post_filter"]["description"]
+    assert "substring" in description
+    assert "bypassed" in description
+    assert "number prefix" in description
+
   def test_post_filter_present_on_tool_with_many_params(self) -> None:
     """post_filter appears alongside many existing parameters."""
 
@@ -123,6 +136,8 @@ class TestPostFilterExecution:
     assert "line3: warning here" in result.result
     assert "line2: all good" not in result.result
     assert "[post_filter:" in result.result
+    # #60: the zero-match hint only appears when nothing matched.
+    assert "Hint:" not in result.result
 
   @pytest.mark.asyncio
   async def test_post_filter_all_lines_match_returns_unfiltered(self) -> None:
@@ -159,6 +174,9 @@ class TestPostFilterExecution:
     assert "line2" not in result.result
     assert "line3" not in result.result
     assert "[post_filter: 0/3 lines matched" in result.result
+    # #60: zero-match output carries a hint explaining the two known pitfalls.
+    assert "substring" in result.result
+    assert "line-number prefix" in result.result
 
   @pytest.mark.asyncio
   async def test_post_filter_not_provided_returns_full_output(self) -> None:
@@ -617,6 +635,24 @@ class TestEnforceOutputLimit:
 
     assert not out.success
     assert "single-line" not in (out.error or "")
+
+  def test_overflow_guidance_includes_collection_error_patterns(self) -> None:
+    """The overflow advice names pytest collection-error patterns (#60 A1)."""
+    from yoker.core._processing import _enforce_output_limit
+
+    spec = self._make_spec()
+    config = MagicMock()
+    config.max_output_kb = 10
+    agent = MagicMock()
+    agent.config.tools.__getitem__ = MagicMock(return_value=config)
+
+    result = ToolResult(success=True, result=("x" * 100 + "\n") * 500)  # multi-line, ~50KB
+    out = _enforce_output_limit(result, agent, spec)
+
+    assert not out.success
+    assert "ERROR collecting" in (out.error or "")
+    assert "ERRORS" in (out.error or "")
+    assert "##[error]" in (out.error or "")
 
 
 # ---------------------------------------------------------------------------

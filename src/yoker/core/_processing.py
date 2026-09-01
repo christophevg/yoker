@@ -1373,6 +1373,16 @@ def _filter_lines(content: str, regex: re.Pattern[str], pattern: str) -> tuple[s
 
   filtered = "\n".join(matched)
   filtered += f"\n\n[post_filter: {kept}/{total} lines matched pattern: {pattern}]"
+  if kept == 0:
+    # #60: a zero-match filter is usually a pitfall (substring matching or the
+    # line-number prefix on sliced read output), not a signal the content is
+    # empty — give the LLM the two known causes so it can retry.
+    filtered += (
+      " Hint: matching is substring-based ('passed' also matches 'bypassed'; "
+      "'.' matches every line). On sliced read output (offset/limit), lines "
+      "carry a '  12\\t' line-number prefix — use non-anchored substrings, or "
+      "'^\\s*\\d+\\t' to account for it."
+    )
   return filtered, True
 
 
@@ -1456,8 +1466,9 @@ def _enforce_output_limit(result: ToolResult, agent: Any, spec: ToolSpec) -> Too
     f"Output exceeds {max_output_kb}KB limit ({actual_kb}KB after post_filter). "
     f"Use a more specific post_filter pattern to narrow the output. "
     f"Avoid broad terms like 'error' that match test names. "
-    f"Good patterns: 'FAILED|Traceback|assert|short test summary' for tests, "
-    f"'class |def |import ' for code structure, 'CalledProcessError|exit code' for CI."
+    f"Good patterns: 'FAILED|Traceback|assert|short test summary|ERROR collecting|ERRORS' "
+    f"for tests, 'class |def |import ' for code structure, "
+    f"'CalledProcessError|exit code|##[error]' for CI."
   )
   if "\n" not in field_val.strip():
     error_msg += (
