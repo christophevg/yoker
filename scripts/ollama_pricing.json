@@ -28,3 +28,5 @@
     "qwen3.5: price is for the 'qwen3.5:397b' model; cloud deployments report as 'qwen3.5:cloud', matched via tag-strip rule."
   ]
 }
+  ]
+}
