@@ -690,6 +690,102 @@ class TestGithubWriteOperations:
     parsed = json.loads(result.result)
     assert parsed["url"] == url
 
+  # --- issue_comment ---
+
+  @pytest.mark.asyncio
+  async def test_issue_comment_builds_correct_command(self, mocker: MockerFixture) -> None:
+    """issue_comment builds gh issue comment <number> --body=..., no --json."""
+    popen = _mock_popen(mocker, stdout="https://github.com/owner/repo/issues/7#issuecomment-456")
+    cfg = GitHubToolConfig(allowed_operations=("issue_comment",))
+    await github(
+      operation="issue_comment",
+      ctx=_ctx(cfg),
+      number=7,
+      body="Fixed in #42.",
+    )
+    cmd = popen.call_args.args[0]
+    assert cmd[:3] == ["gh", "issue", "comment"]
+    assert "--body=Fixed in #42." in cmd
+    assert "--json" not in cmd
+    # The -- separator and positional number must come AFTER --body
+    sep_idx = cmd.index("--")
+    body_idx = cmd.index("--body=Fixed in #42.")
+    assert body_idx < sep_idx, "--body must come before -- separator"
+    assert str(7) in cmd[sep_idx + 1 :], "number must come after -- separator"
+
+  @pytest.mark.asyncio
+  async def test_issue_comment_with_repo(self, mocker: MockerFixture) -> None:
+    """issue_comment includes --repo when provided."""
+    popen = _mock_popen(mocker, stdout="https://github.com/owner/repo/issues/7#issuecomment-456")
+    cfg = GitHubToolConfig(allowed_operations=("issue_comment",))
+    await github(
+      operation="issue_comment",
+      ctx=_ctx(cfg),
+      repo="owner/repo",
+      number=7,
+      body="Comment",
+    )
+    cmd = popen.call_args.args[0]
+    assert "--repo" in cmd and "owner/repo" in cmd
+
+  @pytest.mark.asyncio
+  async def test_issue_comment_not_in_default_allowlist(self, mocker: MockerFixture) -> None:
+    """issue_comment is rejected with default config (not in default allowlist)."""
+    _mock_popen(mocker)
+    result = await github(
+      operation="issue_comment",
+      ctx=_ctx(),  # default config
+      number=7,
+      body="LGTM!",
+    )
+    assert not result.success
+    assert "not allowed" in result.error.lower() or "allowed" in result.error.lower()
+
+  @pytest.mark.asyncio
+  async def test_issue_comment_requires_body(self, mocker: MockerFixture) -> None:
+    """issue_comment requires a non-empty body."""
+    _mock_popen(mocker)
+    cfg = GitHubToolConfig(allowed_operations=("issue_comment",))
+    result = await github(
+      operation="issue_comment",
+      ctx=_ctx(cfg),
+      number=7,
+      body="",
+    )
+    assert not result.success
+    assert "body" in result.error.lower()
+
+  @pytest.mark.asyncio
+  async def test_issue_comment_requires_number(self, mocker: MockerFixture) -> None:
+    """issue_comment requires a positive number."""
+    _mock_popen(mocker)
+    cfg = GitHubToolConfig(allowed_operations=("issue_comment",))
+    result = await github(
+      operation="issue_comment",
+      ctx=_ctx(cfg),
+      body="LGTM!",
+    )
+    assert not result.success
+    assert "number" in result.error.lower()
+
+  @pytest.mark.asyncio
+  async def test_issue_comment_returns_success_with_url(self, mocker: MockerFixture) -> None:
+    """issue_comment returns success with the comment URL."""
+    url = "https://github.com/owner/repo/issues/7#issuecomment-456"
+    _mock_popen(mocker, stdout=url)
+    cfg = GitHubToolConfig(allowed_operations=("issue_comment",))
+    result = await github(
+      operation="issue_comment",
+      ctx=_ctx(cfg),
+      number=7,
+      body="LGTM!",
+    )
+    assert result.success
+    import json
+
+    parsed = json.loads(result.result)
+    assert parsed["url"] == url
+
   # --- pr_ready ---
 
   @pytest.mark.asyncio

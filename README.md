@@ -491,7 +491,7 @@ See [docs/rationale.md](docs/rationale.md) for the full rationale and comparison
 - [x] `existence` tool - Check if files or folders exist with security hardening
 - [x] `mkdir` tool - Create directories with recursive parent creation and depth limits
 - [x] `git` tool - Git operations (status, log, diff, branch, show) with permission-controlled commit/push
-- [x] `github` tool - Read-only GitHub operations via `gh` CLI (issues, PRs, workflows, reviews, comments)
+- [x] `github` tool - GitHub operations via `gh` CLI (issues, PRs, workflows, releases; write ops like `issue_create`, `issue_comment`, `pr_create` require config opt-in)
 - [x] `make` tool - Execute Makefile targets (e.g., `make check`, `make test`) with target validation, per-target env var allowlist, and process-group timeout enforcement.
 - [x] `websearch` tool - Web search with SSRF protection, domain filtering, and rate limiting
 - [x] `webfetch` tool - Fetch web content with SSRF protection, URL validation, and size limits

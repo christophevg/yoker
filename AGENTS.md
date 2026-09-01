@@ -169,7 +169,9 @@ src/yoker/
 │   ├── sleep.py             # sleep: pause execution (1–300s) for polling/waiting
 │   ├── git.py               # git: Git operations (status, log, diff, branch, show, 
 │   │                        #   add, commit, push, checkout, rm, pull, tag)
-│   ├── github.py            # github: read-only GitHub operations via gh CLI
+│   ├── github.py            # github: GitHub operations via gh CLI (incl.
+│   │                        #   write ops: pr_create, pr_comment, issue_create,
+│   │                        #   issue_comment, release_create, ...)
 │   ├── make.py              # make: Makefile target execution
 │   ├── webfetch.py          # webfetch: fetch web content through a backend
 │   ├── websearch.py         # websearch: search the web through a backend

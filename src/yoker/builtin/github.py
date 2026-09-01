@@ -2,7 +2,7 @@
 
 Wraps the ``gh`` CLI for a fixed set of GitHub operations. Read operations
 are auto-permitted via the default allowlist. Write operations (``pr_create``,
-``release_create``, ``issue_create``) require explicit opt-in via
+``pr_comment``, ``issue_create``, ``issue_comment``) require explicit opt-in via
 ``allowed_operations`` in
 config — they are never in the default allowlist. The operation enum is the
 security boundary: the agent can only invoke the hardcoded ``gh`` subcommands
@@ -75,6 +75,7 @@ _GITHUB_OPERATIONS: frozenset[str] = frozenset(
     "pr_edit",
     "release_create",
     "issue_create",
+    "issue_comment",
   }
 )
 
@@ -83,7 +84,16 @@ _GITHUB_OPERATIONS: frozenset[str] = frozenset(
 # allowlist. Even when allowed, they are never auto-permitted (the config
 # owner must consciously add them).
 _WRITE_OPS: frozenset[str] = frozenset(
-  {"pr_create", "pr_comment", "pr_ready", "pr_draft", "pr_edit", "release_create", "issue_create"}
+  {
+    "pr_create",
+    "pr_comment",
+    "pr_ready",
+    "pr_draft",
+    "pr_edit",
+    "release_create",
+    "issue_create",
+    "issue_comment",
+  }
 )
 
 # (gh_subcommand_prefix, --json fields, required_param)
@@ -170,6 +180,11 @@ _OPERATION_DISPATCH: dict[str, tuple[list[str], str, str | None]] = {
     ["issue", "create"],
     "",
     None,
+  ),
+  "issue_comment": (
+    ["issue", "comment"],
+    "",
+    "number",
   ),
 }
 
@@ -391,6 +406,7 @@ _REDACT_REPLACEMENT = "<redacted>"
     "  pr_edit        — Edit a PR (assignees, reviewers, labels). Required: number. Optional: repo, add_assignee, remove_assignee, add_reviewer, remove_reviewer, add_label, remove_label.\n"
     "  release_create — Create a release. Required: repo, tag, title, notes. Optional: draft, prerelease.\n"
     "  issue_create   — Create an issue. Required: repo, title, body. Optional: label, assignee.\n"
+    "  issue_comment  — Add a comment to an issue. Required: number, body. Optional: repo.\n"
     "\n"
     "Common parameters:\n"
     '  repo    — "owner/name" (e.g. "octocat/Hello-World"). If omitted, uses current git repo.\n'
@@ -423,7 +439,8 @@ async def github(
       "GitHub operation. One of: repo_view, issue_list, issue_view, pr_list, "
       "pr_view, pr_reviews, pr_comments, workflow_list, workflow_view, "
       "workflow_logs, release_list, release_view, pr_create, pr_comment, "
-      "pr_ready, pr_draft, pr_edit, release_create, issue_create."
+      "pr_ready, pr_draft, pr_edit, release_create, issue_create, "
+      "issue_comment."
     ),
   ],
   ctx: ToolContext,
@@ -491,7 +508,7 @@ async def github(
   Read operations are restricted to a fixed enum (the security boundary)
   and further gated by ``GitHubToolConfig.allowed_operations``. Write
   operations (``pr_create``, ``pr_comment``, ``pr_ready``, ``pr_draft``,
-  ``release_create``, ``issue_create``) require
+  ``release_create``, ``issue_create``, ``issue_comment``) require
   explicit opt-in via ``allowed_operations`` — they are NOT in the default
   allowlist. All commands
   run via ``subprocess`` with list args (no shell); timeout is enforced by
@@ -520,6 +537,10 @@ async def github(
   ``issue_create`` requires ``repo``, ``title``, and ``body``. Optional
   ``label`` (comma-separated labels) and ``assignee`` (comma-separated
   logins) add labels and assignees to the created issue.
+
+  ``issue_comment`` requires ``number`` and ``body``. Optional ``repo``
+  defaults to the current git repo. The comment is posted as a regular
+  issue comment.
   """
   # --- 1. Config type check ---
   gh_config = ctx.config
@@ -612,6 +633,12 @@ async def github(
     werr = _validate_issue_create_params(repo, title, body)
     if werr is not None:
       logger.info("github_rejected", reason="invalid_issue_create_param", error=werr)
+      return ToolResult(success=False, error=werr)
+
+  if operation == "issue_comment":
+    werr = _validate_issue_comment_params(body)
+    if werr is not None:
+      logger.info("github_rejected", reason="invalid_issue_comment_param", error=werr)
       return ToolResult(success=False, error=werr)
 
   # issue_create: validate assignee for forbidden chars (label already validated)
@@ -761,8 +788,8 @@ async def github(
   # For release_create, the positional tag is already in the command from
   # _build_command, and write_args (--title, --notes, --draft, --prerelease)
   # are flags that go after.
-  if operation in ("pr_comment", "pr_ready", "pr_edit"):
-    # cmd is ["gh", "pr", "<subcmd>", "--repo", repo] (no -- separator yet)
+  if operation in ("pr_comment", "pr_ready", "pr_edit", "issue_comment"):
+    # cmd is ["gh", "pr|issue", "<subcmd>", "--repo", repo] (no -- separator yet)
     cmd.extend(write_args)
     cmd.extend(["--", str(number)])
   else:
@@ -999,6 +1026,16 @@ def _validate_issue_create_params(repo: str, title: str, body: str) -> str | Non
   return None
 
 
+def _validate_issue_comment_params(body: str) -> str | None:
+  """Validate parameters for issue_comment operation."""
+  if not body or not isinstance(body, str):
+    return "Parameter 'body' is required for issue_comment"
+  err = _validate_text_field("body", body, max_len=100000)
+  if err is not None:
+    return err
+  return None
+
+
 def _build_write_args(
   operation: str,
   title: str,
@@ -1050,6 +1087,9 @@ def _build_write_args(
     return args
 
   if operation == "pr_comment":
+    return [f"--body={body}"]
+
+  if operation == "issue_comment":
     return [f"--body={body}"]
 
   if operation == "pr_edit":
@@ -1409,6 +1449,9 @@ def _parse_write_output(operation: str, stdout: str, tag: str) -> str:
     match = re.search(r"/issues/(\d+)", url)
     if match:
       result["number"] = int(match.group(1))
+  elif operation == "issue_comment":
+    # gh issue comment outputs the comment URL: .../issues/42#issuecomment-123
+    result["url"] = url
 
   return json.dumps(result)
 
