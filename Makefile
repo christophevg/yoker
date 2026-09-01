@@ -56,6 +56,9 @@ size:
 	@echo "tests/"
 	@find tests/ | grep "\.py$$" | xargs wc -l | sort -rn | head -10
 
+usage:
+	uv run python scripts/usage_report.py
+
 ## Running
 
 run: env-run ## Run the application
