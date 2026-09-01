@@ -85,6 +85,29 @@ def _mock_popen(
   return original_mock
 
 
+def _track_gh_calls(mocker: MockerFixture) -> list[list[str]]:
+  """Patch create_subprocess_exec with a per-call mock that records commands.
+
+  Unlike ``_mock_popen`` (whose ``call_args_list`` is unreliable in this
+  file), this helper appends each command list to the returned list and
+  always returns a successful process with the standard issue-view JSON on
+  stdout. Use ``seen_cmds[0]``, ``seen_cmds[1]`` etc. to assert per-step
+  commands of multi-step operations (issue_edit, pr_comments, pr_draft).
+  """
+  seen_cmds: list[list[str]] = []
+
+  def side_effect(*args: Any, **kwargs: Any) -> Any:
+    seen_cmds.append(list(args))
+    proc = mocker.MagicMock()
+    proc.pid = 12345
+    proc.returncode = 0
+    proc.communicate = mocker.AsyncMock(return_value=(b'{"number": 42, "state": "open"}', b""))
+    return proc
+
+  mocker.patch.object(github_module.asyncio, "create_subprocess_exec", side_effect=side_effect)
+  return seen_cmds
+
+
 # POSIX-only: the github tool uses os.killpg + SIGKILL + start_new_session
 # to enforce the process-group-kill invariant on timeout. The Windows path
 # is covered by TestWindowsPlatformGate below.
@@ -139,6 +162,22 @@ class TestGithubOperations:
     assert "--label" in cmd and "bug" in cmd
     assert "--limit" in cmd and "5" in cmd
     assert "--json" in cmd
+
+  @pytest.mark.asyncio
+  async def test_issue_list_defaults_to_open_state(self, mocker: MockerFixture) -> None:
+    """Omitting state applies the "open" list default (gh issue list default)."""
+    popen = _mock_popen(mocker, stdout="[]")
+    await github(operation="issue_list", ctx=_ctx(), repo="owner/repo")
+    cmd = popen.call_args.args[0]
+    assert "--state" in cmd and "open" in cmd
+
+  @pytest.mark.asyncio
+  async def test_issue_list_explicit_open_state(self, mocker: MockerFixture) -> None:
+    """state="open" explicitly requested behaves identically to the default."""
+    popen = _mock_popen(mocker, stdout="[]")
+    await github(operation="issue_list", ctx=_ctx(), repo="owner/repo", state="open")
+    cmd = popen.call_args.args[0]
+    assert "--state" in cmd and "open" in cmd
 
   @pytest.mark.asyncio
   async def test_issue_view_with_number(self, mocker: MockerFixture) -> None:
@@ -1438,6 +1477,353 @@ class TestGithubWriteOperations:
     assert "--remove-label=label1" in cmd
 
 
+class TestGithubIssueEdit:
+  """Tests for issue_edit write operation.
+
+  issue_edit is a multi-step operation: gh issue edit (labels/assignees),
+  optional gh issue close/reopen (state), and a final gh issue view that
+  returns the updated issue summary.
+  """
+
+  @pytest.mark.asyncio
+  async def test_issue_edit_not_in_default_allowlist(self, mocker: MockerFixture) -> None:
+    """issue_edit is rejected with default config (not in default allowlist)."""
+    _mock_popen(mocker)
+    result = await github(
+      operation="issue_edit",
+      ctx=_ctx(),
+      number=42,
+      add_label="bug",
+    )
+    assert not result.success
+    assert "not allowed" in result.error.lower() or "allowed" in result.error.lower()
+
+  @pytest.mark.asyncio
+  async def test_issue_edit_requires_number(self, mocker: MockerFixture) -> None:
+    """issue_edit requires a positive number."""
+    _mock_popen(mocker)
+    cfg = GitHubToolConfig(allowed_operations=("issue_edit",))
+    result = await github(
+      operation="issue_edit",
+      ctx=_ctx(cfg),
+      add_label="bug",
+    )
+    assert not result.success
+    assert "number" in result.error.lower()
+
+  @pytest.mark.asyncio
+  async def test_issue_edit_requires_at_least_one_param(self, mocker: MockerFixture) -> None:
+    """issue_edit requires at least one edit parameter."""
+    _mock_popen(mocker)
+    cfg = GitHubToolConfig(allowed_operations=("issue_edit",))
+    result = await github(
+      operation="issue_edit",
+      ctx=_ctx(cfg),
+      number=42,
+    )
+    assert not result.success
+    assert "at least one" in result.error.lower()
+
+  @pytest.mark.asyncio
+  async def test_issue_edit_state_all_rejected(self, mocker: MockerFixture) -> None:
+    """issue_edit rejects state="all" — it is a list filter, not a state."""
+    _mock_popen(mocker)
+    cfg = GitHubToolConfig(allowed_operations=("issue_edit",))
+    result = await github(
+      operation="issue_edit",
+      ctx=_ctx(cfg),
+      number=42,
+      state="all",
+    )
+    assert not result.success
+    assert "state" in result.error.lower()
+
+  @pytest.mark.asyncio
+  async def test_issue_edit_add_label_builds_command(self, mocker: MockerFixture) -> None:
+    """issue_edit with add_label builds gh issue edit --add-label=... -- 42 + view."""
+    seen_cmds = _track_gh_calls(mocker)
+    cfg = GitHubToolConfig(allowed_operations=("issue_edit",))
+    result = await github(
+      operation="issue_edit",
+      ctx=_ctx(cfg),
+      number=42,
+      add_label="status:in-progress",
+    )
+    assert result.success
+    assert len(seen_cmds) == 2
+    edit_cmd, view_cmd = seen_cmds
+    assert edit_cmd[:3] == ["gh", "issue", "edit"]
+    assert "--add-label=status:in-progress" in edit_cmd
+    assert "--json" not in edit_cmd
+    assert edit_cmd[-1] == "42" and edit_cmd[-2] == "--"
+    # The view returns the updated issue summary as JSON.
+    assert view_cmd[:3] == ["gh", "issue", "view"]
+    assert "--json" in view_cmd
+    assert "number,title,state,labels,assignees,url" in view_cmd
+    assert str(42) in view_cmd[view_cmd.index("--") :]
+    parsed = json.loads(result.result)
+    assert parsed["number"] == 42
+
+  @pytest.mark.asyncio
+  async def test_issue_edit_remove_label_builds_command(self, mocker: MockerFixture) -> None:
+    """issue_edit with remove_label builds --remove-label=... before the separator."""
+    seen_cmds = _track_gh_calls(mocker)
+    cfg = GitHubToolConfig(allowed_operations=("issue_edit",))
+    await github(
+      operation="issue_edit",
+      ctx=_ctx(cfg),
+      number=42,
+      remove_label="status:backlog",
+    )
+    edit_cmd = seen_cmds[0]
+    assert edit_cmd[:3] == ["gh", "issue", "edit"]
+    assert "--remove-label=status:backlog" in edit_cmd
+
+  @pytest.mark.asyncio
+  async def test_issue_edit_add_assignee_builds_command(self, mocker: MockerFixture) -> None:
+    """issue_edit with add_assignee builds --add-assignee=... before the separator."""
+    seen_cmds = _track_gh_calls(mocker)
+    cfg = GitHubToolConfig(allowed_operations=("issue_edit",))
+    await github(
+      operation="issue_edit",
+      ctx=_ctx(cfg),
+      number=42,
+      add_assignee="christophevg",
+    )
+    edit_cmd = seen_cmds[0]
+    assert edit_cmd[:3] == ["gh", "issue", "edit"]
+    assert "--add-assignee=christophevg" in edit_cmd
+
+  @pytest.mark.asyncio
+  async def test_issue_edit_remove_assignee_builds_command(self, mocker: MockerFixture) -> None:
+    """issue_edit with remove_assignee builds --remove-assignee=... before the separator."""
+    seen_cmds = _track_gh_calls(mocker)
+    cfg = GitHubToolConfig(allowed_operations=("issue_edit",))
+    await github(
+      operation="issue_edit",
+      ctx=_ctx(cfg),
+      number=42,
+      remove_assignee="christophevg",
+    )
+    edit_cmd = seen_cmds[0]
+    assert edit_cmd[:3] == ["gh", "issue", "edit"]
+    assert "--remove-assignee=christophevg" in edit_cmd
+
+  @pytest.mark.asyncio
+  async def test_issue_edit_multiple_params(self, mocker: MockerFixture) -> None:
+    """issue_edit with multiple edit params includes all flags in one edit call."""
+    seen_cmds = _track_gh_calls(mocker)
+    cfg = GitHubToolConfig(allowed_operations=("issue_edit",))
+    await github(
+      operation="issue_edit",
+      ctx=_ctx(cfg),
+      number=42,
+      add_label="bug,wip",
+      remove_label="status:backlog",
+      add_assignee="user1",
+      remove_assignee="user2",
+    )
+    # Exactly two gh calls: one edit + one view (no state change).
+    assert len(seen_cmds) == 2
+    edit_cmd = seen_cmds[0]
+    assert "--add-label=bug,wip" in edit_cmd
+    assert "--remove-label=status:backlog" in edit_cmd
+    assert "--add-assignee=user1" in edit_cmd
+    assert "--remove-assignee=user2" in edit_cmd
+
+  @pytest.mark.asyncio
+  async def test_issue_edit_with_repo(self, mocker: MockerFixture) -> None:
+    """issue_edit includes --repo on every step when provided."""
+    seen_cmds = _track_gh_calls(mocker)
+    cfg = GitHubToolConfig(allowed_operations=("issue_edit",))
+    await github(
+      operation="issue_edit",
+      ctx=_ctx(cfg),
+      repo="owner/repo",
+      number=42,
+      add_label="bug",
+    )
+    assert len(seen_cmds) == 2
+    edit_cmd, view_cmd = seen_cmds
+    assert "--repo" in edit_cmd and "owner/repo" in edit_cmd
+    assert "--repo" in view_cmd and "owner/repo" in view_cmd
+
+  @pytest.mark.asyncio
+  async def test_issue_edit_state_closed_runs_close(self, mocker: MockerFixture) -> None:
+    """issue_edit with state="closed" runs gh issue close after the edit, then view."""
+    seen_cmds = _track_gh_calls(mocker)
+    cfg = GitHubToolConfig(allowed_operations=("issue_edit",))
+    result = await github(
+      operation="issue_edit",
+      ctx=_ctx(cfg),
+      number=42,
+      add_label="status:done",
+      state="closed",
+    )
+    assert result.success
+    assert len(seen_cmds) == 3
+    edit_cmd, close_cmd, view_cmd = seen_cmds
+    assert edit_cmd[:3] == ["gh", "issue", "edit"]
+    assert "--add-label=status:done" in edit_cmd
+    assert close_cmd[:3] == ["gh", "issue", "close"]
+    assert close_cmd[-1] == "42" and close_cmd[-2] == "--"
+    assert view_cmd[:3] == ["gh", "issue", "view"]
+    # The mocked gh returns the (updated) issue; verify the view ran after close.
+    parsed = json.loads(result.result)
+    assert parsed["number"] == 42
+
+  @pytest.mark.asyncio
+  async def test_issue_edit_state_open_runs_reopen(self, mocker: MockerFixture) -> None:
+    """issue_edit with state="open" runs gh issue reopen, then view."""
+    seen_cmds = _track_gh_calls(mocker)
+    cfg = GitHubToolConfig(allowed_operations=("issue_edit",))
+    await github(
+      operation="issue_edit",
+      ctx=_ctx(cfg),
+      number=42,
+      state="open",
+    )
+    assert len(seen_cmds) == 2
+    reopen_cmd, _view_cmd = seen_cmds
+    assert reopen_cmd[:3] == ["gh", "issue", "reopen"]
+    assert reopen_cmd[-1] == "42"
+
+  @pytest.mark.asyncio
+  async def test_issue_edit_state_only_skips_edit_call(self, mocker: MockerFixture) -> None:
+    """issue_edit with only state runs close/reopen directly — no gh issue edit."""
+    seen_cmds = _track_gh_calls(mocker)
+    cfg = GitHubToolConfig(allowed_operations=("issue_edit",))
+    await github(
+      operation="issue_edit",
+      ctx=_ctx(cfg),
+      number=42,
+      state="closed",
+    )
+    assert len(seen_cmds) == 2
+    close_cmd, view_cmd = seen_cmds
+    assert close_cmd[:3] == ["gh", "issue", "close"]
+    assert view_cmd[:3] == ["gh", "issue", "view"]
+
+  @pytest.mark.asyncio
+  async def test_issue_edit_rejects_pr_only_param_with_allowed_set(
+    self, mocker: MockerFixture
+  ) -> None:
+    """issue_edit rejects PR-only edit parameters, naming the allowed set."""
+    _mock_popen(mocker)
+    cfg = GitHubToolConfig(allowed_operations=("issue_edit",))
+    result = await github(
+      operation="issue_edit",
+      ctx=_ctx(cfg),
+      number=42,
+      add_reviewer="user1",
+    )
+    assert not result.success
+    assert "add_reviewer" in result.error
+    assert "add_label" in result.error
+    assert "issue_edit" in result.error
+
+  @pytest.mark.asyncio
+  async def test_issue_edit_rejects_forbidden_char_in_label(self, mocker: MockerFixture) -> None:
+    """issue_edit rejects forbidden characters in add_label."""
+    _mock_popen(mocker)
+    cfg = GitHubToolConfig(allowed_operations=("issue_edit",))
+    result = await github(
+      operation="issue_edit",
+      ctx=_ctx(cfg),
+      number=42,
+      add_label="bug;rm -rf",
+    )
+    assert not result.success
+    assert "forbidden" in result.error.lower()
+
+  @pytest.mark.asyncio
+  async def test_issue_edit_edit_failure_propagates(self, mocker: MockerFixture) -> None:
+    """issue_edit maps a genuine issue-not-found to the issue number."""
+    _mock_popen(mocker, stderr="could not resolve to an Issue", returncode=1)
+    cfg = GitHubToolConfig(allowed_operations=("issue_edit",))
+    result = await github(
+      operation="issue_edit",
+      ctx=_ctx(cfg),
+      number=42,
+      add_label="bug",
+    )
+    assert not result.success
+    # The issue itself is the missing resource here — blame the number.
+    assert "42" in result.error
+    assert "not found" in result.error.lower()
+
+  @pytest.mark.asyncio
+  async def test_issue_edit_missing_label_names_the_label_not_the_issue(
+    self, mocker: MockerFixture
+  ) -> None:
+    """A missing LABEL must not be misreported as 'Resource not found: 42'.
+
+    gh issue edit does not auto-create labels; it fails with
+    "could not add label: 'x' not found". The bug this guards against: the
+    generic not-found mapping blamed the issue number while the issue was
+    fine and the label was missing.
+    """
+    _mock_popen(mocker, stderr="could not add label: 'test-issue-edit' not found", returncode=1)
+    cfg = GitHubToolConfig(allowed_operations=("issue_edit",))
+    result = await github(
+      operation="issue_edit",
+      ctx=_ctx(cfg),
+      number=69,
+      add_label="test-issue-edit",
+    )
+    assert not result.success
+    # Names the label as the missing resource — not the issue number alone.
+    assert "test-issue-edit" in result.error
+    assert "label not found" in result.error.lower()
+    assert "does not auto-create" in result.error.lower()
+    # And does NOT claim the issue is missing.
+    assert "Resource not found: 69" not in result.error
+
+  @pytest.mark.asyncio
+  async def test_issue_edit_missing_remove_label_reports_label(self, mocker: MockerFixture) -> None:
+    """remove-label failure with unknown label names the label, not the issue."""
+    _mock_popen(mocker, stderr="could not remove label: 'status:backlog' not found", returncode=1)
+    cfg = GitHubToolConfig(allowed_operations=("issue_edit",))
+    result = await github(
+      operation="issue_edit",
+      ctx=_ctx(cfg),
+      number=69,
+      remove_label="status:backlog",
+    )
+    assert not result.success
+    assert "status:backlog" in result.error
+    assert "could not remove" in result.error.lower()
+
+  @pytest.mark.asyncio
+  async def test_issue_edit_missing_assignee_reports_assignee(self, mocker: MockerFixture) -> None:
+    """A missing assignee login is named in the error, not the issue number."""
+    _mock_popen(mocker, stderr="could not add assignee: 'ghost-user' not found", returncode=1)
+    cfg = GitHubToolConfig(allowed_operations=("issue_edit",))
+    result = await github(
+      operation="issue_edit",
+      ctx=_ctx(cfg),
+      number=69,
+      add_assignee="ghost-user",
+    )
+    assert not result.success
+    assert "ghost-user" in result.error
+    assert "assignee not found" in result.error.lower()
+
+  @pytest.mark.asyncio
+  async def test_issue_edit_view_failure_propagates(self, mocker: MockerFixture) -> None:
+    """issue_edit surfaces the gh error when the final view step fails."""
+    _mock_popen(mocker, stderr="API rate limit exceeded", returncode=1)
+    cfg = GitHubToolConfig(allowed_operations=("issue_edit",))
+    result = await github(
+      operation="issue_edit",
+      ctx=_ctx(cfg),
+      number=42,
+      add_label="bug",
+    )
+    assert not result.success
+    assert "rate limit" in result.error.lower()
+
+
 class TestGithubIssueCreate:
   """Tests for issue_create write operation."""
 
@@ -1600,6 +1986,215 @@ class TestGithubIssueCreate:
   async def test_issue_create_in_write_ops(self) -> None:
     """issue_create is in the _WRITE_OPS frozenset (requires explicit opt-in)."""
     assert "issue_create" in github_module._WRITE_OPS
+
+
+class TestGithubLabelCreate:
+  """Tests for label_create write operation."""
+
+  @pytest.mark.asyncio
+  async def test_label_create_builds_correct_command(self, mocker: MockerFixture) -> None:
+    """label_create builds gh label create --repo owner/repo <name> with no --json."""
+    popen = _mock_popen(mocker, stdout='✓ Label "status:triage" created in owner/repo')
+    cfg = GitHubToolConfig(allowed_operations=("label_create",))
+    await github(
+      operation="label_create",
+      ctx=_ctx(cfg),
+      repo="owner/repo",
+      label="status:triage",
+    )
+    cmd = popen.call_args.args[0]
+    assert cmd[:3] == ["gh", "label", "create"]
+    assert "--repo" in cmd and "owner/repo" in cmd
+    assert "status:triage" in cmd
+    assert "--json" not in cmd
+    assert "--" not in cmd  # no number/tag positional
+
+  @pytest.mark.asyncio
+  async def test_label_create_with_color_and_description(self, mocker: MockerFixture) -> None:
+    """label_create passes --color= and --description= flags in = format."""
+    popen = _mock_popen(mocker, stdout='✓ Label "bug" created in owner/repo')
+    cfg = GitHubToolConfig(allowed_operations=("label_create",))
+    await github(
+      operation="label_create",
+      ctx=_ctx(cfg),
+      repo="owner/repo",
+      label="bug",
+      color="E99695",
+      description="Something isn't working",
+    )
+    cmd = popen.call_args.args[0]
+    assert "--color=E99695" in cmd
+    assert "--description=Something isn't working" in cmd
+    # Name positional comes before the flags.
+    assert cmd.index("bug") < cmd.index("--color=E99695")
+
+  @pytest.mark.asyncio
+  async def test_label_create_omits_optional_flags(self, mocker: MockerFixture) -> None:
+    """label_create omits --color/--description when not provided."""
+    popen = _mock_popen(mocker, stdout='✓ Label "x" created in owner/repo')
+    cfg = GitHubToolConfig(allowed_operations=("label_create",))
+    await github(
+      operation="label_create",
+      ctx=_ctx(cfg),
+      repo="owner/repo",
+      label="x",
+    )
+    cmd = popen.call_args.args[0]
+    assert "--color" not in cmd
+    assert "--description" not in cmd
+
+  @pytest.mark.asyncio
+  async def test_label_create_returns_success_summary(self, mocker: MockerFixture) -> None:
+    """label_create parses gh's success message into a JSON summary."""
+    _mock_popen(mocker, stdout='✓ Label "status:triage" created in owner/repo')
+    cfg = GitHubToolConfig(allowed_operations=("label_create",))
+    result = await github(
+      operation="label_create",
+      ctx=_ctx(cfg),
+      repo="owner/repo",
+      label="status:triage",
+    )
+    assert result.success
+    parsed = json.loads(result.result)
+    assert parsed["created"] is True
+    assert parsed["label"] == "status:triage"
+    assert parsed["repo"] == "owner/repo"
+
+  @pytest.mark.asyncio
+  async def test_label_create_empty_stdout_still_success(self, mocker: MockerFixture) -> None:
+    """label_create with empty gh stdout returns a minimal created summary."""
+    _mock_popen(mocker, stdout="")
+    cfg = GitHubToolConfig(allowed_operations=("label_create",))
+    result = await github(
+      operation="label_create",
+      ctx=_ctx(cfg),
+      repo="owner/repo",
+      label="x",
+    )
+    assert result.success
+    parsed = json.loads(result.result)
+    assert parsed["created"] is True
+    assert "label" not in parsed
+
+  @pytest.mark.asyncio
+  async def test_label_create_not_in_default_allowlist(self, mocker: MockerFixture) -> None:
+    """label_create is rejected with default config (not in default allowlist)."""
+    _mock_popen(mocker)
+    result = await github(
+      operation="label_create",
+      ctx=_ctx(),
+      repo="owner/repo",
+      label="x",
+    )
+    assert not result.success
+    assert "not allowed" in result.error.lower() or "allowed" in result.error.lower()
+
+  @pytest.mark.asyncio
+  async def test_label_create_requires_repo(self, mocker: MockerFixture) -> None:
+    """label_create requires an explicit repo (no auto-detect for creation)."""
+    _mock_popen(mocker)
+    cfg = GitHubToolConfig(allowed_operations=("label_create",))
+    result = await github(
+      operation="label_create",
+      ctx=_ctx(cfg),
+      label="x",
+    )
+    assert not result.success
+    assert "repo" in result.error.lower()
+
+  @pytest.mark.asyncio
+  async def test_label_create_requires_label(self, mocker: MockerFixture) -> None:
+    """label_create requires a non-empty label name."""
+    _mock_popen(mocker)
+    cfg = GitHubToolConfig(allowed_operations=("label_create",))
+    result = await github(
+      operation="label_create",
+      ctx=_ctx(cfg),
+      repo="owner/repo",
+      label="",
+    )
+    assert not result.success
+    assert "label" in result.error.lower()
+
+  @pytest.mark.asyncio
+  async def test_label_create_rejects_leading_dash_label(self, mocker: MockerFixture) -> None:
+    """label_create rejects a label starting with '-' (flag injection)."""
+    _mock_popen(mocker)
+    cfg = GitHubToolConfig(allowed_operations=("label_create",))
+    result = await github(
+      operation="label_create",
+      ctx=_ctx(cfg),
+      repo="owner/repo",
+      label="--force",
+    )
+    assert not result.success
+    assert (
+      "dash" in result.error.lower()
+      or "-'" in result.error
+      or "must not start" in result.error.lower()
+    )
+
+  @pytest.mark.asyncio
+  async def test_label_create_rejects_invalid_color(self, mocker: MockerFixture) -> None:
+    """label_create rejects colors that are not 6-char hex without '#'."""
+    _mock_popen(mocker)
+    cfg = GitHubToolConfig(allowed_operations=("label_create",))
+    result = await github(
+      operation="label_create",
+      ctx=_ctx(cfg),
+      repo="owner/repo",
+      label="x",
+      color="#E99695",
+    )
+    assert not result.success
+    assert "color" in result.error.lower()
+
+  @pytest.mark.asyncio
+  async def test_label_create_rejects_short_color(self, mocker: MockerFixture) -> None:
+    """label_create rejects 5-character color values."""
+    _mock_popen(mocker)
+    cfg = GitHubToolConfig(allowed_operations=("label_create",))
+    result = await github(
+      operation="label_create",
+      ctx=_ctx(cfg),
+      repo="owner/repo",
+      label="x",
+      color="E9969",
+    )
+    assert not result.success
+    assert "color" in result.error.lower()
+
+  @pytest.mark.asyncio
+  async def test_label_create_accepts_label_names_with_spaces(self, mocker: MockerFixture) -> None:
+    """label_create accepts names like 'good first issue' and 'status:backlog'."""
+    _mock_popen(mocker, stdout='✓ Label "good first issue" created in owner/repo')
+    cfg = GitHubToolConfig(allowed_operations=("label_create",))
+    result = await github(
+      operation="label_create",
+      ctx=_ctx(cfg),
+      repo="owner/repo",
+      label="good first issue",
+      description="Good for newcomers",
+    )
+    assert result.success
+
+  @pytest.mark.asyncio
+  async def test_label_create_already_exists_error(self, mocker: MockerFixture) -> None:
+    """label_create surfaces gh's already-exists error verbatim (no --force)."""
+    _mock_popen(
+      mocker,
+      stderr='label with name "bug" already exists; use `--force` to update its color and description',
+      returncode=1,
+    )
+    cfg = GitHubToolConfig(allowed_operations=("label_create",))
+    result = await github(
+      operation="label_create",
+      ctx=_ctx(cfg),
+      repo="owner/repo",
+      label="bug",
+    )
+    assert not result.success
+    assert "already exists" in result.error.lower()
 
 
 class TestGithubOperationAllowlist:
@@ -1892,6 +2487,33 @@ class TestGithubResultShape:
     assert result.content_metadata["path"] == "default"
 
   @pytest.mark.asyncio
+  async def test_issue_edit_metadata_shape(self, mocker: MockerFixture) -> None:
+    _mock_popen(mocker, stdout='{"number": 42, "state": "open"}', returncode=0)
+    cfg = GitHubToolConfig(allowed_operations=("issue_edit",))
+    result = await github(operation="issue_edit", ctx=_ctx(cfg), number=42, add_label="bug")
+    assert result.success
+    md = result.content_metadata
+    assert set(md.keys()) == {"operation", "path", "content_type", "content", "metadata"}
+    assert md["operation"] == "github"
+    assert md["path"] == "default"
+    assert md["content_type"] == "application/json"
+    inner = md["metadata"]
+    assert inner["returncode"] == 0
+    assert inner["repo"] == ""
+    assert inner["number"] == 42
+    assert "gh_subcommand" in inner
+
+  @pytest.mark.asyncio
+  async def test_issue_edit_metadata_state_none_when_omitted(self, mocker: MockerFixture) -> None:
+    _mock_popen(mocker, stdout='{"number": 42, "state": "open"}', returncode=0)
+    cfg = GitHubToolConfig(allowed_operations=("issue_edit",))
+    await github(operation="issue_edit", ctx=_ctx(cfg), number=42, add_label="bug")
+    # With default config the list-op state default never leaks into issue_edit.
+    result = await github(operation="issue_edit", ctx=_ctx(cfg), number=42, add_label="bug")
+    assert result.success
+    assert result.content_metadata["metadata"]["state"] is None
+
+  @pytest.mark.asyncio
   async def test_error_result_has_no_metadata(self, mocker: MockerFixture) -> None:
     _mock_popen(mocker, stderr="not found", returncode=1)
     result = await github(operation="repo_view", ctx=_ctx(), repo="owner/repo")
@@ -1983,6 +2605,8 @@ class TestGithubConfigValidation:
     assert "pr_ready" not in cfg.allowed_operations
     assert "pr_draft" not in cfg.allowed_operations
     assert "release_create" not in cfg.allowed_operations
+    assert "issue_edit" not in cfg.allowed_operations
+    assert "label_create" not in cfg.allowed_operations
 
   def test_write_ops_allowed_when_explicitly_configured(self) -> None:
     cfg = GitHubToolConfig(

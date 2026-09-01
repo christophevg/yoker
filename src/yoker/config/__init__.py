@@ -656,7 +656,9 @@ class GitHubToolConfig(ToolConfig):
       MVP set. Operations in the fixed enum but not in this list are
       rejected. Write operations (``pr_create``, ``pr_comment``,
       ``pr_ready``, ``pr_draft``, ``pr_edit``, ``release_create``,
-      ``issue_create``, ``issue_comment``) are in the enum but NOT in the
+      ``issue_create``, ``issue_comment``, ``issue_edit``,
+      ``label_create``) are in the enum
+      but NOT in the
       default allowlist — the config owner must
       explicitly add them to enable write operations. An empty list
       disables the tool effectively (when combined with ``enabled = true``;
@@ -682,7 +684,7 @@ class GitHubToolConfig(ToolConfig):
         "workflow_list", "workflow_view", "workflow_logs",
         "release_list", "release_view",
         "pr_create", "pr_comment", "pr_ready", "pr_draft", "pr_edit", "release_create",
-        "issue_create", "issue_comment"
+        "issue_create", "issue_comment", "issue_edit", "label_create"
       ]
   """
 

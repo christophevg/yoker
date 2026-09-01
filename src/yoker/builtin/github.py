@@ -2,7 +2,8 @@
 
 Wraps the ``gh`` CLI for a fixed set of GitHub operations. Read operations
 are auto-permitted via the default allowlist. Write operations (``pr_create``,
-``pr_comment``, ``issue_create``, ``issue_comment``) require explicit opt-in via
+``pr_comment``, ``issue_create``, ``issue_comment``, ``issue_edit``,
+``label_create``) require explicit opt-in via
 ``allowed_operations`` in
 config — they are never in the default allowlist. The operation enum is the
 security boundary: the agent can only invoke the hardcoded ``gh`` subcommands
@@ -76,6 +77,8 @@ _GITHUB_OPERATIONS: frozenset[str] = frozenset(
     "release_create",
     "issue_create",
     "issue_comment",
+    "issue_edit",
+    "label_create",
   }
 )
 
@@ -93,6 +96,8 @@ _WRITE_OPS: frozenset[str] = frozenset(
     "release_create",
     "issue_create",
     "issue_comment",
+    "issue_edit",
+    "label_create",
   }
 )
 
@@ -186,6 +191,16 @@ _OPERATION_DISPATCH: dict[str, tuple[list[str], str, str | None]] = {
     "",
     "number",
   ),
+  "issue_edit": (
+    ["issue", "edit"],
+    "",
+    "number",
+  ),
+  "label_create": (
+    ["label", "create"],
+    "",
+    None,
+  ),
 }
 
 # Operations that use ``gh api`` instead of a regular ``gh`` subcommand.
@@ -202,6 +217,13 @@ _PLAINTEXT_OPS: frozenset[str] = frozenset({"workflow_logs"})
 _STATE_OPS: frozenset[str] = frozenset({"issue_list", "pr_list"})
 _LABEL_OPS: frozenset[str] = frozenset({"issue_list"})
 _LIMIT_OPS: frozenset[str] = frozenset({"issue_list", "pr_list", "workflow_list", "release_list"})
+
+# Operations whose ``state`` parameter triggers a dedicated close/reopen
+# subcommand (``gh issue close`` / ``gh issue reopen``) — ``gh issue edit``
+# has no ``--state`` flag. For these ops ``state`` is a change request
+# ("open" reopens, "closed" closes), not a list filter; the default ``None``
+# means "no state change".
+_ISSUE_STATE_CHANGE_OPS: frozenset[str] = frozenset({"issue_edit"})
 
 # Operations that accept the ``fields`` parameter (gh ``--json`` field
 # selection). When ``fields`` is given, gh output is passed through raw —
@@ -352,6 +374,12 @@ _VALID_FIELDS: dict[str, frozenset[str]] = {
 # --- Validation regexes (tight allowlists) ---
 _REPO_RE = re.compile(r"^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$")
 _TAG_LABEL_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+# Label names may contain single spaces (e.g. "good first issue") and a
+# "scope:value" colon form (e.g. "status:in-progress") — superset of
+# _TAG_LABEL_RE.
+_LABEL_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._:-]*$")
+# 6-character hex color without leading '#', as required by gh label create.
+_COLOR_HEX_RE = re.compile(r"^[0-9A-Fa-f]{6}$")
 _VALID_STATES: frozenset[str] = frozenset({"open", "closed", "all"})
 
 # Same set as git.py / make.py: shell metacharacters + owner's five.
@@ -407,11 +435,19 @@ _REDACT_REPLACEMENT = "<redacted>"
     "  release_create — Create a release. Required: repo, tag, title, notes. Optional: draft, prerelease.\n"
     "  issue_create   — Create an issue. Required: repo, title, body. Optional: label, assignee.\n"
     "  issue_comment  — Add a comment to an issue. Required: number, body. Optional: repo.\n"
+    "  issue_edit     — Edit an issue (labels, assignees, state). Required: number. Optional: repo,\n"
+    "                   add_label, remove_label, add_assignee, remove_assignee, state (open/closed).\n"
+    "                   Label/assignee editing exists for both issues (issue_edit) and PRs (pr_edit).\n"
+    "  label_create   — Create a repo label. Required: label (name), repo. Optional: color (6-char hex),\n"
+    "                   description. Does NOT auto-create on issue_edit — create it here first.\n"
     "\n"
     "Common parameters:\n"
     '  repo    — "owner/name" (e.g. "octocat/Hello-World"). If omitted, uses current git repo.\n'
+    "  label   — Label name. Filter for issue_list; the label to create for label_create.\n"
     "  number  — Issue/PR number or workflow run ID (integer >= 1).\n"
     '  state   — Filter: "open", "closed", or "all" (default: "open"). Only for list operations.\n'
+    '            For issue_edit, state is a change request instead: "closed" closes and\n'
+    '            "open" reopens the issue (gh issue close/reopen); omit it to leave the state alone.\n'
     "  limit   — Max items for list operations (default: 30, max: config ceiling).\n"
     "  include_comments — If True, fetch and merge PR comments into pr_view output (only for pr_view).\n"
     "  fields  — Comma-separated gh JSON fields (pr_list, issue_list, pr_view only).\n"
@@ -423,6 +459,8 @@ _REDACT_REPLACEMENT = "<redacted>"
     "            (includes full statusCheckRollup). Field names must be gh-supported\n"
     "            JSON fields; invalid names are rejected with the allowed set.\n"
     "  timeout_ms — Override default timeout in milliseconds (clamped to config ceiling).\n"
+    "  color   — 6-character hex label color (no leading '#'), for label_create. Random if omitted.\n"
+    "  description — Label description (for label_create).\n"
     "  draft   — Create as draft (for pr_create or release_create).\n"
     "  prerelease — Mark release as prerelease (only for release_create).\n"
     "  post_filter — Optional regex to filter output lines. Use specific patterns: "
@@ -440,7 +478,7 @@ async def github(
       "pr_view, pr_reviews, pr_comments, workflow_list, workflow_view, "
       "workflow_logs, release_list, release_view, pr_create, pr_comment, "
       "pr_ready, pr_draft, pr_edit, release_create, issue_create, "
-      "issue_comment."
+      "issue_comment, issue_edit, label_create."
     ),
   ],
   ctx: ToolContext,
@@ -454,11 +492,12 @@ async def github(
   tag: Annotated[str, Text("Release tag (for release_view)")] = "",
   limit: Annotated[int, Text("Max items to return for list operations (default: 30)")] = 30,
   state: Annotated[
-    str,
+    str | None,
     Text(
-      "Filter by state: 'open', 'closed', or 'all' (default: 'open', only for issue_list and pr_list)"
+      "Filter by state: 'open', 'closed', or 'all' (default: 'open', only for issue_list and pr_list). "
+      "For issue_edit: change request — 'closed' closes, 'open' reopens the issue"
     ),
-  ] = "open",
+  ] = None,
   label: Annotated[str, Text("Filter by label (for issue_list)")] = "",
   fields: Annotated[
     str | None,
@@ -502,13 +541,19 @@ async def github(
   add_label: Annotated[str, Text("Comma-separated label names to add (for pr_edit)")] = "",
   remove_label: Annotated[str, Text("Comma-separated label names to remove (for pr_edit)")] = "",
   assignee: Annotated[str, Text("Comma-separated logins to assign (for issue_create)")] = "",
+  # --- label_create parameters ---
+  color: Annotated[
+    str, Text("6-character hex label color without leading '#' (for label_create)")
+  ] = "",
+  description: Annotated[str, Text("Label description (for label_create)")] = "",
 ) -> ToolResult:
   """Perform a GitHub operation via the ``gh`` CLI.
 
   Read operations are restricted to a fixed enum (the security boundary)
   and further gated by ``GitHubToolConfig.allowed_operations``. Write
   operations (``pr_create``, ``pr_comment``, ``pr_ready``, ``pr_draft``,
-  ``release_create``, ``issue_create``, ``issue_comment``) require
+  ``pr_edit``, ``release_create``, ``issue_create``, ``issue_comment``,
+  ``issue_edit``, ``label_create``) require
   explicit opt-in via ``allowed_operations`` — they are NOT in the default
   allowlist. All commands
   run via ``subprocess`` with list args (no shell); timeout is enforced by
@@ -541,6 +586,22 @@ async def github(
   ``issue_comment`` requires ``number`` and ``body``. Optional ``repo``
   defaults to the current git repo. The comment is posted as a regular
   issue comment.
+
+  ``issue_edit`` requires ``number`` and at least one edit parameter
+  (``add_label``, ``remove_label``, ``add_assignee``, ``remove_assignee``,
+  ``state``). Optional ``repo`` defaults to the current git repo. Label and
+  assignee values are comma-separated names/logins. ``state`` is a change
+  request: "closed" closes the issue, "open" reopens it (via
+  ``gh issue close`` / ``gh issue reopen`` — ``gh issue edit`` has no
+  ``--state`` flag). On success the updated issue is fetched with
+  ``gh issue view`` and returned as a JSON summary.
+
+  ``label_create`` requires ``label`` (the label name). Optional ``repo``
+  defaults to the current git repo, ``color`` (6-character hex, without a
+  leading ``#`` — random if omitted) and ``description``. The label must
+  not already exist (no ``--force`` update). Useful before
+  ``issue_edit add_label`` with a brand-new label, since gh never
+  auto-creates labels.
   """
   # --- 1. Config type check ---
   gh_config = ctx.config
@@ -573,7 +634,12 @@ async def github(
     )
 
   # --- 5. Per-parameter validation ---
-  param_error = _validate_params(operation, repo, number, tag, limit, state, label, gh_config)
+  # List operations filter by state and default to "open"; None restores
+  # that default. State-change ops (issue_edit) use None as "no change".
+  effective_state = state if state is not None else "open"
+  param_error = _validate_params(
+    operation, repo, number, tag, limit, effective_state, label, gh_config
+  )
   if param_error is not None:
     logger.info("github_rejected", reason="invalid_param", error=param_error)
     return ToolResult(success=False, error=param_error)
@@ -641,6 +707,12 @@ async def github(
       logger.info("github_rejected", reason="invalid_issue_comment_param", error=werr)
       return ToolResult(success=False, error=werr)
 
+  if operation == "label_create":
+    werr = _validate_label_create_params(repo, label, color, description)
+    if werr is not None:
+      logger.info("github_rejected", reason="invalid_label_create_param", error=werr)
+      return ToolResult(success=False, error=werr)
+
   # issue_create: validate assignee for forbidden chars (label already validated)
   if operation == "issue_create" and assignee and _contains_forbidden(assignee):
     return ToolResult(
@@ -678,6 +750,73 @@ async def github(
       ("remove_reviewer", remove_reviewer),
       ("add_label", add_label),
       ("remove_label", remove_label),
+    ]:
+      if param_value and _contains_forbidden(param_value):
+        return ToolResult(
+          success=False,
+          error=f"Parameter {param_name!r} contains forbidden character",
+        )
+
+  # issue_edit: reject parameters that belong to other operations, mirroring
+  # pr_edit's strict validation. Truly unknown kwarg names are already
+  # rejected at argument-binding time by the tool framework.
+  if operation == "issue_edit":
+    unknown = [
+      param_name
+      for param_name, param_value in [
+        ("add_reviewer", add_reviewer),
+        ("remove_reviewer", remove_reviewer),
+        ("title", title),
+        ("body", body),
+        ("head", head),
+        ("base", base),
+        ("notes", notes),
+        ("tag", tag),
+        ("label", label),
+        ("assignee", assignee),
+        ("fields", fields),
+        ("include_comments", include_comments),
+      ]
+      if param_value not in (None, "", False)
+    ]
+    if unknown:
+      allowed = "repo, number, add_label, remove_label, add_assignee, remove_assignee, state"
+      return ToolResult(
+        success=False,
+        error=(f"Unknown parameter(s) for issue_edit: {', '.join(unknown)}. Allowed: {allowed}"),
+      )
+
+  # issue_edit: state is a change request (open/closed), not a filter —
+  # "all" is meaningless here.
+  if operation == "issue_edit" and state == "all":
+    return ToolResult(
+      success=False,
+      error="Parameter 'state' for issue_edit must be 'open' or 'closed', not 'all'",
+    )
+
+  # issue_edit requires at least one edit parameter
+  if operation == "issue_edit":
+    issue_edit_params = [
+      add_label,
+      remove_label,
+      add_assignee,
+      remove_assignee,
+      state,
+    ]
+    if not any(issue_edit_params):
+      return ToolResult(
+        success=False,
+        error=(
+          "Operation 'issue_edit' requires at least one of: add_label, "
+          "remove_label, add_assignee, remove_assignee, state"
+        ),
+      )
+    # Validate label/assignee values for forbidden chars
+    for param_name, param_value in [
+      ("add_label", add_label),
+      ("remove_label", remove_label),
+      ("add_assignee", add_assignee),
+      ("remove_assignee", remove_assignee),
     ]:
       if param_value and _contains_forbidden(param_value):
         return ToolResult(
@@ -760,7 +899,51 @@ async def github(
       },
     )
 
-  cmd = _build_command(operation, repo, number, tag, effective_limit, state, label, fields)
+  # issue_edit is a multi-step operation: label/assignee edits via
+  # ``gh issue edit``, an optional state change via ``gh issue close`` /
+  # ``gh issue reopen`` (``gh issue edit`` has no ``--state`` flag), and a
+  # final ``gh issue view`` to return the updated issue summary.
+  # It doesn't use _build_command — handle it separately.
+  if operation == "issue_edit":
+    assert number is not None and number >= 1  # validated at step 6
+    assert state != "all"  # rejected in step 5d
+    logger.info("github_executing", operation="issue_edit", repo=repo, number=number)
+    success, output = await _edit_issue(
+      repo,
+      number,
+      add_label=add_label,
+      remove_label=remove_label,
+      add_assignee=add_assignee,
+      remove_assignee=remove_assignee,
+      state=state,
+      timeout_ms=effective_timeout_ms,
+    )
+    if success:
+      return ToolResult(
+        success=True,
+        result=output,
+        content_metadata={
+          "operation": "github",
+          "path": repo or "default",
+          "content_type": "application/json",
+          "content": output,
+          "metadata": {
+            "gh_subcommand": "gh issue edit/close/reopen + view",
+            "repo": repo,
+            "number": number,
+            "tag": None,
+            "limit": None,
+            "state": state,
+            "label": None,
+            "returncode": 0,
+          },
+        },
+      )
+    return ToolResult(success=False, error=output)
+
+  cmd = _build_command(
+    operation, repo, number, tag, effective_limit, effective_state, label, fields
+  )
   write_args = _build_write_args(
     operation,
     title,
@@ -779,12 +962,15 @@ async def github(
     remove_label,
     label,
     assignee,
+    color,
+    description,
   )
   # For write ops with a required positional (pr_comment), insert write args
   # (flags like --body=...) BEFORE the -- separator + positional arg.
   # For write ops without a required positional (pr_create, release_create,
-  # issue_create), _build_command already returned the full command; write_args are appended
-  # after (they're all flags, no positional needed).
+  # issue_create, label_create), _build_command already returned the full
+  # command; write_args are appended after (flags, or the label name
+  # positional first for label_create).
   # For release_create, the positional tag is already in the command from
   # _build_command, and write_args (--title, --notes, --draft, --prerelease)
   # are flags that go after.
@@ -895,7 +1081,7 @@ async def github(
         "number": number,
         "tag": tag,
         "limit": effective_limit if operation in _LIMIT_OPS else None,
-        "state": state if operation in _STATE_OPS else None,
+        "state": effective_state if operation in _STATE_OPS else None,
         "label": label if operation in _LABEL_OPS else None,
         "returncode": returncode,
       },
@@ -1036,6 +1222,36 @@ def _validate_issue_comment_params(body: str) -> str | None:
   return None
 
 
+def _validate_label_create_params(
+  repo: str, label: str, color: str, description: str
+) -> str | None:
+  """Validate parameters for label_create operation."""
+  if not repo:
+    return "Parameter 'repo' is required for label_create"
+  if not label or not isinstance(label, str):
+    return "Parameter 'label' is required for label_create"
+  if label.startswith("-"):
+    return "Parameter 'label' must not start with '-'"
+  if len(label) > _MAX_TAG_LABEL_LEN:
+    return f"Parameter 'label' exceeds {_MAX_TAG_LABEL_LEN} characters"
+  if not _LABEL_NAME_RE.fullmatch(label):
+    return f"Invalid label name format: {label!r}"
+  if _contains_forbidden(label):
+    return "Parameter 'label' contains forbidden character"
+  if color:
+    if not isinstance(color, str):
+      return "Parameter 'color' must be a string"
+    if color.startswith("#"):
+      return "Parameter 'color' must not start with '#' (use a 6-character hex value)"
+    if len(color) != 6 or not _COLOR_HEX_RE.fullmatch(color):
+      return f"Invalid color format: {color!r}. Must be a 6-character hex value (e.g. 'E99695')"
+  if description:
+    err = _validate_text_field("description", description, max_len=1024)
+    if err is not None:
+      return err
+  return None
+
+
 def _build_write_args(
   operation: str,
   title: str,
@@ -1054,6 +1270,8 @@ def _build_write_args(
   remove_label: str = "",
   label: str = "",
   assignee: str = "",
+  color: str = "",
+  description: str = "",
 ) -> list[str]:
   """Build the extra CLI args for write operations.
 
@@ -1063,9 +1281,16 @@ def _build_write_args(
   optional ``--draft``, ``--prerelease``.
   For ``issue_create``: ``--title=...``, ``--body=...``, optional ``--label``,
   ``--assignee``.
+  For ``label_create``: positional label name, optional ``--color=...``,
+  ``--description=...``.
   For ``pr_edit``: optional ``--add-assignee=...``, ``--remove-assignee=...``,
   ``--add-reviewer=...``, ``--remove-reviewer=...``, ``--add-label=...``,
   ``--remove-label=...``.
+
+  ``issue_edit`` does not go through this function — it has its own
+  multi-step execution path (``_edit_issue``) because the state change
+  requires the separate ``gh issue close`` / ``gh issue reopen``
+  subcommands.
 
   Uses ``=`` format (``--title=value``) so values starting with ``-`` are
   treated as the flag's value, not as a new flag. This is defense-in-depth:
@@ -1131,6 +1356,17 @@ def _build_write_args(
       args.extend(["--assignee", assignee])
     return args
 
+  if operation == "label_create":
+    # gh label create <name> [--color=...] [--description=...]: the label
+    # name is the required positional operand; name and color are
+    # validated to not start with "-" (defense against flag injection).
+    args = [label]
+    if color:
+      args.append(f"--color={color}")
+    if description:
+      args.append(f"--description={description}")
+    return args
+
   return []
 
 
@@ -1189,12 +1425,13 @@ def _validate_params(
     return "Parameter 'limit' must be >= 1"
 
   # state
-  if not isinstance(state, str):
-    return "Parameter 'state' must be a string"
-  if state not in _VALID_STATES:
-    return f"Invalid state: {state!r}. Must be one of {sorted(_VALID_STATES)}"
-  if _contains_forbidden(state):
-    return "Parameter 'state' contains forbidden character"
+  if state is not None:
+    if not isinstance(state, str):
+      return "Parameter 'state' must be a string"
+    if state not in _VALID_STATES:
+      return f"Invalid state: {state!r}. Must be one of {sorted(_VALID_STATES)}"
+    if _contains_forbidden(state):
+      return "Parameter 'state' contains forbidden character"
 
   # label
   if label:
@@ -1452,6 +1689,16 @@ def _parse_write_output(operation: str, stdout: str, tag: str) -> str:
   elif operation == "issue_comment":
     # gh issue comment outputs the comment URL: .../issues/42#issuecomment-123
     result["url"] = url
+  elif operation == "label_create":
+    # gh label create outputs: ✓ Label "name" created in owner/repo
+    # (stdout is empty in non-TTY contexts — the message goes through the
+    # colored success icon, but the quoted name is stable to extract).
+    result.pop("url", None)
+    result["created"] = True
+    match = re.search(r'Label "(.+?)" created in (\S+)', stdout)
+    if match:
+      result["label"] = match.group(1)
+      result["repo"] = match.group(2)
 
   return json.dumps(result)
 
@@ -1517,6 +1764,105 @@ async def _convert_to_draft(repo: str, number: int, timeout_ms: int) -> tuple[bo
     return False, _map_error(stderr, "pr_draft", repo, number, "")
 
   return True, json.dumps({"draft": True, "number": number})
+
+
+async def _run_gh(cmd: list[str], timeout_ms: int) -> tuple[int, str, str]:
+  """Run a single gh command. Returns ``(returncode, stdout, stderr)``."""
+  try:
+    proc = await asyncio.create_subprocess_exec(
+      *cmd,
+      cwd=None,
+      env=os.environ,
+      stdout=asyncio.subprocess.PIPE,
+      stderr=asyncio.subprocess.PIPE,
+      start_new_session=True,
+    )
+    stdout_b, stderr_b = await asyncio.wait_for(proc.communicate(), timeout=timeout_ms / 1000)
+  except (FileNotFoundError, asyncio.TimeoutError, OSError) as exc:
+    return 1, "", f"Failed to run gh: {exc}"
+  stdout = stdout_b.decode("utf-8", errors="replace") if stdout_b else ""
+  stderr = stderr_b.decode("utf-8", errors="replace") if stderr_b else ""
+  # Redact credential patterns before the output reaches any error message.
+  stdout, _ = _redact(stdout)
+  stderr, _ = _redact(stderr)
+  return proc.returncode or 0, stdout, stderr
+
+
+async def _edit_issue(
+  repo: str,
+  number: int,
+  *,
+  add_label: str = "",
+  remove_label: str = "",
+  add_assignee: str = "",
+  remove_assignee: str = "",
+  state: str | None = None,
+  timeout_ms: int,
+) -> tuple[bool, str]:
+  """Edit an issue: labels/assignees, optional state change, then re-view.
+
+  Sequence (each step only when applicable):
+  1. ``gh issue edit <n>`` with ``--add-label=...``, ``--remove-label=...``,
+     ``--add-assignee=...``, ``--remove-assignee=...`` (skipped when none set)
+  2. ``gh issue close <n>`` (state == "closed") or
+     ``gh issue reopen <n>`` (state == "open") — ``gh issue edit`` has no
+     ``--state`` flag
+  3. ``gh issue view <n> --json ...`` to return the updated issue summary
+
+  Returns ``(success, output)``. On success ``output`` is the updated issue
+  as JSON; on failure it is a friendly error message.
+  """
+  # Step 1: label/assignee edits
+  if any([add_label, remove_label, add_assignee, remove_assignee]):
+    cmd = ["gh", "issue", "edit"]
+    if repo:
+      cmd.extend(["--repo", repo])
+    if add_label:
+      cmd.append(f"--add-label={add_label}")
+    if remove_label:
+      cmd.append(f"--remove-label={remove_label}")
+    if add_assignee:
+      cmd.append(f"--add-assignee={add_assignee}")
+    if remove_assignee:
+      cmd.append(f"--remove-assignee={remove_assignee}")
+    cmd.extend(["--", str(number)])
+    returncode, _stdout, stderr = await _run_gh(cmd, timeout_ms)
+    if returncode != 0:
+      # gh does not auto-create labels/assignees; a missing one fails with
+      # "could not add label: 'x' not found" — which must NOT be mapped to
+      # the issue number (the generic "not found" mapping would blame #69).
+      return False, _map_edit_error(stderr, repo, number)
+
+  # Step 2: state change via dedicated subcommands
+  if state == "closed":
+    cmd = ["gh", "issue", "close"]
+    if repo:
+      cmd.extend(["--repo", repo])
+    cmd.extend(["--", str(number)])
+    returncode, _stdout, stderr = await _run_gh(cmd, timeout_ms)
+    if returncode != 0:
+      return False, _map_error(stderr, "issue_edit", repo, number, "")
+  elif state == "open":
+    cmd = ["gh", "issue", "reopen"]
+    if repo:
+      cmd.extend(["--repo", repo])
+    cmd.extend(["--", str(number)])
+    returncode, _stdout, stderr = await _run_gh(cmd, timeout_ms)
+    if returncode != 0:
+      return False, _map_error(stderr, "issue_edit", repo, number, "")
+
+  # Step 3: fetch the updated issue summary
+  fields = "number,title,state,labels,assignees,url"
+  cmd = ["gh", "issue", "view"]
+  if repo:
+    cmd.extend(["--repo", repo])
+  cmd.extend(["--json", fields, "--", str(number)])
+  returncode, stdout, stderr = await _run_gh(cmd, timeout_ms)
+  if returncode != 0:
+    return False, _map_error(stderr, "issue_view", repo, number, "")
+
+  stdout, _ = _redact(stdout or "")
+  return True, stdout.strip() or json.dumps({"number": number})
 
 
 async def _fetch_api_comments(url: str, jq: str, timeout_ms: int) -> list[dict[str, Any]]:
@@ -1646,6 +1992,29 @@ def _map_error(stderr: str, operation: str, repo: str, number: int | None, tag: 
     return f"Resource not found: {repo or '(current repo)'}"
   # Fall back to the (already truncated + redacted) stderr.
   return stderr.strip() or "GitHub command failed"
+
+
+def _map_edit_error(stderr: str, repo: str, number: int) -> str:
+  """Map gh issue edit stderr to an accurate error message.
+
+  ``gh issue edit`` fails when a referenced label or assignee does not exist
+  (``could not add label: 'x' not found``). That "not found" refers to the
+  LABEL, not the issue — the generic ``_map_error`` would wrongly report
+  ``Resource not found: <number>``. Recognize the pattern and name the
+  actual missing resource with a remediation hint. Everything else falls
+  through to the generic mapping (a genuine issue-not-found keeps pointing
+  at the number).
+  """
+  lower = stderr.lower()
+  match = re.search(r"could not (add|remove) (label|assignee): (.+?) not found", lower)
+  if match:
+    action, kind, value = match.groups()
+    hint = f"gh does not auto-create {kind}s — create it in the repo first (or check for a typo)."
+    return (
+      f"Could not {action} {kind} {value!r} on issue #{number}: "
+      f"{kind} not found in {repo or '(current repo)'}. {hint}"
+    )
+  return _map_error(stderr, "issue_edit", repo, number, "")
 
 
 __all__ = ["github"]

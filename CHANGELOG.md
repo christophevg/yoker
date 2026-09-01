@@ -1,3 +1,17 @@
+## Unreleased
+
+### Added
+- **`label_create` GitHub operation**: create repository labels
+  (`label`, optional `color` as 6-char hex and `description`) — the
+  missing companion to `issue_edit add_label`, since gh never
+  auto-creates labels. Requires explicit opt-in via
+  `tools.github.allowed_operations`.
+- **`issue_edit` GitHub operation**: edit existing issues — labels and
+  assignees (add/remove), plus state changes (`state="closed"` closes via
+  `gh issue close`, `state="open"` reopens via `gh issue reopen`).
+  Returns the updated issue summary. Requires explicit opt-in via
+  `tools.github.allowed_operations`, like all write operations.
+
 ## 0.11.0 (2026-08-31)
 
 ### Added
