@@ -142,6 +142,16 @@ async def make(
     if not isinstance(env_vars, dict):
       return ToolResult(success=False, error="Parameter 'env_vars' must be an object")
     allowed_names = make_config.allowed_env_vars.get(target, ())
+    # #59: enriched allowlist rejection here; the guardrail stays as backstop
+    # for the hard-denylist and value-rule failures it still handles.
+    blocked = [name for name in env_vars if name not in allowed_names]
+    if blocked:
+      return ToolResult(
+        success=False,
+        error=_env_allowlist_error(
+          blocked, target, allowed_names, target in make_config.allowed_env_vars
+        ),
+      )
     failure = validate_env_vars(env_vars, allowed_names, make_config.max_env_var_bytes)
     if failure is not None:
       _name, error = failure
@@ -255,6 +265,36 @@ async def make(
     error=error_msg,
     content_metadata=content_metadata,
   )
+
+
+def _env_allowlist_error(
+  blocked: list[str],
+  target: str,
+  allowed_names: tuple[str, ...],
+  has_entry: bool,
+) -> str:
+  """Build the enriched allowlist rejection message (issue #59)."""
+  plural = "s" if len(blocked) > 1 else ""
+  names = ", ".join(repr(name) for name in blocked)
+  head = f"env var{plural} {names} not in the allowlist for target '{target}'"
+  if not has_entry:
+    detail = " — no allowlist entry exists for this target, so all env vars are denied by default"
+  elif allowed_names:
+    detail = f" (allowed for this target: {', '.join(repr(n) for n in allowed_names)})"
+  else:
+    detail = " — no env vars are allowlisted for this target"
+  return f"{head}{detail}. Add them under [tools.make.allowed_env_vars] in yoker.toml."
+
+
+make.__yoker_description__ = (  # type: ignore[attr-defined]
+  "Execute a Makefile target via 'make <target>' in a working directory. "
+  "Optional env_vars are passed to make; each name must be in the target's "
+  "per-target allowlist under [tools.make.allowed_env_vars] in yoker.toml — "
+  "empty by default, so every target denies all env vars until configured. "
+  "Names on the framework hard-denylist are always rejected. On failure the "
+  "error field carries stdout+stderr (errors usually print to stdout); use "
+  "post_filter to narrow large output."
+)
 
 
 def _kill_process_group(pid: int) -> None:

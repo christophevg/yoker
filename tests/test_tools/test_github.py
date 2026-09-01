@@ -2214,6 +2214,9 @@ class TestGithubOperationAllowlist:
     result = await github(operation="issue_list", ctx=_ctx(cfg))
     assert not result.success
     assert "not allowed" in result.error.lower()
+    # #68: the rejection names the enabling key and where to set it.
+    assert "tools.github.allowed_operations" in result.error
+    assert "yoker.toml" in result.error
 
   @pytest.mark.asyncio
   async def test_non_string_operation_rejected(self, mocker: MockerFixture) -> None:

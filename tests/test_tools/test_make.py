@@ -61,6 +61,11 @@ class TestMakeToolSchema:
     assert spec.description
     assert "make" in spec.description.lower() or "Make" in spec.description
 
+  def test_description_documents_env_var_mechanism(self) -> None:
+    """The LLM-facing description mentions the per-target env-var allowlist (#59)."""
+    spec = _make_spec()
+    assert "allowed_env_vars" in spec.description
+
   def test_schema_target_required(self) -> None:
     """target is required; cwd/timeout_ms/env_vars are optional."""
     spec = _make_spec()
@@ -246,6 +251,9 @@ class TestMakeToolEnvVars:
     )
     assert not result.success
     assert "allowlist" in result.error.lower()
+    assert "tools.make.allowed_env_vars" in result.error
+    assert "TEST" in result.error
+    assert "build" in result.error
 
   @pytest.mark.asyncio
   async def test_env_var_denied_when_name_not_in_per_target_tuple(self, makefile_dir: Path) -> None:
@@ -261,6 +269,56 @@ class TestMakeToolEnvVars:
     )
     assert not result.success
     assert "allowlist" in result.error.lower()
+    assert "tools.make.allowed_env_vars" in result.error
+    assert "'BUILD'" in result.error
+
+  @pytest.mark.asyncio
+  async def test_env_var_error_lists_allowed_names(self, makefile_dir: Path) -> None:
+    """Blocked rejection lists the target's effective allowlist (issue #59 A1)."""
+    config = MakeToolConfig(allowed_env_vars={"build": ("BUILD", "CFLAGS")})
+    spec = _make_spec()
+    ctx = _make_context(config=config)
+    result = await spec.execute(
+      target="build",
+      ctx=ctx,
+      cwd=str(makefile_dir),
+      env_vars={"TEST": "foo"},
+    )
+    assert not result.success
+    assert "'BUILD', 'CFLAGS'" in result.error
+
+  @pytest.mark.asyncio
+  async def test_env_var_error_when_target_absent_says_denied_by_default(
+    self, makefile_dir: Path
+  ) -> None:
+    """No allowlist entry for the target → message says denied by default (issue #59 A1)."""
+    config = MakeToolConfig(allowed_env_vars={"test": ("TEST",)})
+    spec = _make_spec()
+    ctx = _make_context(config=config)
+    result = await spec.execute(
+      target="build",
+      ctx=ctx,
+      cwd=str(makefile_dir),
+      env_vars={"TEST": "foo"},
+    )
+    assert not result.success
+    assert "denied by default" in result.error
+
+  @pytest.mark.asyncio
+  async def test_env_var_error_names_all_blocked_vars(self, makefile_dir: Path) -> None:
+    """Multiple blocked vars are all named, pluralized (issue #59 A1)."""
+    config = MakeToolConfig(allowed_env_vars={"build": ("BUILD",)})
+    spec = _make_spec()
+    ctx = _make_context(config=config)
+    result = await spec.execute(
+      target="build",
+      ctx=ctx,
+      cwd=str(makefile_dir),
+      env_vars={"TEST": "foo", "OTHER": "bar"},
+    )
+    assert not result.success
+    assert "'TEST', 'OTHER'" in result.error
+    assert "env vars" in result.error
 
   @pytest.mark.asyncio
   async def test_makeflags_denied_even_if_allowlisted(self, makefile_dir: Path) -> None:

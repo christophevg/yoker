@@ -12,6 +12,20 @@
   Returns the updated issue summary. Requires explicit opt-in via
   `tools.github.allowed_operations`, like all write operations.
 
+### Fixed
+- **make tool (#59)**: env-var rejections now name the target's effective
+  allowlist (or that no entry exists — deny by default) and point to
+  `[tools.make.allowed_env_vars]` in yoker.toml; the tool description now
+  documents the per-target env-var mechanism.
+- **post_filter guidance (#60)**: overflow guidance and the auto-injected
+  `post_filter` description now include pytest collection-error patterns
+  (`ERROR collecting`, `ERRORS`, `##[error]`), warn that matching is
+  substring-based, explain the line-number prefix on sliced read output
+  for ^-anchored patterns, and add a hint when a filter matches zero lines.
+- **github tool (#68)**: allowlist rejections now name the enabling key —
+  add the operation to `[tools.github] allowed_operations` in yoker.toml.
+  Write operations remain opt-in.
+
 ## 0.11.0 (2026-08-31)
 
 ### Added
