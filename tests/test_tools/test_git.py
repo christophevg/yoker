@@ -1927,6 +1927,51 @@ class TestGitToolOutputSanitization:
     assert "secret_token" not in sanitized
     assert "<redacted>" in sanitized
 
+  def test_redaction_does_not_span_lines(self) -> None:
+    """
+    Given: Multi-line output with a credential-less URL, a colon on a later
+      line (e.g. type annotation) and an @ further below (e.g. decorator)
+    When: Sanitizing the output
+    Then: The output is unchanged — the match must not cross line boundaries
+    """
+    output = (
+      'popen = _mock_popen(mocker, stdout="https://github.com/owner/repo/issues/7")\n'
+      "cfg = GitHubToolConfig(allowed_operations=(\n"
+      "async def test_something(self, mocker: MockerFixture) -> None:\n"
+      "@pytest.mark.asyncio\n"
+    )
+    assert _sanitize_output(output) == output
+
+  def test_redaction_in_diff_like_output(self) -> None:
+    """
+    Given: Diff-style output mixing URLs with @-prefixed decorator lines
+    When: Sanitizing the output
+    Then: URLs without credentials survive; only real credential URLs change
+    """
+    output = (
+      "+++ b/tests/test_x.py\n"
+      '+    popen = _mock_popen(mocker, stdout="https://example.com/path#frag")\n'
+      "+  @pytest.mark.asyncio\n"
+      '+    assert cmd[:3] == ["gh", "issue", "comment"]\n'
+    )
+    assert _sanitize_output(output) == output
+
+  def test_single_line_credential_url_still_redacted(self) -> None:
+    """
+    Given: A single-line URL containing credentials (incl. empty password)
+    When: Sanitizing the output
+    Then: Credentials are redacted, the rest of the line survives
+    """
+    sanitized = _sanitize_output(
+      "see https://user:secret@github.com/o/r.git for details\n"
+      "and https://token:@github.com/o/r2.git for more\n"
+    )
+    assert "secret" not in sanitized
+    assert "token" not in sanitized
+    assert sanitized.count("<redacted>") == 2
+    assert sanitized.startswith("see https://<redacted>@github.com/o/r.git")
+    assert "\n" in sanitized  # line structure preserved
+
   @pytest.mark.asyncio
   async def test_sensitive_config_values_hidden(self, tmp_path: Path) -> None:
     """

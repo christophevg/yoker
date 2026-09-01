@@ -211,7 +211,12 @@ FORBIDDEN_CHARS: frozenset[str] = frozenset(
   }
 )
 
-CREDENTIAL_PATTERN = re.compile(r"(https?://)[^:]+:[^@]*@")
+# URL-credential redaction. ``\s`` exclusions confine the match to a single
+# line: without them, ``[^:]+``/``[^@]*`` happily scan across newlines, so a
+# credential-less URL in one line of output can swallow text up to a ``:``
+# and ``@`` many lines below (e.g. type annotations and decorators in a
+# diff), corrupting multi-line spans in the rendered output.
+CREDENTIAL_PATTERN = re.compile(r"(https?://)[^:\s]+:[^@\s]*@")
 
 
 async def git(
