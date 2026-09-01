@@ -78,6 +78,11 @@
 
 - [ ] **`search` tool: `include_pattern` for directories** — cannot search within a specific subdirectory pattern
 - [ ] **`read` tool: binary file detection** — reading a binary file returns garbled content. Should detect and warn/skip like `search` does
+- [ ] **Tool dispatch: resolve bare (simple) tool names at call time**
+  - Investigation (2026-09-01, dogfooding session): a model emitted bare names `list`/`search` instead of the namespaced schema names `yoker__list`/`yoker__search`; `_run_tool` (`src/yoker/core/_processing.py:1012`) does an exact-key `agent.tools.get(tool_name)` lookup on namespaced keys (`yoker:list`) with no fallback → `Error: Unknown tool 'list'`.
+  - Inconsistency: `AgentRegistry.resolve()` and `SkillRegistry.resolve()` already implement bare-name fallback (match on `simple_name`, error with full-name list on ambiguity), but `ToolRegistry` has no `resolve()` at all. `_filter_tools_by_definition` (`src/yoker/core/__init__.py:666`) even accepts bare names at agent-definition time — so bare names work when *filtering* but not when *dispatching*.
+  - **Fix:** Add `resolve()`-style fallback to tool dispatch, mirroring `SkillRegistry.resolve()`: on exact-key miss with no `:` in the name, match `spec.simple_name` (possibly trying the `yoker:` prefix first for builtins); on multiple matches, error listing full names (precedent: `AgentRegistry.resolve()`).
+  - **Priority:** Low
 - [ ] **`git` tool: `git merge` operation** — complete the branch workflow (create → work → commit → switch → merge)
 - [ ] **`git` tool: `git restore` / `git stash`** — `checkout` is done, but `restore` (discard changes) and `stash` (temporarily shelve work) are still missing
 - [ ] **`write` tool: per-call `overwrite` flag** — ~~`allow_overwrite` is project-level config. Agent cannot overwrite even when it explicitly wants to~~  — **Decision: not implementing.** Project-level config is the correct security boundary; per-call override would bypass it.
