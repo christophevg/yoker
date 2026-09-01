@@ -59,6 +59,11 @@ This is information specific to this project. You should follow these instructio
       else ""
     )
 
+    from yoker.context.config_summary import render_config_summary
+
+    config_summary = render_config_summary(self._agent.config)
+    config_block = f"\n{config_summary}" if config_summary else ""
+
     return f"""
 You are running inside the Yoker agent harness ({harness_id}).
 # Environment
@@ -74,7 +79,7 @@ Examples:
   - `post_filter: 'TODO|FIXME|HACK'` to find only markers
   - `post_filter: 'CalledProcessError|exit code|##\\[error\\]'` for CI logs
 **ALWAYS** pass post_filter when you expect large output. This is critical for keeping your session running longer. Not using it will cause context overflow and premature session termination.
-{context_block}
+{context_block}{config_block}
 """
 
   def _load_context_files(self) -> str | None:
