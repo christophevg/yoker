@@ -57,6 +57,32 @@
 - [x] **`update` tool: infer `operation` from arguments when omitted**
   - Already implemented: `operation` defaults to `""`, inference logic handles replace/insert/append. Delete must always be explicit. Tests cover all inference paths.
 
+- [ ] **#59 + #60 + #68: Error-message-quality bundle — NEXT TASK (owner-approved)**
+  - One theme: tool rejections and overflow guidance must give the agent what it needs to self-correct. Three sub-fixes:
+  - **#59 make tool:** env-var rejection error must name the target's effective allowlist (or state that none are configured) and point to `yoker.toml` `[tools.make.allowed_env_vars]`; tool description documents the env-var mechanism.
+  - **#60 make/github/read tools:** canned post_filter advice must include pytest collection-error patterns (`ERROR collecting|^ERRORS|short test summary|##[error]`); tool descriptions document substring pitfalls (`passed` also matches "bypassed", `.` matches every line) and cross-reference the anchored-filter caveat from #58.
+  - **#68 github tool:** write-op rejection message must name `tools.github.allowed_operations` as the enabling config key; changelog/README note that write ops require opt-in.
+  - **Priority:** High — approved as next task
+
+- [ ] **#61: `list`/`search` tools: gitignored entries suppressed silently** — "0 entries" output reads as absence; fix by reporting visibility: "0 visible entries (N hidden by ignore rules)". **Priority:** High (owner: high value, small fix, solves a lot)
+
+- [ ] **#65 (re-scoped): `update` tool: anchor-based insert — `insert_after`/`insert_before`**
+  - Re-scoped 2026-09-01: commit 10100c1 fixed the `operation`-inference misfires, but the anchor-insert API is NOT implemented; the issue now covers only the missing API. (Related: #63 — ambiguous-anchor erroring is re-evaluated after this lands.)
+  - **Priority:** Medium
+
+- [ ] **#56: `github` tool: `workflow_view` output too large** — 20KB overflow; compact default + opt-in `fields`, mirroring the `pr_list`/`issue_list` pattern. **Priority:** Medium
+
+- [ ] **#57: `git` tool: read-only ops on protected paths trigger write-approval prompts**
+  - Owner ruling: as-designed; needs a design decision (label subcommands read/write internally). Kept in backlog — **Priority:** Medium — explicitly "not enough incidents yet, design-later".
+
+- [ ] **#62: `update`/`write` tools: return a diff of the applied change** — **Priority:** Low (owner: commit 10100c1 already solved much of the corruption pain)
+
+- [ ] **#63: `update` tool: ambiguous anchor should error** — re-evaluate AFTER the #65 outcome (owner: see related issues).
+
+- [ ] **#67: bootstrap wizard intercepts `--help`/`--version`** — **Priority:** Low (owner: very low, needs more incidents)
+
+- [ ] **#69: `git` tool: missing `stash` + branch deletion** — **Priority:** Low (owner: needs more incidents; permission-model design needed when picked up). Overlaps with the `git restore` / `git stash` line below.
+
 - [ ] **`search` tool: `include_pattern` for directories** — cannot search within a specific subdirectory pattern
 - [ ] **`read` tool: binary file detection** — reading a binary file returns garbled content. Should detect and warn/skip like `search` does
 - [ ] **`git` tool: `git merge` operation** — complete the branch workflow (create → work → commit → switch → merge)
