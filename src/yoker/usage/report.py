@@ -277,17 +277,13 @@ def format_report(agg: dict[str, Any], currency: str = "USD") -> str:
         if entry.get("thinking_chars", 0) == 0:
           continue
         implied = entry.get("implied_thinking_in_output", 0)
-        cost = (
-          f" (~${entry['est_thinking_cost']:.6f})" if "est_thinking_cost" in entry else ""
-        )
+        cost = f" (~${entry['est_thinking_cost']:.6f})" if "est_thinking_cost" in entry else ""
         lines.append(
           f"  {name}: est thinking {entry['est_thinking_tokens']} tok{cost} | "
           f"unexplained in reported output: {implied:+d} tok"
         )
       upper_bound = agg["total_cost"] + agg["est_thinking_cost"]
-      lines.append(
-        f"Estimated total cost incl. thinking (upper bound): ${upper_bound:.6f}"
-      )
+      lines.append(f"Estimated total cost incl. thinking (upper bound): ${upper_bound:.6f}")
 
   lines.append("")
   lines.append(CACHED_INPUT_NOTE)

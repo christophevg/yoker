@@ -268,7 +268,9 @@ class TestCalibrationRatio:
   def test_none_with_no_qualifying_records(self) -> None:
     assert calibration_ratio([]) is None
     # thinking-on records and zero-content records never qualify.
-    assert calibration_ratio([_record(thinking_chars=100, content_chars=200, output_tokens=50)]) is None
+    assert (
+      calibration_ratio([_record(thinking_chars=100, content_chars=200, output_tokens=50)]) is None
+    )
     assert calibration_ratio([_record(content_chars=0, output_tokens=50)]) is None
     # content but no tokens doesn't qualify either.
     assert calibration_ratio([_record(content_chars=400, output_tokens=0)]) is None
@@ -477,7 +479,9 @@ class TestFormatReportEstimates:
     report = format_report(aggregate(records, PRICING))
 
     assert "Thinking estimate (client-side chars; ratio 4.00 chars/token" in report
-    assert "glm-5.3-flash: est thinking 750 tok (~$0.000375) | unexplained in reported output: +797 tok"
+    assert (
+      "glm-5.3-flash: est thinking 750 tok (~$0.000375) | unexplained in reported output: +797 tok"
+    )
     assert "Estimated total cost incl. thinking (upper bound): $0.001186" in report
     assert "est" in report
 
@@ -504,22 +508,38 @@ class TestFormatReportEstimates:
     # Pinned full-text regression: 2 thinking-on + 1 calibration + 1 unknown.
     records = [
       _record(  # thinking-off calibration: 400 chars / 100 tok → ratio 4.0
-        model="glm-5.3-flash", input_tokens=1000, output_tokens=100,
-        content_chars=400, session_id="s1", ts="2026-09-01T12:00:00+00:00",
+        model="glm-5.3-flash",
+        input_tokens=1000,
+        output_tokens=100,
+        content_chars=400,
+        session_id="s1",
+        ts="2026-09-01T12:00:00+00:00",
       ),
       _record(
-        model="glm-5.3-flash", input_tokens=2000, output_tokens=922,
-        thinking_chars=3000, content_chars=500, session_id="s1",
+        model="glm-5.3-flash",
+        input_tokens=2000,
+        output_tokens=922,
+        thinking_chars=3000,
+        content_chars=500,
+        session_id="s1",
         ts="2026-09-01T12:00:10+00:00",
       ),
       _record(
-        model="glm-5.3-flash", input_tokens=2000, output_tokens=922,
-        thinking_chars=3000, content_chars=500, session_id="s1",
+        model="glm-5.3-flash",
+        input_tokens=2000,
+        output_tokens=922,
+        thinking_chars=3000,
+        content_chars=500,
+        session_id="s1",
         ts="2026-09-01T12:00:20+00:00",
       ),
       _record(
-        model="some-model", input_tokens=500, output_tokens=60,
-        thinking_chars=1500, content_chars=250, session_id="s2",
+        model="some-model",
+        input_tokens=500,
+        output_tokens=60,
+        thinking_chars=1500,
+        content_chars=250,
+        session_id="s2",
         ts="2026-09-01T12:00:30+00:00",
       ),
     ]
