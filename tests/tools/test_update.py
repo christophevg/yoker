@@ -295,6 +295,57 @@ class TestUpdateTool:
     assert file_path.read_text() == "line1\nline2\nline3\n"
 
   @pytest.mark.asyncio
+  async def test_infer_replace_from_line_range_and_new_string(self, tmp_path: Path) -> None:
+    """When operation is omitted and line_range + new_string are provided, infer line-based replace."""
+    file_path = tmp_path / "test.txt"
+    file_path.write_text("Line 1\nLine 2\nLine 3\n")
+    spec = _update_spec()
+    ctx = _update_context()
+    result = await spec.execute(
+      path=str(file_path),
+      line_range=[2, 3],
+      new_string="Replaced lines",
+      ctx=ctx,
+    )
+    assert result.success is True
+    assert file_path.read_text() == "Line 1\nReplaced lines\n"
+    assert "inferred: 'replace'" in result.result
+    assert "explicit 'operation'" in result.result
+
+  @pytest.mark.asyncio
+  async def test_infer_append_excludes_line_range(self, tmp_path: Path) -> None:
+    """new_string + line_range must infer line-based replace, never append."""
+    file_path = tmp_path / "test.txt"
+    file_path.write_text("Line 1\nLine 2\nLine 3\n")
+    spec = _update_spec()
+    ctx = _update_context()
+    result = await spec.execute(
+      path=str(file_path),
+      line_range=[1, 1],
+      new_string="First line replaced",
+      ctx=ctx,
+    )
+    assert result.success is True
+    assert file_path.read_text() == "First line replaced\nLine 2\nLine 3\n"
+    assert "inferred: 'replace'" in result.result
+
+  @pytest.mark.asyncio
+  async def test_infer_error_when_line_range_without_new_string(self, tmp_path: Path) -> None:
+    """When operation is omitted and line_range is provided without new_string, return error."""
+    file_path = tmp_path / "test.txt"
+    file_path.write_text("Line 1\nLine 2\nLine 3\n")
+    spec = _update_spec()
+    ctx = _update_context()
+    result = await spec.execute(
+      path=str(file_path),
+      line_range=[2, 3],
+      ctx=ctx,
+    )
+    assert result.success is False
+    assert "operation" in result.error.lower()
+    assert "delete" in result.error.lower()
+
+  @pytest.mark.asyncio
   async def test_delete_line(self, tmp_path: Path) -> None:
     """update tool deletes a line."""
     file_path = tmp_path / "test.txt"

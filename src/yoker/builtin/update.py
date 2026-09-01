@@ -73,8 +73,9 @@ async def update(
     Text(
       "File operation to execute. One of: 'replace', 'insert', 'append', 'delete'. "
       "When omitted, the operation is inferred from the other arguments: "
-      "old_string + new_string → 'replace', new_string only → 'append', "
-      "line_number + new_string → 'insert'. 'delete' is never inferred — "
+      "line_range + new_string → 'replace' (line-based), "
+      "line_number + new_string → 'insert', old_string + new_string → 'replace', "
+      "new_string only → 'append'. 'delete' is never inferred — "
       "it must always be specified explicitly."
     ),
   ] = "",
@@ -124,7 +125,8 @@ async def update(
   The ``operation`` parameter is optional and can be inferred from the
   other arguments when omitted:
 
-  - **replace** (default when ``old_string`` + ``new_string`` provided):
+  - **replace** (default when ``old_string`` + ``new_string`` provided, or
+    ``line_range`` + ``new_string``):
     Replace text found via ``old_string`` with ``new_string``.
     Alternatively, provide ``line_range`` to replace a range of lines
     directly (takes precedence over ``old_string``).
@@ -141,6 +143,9 @@ async def update(
   When ``operation`` is omitted and the arguments don't match any
   inference rule (e.g. ``old_string`` without ``new_string``), an error
   is returned suggesting ``operation='delete'``.
+
+  When the operation is inferred, the success message states the inferred
+  operation and advises providing an explicit ``operation`` next time.
   """
   update_config = ctx.config
   if not isinstance(update_config, UpdateToolConfig):
@@ -161,15 +166,16 @@ async def update(
   # Safe operations (replace, insert, append) can be inferred from arguments.
   # Delete is never inferred — it must always be explicit to prevent
   # accidental data loss from ambiguous arguments.
+  operation_inferred = False
   if not operation:
-    if line_number is not None and new_string is not None:
+    if line_range is not None and new_string is not None:
+      operation = "replace"
+    elif line_number is not None and new_string is not None:
       operation = "insert"
     elif old_string and new_string is not None:
       operation = "replace"
-    elif new_string is not None and not old_string:
+    elif new_string is not None and not old_string and line_range is None and line_number is None:
       operation = "append"
-    elif line_range is not None and new_string is not None:
-      operation = "replace"
     else:
       # No inference possible — arguments don't match a safe operation.
       return ToolResult(
@@ -180,6 +186,7 @@ async def update(
           "always be specified explicitly to prevent accidental data loss."
         ),
       )
+    operation_inferred = True
     logger.info("update_operation_inferred", operation=operation)
 
   valid_operations = {"replace", "insert", "append", "delete"}
@@ -271,9 +278,17 @@ async def update(
       ctx=ctx,
     )
 
+    if operation_inferred:
+      result_message = (
+        f"File updated successfully (operation inferred: '{operation}'). "
+        "Next time, provide an explicit 'operation' to avoid inference."
+      )
+    else:
+      result_message = "File updated successfully"
+
     return ToolResult(
       success=True,
-      result="File updated successfully",
+      result=result_message,
       content_metadata=content_metadata,
     )
   except PermissionError:
