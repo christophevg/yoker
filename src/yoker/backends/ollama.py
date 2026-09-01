@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 import httpx
 from ollama import AsyncClient
+from structlog import get_logger
 
 from yoker.backends.protocol import (
   ChatChunk,
@@ -26,6 +27,75 @@ if TYPE_CHECKING:
   from yoker.config import Config, OllamaConfig
 
 logger = logging.getLogger(__name__)
+
+
+def _coerce_tool_arguments(arguments: Any, tool_name: str) -> dict[str, Any]:
+  """Normalize Ollama tool-call arguments into a flat dict.
+
+  Models served by Ollama (and older Ollama servers themselves) sometimes
+  deliver tool-call arguments in degraded shapes:
+
+  - the whole ``arguments`` as a JSON string (ollama/ollama-python#484),
+  - a duplicated ``{"name": ..., "arguments": {...}}`` envelope
+    (ollama/ollama#11805),
+  - nested object/array values string-encoded, e.g. ``{"env_vars":
+    "{\\"TEST\\": \\"foo\\"}"}`` (ollama/ollama#6155; fixed server-side only
+    in very recent Ollama via PR #13508).
+
+  The ollama SDK types inner values as ``Any`` and never coerces, so such
+  strings reach tools and fail ``isinstance(value, dict)`` checks. This
+  helper repairs the known shapes without mangling legitimate values:
+
+  - a JSON-string ``arguments`` is parsed once;
+  - a duplicated envelope is unwrapped once;
+  - string values that start with ``{`` or ``[`` are parsed one level deep;
+    anything else (including JSON literals like ``"123"`` or ``"true"``) is
+    kept verbatim so real string values are never lost.
+
+  Mirrors the defensive parsing every major consumer implements (LangChain's
+  ``_parse_arguments_from_tool_call``, LiteLLM's ollama transformation).
+  Coercion that changes a value's shape is logged for debuggability.
+  """
+  slogger = get_logger(__name__)
+  if isinstance(arguments, str):
+    try:
+      arguments = json.loads(arguments)
+    except json.JSONDecodeError:
+      slogger.warning("ollama_tool_arguments_unparseable_string", tool=tool_name)
+      return {}
+  if not isinstance(arguments, dict):
+    slogger.warning("ollama_tool_arguments_not_a_dict", tool=tool_name)
+    return {}
+  # Unwrap duplicated envelope: {"name": ..., "arguments": {...}} (#11805).
+  if "arguments" in arguments and "name" in arguments:
+    inner = arguments["arguments"]
+    arguments = inner if isinstance(inner, dict) else {}
+  coerced: dict[str, Any] = {}
+  for key, value in arguments.items():
+    if key == "functionName" and value == tool_name:
+      # Echo artifact emitted by some models — drop it.
+      continue
+    if isinstance(value, str) and value.lstrip()[:1] in ("{", "["):
+      try:
+        parsed = json.loads(value)
+      except json.JSONDecodeError:
+        coerced[key] = value
+      else:
+        if isinstance(parsed, (dict, list)):
+          slogger.info(
+            "ollama_tool_argument_coerced",
+            tool=tool_name,
+            key=key,
+            from_type=type(value).__name__,
+            to_type=type(parsed).__name__,
+          )
+          coerced[key] = parsed
+        else:
+          # e.g. a quoted scalar — not an object/array; keep the string.
+          coerced[key] = value
+    else:
+      coerced[key] = value
+  return coerced
 
 
 class OllamaBackend(ModelBackend):
@@ -223,7 +293,12 @@ class OllamaBackend(ModelBackend):
             tool_call_buffer[index] = {
               "id": getattr(tool_call, "id", None),
               "name": tool_call.function.name,
-              "arguments": tool_call.function.arguments,
+              # Repair degraded argument shapes (stringified nested values,
+              # string envelopes) before they reach tool binding — see
+              # _coerce_tool_arguments for the documented failure modes.
+              "arguments": _coerce_tool_arguments(
+                tool_call.function.arguments, tool_call.function.name
+              ),
             }
             # Emit TOOL_CALL_START
             yield ChatChunk(
@@ -236,15 +311,10 @@ class OllamaBackend(ModelBackend):
                 arguments_delta=None,
               ),
             )
-            # Emit TOOL_CALL_DELTA with full arguments (as JSON string)
-            # Ollama normally returns arguments as a dict, but some cloud
-            # models may return a JSON string — pass it through unchanged
-            # to avoid double-encoding.
-            raw_args = tool_call.function.arguments
-            if isinstance(raw_args, str):
-              args_json = raw_args
-            else:
-              args_json = json.dumps(raw_args)
+            # Emit TOOL_CALL_DELTA with full arguments (as JSON string).
+            # Arguments were coerced to a flat dict above, so this is always
+            # a clean single-encode.
+            args_json = json.dumps(tool_call_buffer[index]["arguments"])
             yield ChatChunk(
               event=ChatChunkEvent.TOOL_CALL_DELTA,
               index=index,

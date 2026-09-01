@@ -297,6 +297,154 @@ class TestOllamaBackend:
       assert delta_event.tool_call.arguments_delta == '{"location": "Paris"}'
 
   @pytest.mark.asyncio
+  async def test_chat_stream_coerces_stringified_nested_arguments(self):
+    """String-encoded nested object values are parsed into dicts (#6155).
+
+    GLM via Ollama emits nested object parameters as JSON strings, e.g.
+    {"env_vars": "{\"TEST\": \"foo\"}"}. The backend must repair this
+    before tool binding, where isinstance(value, dict) would fail.
+    """
+    from ollama import AsyncClient
+
+    tool_call = MockToolCall(
+      id="call_789",
+      function=MockToolCallFunction(
+        name="make",
+        arguments={"target": "test", "env_vars": '{"TEST": "tests/test_foo.py"}'},
+      ),
+    )
+
+    chunks = [
+      MockChunk(message=MockMessage(tool_calls=[tool_call])),
+      MockChunk(
+        message=MockMessage(),
+        done=True,
+        prompt_eval_count=5,
+        eval_count=1,
+        total_duration=20_000_000,
+      ),
+    ]
+
+    mock_client = AsyncMock(spec=AsyncClient)
+    mock_client.chat = AsyncMock(return_value=_async_iter(chunks))
+
+    config = _create_mock_config()
+
+    with patch("yoker.backends.ollama.AsyncClient", return_value=mock_client):
+      backend = OllamaBackend(config)
+
+      events = []
+      async for chunk in backend.chat_stream(
+        model="test-model",
+        messages=[{"role": "user", "content": "Run tests"}],
+        tools=[{"type": "function", "function": {"name": "make"}}],
+      ):
+        events.append(chunk)
+
+      delta_event = next(e for e in events if e.event == ChatChunkEvent.TOOL_CALL_DELTA)
+      import json as json_module
+
+      parsed = json_module.loads(delta_event.tool_call.arguments_delta)
+      assert parsed["target"] == "test"
+      assert parsed["env_vars"] == {"TEST": "tests/test_foo.py"}
+
+  @pytest.mark.asyncio
+  async def test_chat_stream_keeps_plain_string_values_untouched(self):
+    """String values not starting with { or [ pass through unchanged.
+
+    A legitimate dict[str, str] value like "TEST=foo" must never be
+    mangled by the coercion, and quoted scalars stay strings.
+    """
+    from ollama import AsyncClient
+
+    tool_call = MockToolCall(
+      id="call_789",
+      function=MockToolCallFunction(
+        name="make",
+        arguments={"TEST": "value=with=equals", "count": "123", "flag": "true"},
+      ),
+    )
+
+    chunks = [
+      MockChunk(message=MockMessage(tool_calls=[tool_call])),
+      MockChunk(
+        message=MockMessage(),
+        done=True,
+        prompt_eval_count=5,
+        eval_count=1,
+        total_duration=20_000_000,
+      ),
+    ]
+
+    mock_client = AsyncMock(spec=AsyncClient)
+    mock_client.chat = AsyncMock(return_value=_async_iter(chunks))
+
+    config = _create_mock_config()
+
+    with patch("yoker.backends.ollama.AsyncClient", return_value=mock_client):
+      backend = OllamaBackend(config)
+
+      events = []
+      async for chunk in backend.chat_stream(
+        model="test-model",
+        messages=[{"role": "user", "content": "Run"}],
+        tools=[{"type": "function", "function": {"name": "make"}}],
+      ):
+        events.append(chunk)
+
+      delta_event = next(e for e in events if e.event == ChatChunkEvent.TOOL_CALL_DELTA)
+      import json as json_module
+
+      parsed = json_module.loads(delta_event.tool_call.arguments_delta)
+      assert parsed == {"TEST": "value=with=equals", "count": "123", "flag": "true"}
+
+  @pytest.mark.asyncio
+  async def test_chat_stream_unwraps_duplicated_arguments_envelope(self):
+    """A duplicated {"name": ..., "arguments": {...}} envelope is unwrapped (#11805)."""
+    from ollama import AsyncClient
+
+    tool_call = MockToolCall(
+      id="call_790",
+      function=MockToolCallFunction(
+        name="make",
+        arguments={"name": "make", "arguments": {"target": "check"}},
+      ),
+    )
+
+    chunks = [
+      MockChunk(message=MockMessage(tool_calls=[tool_call])),
+      MockChunk(
+        message=MockMessage(),
+        done=True,
+        prompt_eval_count=5,
+        eval_count=1,
+        total_duration=20_000_000,
+      ),
+    ]
+
+    mock_client = AsyncMock(spec=AsyncClient)
+    mock_client.chat = AsyncMock(return_value=_async_iter(chunks))
+
+    config = _create_mock_config()
+
+    with patch("yoker.backends.ollama.AsyncClient", return_value=mock_client):
+      backend = OllamaBackend(config)
+
+      events = []
+      async for chunk in backend.chat_stream(
+        model="test-model",
+        messages=[{"role": "user", "content": "Check"}],
+        tools=[{"type": "function", "function": {"name": "make"}}],
+      ):
+        events.append(chunk)
+
+      delta_event = next(e for e in events if e.event == ChatChunkEvent.TOOL_CALL_DELTA)
+      import json as json_module
+
+      parsed = json_module.loads(delta_event.tool_call.arguments_delta)
+      assert parsed == {"target": "check"}
+
+  @pytest.mark.asyncio
   async def test_chat_stream_handles_empty_content(self):
     """OllamaBackend.chat_stream handles chunks with no content."""
     from ollama import AsyncClient
