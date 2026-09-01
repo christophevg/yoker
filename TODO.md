@@ -57,7 +57,7 @@
 - [x] **`update` tool: infer `operation` from arguments when omitted**
   - Already implemented: `operation` defaults to `""`, inference logic handles replace/insert/append. Delete must always be explicit. Tests cover all inference paths.
 
-- [ ] **#59 + #60 + #68: Error-message-quality bundle — NEXT TASK (owner-approved)**
+- [ ] **#59 + #60 + #68: Error-message-quality bundle — implemented & review-passed; PENDING OWNER REVIEW on PR #70 (https://github.com/christophevg/yoker/pull/70)**
   - One theme: tool rejections and overflow guidance must give the agent what it needs to self-correct. Three sub-fixes:
   - **#59 make tool:** env-var rejection error must name the target's effective allowlist (or state that none are configured) and point to `yoker.toml` `[tools.make.allowed_env_vars]`; tool description documents the env-var mechanism.
   - **#60 make/github/read tools:** canned post_filter advice must include pytest collection-error patterns (`ERROR collecting|^ERRORS|short test summary|##[error]`); tool descriptions document substring pitfalls (`passed` also matches "bypassed", `.` matches every line) and cross-reference the anchored-filter caveat from #58.
