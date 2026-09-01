@@ -1,9 +1,12 @@
 """Tests for token usage logging (yoker.usage)."""
 
 import json
+import sys
 from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 from typing import Any
+
+import pytest
 
 from yoker.config import Config, UsageConfig
 from yoker.usage import UsageLogger, UsageRecord, log_call_usage
@@ -86,12 +89,14 @@ class TestUsageLogger:
 
   def test_log_expands_home_directory(self, tmp_path: Any, monkeypatch: Any) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))  # Windows expanduser source.
     logger = UsageLogger("~/.yoker/usage.jsonl")
 
     logger.log(_record())
 
     assert (tmp_path / ".yoker" / "usage.jsonl").exists()
 
+  @pytest.mark.skipif(sys.platform == "win32", reason="O_APPEND atomicity is POSIX-only")
   def test_log_concurrent_writes_never_interleave(self, tmp_path: Any) -> None:
     path = tmp_path / "usage.jsonl"
     threads = 8
@@ -117,6 +122,7 @@ class TestUsageLogger:
 
     logger.log(_record())  # Must not raise.
 
+  @pytest.mark.skipif(sys.platform == "win32", reason="POSIX file modes not reported on Windows")
   def test_log_sets_owner_only_permissions(self, tmp_path: Any) -> None:
     import os
     import stat
@@ -153,8 +159,13 @@ class TestLogCallUsage:
 
     log_call_usage(
       agent,
-      {"input_tokens": 200, "output_tokens": 80, "total_duration_ms": 1200,
-       "thinking_chars": 2500, "content_chars": 900},
+      {
+        "input_tokens": 200,
+        "output_tokens": 80,
+        "total_duration_ms": 1200,
+        "thinking_chars": 2500,
+        "content_chars": 900,
+      },
     )
 
     (record,) = _read_lines(path)
