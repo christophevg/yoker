@@ -120,8 +120,8 @@ class TestFormatInvocationBlock:
 
     assert "<command-name>pkgq:find</command-name>" in result
 
-  def test_format_invocation_includes_base_directory(self) -> None:
-    """Invocation block includes base directory context."""
+  def test_format_invocation_points_to_resource_argument(self) -> None:
+    """Invocation block points to the skill tool's resource argument."""
     skill = Skill(
       simple_name="test",
       description="Test skill",
@@ -130,7 +130,9 @@ class TestFormatInvocationBlock:
 
     result = format_invocation_block(skill)
 
-    assert "Base directory for this skill:" in result
+    assert "Base directory" not in result
+    assert "resource argument" in result
+    assert "skill(skill_name=" in result
 
   def test_format_invocation_preserves_content(self) -> None:
     """Invocation block preserves full skill content."""
