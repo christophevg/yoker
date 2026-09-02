@@ -68,7 +68,7 @@
 - [ ] **#57: `git` tool: read-only ops on protected paths trigger write-approval prompts**
   - Owner ruling: as-designed; needs a design decision (label subcommands read/write internally). Kept in backlog — **Priority:** Medium — explicitly "not enough incidents yet, design-later".
 
-- [ ] **#62: `update`/`write` tools: return a diff of the applied change** — **Priority:** Low (owner: commit 10100c1 already solved much of the corruption pain)
+- [ ] **#62: `update`/`write` tools: return a diff of the applied change** — **Priority:** Medium (bumped from Low 2026-09-02: rich feedback lets the caller validate the edit without a follow-up read, eliminating the read-after-write double tool call; commit 10100c1 already solved much of the corruption pain)
 
 - [ ] **#63: `update` tool: ambiguous anchor should error** — re-evaluate AFTER the #65 outcome (owner: see related issues).
 
@@ -83,13 +83,17 @@
   - Inconsistency: `AgentRegistry.resolve()` and `SkillRegistry.resolve()` already implement bare-name fallback (match on `simple_name`, error with full-name list on ambiguity), but `ToolRegistry` has no `resolve()` at all. `_filter_tools_by_definition` (`src/yoker/core/__init__.py:666`) even accepts bare names at agent-definition time — so bare names work when *filtering* but not when *dispatching*.
   - **Fix:** Add `resolve()`-style fallback to tool dispatch, mirroring `SkillRegistry.resolve()`: on exact-key miss with no `:` in the name, match `spec.simple_name` (possibly trying the `yoker:` prefix first for builtins); on multiple matches, error listing full names (precedent: `AgentRegistry.resolve()`).
   - **Priority:** Low
+  - Related: M.5 (registry-level bare-name resolution) — same problem, deeper fix at the registry level; this entry is the dispatch-level quick fix.
 - [ ] **`git` tool: `git merge` operation** — complete the branch workflow (create → work → commit → switch → merge)
 - [ ] **`git` tool: `git restore` / `git stash`** — `checkout` is done, but `restore` (discard changes) and `stash` (temporarily shelve work) are still missing
-- [ ] **`write` tool: per-call `overwrite` flag** — ~~`allow_overwrite` is project-level config. Agent cannot overwrite even when it explicitly wants to~~  — **Decision: not implementing.** Project-level config is the correct security boundary; per-call override would bypass it.
+- [ ] **`write` tool: per-call `overwrite` flag** — **Decision: under investigation (2026-09-02).** Owner is testing with `allow_overwrite = true` (config) to evaluate the blast radius; will then decide between keeping config-only, per-call argument, or both. Previous "not implementing" ruling reverted. Note: `protected_files` guardrail remains the safety net in all variants.
 - [ ] **`make` tool: arbitrary target args** — some Makefile targets need arguments that aren't env vars (e.g. `make clean V=1`). Consider `make_args` parameter with sanitization
 - [ ] **`github` tool: `issue_create` operation** — currently read-only (except pr_create/pr_comment/release_create). Add issue creation with approval model
+- [ ] **#1: `github` tool: `repo` argument optional, defaults to current git repo** — docs already promise "If omitted, uses current git repo", but write ops (`pr_create`, `issue_create`, `release_create`, `label_create`) reject a missing repo ("Parameter 'repo' is required for …"). Doc/behavior mismatch; align implementation with the documented behavior. **Priority:** Medium
 - [ ] **`file` tool: `stat`/`info` sub-operation** — return file size, type, modification time without reading content
 - [ ] **`file` tool: `diff` sub-operation** — compare two files without reading both into context
+- [ ] **Tool framework: descriptive error messages for invalid arguments** — when a tool call fails on wrong/missing arguments, the error should state what was wrong and list the set of expected/valid arguments (schema-driven), so the caller can self-correct on the next attempt. Cross-cutting over all builtin tools. **Priority:** Medium
+- [ ] **`write` tool: `create_parents` default → True** — failing on missing parent directories is the annoyance; creating them is harmless (per-call argument default change, independent of the `allow_overwrite` decision). **Priority:** Medium
 
 ### UX Polish
 
