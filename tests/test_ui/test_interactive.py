@@ -835,7 +835,7 @@ class TestInteractiveUIHandlerStats:
 
     text = output.getvalue()
     assert "1.5s" in text
-    assert "150 tokens" in text
+    assert "50/100 tokens" in text
 
   def test_output_stats_suppressed_when_disabled(self):
     """output_stats should not print when show_stats is False."""
@@ -862,7 +862,7 @@ class TestInteractiveUIHandlerStats:
 
     text = output.getvalue()
     assert "1.5s" in text
-    assert "150 tokens" in text
+    assert "50/100 tokens" in text
     assert "session" in text
     assert "98%" in text
     assert "weekly" in text
@@ -878,7 +878,7 @@ class TestInteractiveUIHandlerStats:
 
     text = output.getvalue()
     assert "1.5s" in text
-    assert "150 tokens" in text
+    assert "50/100 tokens" in text
     assert "session" not in text
     assert "weekly" not in text
 

@@ -849,7 +849,6 @@ class InteractiveUIHandler(UIHandler):
     """
     self._stop_processing_status()
     if self.show_stats:
-      total = prompt_tokens + eval_tokens
       duration_s = duration_ms / 1000.0
       ts = self._ts()
       tag = self._agent_tag(agent)
@@ -858,9 +857,9 @@ class InteractiveUIHandler(UIHandler):
       if agent:
         prefix = f"{BULLET}{ts}"
         self.console.print(f"{prefix}{tag}", end="")
-        parts = [f"{duration_s:.1f}s, {total} tokens"]
+        parts = [f"{duration_s:.1f}s, {prompt_tokens}/{eval_tokens} tokens"]
       else:
-        parts = [f"{BULLET}{ts}{duration_s:.1f}s, {total} tokens"]
+        parts = [f"{BULLET}{ts}{duration_s:.1f}s, {prompt_tokens}/{eval_tokens} tokens"]
       if usage_limits:
         session_pct = _extract_usage_pct(usage_limits, "session")
         weekly_pct = _extract_usage_pct(usage_limits, "weekly")
