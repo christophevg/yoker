@@ -1567,7 +1567,9 @@ def _ci_verdict(rollup: Any) -> str:
 
   Rollup entries are check-run dicts; the meaningful signal is ``conclusion``
   (e.g. SUCCESS, FAILURE) or ``status`` (e.g. IN_PROGRESS, PENDING) while a
-  check is still running. Unknown or missing states count as pending.
+  check is still running. StatusContext nodes (classic commit statuses) carry
+  ``state`` instead, with the same vocabulary for the values that matter.
+  Unknown or missing states count as pending.
 
   Semantics (documented in the tool description):
   - no rollup / empty list            -> ``"none"``
@@ -1583,11 +1585,16 @@ def _ci_verdict(rollup: Any) -> str:
     if not isinstance(check, dict):
       pending += 1
       continue
-    conclusion = str(check.get("conclusion", "") or "").upper()
+    # StatusContext nodes (classic commit statuses, e.g. coverage/coveralls)
+    # carry "state" instead of "conclusion" (SUCCESS/FAILURE/ERROR/PENDING/
+    # EXPECTED); treat them as first-class checks.
+    state = str(check.get("state", "") or "").upper()
+    conclusion = state or str(check.get("conclusion", "") or "").upper()
     if conclusion in ("SUCCESS", "NEUTRAL", "SKIPPED"):
       ok += 1
     elif conclusion in (
       "FAILURE",
+      "ERROR",  # StatusContext-only state value
       "TIMED_OUT",
       "CANCELLED",
       "ACTION_REQUIRED",

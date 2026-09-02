@@ -2741,6 +2741,20 @@ class TestCiVerdict:
     rollup = [{"conclusion": "TIMED_OUT"}, {"conclusion": "SUCCESS"}]
     assert github_module._ci_verdict(rollup) == "1 failing / 1 ok"
 
+  def test_status_context_state_field_counts(self) -> None:
+    rollup = [{"conclusion": "SUCCESS"}] * 11 + [{"state": "SUCCESS"}]
+    assert github_module._ci_verdict(rollup) == "12 ok"
+
+  def test_status_context_states_map_to_verdicts(self) -> None:
+    rollup = (
+      [{"conclusion": "SUCCESS"}] * 10
+      + [{"state": "FAILURE"}]
+      + [{"state": "ERROR"}]
+      + [{"state": "PENDING"}]
+      + [{"state": "EXPECTED"}]
+    )
+    assert github_module._ci_verdict(rollup) == "2 failing / 10 ok / 2 pending"
+
 
 class TestCompactDefaults:
   """Without explicit fields, pr_list/pr_view compress rollup and pr_list author."""
