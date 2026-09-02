@@ -66,7 +66,9 @@ def format_invocation_block(skill: Skill, args: str = "") -> str:
     <command-args>fix authentication bug</command-args>
     </command-message>
 
-    Base directory for this skill:
+    To load a bundled reference file this skill provides, use the skill tool's
+    resource argument (e.g. skill(skill_name="<name>", resource="references/<file>"))
+    - do not read skill files from the filesystem.
     ...
   """
   # Command message shows the user's slash command
@@ -80,7 +82,9 @@ def format_invocation_block(skill: Skill, args: str = "") -> str:
     f"<command-args>{args}</command-args>" if args else "<command-args></command-args>",
     "</command-message>",
     "",
-    "Base directory for this skill:",
+    "To load a bundled reference file this skill provides, use the skill tool's",
+    'resource argument (e.g. skill(skill_name="<name>", resource="references/<file>"))',
+    "- do not read skill files from the filesystem.",
     "",
   ]
 
