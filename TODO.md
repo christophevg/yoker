@@ -63,7 +63,24 @@ error classes, make first retry succeed, stop doomed loops. Track progress here.
   capacity surfacing remain).
 
 ## Backlog
-## Backlog
+
+### Permission Annotations
+
+- [ ] **Subcommand-aware permission annotations (deferred — fundamental redesign)**
+  - `git`'s `path` is annotated `WritePath` because some operations consuming it
+    are destructive (checkout, rm, pull) — worst-case semantics by design. This
+    makes read-only operations (`git diff` on a protected file) fire the
+    protected-path approval prompt. The annotation system cannot express
+    "depends on subcommand" today; fixing it properly requires a fundamental
+    redesign of the permission annotation system to take subcommands into
+    account. Deferred as too big for now.
+  - Related note: `git checkout` with a branch named like a file pathspec
+    (e.g. `args={"branch": "Makefile"}`) would attempt a file restore — an
+    operation-level approval question, unchanged by this issue.
+  - **Priority:** Low (as-designed trade-off, UX cost only)
+  - **Severity:** Low — prompt is honest (see git approval-prompt provider),
+    but noisy for read operations
+
 
 ### Code Quality
 

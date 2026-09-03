@@ -14,14 +14,14 @@ allowed.
 import os
 import shutil
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 from structlog import get_logger
 
 from yoker.config import FileToolConfig
 from yoker.tools.annotations import Text, WritePath
 from yoker.tools.context import ToolContext
-from yoker.tools.schema import ToolResult
+from yoker.tools.schema import ApprovalPrompt, ToolResult
 
 logger = get_logger(__name__)
 
@@ -132,6 +132,44 @@ async def file(
   else:
     # Unreachable — operation already validated above
     return ToolResult(success=False, error=f"Unknown operation: {operation}")
+
+
+# ---------------------------------------------------------------------------
+# Approval prompt provider (interactive protected-path approval flow)
+# ---------------------------------------------------------------------------
+
+
+def _approval_prompt(tool_args: dict[str, Any]) -> ApprovalPrompt:
+  """Build the approval prompt for a protected file operation.
+
+  - ``delete``: the diff shows the file being removed.
+  - ``copy``/``move``: a brief summary (no content diff, since the
+    destination may not exist yet).
+  """
+  from yoker.tools.diff import generate_diff
+
+  path = tool_args.get("source", "")
+  operation = tool_args.get("operation", "unknown")
+  destination = tool_args.get("destination", "")
+  if operation == "delete":
+    try:
+      old_content = Path(path).read_text(encoding="utf-8")
+    except OSError:
+      old_content = ""
+    new_content = ""
+  else:
+    # copy or move: show a summary rather than a content diff
+    old_content = f"[{operation}] {path}"
+    new_content = (
+      f"[{operation}] {path} -> {destination}" if destination else f"[{operation}] {path}"
+    )
+  return ApprovalPrompt(
+    label=path,
+    preview=generate_diff(old_content, new_content, Path(path).name),
+  )
+
+
+file.__yoker_approval__ = _approval_prompt  # type: ignore[attr-defined]
 
 
 def _do_copy(source: Path, destination: Path | None, recursive: bool) -> ToolResult:

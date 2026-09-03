@@ -34,6 +34,7 @@ from yoker.logging import log_timing
 from yoker.tools.context import ToolContext
 from yoker.tools.guardrails import Guardrail
 from yoker.tools.schema import (
+  ApprovalPrompt,
   ToolResult,
   ToolSpec,
   ValidationResult,
@@ -1174,6 +1175,46 @@ async def _run_tool(agent: Any, tool_name: str, tool_args: dict[str, Any]) -> tu
     return f"Error executing tool: {e}", False, None
 
 
+def _build_generic_approval_prompt(
+  simple_name: str, blocked_path: str, tool_args: dict[str, Any]
+) -> ApprovalPrompt:
+  """Build the generic approval prompt for tools without their own builder.
+
+  Honest by construction: it names the tool, the protected path, and what
+  approval means — it never fabricates a content diff depicting a change
+  the tool would not make.
+  """
+  del tool_args
+  return ApprovalPrompt(
+    label=blocked_path,
+    preview=(
+      f"Tool '{simple_name}' targets write-protected path: {blocked_path}\n"
+      "Approving skips the protected-path check for this call only."
+    ),
+  )
+
+
+def _resolve_approval_prompt(
+  spec: ToolSpec, blocked_path: str, tool_args: dict[str, Any]
+) -> ApprovalPrompt:
+  """Resolve the approval prompt for a write-blocked tool call.
+
+  Uses the tool's own ``__yoker_approval__`` builder when it provides one;
+  otherwise falls back to the generic framework default.
+  """
+  simple_name = spec.simple_name or spec.name
+  provider = spec.approval_prompt
+  if provider is None:
+    return _build_generic_approval_prompt(simple_name, blocked_path, tool_args)
+  try:
+    return provider(tool_args)
+  except Exception as e:
+    # A broken provider must not crash the approval flow — fall back to
+    # the generic prompt so the user is still asked meaningfully.
+    logger.warning("approval_prompt_provider_error", tool=spec.name, error=str(e))
+    return _build_generic_approval_prompt(simple_name, blocked_path, tool_args)
+
+
 async def _maybe_approve_write_blocked(
   agent: Any, spec: ToolSpec, tool_args: dict[str, Any]
 ) -> bool:
@@ -1191,6 +1232,11 @@ async def _maybe_approve_write_blocked(
   parameters, so tools like ``file`` (with ``source`` and ``destination``)
   and ``make`` (with ``cwd``) are covered. Any tool declaring ``WritePath``
   gets the approval flow automatically — no hardcoded tool name list.
+
+  The prompt itself is generic: tools may provide a tool-specific builder
+  via ``__yoker_approval__`` (discovered into ``ToolSpec.approval_prompt``);
+  tools without one get the generic default. The framework never
+  inspects tool names or operation kinds here — tools stay fully generic.
 
   Returns:
     ``True`` when the user approved (skip guardrail blocked_write_paths),
@@ -1229,10 +1275,9 @@ async def _maybe_approve_write_blocked(
   if not blocked_paths:
     return False
 
-  simple_name = spec.simple_name or spec.name
-  diff = _build_approval_diff(simple_name, blocked_paths[0], tool_args)
+  prompt = _resolve_approval_prompt(spec, blocked_paths[0], tool_args)
   try:
-    approved = await handler(blocked_paths[0], diff, "file")
+    approved = await handler(prompt.label, prompt.preview, prompt.kind)
   except Exception as e:
     logger.warning("approval_handler_error", tool=spec.name, error=str(e))
     approved = False
@@ -1240,122 +1285,6 @@ async def _maybe_approve_write_blocked(
   if not approved:
     logger.info("write_blocked_denied", tool=spec.name, path=blocked_paths[0])
   return bool(approved)
-
-
-def _build_approval_diff(tool_name: str, path: str, tool_args: dict[str, Any]) -> str:
-  """Build a unified diff for an approval prompt.
-
-  - ``update``: applies the tool's replace/delete/insert logic to the
-    current file content and diffs the result. Falls back to empty old
-    content when the file cannot be read (defensive — ``update`` requires
-    an existing file, so this is unreachable in practice).
-  - ``write``: diffs the current file content (if any) against the new
-    content. New files produce an all-additions diff.
-  - ``file``: shows the operation (copy/move/delete) and the source path.
-    For ``delete``, the diff shows the file being removed. For ``copy``
-    and ``move``, a brief summary is shown (no content diff, since the
-    destination may not exist yet).
-  - Other tools (e.g. ``make`` with ``cwd``): produces a simple summary
-    diff showing the protected path and the operation.
-  """
-  from pathlib import Path
-
-  from yoker.tools.diff import generate_diff
-
-  filename = Path(path).name
-
-  if tool_name == "update":
-    try:
-      old_content = Path(path).read_text(encoding="utf-8")
-    except OSError:
-      old_content = ""
-    operation = tool_args.get("operation", "replace")
-    old_string = tool_args.get("old_string", "")
-    new_string = tool_args.get("new_string", "")
-    if operation == "replace":
-      new_content = old_content.replace(old_string, new_string, 1)
-    elif operation == "delete":
-      new_content = old_content.replace(old_string, "", 1)
-    elif operation in ("insert", "append"):
-      # Reproduce the update tool's insert/append so the approval diff shows
-      # the insertion in context rather than a misleading full-file
-      # replacement.
-      line_number = tool_args.get("line_number")
-      if operation == "append":
-        new_content = _apply_append(old_content, new_string)
-      elif line_number is None:
-        new_content = new_string
-      else:
-        new_content = _apply_insert(old_content, line_number, new_string)
-    else:
-      new_content = new_string
-  elif tool_name == "write":
-    new_content = tool_args.get("content", "")
-    try:
-      old_content = Path(path).read_text(encoding="utf-8")
-    except OSError:
-      old_content = ""
-  elif tool_name == "file":
-    operation = tool_args.get("operation", "unknown")
-    destination = tool_args.get("destination", "")
-    if operation == "delete":
-      try:
-        old_content = Path(path).read_text(encoding="utf-8")
-      except OSError:
-        old_content = ""
-      new_content = ""
-    else:
-      # copy or move: show a summary rather than a content diff
-      old_content = f"[{operation}] {path}"
-      new_content = (
-        f"[{operation}] {path} -> {destination}" if destination else f"[{operation}] {path}"
-      )
-  else:
-    # Fallback for any other tool with a Path-annotated parameter
-    old_content = f"[{tool_name}] {path}"
-    new_content = f"[{tool_name}] {path} (approved)"
-
-  return generate_diff(old_content, new_content, filename)
-
-
-def _apply_insert(old_content: str, line_number: Any, new_string: str) -> str:
-  """Mirror ``yoker.builtin.update._do_insert`` for approval diff rendering.
-
-  Inserts ``new_string`` at the 1-based ``line_number`` in ``old_content``
-  (content appears at that line, pushing existing lines down) and returns the
-  resulting full file content. Unlike ``_do_insert``, this helper does not
-  raise on out-of-range line numbers — a bad range would make the diff
-  unintelligible but the actual tool call would fail validation anyway, so we
-  fall back to appending at the nearest boundary.
-  """
-  try:
-    line_num = int(line_number)
-  except (ValueError, TypeError):
-    return new_string
-
-  lines = old_content.splitlines(keepends=True)
-  if not lines:
-    return new_string + "\n"
-
-  if lines and not lines[-1].endswith("\n"):
-    lines[-1] = lines[-1] + "\n"
-
-  total = len(lines)
-  # Clamp to valid range so an out-of-range request still produces a
-  # readable diff rather than raising.
-  idx = max(0, min(line_num - 1, total))
-  lines.insert(idx, new_string + "\n")
-  return "".join(lines)
-
-
-def _apply_append(old_content: str, new_string: str) -> str:
-  """Mirror ``yoker.builtin.update._do_append`` for approval diff rendering."""
-  if not old_content:
-    return new_string + "\n"
-  content = old_content
-  if not content.endswith("\n"):
-    content = content + "\n"
-  return content + new_string + "\n"
 
 
 def _describe_binding_error(spec: ToolSpec, kwargs: dict[str, Any], original: TypeError) -> str:

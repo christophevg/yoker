@@ -15,7 +15,7 @@ from yoker.builtin._validators import validate_write_content_size
 from yoker.config import WriteToolConfig
 from yoker.tools.annotations import Text, WritePath
 from yoker.tools.context import ToolContext
-from yoker.tools.schema import ToolResult
+from yoker.tools.schema import ApprovalPrompt, ToolResult
 
 if TYPE_CHECKING:
   pass
@@ -227,6 +227,30 @@ def _build_content_metadata(
 
 
 write.__yoker_validators__ = [validate_write_content_size]  # type: ignore[attr-defined]
+
+
+def _approval_prompt(tool_args: dict[str, Any]) -> ApprovalPrompt:
+  """Build the approval prompt for writing to a write-protected file.
+
+  Diffs the current file content (if any) against the new content. New
+  files produce an all-additions diff. Mirrors the framework's generic
+  ``write`` preview so the user sees exactly what the overwrite would do.
+  """
+  from yoker.tools.diff import generate_diff
+
+  path = tool_args.get("path", "")
+  new_content = tool_args.get("content", "")
+  try:
+    old_content = Path(path).read_text(encoding="utf-8")
+  except OSError:
+    old_content = ""
+  return ApprovalPrompt(
+    label=path,
+    preview=generate_diff(old_content, new_content, Path(path).name),
+  )
+
+
+write.__yoker_approval__ = _approval_prompt  # type: ignore[attr-defined]
 
 
 def _build_write_result_message(

@@ -36,7 +36,7 @@ from structlog import get_logger
 from yoker.config import GitToolConfig
 from yoker.tools.annotations import Text, WritePath
 from yoker.tools.context import ToolContext
-from yoker.tools.schema import ToolResult, ValidationResult
+from yoker.tools.schema import ApprovalPrompt, ToolResult, ValidationResult
 
 logger = get_logger(__name__)
 
@@ -217,6 +217,32 @@ FORBIDDEN_CHARS: frozenset[str] = frozenset(
 # and ``@`` many lines below (e.g. type annotations and decorators in a
 # diff), corrupting multi-line spans in the rendered output.
 CREDENTIAL_PATTERN = re.compile(r"(https?://)[^:\s]+:[^@\s]*@")
+
+
+# ---------------------------------------------------------------------------
+# Approval prompt provider (interactive protected-path approval flow)
+# ---------------------------------------------------------------------------
+
+
+def _approval_prompt(tool_args: dict[str, Any]) -> ApprovalPrompt:
+  """Build the approval prompt for a git operation on a protected path.
+
+  The ``path`` parameter is annotated ``WritePath`` because some git
+  operations that consume it are destructive (checkout, rm, pull, ...) —
+  worst-case semantics by design (see backlog: per-subcommand permission
+  annotations). The prompt therefore fires for every operation, read or
+  destructive. This provider makes the prompt honest about that: it names
+  the actual operation and states what approval means, instead of
+  depicting a file modification that will never happen.
+  """
+  operation = tool_args.get("operation", "")
+  path = tool_args.get("path", ".")
+  label = f"git {operation}".strip()
+  preview = (
+    f"Targets write-protected path: {path}\n"
+    "Approving skips the protected-path check for this call only."
+  )
+  return ApprovalPrompt(label=label, preview=preview, kind="git")
 
 
 async def git(
@@ -820,6 +846,9 @@ async def _execute_command(
 def _sanitize_output(output: str) -> str:
   """Sanitize output to redact credentials."""
   return CREDENTIAL_PATTERN.sub(r"\1<redacted>@", output)
+
+
+git.__yoker_approval__ = _approval_prompt  # type: ignore[attr-defined]
 
 
 __all__ = ["git", "OPERATION_ARGS"]

@@ -12,8 +12,14 @@ from typing import Annotated, Any
 
 import pytest
 
+from yoker.builtin import file as file_tool
+from yoker.builtin import write as write_tool
+from yoker.builtin.file import _approval_prompt as file_prompt
+from yoker.builtin.git import _approval_prompt as git_prompt
+from yoker.builtin.update import _approval_prompt as update_prompt
+from yoker.builtin.write import _approval_prompt as write_prompt
 from yoker.config import Config, PermissionsConfig
-from yoker.core._processing import _build_approval_diff, _maybe_approve_write_blocked
+from yoker.core._processing import _maybe_approve_write_blocked
 from yoker.tools.annotations import ReadPath, Text
 from yoker.tools.annotations import WritePath as PathArg
 from yoker.tools.diff import generate_diff
@@ -131,95 +137,148 @@ class TestGenerateDiff:
 
 
 # ---------------------------------------------------------------------------
-# _build_approval_diff
+# Tool approval-prompt providers (yoker.builtin.write / update / file / git)
 # ---------------------------------------------------------------------------
 
 
-class TestBuildApprovalDiff:
+class TestWriteApprovalPrompt:
+  """The write tool's own provider builds the same diff core used to build."""
+
   def test_write_new_file_diff(self, tmp_path: Path) -> None:
     target = tmp_path / "Makefile"
-    diff = _build_approval_diff("write", str(target), {"content": "all:\n\techo hi\n"})
-    assert "+all:" in diff
-    assert "+\techo hi" in diff
+    prompt = write_prompt({"path": str(target), "content": "all:\n\techo hi\n"})
+    assert prompt.label == str(target)
+    assert prompt.kind == "file"
+    assert "+all:" in prompt.preview
+    assert "+\techo hi" in prompt.preview
 
   def test_write_overwrite_diff(self, tmp_path: Path) -> None:
     target = tmp_path / "Makefile"
     target.write_text("old:\n\techo old\n")
-    diff = _build_approval_diff("write", str(target), {"content": "new:\n\techo new\n"})
-    assert "-old:" in diff
-    assert "+new:" in diff
+    prompt = write_prompt({"path": str(target), "content": "new:\n\techo new\n"})
+    assert "-old:" in prompt.preview
+    assert "+new:" in prompt.preview
 
+  def test_unreadable_file_yields_all_additions_diff(self, tmp_path: Path) -> None:
+    prompt = write_prompt({"path": str(tmp_path / "missing.txt"), "content": "x\n"})
+    assert "+x" in prompt.preview
+
+
+class TestUpdateApprovalPrompt:
   def test_update_replace_diff(self, tmp_path: Path) -> None:
     target = tmp_path / "pyproject.toml"
     target.write_text('name = "old"\n')
-    diff = _build_approval_diff(
-      "update",
-      str(target),
-      {"operation": "replace", "old_string": "old", "new_string": "new"},
+    prompt = update_prompt(
+      {"path": str(target), "operation": "replace", "old_string": "old", "new_string": "new"}
     )
-    assert '-name = "old"' in diff
-    assert '+name = "new"' in diff
+    assert '-name = "old"' in prompt.preview
+    assert '+name = "new"' in prompt.preview
 
   def test_update_delete_diff(self, tmp_path: Path) -> None:
     target = tmp_path / "pyproject.toml"
     target.write_text('name = "x"\nextra = 1\n')
-    diff = _build_approval_diff(
-      "update",
-      str(target),
-      {"operation": "delete", "old_string": "extra = 1\n", "new_string": ""},
+    prompt = update_prompt(
+      {"path": str(target), "operation": "delete", "old_string": "extra = 1\n", "new_string": ""}
     )
-    assert "-extra = 1" in diff
+    assert "-extra = 1" in prompt.preview
 
   def test_update_insert_diff_shows_insert_in_context(self, tmp_path: Path) -> None:
     target = tmp_path / "pyproject.toml"
     target.write_text("line1\nline2\nline3\n")
-    diff = _build_approval_diff(
-      "update",
-      str(target),
+    prompt = update_prompt(
       {
+        "path": str(target),
         "operation": "insert",
         "line_number": 2,
         "new_string": "INSERTED",
-      },
+      }
     )
     # Insertion shown as an addition, surrounding lines preserved
-    assert "+INSERTED" in diff
-    assert "-line2" not in diff  # line2 is not removed, just shifted
-    assert "line2" in diff  # line2 still appears in the diff context
-    assert "line1" in diff
+    assert "+INSERTED" in prompt.preview
+    assert "-line2" not in prompt.preview  # line2 is not removed, just shifted
+    assert "line2" in prompt.preview  # line2 still appears in the diff context
+    assert "line1" in prompt.preview
 
   def test_update_append_diff_shows_insert_in_context(self, tmp_path: Path) -> None:
     target = tmp_path / "pyproject.toml"
     target.write_text("line1\nline2\nline3\n")
-    diff = _build_approval_diff(
-      "update",
-      str(target),
+    prompt = update_prompt(
       {
+        "path": str(target),
         "operation": "append",
         "new_string": "APPENDED",
-      },
+      }
     )
-    assert "+APPENDED" in diff
-    assert "-line2" not in diff
-    assert "line3" in diff
+    assert "+APPENDED" in prompt.preview
+    assert "-line2" not in prompt.preview
+    assert "line3" in prompt.preview
 
   def test_update_insert_not_full_file_replacement(self, tmp_path: Path) -> None:
     """Regression: insert must not depict the whole file being replaced."""
     target = tmp_path / "pyproject.toml"
     target.write_text("line1\nline2\nline3\n")
-    diff = _build_approval_diff(
-      "update",
-      str(target),
+    prompt = update_prompt(
       {
+        "path": str(target),
         "operation": "insert",
         "line_number": 2,
         "new_string": "INSERTED",
-      },
+      }
     )
     # The existing lines must not all appear as removed — that would
     # indicate the old buggy full-file-replacement behaviour.
-    assert "-line1" not in diff
-    assert "-line3" not in diff
+    assert "-line1" not in prompt.preview
+    assert "-line3" not in prompt.preview
+
+
+class TestFileApprovalPrompt:
+  def test_file_delete_diff(self, tmp_path: Path) -> None:
+    target = tmp_path / "Makefile"
+    target.write_text("all:\n\techo hi\n")
+    prompt = file_prompt({"operation": "delete", "source": str(target)})
+    assert "-all:" in prompt.preview
+    assert "-\techo hi" in prompt.preview
+
+  def test_file_move_diff(self, tmp_path: Path) -> None:
+    target = tmp_path / "Makefile"
+    prompt = file_prompt(
+      {"operation": "move", "source": str(target), "destination": "/elsewhere/Makefile.bak"}
+    )
+    assert "move" in prompt.preview.lower()
+    assert str(target) in prompt.preview
+
+  def test_file_copy_diff(self, tmp_path: Path) -> None:
+    target = tmp_path / "Makefile"
+    prompt = file_prompt(
+      {"operation": "copy", "source": str(target), "destination": "/elsewhere/Makefile.bak"}
+    )
+    assert "copy" in prompt.preview.lower()
+
+
+class TestGitApprovalPrompt:
+  """The git provider names the actual operation — no fabricated file diff."""
+
+  def test_diff_operation_honest_prompt(self) -> None:
+    prompt = git_prompt({"operation": "diff", "path": "Makefile"})
+    assert prompt.label == "git diff"
+    assert prompt.kind == "git"
+    assert "Makefile" in prompt.preview
+    assert "(approved)" not in prompt.preview
+    # No fabricated modification: the preview must not look like a diff
+    # body changing the file.
+    assert not prompt.preview.startswith("-")
+    assert " (approved)" not in prompt.preview
+
+  def test_commit_operation(self) -> None:
+    prompt = git_prompt({"operation": "commit", "path": "."})
+    assert prompt.label == "git commit"
+    assert prompt.kind == "git"
+    assert "write-protected" in prompt.preview
+
+  def test_operation_missing_label_still_safe(self) -> None:
+    prompt = git_prompt({})
+    assert prompt.label == "git"
+    assert prompt.kind == "git"
 
 
 # ---------------------------------------------------------------------------
@@ -287,13 +346,44 @@ async def test_approval_approved_returns_true(tmp_path: Path) -> None:
     return True
 
   agent = _FakeAgent(handler=handler, protected=True)
-  spec = _make_spec(_dummy_write, "write")
+  spec = _make_spec(write_tool, "write")
   result = await _maybe_approve_write_blocked(
     agent, spec, {"path": str(target), "content": "new:\n\techo new\n"}
   )
   assert result is True  # approved → skip guardrail blocked_write_paths
   assert captured["path"] == str(target)
   assert "+new:" in captured["diff"]
+
+
+@pytest.mark.asyncio
+async def test_generic_default_prompt_for_tool_without_provider(tmp_path: Path) -> None:
+  """A tool without ``__yoker_approval__`` gets the honest generic prompt.
+
+  No fabricated diff — just the tool name, the protected path, and what
+  approval means. This is the default every new tool inherits.
+  """
+  target = tmp_path / "Makefile"
+
+  captured: dict[str, str] = {}
+
+  async def handler(path: str, preview: str, kind: str = "file") -> bool:
+    captured["path"] = path
+    captured["preview"] = preview
+    captured["kind"] = kind
+    return True
+
+  agent = _FakeAgent(handler=handler, protected=True)
+  spec = _make_spec(_dummy_write, "write")  # dummy has no __yoker_approval__
+  result = await _maybe_approve_write_blocked(
+    agent, spec, {"path": str(target), "content": "anything"}
+  )
+  assert result is True
+  assert captured["path"] == str(target)
+  assert captured["kind"] == "file"
+  assert "'write'" in captured["preview"]
+  assert "write-protected" in captured["preview"]
+  assert "(approved)" not in captured["preview"]
+  assert "+new:" not in captured["preview"]  # no fabricated diff
 
 
 @pytest.mark.asyncio
@@ -362,7 +452,7 @@ async def test_approval_file_tool_delete_protected(tmp_path: Path) -> None:
     return True
 
   agent = _FakeAgent(handler=handler, protected=True)
-  spec = _make_spec(_dummy_file, "file")
+  spec = _make_spec(file_tool, "file")
   result = await _maybe_approve_write_blocked(
     agent, spec, {"operation": "delete", "source": str(target)}
   )
@@ -399,32 +489,3 @@ async def test_approval_file_tool_no_handler_returns_false(tmp_path: Path) -> No
     agent, spec, {"operation": "delete", "source": str(target)}
   )
   assert result is False
-
-
-# ---------------------------------------------------------------------------
-# _build_approval_diff — file tool
-# ---------------------------------------------------------------------------
-
-
-class TestBuildApprovalDiffFile:
-  def test_file_delete_diff(self, tmp_path: Path) -> None:
-    target = tmp_path / "Makefile"
-    target.write_text("all:\n\techo hi\n")
-    diff = _build_approval_diff("file", str(target), {"operation": "delete"})
-    assert "-all:" in diff
-    assert "-\techo hi" in diff
-
-  def test_file_move_diff(self, tmp_path: Path) -> None:
-    target = tmp_path / "Makefile"
-    diff = _build_approval_diff(
-      "file", str(target), {"operation": "move", "destination": "/elsewhere/Makefile.bak"}
-    )
-    assert "move" in diff.lower()
-    assert str(target) in diff
-
-  def test_file_copy_diff(self, tmp_path: Path) -> None:
-    target = tmp_path / "Makefile"
-    diff = _build_approval_diff(
-      "file", str(target), {"operation": "copy", "destination": "/elsewhere/Makefile.bak"}
-    )
-    assert "copy" in diff.lower()

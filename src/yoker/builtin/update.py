@@ -46,7 +46,7 @@ from yoker.config import UpdateToolConfig
 from yoker.tools.annotations import Text, WritePath
 from yoker.tools.context import ToolContext
 from yoker.tools.diff import generate_diff
-from yoker.tools.schema import ToolResult
+from yoker.tools.schema import ApprovalPrompt, ToolResult
 
 if TYPE_CHECKING:
   pass
@@ -991,6 +991,95 @@ def _multiple_matches_error(old_content: str, old_string: str) -> str:
 
 
 update.__yoker_validators__ = [validate_update_diff_size]  # type: ignore[attr-defined]
+
+
+# ---------------------------------------------------------------------------
+# Approval prompt provider (interactive protected-path approval flow)
+# ---------------------------------------------------------------------------
+
+
+def _preview_apply_insert(old_content: str, line_number: Any, new_string: str) -> str:
+  """Apply a line-based insert for approval diff rendering.
+
+  Mirrors ``_do_insert``'s line-based branch but does not raise on
+  out-of-range line numbers — a bad range would make the diff
+  unintelligible but the actual tool call would fail validation anyway, so
+  we fall back to appending at the nearest boundary.
+  """
+  try:
+    line_num = int(line_number)
+  except (ValueError, TypeError):
+    return new_string
+
+  lines = old_content.splitlines(keepends=True)
+  if not lines:
+    return new_string + "\n"
+
+  if lines and not lines[-1].endswith("\n"):
+    lines[-1] = lines[-1] + "\n"
+
+  total = len(lines)
+  # Clamp to valid range so an out-of-range request still produces a
+  # readable diff rather than raising.
+  idx = max(0, min(line_num - 1, total))
+  lines.insert(idx, new_string + "\n")
+  return "".join(lines)
+
+
+def _preview_apply_append(old_content: str, new_string: str) -> str:
+  """Apply an append for approval diff rendering (mirrors ``_do_append``)."""
+  if not old_content:
+    return new_string + "\n"
+  content = old_content
+  if not content.endswith("\n"):
+    content = content + "\n"
+  return content + new_string + "\n"
+
+
+def _approval_prompt(tool_args: dict[str, Any]) -> ApprovalPrompt:
+  """Build the approval prompt for updating a write-protected file.
+
+  Applies the tool's replace/delete/insert logic to the current file
+  content and diffs the result, so the preview shows the insertion (not a
+  misleading full-file replacement) and matches what the tool would do.
+  Falls back to empty old content when the file cannot be read (defensive
+  — ``update`` requires an existing file, so this is unreachable in
+  practice).
+  """
+  from yoker.tools.diff import generate_diff
+
+  path = tool_args.get("path", "")
+  try:
+    old_content = Path(path).read_text(encoding="utf-8")
+  except OSError:
+    old_content = ""
+  operation = tool_args.get("operation", "replace")
+  old_string = tool_args.get("old_string", "")
+  new_string = tool_args.get("new_string", "")
+  if operation == "replace":
+    new_content = old_content.replace(old_string, new_string, 1)
+  elif operation == "delete":
+    new_content = old_content.replace(old_string, "", 1)
+  elif operation in ("insert", "append"):
+    # Reproduce the update tool's insert/append so the approval diff shows
+    # the insertion in context rather than a misleading full-file
+    # replacement.
+    line_number = tool_args.get("line_number")
+    if operation == "append":
+      new_content = _preview_apply_append(old_content, new_string)
+    elif line_number is None:
+      new_content = new_string
+    else:
+      new_content = _preview_apply_insert(old_content, line_number, new_string)
+  else:
+    new_content = new_string
+  return ApprovalPrompt(
+    label=path,
+    preview=generate_diff(old_content, new_content, Path(path).name),
+  )
+
+
+update.__yoker_approval__ = _approval_prompt  # type: ignore[attr-defined]
 
 
 __all__ = ["update"]

@@ -16,7 +16,7 @@ from yoker.tools.context import ToolContext
 from yoker.tools.guardrails import Guardrail
 from yoker.tools.guardrails.path import ReadPathGuardrail, WritePathGuardrail
 from yoker.tools.registry import ToolRegistry
-from yoker.tools.schema import ToolResult, ValidationResult
+from yoker.tools.schema import ApprovalPrompt, ToolResult, ValidationResult
 from yoker.tools.web import (
   FetchedContent,
   OllamaWebFetchBackend,
@@ -34,6 +34,7 @@ from yoker.tools.web import (
 
 __all__ = [
   # Framework
+  "ApprovalPrompt",
   "ToolResult",
   "ValidationResult",
   "Guardrail",

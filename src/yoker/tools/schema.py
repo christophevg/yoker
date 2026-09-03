@@ -16,6 +16,16 @@ A validator has the signature ``(tool_args: dict[str, Any], config: ToolConfig) 
 It receives the full tool arguments and the tool-specific config, and
 returns a :class:`ValidationResult` indicating whether the arguments
 satisfy the tool's operational constraints.
+
+Tools may also provide an optional approval-prompt builder via the
+``__yoker_approval__`` attribute (discovered into
+:attr:`ToolSpec.approval_prompt`). The builder has the signature
+``(tool_args: dict[str, Any]) -> ApprovalPrompt`` and produces the label,
+preview text, and kind shown to the user when the interactive
+protected-path approval flow fires for the tool. It must be a pure
+formatter — no I/O beyond reading file content for the preview, no
+approval logic (the framework owns when to ask). Tools without a builder
+get a generic, honest default prompt.
 """
 
 import inspect
@@ -68,6 +78,33 @@ class ValidationResult:
   reason: str | None = None
 
 
+@dataclass(frozen=True)
+class ApprovalPrompt:
+  """What to show the user when a protected-path approval prompt fires.
+
+  Built by a tool's ``__yoker_approval__`` provider (or the generic
+  framework default) from the tool arguments, then handed to the approval
+  handler as ``(label, preview, kind)``.
+
+  Attributes:
+    label: Short identity shown in the header and y/N prompt (e.g. a file
+      path, or ``"git diff"`` for operation-labeled tools).
+    preview: Preview body — unified diff for content changes, or honest
+      summary text otherwise. May be empty.
+    kind: Presentation context for the UI (``"file"`` renders a
+      protected-file panel, ``"git"`` a git-operation panel). Supplied by
+      the tool as data; the framework never inspects it.
+  """
+
+  label: str
+  preview: str = ""
+  kind: str = "file"
+
+
+# A tool-specific approval-prompt builder: pure formatter from tool args.
+ApprovalPromptProvider = Callable[[dict[str, Any]], ApprovalPrompt]
+
+
 @dataclass
 class ToolSpec(NameSpaced):
   """Internal contract for a registered tool.
@@ -81,6 +118,9 @@ class ToolSpec(NameSpaced):
     execute: The original tool function (sync or async).
     validators: Tool-specific validators that check operational constraints
       (file size, content size, etc.) after the generic guardrail passes.
+    approval_prompt: Optional tool-provided approval-prompt builder used by
+      the interactive protected-path approval flow. ``None`` means the
+      framework's generic default prompt is used.
   """
 
   description: str = ""
@@ -88,6 +128,7 @@ class ToolSpec(NameSpaced):
   guards: dict[str, GuardType] = field(default_factory=dict)
   execute: Callable[..., Any] | None = None
   validators: list[ToolValidator] = field(default_factory=list)
+  approval_prompt: ApprovalPromptProvider | None = None
 
   def __post_init__(self) -> None:
     if not self.description:
@@ -207,6 +248,7 @@ def build_tool_spec(
     guards=guards,
     execute=tool,
     validators=getattr(tool, "__yoker_validators__", []),
+    approval_prompt=getattr(tool, "__yoker_approval__", None),
   )
 
 
