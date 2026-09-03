@@ -50,17 +50,30 @@ error classes, make first retry succeed, stop doomed loops. Track progress here.
 
 ### Tier 3 — behavioral (stop wasting loops on doomed strategies)
 
-- [ ] **Agent boundary awareness** — strengthened agent-tool description,
+- [x] **Agent boundary awareness** — strengthened agent-tool description,
   explicit no-shell-access + stop-and-ask instructions, retry-limit escalation
   in the tool loop (force escalation after N consecutive failures).
+  **Done 2026-09-03:** fresh-context spawn prompts + slot-cost note in the
+  agent tool descriptions; no-shell + stop-and-ask line in the environment
+  reminder; retry-limit escalation via `agent.max_consecutive_tool_failures`
+  (default 3, 0 = disabled), fires once per failure streak; unimplemented
+  `session.default_isolation_policy` removed; 14 new tests; make check
+  green; live-validated (`5a8932a`).
 
 ### Release hygiene
 
-- [ ] **Complete `Unreleased` changelog** (usage tracking, config summary,
+- [x] **Complete `Unreleased` changelog** (usage tracking, config summary,
   #71 fix) and rename section to 0.12.0 at release time.
-- [ ] **Mark stale backlog items** — `/session` command (shipped in 0.11.0),
+  **Done 2026-09-03:** all v0.11.0..HEAD commits covered (Tier 1–3, approval
+  prompts, usage tracking, config summary, #71, plus issue_comment,
+  update-inference, git-redaction, ollama-coercion, CI-verdict, stats
+  entries); section renamed to 0.12.0 at release time.
+- [x] **Mark stale backlog items** — `/session` command (shipped in 0.11.0),
   agent-lifecycle item (ephemeral + `release_agent` shipped; per-type limits +
   capacity surfacing remain).
+  **Done 2026-09-03:** annotated in the backlog below; also annotated the
+  stale Tool Enhancements duplicates (#65, #62, #63, #1, bare-name dispatch,
+  descriptive invalid-arg errors, `create_parents`).
 
 ## Backlog
 
@@ -125,11 +138,13 @@ error classes, make first retry succeed, stop doomed loops. Track progress here.
        - Surface which agent types are already active (and their IDs) to help the LLM choose `send_message` over spawning a duplicate
   - **Priority:** High
   - **Severity:** High — agents hit the limit before spawning the right types, breaking multi-agent workflows
+  - **Update 2026-09-03:** parts 1 (`ephemeral` spawn flag), 4 (`release_agent` tool) and the core of 2 (best-practice guidance in the agent tool descriptions, incl. fresh-context and slot-cost wording — `5a8932a`, shipped 0.11.0 + 0.12.0) are done. Still open: per-type limits (3), idle-timeout auto-release and capacity/type surfacing in results (5).
 - [ ] **`/session` command — interactive overview of active agents in the session**
   - `/agents` is already taken and shows the registry of known agent definitions (the catalog). There is no way to see which agents are actually active in the running session, what their IDs are, or how many slots remain.
   - **Fix:** Add a `/session` slash command that shows: active agents (ID, agent definition name, status), remaining capacity vs. agent limit, and which agent types are currently available for `send_message`. This complements the lifecycle management work above by giving the user (and indirectly the LLM via tool results) visibility into session state.
   - **Priority:** High
   - **Severity:** Medium — no visibility into multi-agent session state; user cannot inspect or troubleshoot agent lifecycle issues
+  - **Shipped in 0.11.0** (commit `b23d639`) — entry kept for reference; remaining visibility ideas (remaining-capacity surfacing in tool results) are tracked in the agent-lifecycle item above.
 
 
 ### Tool Enhancements
@@ -146,18 +161,21 @@ error classes, make first retry succeed, stop doomed loops. Track progress here.
   `hint`); 9 new tests. Blocked-path suppression not counted (separate
   enforcement mechanism).
 
-- [ ] **#65 (re-scoped): `update` tool: anchor-based insert — `insert_after`/`insert_before`**
+- [x] **#65 (re-scoped): `update` tool: anchor-based insert — `insert_after`/`insert_before`**
   - Re-scoped 2026-09-01: commit 10100c1 fixed the `operation`-inference misfires, but the anchor-insert API is NOT implemented; the issue now covers only the missing API. (Related: #63 — ambiguous-anchor erroring is re-evaluated after this lands.)
   - **Priority:** Medium
+  **Done 2026-09-03 (`36ec104`):** `anchor` + `position` (`after`/`before`) params; ambiguous anchors rejected with match line numbers; anchor overrides line_number. #63 resolved by this design — no separate work needed.
 
 - [ ] **#56: `github` tool: `workflow_view` output too large** — 20KB overflow; compact default + opt-in `fields`, mirroring the `pr_list`/`issue_list` pattern. **Priority:** Medium
 
 - [ ] **#57: `git` tool: read-only ops on protected paths trigger write-approval prompts**
   - Owner ruling: as-designed; needs a design decision (label subcommands read/write internally). Kept in backlog — **Priority:** Medium — explicitly "not enough incidents yet, design-later".
 
-- [ ] **#62: `update`/`write` tools: return a diff of the applied change** — **Priority:** Medium (bumped from Low 2026-09-02: rich feedback lets the caller validate the edit without a follow-up read, eliminating the read-after-write double tool call; commit 10100c1 already solved much of the corruption pain)
+- [x] **#62: `update`/`write` tools: return a diff of the applied change** — **Priority:** Medium (bumped from Low 2026-09-02: rich feedback lets the caller validate the edit without a follow-up read, eliminating the read-after-write double tool call; commit 10100c1 already solved much of the corruption pain)
+  **Done 2026-09-03 (`2a8de42`):** stat (+N −M) + unified diff (60-line cap); new files stat-only; overwrites diff vs. previous content. See Tier 2 checklist for details.
 
-- [ ] **#63: `update` tool: ambiguous anchor should error** — re-evaluate AFTER the #65 outcome (owner: see related issues).
+- [x] **#63: `update` tool: ambiguous anchor should error** — re-evaluate AFTER the #65 outcome (owner: see related issues).
+  **Resolved 2026-09-03 by the #65 design (`36ec104`):** ambiguous anchors (multiple exact or fuzzy matches) are rejected with their match line numbers — no separate work needed.
 
 - [ ] **#67: bootstrap wizard intercepts `--help`/`--version`** — **Priority:** Low (owner: very low, needs more incidents)
 
@@ -165,22 +183,26 @@ error classes, make first retry succeed, stop doomed loops. Track progress here.
 
 - [ ] **`search` tool: `include_pattern` for directories** — cannot search within a specific subdirectory pattern
 - [ ] **`read` tool: binary file detection** — reading a binary file returns garbled content. Should detect and warn/skip like `search` does
-- [ ] **Tool dispatch: resolve bare (simple) tool names at call time**
+- [x] **Tool dispatch: resolve bare (simple) tool names at call time**
   - Investigation (2026-09-01, dogfooding session): a model emitted bare names `list`/`search` instead of the namespaced schema names `yoker__list`/`yoker__search`; `_run_tool` (`src/yoker/core/_processing.py:1012`) does an exact-key `agent.tools.get(tool_name)` lookup on namespaced keys (`yoker:list`) with no fallback → `Error: Unknown tool 'list'`.
   - Inconsistency: `AgentRegistry.resolve()` and `SkillRegistry.resolve()` already implement bare-name fallback (match on `simple_name`, error with full-name list on ambiguity), but `ToolRegistry` has no `resolve()` at all. `_filter_tools_by_definition` (`src/yoker/core/__init__.py:666`) even accepts bare names at agent-definition time — so bare names work when *filtering* but not when *dispatching*.
   - **Fix:** Add `resolve()`-style fallback to tool dispatch, mirroring `SkillRegistry.resolve()`: on exact-key miss with no `:` in the name, match `spec.simple_name` (possibly trying the `yoker:` prefix first for builtins); on multiple matches, error listing full names (precedent: `AgentRegistry.resolve()`).
   - **Priority:** Low
   - Related: M.5 (registry-level bare-name resolution) — same problem, deeper fix at the registry level; this entry is the dispatch-level quick fix.
+  **Done 2026-09-03 (`21e3531`):** dispatch falls back to `ToolRegistry.resolve()`; ambiguity errors list full names; not-found errors list available tools. See Tier 1 checklist. M.5 stays deferred.
 - [ ] **`git` tool: `git merge` operation** — complete the branch workflow (create → work → commit → switch → merge)
 - [ ] **`git` tool: `git restore` / `git stash`** — `checkout` is done, but `restore` (discard changes) and `stash` (temporarily shelve work) are still missing
 - [ ] **`write` tool: per-call `overwrite` flag** — **Decision: under investigation (2026-09-02).** Owner is testing with `allow_overwrite = true` (config) to evaluate the blast radius; will then decide between keeping config-only, per-call argument, or both. Previous "not implementing" ruling reverted. Note: `protected_files` guardrail remains the safety net in all variants.
 - [ ] **`make` tool: arbitrary target args** — some Makefile targets need arguments that aren't env vars (e.g. `make clean V=1`). Consider `make_args` parameter with sanitization
 - [ ] **`github` tool: `issue_create` operation** — currently read-only (except pr_create/pr_comment/release_create). Add issue creation with approval model
-- [ ] **#1: `github` tool: `repo` argument optional, defaults to current git repo** — docs already promise "If omitted, uses current git repo", but write ops (`pr_create`, `issue_create`, `release_create`, `label_create`) reject a missing repo ("Parameter 'repo' is required for …"). Doc/behavior mismatch; align implementation with the documented behavior. **Priority:** Medium
+- [x] **#1: `github` tool: `repo` argument optional, defaults to current git repo** — docs already promise "If omitted, uses current git repo", but write ops (`pr_create`, `issue_create`, `release_create`, `label_create`) reject a missing repo ("Parameter 'repo' is required for …"). Doc/behavior mismatch; align implementation with the documented behavior. **Priority:** Medium
+  **Done 2026-09-03 (`9d1c6a2`):** write ops no longer hard-require repo (auto-detect via current git remote); `pr_reviews`/`pr_comments`/`pr_draft` still require it (gh api, no auto-detect). See Tier 1 checklist.
 - [ ] **`file` tool: `stat`/`info` sub-operation** — return file size, type, modification time without reading content
 - [ ] **`file` tool: `diff` sub-operation** — compare two files without reading both into context
-- [ ] **Tool framework: descriptive error messages for invalid arguments** — when a tool call fails on wrong/missing arguments, the error should state what was wrong and list the set of expected/valid arguments (schema-driven), so the caller can self-correct on the next attempt. Cross-cutting over all builtin tools. **Priority:** Medium
-- [ ] **`write` tool: `create_parents` default → True** — failing on missing parent directories is the annoyance; creating them is harmless (per-call argument default change, independent of the `allow_overwrite` decision). **Priority:** Medium
+- [x] **Tool framework: descriptive error messages for invalid arguments** — when a tool call fails on wrong/missing arguments, the error should state what was wrong and list the set of expected/valid arguments (schema-driven), so the caller can self-correct on the next attempt. Cross-cutting over all builtin tools. **Priority:** Medium
+  **Done 2026-09-03 (`18270fc`):** schema-driven binding errors (missing/unknown args + full expected list); JSON-parse failures get the same hint. See Tier 2 checklist.
+- [x] **`write` tool: `create_parents` default → True** — failing on missing parent directories is the annoyance; creating them is harmless (per-call argument default change, independent of the `allow_overwrite` decision). **Priority:** Medium
+  **Done 2026-09-03 (`64c8386`):** default flipped to True; pass `create_parents=false` for strict behavior. See Tier 1 checklist.
 
 ### UX Polish
 
