@@ -73,6 +73,7 @@ async def update(
     Text(
       "File operation to execute. One of: 'replace', 'insert', 'append', 'delete'. "
       "When omitted, the operation is inferred from the other arguments: "
+      "anchor + new_string → 'insert' (anchor-based), "
       "line_range + new_string → 'replace' (line-based), "
       "line_number + new_string → 'insert', old_string + new_string → 'replace', "
       "new_string only → 'append'. 'delete' is never inferred — "
@@ -92,7 +93,8 @@ async def update(
     Text(
       "Replacement or insertion text (required for replace, insert, and append). "
       "For replace: replaces old_string with this. For insert: the content to "
-      "insert at line_number. For append: the content to add at end of file. "
+      "insert at line_number or relative to anchor. For append: the content to "
+      "add at end of file. "
       "An empty string is a valid value (clears text for replace). When omitted "
       "(None), the operation cannot be inferred as replace/insert/append."
     ),
@@ -112,6 +114,24 @@ async def update(
       "string matching. Takes precedence over old_string for both operations."
     ),
   ] = None,
+  anchor: Annotated[
+    str | None,
+    Text(
+      "Anchor text for position-based insert: new_string is inserted directly "
+      "after (position='after', default) or before (position='before') the "
+      "unique occurrence of this text. The anchor itself is NOT modified — "
+      "unlike replace, you do not need to retype it in new_string. The anchor "
+      "must appear exactly once in the file; ambiguous anchors are rejected "
+      "with all match line numbers. Takes precedence over line_number."
+    ),
+  ] = None,
+  position: Annotated[
+    str | None,
+    Text(
+      "Position of the insert relative to anchor: 'after' (default) or "
+      "'before'. Only used together with anchor."
+    ),
+  ] = None,
   require_exact_match: Annotated[
     bool | None,
     Text(
@@ -125,6 +145,14 @@ async def update(
   The ``operation`` parameter is optional and can be inferred from the
   other arguments when omitted:
 
+  - **insert** (inferred when ``anchor`` + ``new_string`` provided):
+    Anchor-based insert — ``new_string`` is placed directly after
+    (``position='after'``, default) or before (``position='before'``) the
+    unique occurrence of ``anchor``. The anchor text itself is NOT
+    modified or retyped. The anchor must appear exactly once; ambiguous
+    anchors are rejected with all match line numbers. This avoids both
+    the "Search text not found" failures of replace-emulated inserts and
+    the stale-line-number risk of line-based inserts.
   - **replace** (default when ``old_string`` + ``new_string`` provided, or
     ``line_range`` + ``new_string``):
     Replace text found via ``old_string`` with ``new_string``.
@@ -168,7 +196,9 @@ async def update(
   # accidental data loss from ambiguous arguments.
   operation_inferred = False
   if not operation:
-    if line_range is not None and new_string is not None:
+    if anchor and new_string is not None:
+      operation = "insert"
+    elif line_range is not None and new_string is not None:
       operation = "replace"
     elif line_number is not None and new_string is not None:
       operation = "insert"
@@ -200,6 +230,18 @@ async def update(
   if new_string is not None and not isinstance(new_string, str):
     logger.warning("update_invalid_new_string_type", new_string_type=type(new_string).__name__)
     return ToolResult(success=False, error="Invalid new_string parameter")
+  if anchor is not None and not isinstance(anchor, str):
+    logger.warning("update_invalid_anchor_type", anchor_type=type(anchor).__name__)
+    return ToolResult(success=False, error="Invalid anchor parameter")
+  if position is not None and position not in ("after", "before"):
+    logger.warning("update_invalid_position", position=position)
+    return ToolResult(success=False, error="Invalid position: must be 'after' or 'before'")
+  if anchor and operation and operation != "insert":
+    logger.warning("update_anchor_wrong_operation", operation=operation)
+    return ToolResult(
+      success=False,
+      error=f"anchor is only valid for operation='insert' (got '{operation}')",
+    )
   # Normalize None to empty string for the execution path.
   # For delete, new_string is irrelevant; for replace, an explicit "" is valid.
   new_string = new_string or ""
@@ -249,7 +291,7 @@ async def update(
     if operation == "replace":
       result_content = _do_replace(old_content, old_string, new_string, line_range, exact_match)
     elif operation == "insert":
-      result_content = _do_insert(old_content, line_number, new_string)
+      result_content = _do_insert(old_content, line_number, new_string, anchor, position)
     elif operation == "append":
       result_content = _do_append(old_content, new_string)
     elif operation == "delete":
@@ -631,14 +673,28 @@ def _do_insert(
   old_content: str,
   line_number: Any,
   new_string: str,
+  anchor: str | None = None,
+  position: str | None = None,
 ) -> str:
-  """Insert new_string at a specific line (content appears at that line).
+  """Insert new_string at a specific line or relative to an anchor.
 
-  The new content is inserted *before* the existing line at ``line_number``,
-  so it appears at that line number in the resulting file.
+  Two positioning modes:
+
+  - **Anchor-based** (``anchor`` provided): ``new_string`` is inserted
+    directly after (default) or before the unique occurrence of
+    ``anchor``. The anchor must appear exactly once — ambiguous anchors
+    are rejected with all match line numbers (fail-loud, never
+    first-match-silently). The anchor text itself is not modified.
+    Takes precedence over ``line_number``.
+  - **Line-based** (``line_number``): the new content is inserted
+    *before* the existing line at ``line_number``, so it appears at that
+    line number in the resulting file.
   """
+  if anchor:
+    return _insert_by_anchor(old_content, anchor, new_string, position or "after")
+
   if line_number is None:
-    raise ValueError("line_number is required for insert operations")
+    raise ValueError("line_number is required for insert operations (or provide anchor)")
 
   try:
     line_num = int(line_number)
@@ -661,6 +717,92 @@ def _do_insert(
 
   lines.insert(line_num - 1, new_string + "\n")
   return "".join(lines)
+
+
+def _insert_by_anchor(
+  old_content: str,
+  anchor: str,
+  new_string: str,
+  position: str,
+) -> str:
+  """Insert new_string directly after or before the unique anchor occurrence.
+
+  Matching mirrors ``replace`` semantics: exact substring match first, then
+  a whitespace-normalized (fuzzy) fallback restricted to whole-line matches
+  (every line of the anchor must fuzzy-match a consecutive run of file
+  lines). The anchor must resolve to exactly one location — ambiguous
+  anchors are rejected with match line numbers (fail-loud).
+
+  Insertion points are line-aligned: 'before' inserts at the start of the
+  anchor's first line, 'after' inserts at the start of the line following
+  the anchor's last line. The new content always ends with a newline.
+  """
+  lines = old_content.splitlines(keepends=True)
+  anchor_lines = anchor.strip("\n").splitlines()
+
+  # --- Locate the anchor: unique exact line-run, else fuzzy line-run ----
+  match_start_line = _find_unique_anchor_line(lines, anchor_lines)
+
+  if match_start_line is None:
+    raise ValueError(_not_found_error(old_content, anchor))
+
+  # --- Compute the insertion point (line index) --------------------------
+  if position == "before":
+    insert_line = match_start_line
+  else:  # "after"
+    insert_line = match_start_line + len(anchor_lines)
+    # Skip the anchor's trailing blank remainder if the exact match ended
+    # mid-content — insert after the anchor's last line only.
+    insert_line = min(insert_line, len(lines))
+
+  insertion = new_string if new_string.endswith("\n") else new_string + "\n"
+
+  # Mirror line-based insert: if the file's last line lacks a trailing
+  # newline, normalize it first so the insertion always starts on a fresh
+  # line (a mid-line splice would corrupt e.g. '  return 2' + new code).
+  if lines and not lines[-1].endswith("\n"):
+    lines[-1] = lines[-1] + "\n"
+
+  return "".join(lines[:insert_line]) + insertion + "".join(lines[insert_line:])
+
+
+def _find_unique_anchor_line(lines: list[str], anchor_lines: list[str]) -> int | None:
+  """Find the unique 0-indexed start line whose line-run matches anchor_lines.
+
+  Exact matching: every anchor line must appear as a substring of the
+  corresponding file line. If zero exact matches, fall back to
+  whitespace-normalized matching. Returns the 0-indexed start line of the
+  unique match, or None. Raises ValueError on ambiguity.
+  """
+
+  def find_runs(normalize: Any) -> list[int]:
+    runs: list[int] = []
+    for start in range(len(lines) - len(anchor_lines) + 1):
+      if all(
+        normalize(anchor_lines[k]) in normalize(lines[start + k]) for k in range(len(anchor_lines))
+      ):
+        runs.append(start)
+    return runs
+
+  exact = find_runs(lambda s: s)
+  if len(exact) == 1:
+    return exact[0]
+  if len(exact) > 1:
+    raise ValueError(_multiple_matches_error("".join(lines), anchor_lines[0]))
+
+  # Fuzzy fallback: whitespace-normalized, whole-line run matching.
+  def norm(text: str) -> str:
+    return " ".join(text.split())
+
+  fuzzy = find_runs(norm)
+  if len(fuzzy) == 1:
+    return fuzzy[0]
+  if len(fuzzy) > 1:
+    raise ValueError(
+      f"Ambiguous anchor: whitespace-normalized text appears {len(fuzzy)} times. "
+      + _multiple_matches_error("".join(lines), anchor_lines[0])
+    )
+  return None
 
 
 def _do_append(
