@@ -11,6 +11,38 @@
   `gh issue close`, `state="open"` reopens via `gh issue reopen`).
   Returns the updated issue summary. Requires explicit opt-in via
   `tools.github.allowed_operations`, like all write operations.
+- **`issue_comment` GitHub operation**: comment on an existing issue —
+  required `number` and `body`, optional `repo`; returns the comment
+  URL. Requires explicit opt-in via
+  `tools.github.allowed_operations`, like all write operations.
+- **Token usage tracking**: every LLM API call appends a JSONL record
+  (timestamp, session, model, agent, input/output tokens, duration) —
+  one per call, not per turn, so tool-loop iterations and sub-agents
+  are counted — atomically to `~/.yoker/usage.jsonl` (`[usage]`
+  config, enabled by default, disabled under pytest). `make usage`
+  aggregates the log into per-model token totals and cost against a
+  captured Ollama pricing table, with a client-side thinking-token
+  estimate and text/JSON output.
+- **Effective-configuration summary**: the environment reminder now
+  embeds a curated, redacted snapshot of the effective (merged)
+  configuration — github/make/git permission grants, filesystem paths,
+  write-protection, backend + model, trusted plugins — so agents see
+  config effects instead of discovering them via surprising tool
+  rejections. Redaction is structural: credential fields are never
+  read.
+- **`update` tool anchor-based insert (#65)**: new `anchor` +
+  `position` (`after`/`before`) parameters insert content relative to
+  a unique anchor, eliminating the "Search text not found" failure
+  class for inserts. Ambiguous anchors (multiple exact or fuzzy
+  matches) are rejected with their match line numbers; an explicit
+  anchor overrides `line_number`. Resolves #63's ambiguous-anchor rule
+  by design.
+- **Retry-limit escalation**: consecutive failed tool calls are
+  counted (reset on every success); after
+  `agent.max_consecutive_tool_failures` (default 3, `0` disables) a
+  one-time system-side note is injected telling the model to stop
+  retrying the same approach and to reconsider strategy or ask the
+  user.
 
 ### Changed
 - **github tool (#1): `repo` optional for all write operations** —
@@ -28,6 +60,49 @@
   Pass `create_parents=false` to keep the old strict behavior. The
   protected-files guardrail is unaffected: parent creation happens only
   for already-approved paths.
+- **Agent boundary awareness**: the `agent` (spawn) tool descriptions now
+  state that spawned agents start with a FRESH context — project context
+  files and system prompt are pre-loaded, but there is no conversation
+  history, so prompts must be fully self-contained — and that persistent
+  agents (`ephemeral=False`) occupy a session slot until `release_agent`.
+  The environment reminder opens with an explicit no-shell instruction
+  (no Bash tool; stop and tell the user instead of improvising) and a
+  stop-and-ask directive when blocked.
+- **github CI verdict**: `pr_list`/`pr_view` compact verdicts now count
+  StatusContext checks (classic commit statuses such as coverage, which
+  carry `state` instead of `conclusion`) — fully green PRs no longer
+  report as permanently pending.
+- **UI stats line**: token count split into prompt/evaluation
+  ("50/100 tokens").
+- **`update`/`write` tools (#62): results include a diff of the applied
+  change** — a stat line (+N −M) plus a unified diff (60-line cap, stat
+  always preserved) lets the caller validate the edit without a
+  read-after-write round trip and makes silent failures audible. New
+  files report stat-only; overwrites diff against the previous content.
+- **Descriptive invalid-argument errors**: tool calls failing on wrong
+  or missing arguments now state what was wrong and list the full set
+  of expected arguments (schema-driven), so the model can self-correct
+  on the next attempt instead of blind-retrying; JSON-parse failures
+  get the same hint.
+- **Generic approval prompts with tool-provided providers**: the
+  protected-path approval prompt no longer fabricates diffs for tools
+  without a dedicated core branch — the nonsense
+  "-[git] Makefile +[git] Makefile (approved)" preview for read-only git
+  operations on write-protected files is gone. Tools can provide an
+  approval-prompt builder via `__yoker_approval__` (discovered into
+  `ToolSpec.approval_prompt`); core's flow is fully generic and falls
+  back to an honest default (tool name + protected path + what approval
+  means). git, write, update and file providers moved into their own
+  modules; previews for write/update/file are byte-identical, git names
+  the actual operation ("git diff"). Backward compatible: provider-less
+  tools (mkdir, make, custom plugins) get the generic default
+  automatically.
+
+### Removed
+- **`session.default_isolation_policy` config field**: declared and
+  validated (`fresh`/`fork`) but fork was never implemented — the spawn
+  path always builds a fresh context manager. A knob that silently does
+  nothing is worse than no knob.
 
 ### Fixed
 - **list/search tools (#61): silent ignore-rule suppression made visible** —
@@ -57,6 +132,27 @@
 - **github tool (#68)**: allowlist rejections now name the enabling key —
   add the operation to `[tools.github] allowed_operations` in yoker.toml.
   Write operations remain opt-in.
+- **update tool: operation inference corrupting files (`line_range`)** —
+  the `line_range` + `new_string` → replace inference rule sat after the
+  append rule, so line-based replaces were silently appended at end of
+  file. Fixed by checking `line_range` first; when an operation is
+  inferred, the result now names it and advises an explicit `operation`
+  next time.
+- **git tool: credential redaction swallowed multiple lines** — the
+  redaction regex could match across a line boundary, replacing a
+  multi-line span (URL + a later `:`/`@` from unrelated output) with a
+  single `<redacted>` marker in `git diff`/`show` output. Matching is now
+  confined to a single line; real credential URLs still redact.
+- **ollama backend: stringified nested tool-call arguments** — models
+  (e.g. GLM via Ollama) may send nested object/array parameter values as
+  JSON strings (`{"TEST": "foo"}` arriving as `'{"TEST": "foo"}'`), which
+  failed tool binding ("must be an object" for real objects). The backend
+  now coerces known degraded argument shapes at the adapter boundary
+  (string parsing, envelope unwrapping, one-level string-value parsing).
+- **skill injection (#71)**: the invocation block no longer tells agents
+  to read skill files from the filesystem ("Base directory for this
+  skill:"); it now points to the `skill` tool's `resource` argument for
+  loading bundled reference files.
 
 ## 0.11.0 (2026-08-31)
 
