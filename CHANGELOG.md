@@ -13,6 +13,14 @@
   `tools.github.allowed_operations`, like all write operations.
 
 ### Changed
+- **github tool (#1): `repo` optional for all write operations** —
+  `pr_create`, `release_create`, `issue_create`, and `label_create` no
+  longer reject a missing `repo`; like the read operations, gh then
+  auto-detects the repository from the current git remote, matching the
+  documented "If omitted, uses current git repo" behavior. `pr_reviews`,
+  `pr_comments`, and `pr_draft` still require `repo` (they use `gh api`,
+  which has no auto-detection). The `require_explicit_repo` config option
+  still forces an explicit repo for every operation.
 - **write tool `create_parents` defaults to True**: writing to a path whose
   parent directories do not exist now creates them automatically
   (`mkdir -p` semantics) instead of failing with "Parent directory does not

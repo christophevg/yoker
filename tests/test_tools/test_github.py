@@ -542,9 +542,9 @@ class TestGithubWriteOperations:
     assert "not allowed" in result.error.lower()
 
   @pytest.mark.asyncio
-  async def test_pr_create_requires_repo(self, mocker: MockerFixture) -> None:
-    """pr_create requires the repo parameter."""
-    _mock_popen(mocker)
+  async def test_pr_create_repo_optional_gh_auto_detects(self, mocker: MockerFixture) -> None:
+    """pr_create without repo omits --repo — gh auto-detects (#1)."""
+    popen = _mock_popen(mocker, stdout="https://github.com/owner/repo/pull/42")
     cfg = GitHubToolConfig(allowed_operations=("pr_create",))
     result = await github(
       operation="pr_create",
@@ -552,8 +552,10 @@ class TestGithubWriteOperations:
       title="Fix",
       body="body",
     )
-    assert not result.success
-    assert "repo" in result.error.lower()
+    assert result.success
+    cmd = popen.call_args.args[0]
+    assert "--repo" not in cmd
+    assert "-R" not in cmd
 
   @pytest.mark.asyncio
   async def test_pr_create_requires_title(self, mocker: MockerFixture) -> None:
@@ -1122,9 +1124,9 @@ class TestGithubWriteOperations:
     assert "not allowed" in result.error.lower()
 
   @pytest.mark.asyncio
-  async def test_release_create_requires_repo(self, mocker: MockerFixture) -> None:
-    """release_create requires the repo parameter."""
-    _mock_popen(mocker)
+  async def test_release_create_repo_optional_gh_auto_detects(self, mocker: MockerFixture) -> None:
+    """release_create without repo omits --repo — gh auto-detects (#1)."""
+    popen = _mock_popen(mocker, stdout="https://github.com/owner/repo/releases/tag/v1.0.0")
     cfg = GitHubToolConfig(allowed_operations=("release_create",))
     result = await github(
       operation="release_create",
@@ -1133,8 +1135,9 @@ class TestGithubWriteOperations:
       title="Release",
       notes="Notes",
     )
-    assert not result.success
-    assert "repo" in result.error.lower()
+    assert result.success
+    cmd = popen.call_args.args[0]
+    assert "--repo" not in cmd
 
   @pytest.mark.asyncio
   async def test_release_create_requires_tag(self, mocker: MockerFixture) -> None:
@@ -1901,9 +1904,9 @@ class TestGithubIssueCreate:
     assert "not allowed" in result.error.lower()
 
   @pytest.mark.asyncio
-  async def test_issue_create_requires_repo(self, mocker: MockerFixture) -> None:
-    """issue_create requires the repo parameter."""
-    _mock_popen(mocker)
+  async def test_issue_create_repo_optional_gh_auto_detects(self, mocker: MockerFixture) -> None:
+    """issue_create without repo omits --repo — gh auto-detects (#1)."""
+    popen = _mock_popen(mocker, stdout="https://github.com/owner/repo/issues/7")
     cfg = GitHubToolConfig(allowed_operations=("issue_create",))
     result = await github(
       operation="issue_create",
@@ -1911,8 +1914,9 @@ class TestGithubIssueCreate:
       title="Bug",
       body="body",
     )
-    assert not result.success
-    assert "repo" in result.error.lower()
+    assert result.success
+    cmd = popen.call_args.args[0]
+    assert "--repo" not in cmd
 
   @pytest.mark.asyncio
   async def test_issue_create_requires_title(self, mocker: MockerFixture) -> None:
@@ -2090,17 +2094,18 @@ class TestGithubLabelCreate:
     assert "not allowed" in result.error.lower() or "allowed" in result.error.lower()
 
   @pytest.mark.asyncio
-  async def test_label_create_requires_repo(self, mocker: MockerFixture) -> None:
-    """label_create requires an explicit repo (no auto-detect for creation)."""
-    _mock_popen(mocker)
+  async def test_label_create_repo_optional_gh_auto_detects(self, mocker: MockerFixture) -> None:
+    """label_create without repo omits --repo — gh auto-detects (#1)."""
+    popen = _mock_popen(mocker, stdout="https://github.com/owner/repo/labels/x")
     cfg = GitHubToolConfig(allowed_operations=("label_create",))
     result = await github(
       operation="label_create",
       ctx=_ctx(cfg),
       label="x",
     )
-    assert not result.success
-    assert "repo" in result.error.lower()
+    assert result.success
+    cmd = popen.call_args.args[0]
+    assert "--repo" not in cmd
 
   @pytest.mark.asyncio
   async def test_label_create_requires_label(self, mocker: MockerFixture) -> None:

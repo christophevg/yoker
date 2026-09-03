@@ -427,22 +427,28 @@ _REDACT_REPLACEMENT = "<redacted>"
     "  workflow_logs  — View failed-step logs of a workflow run. Required: number (run ID). Optional: repo.\n"
     "  release_list   — List releases. Optional: repo, limit.\n"
     "  release_view   — View a release. Required: tag. Optional: repo.\n"
-    "  pr_create      — Create a PR. Required: repo, title, body. Optional: head, base, draft.\n"
+    "  pr_create      — Create a PR. Required: title, body. Optional: repo (defaults to current\n"
+    "                   git repo), head, base, draft.\n"
     "  pr_comment     — Add a comment to a PR. Required: number, body. Optional: repo.\n"
     "  pr_ready       — Convert a draft PR to ready for review. Required: number. Optional: repo.\n"
-    "  pr_draft       — Convert a PR to draft. Required: number, repo.\n"
+    "  pr_draft       — Convert a PR to draft. Required: number, repo (gh api has no auto-detect).\n"
     "  pr_edit        — Edit a PR (assignees, reviewers, labels). Required: number. Optional: repo, add_assignee, remove_assignee, add_reviewer, remove_reviewer, add_label, remove_label.\n"
-    "  release_create — Create a release. Required: repo, tag, title, notes. Optional: draft, prerelease.\n"
-    "  issue_create   — Create an issue. Required: repo, title, body. Optional: label, assignee.\n"
+    "  release_create — Create a release. Required: tag, title, notes. Optional: repo (defaults to\n"
+    "                   current git repo), draft, prerelease.\n"
+    "  issue_create   — Create an issue. Required: title, body. Optional: repo (defaults to current\n"
+    "                   git repo), label, assignee.\n"
     "  issue_comment  — Add a comment to an issue. Required: number, body. Optional: repo.\n"
     "  issue_edit     — Edit an issue (labels, assignees, state). Required: number. Optional: repo,\n"
     "                   add_label, remove_label, add_assignee, remove_assignee, state (open/closed).\n"
     "                   Label/assignee editing exists for both issues (issue_edit) and PRs (pr_edit).\n"
-    "  label_create   — Create a repo label. Required: label (name), repo. Optional: color (6-char hex),\n"
-    "                   description. Does NOT auto-create on issue_edit — create it here first.\n"
+    "  label_create   — Create a repo label. Required: label (name). Optional: repo (defaults to\n"
+    "                   current git repo), color (6-char hex), description. Does NOT auto-create on\n"
+    "                   issue_edit — create it here first.\n"
     "\n"
     "Common parameters:\n"
     '  repo    — "owner/name" (e.g. "octocat/Hello-World"). If omitted, uses current git repo.\n'
+    "            Exceptions (repo truly required): pr_reviews, pr_comments, pr_draft — they use\n"
+    "            gh api, which has no repo auto-detection.\n"
     "  label   — Label name. Filter for issue_list; the label to create for label_create.\n"
     "  number  — Issue/PR number or workflow run ID (integer >= 1).\n"
     '  state   — Filter: "open", "closed", or "all" (default: "open"). Only for list operations.\n'
@@ -563,9 +569,10 @@ async def github(
   call fetches PR comments and inline review comments, merged into the
   result JSON under a ``comments`` key.
 
-  ``pr_create`` requires ``repo``, ``title``, and ``body``. Optional ``head``
-  (source branch) and ``base`` (target branch) default to the current branch
-  and repo default respectively. Optional ``draft`` creates the PR as a draft.
+  ``pr_create`` requires ``title`` and ``body``. Optional ``repo`` defaults
+  to the current git repo; ``head`` (source branch) defaults to the current
+  branch, ``base`` (target branch) to the repo default. Optional ``draft``
+  creates the PR as a draft.
 
   ``pr_comment`` requires ``number`` and ``body``. Optional ``repo`` defaults
   to the current git repo. The comment is posted as a regular PR comment
@@ -576,12 +583,14 @@ async def github(
   ``remove_reviewer``, ``add_label``, ``remove_label``). Values are
   comma-separated logins (for assignees/reviewers) or label names.
 
-  ``release_create`` requires ``repo``, ``tag``, ``title``, and ``notes``.
-  Optional ``draft`` and ``prerelease`` flags default to false.
+  ``release_create`` requires ``tag``, ``title``, and ``notes``. Optional
+  ``repo`` defaults to the current git repo; ``draft`` and ``prerelease``
+  flags default to false.
 
-  ``issue_create`` requires ``repo``, ``title``, and ``body``. Optional
-  ``label`` (comma-separated labels) and ``assignee`` (comma-separated
-  logins) add labels and assignees to the created issue.
+  ``issue_create`` requires ``title`` and ``body``. Optional ``repo``
+  defaults to the current git repo; ``label`` (comma-separated labels) and
+  ``assignee`` (comma-separated logins) add labels and assignees to the
+  created issue.
 
   ``issue_comment`` requires ``number`` and ``body``. Optional ``repo``
   defaults to the current git repo. The comment is posted as a regular
@@ -1152,9 +1161,12 @@ def _validate_branch_name(name: str, field: str) -> str | None:
 def _validate_pr_create_params(
   repo: str, title: str, body: str, head: str, base: str
 ) -> str | None:
-  """Validate parameters for pr_create operation."""
-  if not repo:
-    return "Parameter 'repo' is required for pr_create"
+  """Validate parameters for pr_create operation.
+
+  ``repo`` is validated by the generic ``_validate_params`` (format +
+  ``require_explicit_repo``); when omitted, gh auto-detects the repository
+  from the current git remote.
+  """
   err = _validate_text_field("title", title, max_len=1024)
   if err is not None:
     return err
@@ -1181,9 +1193,11 @@ def _validate_pr_comment_params(body: str) -> str | None:
 
 
 def _validate_release_create_params(repo: str, tag: str, title: str, notes: str) -> str | None:
-  """Validate parameters for release_create operation."""
-  if not repo:
-    return "Parameter 'repo' is required for release_create"
+  """Validate parameters for release_create operation.
+
+  ``repo`` is validated by the generic ``_validate_params``; when omitted,
+  gh auto-detects the repository from the current git remote.
+  """
   if not tag or not isinstance(tag, str):
     return "Parameter 'tag' is required for release_create"
   if tag.startswith("-"):
@@ -1204,9 +1218,11 @@ def _validate_release_create_params(repo: str, tag: str, title: str, notes: str)
 
 
 def _validate_issue_create_params(repo: str, title: str, body: str) -> str | None:
-  """Validate parameters for issue_create operation."""
-  if not repo:
-    return "Parameter 'repo' is required for issue_create"
+  """Validate parameters for issue_create operation.
+
+  ``repo`` is validated by the generic ``_validate_params``; when omitted,
+  gh auto-detects the repository from the current git remote.
+  """
   err = _validate_text_field("title", title, max_len=1024)
   if err is not None:
     return err
@@ -1229,9 +1245,11 @@ def _validate_issue_comment_params(body: str) -> str | None:
 def _validate_label_create_params(
   repo: str, label: str, color: str, description: str
 ) -> str | None:
-  """Validate parameters for label_create operation."""
-  if not repo:
-    return "Parameter 'repo' is required for label_create"
+  """Validate parameters for label_create operation.
+
+  ``repo`` is validated by the generic ``_validate_params``; when omitted,
+  gh auto-detects the repository from the current git remote.
+  """
   if not label or not isinstance(label, str):
     return "Parameter 'label' is required for label_create"
   if label.startswith("-"):
