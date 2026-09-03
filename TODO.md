@@ -34,8 +34,12 @@ error classes, make first retry succeed, stop doomed loops. Track progress here.
   **Done 2026-09-03:** binding failures classified against the schema
   (missing/unknown args + full expected list); JSON-parse failures get the
   same hint; 12 new tests; live-validated (`18270fc`).
-- [ ] **#65: `update` anchor-based insert (`insert_after`/`insert_before`)** —
+- [x] **#65: `update` anchor-based insert (`insert_after`/`insert_before`)** —
   eliminates the "Search text not found" failure class; re-evaluate #63 after.
+  **Done 2026-09-03:** `anchor` + `position` (`after`/`before`) params; #63
+  rule adopted — ambiguous anchors (exact + fuzzy) rejected with match line
+  numbers; anchor overrides line_number; 34 tests; live-validated
+  (`36ec104`). #63: resolved by this design — no separate work needed.
 - [ ] **#62: `update`/`write` return a diff of the applied change** — removes
   the read-after-write round trip; makes failures audible.
 
