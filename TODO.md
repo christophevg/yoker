@@ -21,13 +21,19 @@ error classes, make first retry succeed, stop doomed loops. Track progress here.
   (generic validation + `require_explicit_repo` unchanged); `pr_reviews`,
   `pr_comments`, `pr_draft` still require it (gh api has no auto-detect);
   4 tests rewritten to pin the no-`--repo` command shape.
-- [ ] **#61: `list`/`search`: report visibility on "0 entries"** — "0 visible
+- [x] **#61: `list`/`search`: report visibility on "0 entries"** — "0 visible
   entries (N hidden by ignore rules)"; silent absence reads as absence.
+  **Done 2026-09-03:** list appends "N entries hidden by ignore rules" +
+  `hidden_entries` metadata; search adds `hidden_by_ignore` (+ zero-match
+  `hint`); 9 new tests; live-validated (`439c8f6`).
 
 ### Tier 2 — self-correctable errors + fewer round trips
 
-- [ ] **Descriptive invalid-argument errors** — schema-driven error stating
+- [x] **Descriptive invalid-argument errors** — schema-driven error stating
   what was wrong + valid set; converts N blind retries into 1 informed retry.
+  **Done 2026-09-03:** binding failures classified against the schema
+  (missing/unknown args + full expected list); JSON-parse failures get the
+  same hint; 12 new tests; live-validated (`18270fc`).
 - [ ] **#65: `update` anchor-based insert (`insert_after`/`insert_before`)** —
   eliminates the "Search text not found" failure class; re-evaluate #63 after.
 - [ ] **#62: `update`/`write` return a diff of the applied change** — removes
