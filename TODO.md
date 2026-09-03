@@ -40,8 +40,13 @@ error classes, make first retry succeed, stop doomed loops. Track progress here.
   rule adopted — ambiguous anchors (exact + fuzzy) rejected with match line
   numbers; anchor overrides line_number; 34 tests; live-validated
   (`36ec104`). #63: resolved by this design — no separate work needed.
-- [ ] **#62: `update`/`write` return a diff of the applied change** — removes
+- [x] **#62: `update`/`write` return a diff of the applied change** — removes
   the read-after-write round trip; makes failures audible.
+  **Done 2026-09-03:** update: stat (+N −M) + diff (60-line cap, stats
+  always preserved); write: new files stat-only, overwrites stat + diff vs.
+  previous content; UI channel untouched; no opt-out flag (by design);
+  17 new tests; live-validated incl. independent dogfooding session
+  (`2a8de42`).
 
 ### Tier 3 — behavioral (stop wasting loops on doomed strategies)
 
