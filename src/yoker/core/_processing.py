@@ -1011,9 +1011,27 @@ async def _run_tool(agent: Any, tool_name: str, tool_args: dict[str, Any]) -> tu
   """Run a tool and return (result, success, raw_tool_result)."""
   spec = agent.tools.get(tool_name)
   if spec is None:
+    # Bare-name fallback: models sometimes emit the simple name (e.g.
+    # ``list``) instead of the namespaced schema name (``yoker__list`` /
+    # ``yoker:list``). Resolve via the registry before failing, mirroring
+    # ``AgentRegistry.resolve()`` — on exactly one match, dispatch it.
+    try:
+      resolved = agent.tools.resolve(tool_name)
+    except ValueError as e:
+      logger.warning("tool_ambiguous", tool=tool_name, error=str(e))
+      return f"Error: {e}", False, None
+    if resolved is not None:
+      logger.info("tool_name_resolved", requested=tool_name, resolved=resolved)
+      spec = agent.tools.get(resolved)
+
+  if spec is None:
     logger.warning("tool_not_found", tool=tool_name)
     logger.warning(f"available: {list(agent.tools.keys())}")
-    return f"Error: Unknown tool '{tool_name}'", False, None
+    return (
+      f"Error: Unknown tool '{tool_name}'. Available tools: {', '.join(list(agent.tools.keys()))}",
+      False,
+      None,
+    )
 
   # Write-blocked-path approval hook. When an approval handler is wired on the
   # agent (interactive mode), it runs BEFORE the guardrail. This gives the

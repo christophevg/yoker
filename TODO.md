@@ -1,5 +1,49 @@
 # TODO
 
+## 0.12.0 Release Targets — "Reduce tool errors and retry loops"
+
+Theme: tool errors cost a retry round trip + context re-evaluation. Eliminate
+error classes, make first retry succeed, stop doomed loops. Track progress here.
+
+### Tier 1 — error-class elimination (tool accepts what the model naturally sends)
+
+- [x] **Bare-name tool dispatch** — add `resolve()` fallback to `_run_tool`
+  (`core/_processing.py:1012`); exact-key miss with bare name resolves via
+  `ToolRegistry.resolve()`; ambiguity → error listing full names (precedent:
+  `AgentRegistry.resolve()`). Registry-level M.5 follow-up stays deferred.
+  **Done 2026-09-03:** implemented + 12 unit tests, `make check` green,
+  live-validated (bare `list` call dispatched correctly after restart).
+- [ ] **`write` tool: `create_parents` default → True** — kills the
+  guaranteed "parent directory does not exist" → mkdir → retry loop.
+- [ ] **#1: `github` tool: `repo` optional, defaults to current git repo** —
+  align write ops with documented behavior; docs already promise the default.
+- [ ] **#61: `list`/`search`: report visibility on "0 entries"** — "0 visible
+  entries (N hidden by ignore rules)"; silent absence reads as absence.
+
+### Tier 2 — self-correctable errors + fewer round trips
+
+- [ ] **Descriptive invalid-argument errors** — schema-driven error stating
+  what was wrong + valid set; converts N blind retries into 1 informed retry.
+- [ ] **#65: `update` anchor-based insert (`insert_after`/`insert_before`)** —
+  eliminates the "Search text not found" failure class; re-evaluate #63 after.
+- [ ] **#62: `update`/`write` return a diff of the applied change** — removes
+  the read-after-write round trip; makes failures audible.
+
+### Tier 3 — behavioral (stop wasting loops on doomed strategies)
+
+- [ ] **Agent boundary awareness** — strengthened agent-tool description,
+  explicit no-shell-access + stop-and-ask instructions, retry-limit escalation
+  in the tool loop (force escalation after N consecutive failures).
+
+### Release hygiene
+
+- [ ] **Complete `Unreleased` changelog** (usage tracking, config summary,
+  #71 fix) and rename section to 0.12.0 at release time.
+- [ ] **Mark stale backlog items** — `/session` command (shipped in 0.11.0),
+  agent-lifecycle item (ephemeral + `release_agent` shipped; per-type limits +
+  capacity surfacing remain).
+
+## Backlog
 ## Backlog
 
 ### Code Quality

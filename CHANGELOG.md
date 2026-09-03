@@ -13,6 +13,13 @@
   `tools.github.allowed_operations`, like all write operations.
 
 ### Fixed
+- **Bare-name tool dispatch**: a model emitting a bare tool name (`list`)
+  instead of the namespaced schema name (`yoker__list`) no longer fails
+  with `Error: Unknown tool`. Dispatch now falls back to
+  `ToolRegistry.resolve()` (precedent: `AgentRegistry.resolve()`): one
+  match is dispatched, several raise an ambiguity error listing the full
+  namespaced names, and the not-found error now lists the available tools
+  so the model can self-correct on the next attempt.
 - **make tool (#59)**: env-var rejections now name the target's effective
   allowlist (or that no entry exists — deny by default) and point to
   `[tools.make.allowed_env_vars]` in yoker.toml; the tool description now

@@ -154,6 +154,38 @@ class ToolRegistry(UserDict[str, ToolSpec]):
       self.register_all(enabled, namespace=plugin.source)
       logger.info("tools_registered", package=plugin.source, count=len(enabled))
 
+  def resolve(self, name: str) -> str | None:
+    """Resolve a tool name (bare or namespaced) to its registry key.
+
+    When ``name`` is a full registry key (e.g. ``"yoker:list"``), it is
+    returned as-is when present. When ``name`` is a bare simple name
+    (no ``:``), the registry is searched for any tool whose
+    ``simple_name`` matches. If exactly one match is found, that key is
+    returned; if several match, a ``ValueError`` is raised listing the
+    full namespaced names so the caller can disambiguate (precedent:
+    ``AgentRegistry.resolve()``).
+
+    Args:
+      name: Tool name to resolve (bare or namespaced).
+
+    Returns:
+      The registry key for the tool, or ``None`` if not found.
+
+    Raises:
+      ValueError: If a bare name matches several registered tools.
+    """
+    if name in self.data:
+      return name
+    if ":" in name:
+      return None
+    matches = [key for key, spec in self.data.items() if (spec.simple_name or "") == name]
+    if len(matches) == 1:
+      return matches[0]
+    if len(matches) > 1:
+      full = ", ".join(sorted(matches))
+      raise ValueError(f"Tool '{name}' is ambiguous: {full}")
+    return None
+
   def get_schemas(self) -> list[dict[str, Any]]:
     """Return schemas for all registered tools.
 
