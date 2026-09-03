@@ -12,6 +12,15 @@
   Returns the updated issue summary. Requires explicit opt-in via
   `tools.github.allowed_operations`, like all write operations.
 
+### Changed
+- **write tool `create_parents` defaults to True**: writing to a path whose
+  parent directories do not exist now creates them automatically
+  (`mkdir -p` semantics) instead of failing with "Parent directory does not
+  exist" — eliminating a guaranteed error → mkdir → retry round trip.
+  Pass `create_parents=false` to keep the old strict behavior. The
+  protected-files guardrail is unaffected: parent creation happens only
+  for already-approved paths.
+
 ### Fixed
 - **Bare-name tool dispatch**: a model emitting a bare tool name (`list`)
   instead of the namespaced schema name (`yoker__list`) no longer fails

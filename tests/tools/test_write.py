@@ -159,6 +159,21 @@ class TestWriteTool:
     assert file_path.read_text(encoding="utf-8") == "data"
 
   @pytest.mark.asyncio
+  async def test_write_create_parents_defaults_to_true(self, tmp_path: Path) -> None:
+    """Omitted create_parents creates parents (0.12.0 default change).
+
+    Models omitting the argument previously hit
+    "Parent directory does not exist" → mkdir → retry — a guaranteed
+    extra round trip. The default now avoids that error class.
+    """
+    file_path = tmp_path / "missing" / "test.txt"
+    spec = _write_spec()
+    ctx = _write_context()
+    result = await spec.execute(path=str(file_path), content="data", ctx=ctx)
+    assert result.success is True
+    assert file_path.read_text(encoding="utf-8") == "data"
+
+  @pytest.mark.asyncio
   async def test_write_missing_path(self) -> None:
     """write tool handles missing path parameter."""
     spec = _write_spec()
@@ -216,14 +231,26 @@ class TestWriteTool:
     assert str(file_path) not in result.error
 
   @pytest.mark.asyncio
-  async def test_write_sanitizes_error_messages(self, tmp_path: Path) -> None:
+  async def test_write_sanitizes_error_messages(self, tmp_path: Path, monkeypatch) -> None:
     """write tool does not leak full paths in error messages."""
     spec = _write_spec()
-    ctx = _write_context()
-    sensitive_path = str(tmp_path / ".ssh" / "id_rsa")
-    result = await spec.execute(path=sensitive_path, content="secret", ctx=ctx)
+    sensitive_path = tmp_path / ".ssh" / "id_rsa"
+    # Create the file (and parent) so execution reaches write_text, then
+    # force a PermissionError there — previously this test relied on the
+    # old create_parents=False default to produce a generic error.
+    sensitive_path.parent.mkdir(parents=True, exist_ok=True)
+    sensitive_path.write_text("existing")
+
+    def mock_write_text(*args, **kwargs):
+      raise PermissionError("Access denied")
+
+    monkeypatch.setattr(Path, "write_text", mock_write_text)
+    config = Config(tools=ToolsConfig(write=WriteToolConfig(allow_overwrite=True)))
+    ctx = _write_context(config)
+    result = await spec.execute(path=str(sensitive_path), content="secret", ctx=ctx)
     assert result.success is False
-    assert sensitive_path not in result.error
+    assert "permission denied" in result.error.lower()
+    assert str(sensitive_path) not in result.error
 
   @pytest.mark.asyncio
   async def test_write_resolves_path(self, tmp_path: Path) -> None:

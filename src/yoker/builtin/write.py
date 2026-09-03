@@ -59,16 +59,16 @@ async def write(
   path: Annotated[str, WritePath("Path to the file to write")],
   content: Annotated[str, Text("Content to write to the file")],
   ctx: ToolContext,
-  create_parents: bool = False,
+  create_parents: bool = True,
 ) -> ToolResult:
   """Write content to a file.
 
   If the parent directory does not exist:
-    - With create_parents=True: all parent directories are created
-      automatically (equivalent to mkdir -p).
-    - With create_parents=False (default): the operation fails with
-      "Parent directory does not exist". Use the mkdir tool first to
-      create the directory structure, or pass create_parents=true.
+    - With create_parents=True (default): all parent directories are
+      created automatically (equivalent to mkdir -p).
+    - With create_parents=False: the operation fails with
+      "Parent directory does not exist" — the directory structure must
+      already exist (e.g. created with the mkdir tool).
 
   Overwriting existing files is controlled by the allow_overwrite setting
   in the write tool configuration (default: not permitted).

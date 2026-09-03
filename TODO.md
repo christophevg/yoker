@@ -13,7 +13,7 @@ error classes, make first retry succeed, stop doomed loops. Track progress here.
   `AgentRegistry.resolve()`). Registry-level M.5 follow-up stays deferred.
   **Done 2026-09-03:** implemented + 12 unit tests, `make check` green,
   live-validated (bare `list` call dispatched correctly after restart).
-- [ ] **`write` tool: `create_parents` default → True** — kills the
+- [x] **`write` tool: `create_parents` default → True** — kills the
   guaranteed "parent directory does not exist" → mkdir → retry loop.
 - [ ] **#1: `github` tool: `repo` optional, defaults to current git repo** —
   align write ops with documented behavior; docs already promise the default.
