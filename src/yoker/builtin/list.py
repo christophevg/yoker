@@ -119,13 +119,19 @@ async def list(
     # Get blocked_path patterns for internal enforcement
     blocked_patterns = ctx.blocked_path_patterns if ctx else []
 
-    lines, file_count, dir_count, truncated = _build_tree(
+    lines, file_count, dir_count, truncated, hidden = _build_tree(
       resolved, effective_max_depth, effective_max_entries, pattern, matcher, blocked_patterns
     )
 
     total = file_count + dir_count
     lines.append("")
     lines.append(f"{total} entries total ({file_count} files, {dir_count} directories)")
+    if hidden > 0:
+      # #61: a bare "0 entries" reads as absence. Report what the ignore
+      # rules suppressed so the caller can tell "empty" from "hidden".
+      lines.append(
+        f"{hidden} entries hidden by ignore rules (use include_ignored=true to show them)"
+      )
     if truncated:
       lines.append(f"... ({truncated} more entries truncated, max_entries={effective_max_entries})")
 
@@ -139,6 +145,7 @@ async def list(
         "total_entries": total,
         "file_count": file_count,
         "dir_count": dir_count,
+        "hidden_entries": hidden,
         "truncated": truncated,
         "max_depth": effective_max_depth,
         "max_entries": effective_max_entries,
@@ -164,20 +171,25 @@ def _build_tree(
   pattern: str,
   matcher: IgnoreMatcher | None = None,
   blocked_patterns: builtins.list[Any] | None = None,
-) -> tuple[builtins.list[str], int, int, int]:
+) -> tuple[builtins.list[str], int, int, int, int]:
   """Build tree listing.
 
   Returns:
-    Tuple of (lines, file_count, dir_count, truncated_count).
+    Tuple of (lines, file_count, dir_count, truncated_count, hidden_count).
+    ``hidden_count`` is the number of entries excluded by ignore rules
+    (gitignore patterns, skip_dirs, dotfiles) — reported so the caller can
+    distinguish "empty" from "hidden" (#61). Blocked-path suppression is
+    a separate enforcement mechanism and is NOT counted.
   """
   lines: builtins.list[str] = [str(root).rstrip("/") + "/"]
   file_count = 0
   dir_count = 0
   entry_count = 0
   truncated = 0
+  hidden = 0
 
   def walk(current: Path, depth: int, prefix: str = "") -> None:
-    nonlocal file_count, dir_count, entry_count, truncated
+    nonlocal file_count, dir_count, entry_count, truncated, hidden
 
     if depth >= max_depth or entry_count >= max_entries:
       return
@@ -201,6 +213,7 @@ def _build_tree(
       # Apply ignore filtering
       if matcher is not None:
         if matcher.should_ignore_path(entry, is_dir=is_dir):
+          hidden += 1
           continue
 
       # Apply blocked_paths enforcement
@@ -224,7 +237,7 @@ def _build_tree(
         entry_count += 1
 
   walk(root, 0)
-  return lines, file_count, dir_count, truncated
+  return lines, file_count, dir_count, truncated, hidden
 
 
 # Export as 'list' for the tool name

@@ -105,7 +105,14 @@ error classes, make first retry succeed, stop doomed loops. Track progress here.
 - [x] **`update` tool: infer `operation` from arguments when omitted**
   - Already implemented: `operation` defaults to `""`, inference logic handles replace/insert/append. Delete must always be explicit. Tests cover all inference paths.
 
-- [ ] **#61: `list`/`search` tools: gitignored entries suppressed silently** — "0 entries" output reads as absence; fix by reporting visibility: "0 visible entries (N hidden by ignore rules)". **Priority:** High (owner: high value, small fix, solves a lot)
+- [x] **#61: `list`/`search` tools: gitignored entries suppressed silently** —
+  "0 entries" output reads as absence; fix by reporting visibility: "0 visible
+  entries (N hidden by ignore rules)". **Priority:** High (owner: high value,
+  small fix, solves a lot)
+  **Done 2026-09-03:** list appends "N entries hidden by ignore rules" +
+  `hidden_entries` metadata; search adds `hidden_by_ignore` (+ zero-match
+  `hint`); 9 new tests. Blocked-path suppression not counted (separate
+  enforcement mechanism).
 
 - [ ] **#65 (re-scoped): `update` tool: anchor-based insert — `insert_after`/`insert_before`**
   - Re-scoped 2026-09-01: commit 10100c1 fixed the `operation`-inference misfires, but the anchor-insert API is NOT implemented; the issue now covers only the missing API. (Related: #63 — ambiguous-anchor erroring is re-evaluated after this lands.)

@@ -30,6 +30,14 @@
   for already-approved paths.
 
 ### Fixed
+- **list/search tools (#61): silent ignore-rule suppression made visible** —
+  a bare "0 entries"/"no matches" read as absence, misleading the agent
+  into wrong conclusions or repeated searches. `list` now appends
+  "N entries hidden by ignore rules (use include_ignored=true to show
+  them)" and reports `hidden_entries` in metadata; `search` returns
+  `hidden_by_ignore` and, when zero matches coincide with suppressed
+  entries, an explicit `hint` to retry with `include_ignored=true`.
+  Blocked-path suppression is not counted (separate enforcement mechanism).
 - **Bare-name tool dispatch**: a model emitting a bare tool name (`list`)
   instead of the namespaced schema name (`yoker__list`) no longer fails
   with `Error: Unknown tool`. Dispatch now falls back to

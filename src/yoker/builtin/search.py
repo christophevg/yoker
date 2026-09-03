@@ -211,6 +211,7 @@ async def search(
   blocked_patterns = ctx.blocked_path_patterns if ctx else []
 
   try:
+    hidden_skips: list[int] = [0]
     if search_type == "content":
       matches, total, truncated, files_searched, counts = _search_content(
         resolved,
@@ -225,6 +226,7 @@ async def search(
         count_only=effective_count_only,
         matcher=matcher,
         blocked_patterns=blocked_patterns,
+        skip_counter=hidden_skips,
       )
       if effective_count_only:
         result = {
@@ -252,6 +254,7 @@ async def search(
         exclude_pattern=exclude_pattern,
         matcher=matcher,
         blocked_patterns=blocked_patterns,
+        skip_counter=hidden_skips,
       )
       result = {
         "success": True,
@@ -259,6 +262,17 @@ async def search(
         "total_matches": total,
         "truncated": truncated,
       }
+
+    # #61: report visibility. A bare "no matches" reads as absence; when
+    # ignore rules suppressed entries, say so and hint at include_ignored.
+    hidden = hidden_skips[0]
+    if hidden > 0:
+      result["hidden_by_ignore"] = hidden
+      if total == 0:
+        result["hint"] = (
+          f"{hidden} file(s)/dir(s) were hidden by ignore rules — "
+          "retry with include_ignored=true if the target may be ignored"
+        )
 
     logger.info(
       "search_success",
@@ -317,6 +331,7 @@ def _walk_files(
   exclude_pattern: str = "",
   matcher: IgnoreMatcher | None = None,
   blocked_patterns: list[Any] | None = None,
+  skip_counter: list[int] | None = None,
 ) -> Iterator[Path]:
   """Walk directory tree, yielding files, applying optional glob filters on filename.
 
@@ -326,6 +341,12 @@ def _walk_files(
   patterns are pruned. When ``blocked_patterns`` is provided, files
   matching blocked_path glob patterns are skipped (internal enforcement of
   the universal denylist).
+
+  When ``skip_counter`` is a list, the number of entries suppressed by
+  ignore rules (gitignore patterns, skip_dirs, dotfiles) is appended to
+  it — reported so the caller can distinguish "no matches" from "no
+  matches because everything is hidden" (#61). Blocked-path suppression
+  is a separate enforcement mechanism and is NOT counted.
   """
   if root.is_file():
     # Even single files must pass the blocked check
@@ -336,13 +357,15 @@ def _walk_files(
 
   for dirpath, dirnames, filenames in os.walk(root):
     if matcher is not None:
-      # Prune ignored directories in-place
-      dirnames[:] = [
-        d
-        for d in dirnames
-        if not matcher.should_skip_dir(d)
-        and not matcher.should_ignore_path(Path(dirpath) / d, is_dir=True)
-      ]
+      # Prune ignored directories in-place, counting what is pruned (#61)
+      kept: list[str] = []
+      for d in dirnames:
+        if matcher.should_skip_dir(d) or matcher.should_ignore_path(Path(dirpath) / d, is_dir=True):
+          if skip_counter is not None:
+            skip_counter[0] += 1
+          continue
+        kept.append(d)
+      dirnames[:] = kept
     else:
       dirnames[:] = [d for d in dirnames if not d.startswith(".") and d not in _FALLBACK_SKIP_DIRS]
 
@@ -356,9 +379,13 @@ def _walk_files(
       if matcher is not None:
         file_path = Path(dirpath) / filename
         if matcher.should_ignore_path(file_path, is_dir=False):
+          if skip_counter is not None:
+            skip_counter[0] += 1
           continue
       else:
         if filename.startswith("."):
+          if skip_counter is not None:
+            skip_counter[0] += 1
           continue
       if include_pattern and not fnmatch.fnmatchcase(filename, include_pattern):
         continue
@@ -396,6 +423,7 @@ def _search_content(
   count_only: bool = False,
   matcher: IgnoreMatcher | None = None,
   blocked_patterns: list[Any] | None = None,
+  skip_counter: list[int] | None = None,
 ) -> tuple[list[dict[str, Any]], int, bool, int, dict[str, int]]:
   """Search file contents using regex."""
   matches: list[dict[str, Any]] = []
@@ -412,7 +440,12 @@ def _search_content(
   collect_context = (context_before > 0 or context_after > 0) and not count_only
 
   for file_path in _walk_files(
-    root, include_pattern, exclude_pattern, matcher=matcher, blocked_patterns=blocked_patterns
+    root,
+    include_pattern,
+    exclude_pattern,
+    matcher=matcher,
+    blocked_patterns=blocked_patterns,
+    skip_counter=skip_counter,
   ):
     if time.monotonic() - start_time > timeout_seconds:
       truncated = True
@@ -469,6 +502,7 @@ def _search_filename(
   exclude_pattern: str = "",
   matcher: IgnoreMatcher | None = None,
   blocked_patterns: list[Any] | None = None,
+  skip_counter: list[int] | None = None,
 ) -> tuple[list[dict[str, Any]], int, bool]:
   """Search file names using glob pattern."""
   matches: list[dict[str, Any]] = []
@@ -478,7 +512,12 @@ def _search_filename(
   pattern_lower = pattern.lower() if case_insensitive else None
 
   for file_path in _walk_files(
-    root, include_pattern, exclude_pattern, matcher=matcher, blocked_patterns=blocked_patterns
+    root,
+    include_pattern,
+    exclude_pattern,
+    matcher=matcher,
+    blocked_patterns=blocked_patterns,
+    skip_counter=skip_counter,
   ):
     name = file_path.name
     if pattern_lower is not None:
