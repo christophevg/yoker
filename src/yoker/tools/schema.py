@@ -210,6 +210,52 @@ def build_tool_spec(
   )
 
 
+def describe_expected_arguments(spec: ToolSpec) -> str:
+  """Describe a tool's expected arguments, schema-driven.
+
+  Produces a compact human-readable summary of the tool's parameter schema,
+  e.g. ``path (required, string), offset (optional, integer)``. Used in
+  invalid-argument error messages so the model can self-correct on the next
+  attempt without re-reading the tool schema.
+
+  Falls back to introspecting the execute function's signature when the
+  schema is unavailable or malformed.
+  """
+  parameters: dict[str, Any] = {}
+  required: list[str] = []
+  try:
+    function_schema = spec.schema.get("function", {})
+    params = function_schema.get("parameters", {})
+    parameters = params.get("properties", {})
+    required = list(params.get("required", []))
+  except AttributeError:
+    pass
+
+  if not parameters and spec.execute is not None:
+    # Fallback: derive from the signature (schema absent or malformed).
+    try:
+      sig = inspect.signature(spec.execute)
+    except (TypeError, ValueError):
+      return "<no argument information available>"
+    for name, param in sig.parameters.items():
+      if _is_context_parameter(param):
+        continue
+      param_type = _python_type_to_json_schema(param.annotation) or "any"
+      if param.default is inspect.Parameter.empty:
+        required.append(name)
+      parameters[name] = {"type": param_type}
+
+  if not parameters:
+    return "<no argument information available>"
+
+  parts = []
+  for name, param_schema in parameters.items():
+    param_type = param_schema.get("type", "any") if isinstance(param_schema, dict) else "any"
+    req = "required" if name in required else "optional"
+    parts.append(f"{name} ({req}, {param_type})")
+  return ", ".join(parts)
+
+
 def _resolve_name(
   tool: Callable[..., Any],
   *,

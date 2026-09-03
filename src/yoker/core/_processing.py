@@ -33,7 +33,12 @@ from yoker.exceptions import NetworkError
 from yoker.logging import log_timing
 from yoker.tools.context import ToolContext
 from yoker.tools.guardrails import Guardrail
-from yoker.tools.schema import ToolResult, ToolSpec, ValidationResult
+from yoker.tools.schema import (
+  ToolResult,
+  ToolSpec,
+  ValidationResult,
+  describe_expected_arguments,
+)
 from yoker.usage.logger import log_call_usage
 
 logger = get_logger(__name__)
@@ -949,6 +954,26 @@ def _deduplicate_tool_calls(tool_calls: list[Any]) -> list[Any]:
   return unique
 
 
+def _expected_arguments_hint(agent: Any, tool_name: str) -> str:
+  """Best-effort 'Expected arguments: ...' suffix for a known tool.
+
+  Resolves the tool spec (including the bare-name fallback used by
+  ``_run_tool``) and returns a schema-driven summary of its parameters.
+  Returns an empty string when the tool cannot be resolved.
+  """
+  spec = agent.tools.get(tool_name)
+  if spec is None:
+    try:
+      resolved = agent.tools.resolve(tool_name)
+    except ValueError:
+      resolved = None
+    if resolved is not None:
+      spec = agent.tools.get(resolved)
+  if spec is None:
+    return ""
+  return f" Expected arguments: {describe_expected_arguments(spec)}"
+
+
 async def _execute_single_tool_call(agent: Any, call: Any) -> None:
   """Execute a single tool call and emit result events."""
   # Convert schema format (__) to canonical format (:) for display and lookup
@@ -968,7 +993,8 @@ async def _execute_single_tool_call(agent: Any, call: Any) -> None:
   # "missing required argument" message.
   parse_error = getattr(call, "parse_error", None)
   if parse_error:
-    result = f"Error: {parse_error}"
+    hint = _expected_arguments_hint(agent, tool_name)
+    result = f"Error: {parse_error}.{hint}"
     success = False
     tool_result = None
   else:
@@ -1245,6 +1271,43 @@ def _apply_append(old_content: str, new_string: str) -> str:
   return content + new_string + "\n"
 
 
+def _describe_binding_error(spec: ToolSpec, kwargs: dict[str, Any], original: TypeError) -> str:
+  """Build a schema-driven invalid-argument error message.
+
+  Classifies the binding failure against the tool's parameter schema so the
+  model can self-correct on the next attempt: names every missing required
+  argument, every unknown argument, and always appends the full list of
+  expected arguments. Falls back to the original TypeError message for
+  failure classes not covered by the schema (e.g. duplicate values).
+  """
+  expected = describe_expected_arguments(spec)
+  prefix = f"Invalid arguments for tool '{spec.name}'"
+
+  try:
+    params = spec.schema["function"]["parameters"]["properties"]
+    required = set(spec.schema["function"]["parameters"].get("required", []))
+  except (KeyError, AttributeError, TypeError):
+    return f"{prefix}: {original}. Expected arguments: {expected}"
+
+  known = set(params) - {"post_filter"}
+  provided = set(kwargs) - {"post_filter"}
+
+  missing = sorted(required - provided)
+  unknown = sorted(provided - known)
+
+  problems: list[str] = []
+  if missing:
+    problems.append(f"missing required argument(s): {', '.join(missing)}")
+  if unknown:
+    problems.append(f"unknown argument(s): {', '.join(unknown)}")
+  if not problems:
+    # Not a missing/unknown failure (e.g. multiple values for a parameter) —
+    # keep the original TypeError detail.
+    problems.append(str(original))
+
+  return f"{prefix}: {'; '.join(problems)}. Expected arguments: {expected}"
+
+
 async def _execute_tool(spec: ToolSpec, agent: Any, tool_args: dict[str, Any]) -> ToolResult:
   """Execute a tool with proper argument binding and context injection.
 
@@ -1275,7 +1338,10 @@ async def _execute_tool(spec: ToolSpec, agent: Any, tool_args: dict[str, Any]) -
     bound = sig.bind(**kwargs)
     bound.apply_defaults()
   except TypeError as e:
-    return ToolResult(success=False, error=f"Invalid tool arguments: {e}")
+    return ToolResult(
+      success=False,
+      error=f"Invalid tool arguments: {_describe_binding_error(spec, kwargs, e)}",
+    )
 
   # Call the tool
   result = spec.execute(*bound.args, **bound.kwargs)
