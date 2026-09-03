@@ -70,6 +70,7 @@ from yoker.config.validators import (
   validate_directory_exists,
   validate_log_level,
   validate_non_empty_string,
+  validate_non_negative_int,
   validate_positive_int,
 )
 from yoker.exceptions import ValidationError
@@ -1086,14 +1087,24 @@ class AgentConfig:
       consecutive seconds, the idle watchdog cancels the in-flight
       processing and emits a :class:`TimeoutEvent`. Awaiting user
       approval does not count as idle time.
+    max_consecutive_tool_failures: Number of consecutive failed tool
+      calls after which the tool loop injects a one-time system-side
+      escalation note telling the model to stop retrying the same
+      approach. Reset on every successful tool call; the note can fire
+      again only after the counter has reset and re-climbed to the
+      threshold. ``0`` disables the escalation entirely.
   """
 
   name: str = ""
   timeout_seconds: int = 600
+  max_consecutive_tool_failures: int = 3
 
   def __post_init__(self) -> None:
     """Validate agent configuration."""
     validate_positive_int(self.timeout_seconds, "agent.timeout_seconds")
+    validate_non_negative_int(
+      self.max_consecutive_tool_failures, "agent.max_consecutive_tool_failures"
+    )
 
 
 @dataclass
@@ -1105,24 +1116,16 @@ class SessionConfig:
 
   Attributes:
     max_agents: Hard cap on concurrent agents in a session.
-    default_isolation_policy: Default context isolation for spawned agents
-      (``"fresh"`` or ``"fork"``).
     event_aggregation: Whether sub-agent events are aggregated to session
       handlers.
   """
 
   max_agents: int = 10
-  default_isolation_policy: str = "fresh"
   event_aggregation: bool = True
 
   def __post_init__(self) -> None:
     """Validate session configuration."""
     validate_positive_int(self.max_agents, "session.max_agents")
-    validate_choice(
-      self.default_isolation_policy,
-      "session.default_isolation_policy",
-      ("fresh", "fork"),
-    )
 
 
 @dataclass

@@ -25,7 +25,11 @@ static tool set loaded from plugins.
   - When ``ephemeral=False`` (default), the agent remains in the session's
     active map so the parent can send follow-up messages via
     ``send_message``. The session's ``__aexit__`` cleans up all agents on
-    exit.
+    exit. A persistent agent occupies a session slot until released.
+  - Spawned agents start with a FRESH context — no conversation history;
+    project context files, the environment reminder, and the agent's own
+    system prompt are pre-loaded. The tool's parameter descriptions instruct
+    the caller to make prompts fully self-contained.
   - Returns a ``ToolResult`` carrying the spawned agent's unique id (when
     persistent) and its response string.
   - Available agent names are baked into the tool description from the
@@ -74,6 +78,12 @@ def make_spawn_agent_tool(session: "Session", requester: "Agent") -> Any:
   Agents it owns. The requesting agent is also captured so the allowlist
   check fires inside ``session.spawn``.
 
+  The ``prompt`` parameter description carries the boundary-awareness
+  guidance: spawned agents start with a fresh context (project context
+  files and system prompt pre-loaded, but no conversation history), so
+  prompts must be self-contained, and persistent agents occupy a session
+  slot until released (cost of ephemeral=False).
+
   Args:
     session: The :class:`Session` that owns the agent (back-reference).
     requester: The :class:`Agent` on which this tool is being injected. Used
@@ -100,25 +110,47 @@ def make_spawn_agent_tool(session: "Session", requester: "Agent") -> Any:
   label = "Name of the agent to spawn"
   if available:
     label += f" (available: {', '.join(available)})"
+  label += (
+    ". The spawned agent starts with a FRESH context — project context files "
+    "and its system prompt are pre-loaded, but it has no conversation "
+    "history, so its prompt must be fully self-contained. Persistent agents "
+    "(ephemeral=False) occupy a session slot until release_agent is called."
+  )
 
   async def spawn_agent(
     agent_name: Annotated[str, Text(label)],
-    prompt: Annotated[str, Text("Task for the spawned agent")],
+    prompt: Annotated[
+      str,
+      Text(
+        "Task for the spawned agent. IMPORTANT: the agent starts with a "
+        "FRESH context — project context files and its system prompt are "
+        "pre-loaded, but it knows nothing about your conversation. Make the "
+        "prompt fully self-contained: state the task, all relevant file "
+        "paths, error messages, and expected outcome. Never refer to 'the "
+        "bug we discussed' or 'as agreed' — the agent has not seen that. "
+        "Mention the agent's own name and what to do explicitly."
+      ),
+    ],
     ephemeral: Annotated[
       bool,
       Text(
         "When True, the agent is automatically released after its response "
         "(single-shot, no follow-up possible). When False (default), the agent "
-        "stays active and can be addressed via send_message for follow-up work."
+        "stays active and can be addressed via send_message for follow-up work. "
+        "Cost: a persistent agent occupies a session slot until released via "
+        "release_agent — prefer ephemeral=True for one-shot tasks."
       ),
     ] = False,
   ) -> ToolResult:
     """Spawn a sub-agent to perform a specific task.
 
+    The spawned agent starts with a fresh context (project context files
+    and its system prompt pre-loaded) — make the prompt self-contained.
     When ephemeral=False (default), returns the spawned agent's unique id
-    and its response so you can address it later via send_message.
-    When ephemeral=True, the agent is released after responding and no
-    agent_id is returned (single-shot, no follow-up possible).
+    and its response so you can address it later via send_message (it
+    occupies a session slot until release_agent is called). When
+    ephemeral=True, the agent is released after responding and no agent_id
+    is returned (single-shot, no follow-up possible).
     """
     if not agent_name:
       return ToolResult(success=False, error="Missing required parameter: agent_name")

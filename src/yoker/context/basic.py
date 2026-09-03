@@ -72,6 +72,7 @@ You are running inside the Yoker agent harness ({harness_id}).
 * Today's date: {date.today().isoformat()}
 
 # Operating Instructions
+{self.no_shell_reminder()}
 **IMPORTANT** — post_filter: Tool outputs can be very large and consume your context budget. EVERY tool accepts an optional `post_filter` parameter: a regex pattern that filters the output line-by-line, keeping only matching lines. You MUST use this proactively. Use SPECIFIC patterns — broad terms like 'error' match test names and produce noise.
 Examples:
   - `post_filter: 'FAILED|Traceback|assert|short test summary'` on make/test calls to see only failures (not 'error' which matches test names)
@@ -81,6 +82,19 @@ Examples:
 **ALWAYS** pass post_filter when you expect large output. This is critical for keeping your session running longer. Not using it will cause context overflow and premature session termination.
 {context_block}{config_block}
 """
+
+  @staticmethod
+  def no_shell_reminder() -> str:
+    """Return the no-shell-access operating instruction line.
+
+    Kept as a separate constant-like accessor so tests (and future
+    context managers) can assert on the exact guidance text.
+    """
+    return (
+      "**IMPORTANT** — You have NO shell or CLI access. There is no Bash tool. "
+      "If a task requires running shell commands, STOP and tell the user — "
+      "do not improvise or simulate."
+    )
 
   def _load_context_files(self) -> str | None:
     """Load and concatenate all configured context files.

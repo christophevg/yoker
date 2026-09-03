@@ -13,7 +13,6 @@ class TestSessionConfig:
     """SessionConfig() yields the design defaults."""
     cfg = SessionConfig()
     assert cfg.max_agents == 10
-    assert cfg.default_isolation_policy == "fresh"
     assert cfg.event_aggregation is True
 
   def test_mutable(self) -> None:
@@ -32,16 +31,6 @@ class TestSessionConfig:
     with pytest.raises(ValidationError):
       SessionConfig(max_agents=-1)
 
-  def test_invalid_isolation_policy(self) -> None:
-    """default_isolation_policy must be fresh or fork."""
-    with pytest.raises(ValidationError):
-      SessionConfig(default_isolation_policy="shared")
-
-  def test_valid_fork_policy(self) -> None:
-    """fork is an accepted isolation policy."""
-    cfg = SessionConfig(default_isolation_policy="fork")
-    assert cfg.default_isolation_policy == "fork"
-
   def test_event_aggregation_can_be_disabled(self) -> None:
     """event_aggregation is a plain bool toggle."""
     cfg = SessionConfig(event_aggregation=False)
@@ -56,7 +45,6 @@ class TestConfigSessionField:
     config = Config()
     assert isinstance(config.session, SessionConfig)
     assert config.session.max_agents == 10
-    assert config.session.default_isolation_policy == "fresh"
     assert config.session.event_aggregation is True
 
   def test_config_session_can_be_overridden(self) -> None:

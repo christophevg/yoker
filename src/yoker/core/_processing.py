@@ -67,6 +67,33 @@ _ANTHROPIC_CLEAR_THINKING: dict[str, Any] = {
   "edits": [{"type": "clear_thinking_20251015", "keep": "all"}],
 }
 
+# System-side note injected into the context after the configured number of
+# consecutive failed tool calls. Tells the model to stop retrying the same
+# doomed approach and escalate instead.
+_TOOL_FAILURE_ESCALATION_NOTE = (
+  "SYSTEM NOTE: Your last {n} tool calls failed consecutively. Stop retrying "
+  "the same approach — it is not working. Reconsider your strategy: read the "
+  "error messages, adjust the arguments, use a different tool, or STOP and "
+  "ask the user for help."
+)
+
+
+class _EscalationState:
+  """Mutable retry-limit escalation state threaded through the tool loop.
+
+  Attributes:
+    consecutive_failures: Number of consecutive failed tool calls since the
+      last success (reset on every success).
+    injected: Whether the escalation note has been injected since the last
+      reset — prevents re-injecting while failures continue.
+  """
+
+  __slots__ = ("consecutive_failures", "injected")
+
+  def __init__(self, consecutive_failures: int = 0, injected: bool = False) -> None:
+    self.consecutive_failures = consecutive_failures
+    self.injected = injected
+
 
 def _strip_thinking_blocks(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
   """Drop the ``thinking`` key from each message dict.
@@ -244,6 +271,13 @@ async def process_message(
   replacement is validated for shape, role=system preservation, and
   tool-call/tool-result pairing; on validation failure the framework
   default runs instead and a warning is logged.
+
+  Retry-limit escalation: consecutive failed tool calls are counted
+  (reset on every success). When the count reaches
+  ``config.agent.max_consecutive_tool_failures``, a one-time system-side
+  note is injected telling the model to stop retrying the same approach.
+  The note can fire again only after the counter has reset and re-climbed
+  to the threshold. A value of ``0`` disables the escalation.
   """
   logger.info("turn_started", message_preview=message[:50])
   await emit(TurnStartEvent(type=EventType.TURN_START, message=message), agent._event_handlers)
@@ -253,6 +287,11 @@ async def process_message(
   # calls).  Provider-supplied total_duration_ms only covers the last
   # chunk's latency; this measures the real elapsed time the user waited.
   turn_start = time.monotonic()
+
+  # Retry-limit escalation state: consecutive failed tool calls this turn,
+  # and whether the escalation note has been injected since the last reset.
+  # Created once per message; updated in-place by the tool-execution path.
+  escalation = _EscalationState()
 
   # Last captured UsageStats.input_tokens — the primary signal for the
   # hybrid size check. Updated each turn from _consume_stream's stats.
@@ -299,7 +338,7 @@ async def process_message(
       logger.info("turn_completed", response_length=len(content), tool_calls_count=0)
       return content
 
-    await _execute_tool_calls(agent, tool_calls, thinking, content)
+    await _execute_tool_calls(agent, tool_calls, thinking, content, escalation)
 
 
 async def _manage_context_overflow(
@@ -915,8 +954,14 @@ async def _execute_tool_calls(
   tool_calls: list[Any],
   thinking: str,
   content: str = "",
+  escalation: _EscalationState | None = None,
 ) -> None:
-  """Deduplicate and execute tool calls, emitting events."""
+  """Deduplicate and execute tool calls, emitting events.
+
+  When an ``escalation`` state object is provided, per-call outcomes update
+  it (failures increment, successes reset) and the retry-limit escalation
+  note is injected when the configured threshold is reached.
+  """
   unique_calls = _deduplicate_tool_calls(tool_calls)
   if unique_calls:
     formatted = [
@@ -932,7 +977,34 @@ async def _execute_tool_calls(
     agent.context.add_tool_calls(formatted, thinking=thinking or None, content=content)
 
   for call in unique_calls:
-    await _execute_single_tool_call(agent, call)
+    await _execute_single_tool_call(agent, call, escalation)
+    if escalation is not None:
+      _maybe_inject_escalation(agent, escalation)
+
+
+def _maybe_inject_escalation(agent: Any, escalation: _EscalationState) -> None:
+  """Inject the escalation note when the failure threshold is reached.
+
+  Fires once per escalation cycle: while failures continue without a
+  success, the note is not re-injected. A later success resets both the
+  counter and the injected flag, so the note can fire again if failures
+  re-accumulate. Disabled entirely when
+  ``agent.config.agent.max_consecutive_tool_failures`` is ``0``.
+  """
+  limit = agent.config.agent.max_consecutive_tool_failures
+  if limit <= 0 or escalation.injected:
+    return
+  if escalation.consecutive_failures < limit:
+    return
+
+  note = _TOOL_FAILURE_ESCALATION_NOTE.format(n=limit)
+  agent.context.add_message("system", note)
+  escalation.injected = True
+  logger.warning(
+    "tool_failure_escalation",
+    consecutive_failures=escalation.consecutive_failures,
+    limit=limit,
+  )
 
 
 def _deduplicate_tool_calls(tool_calls: list[Any]) -> list[Any]:
@@ -974,8 +1046,16 @@ def _expected_arguments_hint(agent: Any, tool_name: str) -> str:
   return f" Expected arguments: {describe_expected_arguments(spec)}"
 
 
-async def _execute_single_tool_call(agent: Any, call: Any) -> None:
-  """Execute a single tool call and emit result events."""
+async def _execute_single_tool_call(
+  agent: Any, call: Any, escalation: _EscalationState | None = None
+) -> None:
+  """Execute a single tool call and emit result events.
+
+  When an ``escalation`` state object is provided, a failed call
+  increments ``consecutive_failures``; a successful call resets it to 0
+  (and clears the ``injected`` flag so a future failure streak can
+  re-trigger the escalation note).
+  """
   # Convert schema format (__) to canonical format (:) for display and lookup
   tool_name = (
     call.function.name.replace("__", ":", 1) if "__" in call.function.name else call.function.name
@@ -1024,6 +1104,13 @@ async def _execute_single_tool_call(agent: Any, call: Any) -> None:
       ),
       agent._event_handlers,
     )
+
+  if escalation is not None:
+    if success:
+      escalation.consecutive_failures = 0
+      escalation.injected = False
+    else:
+      escalation.consecutive_failures += 1
 
   agent.context.add_tool_result(
     tool_name=tool_name,
