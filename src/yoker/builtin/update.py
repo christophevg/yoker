@@ -328,6 +328,8 @@ async def update(
     else:
       result_message = "File updated successfully"
 
+    result_message = _append_result_diff(result_message, old_content, result_content, resolved.name)
+
     return ToolResult(
       success=True,
       result=result_message,
@@ -339,6 +341,48 @@ async def update(
   except OSError as e:
     logger.error("update_write_error", path=str(resolved), error=str(e))
     return ToolResult(success=False, error="Error updating file")
+
+
+def _append_result_diff(
+  result_message: str,
+  old_content: str,
+  new_content: str,
+  filename: str,
+) -> str:
+  """Append a compact diff of the applied change to the result string.
+
+  This is the LLM-facing verification channel (#62): the model sees what
+  actually changed without a read-after-write round trip. The UI has its
+  own, richer channel via content_metadata — this string is not a
+  replacement for it.
+
+  Format: one stat line (changed-line counts) plus the unified diff body,
+  capped at ``_RESULT_DIFF_MAX_LINES`` lines with a trailing summary when
+  truncated. Stats stay present even when the body is truncated, so a
+  larger-than-expected change remains auditable.
+  """
+  diff_text = generate_diff(old_content, new_content, filename)
+  diff_lines = diff_text.splitlines()
+
+  added = sum(1 for line in diff_lines if line.startswith("+") and not line.startswith("+++"))
+  removed = sum(1 for line in diff_lines if line.startswith("-") and not line.startswith("---"))
+
+  # No-op edit (e.g. replace with identical text): stat-only.
+  if added == 0 and removed == 0:
+    return f"{result_message} (no content change)"
+
+  stat = f"{result_message} (+{added} \u2212{removed})"
+
+  if len(diff_lines) <= _RESULT_DIFF_MAX_LINES:
+    diff_body = diff_text.rstrip("\n")
+    return f"{stat}\n{diff_body}"
+
+  body = "\n".join(diff_lines[:_RESULT_DIFF_MAX_LINES])
+  omitted = len(diff_lines) - _RESULT_DIFF_MAX_LINES
+  return f"{stat}\n{body}\n... {omitted} more diff lines"
+
+
+_RESULT_DIFF_MAX_LINES = 60
 
 
 def _build_content_metadata(

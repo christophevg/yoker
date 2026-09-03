@@ -80,6 +80,8 @@ async def write(
     return ToolResult(success=False, error="Invalid configuration for write tool")
   allow_overwrite = write_config.allow_overwrite
 
+  previous_content: str | None = None
+
   if not isinstance(path, str) or not path.strip():
     logger.warning("write_invalid_path_type", path_type=type(path).__name__)
     return ToolResult(success=False, error="Invalid path parameter")
@@ -104,6 +106,11 @@ async def write(
     if not allow_overwrite:
       logger.info("write_overwrite_blocked", path=str(resolved))
       return ToolResult(success=False, error="File already exists and overwrite is not permitted")
+    # Capture pre-write content for the LLM-facing result diff (#62).
+    try:
+      previous_content = resolved.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+      previous_content = None
 
   parent = resolved.parent
   if not parent.exists():
@@ -129,9 +136,11 @@ async def write(
       ctx=ctx,
     )
 
+    result_message = _build_write_result_message(content, is_overwrite, previous_content, resolved)
+
     return ToolResult(
       success=True,
-      result="File written successfully",
+      result=result_message,
       content_metadata=content_metadata,
     )
   except PermissionError:
@@ -218,6 +227,68 @@ def _build_content_metadata(
 
 
 write.__yoker_validators__ = [validate_write_content_size]  # type: ignore[attr-defined]
+
+
+def _build_write_result_message(
+  content: str,
+  is_overwrite: bool,
+  previous_content: str | None,
+  resolved_path: Path,
+) -> str:
+  """Build the LLM-facing result string for a successful write (#62).
+
+  - **New file**: stat only — a diff against empty would just echo the
+    content the model already has in context.
+  - **Overwrite**: stat line plus a compact unified diff of the applied
+    change (capped), so the model can verify the edit without a
+    read-after-write round trip. Same verification channel as `update`.
+  """
+  lines = content.splitlines()
+  stat = f"File written successfully ({len(lines)} lines, {len(content.encode('utf-8'))} bytes)"
+
+  if not is_overwrite or previous_content is None:
+    return stat
+
+  return _append_result_diff(stat, previous_content, content, resolved_path.name)
+
+
+def _append_result_diff(
+  result_message: str,
+  old_content: str,
+  new_content: str,
+  filename: str,
+) -> str:
+  """Append a compact diff of the applied change to the result string.
+
+  Shared with the update tool via the same pattern: one stat line
+  (changed-line counts) plus the unified diff body, capped at
+  ``_RESULT_DIFF_MAX_LINES`` lines with a trailing summary when truncated.
+  Stats stay present even when the body is truncated, so a
+  larger-than-expected change remains auditable.
+  """
+  from yoker.tools.diff import generate_diff
+
+  diff_text = generate_diff(old_content, new_content, filename)
+  diff_lines = diff_text.splitlines()
+
+  added = sum(1 for line in diff_lines if line.startswith("+") and not line.startswith("+++"))
+  removed = sum(1 for line in diff_lines if line.startswith("-") and not line.startswith("---"))
+
+  if added == 0 and removed == 0:
+    return f"{result_message} (no content change)"
+
+  stat = f"{result_message} (+{added} \u2212{removed})"
+
+  if len(diff_lines) <= _RESULT_DIFF_MAX_LINES:
+    diff_body = diff_text.rstrip("\n")
+    return f"{stat}\n{diff_body}"
+
+  body = "\n".join(diff_lines[:_RESULT_DIFF_MAX_LINES])
+  omitted = len(diff_lines) - _RESULT_DIFF_MAX_LINES
+  return f"{stat}\n{body}\n... {omitted} more diff lines"
+
+
+_RESULT_DIFF_MAX_LINES = 60
 
 
 __all__ = ["write"]

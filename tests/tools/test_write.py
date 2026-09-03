@@ -61,13 +61,13 @@ class TestWriteTool:
 
   @pytest.mark.asyncio
   async def test_write_new_file(self, tmp_path: Path) -> None:
-    """write tool writes content to a new file."""
+    """write tool writes content to a new file; result carries a stat line."""
     file_path = tmp_path / "test.txt"
     spec = _write_spec()
     ctx = _write_context()
     result = await spec.execute(path=str(file_path), content="hello world", ctx=ctx)
     assert result.success is True
-    assert result.result == "File written successfully"
+    assert result.result == "File written successfully (1 lines, 11 bytes)"
     assert result.error is None
     assert file_path.read_text(encoding="utf-8") == "hello world"
 
@@ -191,7 +191,7 @@ class TestWriteTool:
     ctx = _write_context()
     result = await spec.execute(path=str(file_path), content="", ctx=ctx)
     assert result.success is True
-    assert result.result == "File written successfully"
+    assert result.result == "File written successfully (0 lines, 0 bytes)"
     assert file_path.read_text(encoding="utf-8") == ""
 
   @pytest.mark.asyncio
