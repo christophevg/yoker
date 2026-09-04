@@ -1851,6 +1851,21 @@ wheels = [
 ]
 
 [[package]]
+name = "pkgq"
+version = "0.3.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "httpx" },
+    { name = "pydantic" },
+    { name = "rich" },
+    { name = "yoker" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/b8/be/1da18829836f4db7535d5ca09ce34f3c3cd56c790f803d9f96c72b127bdb/pkgq-0.3.2.tar.gz", hash = "sha256:2e28dd1074a932cffb2e7c8ad70cbfa9dba61ceca4990dacf404c7dd80731d14", size = 166860, upload-time = "2026-06-26T13:22:39.85Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/58/0a/0ecb43b4b8d24ea8fd245e2a863bf1192800f613bbc8b5c86ff69bc129ba/pkgq-0.3.2-py3-none-any.whl", hash = "sha256:7ecf7b78c27fb27b21d5c93b8176ea49c111dbc8a2d52372fd31fe4ee1a13473", size = 17361, upload-time = "2026-06-26T13:22:38.211Z" },
+]
+
+[[package]]
 name = "platformdirs"
 version = "4.9.6"
 source = { registry = "https://pypi.org/simple" }
@@ -3584,6 +3599,7 @@ dependencies = [
     { name = "httpx" },
     { name = "litellm" },
     { name = "ollama" },
+    { name = "pkgq" },
     { name = "prompt-toolkit" },
     { name = "pyfiglet" },
     { name = "python-dotenv" },
@@ -3633,6 +3649,7 @@ requires-dist = [
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.13.0" },
     { name = "myst-parser", marker = "extra == 'docs'", specifier = ">=2.0.0" },
     { name = "ollama", specifier = ">=0.6.0" },
+    { name = "pkgq", specifier = ">=0.3.2" },
     { name = "prompt-toolkit", specifier = ">=3.0.0" },
     { name = "pyfiglet", specifier = ">=1.0.4" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },

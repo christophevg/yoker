@@ -36,6 +36,7 @@ dependencies = [
   "structlog>=23.3.0",
   "pyyaml>=6.0",
   "pyfiglet>=1.0.4",
+  "pkgq>=0.3.2",
 ]
 
 [project.optional-dependencies]
