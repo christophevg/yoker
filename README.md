@@ -484,19 +484,19 @@ See [docs/rationale.md](docs/rationale.md) for the full rationale and comparison
 - [x] Bootstrap wizard - Interactive first-run setup that writes `~/.yoker.toml` for you
 - [x] Tool calling - Structured tool execution with parameters
 - [x] `read` tool - Read file contents with guardrails
-- [x] `list` tool - Directory listing with pattern filtering
-- [x] `write` tool - Write files with overwrite protection
-- [x] `update` tool - Edit existing files with replace, insert, and delete operations
-- [x] `search` tool - Search file contents with regex or filenames with glob
+- [x] `list` tool - Directory listing with pattern filtering and visible reporting of entries hidden by ignore rules
+- [x] `write` tool - Write files with overwrite protection, automatic parent-directory creation, and a diff of the applied change in the result
+- [x] `update` tool - Edit existing files with replace, insert, and delete operations, anchor-based insertion relative to a unique anchor, and a diff of the applied change in the result
+- [x] `search` tool - Search file contents with regex or filenames with glob, with visible reporting of matches hidden by ignore rules
 - [x] `existence` tool - Check if files or folders exist with security hardening
 - [x] `mkdir` tool - Create directories with recursive parent creation and depth limits
 - [x] `git` tool - Git operations (status, log, diff, branch, show) with permission-controlled commit/push
-- [x] `github` tool - GitHub operations via `gh` CLI (issues, PRs, workflows, releases; write ops like `issue_create`, `issue_comment`, `pr_create` require config opt-in)
+- [x] `github` tool - GitHub operations via `gh` CLI (issues, PRs, workflows, releases, labels; read ops always available, write ops like `issue_create`, `issue_comment`, `issue_edit`, `label_create`, `pr_create` require config opt-in; write ops may omit `repo` to use the current git repository)
 - [x] `make` tool - Execute Makefile targets (e.g., `make check`, `make test`) with target validation, per-target env var allowlist, and process-group timeout enforcement.
 - [x] `websearch` tool - Web search with SSRF protection, domain filtering, and rate limiting
 - [x] `webfetch` tool - Fetch web content with SSRF protection, URL validation, and size limits
 - [x] `sleep` tool - Pause execution (1–300s) for polling intervals between checks
-- [x] `agent` tool - Spawn subagents with isolated context and recursion limits
+- [x] `agent` tool - Spawn subagents with isolated context and recursion limits; spawned agents start with a FRESH context (context files and system prompt pre-loaded, no conversation history) and persistent agents occupy a session slot until released
 - [x] `skill` tool - Invoke skills dynamically by name with full content loading
 - [x] Slash commands - Built-in commands: `/help`, `/think on|off|silent`, `/skills`, `/context`, `/tools`, `/agents`
 - [x] Thinking mode - LLM reasoning trace with gray output (on/off/silent)
@@ -514,12 +514,14 @@ See [docs/rationale.md](docs/rationale.md) for the full rationale and comparison
 - [x] Protected files - SOFT guardrail blocking agent `write`/`update` to a configurable denylist (`Makefile`, `pyproject.toml`, `yoker.toml`, `uv.lock`, `.git/config`, `.github/workflows/*.yml`, ...) with interactive approve-on-diff in `yoker chat` and a simple block in batch/`yoker run`; empty tuple opts out
 - [x] Permissions - Static TOML-based access control
 - [x] Secure API key handling - Masked input during bootstrap, config files written with `chmod 600`
+- [x] Multi-agent orchestration - Run coordinated agent teams (`Session.spawn()`, inter-agent messaging, ephemeral agents with `release_agent`)
+- [x] Token usage tracking - Every LLM API call logged (model, agent, input/output tokens, duration) to `~/.yoker/usage.jsonl`, enabled by default and configurable via `[usage]` in `yoker.toml`
+- [x] Retry-limit escalation - After `agent.max_consecutive_tool_failures` (default 3) consecutive failed tool calls, a one-time system note tells the model to stop retrying and reconsider strategy
+- [x] Effective-configuration summary - The environment reminder embeds a redacted snapshot of the effective config (permission grants, paths, write-protection, backend, trusted plugins) so agents see config effects up front
 
 **Planned Features:**
-- [ ] Multi-agent orchestration - Run coordinated agent teams
 - [ ] Keyring integration - Store API keys in the OS keychain instead of config files (TODO S.1)
 - [ ] Tool timing metrics - Performance tracking
-- [ ] Token usage tracking - Cost monitoring
 - [ ] Tool result caching - Reduce redundant calls
 - [ ] Parallel tool execution - Concurrent read operations
 
@@ -813,4 +815,4 @@ MIT License - see [LICENSE](LICENSE) for details.
 [yoker]: https://yoker.dev
 [ci]: https://github.com/christophevg/yoker/actions
 [coveralls]: https://coveralls.io/github/christophevg/yoker
-[license]: https://github.com/christophevg/yoker/blob/main/LICENSE
+[license]: https://github.com/christophevg/yoker/blob/master/LICENSE
