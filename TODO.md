@@ -34,6 +34,7 @@
 - [ ] **conftest.py plugin fallback is silent** — `tests/conftest.py` installs the demo plugin via subprocess with `check=False` and swallowed output (pytest-configure time); failures surface later as confusing `ModuleNotFoundError`/`PluginError` in tests. Make the fallback loud (fail with clear message) or remove it now that the plugin is a proper dev dependency.
 - [ ] **`session`/`sleep` shadowing smell** — public API functions re-exported from `__init__.py` shadow same-named submodules (`yoker.session`, `yoker.builtin.sleep`); caused 3.10 mock-target failures (`patch("yoker.session.Agent")` resolves to the function). Product rename is a breaking change — evaluate for a future major version; meanwhile tests must patch via explicit module refs (done in 0.11.0).
 - [ ] **`demos/agent-tool.md`: review script** — currently produces too much output, and the generated `media/demo-agent-tool.svg` had to be reverted after regen (small rendering bug; not fixed in 0.12.0). Owner: review script output volume + bug later.
+- [ ] **Major docs/ content update** — the docs build is verified clean, but docs/ CONTENT has not been systematically updated against recent releases (no docs/ content commits in recent git history). Schedule a full content refresh after the 0.12.0 release, ideally alongside the analysis/ corpus consolidation so both reflect the same current-state picture. Owner remark at 0.12.0 Gate 1.
 
 ### Agent Behavior & Instructions
 
