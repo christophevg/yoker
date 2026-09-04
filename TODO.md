@@ -147,6 +147,12 @@ error classes, make first retry succeed, stop doomed loops. Track progress here.
   - **Shipped in 0.11.0** (commit `b23d639`) — entry kept for reference; remaining visibility ideas (remaining-capacity surfacing in tool results) are tracked in the agent-lifecycle item above.
 
 
+### Documentation & Analysis
+
+- [ ] **First full run: consolidate legacy `analysis/` corpus into `analysis/functional.md`** — the analysis/ folder holds ~90 legacy analysis documents; per-release consolidation (release process R1) only merges documents newer than the last consolidation, so this one-time bulk run is needed first. After the run, per-release consolidation stays lightweight forever. If gaps are found, the deleted `research/` corpus remains recoverable from git history (pre-cleanup commit).
+  - **Priority:** Medium — blocks nothing, but the per-release step assumes it
+  - **Note:** new `research/` documents are consolidated at each release and deleted after consolidation (release process R1); this backlog item covers only the one-time legacy backlog.
+
 ### Tool Enhancements
 
 - [x] **`update` tool: infer `operation` from arguments when omitted**

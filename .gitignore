@@ -50,5 +50,4 @@ logs/
 # folder for local transient files
 local/
 tmp/
-SESSION.md
 /reporting
