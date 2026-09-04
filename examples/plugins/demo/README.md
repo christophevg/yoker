@@ -71,10 +71,10 @@ python -c "import yoker_plugin_demo; print(yoker_plugin_demo.__YOKER_MANIFEST__)
 ```bash
 # Run yoker with demo plugin
 # (requires [plugins] enabled = true and [plugins.trusted] yoker_plugin_demo = true)
-uv run yoker --with yoker_plugin_demo --agent demo
+uv run yoker --with yoker_plugin_demo --agent-name demo
 
 # The agent can now use:
-# - echo tool (namespaced as "echo" when loaded via plugin)
+# - echo tool (namespaced as "yoker_plugin_demo:echo" when loaded via plugin)
 # - greeting skill (via /greeting)
 # - demo agent definition
 ```
@@ -155,7 +155,7 @@ __YOKER_MANIFEST__ = PluginManifest(
 ### Tools
 
 Tools are plain functions or callable class instances:
-1. Annotate string parameters with `yoker.tools.annotations` markers (`Path`, `Url`, `Query`, `Text`).
+1. Annotate string parameters with `yoker.tools.annotations` markers (`ReadPath`, `WritePath`, `Url`, `Query`, `Text`).
 2. Use the function/class docstring as the tool description, or set `__yoker_description__`.
 3. Return any JSON-serializable value; the harness wraps results and exceptions in `ToolResult`.
 

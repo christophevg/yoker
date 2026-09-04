@@ -61,7 +61,7 @@ whitelists, and system prompts.
 
 | File | Description |
 |------|-------------|
-| `main.md` | Default assistant with read-only tools |
+| `main.md` | Default assistant with full tool access |
 | `markdown.md` | Assistant that formats all responses as structured Markdown |
 | `researcher.md` | Research assistant that explores and analyzes files |
 
@@ -74,7 +74,7 @@ python -m yoker --agents-definition examples/agents/researcher.md
 # Use in code
 import yoker
 
-agent = yoker.agent(definition="examples/agents/researcher.md")
+agent = yoker.agent(agent_path="examples/agents/researcher.md")
 result = yoker.run_sync(agent.process("Analyze the current directory structure."))
 ```
 
@@ -128,7 +128,7 @@ plugins/demo/
 uv pip install -e examples/plugins/demo
 
 # Run yoker with the plugin (requires [plugins] enabled = true in config)
-python -m yoker --with yoker_plugin_demo --agent demo
+python -m yoker --with yoker_plugin_demo --agent-name demo
 ```
 
 See [plugins/demo/README.md](plugins/demo/README.md) for the full development

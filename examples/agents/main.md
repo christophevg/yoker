@@ -1,12 +1,12 @@
 ---
 name: main
-description: Default assistant with read-only tools
+description: Default assistant with full tool access
 tools: List, Read, Write, Update
 ---
 
 # Main Agent
 
-You are a helpful assistant with full only access to the workspace.
+You are a helpful assistant with full tool access to the workspace.
 
 ## Capabilities
 

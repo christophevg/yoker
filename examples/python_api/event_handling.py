@@ -23,7 +23,13 @@ def handler(event: Any) -> None:
   elif isinstance(event, ToolCallEvent):
     print(f"\n[tool] {event.tool_name}({event.arguments})")
   elif isinstance(event, TurnEndEvent):
-    print(f"\n[tokens] in={event.input_tokens} out={event.output_tokens}")
+    # Which pair is populated depends on the backend: LiteLLM backends fill
+    # input_tokens/output_tokens, the native Ollama backend fills
+    # prompt_eval_count/eval_count (the other pair stays 0).
+    print(
+      f"\n[tokens] in={event.input_tokens} out={event.output_tokens}"
+      f" | ollama: prompt_eval={event.prompt_eval_count} eval={event.eval_count}"
+    )
 
 
 async def main() -> None:
