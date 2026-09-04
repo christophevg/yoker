@@ -2,6 +2,18 @@
 
 Essential context for working on the Yoker codebase. For user-facing documentation, see [README.md](README.md).
 
+## Ecosystem (Release Checklist Inputs)
+
+Satellite projects and channels to keep in sync with each release
+(release process R8 — see c3:release):
+
+- **Consumer projects** (upgrade + verify after each release):
+  - `../yoker-assistant`
+  - `../yoker-writing-assistant`
+- **Website**: `../yoker.dev` (Jekyll site — version references + feature mentions)
+- **Announcement post**: `../yoker.dev/_posts/` — draft post for the upcoming
+  release, updated at R8, owner-reviewed before publishing
+
 ## Makefile — Yoker-Specific Targets
 
 Standard targets (`build`, `check`, `clean`, `format`, `install`, `lint`, `publish`, `run`, `test`, `test-all`, `test-cov`, `typecheck`, ...) are described in `AGENTS.global.md` — run `make help` for the full list. These are the targets unique to this project:
