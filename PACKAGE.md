@@ -16,6 +16,70 @@ Key differentiators:
 - **Static permissions** — Deterministic boundaries via configuration
 - **Transparent** — All prompts visible, editable, configurable
 
+## Version Notes
+
+### 0.12.0
+
+**New Features:**
+- **`update` tool anchor-based insert**: new `anchor` + `position`
+  (`after`/`before`) parameters insert content relative to a unique
+  anchor; ambiguous anchors are rejected with their match line numbers,
+  and an explicit anchor overrides `line_number`.
+- **GitHub write operations expanded**: new `issue_comment`, `issue_edit`
+  (labels, assignees, state changes), and `label_create` operations; and
+  `repo` is now optional for all write operations — like the read
+  operations, gh auto-detects the repository from the current git remote.
+- **Token usage tracking**: every LLM API call appends a JSONL record
+  (timestamp, session, model, agent, input/output tokens, duration) to
+  `~/.yoker/usage.jsonl` (`[usage]` config, enabled by default).
+- **Effective-configuration summary**: the environment reminder embeds a
+  curated, redacted snapshot of the effective configuration — permission
+  grants, filesystem paths, write-protection, backend + model, trusted
+  plugins — so agents see config effects instead of discovering them via
+  tool rejections.
+- **Retry-limit escalation**: after `agent.max_consecutive_tool_failures`
+  (default 3, `0` disables) consecutive failed tool calls, a one-time
+  system-side note tells the model to stop retrying and reconsider
+  strategy or ask the user.
+
+**Changes:**
+- **`write` tool `create_parents` defaults to True**: writing to a path
+  with non-existing parents creates them automatically (`mkdir -p`
+  semantics); pass `create_parents=false` for strict behavior.
+- **`update`/`write` results include a diff** — a stat line (+N −M) plus
+  a unified diff (60-line cap) of the applied change, so callers can
+  validate the edit without a read-after-write round trip.
+- **Agent boundary awareness**: spawned agents start with a FRESH context
+  (context files and system prompt pre-loaded, no conversation history —
+  prompts must be fully self-contained), and persistent agents
+  (`ephemeral=False`) occupy a session slot until released.
+- **Generic approval prompts**: tools can provide an approval-prompt
+  builder via `__yoker_approval__` (discovered into
+  `ToolSpec.approval_prompt`); the protected-path approval flow is fully
+  generic with an honest default for provider-less tools.
+- **Descriptive invalid-argument errors**: tool calls failing on wrong
+  or missing arguments state what was wrong and list the expected
+  arguments, so the model can self-correct instead of blind-retrying.
+
+**Removed:**
+- **`session.default_isolation_policy` config field** — declared but
+  fork was never implemented; the spawn path always builds a fresh
+  context manager. Remove it from `yoker.toml` if present.
+
+**Fixed:**
+- **list/search hidden-entry reporting**: a bare "0 entries"/"no
+  matches" now appends visible reporting of entries suppressed by ignore
+  rules (`list`: hidden-entries note + `hidden_entries` metadata;
+  `search`: `hidden_by_ignore` + a retry hint with `include_ignored=true`).
+- **Bare-name tool dispatch**: a bare tool name (`list`) now resolves
+  via `ToolRegistry.resolve()` fallback; ambiguous matches raise an
+  error listing the full namespaced names.
+- **update tool `line_range` inference fix**: line-based replaces are no
+  longer silently appended at end of file; inferred operations name
+  themselves in the result.
+
+## Overview
+
 ## Installation
 
 ```bash
@@ -213,7 +277,7 @@ Implement the `UIHandler` protocol and wire it to the agent with `UIBridge`:
 ```python
 from typing import Any
 from yoker import Agent
-from yoker.ui import UIHandler
+from yoker.ui import AgentDisplay, UIHandler
 
 class MyUIHandler:
     """A minimal UIHandler implementation for custom integrations."""
@@ -245,7 +309,7 @@ class MyUIHandler:
     def output_thinking(self, text: str) -> None:
         print(text)
 
-    def output_tool_call(self, tool_name: str, args: dict[str, object]) -> None:
+    def output_tool_call(self, tool_name: str, args: dict[str, object], agent: AgentDisplay | None = None) -> None:
         print(f"Tool: {tool_name}({args})")
 
     def output_tool_result(self, tool_name: str, success: bool, result: str) -> None:
@@ -263,13 +327,13 @@ class MyUIHandler:
     ) -> None:
         print(f"{tool_name} {operation} {path}")
 
-    def output_stats(self, duration_ms: int, prompt_tokens: int, eval_tokens: int) -> None:
+    def output_stats(self, duration_ms: int, prompt_tokens: int, eval_tokens: int, usage_limits: dict[str, object] | None = None, agent: AgentDisplay | None = None) -> None:
         print(f"Stats: {duration_ms}ms, {prompt_tokens} + {eval_tokens} tokens")
 
     def output_error(self, error: Exception, include_traceback: bool = False) -> None:
         print(f"Error: {error}")
 
-    def start_content_stream(self) -> None:
+    def start_content_stream(self, agent: AgentDisplay | None = None) -> None:
         pass
 
     def stream_content(self, chunk: str, content_type: str = "text/plain") -> None:
@@ -278,7 +342,7 @@ class MyUIHandler:
     def end_content_stream(self, total_length: int) -> None:
         print()
 
-    def start_thinking_stream(self) -> None:
+    def start_thinking_stream(self, agent: AgentDisplay | None = None) -> None:
         pass
 
     def stream_thinking(self, chunk: str) -> None:
@@ -426,11 +490,11 @@ Yoker tools are plain Python functions or callable classes. There is no base cla
 
 ```python
 from typing import Annotated
-from yoker.tools.annotations import Path, Text
+from yoker.tools.annotations import ReadPath, Text
 from yoker.tools import ToolRegistry
 
 def read_file(
-    path: Annotated[str, Path("Path to the file to read")],
+    path: Annotated[str, ReadPath("Path to the file to read")],
     encoding: Annotated[str, Text("File encoding")] = "utf-8",
 ) -> str:
     """Read a file and return its contents."""
@@ -451,7 +515,8 @@ Yoker uses a schema-driven guardrail system. String parameters are annotated wit
 
 | Marker | Guardrail applies to |
 |--------|----------------------|
-| `Path` | Filesystem paths (`PathGuardrail`) |
+| `ReadPath` | Filesystem paths used read-only (`ReadPathGuardrail`) |
+| `WritePath` | Filesystem paths used for writing (`WritePathGuardrail`) |
 | `Url`  | URLs (`WebGuardrail.validate_url`) |
 | `Query` | Web search queries (`WebGuardrail.validate`) |
 | `Text` | Plain text; no guardrail |
@@ -561,8 +626,6 @@ To enable informational logs, set the level in `yoker.toml`:
 level = "INFO"
 ```
 
-Or set the environment variable `YOKER_LOGGING_LEVEL=INFO`.
-
 Programmatically:
 
 ```python
@@ -616,7 +679,13 @@ agent.inject_skill_context("pkgq:commit", "write a concise commit message")
 
 ### Subagent spawning
 
-The `yoker:agent` tool spawns isolated subagents. Recursion depth is tracked automatically. Sub-agents inherit guardrails from their parent and get an isolated context.
+The `yoker:agent` tool spawns subagents with a FRESH context — project
+context files and the agent's system prompt are pre-loaded, but there is
+no conversation history, so prompts must be fully self-contained.
+Sub-agents inherit guardrails from their parent. Persistent agents
+(`ephemeral=False`) occupy a session slot until `release_agent` is
+called; ephemeral agents (`ephemeral=True`) are released automatically
+after their response.
 
 ```python
 parent = Agent()
@@ -649,13 +718,15 @@ All built-in tools are registered with the `yoker:` namespace.
 |------|-------------|
 | `yoker:read` | Read file contents with guardrails and content type detection |
 | `yoker:list` | Directory listing with pattern filtering and depth limits |
-| `yoker:write` | Write files with overwrite protection |
-| `yoker:update` | Edit files (replace, insert, delete) with diff display |
-| `yoker:search` | Search file contents (regex, glob) with complexity limits |
+| `yoker:write` | Write files with overwrite protection; creates parent directories automatically (`create_parents=True` default) and returns a diff of the applied change |
+| `yoker:update` | Edit files (replace, insert incl. anchor-based, append, delete) and return a diff of the applied change |
+| `yoker:search` | Search file contents (regex, glob) with complexity limits and hidden-match reporting |
 | `yoker:existence` | Check file/folder existence |
 | `yoker:mkdir` | Create directories with depth limits |
-| `yoker:git` | Git operations (status, log, diff, branch, show, add, commit, push, pull, tag, checkout, rm) |
-| `yoker:github` | Read-only GitHub operations via `gh` CLI (issues, PRs, workflows, reviews) |
+| `yoker:file` | Filesystem operations (copy, move, delete) with recursive support |
+| `yoker:notify` | Send macOS notifications to alert the user |
+| `yoker:git` | Git operations (status, log, diff, branch, show, add, commit, push, pull, tag, checkout, rm, rebase) with auto-approved and approval-required command sets |
+| `yoker:github` | GitHub operations via `gh` CLI (issues, PRs, workflows, reviews, releases, labels); read ops always available, write ops (`issue_create`, `issue_comment`, `issue_edit`, `label_create`, `pr_create`, `pr_comment`, `release_create`, ...) require config opt-in via `tools.github.allowed_operations` |
 | `yoker:make` | Execute Makefile targets with per-target env var allowlist and timeout enforcement |
 | `yoker:websearch` | Web search with SSRF protection and rate limiting |
 | `yoker:webfetch` | Fetch web content with URL validation and guardrails |
@@ -674,6 +745,7 @@ src/yoker/
 │                            #   session(), run_sync() — no private helpers
 ├── exceptions.py            # Exception hierarchy (NetworkError, ValidationError, ...)
 ├── logging.py               # Structured logging (structlog)
+├── markdown.py              # MarkdownStreamer — block-buffered Markdown streaming
 ├── resources.py             # Resource location for definition files (skills, agents)
 ├── schema.py                # NameSpaced base class for namespaced dataclasses
 ├── py.typed                 # PEP 561 typed-package marker
@@ -705,19 +777,25 @@ src/yoker/
 │   └── modellist.py         # Model list rendering
 │
 ├── builtin/                 # Built-in tools registered via __YOKER_MANIFEST__
-│   ├── __init__.py          # Manifest declaring read, write, git, github, make,
-│   │                        #   websearch, webfetch, search, list, mkdir, existence, sleep, skill
+│   ├── __init__.py          # Manifest declaring existence, file, git, github, list,
+│   │                        #   make, mkdir, notify, read, search, sleep, update,
+│   │                        #   webfetch, websearch, write (skill via factory)
+│   ├── _validators.py       # Shared validators for builtin tool arguments
 │   ├── read.py              # read: file contents (offset/limit slicing)
-│   ├── write.py             # write: file contents
-│   ├── update.py            # update: edit existing file contents (diff-based)
-│   ├── list.py              # list: directory contents
+│   ├── write.py             # write: file contents (create_parents, result diff)
+│   ├── update.py            # update: edit existing file contents (diff-based,
+│   │                        #   anchor-based insert, result diff)
+│   ├── list.py              # list: directory contents (ignore-rule aware)
 │   ├── mkdir.py             # mkdir: create directories
 │   ├── existence.py         # existence: check files/folders exist
+│   ├── file.py              # file: filesystem operations (copy, move, delete)
+│   ├── notify.py            # notify: macOS notifications
 │   ├── search.py            # search: file and content search (grep-like)
 │   ├── sleep.py             # sleep: pause execution (1–300s)
 │   ├── git.py               # git: Git operations (status, log, diff, branch, show,
-│   │                        #   add, commit, push, checkout, pull, tag, rm)
-│   ├── github.py            # github: read-only GitHub operations via gh CLI
+│   │                        #   add, commit, push, checkout, pull, tag, rm, rebase)
+│   ├── github.py            # github: GitHub operations via gh CLI (read ops +
+│   │                        #   opt-in write ops)
 │   ├── make.py              # make: Makefile target execution
 │   ├── webfetch.py          # webfetch: fetch web content through a backend
 │   ├── websearch.py         # websearch: search the web through a backend
@@ -733,6 +811,7 @@ src/yoker/
 │   ├── protocol.py          # ContextManager @runtime_checkable Protocol
 │   ├── manager.py           # BaseContextManager (in-memory base)
 │   ├── basic.py             # SimpleContextManager (env reminder + system prompt)
+│   ├── config_summary.py    # render_config_summary() — redacted config snapshot
 │   ├── wrapper.py           # ContextManagerWrapper (pure proxy)
 │   ├── persisted.py         # Persisted (JSONL persistence via bulk-rewrite)
 │   ├── factory.py           # Context manager factory — agent-scoped from Config
@@ -790,12 +869,18 @@ src/yoker/
 │   ├── container.py         # yoker container: Dockerfile/Containerfile generation
 │   └── sources.py           # resolve_source() + load_source() — two-phase source resolution
 │
-└── ui/                      # UI layer (strictly separated from the Agent layer)
-    ├── handler.py           # UIHandler protocol
-    ├── bridge.py            # UIBridge: events -> UIHandler method calls
-    ├── interactive.py       # InteractiveUIHandler (Rich append-only + prompt_toolkit)
-    ├── batch.py             # BatchUIHandler (stdin/stdout/stderr for pipelines)
-    └── commands/            # Slash commands (/help, /agents, /skills, /tools, /think, /context, /config)
+├── ui/                      # UI layer (strictly separated from the Agent layer)
+│   ├── handler.py           # UIHandler protocol
+│   ├── bridge.py            # UIBridge: events -> UIHandler method calls
+│   ├── agent_display.py     # AgentDisplay — minimal agent info for UI rendering
+│   ├── formatting.py        # Shared output formatting helpers
+│   ├── interactive.py       # InteractiveUIHandler (Rich append-only + prompt_toolkit)
+│   ├── batch.py             # BatchUIHandler (stdin/stdout/stderr for pipelines)
+│   └── commands/            # Slash commands (/help, /agents, /skills, /tools, /think, /context, /config, /session)
+│
+└── usage/                   # Token usage tracking
+    ├── logger.py            # UsageRecord + atomic JSONL append to ~/.yoker/usage.jsonl
+    └── report.py            # load/aggregate/format per-model token and cost report
 ```
 
 ## References
