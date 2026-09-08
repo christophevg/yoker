@@ -32,10 +32,24 @@ target text:
 
 The ``insert`` operation uses ``line_number`` to position new content.
 The ``append`` operation requires no line number — content is added at end.
+
+## EOF newline termination
+
+Any successful update whose touched region includes the file's last line
+guarantees the result ends with exactly one terminal newline: a missing
+terminal newline is added (surfaced in the result message as
+"(added missing trailing newline at EOF)"), existing terminal newlines are
+preserved, trailing blank lines are never collapsed. Operations that do
+not touch EOF leave the file byte-exact. ``append("")`` is an explicit
+ensure-termination no-op. The insert's ``anchor`` parameter never
+duplicates the anchor: insertion content that repeats it (at its start or
+end) is rejected — set ``allow_duplicate_anchor=True`` only when
+duplicating the anchor is intentional.
 """
 
 import difflib
 import os
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any
 
@@ -139,6 +153,15 @@ async def update(
       "normalized for matching and multiple matches use the first occurrence."
     ),
   ] = None,
+  allow_duplicate_anchor: Annotated[
+    bool,
+    Text(
+      "Escape hatch for the anchor-duplication guard: when false (default), "
+      "an insert whose new_string starts or ends with the anchor text is "
+      "rejected — the anchor is not replaced, so it doesn't need to be "
+      "repeated. Set true only to intentionally duplicate the anchor."
+    ),
+  ] = False,
 ) -> ToolResult:
   """Update an existing file by replacing, inserting, or deleting content.
 
@@ -240,7 +263,10 @@ async def update(
     logger.warning("update_anchor_wrong_operation", operation=operation)
     return ToolResult(
       success=False,
-      error=f"anchor is only valid for operation='insert' (got '{operation}')",
+      error=(
+        f"anchor is only valid for operation='insert' (got '{operation}') — "
+        "for replace, put the search text in 'old_string' instead"
+      ),
     )
   # Normalize None to empty string for the execution path.
   # For delete, new_string is irrelevant; for replace, an explicit "" is valid.
@@ -291,7 +317,9 @@ async def update(
     if operation == "replace":
       result_content = _do_replace(old_content, old_string, new_string, line_range, exact_match)
     elif operation == "insert":
-      result_content = _do_insert(old_content, line_number, new_string, anchor, position)
+      result_content = _do_insert(
+        old_content, line_number, new_string, anchor, position, allow_duplicate_anchor
+      )
     elif operation == "append":
       result_content = _do_append(old_content, new_string)
     elif operation == "delete":
@@ -327,6 +355,11 @@ async def update(
       )
     else:
       result_message = "File updated successfully"
+
+    # EOF-touching operations guarantee a terminal newline; surface the
+    # byte change when one was added (never silent normalization).
+    if old_content and not old_content.endswith("\n") and result_content.endswith("\n"):
+      result_message = result_message + " (added missing trailing newline at EOF)"
 
     result_message = _append_result_diff(result_message, old_content, result_content, resolved.name)
 
@@ -647,7 +680,9 @@ def _replace_line_range(
     raise ValueError("line_range values must be integers")
 
   if start < 1:
-    raise ValueError(f"line_range start {start} must be >= 1")
+    raise ValueError(
+      f"line_range start {start} must be >= 1 (line numbers are 1-indexed; use 1 for the first line)"
+    )
   if end < start:
     raise ValueError(f"line_range end {end} must be >= start {start}")
 
@@ -679,7 +714,12 @@ def _replace_string(
   new_string: str,
   require_exact_match: bool,
 ) -> str:
-  """Replace old_string with new_string, optionally with fuzzy matching."""
+  """Replace old_string with new_string, optionally with fuzzy matching.
+
+  EOF-touching: when the match overlaps the file's last line, the result
+  is guaranteed newline-terminated (a missing terminal newline is added);
+  matches strictly before the last line leave the file byte-exact.
+  """
   if require_exact_match:
     occurrences = old_content.count(old_string)
 
@@ -689,7 +729,11 @@ def _replace_string(
     if occurrences > 1:
       raise ValueError(_multiple_matches_error(old_content, old_string))
 
-    return old_content.replace(old_string, new_string, 1)
+    match_end = old_content.find(old_string) + len(old_string)
+    result = old_content.replace(old_string, new_string, 1)
+    if match_end > old_content.rfind("\n") + 1:
+      result = _ensure_trailing_newline(result)
+    return result
 
   # Whitespace-insensitive matching: find the first occurrence where
   # whitespace-normalized content matches the normalized search string.
@@ -698,8 +742,6 @@ def _replace_string(
 
 def _fuzzy_replace(old_content: str, old_string: str, new_string: str) -> str:
   """Replace first whitespace-insensitive match of old_string."""
-  import re
-
   # Build a regex that treats any whitespace run in old_string as \s+
   escaped = re.escape(old_string)
   pattern = re.sub(r"\\ ", r"\\s+", escaped)
@@ -708,9 +750,19 @@ def _fuzzy_replace(old_content: str, old_string: str, new_string: str) -> str:
 
   match = re.search(pattern, old_content)
   if match:
-    return old_content[: match.start()] + new_string + old_content[match.end() :]
+    result = old_content[: match.start()] + new_string + old_content[match.end() :]
+    if match.end() > old_content.rfind("\n") + 1:
+      result = _ensure_trailing_newline(result)
+    return result
 
   raise ValueError(_not_found_error(old_content, old_string))
+
+
+def _ensure_trailing_newline(text: str) -> str:
+  """Guarantee the text ends with a terminal newline (never collapses blank lines)."""
+  if text and not text.endswith("\n"):
+    return text + "\n"
+  return text
 
 
 def _do_insert(
@@ -719,6 +771,7 @@ def _do_insert(
   new_string: str,
   anchor: str | None = None,
   position: str | None = None,
+  allow_duplicate_anchor: bool = False,
 ) -> str:
   """Insert new_string at a specific line or relative to an anchor.
 
@@ -729,13 +782,18 @@ def _do_insert(
     ``anchor``. The anchor must appear exactly once — ambiguous anchors
     are rejected with all match line numbers (fail-loud, never
     first-match-silently). The anchor text itself is not modified.
+    Unless ``allow_duplicate_anchor`` is set, insertion content that
+    repeats the anchor (at its start or end) is rejected — the anchor
+    is not replaced, so it doesn't need to be repeated.
     Takes precedence over ``line_number``.
   - **Line-based** (``line_number``): the new content is inserted
     *before* the existing line at ``line_number``, so it appears at that
     line number in the resulting file.
   """
   if anchor:
-    return _insert_by_anchor(old_content, anchor, new_string, position or "after")
+    return _insert_by_anchor(
+      old_content, anchor, new_string, position or "after", allow_duplicate_anchor
+    )
 
   if line_number is None:
     raise ValueError("line_number is required for insert operations (or provide anchor)")
@@ -750,11 +808,16 @@ def _do_insert(
 
   if total_lines == 0:
     if line_num != 1:
-      raise ValueError(f"Line number {line_num} out of range (file has 0 lines)")
+      raise ValueError(
+        f"Line number {line_num} out of range (file has 0 lines; line numbers are 1-indexed)"
+      )
     return new_string + "\n"
 
   if line_num < 1 or line_num > total_lines:
-    raise ValueError(f"Line number {line_num} out of range (file has {total_lines} lines)")
+    raise ValueError(
+      f"Line number {line_num} out of range (file has {total_lines} lines; "
+      "line numbers are 1-indexed)"
+    )
 
   if lines and not lines[-1].endswith("\n"):
     lines[-1] = lines[-1] + "\n"
@@ -768,6 +831,7 @@ def _insert_by_anchor(
   anchor: str,
   new_string: str,
   position: str,
+  allow_duplicate_anchor: bool = False,
 ) -> str:
   """Insert new_string directly after or before the unique anchor occurrence.
 
@@ -783,6 +847,14 @@ def _insert_by_anchor(
   """
   lines = old_content.splitlines(keepends=True)
   anchor_lines = anchor.strip("\n").splitlines()
+
+  # --- Anchor-duplication guard (fail-loud) ------------------------------
+  # Muscle memory from anchor-inclusive replace tools repeats the anchor in
+  # new_string; here the anchor is NOT replaced, so repeating it duplicates
+  # the anchor in the file. Detect at the boundary, line-level,
+  # whitespace-normalized; escape hatch: allow_duplicate_anchor=True.
+  if not allow_duplicate_anchor:
+    _reject_anchor_duplication(anchor, new_string)
 
   # --- Locate the anchor: unique exact line-run, else fuzzy line-run ----
   match_start_line = _find_unique_anchor_line(lines, anchor_lines)
@@ -808,6 +880,35 @@ def _insert_by_anchor(
     lines[-1] = lines[-1] + "\n"
 
   return "".join(lines[:insert_line]) + insertion + "".join(lines[insert_line:])
+
+
+def _reject_anchor_duplication(anchor: str, new_string: str) -> None:
+  """Reject insertion content that repeats the anchor at either boundary.
+
+  The anchor is not replaced by an insert, so new_string that starts or
+  ends with the anchor text duplicates the anchor in the file — a classic
+  muscle-memory error from anchor-inclusive replace tools. Comparison is
+  line-level and whitespace-normalized (mirrors fuzzy anchor matching):
+  the first new line is compared to the anchor's first line, the last new
+  line to the anchor's last line. Lines that merely contain the anchor's
+  words are not flagged. Raises ValueError with the escape-hatch hint.
+  """
+
+  def norm(line: str) -> str:
+    return " ".join(line.split())
+
+  anchor_lines = [norm(ln) for ln in anchor.strip("\n").splitlines() if ln.strip()]
+  new_lines = [norm(ln) for ln in new_string.strip("\n").splitlines() if ln.strip()]
+
+  if not new_lines or not anchor_lines:
+    return
+
+  if new_lines[0] == anchor_lines[0] or new_lines[-1] == anchor_lines[-1]:
+    raise ValueError(
+      "The anchor is not replaced, so doesn't need to be repeated — "
+      "remove it from new_string. "
+      "If duplicating the anchor is intentional, retry with allow_duplicate_anchor=true"
+    )
 
 
 def _find_unique_anchor_line(lines: list[str], anchor_lines: list[str]) -> int | None:
@@ -853,14 +954,22 @@ def _do_append(
   old_content: str,
   new_string: str,
 ) -> str:
-  """Append new_string at the end of the file."""
-  if not old_content:
-    return new_string + "\n"
+  """Append new_string at the end of the file.
 
-  content = old_content
-  if not content.endswith("\n"):
-    content = content + "\n"
-  return content + new_string + "\n"
+  EOF-touching: the result is always newline-terminated. A missing
+  terminal newline is added; an existing one is preserved (trailing blank
+  lines are never collapsed). Appending content that already ends with a
+  newline no longer produces a stray blank line; appending an empty
+  new_string is an ensure-termination no-op.
+  """
+  base = old_content
+  if base and not base.endswith("\n"):
+    base = base + "\n"
+  if not new_string:
+    return base
+  if new_string.endswith("\n"):
+    return base + new_string
+  return base + new_string + "\n"
 
 
 def _do_delete(
@@ -884,10 +993,15 @@ def _do_delete(
     total_lines = len(lines)
 
     if total_lines == 0:
-      raise ValueError(f"Line number {line_num} out of range (file has 0 lines)")
+      raise ValueError(
+        f"Line number {line_num} out of range (file has 0 lines; line numbers are 1-indexed)"
+      )
 
     if line_num < 1 or line_num > total_lines:
-      raise ValueError(f"Line number {line_num} out of range (file has {total_lines} lines)")
+      raise ValueError(
+        f"Line number {line_num} out of range (file has {total_lines} lines; "
+        "line numbers are 1-indexed)"
+      )
 
     del lines[line_num - 1]
     return "".join(lines)
@@ -899,16 +1013,21 @@ def _do_delete(
         raise ValueError(_not_found_error(old_content, old_string))
       if occurrences > 1:
         raise ValueError(_multiple_matches_error(old_content, old_string))
-      return old_content.replace(old_string, "", 1)
+      match_end = old_content.find(old_string) + len(old_string)
+      result = old_content.replace(old_string, "", 1)
+      if match_end > old_content.rfind("\n") + 1:
+        result = _ensure_trailing_newline(result)
+      return result
 
     # Fuzzy delete
-    import re
-
     escaped = re.escape(old_string)
     pattern = re.sub(r"(?:\\ )+", r"\\s+", escaped)
     match = re.search(pattern, old_content)
     if match:
-      return old_content[: match.start()] + old_content[match.end() :]
+      result = old_content[: match.start()] + old_content[match.end() :]
+      if match.end() > old_content.rfind("\n") + 1:
+        result = _ensure_trailing_newline(result)
+      return result
     raise ValueError(_not_found_error(old_content, old_string))
 
   raise ValueError("Either old_string, line_number, or line_range is required for delete")
@@ -924,7 +1043,9 @@ def _delete_line_range(old_content: str, line_range: list[int]) -> str:
     raise ValueError("line_range values must be integers")
 
   if start < 1:
-    raise ValueError(f"line_range start {start} must be >= 1")
+    raise ValueError(
+      f"line_range start {start} must be >= 1 (line numbers are 1-indexed; use 1 for the first line)"
+    )
   if end < start:
     raise ValueError(f"line_range end {end} must be >= start {start}")
 

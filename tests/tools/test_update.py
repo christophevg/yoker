@@ -72,7 +72,8 @@ class TestUpdateTool:
       ctx=ctx,
     )
     assert result.success is True
-    assert file_path.read_text() == "hello universe"
+    # EOF-touching replace: file guaranteed newline-terminated.
+    assert file_path.read_text() == "hello universe\n"
 
   @pytest.mark.asyncio
   async def test_replace_exact_match_multiple_rejected(self, tmp_path: Path) -> None:
@@ -108,7 +109,8 @@ class TestUpdateTool:
       ctx=ctx,
     )
     assert result.success is True
-    assert file_path.read_text() == "hello universe"
+    # EOF-touching replace: file guaranteed newline-terminated.
+    assert file_path.read_text() == "hello universe\n"
 
   @pytest.mark.asyncio
   async def test_replace_no_match(self, tmp_path: Path) -> None:
@@ -143,7 +145,8 @@ class TestUpdateTool:
       ctx=ctx,
     )
     assert result.success is True
-    assert file_path.read_text() == "world hello hello"
+    # EOF-touching replace: file guaranteed newline-terminated.
+    assert file_path.read_text() == "world hello hello\n"
 
   @pytest.mark.asyncio
   async def test_insert(self, tmp_path: Path) -> None:
@@ -195,7 +198,8 @@ class TestUpdateTool:
       ctx=ctx,
     )
     assert result.success is True
-    assert file_path.read_text() == "hello universe"
+    # EOF-touching replace: file guaranteed newline-terminated.
+    assert file_path.read_text() == "hello universe\n"
 
   @pytest.mark.asyncio
   async def test_infer_append_from_new_string_only(self, tmp_path: Path) -> None:
@@ -258,7 +262,8 @@ class TestUpdateTool:
       ctx=ctx,
     )
     assert result.success is True
-    assert file_path.read_text() == "hello "
+    # EOF-touching: file guaranteed newline-terminated.
+    assert file_path.read_text() == "hello \n"
 
   @pytest.mark.asyncio
   async def test_explicit_delete_still_works(self, tmp_path: Path) -> None:
@@ -274,7 +279,8 @@ class TestUpdateTool:
       ctx=ctx,
     )
     assert result.success is True
-    assert file_path.read_text() == "hello "
+    # EOF-touching delete: file guaranteed newline-terminated.
+    assert file_path.read_text() == "hello \n"
 
   @pytest.mark.asyncio
   async def test_explicit_operation_overrides_inference(self, tmp_path: Path) -> None:
@@ -376,7 +382,8 @@ class TestUpdateTool:
       ctx=ctx,
     )
     assert result.success is True
-    assert file_path.read_text() == "world"
+    # EOF-touching replace: file guaranteed newline-terminated.
+    assert file_path.read_text() == "world\n"
 
   @pytest.mark.asyncio
   async def test_update_missing_file(self) -> None:

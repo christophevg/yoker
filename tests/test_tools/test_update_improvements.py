@@ -614,3 +614,186 @@ class TestExistingBehaviorPreserved:
 
     assert result.success
     assert test_file.read_text() == "Line 1\nLine 2\nAppended\n"
+
+
+# ---------------------------------------------------------------------------
+# EOF newline-termination rule
+# ---------------------------------------------------------------------------
+
+
+class TestEofNewlineTermination:
+  """EOF-touching update operations guarantee a terminal newline.
+
+  Rule: any successful update whose touched region includes the file's
+  last line results in a newline-terminated file. Operations not touching
+  EOF stay byte-exact. Byte changes are surfaced in the result message —
+  never silent.
+  """
+
+  @pytest.mark.asyncio
+  async def test_append_fixes_missing_terminal_newline(self, tmp_path: Path) -> None:
+    """The dogfooding incident: unterminated file gets terminated on append."""
+    spec = _update_spec()
+    ctx = _update_context()
+    test_file = tmp_path / "test.txt"
+    test_file.write_text("Line 1\nLine 2")  # missing terminal newline
+
+    result = await spec.execute(
+      path=str(test_file),
+      operation="append",
+      new_string="Line 3",
+      ctx=ctx,
+    )
+
+    assert result.success
+    assert test_file.read_text() == "Line 1\nLine 2\nLine 3\n"
+    assert "added missing trailing newline at EOF" in result.result
+
+  @pytest.mark.asyncio
+  async def test_append_no_blank_line_when_content_ends_with_newline(self, tmp_path: Path) -> None:
+    """Appending newline-terminated content no longer adds a stray blank line."""
+    spec = _update_spec()
+    ctx = _update_context()
+    test_file = tmp_path / "test.txt"
+    test_file.write_text("Line 1\n")
+
+    result = await spec.execute(
+      path=str(test_file),
+      operation="append",
+      new_string="Line 2\n",
+      ctx=ctx,
+    )
+
+    assert result.success
+    assert test_file.read_text() == "Line 1\nLine 2\n"
+
+  @pytest.mark.asyncio
+  async def test_append_empty_is_ensure_termination_noop(self, tmp_path: Path) -> None:
+    """append('') fixes a missing terminal newline without adding content."""
+    spec = _update_spec()
+    ctx = _update_context()
+    test_file = tmp_path / "test.txt"
+    test_file.write_text("Line 1")  # unterminated
+
+    result = await spec.execute(
+      path=str(test_file),
+      operation="append",
+      new_string="",
+      ctx=ctx,
+    )
+
+    assert result.success
+    assert test_file.read_text() == "Line 1\n"
+
+  @pytest.mark.asyncio
+  async def test_append_preserves_trailing_blank_lines(self, tmp_path: Path) -> None:
+    """Existing trailing blank lines are never collapsed."""
+    spec = _update_spec()
+    ctx = _update_context()
+    test_file = tmp_path / "test.txt"
+    test_file.write_text("Line 1\n\n")  # intentional trailing blank line
+
+    result = await spec.execute(
+      path=str(test_file),
+      operation="append",
+      new_string="Line 2",
+      ctx=ctx,
+    )
+
+    assert result.success
+    assert test_file.read_text() == "Line 1\n\nLine 2\n"
+
+  @pytest.mark.asyncio
+  async def test_replace_touching_eof_terminates(self, tmp_path: Path) -> None:
+    """A string replace overlapping the last line terminates the result."""
+    spec = _update_spec()
+    ctx = _update_context()
+    test_file = tmp_path / "test.txt"
+    test_file.write_text("Line 1\nLine 2")
+
+    result = await spec.execute(
+      path=str(test_file),
+      operation="replace",
+      old_string="Line 2",
+      new_string="Line 2 edited",
+      ctx=ctx,
+    )
+
+    assert result.success
+    assert test_file.read_text() == "Line 1\nLine 2 edited\n"
+
+  @pytest.mark.asyncio
+  async def test_replace_mid_file_stays_byte_exact(self, tmp_path: Path) -> None:
+    """A replace strictly before the last line does not normalize EOF."""
+    spec = _update_spec()
+    ctx = _update_context()
+    test_file = tmp_path / "test.txt"
+    test_file.write_text("Line 1\nLine 2\nLine 3")  # unterminated last line
+
+    result = await spec.execute(
+      path=str(test_file),
+      operation="replace",
+      old_string="Line 1",
+      new_string="Line 1 edited",
+      ctx=ctx,
+    )
+
+    assert result.success
+    # Last line untouched → no normalization; file stays unterminated.
+    assert test_file.read_text() == "Line 1 edited\nLine 2\nLine 3"
+
+  @pytest.mark.asyncio
+  async def test_delete_touching_eof_terminates(self, tmp_path: Path) -> None:
+    """Deleting the last line's text leaves the new last line terminated."""
+    spec = _update_spec()
+    ctx = _update_context()
+    test_file = tmp_path / "test.txt"
+    test_file.write_text("Line 1\nLine 2")
+
+    result = await spec.execute(
+      path=str(test_file),
+      operation="delete",
+      old_string="Line 2",
+      ctx=ctx,
+    )
+
+    assert result.success
+    assert test_file.read_text() == "Line 1\n"
+
+  @pytest.mark.asyncio
+  async def test_replace_line_range_to_eof_terminates(self, tmp_path: Path) -> None:
+    """Line-range replace reaching the last line terminates the result."""
+    spec = _update_spec()
+    ctx = _update_context()
+    test_file = tmp_path / "test.txt"
+    test_file.write_text("Line 1\nLine 2")  # unterminated
+
+    result = await spec.execute(
+      path=str(test_file),
+      operation="replace",
+      line_range=[2, 2],
+      new_string="Line 2 edited",
+      ctx=ctx,
+    )
+
+    assert result.success
+    assert test_file.read_text() == "Line 1\nLine 2 edited\n"
+
+  @pytest.mark.asyncio
+  async def test_note_only_when_newline_actually_added(self, tmp_path: Path) -> None:
+    """The '(added missing trailing newline at EOF)' note fires only on a real fix."""
+    spec = _update_spec()
+    ctx = _update_context()
+    test_file = tmp_path / "test.txt"
+    test_file.write_text("Line 1\nLine 2\n")  # already terminated
+
+    result = await spec.execute(
+      path=str(test_file),
+      operation="append",
+      new_string="Line 3",
+      ctx=ctx,
+    )
+
+    assert result.success
+    assert "added missing trailing newline" not in result.result
+    assert test_file.read_text() == "Line 1\nLine 2\nLine 3\n"

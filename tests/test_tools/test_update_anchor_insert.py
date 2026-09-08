@@ -318,3 +318,83 @@ class TestAnchorInsertLiveParity:
     result = await update(str(file), make_ctx(), operation="delete", new_string="X", anchor="a")
     assert not result.success
     assert "anchor is only valid for operation='insert'" in result.error
+
+
+# ---------------------------------------------------------------------------
+# Anchor-duplication guard
+# ---------------------------------------------------------------------------
+
+
+class TestAnchorDuplicationGuard:
+  """Insertion content that repeats the anchor is rejected (fail-loud).
+
+  The anchor is NOT replaced by an insert, so new_string that starts or
+  ends with the anchor text duplicates the anchor in the file — the
+  muscle-memory error from anchor-inclusive replace tools. Detection is
+  symmetric (both boundaries, both positions), line-level,
+  whitespace-normalized. Escape hatch: allow_duplicate_anchor=True.
+  """
+
+  def test_new_string_ends_with_anchor_rejected(self) -> None:
+    """The reported incident: insert-after whose content ends with anchor."""
+    with pytest.raises(ValueError, match="doesn't need to be repeated") as excinfo:
+      _do_insert("alpha\nbeta\n", None, "delta\nbeta", anchor="beta")
+    assert "allow_duplicate_anchor=true" in str(excinfo.value)
+
+  def test_new_string_starts_with_anchor_rejected(self) -> None:
+    """Mirror case: content starting with the anchor also duplicates it."""
+    with pytest.raises(ValueError, match="doesn't need to be repeated"):
+      _do_insert("alpha\nbeta\n", None, "beta\ndelta", anchor="beta")
+
+  def test_position_before_both_boundaries(self) -> None:
+    """Symmetry holds for position='before' at either boundary."""
+    with pytest.raises(ValueError, match="doesn't need to be repeated"):
+      _do_insert("alpha\nbeta\n", None, "delta\nbeta", anchor="beta", position="before")
+    with pytest.raises(ValueError, match="doesn't need to be repeated"):
+      _do_insert("alpha\nbeta\n", None, "beta\ndelta", anchor="beta", position="before")
+
+  def test_multiline_anchor_boundary_lines_compared(self) -> None:
+    """Multi-line anchors: first line vs first, last line vs last."""
+    content = "one\ntwo\nthree\n"
+    with pytest.raises(ValueError, match="doesn't need to be repeated"):
+      _do_insert(content, None, "delta\ntwo\nthree", anchor="two\nthree")
+    with pytest.raises(ValueError, match="doesn't need to be repeated"):
+      _do_insert(content, None, "one\ntwo\ndelta", anchor="one\ntwo")
+
+  def test_whitespace_normalized_boundary_match(self) -> None:
+    """Fuzzy boundary: trailing spaces/indent variants still detected."""
+    with pytest.raises(ValueError, match="doesn't need to be repeated"):
+      _do_insert("alpha\n  beta\n", None, "delta\n beta ", anchor="beta")
+
+  def test_line_containing_anchor_words_not_flagged(self) -> None:
+    """A line that merely contains the anchor's words is not a duplicate."""
+    result = _do_insert("alpha\nbeta\n", None, "beta testing is planned", anchor="beta")
+    assert result == "alpha\nbeta\nbeta testing is planned\n"
+
+  def test_escape_hatch_allows_intentional_duplicate(self) -> None:
+    """allow_duplicate_anchor=True performs the insert as requested."""
+    result = _do_insert(
+      "alpha\nbeta\n", None, "delta\nbeta", anchor="beta", allow_duplicate_anchor=True
+    )
+    assert result == "alpha\nbeta\ndelta\nbeta\n"
+
+  @pytest.mark.asyncio
+  async def test_tool_level_guard_with_escape_hatch(self, tmp_path) -> None:
+    """The guard and its escape hatch work through the full update() path."""
+    file = tmp_path / "f.py"
+    file.write_text(FILE)
+    guarded = await update(str(file), make_ctx(), new_string="return 2\nX", anchor="return 2")
+    assert not guarded.success
+    assert "allow_duplicate_anchor=true" in guarded.error
+    assert file.read_text() == FILE  # file untouched on rejection
+
+    allowed = await update(
+      str(file),
+      make_ctx(),
+      new_string="return 2\nX",
+      anchor="return 2",
+      allow_duplicate_anchor=True,
+    )
+    assert allowed.success
+    content = file.read_text()
+    assert content.count("return 2") == 2  # intentional duplication applied
