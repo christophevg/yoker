@@ -58,7 +58,7 @@ def _validate_offset_limit(offset: int | None, limit: int | None) -> str | None:
     if not isinstance(offset, int):
       return "offset must be an integer"
     if offset < 1:
-      return "offset must be >= 1"
+      return "offset must be >= 1 (line numbers are 1-indexed; use 1 for the first line)"
   if limit is not None:
     if not isinstance(limit, int):
       return "limit must be an integer"
