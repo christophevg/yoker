@@ -88,7 +88,7 @@ api/index
 - [x] Event logging - Full session replay capability
 - [x] Demo scripts - Generate documentation screenshots from Markdown scripts
 - [x] Schema-driven guardrails - `Path`, `Url`, `Query`, `Text` markers
-- [x] Protected files - SOFT guardrail blocking agent `write`/`update` to a configurable denylist (`Makefile`, `pyproject.toml`, `yoker.toml`, `uv.lock`, `.git/config`, `.github/workflows/*.yml`, ...) with interactive approve-on-diff in `yoker chat` and a simple block in batch/`yoker run`; empty tuple opts out
+- [x] Protected files - SOFT guardrail blocking agent `write`/`update` to a configurable denylist (`**/Makefile`, `**/pyproject.toml`, `**/yoker.toml`, `**/uv.lock`, `**/.git/config`, `**/.github/workflows/*.yml`, ... — `**/` patterns protect these names at any depth, so scratch subdirectories don't bypass the denylist) with interactive approve-on-diff in `yoker chat` and a simple block in batch/`yoker run`; empty tuple opts out
 - [x] Secure API key handling - Masked input, `chmod 600` config files
 - [x] Session persistence - Resume hint on shutdown, `--resume` flag for continuing conversations
 - [x] AGENTS.md context injection - Project-specific instructions auto-loaded into system prompt

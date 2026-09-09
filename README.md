@@ -511,7 +511,7 @@ See [docs/rationale.md](docs/rationale.md) for the full rationale and comparison
 - [x] Event logging - Full session replay capability
 - [x] Demo scripts - Generate documentation screenshots from Markdown scripts
 - [x] Schema-driven guardrails - Tool parameters are annotated with `yoker.tools.annotations` markers (`Path`, `Url`, `Query`, `Text`); the harness strips the metadata before sending schemas to the model and dispatches the matching guardrail at execution time
-- [x] Protected files - SOFT guardrail blocking agent `write`/`update` to a configurable denylist (`Makefile`, `pyproject.toml`, `yoker.toml`, `uv.lock`, `.git/config`, `.github/workflows/*.yml`, ...) with interactive approve-on-diff in `yoker chat` and a simple block in batch/`yoker run`; empty tuple opts out
+- [x] Protected files - SOFT guardrail blocking agent `write`/`update` to a configurable denylist (`**/Makefile`, `**/pyproject.toml`, `**/yoker.toml`, `**/uv.lock`, `**/.git/config`, `**/.github/workflows/*.yml`, ... — `**/` patterns protect these names at any depth, so scratch subdirectories don't bypass the denylist) with interactive approve-on-diff in `yoker chat` and a simple block in batch/`yoker run`; empty tuple opts out
 - [x] Permissions - Static TOML-based access control
 - [x] Secure API key handling - Masked input during bootstrap, config files written with `chmod 600`
 - [x] Multi-agent orchestration - Run coordinated agent teams (`Session.spawn()`, inter-agent messaging, ephemeral agents with `release_agent`)
@@ -669,22 +669,24 @@ when running untrusted agents.
 
 ### Protected Files (SOFT guardrail)
 
-`permissions.protected_files` is a glob (`fnmatch`) denylist of files
-protected against agent `write`/`update` calls. Reading is never blocked.
+`permissions.blocked_write_paths` is a glob denylist of files protected
+against agent `write`/`update` calls. Reading is never blocked.
 
 ```toml
 [permissions]
-# Defaults to a 16-entry denylist: Makefile, makefile, GNUmakefile,
-# Justfile, justfile, Taskfile.yml, pyproject.toml, tox.ini, setup.py,
-# setup.cfg, yoker.toml, .git/config, .git/hooks/*,
-# .github/workflows/*.yml, uv.lock, poetry.lock.
-protected_files = ["Makefile", "pyproject.toml", ".github/workflows/*.yml"]
+# Defaults to a 14-entry denylist: **/Makefile, **/GNUmakefile,
+# **/Justfile, **/Taskfile.yml, **/pyproject.toml, **/tox.ini, **/setup.py,
+# **/setup.cfg, **/yoker.toml, **/.git/config, **/.git/hooks/*,
+# **/.github/workflows/*.yml, **/uv.lock, **/poetry.lock.
+blocked_write_paths = ["**/Makefile", "**/pyproject.toml", "**/.github/workflows/*.yml"]
 
-protected_files = []  # explicit opt-out: disable all protections
+blocked_write_paths = []  # explicit opt-out: disable all protections
 ```
 
-Patterns match against the relative path from the project root **and** the
-basename, so `Makefile` matches at any depth, not just the root.
+Patterns match against the relative path from the containing allowed root.
+The `**/` prefix matches at any depth — `**/Makefile` protects every
+`Makefile` in the tree, including ones inside scratch subdirectories. A
+bare pattern (no slash) matches only at the root of the allowed root.
 
 **SOFT guardrail — not a security boundary.** It protects against powerful
 mistakes (an agent rewriting your `Makefile` or `uv.lock`), not against a

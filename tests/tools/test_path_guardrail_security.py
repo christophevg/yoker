@@ -165,8 +165,8 @@ class TestGlobPatternBypasses:
     result = guardrail.validate("read", {"path": str(nested)})
     assert result.valid is False, "'**/local' should block nested local/"
 
-  def test_git_pattern_root_only(self, tmp_path: Path) -> None:
-    """Pattern '.git' only blocks at root level."""
+  def test_default_git_pattern_blocks_any_depth(self, tmp_path: Path) -> None:
+    """Default '.git' entry is '**/.git' — blocks nested git dirs too."""
     config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
     guardrail = ReadPathGuardrail(config)
     # Root level - blocked
@@ -174,11 +174,20 @@ class TestGlobPatternBypasses:
     root_git.parent.mkdir(exist_ok=True)
     result = guardrail.validate("read", {"path": str(root_git)})
     assert result.valid is False
-    # Nested - allowed
+    # Nested (submodule / vendored repo) - also blocked by the "**/" default
     nested = tmp_path / "subdir" / ".git" / "config"
     nested.parent.mkdir(parents=True)
     result = guardrail.validate("read", {"path": str(nested)})
-    assert result.valid is True
+    assert result.valid is False, "'**/.git' default should block nested .git/"
+    # Bare-name matching (root-only) remains available for owner conventions
+    explicit = Config(
+      permissions=PermissionsConfig(
+        filesystem_paths=(str(tmp_path),),
+        blocked_paths=(".git",),
+      )
+    )
+    result = ReadPathGuardrail(explicit).validate("read", {"path": str(nested)})
+    assert result.valid is True, "bare '.git' pattern should match root level only"
 
   def test_glob_star_matches_extensions(self, tmp_path: Path) -> None:
     """*.exe pattern should match all .exe files."""

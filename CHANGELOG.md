@@ -1,3 +1,21 @@
+## Unreleased
+
+### Fixed
+- **Guardrail denylist depth bypass**: the default `blocked_write_paths`
+  and `blocked_paths` entries used bare patterns (`Makefile`, `.git`,
+  `.env`, ...) which only match at the top level of an allowed root — an
+  agent could write `<allowed-root>/scratch/Makefile`, `scratch/.env` or
+  reach a nested `.git` (submodule, vendored repo) without triggering the
+  denylist. All security-sensitive defaults now use the `**/` prefix
+  (`**/Makefile`, `**/.git`, `**/.env`, ...) so they are protected at any
+  depth. Bare patterns (no slash) keep their documented root-only
+  semantics for owner conventions (`local` stays root-only; the owner's
+  `context` convention was removed from the list after the folder was
+  merged into `local`). Interactive approval (`skip_blocks`) is unchanged;
+  batch/sub-agent mode remains fail-safe HARD. Tests: new nested-path
+  regression suite (incident shape `<root>/scratch-hq-runner/Makefile`),
+  every default-denylist case now exercised at nested depth.
+
 ## 0.12.0 — 2026-09-04
 
 ### Added

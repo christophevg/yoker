@@ -11,23 +11,26 @@ from yoker.config import (
 from yoker.tools.guardrails.path import WritePathGuardrail
 
 # Every default blocked_write_paths entry, with a representative path for each.
+# Representative paths are nested on purpose — regression for the bare-pattern
+# gap where "Makefile" only matched at the root of an allowed root, letting an
+# agent write <scratch-dir>/Makefile. The "**/" default patterns capture any depth.
 _DEFAULT_CASES = [
-  ("Makefile", "Makefile"),
-  ("makefile", "makefile"),
-  ("GNUmakefile", "GNUmakefile"),
-  ("Justfile", "Justfile"),
-  ("justfile", "justfile"),
-  ("Taskfile.yml", "Taskfile.yml"),
-  ("pyproject.toml", "pyproject.toml"),
-  ("tox.ini", "tox.ini"),
-  ("setup.py", "setup.py"),
-  ("setup.cfg", "setup.cfg"),
-  ("yoker.toml", "yoker.toml"),
-  (".git/config", ".git/config"),
-  (".git/hooks/pre-commit", ".git/hooks/pre-commit"),
-  (".github/workflows/ci.yml", ".github/workflows/ci.yml"),
-  ("uv.lock", "uv.lock"),
-  ("poetry.lock", "poetry.lock"),
+  ("**/Makefile", "scratch-runner/Makefile"),
+  ("**/makefile", "scratch-runner/makefile"),
+  ("**/GNUmakefile", "scratch-runner/GNUmakefile"),
+  ("**/Justfile", "scratch-runner/Justfile"),
+  ("**/justfile", "scratch-runner/justfile"),
+  ("**/Taskfile.yml", "scratch-runner/Taskfile.yml"),
+  ("**/pyproject.toml", "scratch-runner/pyproject.toml"),
+  ("**/tox.ini", "scratch-runner/tox.ini"),
+  ("**/setup.py", "scratch-runner/setup.py"),
+  ("**/setup.cfg", "scratch-runner/setup.cfg"),
+  ("**/yoker.toml", "scratch-runner/yoker.toml"),
+  ("**/.git/config", "sub/.git/config"),
+  ("**/.git/hooks/pre-commit", ".git/hooks/pre-commit"),
+  ("**/.github/workflows/ci.yml", "sub/.github/workflows/ci.yml"),
+  ("**/uv.lock", "scratch-runner/uv.lock"),
+  ("**/poetry.lock", "scratch-runner/poetry.lock"),
 ]
 
 
@@ -253,3 +256,64 @@ class TestIsWriteBlockedPublic:
     # _resolve_path uses os.path.realpath which normalizes any string;
     # the relative path from the root is checked against blocked_write_paths.
     assert guardrail.is_write_blocked("/nonexistent/path/Makefile") is True
+
+
+class TestNestedProtectedWrites:
+  """Regression for the incident: agent wrote <scratch-dir>/Makefile.
+
+  Bare default patterns ("Makefile") only matched at the root of an
+  allowed root, so a nested scratch directory bypassed the denylist.
+  Defaults now use "**/" and must capture protected names at any depth.
+  """
+
+  def test_incident_nested_makefile_blocked(self, tmp_path: Path) -> None:
+    """Exact incident shape: write tool to <root>/scratch-hq-runner/Makefile."""
+    target = tmp_path / "scratch-hq-runner" / "Makefile"
+    config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
+    guardrail = WritePathGuardrail(config)
+    result = guardrail.validate("write", {"path": str(target), "content": "x"})
+    assert result.valid is False
+    assert "write-protected" in (result.reason or "").lower()
+
+  def test_deeply_nested_pyproject_blocked(self, tmp_path: Path) -> None:
+    target = tmp_path / "a" / "b" / "c" / "pyproject.toml"
+    config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
+    guardrail = WritePathGuardrail(config)
+    result = guardrail.validate("write", {"path": str(target), "content": "x"})
+    assert result.valid is False
+
+  def test_nested_makefile_update_blocked(self, tmp_path: Path) -> None:
+    target = tmp_path / "sub" / "Makefile"
+    target.parent.mkdir(parents=True)
+    target.write_text("old:")
+    config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
+    guardrail = WritePathGuardrail(config)
+    result = guardrail.validate(
+      "update",
+      {"path": str(target), "operation": "replace", "old_string": "old:", "new_string": "new:"},
+    )
+    assert result.valid is False
+    assert "write-protected" in (result.reason or "").lower()
+
+  def test_nested_makefile_is_write_blocked(self, tmp_path: Path) -> None:
+    """is_write_blocked (approval-hook entry point) sees nested paths."""
+    target = tmp_path / "scratch-hq-runner" / "Makefile"
+    config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
+    guardrail = WritePathGuardrail(config)
+    assert guardrail.is_write_blocked(str(target)) is True
+
+  def test_root_level_makefile_still_blocked(self, tmp_path: Path) -> None:
+    """The "**/" form keeps protecting the root-level case."""
+    target = tmp_path / "Makefile"
+    config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
+    guardrail = WritePathGuardrail(config)
+    result = guardrail.validate("write", {"path": str(target), "content": "x"})
+    assert result.valid is False
+
+  def test_lookalike_names_not_blocked(self, tmp_path: Path) -> None:
+    """Protected name must not over-match longer filenames."""
+    target = tmp_path / "sub" / "Makefile.txt"
+    config = Config(permissions=PermissionsConfig(filesystem_paths=(str(tmp_path),)))
+    guardrail = WritePathGuardrail(config)
+    result = guardrail.validate("write", {"path": str(target), "content": "x"})
+    assert result.valid is True

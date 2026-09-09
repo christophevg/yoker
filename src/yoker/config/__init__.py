@@ -286,17 +286,22 @@ class UsageConfig:
 # each containing allowed root. Matching a directory blocks it and
 # everything beneath it. Also enforced internally by search/list for every
 # file they traverse.
+#
+# Bare patterns (no "/") only match at the top level of an allowed root
+# (e.g. "local" — the owner's scratch convention). Security-sensitive
+# names use the "**/" prefix so they are protected at ANY depth — nested
+# git worktrees, vendored repos, or a .env inside a scratch subdirectory
+# are protected exactly like root-level ones.
 _DEFAULT_BLOCKED_PATHS: tuple[str, ...] = (
-  ".git",
-  ".venv",
-  "venv",
-  "context",
+  "**/.git",
+  "**/.venv",
+  "**/venv",
   "local",
-  ".env",
-  ".env.*",
-  ".ssh",
-  ".aws",
-  ".gnupg",
+  "**/.env",
+  "**/.env.*",
+  "**/.ssh",
+  "**/.aws",
+  "**/.gnupg",
   "**/credentials",
   "**/secrets",
   "**/*.pem",
@@ -310,22 +315,25 @@ _DEFAULT_BLOCKED_PATHS: tuple[str, ...] = (
 
 # Default blocked_write_paths — write-only denylist (SOFT in interactive
 # mode, HARD in batch mode). Same glob semantics as blocked_paths.
-# An empty tuple disables all write protections (explicit opt-out).
+# The "**/" prefix protects these names at ANY depth — a Makefile or
+# pyproject.toml created inside a scratch subdirectory is blocked exactly
+# like a root-level one. An empty tuple disables all write protections
+# (explicit opt-out).
 _DEFAULT_BLOCKED_WRITE_PATHS: tuple[str, ...] = (
-  "Makefile",
-  "GNUmakefile",
-  "Justfile",
-  "Taskfile.yml",
-  "pyproject.toml",
-  "tox.ini",
-  "setup.py",
-  "setup.cfg",
-  "yoker.toml",
-  ".git/config",
-  ".git/hooks/*",
-  ".github/workflows/*.yml",
-  "uv.lock",
-  "poetry.lock",
+  "**/Makefile",
+  "**/GNUmakefile",
+  "**/Justfile",
+  "**/Taskfile.yml",
+  "**/pyproject.toml",
+  "**/tox.ini",
+  "**/setup.py",
+  "**/setup.cfg",
+  "**/yoker.toml",
+  "**/.git/config",
+  "**/.git/hooks/*",
+  "**/.github/workflows/*.yml",
+  "**/uv.lock",
+  "**/poetry.lock",
 )
 
 

@@ -217,7 +217,7 @@ Built-in tools are registered via the plugin loader from `yoker.builtin.__YOKER_
 
 ### Protected Files Guardrail
 
-`PathGuardrail` enforces a `blocked_write_paths` denylist (default: `Makefile`, `pyproject.toml`, `yoker.toml`, `.git/config`, `.git/hooks/*`, `.github/workflows/*.yml`, `uv.lock`, etc.). The `write` and `update` tools are blocked. In interactive mode, an approval handler can render a diff and prompt y/N. In batch mode, always blocked (fail-safe). An empty tuple disables all protections (explicit opt-out).
+`PathGuardrail` enforces a `blocked_write_paths` denylist (default: `**/Makefile`, `**/pyproject.toml`, `**/yoker.toml`, `**/.git/config`, `**/.git/hooks/*`, `**/.github/workflows/*.yml`, `**/uv.lock`, etc. — the `**/` prefix protects these names at any depth, so a scratch subdirectory does not bypass the denylist). The `write` and `update` tools are blocked. In interactive mode, an approval handler can render a diff and prompt y/N. In batch mode, always blocked (fail-safe). An empty tuple disables all protections (explicit opt-out).
 
 ### Git Tool Permission Model
 
