@@ -80,7 +80,7 @@ Yoker uses **static TOML-based permissions** instead of runtime prompts:
 [permissions]
 file_read = ["./src/**", "./docs/**"]
 file_write = ["./output/**"]
-network_access = "none"
+
 ```
 
 **Why this matters:**

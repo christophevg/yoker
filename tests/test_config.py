@@ -53,7 +53,6 @@ class TestConfigSchema:
     assert config.backend.provider == "ollama"
     assert config.backend.ollama.model == "qwen3.5:cloud"
     assert config.context.manager == "basic_persistence"
-    assert config.permissions.network_access == "none"
     assert config.permissions.filesystem_paths == (".", "plugin://")
     assert config.tools.list.enabled is True
     assert config.agents.directories == ()
@@ -131,12 +130,6 @@ class TestConfigValidation:
     with pytest.raises(ValidationError) as exc_info:
       Config(context=ContextConfig(manager="invalid"))
     assert "context.manager" in str(exc_info.value)
-
-  def test_validate_invalid_network_access(self) -> None:
-    """Test validation catches invalid network access during construction."""
-    with pytest.raises(ValidationError) as exc_info:
-      Config(permissions=PermissionsConfig(network_access="invalid"))
-    assert "permissions.network_access" in str(exc_info.value)
 
   def test_validate_empty_filesystem_paths(self) -> None:
     """Test validation catches empty filesystem_paths during construction."""

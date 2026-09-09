@@ -52,7 +52,7 @@ persist_after_turn = true
 
 [permissions]
 filesystem_paths = ["."]
-network_access = "none"
+
 max_file_size_kb = 500
 # Glob patterns (fnmatch) for files protected against agent writes.
 # Matched against the relative path from the project root AND the basename,

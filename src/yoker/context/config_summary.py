@@ -85,7 +85,7 @@ def render_config_summary(config: Config) -> str:
   # --- Permissions ---
   perms = config.permissions
   lines.append(f"* filesystem_paths: {_fmt_list(list(perms.filesystem_paths), _MAX_PATHS)}")
-  lines.append(f"* network_access: {perms.network_access}")
+
   blocked_count = len(perms.blocked_write_paths)
   if blocked_count:
     lines.append(

@@ -356,19 +356,16 @@ class PermissionsConfig:
     blocked_paths: Universal denylist (HARD, no override).
     blocked_write_paths: Write-only denylist (SOFT in interactive, HARD in
       batch mode).
-    network_access: Network access level ('none', 'local', 'all').
     handlers: Permission handler configurations.
   """
 
   filesystem_paths: tuple[str, ...] = (".", "plugin://")
   blocked_paths: tuple[str, ...] = _DEFAULT_BLOCKED_PATHS
   blocked_write_paths: tuple[str, ...] = _DEFAULT_BLOCKED_WRITE_PATHS
-  network_access: str = "none"
   handlers: dict[str, HandlerConfig] = field(default_factory=dict)
 
   def __post_init__(self) -> None:
     """Validate permissions configuration."""
-    validate_choice(self.network_access, "permissions.network_access", ("none", "local", "all"))
     if not self.filesystem_paths:
       raise ValidationError(
         "permissions.filesystem_paths",
