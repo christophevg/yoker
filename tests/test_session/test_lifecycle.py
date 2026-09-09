@@ -2,16 +2,29 @@
 
 Extends ``test_session.py`` with cleanup-on-exception, handler exception
 isolation, registry population edge paths, and ``register_primary_agent``
-behaviour.
+behaviour. Also covers the least-privilege gating of the session-injected
+``agent``/``send_message``/``release_agent`` tools by the definition's
+``tools:`` grants.
 """
 
 import asyncio
+import importlib
+from dataclasses import replace
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from yoker.config import Config
+from yoker.agents import AgentDefinition
+from yoker.config import AgentToolConfig, Config
+from yoker.core import Agent
 from yoker.events import SessionEndEvent
 from yoker.session import Session
+from yoker.tools import ToolRegistry
+
+# Explicit reference to the real yoker.session module — the package-level
+# `session` FUNCTION re-export (yoker.api) shadows the submodule attribute
+# on Python 3.10, so patching "yoker.session.Agent" fails there.
+session_module = importlib.import_module("yoker.session")
 
 
 class TestSessionExceptionExit:
@@ -187,3 +200,190 @@ class TestRegisterPrimaryAgent:
     assert second_id == "primary-3"
     assert session.get_agent("primary-2") is first
     assert session.get_agent("primary-3") is second
+
+
+SESSION_TOOLS = ("yoker:agent", "yoker:send_message", "yoker:release_agent")
+
+
+class TestSessionToolsRespectToolGrants:
+  """Session-injected tools honour the definition's ``tools:`` grants.
+
+  ``Session.inject_tools`` registers ``agent``/``send_message``/
+  ``release_agent`` AFTER ``Agent.__init__`` has filtered the registry, so
+  historically every session agent received them regardless of grants. The
+  fix re-applies the definition filter post-injection. Grant semantics:
+
+  - No ``tools:`` line (ALL_TOOLS sentinel) → session tools granted
+    (backward compatible with the default primary).
+  - Explicit ``tools:`` containing the session tool names → granted.
+  - Explicit ``tools:`` without them → NOT granted (the least-privilege fix).
+  - Explicit ``tools: []`` → no tools at all, session tools included.
+
+  ``config.tools.agent.enabled=False`` still wins for ``agent``/
+  ``release_agent`` (global kill-switch, existing behaviour).
+  """
+
+  def _spawned(self, session: Session, defn: AgentDefinition) -> Agent:
+    """Spawn a mock-backed child built from ``defn`` (definition reused).
+
+    Uses the sync ``_create_agent`` path (same flow ``_spawn_internal``
+    delegates to) so the tests stay synchronous. ``tools`` is a real
+    ``ToolRegistry`` because ``inject_tools`` registers into it and the
+    assertions inspect ``tools.names``; the other attributes the Session
+    touches stay mocked.
+    """
+    session.agents.register(defn)
+    with patch.object(session_module, "Agent") as mock_agent_cls:
+      mock_child = MagicMock(spec=Agent)
+      type(mock_child).tools = ToolRegistry()
+      type(mock_child).definition = defn
+      mock_child.process = AsyncMock(return_value="ok")
+      mock_child.aclose = AsyncMock()
+      mock_child.on_event = MagicMock()
+      mock_agent_cls.return_value = mock_child
+      child, _agent_id = session._create_agent(name=defn.name, agent_definition=defn)
+    return child
+
+  def _primary(self, defn: AgentDefinition) -> Session:
+    """Build a Session whose primary agent uses ``defn``."""
+    return Session(config=Config(), agent_definition=defn)
+
+  # -- no tools: line → session tools granted (ALL_TOOLS backward compat) --
+
+  def test_all_tools_default_keeps_session_tools(self) -> None:
+    """A definition without tools: (ALL_TOOLS) keeps all session tools."""
+    defn = AgentDefinition(simple_name="orchestrator", description="d")
+    session = self._primary(defn)
+    for tool in SESSION_TOOLS:
+      assert tool in session.agent.tools.names, f"missing {tool} on ALL_TOOLS primary"
+
+  # -- explicit grants → session tools granted --
+
+  def test_explicit_grants_get_session_tools(self) -> None:
+    """A definition granting the three names receives all three tools."""
+    defn = AgentDefinition(
+      simple_name="orchestrator",
+      description="d",
+      tools=("read", "agent", "send_message", "release_agent"),
+    )
+    session = self._primary(defn)
+    for tool in SESSION_TOOLS:
+      assert tool in session.agent.tools.names, f"missing {tool} despite explicit grant"
+
+  def test_explicit_grants_get_session_tools_on_spawned(self) -> None:
+    """Same grant semantics on the spawned (requester) path."""
+    defn = AgentDefinition(
+      simple_name="orchestrator",
+      description="d",
+      tools=("read", "agent", "send_message", "release_agent"),
+    )
+    session = Session(config=Config())
+    child = self._spawned(session, defn)
+    for tool in SESSION_TOOLS:
+      assert tool in child.tools.names, f"missing {tool} despite explicit grant"
+
+  # -- no grants → session tools stripped (the least-privilege fix) --
+
+  def test_ungranted_session_tools_stripped(self) -> None:
+    """A definition without the grants must NOT see the session tools."""
+    defn = AgentDefinition(
+      simple_name="worker",
+      description="d",
+      tools=("read", "list"),
+    )
+    session = self._primary(defn)
+    for tool in SESSION_TOOLS:
+      assert tool not in session.agent.tools.names, f"{tool} leaked past tools: filter"
+
+  def test_ungranted_session_tools_stripped_on_spawned(self) -> None:
+    """A spawned worker without the grants must NOT see the session tools."""
+    defn = AgentDefinition(
+      simple_name="worker",
+      description="d",
+      tools=("read", "list"),
+    )
+    session = Session(config=Config())
+    child = self._spawned(session, defn)
+    for tool in SESSION_TOOLS:
+      assert tool not in child.tools.names, f"{tool} leaked past tools: filter"
+
+  def test_granted_only_send_message(self) -> None:
+    """Partial grants: only the granted session tools survive."""
+    defn = AgentDefinition(
+      simple_name="messenger",
+      description="d",
+      tools=("read", "send_message"),
+    )
+    session = self._primary(defn)
+    assert "yoker:send_message" in session.agent.tools.names
+    assert "yoker:agent" not in session.agent.tools.names
+    assert "yoker:release_agent" not in session.agent.tools.names
+
+  def test_explicit_empty_tools_clears_session_tools(self) -> None:
+    """tools: [] agents get nothing — session tools included."""
+    defn = AgentDefinition(simple_name="silent", description="d", tools=[])
+    session = self._primary(defn)
+    for tool in SESSION_TOOLS:
+      assert tool not in session.agent.tools.names, f"{tool} leaked past tools: []"
+
+  # -- global kill-switch still applies --
+
+  def test_spawn_tool_kill_switch_still_applies(self) -> None:
+    """config.tools.agent.enabled=False still removes agent/release_agent.
+
+    Even when the definition explicitly grants them, the global kill-switch
+    wins (existing inject_tools behaviour, unchanged).
+    """
+    config = Config()
+    config = replace(config, tools=replace(config.tools, agent=AgentToolConfig(enabled=False)))
+    defn = AgentDefinition(
+      simple_name="orchestrator",
+      description="d",
+      tools=("agent", "send_message", "release_agent"),
+    )
+    session = Session(config=config, agent_definition=defn)
+    assert "yoker:agent" not in session.agent.tools.names
+    assert "yoker:release_agent" not in session.agent.tools.names
+    # send_message has no kill-switch and was explicitly granted.
+    assert "yoker:send_message" in session.agent.tools.names
+
+  # -- loader namespacing of the session tool names --
+
+  def test_bare_release_agent_resolves_to_yoker_namespace(self) -> None:
+    """Bare 'release_agent' in frontmatter namespaceres to yoker:release_agent.
+
+    ``release_agent`` was missing from ``_SESSION_INJECTED_TOOLS``, so bare
+    frontmatter grants were namespaced to the collection namespace
+    (e.g. ``c3:release_agent``) and never resolved to the injected tool.
+    """
+    from yoker.agents.loader import _namespace_tools
+
+    assert _namespace_tools(["agent", "send_message", "release_agent"], "c3") == [
+      "yoker:agent",
+      "yoker:send_message",
+      "yoker:release_agent",
+    ]
+
+  # -- twice-spawned ALL_TOOLS definition stays consistent --
+
+  def test_all_tools_definition_consistent_across_spawns(self) -> None:
+    """A shared ALL_TOOLS definition spawns consistently (no marker drift).
+
+    ``AgentDefinition`` is shared between spawns via the registry; the
+    default-granted decision must be captured per agent construction, not
+    inferred from the (mutated) definition state.
+    """
+    defn = AgentDefinition(simple_name="researcher", description="d")
+    session = Session(config=Config())
+    first = self._spawned(session, defn)
+    with patch.object(session_module, "Agent") as mock_agent_cls:
+      mock_child = MagicMock(spec=Agent)
+      type(mock_child).tools = ToolRegistry()
+      type(mock_child).definition = defn
+      mock_child.aclose = AsyncMock()
+      mock_child.on_event = MagicMock()
+      mock_agent_cls.return_value = mock_child
+      second, _agent_id = session._create_agent(name=defn.name, agent_definition=defn)
+    for tool in SESSION_TOOLS:
+      assert tool in first.tools.names
+      assert tool in second.tools.names

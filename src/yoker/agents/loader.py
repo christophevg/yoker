@@ -34,8 +34,15 @@ FILE_NAMESPACE = "file"
 parse_frontmatter = parse_yaml_frontmatter
 
 # Session-injected and factory-registered tool names that are NOT in the
-# builtin manifest but are always available to agents in a session.
-_SESSION_INJECTED_TOOLS: frozenset[str] = frozenset({"agent", "send_message", "skill"})
+# builtin manifest but are available to agents in a session. ``agent``/
+# ``send_message``/``release_agent`` are registered by ``Session.inject_tools``
+# (subject to the definition's ``tools:`` grants and the
+# ``config.tools.agent.enabled`` kill-switch); ``skill`` is registered by the
+# Agent's skill factory. The set drives bare-name → ``yoker:`` namespacing in
+# ``_namespace_tools`` so frontmatter grants resolve to the injected tools.
+_SESSION_INJECTED_TOOLS: frozenset[str] = frozenset(
+  {"agent", "send_message", "release_agent", "skill"}
+)
 
 
 def _builtin_tool_names() -> frozenset[str]:

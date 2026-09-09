@@ -582,16 +582,25 @@ class Agent:
     case-insensitively. Plugin tools must be referenced with their full
     namespaced name. When ``tools is ALL_TOOLS`` (the ``[]`` sentinel) the
     loop body doesn't execute — there is nothing to warn about.
+
+    Session-injected tools (``agent``, ``send_message``, ``release_agent``)
+    are registered AFTER construction by ``Session.inject_tools`` and are
+    therefore not in the registry yet — they are recognized by name here so
+    an explicit grant does not warn "unavailable".
     """
     if not self.definition.tools:
       return  # ALL_TOOLS ([]) or explicit [] — nothing to check
     available = {name.lower() for name in self.tools.names}
+    # Session-injected tools live behind the yoker: namespace but are
+    # registered post-construction; treat bare grants as satisfied.
+    session_injected = {"yoker:agent", "yoker:send_message", "yoker:release_agent"}
+
     missing: list[str] = []
 
     for requested in self.definition.tools:
       normalized = requested.lower()
       if ":" in normalized:
-        matched = normalized in available
+        matched = normalized in available or normalized in session_injected
       else:
         matched = normalized in available or f"yoker:{normalized}" in available
       if not matched:

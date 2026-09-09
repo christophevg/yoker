@@ -481,6 +481,18 @@ class Session:
     (the existing global kill-switch). ``send_message`` is always injected
     when an agent is part of a session.
 
+    Least-privilege: after registration the definition's tool filter is
+    re-applied, so session tools survive only when the definition grants
+    them. Two cases keep the pre-grant behaviour:
+
+    - ``tools_default_granted`` (no ``tools:`` line, ALL_TOOLS sentinel):
+      everything stays granted — the historical posture for the default
+      primary and API-built agents (warned about by
+      ``agent_tools_default_granted``).
+    - Explicit grants: ``agent``/``send_message``/``release_agent`` must be
+      listed in ``tools:`` (bare or ``yoker:``-prefixed) to survive the
+      filter; ``tools: []`` agents lose them all.
+
     Args:
       agent: The :class:`Agent` to inject tools onto.
       agent_id: The agent's session-assigned runtime id (used as
@@ -502,6 +514,35 @@ class Session:
       namespace="yoker",
       name="send_message",
     )
+
+    definition = agent.definition
+    if definition.tools_default_granted:
+      return  # ALL_TOOLS posture — session tools stay default-granted
+
+    # Re-apply the definition filter so ungranted session tools are stripped.
+    # Mirrors Agent._filter_tools_by_definition Branch 2/3 matching semantics
+    # (case-insensitive; bare names match their yoker:-prefixed registration).
+    # After the ALL_TOOLS branch above, tools is a plain list ([] = no tools).
+    assert definition.tools is not None
+    requested = set()
+    for tool_name in definition.tools:
+      normalized = tool_name.lower()
+      if ":" in normalized:
+        requested.add(normalized)
+      else:
+        requested.add(normalized)
+        requested.add(f"yoker:{normalized}")
+
+    to_remove = [tool_name for tool_name in agent.tools.names if tool_name.lower() not in requested]
+    for tool_name in to_remove:
+      del agent.tools.data[tool_name]
+    if to_remove:
+      logger.debug(
+        "session_tools_filtered",
+        agent=definition.name,
+        kept_tools=list(agent.tools.names),
+        removed_tools=to_remove,
+      )
 
   def _make_forwarding_handler(self, agent_id: str) -> EventCallback:
     """Build a handler that wraps agent events in :class:`SessionEvent`."""

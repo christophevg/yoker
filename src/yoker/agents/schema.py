@@ -55,6 +55,14 @@ class AgentDefinition(NameSpaced):
     agents: Allowlist of agent names this agent is permitted to spawn.
       Two states: ``ALL_AGENTS`` (default — any registered agent), or a tuple
       of names (only those may be spawned; empty tuple = no spawns).
+
+    Dynamic attributes set in ``__post_init__``:
+
+    tools_default_granted: ``True`` when the definition was constructed with
+      the ALL_TOOLS sentinel (no ``tools:`` line). Captured per instance at
+      construction because ``tools`` is later mutated by the filter and the
+      definition may be shared between spawns. Read by ``Session.inject_tools``
+      to decide whether session-injected tools are default-granted.
   """
 
   description: str = "The default/minimal Yoker agent."
@@ -95,6 +103,14 @@ class AgentDefinition(NameSpaced):
     elif isinstance(self.tools, tuple):
       self.tools = list(self.tools)
     # else: already a list (empty → no tools; non-empty → filter)
+
+    # Capture the ALL_TOOLS decision per instance, BEFORE anything can mutate
+    # ``tools``. ``Agent._filter_tools_by_definition`` Branch 1 resolves the
+    # sentinel to a plain list, and definitions are SHARED between spawns via
+    # the AgentRegistry — so post-hoc ``is ALL_TOOLS`` checks are unreliable.
+    # ``Session.inject_tools`` reads this to decide whether session-injected
+    # tools (agent/send_message/release_agent) are default-granted.
+    self.tools_default_granted: bool = self.tools is ALL_TOOLS
 
     if self.agents is ALL_AGENTS:
       pass  # sentinel preserved — downstream checks `is ALL_AGENTS`

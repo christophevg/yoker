@@ -50,6 +50,11 @@ def validate_tools(
   if not tools:
     return []
   # Map of bare built-in tool names to their config attributes.
+  # Session-injected tools are mapped too: ``agent`` has its own kill-switch
+  # config; ``send_message``/``release_agent`` are gated by the same
+  # ``tools.agent`` switch (no dedicated config); ``skill`` by the skill tool
+  # config. Skipping them would emit false "unknown tool" warnings for
+  # definitions that grant them explicitly.
   known_tools = {
     "list": tools_config.list,
     "read": tools_config.read,
@@ -57,7 +62,10 @@ def validate_tools(
     "update": tools_config.update,
     "search": tools_config.search,
     "agent": tools_config.agent,
+    "send_message": tools_config.agent,
+    "release_agent": tools_config.agent,
     "git": tools_config.git,
+    "skill": tools_config.skill,
   }
 
   warnings: list[str] = []
