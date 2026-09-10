@@ -22,6 +22,7 @@ from yoker.bootstrap.steps import DOCS_HOME_URL
 from yoker.cli.commands import ChatConfig
 from yoker.cli.shared import abort, check_enabled, load_subcommand_config
 from yoker.config import Config
+from yoker.context.session import _bare_session_id
 from yoker.core import Agent
 from yoker.exceptions import NetworkError, YokerError
 from yoker.logging import configure_logging
@@ -123,9 +124,8 @@ def _last_session_id(config: Config) -> str | None:
   The session files live in one JSONL per agent
   (``{session_id}-{agent_id}.jsonl``); mtime equals last activity because
   every context mutation bulk-rewrites the file. Any file of the winning
-  session yields the same bare id: the session_start record carries it in
-  ``data.session_id`` (new files) — with a legacy fallback that splits the
-  combined id on the first dash (correct for all dash-free session ids).
+  session yields the same bare id via the session_start record (see
+  :func:`yoker.context.session._bare_session_id` for the legacy handling).
   Returns None when the storage has no readable session files.
   """
   storage_path = Path(config.context.storage_path).expanduser()
@@ -145,14 +145,7 @@ def _last_session_id(config: Config) -> str | None:
       record = json.loads(f.readline())
     if record.get("type") != "session_start":
       return None
-    data = record.get("data", {})
-    session_id = data.get("session_id")
-    if not isinstance(session_id, str) or not session_id:
-      return None
-    # Legacy files record the combined id; strip the agent-id suffix.
-    if data.get("agent_id") is None and "-" in session_id:
-      session_id = session_id.split("-", 1)[0]
-    return session_id
+    return _bare_session_id(record.get("data", {}))
   except (OSError, json.JSONDecodeError):
     logger.warning("last_session_resolve_failed", path=str(newest[1]))
     return None

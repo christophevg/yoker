@@ -7,6 +7,7 @@ full context.
 import json
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from structlog import get_logger
 
@@ -22,6 +23,23 @@ LAST_MESSAGE_PREVIEW_LENGTH = 100
 DEFAULT_STORAGE_PATH = Path.home() / ".cache" / "yoker" / "sessions"
 
 
+def _bare_session_id(data: dict[str, Any]) -> str | None:
+  """Extract the bare session id from a session_start record's data.
+
+  New files carry the bare session id plus a separate agent_id. Legacy
+  files recorded the combined filename id; there the agent-id suffix is
+  stripped by splitting on the first dash — correct for all dash-free
+  session ids (all current sessions are UUID-based). Returns None when
+  no session id is present.
+  """
+  session_id = data.get("session_id")
+  if not isinstance(session_id, str) or not session_id:
+    return None
+  if data.get("agent_id") is None and "-" in session_id:
+    session_id = session_id.split("-", 1)[0]
+  return session_id
+
+
 def list_sessions(storage_path: Path | str | None = None) -> list[SessionMetadata]:
   """List all available sessions in a storage directory.
 
@@ -33,7 +51,10 @@ def list_sessions(storage_path: Path | str | None = None) -> list[SessionMetadat
                   Defaults to ~/.cache/yoker/sessions.
 
   Returns:
-    List of SessionMetadata objects, sorted by start_time (newest first).
+    List of SessionMetadata objects, sorted by last activity (newest
+    first). The session_id is the bare session id extracted from the
+    session_start record (legacy files: combined id with the agent-id
+    suffix split off).
 
   Example:
     >>> from yoker.context import list_sessions
@@ -65,8 +86,9 @@ def list_sessions(storage_path: Path | str | None = None) -> list[SessionMetadat
       )
       continue
 
-  # Sort by start_time, newest first
-  sessions.sort(key=lambda s: s.start_time, reverse=True)
+  # Sort by last activity, newest first — consistent with --resume last.
+  # Legacy files have no turn markers, so fall back to start_time.
+  sessions.sort(key=lambda s: s.last_turn_time or s.start_time, reverse=True)
 
   logger.debug("sessions_listed", count=len(sessions), path=str(storage_path))
   return sessions
@@ -108,7 +130,7 @@ def _read_session_metadata(file_path: Path) -> SessionMetadata | None:
   Returns:
     SessionMetadata if successful, None if file is invalid.
   """
-  session_id = file_path.stem
+  session_id: str | None = None
   start_time: datetime | None = None
   last_turn_time: datetime | None = None
   message_count = 0
@@ -128,6 +150,8 @@ def _read_session_metadata(file_path: Path) -> SessionMetadata | None:
         timestamp = record.get("timestamp")
 
         if record_type == "session_start":
+          # Bare session id from the record (legacy: combined id split).
+          session_id = _bare_session_id(data)
           # Parse start time from session_start record
           start_time_str = data.get("start_time") or timestamp
           if start_time_str:
@@ -155,8 +179,8 @@ def _read_session_metadata(file_path: Path) -> SessionMetadata | None:
     logger.warning("session_read_error", path=str(file_path), error=str(e))
     return None
 
-  # Must have start_time to be valid
-  if start_time is None:
+  # Must have start_time and a bare session id to be valid
+  if start_time is None or session_id is None:
     return None
 
   return SessionMetadata(

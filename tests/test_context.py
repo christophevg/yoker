@@ -276,7 +276,7 @@ class TestListSessions:
     """Test listing a single session."""
     from yoker.context import list_sessions
 
-    cm = Persisted(SimpleContextManager(), storage_path=tmp_path, session_id="test-session-1")
+    cm = Persisted(SimpleContextManager(), storage_path=tmp_path, session_id="testsession1")
     cm.start_turn("Hello, how are you?")
     cm.end_turn("I'm doing well, thank you!")
     cm.save()
@@ -284,18 +284,18 @@ class TestListSessions:
 
     sessions = list_sessions(tmp_path)
     assert len(sessions) == 1
-    assert sessions[0].session_id == "test-session-1"
+    assert sessions[0].session_id == "testsession1"
     assert sessions[0].message_count == 2  # user + assistant
     assert sessions[0].turn_count == 1
     assert sessions[0].start_time is not None
 
   def test_multiple_sessions_sorted_newest_first(self, tmp_path: Path) -> None:
-    """Test that sessions are sorted by start_time, newest first."""
+    """Test that sessions are sorted by last activity, newest first."""
     import time
 
     from yoker.context import list_sessions
 
-    cm1 = Persisted(SimpleContextManager(), storage_path=tmp_path, session_id="session-older")
+    cm1 = Persisted(SimpleContextManager(), storage_path=tmp_path, session_id="sessionolder")
     cm1.start_turn("First message")
     cm1.end_turn("First response")
     cm1.save()
@@ -303,7 +303,7 @@ class TestListSessions:
 
     time.sleep(0.01)
 
-    cm2 = Persisted(SimpleContextManager(), storage_path=tmp_path, session_id="session-newer")
+    cm2 = Persisted(SimpleContextManager(), storage_path=tmp_path, session_id="sessionnewer")
     cm2.start_turn("Second message")
     cm2.end_turn("Second response")
     cm2.save()
@@ -311,8 +311,40 @@ class TestListSessions:
 
     sessions = list_sessions(tmp_path)
     assert len(sessions) == 2
-    assert sessions[0].session_id == "session-newer"
-    assert sessions[1].session_id == "session-older"
+    assert sessions[0].session_id == "sessionnewer"
+    assert sessions[1].session_id == "sessionolder"
+
+  def test_resume_activity_moves_session_to_front(self, tmp_path: Path) -> None:
+    """Sorting follows last activity, not start time: resuming an older
+    session moves it back to the front."""
+    import time
+
+    from yoker.context import list_sessions
+
+    cm1 = Persisted(SimpleContextManager(), storage_path=tmp_path, session_id="sessionfirst")
+    cm1.start_turn("First message")
+    cm1.end_turn("First response")
+    cm1.save()
+    cm1.close()
+
+    time.sleep(0.01)
+
+    cm2 = Persisted(SimpleContextManager(), storage_path=tmp_path, session_id="sessionsecond")
+    cm2.start_turn("Second message")
+    cm2.end_turn("Second response")
+    cm2.save()
+    cm2.close()
+
+    time.sleep(0.01)
+
+    # Activity in the FIRST session makes it the most recently active.
+    cm1.resume("sessionfirst", storage_path=tmp_path).save()
+    cm1.close()
+
+    sessions = list_sessions(tmp_path)
+    assert len(sessions) == 2
+    assert sessions[0].session_id == "sessionfirst"
+    assert sessions[1].session_id == "sessionsecond"
 
   def test_session_last_message_preview(self, tmp_path: Path) -> None:
     """Test that last_message contains preview of last user message."""
@@ -351,7 +383,7 @@ class TestListSessions:
     """Test that corrupted session files are skipped."""
     from yoker.context import list_sessions
 
-    cm = Persisted(SimpleContextManager(), storage_path=tmp_path, session_id="valid-session")
+    cm = Persisted(SimpleContextManager(), storage_path=tmp_path, session_id="validsession")
     cm.start_turn("Hello")
     cm.end_turn("Hi!")
     cm.save()
@@ -362,13 +394,13 @@ class TestListSessions:
 
     sessions = list_sessions(tmp_path)
     assert len(sessions) == 1
-    assert sessions[0].session_id == "valid-session"
+    assert sessions[0].session_id == "validsession"
 
   def test_session_metadata_fields(self, tmp_path: Path) -> None:
     """Test that all SessionMetadata fields are populated correctly."""
     from yoker.context import list_sessions
 
-    cm = Persisted(SimpleContextManager(), storage_path=tmp_path, session_id="full-metadata")
+    cm = Persisted(SimpleContextManager(), storage_path=tmp_path, session_id="fullmetadata")
     cm.start_turn("Message 1")
     cm.end_turn("Response 1")
     cm.start_turn("Message 2")
@@ -381,13 +413,57 @@ class TestListSessions:
 
     metadata = sessions[0]
     assert isinstance(metadata, SessionMetadata)
-    assert metadata.session_id == "full-metadata"
+    assert metadata.session_id == "fullmetadata"
     assert metadata.message_count == 4
     assert metadata.turn_count == 2
     assert metadata.start_time is not None
     assert metadata.last_turn_time is not None
     assert metadata.last_message == "Message 2"
-    assert metadata.file_path == str(tmp_path / "full-metadata.jsonl")
+    assert metadata.file_path == str(tmp_path / "fullmetadata.jsonl")
+
+  def test_agent_file_reports_bare_session_id(self, tmp_path: Path) -> None:
+    """A per-agent file ({sid}-{agent}.jsonl) reports the bare session id."""
+    from yoker.context import list_sessions
+
+    cm = Persisted(
+      SimpleContextManager(), storage_path=tmp_path, session_id="sessionabc", agent_id="primary"
+    )
+    cm.start_turn("Hello")
+    cm.end_turn("Hi!")
+    cm.save()
+    cm.close()
+
+    sessions = list_sessions(tmp_path)
+    assert len(sessions) == 1
+    assert sessions[0].session_id == "sessionabc"
+    assert sessions[0].file_path == str(tmp_path / "sessionabc-primary.jsonl")
+
+  def test_legacy_combined_id_split_on_first_dash(self, tmp_path: Path) -> None:
+    """Legacy files (no agent_id in the record) have the agent suffix
+    split off the combined id."""
+    from yoker.context import list_sessions
+
+    (tmp_path / "deadbeefcafe-primary.jsonl").write_text(
+      '{"type": "session_start", "data": {"session_id": "deadbeefcafe-primary"},'
+      ' "timestamp": "2026-09-03T12:45:30.370662"}\n'
+      '{"type": "turn_start", "data": {}, "timestamp": "2026-09-03T12:45:31.000000"}\n'
+    )
+
+    sessions = list_sessions(tmp_path)
+    assert len(sessions) == 1
+    assert sessions[0].session_id == "deadbeefcafe"
+    assert sessions[0].turn_count == 1
+
+  def test_record_without_session_id_skipped(self, tmp_path: Path) -> None:
+    """A file whose session_start record lacks a session id is skipped."""
+    from yoker.context import list_sessions
+
+    (tmp_path / "orphan.jsonl").write_text(
+      '{"type": "session_start", "data": {}, "timestamp": "2026-09-03T12:45:30.370662"}\n'
+    )
+
+    sessions = list_sessions(tmp_path)
+    assert sessions == []
 
   def test_default_storage_path(self) -> None:
     """Test that default storage path is used when not provided."""
