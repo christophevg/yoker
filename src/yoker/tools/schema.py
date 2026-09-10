@@ -57,12 +57,16 @@ class ToolResult:
     content_metadata: Optional metadata for content display events.
       When provided, the agent emits a ToolContentEvent after ToolResultEvent.
       Contains operation, path, content_type, content, and metadata dict.
+    images: Optional list of image file paths the model should see. Stored
+      as references (not base64 blobs) in the message dict; the ollama
+      backend serializes them at submission time.
   """
 
   success: bool
   result: str | dict[str, Any] = ""
   error: str | None = None
   content_metadata: dict[str, Any] | None = None
+  images: list[str] | None = None
 
 
 @dataclass(frozen=True)

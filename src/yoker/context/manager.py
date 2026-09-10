@@ -95,17 +95,23 @@ class BaseContextManager:
     tool_id: str,
     result: str,
     success: bool = True,
+    images: list[str] | None = None,
   ) -> None:
-    """Add a tool execution result to the context."""
-    self._messages.append(
-      {
-        "role": "tool",
-        "name": tool_name,
-        "tool_id": tool_id,
-        "content": result,
-        "success": success,
-      }
-    )
+    """Add a tool execution result to the context.
+
+    ``images`` holds image file paths (references, not base64) for the
+    model to see; the ollama backend serializes them at submission time.
+    """
+    message = {
+      "role": "tool",
+      "name": tool_name,
+      "tool_id": tool_id,
+      "content": result,
+      "success": success,
+    }
+    if images:
+      message["images"] = images
+    self._messages.append(message)
 
   def add_tool_calls(
     self,

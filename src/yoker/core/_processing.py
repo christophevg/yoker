@@ -1118,6 +1118,7 @@ async def _execute_single_tool_call(
     tool_id=getattr(call, "id", tool_name),
     result=str(result),
     success=success,
+    images=getattr(tool_result, "images", None) if tool_result is not None else None,
   )
 
 
@@ -1464,6 +1465,7 @@ def _apply_post_filter(result: ToolResult, pattern: str) -> ToolResult:
     result=new_result,
     error=new_error,
     content_metadata=new_metadata,
+    images=result.images,
   )
 
 

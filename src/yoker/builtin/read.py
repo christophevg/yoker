@@ -22,6 +22,23 @@ logger = get_logger(__name__)
 # cat -n renders line numbers in a 6-wide right-aligned field.
 CAT_N_WIDTH = 6
 
+# Extensions the read tool treats as images. The file is NOT decoded — an
+# image ref is attached to the result so the ollama backend can serialize it
+# for the model at submission time.
+IMAGE_EXTENSIONS: dict[str, str] = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".bmp": "image/bmp",
+}
+
+
+def _image_mime_type(resolved: Path) -> str | None:
+  """Return the MIME type when ``resolved`` is a supported image, else None."""
+  return IMAGE_EXTENSIONS.get(resolved.suffix.lower())
+
 
 async def read(
   path: Annotated[str, ReadPath("Path to the file to read (or plugin:// URL)")],
@@ -195,6 +212,28 @@ async def _read_file(path_str: str, offset: int | None, limit: int | None) -> To
   if not resolved.is_file():
     logger.info("read_not_a_file", path=str(resolved))
     return ToolResult(success=False, error="Path is not a file")
+
+  mime = _image_mime_type(resolved)
+  if mime is not None:
+    # Images are not decoded — the model sees them via the image ref attached
+    # to the result (serialized to base64 by the ollama backend). Line-based
+    # slicing (offset/limit) is meaningless for images, so it is rejected.
+    if offset is not None or limit is not None:
+      return ToolResult(success=False, error="offset/limit do not apply to image files")
+    size_bytes = resolved.stat().st_size
+    logger.info("read_image_ref", path=str(resolved), mime=mime, bytes=size_bytes)
+    return ToolResult(
+      success=True,
+      result=f"Image file: {resolved} ({mime}, {size_bytes} bytes) attached for the model to see.",
+      content_metadata={
+        "operation": "read",
+        "path": str(resolved),
+        "content_type": mime,
+        "content": None,
+        "metadata": {"size_bytes": size_bytes, "image": True},
+      },
+      images=[str(resolved)],
+    )
 
   try:
     content = resolved.read_text(encoding="utf-8", errors="replace")

@@ -227,8 +227,9 @@ class Persisted(ContextManagerWrapper):
     tool_id: str,
     result: str,
     success: bool = True,
+    images: list[str] | None = None,
   ) -> None:
-    self._wrapped.add_tool_result(tool_name, tool_id, result, success=success)
+    self._wrapped.add_tool_result(tool_name, tool_id, result, success=success, images=images)
     self._tool_call_count += 1
     self._persist_full_state(self._wrapped.get_context())
 

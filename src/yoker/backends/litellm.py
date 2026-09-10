@@ -117,6 +117,10 @@ class LitellmBackend(ModelBackend):
     # Ollama, which requires dict arguments).
     messages = copy.deepcopy(messages)
     for message in messages:
+      # Image refs are an Ollama-specific message field (the Ollama SDK
+      # serializes them); OpenAI-format providers would reject the key.
+      # Cross-backend resumption stays safe by dropping it here.
+      message.pop("images", None)
       if "tool_calls" in message:
         for tc in message["tool_calls"]:
           if "function" in tc and isinstance(tc["function"].get("arguments"), dict):
