@@ -44,14 +44,21 @@ def create_context_manager(config: Config, agent_id: str) -> ContextManager:
 
   # option 2: per-agent JSONL file
   safe_agent_id = _sanitize_agent_id(agent_id)
-  # standalone agent: no session_id
-  filename = (
-    safe_agent_id
-    if ctx.session_id is None
-    else ctx.filename.format(session_id=ctx.session_id, agent_id=safe_agent_id)
-  )
   storage_path = Path(ctx.storage_path).expanduser()
-  persisted = Persisted(SimpleContextManager(), storage_path=storage_path, session_id=filename)
+  if ctx.session_id is None:
+    # standalone agent: no session_id — agent id doubles as the file id
+    persisted = Persisted(
+      SimpleContextManager(), storage_path=storage_path, session_id=safe_agent_id
+    )
+  else:
+    filename = ctx.filename.format(session_id=ctx.session_id, agent_id=safe_agent_id)
+    persisted = Persisted(
+      SimpleContextManager(),
+      storage_path=storage_path,
+      session_id=ctx.session_id,
+      agent_id=safe_agent_id,
+      filename=filename,
+    )
   if ctx.fresh:
     # Fresh start: delete any existing file. Ignore "not found" — the
     # file may not exist yet (first run with this session id).

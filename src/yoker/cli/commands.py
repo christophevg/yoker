@@ -36,7 +36,9 @@ class ChatConfig(Config):  # type: ignore[misc]
       session with that id is deleted first (fresh start).
     - ``--resume <name>``: Resume an existing named session. The
       conversation history is loaded from disk. Aborts if no session
-      with that id exists.
+      with that id exists. The special value ``last`` resumes the most
+      recently active session (newest ``*.jsonl`` in the session
+      storage).
     - Neither: A fresh auto-generated UUID session (current default).
   """
 

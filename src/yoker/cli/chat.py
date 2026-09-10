@@ -8,8 +8,10 @@ Session via the event bridge, and starts the REPL loop.
 """
 
 import asyncio
+import json
 import os
 import sys
+from pathlib import Path
 
 from clevis import SecurityError
 from ollama import ResponseError
@@ -111,6 +113,51 @@ def create_ui(config: Config) -> UIHandler:
   return BatchUIHandler()
 
 
+# Sentinel for --resume: resume the most recently active session.
+RESUME_LAST = "last"
+
+
+def _last_session_id(config: Config) -> str | None:
+  """Resolve the bare session id of the most recently active session.
+
+  The session files live in one JSONL per agent
+  (``{session_id}-{agent_id}.jsonl``); mtime equals last activity because
+  every context mutation bulk-rewrites the file. Any file of the winning
+  session yields the same bare id: the session_start record carries it in
+  ``data.session_id`` (new files) — with a legacy fallback that splits the
+  combined id on the first dash (correct for all dash-free session ids).
+  Returns None when the storage has no readable session files.
+  """
+  storage_path = Path(config.context.storage_path).expanduser()
+  if not storage_path.exists():
+    return None
+
+  newest: tuple[float, Path] | None = None
+  for file_path in storage_path.glob("*.jsonl"):
+    mtime = file_path.stat().st_mtime
+    if newest is None or mtime > newest[0]:
+      newest = (mtime, file_path)
+  if newest is None:
+    return None
+
+  try:
+    with open(newest[1]) as f:
+      record = json.loads(f.readline())
+    if record.get("type") != "session_start":
+      return None
+    data = record.get("data", {})
+    session_id = data.get("session_id")
+    if not isinstance(session_id, str) or not session_id:
+      return None
+    # Legacy files record the combined id; strip the agent-id suffix.
+    if data.get("agent_id") is None and "-" in session_id:
+      session_id = session_id.split("-", 1)[0]
+    return session_id
+  except (OSError, json.JSONDecodeError):
+    logger.warning("last_session_resolve_failed", path=str(newest[1]))
+    return None
+
+
 async def _run_with_session(
   config: ChatConfig,
   plugin_packages: list[str],
@@ -121,6 +168,14 @@ async def _run_with_session(
   # Determine session id and fresh/resume mode from CLI flags.
   if config.resume:
     sid: str | None = config.resume
+    if sid == RESUME_LAST:
+      resolved = _last_session_id(config)
+      if resolved is None:
+        ui.output_info("No previous session found to resume. Start one with --session-id <name>.")
+        await ui.shutdown("quit")
+        return
+      sid = resolved
+      ui.output_info(f"Resuming last session: {sid}")
     config.context.fresh = False
   elif config.session_id:
     sid = config.session_id

@@ -86,6 +86,8 @@ Key flags (all Config flags are available — see `yoker chat --help`):
 | `--ui-show-stats` | Show turn statistics |
 | `--with <package>` | Load a plugin package |
 | `--agents-definition <path>` | Load an agent definition file |
+| `--session-id <name>` | Start a new named session |
+| `--resume <name>` | Resume a named session; `last` resumes the most recently active one |
 
 ### `yoker run <source>` — Run an Agentic Package
 

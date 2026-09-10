@@ -80,6 +80,8 @@ class Persisted(ContextManagerWrapper):
     wrapped: Any,
     storage_path: Path | str | None = None,
     session_id: str = "auto",
+    agent_id: str | None = None,
+    filename: str | None = None,
   ) -> None:
     """Initialize the persistence wrapper.
 
@@ -87,10 +89,17 @@ class Persisted(ContextManagerWrapper):
       wrapped: The wrapped ContextManager (e.g. SimpleContextManager).
       storage_path: Directory for storing context files.
                      Defaults to ~/.cache/yoker/sessions.
-      session_id: Session ID or "auto" to generate.
+      session_id: Bare session ID, or "auto" to generate.
+      agent_id: Optional agent id. With it the file stem becomes
+        ``{session_id}-{agent_id}`` (unless overridden via ``filename``)
+        and the session_start record carries both parts, so consumers
+        can recover the bare session id without parsing the filename.
+      filename: Optional explicit file stem, overriding the
+        ``{session_id}[-{agent_id}]`` default (honors the
+        ``context.filename`` config pattern).
 
     Raises:
-      ValidationError: If storage_path or session_id is invalid.
+      ValidationError: If storage_path or any id is invalid.
     """
     super().__init__(wrapped)
 
@@ -101,7 +110,16 @@ class Persisted(ContextManagerWrapper):
       Path(storage_path).expanduser(), "context.storage_path"
     )
     self._session_id = validate_session_id(session_id, "context.session_id")
-    self._file_path = self._storage_path / f"{self._session_id}.jsonl"
+    self._agent_id = (
+      None if agent_id is None else validate_session_id(agent_id, "context.agent_id", min_length=1)
+    )
+    if filename is not None:
+      stem = validate_session_id(filename, "context.filename", min_length=1)
+    elif self._agent_id is None:
+      stem = self._session_id
+    else:
+      stem = f"{self._session_id}-{self._agent_id}"
+    self._file_path = self._storage_path / f"{stem}.jsonl"
 
     self._start_time = datetime.now()
     self._last_turn_time: datetime | None = None
@@ -345,6 +363,7 @@ class Persisted(ContextManagerWrapper):
         "timestamp": self._start_time.isoformat(),
         "data": {
           "session_id": self._session_id,
+          "agent_id": self._agent_id,
           "start_time": self._start_time.isoformat(),
         },
       }

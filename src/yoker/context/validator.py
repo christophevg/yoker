@@ -56,15 +56,16 @@ MAX_SESSION_ID_LENGTH = 128
 MIN_SESSION_ID_LENGTH = 8
 
 
-def validate_session_id(session_id: str, path: str = "session_id") -> str:
+def validate_session_id(
+  session_id: str, path: str = "session_id", *, min_length: int = MIN_SESSION_ID_LENGTH
+) -> str:
   """Validate and optionally generate a session ID.
 
   Args:
     session_id: The session ID to validate, or "auto" to generate.
     path: Configuration path for error messages.
-
-  Returns:
-    Validated session ID, or newly generated ID if "auto".
+    min_length: Minimum length. Agent ids are validated with the same
+      format rules but a lower minimum than session ids (8).
 
   Raises:
     ValidationError: If session ID is invalid.
@@ -74,7 +75,7 @@ def validate_session_id(session_id: str, path: str = "session_id") -> str:
     return secrets.token_urlsafe(16)
 
   # Check length
-  if len(session_id) < MIN_SESSION_ID_LENGTH:
+  if len(session_id) < min_length:
     raise ValidationError(
       path,
       session_id,

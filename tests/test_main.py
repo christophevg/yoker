@@ -1,7 +1,10 @@
 """Tests for __main__.py and cli/chat.py helpers and session loop."""
 
 import importlib
+import json
+import os
 import sys
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -233,6 +236,92 @@ class TestRunRepl:
     await _run_repl(agent, ui, commands)
 
     ui.shutdown.assert_awaited_once()
+
+
+class TestLastSessionId:
+  """Tests for the --resume last resolver (_last_session_id)."""
+
+  @staticmethod
+  def _write_session_file(path: Path, session_id: str, agent_id: str | None) -> Path:
+    record = {
+      "type": "session_start",
+      "timestamp": "2026-09-03T12:45:30.370662",
+      "data": {
+        "session_id": session_id,
+        "agent_id": agent_id,
+        "start_time": "2026-09-03T12:45:30.370662",
+      },
+    }
+    path.write_text(json.dumps(record) + "\n")
+    return path
+
+  def _make_config(self, storage_path: Path) -> Config:
+    config = Config()
+    config.context.storage_path = str(storage_path)
+    return config
+
+  def test_empty_storage_returns_none(self, tmp_path: Path):
+    from yoker.cli.chat import _last_session_id
+
+    assert _last_session_id(self._make_config(tmp_path)) is None
+
+  def test_missing_storage_returns_none(self, tmp_path: Path):
+    from yoker.cli.chat import _last_session_id
+
+    assert _last_session_id(self._make_config(tmp_path / "nope")) is None
+
+  def test_newest_file_wins_by_mtime(self, tmp_path: Path):
+    from yoker.cli.chat import _last_session_id
+
+    old = self._write_session_file(
+      tmp_path / "old-session-1-primary.jsonl", "old-session-1", "primary"
+    )
+    new = self._write_session_file(
+      tmp_path / "new-session-2-primary.jsonl", "new-session-2", "primary"
+    )
+    os.utime(old, (1000, 1000))
+    os.utime(new, (2000, 2000))
+
+    assert _last_session_id(self._make_config(tmp_path)) == "new-session-2"
+
+  def test_subagent_file_resolves_to_session_id(self, tmp_path: Path):
+    from yoker.cli.chat import _last_session_id
+
+    primary = self._write_session_file(tmp_path / "sess-abc-primary.jsonl", "sess-abc", "primary")
+    sub = self._write_session_file(tmp_path / "sess-abc-researcher.jsonl", "sess-abc", "researcher")
+    os.utime(primary, (1000, 1000))
+    os.utime(sub, (3000, 3000))
+
+    assert _last_session_id(self._make_config(tmp_path)) == "sess-abc"
+
+  def test_legacy_combined_id_split_on_first_dash(self, tmp_path: Path):
+    from yoker.cli.chat import _last_session_id
+
+    (tmp_path / "deadbeefcafe-primary.jsonl").write_text(
+      '{"type": "session_start", "data": {"session_id": "deadbeefcafe-primary"}}\n'
+    )
+
+    assert _last_session_id(self._make_config(tmp_path)) == "deadbeefcafe"
+
+  def test_corrupt_newest_file_returns_none(self, tmp_path: Path):
+    from yoker.cli.chat import _last_session_id
+
+    good = self._write_session_file(
+      tmp_path / "good-session-primary.jsonl", "good-session", "primary"
+    )
+    bad = tmp_path / "bad-session-primary.jsonl"
+    bad.write_text("not json\n")
+    os.utime(good, (1000, 1000))
+    os.utime(bad, (2000, 2000))
+
+    assert _last_session_id(self._make_config(tmp_path)) is None
+
+  def test_non_session_start_first_record_returns_none(self, tmp_path: Path):
+    from yoker.cli.chat import _last_session_id
+
+    (tmp_path / "weird-primary.jsonl").write_text('{"type": "message", "data": {}}\n')
+
+    assert _last_session_id(self._make_config(tmp_path)) is None
 
 
 class TestParsePluginArgs:

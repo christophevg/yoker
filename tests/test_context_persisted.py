@@ -25,6 +25,54 @@ class TestPersistedInit:
     with pytest.raises(ValidationError):
       Persisted(SimpleContextManager(), storage_path=tmp_path, session_id="short")
 
+  def test_init_with_agent_id_combines_file_stem(self, tmp_path: Path) -> None:
+    cm = Persisted(
+      SimpleContextManager(),
+      storage_path=tmp_path,
+      session_id="session-abc-123",
+      agent_id="primary",
+    )
+    assert cm.get_session_id() == "session-abc-123"
+    assert cm._file_path.name == "session-abc-123-primary.jsonl"
+
+  def test_init_short_agent_id_allowed(self, tmp_path: Path) -> None:
+    cm = Persisted(
+      SimpleContextManager(), storage_path=tmp_path, session_id="session-abc-123", agent_id="ui"
+    )
+    assert cm._file_path.name == "session-abc-123-ui.jsonl"
+
+  def test_init_explicit_filename_overrides_stem(self, tmp_path: Path) -> None:
+    cm = Persisted(
+      SimpleContextManager(),
+      storage_path=tmp_path,
+      session_id="session-abc-123",
+      agent_id="primary",
+      filename="custom-pattern-primary",
+    )
+    assert cm._file_path.name == "custom-pattern-primary.jsonl"
+
+  def test_record_carries_bare_session_id_and_agent_id(self, tmp_path: Path) -> None:
+    cm = Persisted(
+      SimpleContextManager(),
+      storage_path=tmp_path,
+      session_id="session-abc-123",
+      agent_id="primary",
+    )
+    cm.add_message("user", "hello")
+    with open(cm._file_path) as f:
+      record = json.loads(f.readline())
+    assert record["type"] == "session_start"
+    assert record["data"]["session_id"] == "session-abc-123"
+    assert record["data"]["agent_id"] == "primary"
+
+  def test_legacy_single_arg_record_keeps_combined_id(self, tmp_path: Path) -> None:
+    cm = Persisted(SimpleContextManager(), storage_path=tmp_path, session_id="session-abc-123")
+    cm.add_message("user", "hello")
+    with open(cm._file_path) as f:
+      record = json.loads(f.readline())
+    assert record["data"]["session_id"] == "session-abc-123"
+    assert record["data"]["agent_id"] is None
+
   def test_wrapped_is_stored(self, tmp_path: Path) -> None:
     wrapped = SimpleContextManager()
     cm = Persisted(wrapped, storage_path=tmp_path, session_id="test-session-123")
