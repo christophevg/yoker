@@ -69,7 +69,7 @@ You are running inside the Yoker agent harness ({harness_id}).
 # Environment
 * Current working directory: {Path.cwd()}
 * Model in use: {self._agent.model}
-* Today's date: {date.today().isoformat()}
+* Today's date: {date.today().strftime("%A, %Y-%m-%d")}
 
 # Operating Instructions
 {self.no_shell_reminder()}
