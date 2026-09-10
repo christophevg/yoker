@@ -143,10 +143,14 @@ class BaseContextManager:
   def get_context(self) -> list[dict[str, Any]]:
     """Get the full context for backend submission.
 
-    Returns:
-      List of message dictionaries in Ollama format.
+    Image refs (tool messages carrying ``images``) are included only for
+    tool messages appearing after the most recent assistant message, so
+    freshly read images are visible on the next request exactly once.
+    Older tool messages lose their ``images`` key — the model is expected
+    to have preserved what it needs as a text description. Stored messages
+    are never mutated: refs are dropped in the outgoing copy only.
     """
-    return list(self._messages)
+    return _strip_stale_images(list(self._messages))
 
   def get_messages(self) -> list[dict[str, Any]]:
     """Get all recorded messages (excludes tool results).
@@ -349,6 +353,44 @@ class BaseContextManager:
       "in-memory" for the base implementation.
     """
     return "in-memory"
+
+
+def _strip_stale_images(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+  """Drop ``images`` refs from tool messages older than the last assistant turn.
+
+  The submission contract for image reads is send-once: a freshly read image
+  is included in the request immediately following the read, and removed from
+  every subsequent request. The model must preserve what it needs by
+  describing the image in its response text.
+
+  A tool message keeps its images only when it appears after the most recent
+  assistant message. This rule is stateless (no consumed-flags to bookkeep),
+  retry-safe (a failed stream leaves the messages unchanged, so the image is
+  still attached on retry) and resume-safe (on --resume every image predates
+  the last assistant message and is stripped automatically).
+
+  Args:
+    messages: Outgoing message list (shallow copy; inner dicts are shared
+      with the store per issue #38 and must never be mutated here).
+
+  Returns:
+    The same list; messages needing the strip are replaced with new dicts
+    lacking the ``images`` key.
+  """
+  last_assistant = -1
+  for index, message in enumerate(messages):
+    if message.get("role") == "assistant":
+      last_assistant = index
+
+  stripped = False
+  for index, message in enumerate(messages):
+    if index <= last_assistant and "images" in message:
+      messages[index] = {key: value for key, value in message.items() if key != "images"}
+      stripped = True
+
+  if stripped:
+    logger.debug("stale_image_refs_stripped", count=last_assistant + 1)
+  return messages
 
 
 __all__ = ["BaseContextManager"]

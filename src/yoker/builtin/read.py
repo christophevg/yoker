@@ -224,7 +224,12 @@ async def _read_file(path_str: str, offset: int | None, limit: int | None) -> To
     logger.info("read_image_ref", path=str(resolved), mime=mime, bytes=size_bytes)
     return ToolResult(
       success=True,
-      result=f"Image file: {resolved} ({mime}, {size_bytes} bytes) attached for the model to see.",
+      result=(
+        f"Image file: {resolved} ({mime}, {size_bytes} bytes) attached for the model to see.\n"
+        "The image is visible on this request only and is removed from context on your "
+        "next turn. If you will need its contents later, describe it in your response now; "
+        "you can also read the file again if needed."
+      ),
       content_metadata={
         "operation": "read",
         "path": str(resolved),

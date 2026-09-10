@@ -81,6 +81,12 @@ Examples:
   - `post_filter: 'CalledProcessError|exit code|##\\[error\\]'` for CI logs
 **ALWAYS** pass post_filter when you expect large output. This is critical for keeping your session running longer. Not using it will cause context overflow and premature session termination.
 {context_block}{config_block}
+# Image Reads
+You can read image files (png/jpg/jpeg/gif/webp/bmp) with the read tool. Each
+image you read is shown to you on that request only — it is stripped from all
+subsequent requests to keep usage/token cost contained. If you will need an
+image's contents later in the conversation, describe it in your response text
+when you see it; the file can always be read again if needed.
 """
 
   @staticmethod

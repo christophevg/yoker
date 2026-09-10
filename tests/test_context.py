@@ -254,6 +254,97 @@ class TestBaseContextManager:
     assert isinstance(cm, ContextManager)
 
 
+class TestImageSendOnceContract:
+  """Tests for the send-once contract of image refs on tool messages.
+
+  Images read via the read tool are attached as path refs on the role=tool
+  message. get_context() must include them only for tool messages appearing
+  after the most recent assistant message — the model sees each image
+  exactly once and preserves what it needs as a text description.
+  """
+
+  def test_fresh_image_included(self) -> None:
+    """A tool message after the last assistant message keeps its images."""
+    cm = BaseContextManager()
+    cm.add_tool_calls([{"id": "call_1", "function": {"name": "read", "arguments": {}}}])
+    cm.add_tool_result("read", "call_1", "Image file attached.", images=["/tmp/img.png"])
+    context = cm.get_context()
+    assert context[-1]["images"] == ["/tmp/img.png"]
+
+  def test_stale_image_stripped(self) -> None:
+    """Tool messages before the last assistant message lose their images."""
+    cm = BaseContextManager()
+    cm.add_tool_calls([{"id": "call_1", "function": {"name": "read", "arguments": {}}}])
+    cm.add_tool_result("read", "call_1", "Image file attached.", images=["/tmp/img.png"])
+    cm.add_message("assistant", "The image shows a red square.")
+    context = cm.get_context()
+    assert "images" not in context[1]
+
+  def test_store_not_mutated_by_get_context(self) -> None:
+    """get_context() strips refs in the outgoing copy only (issue #38)."""
+    cm = BaseContextManager()
+    cm.add_tool_calls([{"id": "call_1", "function": {"name": "read", "arguments": {}}}])
+    cm.add_tool_result("read", "call_1", "Image file attached.", images=["/tmp/img.png"])
+    cm.add_message("assistant", "The image shows a red square.")
+    context = cm.get_context()
+    raw_tool = [m for m in cm._messages if m.get("role") == "tool"][0]
+    # Outgoing copy lost the ref...
+    assert "images" not in context[1]
+    # ...it is a fresh dict, not the stored one (never mutated in place)...
+    assert raw_tool is not context[1]
+    # ...and the store still carries the ref (needed for resume/persist).
+    assert raw_tool["images"] == ["/tmp/img.png"]
+
+  def test_multiple_fresh_images_all_included(self) -> None:
+    """Several images read in one turn are all included on that request."""
+    cm = BaseContextManager()
+    cm.add_tool_calls(
+      [
+        {"id": "call_1", "function": {"name": "read", "arguments": {}}},
+        {"id": "call_2", "function": {"name": "read", "arguments": {}}},
+      ]
+    )
+    cm.add_tool_result("read", "call_1", "Image attached.", images=["/tmp/a.png"])
+    cm.add_tool_result("read", "call_2", "Image attached.", images=["/tmp/b.png"])
+    context = cm.get_context()
+    assert context[-2]["images"] == ["/tmp/a.png"]
+    assert context[-1]["images"] == ["/tmp/b.png"]
+
+  def test_chained_tool_turns_strip_earlier_images(self) -> None:
+    """A tool call after the description strips the earlier image refs.
+
+    The image was visible on the previous request; per the send-once
+    contract the model must have described it before calling the next tool.
+    """
+    cm = BaseContextManager()
+    cm.add_tool_calls([{"id": "call_1", "function": {"name": "read", "arguments": {}}}])
+    cm.add_tool_result("read", "call_1", "Image attached.", images=["/tmp/img.png"])
+    cm.add_tool_calls([{"id": "call_2", "function": {"name": "grep", "arguments": {}}}])
+    cm.add_tool_result("grep", "call_2", "match found")
+    context = cm.get_context()
+    assert "images" not in context[1]
+    assert "images" not in context[3]
+
+  def test_stripped_context_omits_images_everywhere(self) -> None:
+    """A fully historical conversation carries no images keys at all."""
+    cm = BaseContextManager()
+    cm.add_tool_calls([{"id": "call_1", "function": {"name": "read", "arguments": {}}}])
+    cm.add_tool_result("read", "call_1", "Image attached.", images=["/tmp/img.png"])
+    cm.add_message("assistant", "Described the image.")
+    cm.add_message("user", "Thanks, now do X")
+    context = cm.get_context()
+    assert not any("images" in m for m in context)
+
+  def test_no_images_key_on_plain_messages(self) -> None:
+    """Messages without images are returned unchanged."""
+    cm = BaseContextManager()
+    cm.add_message("user", "Hello")
+    cm.add_message("assistant", "Hi")
+    cm.add_tool_result("read", "t1", "text")
+    context = cm.get_context()
+    assert not any("images" in m for m in context)
+
+
 class TestListSessions:
   """Tests for list_sessions function."""
 

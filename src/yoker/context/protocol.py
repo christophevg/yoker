@@ -81,7 +81,13 @@ class ContextManager(Protocol):
   # --- reads ---
 
   def get_context(self) -> list[dict[str, Any]]:
-    """Full context for backend submission (includes tool results)."""
+    """Full context for backend submission (includes tool results).
+
+    Image refs on tool messages follow a send-once contract: refs are
+    included only for tool messages after the most recent assistant
+    message and dropped from older ones (described in text by the model
+    instead). Stored messages are never mutated.
+    """
 
   def get_messages(self) -> list[dict[str, Any]]:
     """All recorded messages (excludes tool results)."""

@@ -423,6 +423,26 @@ class TestReadOffsetLimit:
     assert meta["limit"] == 4
 
   @pytest.mark.asyncio
+  async def test_image_read_includes_send_once_nudge(self, tmp_path: Path) -> None:
+    """Image read result tells the model the image is visible once only.
+
+    The send-once contract: the image is stripped from subsequent requests,
+    so the result text nudges the model to describe it now and re-read the
+    file later if needed.
+    """
+    image_path = tmp_path / "diagram.png"
+    image_path.write_bytes(b"\x89PNG fake bytes")
+    spec = _read_spec()
+    ctx = _read_context()
+    result = await spec.execute(path=str(image_path), ctx=ctx)
+    assert result.success is True
+    assert result.images == [str(image_path.resolve())]
+    assert "attached for the model to see" in result.result
+    assert "visible on this request only" in result.result
+    assert "describe it in your response" in result.result
+    assert "read the file again" in result.result
+
+  @pytest.mark.asyncio
   async def test_content_metadata_flat_shape_for_event_emission(self, tmp_path: Path) -> None:
     """ToolResult from read() exposes the flat keys ToolContentEvent consumes.
 
