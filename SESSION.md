@@ -12,6 +12,34 @@ Entries below are ordered newest first; keep them short and dated.
 
 ---
 
+## 2026-09-12 — Tool-parameter schema bug fixed: restart between fixes required
+
+The "Invalid content parameter" bug had a chain of three causes, all fixed
+and live-verified in this session:
+
+1. `schema.py` `_build_parameter_schema` stripped "Annotated metadata" from
+   any subscripted generic, so bare `dict[str, str] | None` (make's
+   `env_vars`) was declared `{"type": "string"}` — models correctly sent
+   JSON strings, the tool rejected them.
+2. The Ollama backend compensated with blunt per-value coercion, which
+   mangled legitimate JSON strings for `write.content`.
+3. Terse error messages ("Invalid content parameter") gave models no way
+   to self-correct.
+
+Now: schema declares real types (make.env_vars → object), per-value
+coercion is schema-aware in `_processing._coerce_schema_aware_args`
+(rescues legacy string-encoded objects only for object/array-typed
+params), and type-mismatch errors name the type + json.dumps remedy.
+
+**Session-worthy lesson**: after EACH of the three fixes, a session
+restart was needed before its behavior was live (schema built at agent
+startup; harness code loaded at startup). When a live test still fails
+after a fix, verify which fix-layer is stale before re-fixing — and
+record in SESSION.md which restarts are pending if work spans multiple
+fixes.
+
+---
+
 ## 2026-09-04 — Dogfooding phase active
 
 We are in a dogfooding phase: we fix problems in Yoker with Yoker. Fixes to
