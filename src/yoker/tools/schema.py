@@ -370,6 +370,15 @@ def _build_parameter_schema(
       annotation = non_none[0]
 
   # Strip Annotated wrapper to find the base type and metadata markers.
+  # Only genuine ``Annotated[T, ...]`` forms carry ``__metadata__`` — bare
+  # subscripted generics (e.g. ``dict[str, str]``) do NOT. Previously this
+  # block stripped any subscripted generic, which reduced
+  # ``dict[str, str] | None`` to ``str`` (get_args -> (str, str), with the
+  # type args mistaken for Annotated metadata) and mislabeled object/array
+  # parameters as {"type": "string"} in the tool schema — the root cause of
+  # models correctly sending JSON strings for object-typed parameters
+  # (e.g. make's env_vars) that the tool then rejected. Gate on
+  # ``__metadata__`` so parameter typing is derived from the real type.
   # Use ``get_args`` (not ``__args__``) so ``Annotated[T, marker]`` metadata
   # is included — ``__args__`` only returns the first type argument for
   # ``Annotated`` forms, leaving the marker unreachable.
@@ -379,8 +388,8 @@ def _build_parameter_schema(
     if origin is type and len(args) == 1:
       # typing.Type[T] or similar; not currently supported.
       annotation = args[0]
-    else:
-      metadata = args[1:]
+    elif hasattr(annotation, "__metadata__"):
+      metadata = annotation.__metadata__
       annotation = args[0]
       marker = _find_marker(metadata)
       if marker is not None:
