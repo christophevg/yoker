@@ -210,7 +210,24 @@ class TestWriteTool:
     ctx = _write_context()
     result = await spec.execute(path="/tmp/test.txt", content=123, ctx=ctx)  # type: ignore
     assert result.success is False
-    assert result.error == "Invalid content parameter"
+    assert "content must be a string" in result.error
+    assert "got int" in result.error
+
+  @pytest.mark.asyncio
+  async def test_write_dict_content_error_is_self_correcting(self) -> None:
+    """Dict content yields a type-naming error that tells the model how to fix it.
+
+    Regression guard: models writing JSON text (e.g. content='{"key": "v"}')
+    must not have the string silently parsed into a dict upstream, and a dict
+    that does arrive must produce an actionable message naming the type and
+    the json.dumps remedy.
+    """
+    spec = _write_spec()
+    ctx = _write_context()
+    result = await spec.execute(path="/tmp/test.json", content={"key": "value"}, ctx=ctx)  # type: ignore
+    assert result.success is False
+    assert "content must be a string, got dict" in result.error
+    assert "json.dumps" in result.error
 
   @pytest.mark.asyncio
   async def test_write_permission_denied(self, tmp_path: Path, monkeypatch) -> None:

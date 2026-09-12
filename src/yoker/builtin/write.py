@@ -88,7 +88,14 @@ async def write(
 
   if not isinstance(content, str):
     logger.warning("write_invalid_content_type", content_type=type(content).__name__)
-    return ToolResult(success=False, error="Invalid content parameter")
+    return ToolResult(
+      success=False,
+      error=(
+        f"Invalid content parameter: content must be a string, got {type(content).__name__}. "
+        "Convert structured data (dict/list) to a string first — e.g. with json.dumps — "
+        "before writing."
+      ),
+    )
 
   original_path = Path(path)
   if original_path.is_symlink():

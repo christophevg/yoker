@@ -249,13 +249,32 @@ async def update(
 
   if not isinstance(old_string, str):
     logger.warning("update_invalid_old_string_type", old_string_type=type(old_string).__name__)
-    return ToolResult(success=False, error="Invalid old_string parameter")
+    return ToolResult(
+      success=False,
+      error=(
+        f"Invalid old_string parameter: old_string must be a string, got {type(old_string).__name__}. "
+        "Pass the literal text to find, not a structured object."
+      ),
+    )
   if new_string is not None and not isinstance(new_string, str):
     logger.warning("update_invalid_new_string_type", new_string_type=type(new_string).__name__)
-    return ToolResult(success=False, error="Invalid new_string parameter")
+    return ToolResult(
+      success=False,
+      error=(
+        f"Invalid new_string parameter: new_string must be a string, got {type(new_string).__name__}. "
+        "Convert structured data (dict/list) to a string first — e.g. with json.dumps — "
+        "before updating."
+      ),
+    )
   if anchor is not None and not isinstance(anchor, str):
     logger.warning("update_invalid_anchor_type", anchor_type=type(anchor).__name__)
-    return ToolResult(success=False, error="Invalid anchor parameter")
+    return ToolResult(
+      success=False,
+      error=(
+        f"Invalid anchor parameter: anchor must be a string, got {type(anchor).__name__}. "
+        "Pass the literal text to insert next to, not a structured object."
+      ),
+    )
   if position is not None and position not in ("after", "before"):
     logger.warning("update_invalid_position", position=position)
     return ToolResult(success=False, error="Invalid position: must be 'after' or 'before'")

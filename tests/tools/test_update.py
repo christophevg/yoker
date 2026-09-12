@@ -470,6 +470,7 @@ class TestUpdateTool:
       ctx=ctx,
     )
     assert result.success is False
+    assert "old_string must be a string" in result.error
 
   @pytest.mark.asyncio
   async def test_non_string_new_string(self, tmp_path: Path) -> None:
@@ -486,6 +487,7 @@ class TestUpdateTool:
       ctx=ctx,
     )
     assert result.success is False
+    assert "new_string must be a string" in result.error
 
   @pytest.mark.asyncio
   async def test_result_is_toolresult(self, tmp_path: Path) -> None:
