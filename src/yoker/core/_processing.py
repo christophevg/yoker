@@ -1122,6 +1122,69 @@ async def _execute_single_tool_call(
   )
 
 
+def _coerce_schema_aware_args(spec: ToolSpec, tool_args: dict[str, Any]) -> dict[str, Any]:
+  """Coerce string-encoded object/array arguments using the tool's schema.
+
+  Some models/backends (notably Ollama, ollama/ollama#6155) deliver
+  object/array parameters as JSON strings, e.g. ``{"env_vars":
+  "{\\"TEST\\": \\"foo\\"}"}``. Tool functions then fail their
+  ``isinstance(value, dict)`` checks. Conversely, a string value that
+  merely *looks* like JSON is legitimate data for a string-typed
+  parameter (e.g. ``write(content='{"key": "value"}')``) and must be left
+  verbatim.
+
+  This function is therefore schema-aware: it coerces a string value only
+  when **both** conditions hold:
+
+  1. the tool's parameter schema declares the parameter as ``object`` or
+     ``array``, and
+  2. the value parses as a JSON object/array.
+
+  Everything else passes through unchanged. Coercions are logged as
+  ``tool_argument_coerced`` for debuggability. The input dict is never
+  mutated; a new dict is returned (also the cheap no-coercion fast path).
+  """
+  try:
+    properties = spec.schema["function"]["parameters"]["properties"]
+  except (KeyError, AttributeError, TypeError):
+    return tool_args
+
+  changed = False
+  coerced: dict[str, Any] = {}
+  for key, value in tool_args.items():
+    if (
+      isinstance(value, str)
+      and isinstance(properties, dict)
+      and properties.get(key, {}).get("type") in ("object", "array")
+    ):
+      stripped = value.lstrip()
+      if stripped[:1] in ("{", "["):
+        try:
+          parsed = json.loads(stripped)
+        except json.JSONDecodeError:
+          coerced[key] = value
+        else:
+          if isinstance(parsed, (dict, list)):
+            logger.info(
+              "tool_argument_coerced",
+              tool=spec.name,
+              key=key,
+              from_type=type(value).__name__,
+              to_type=type(parsed).__name__,
+            )
+            coerced[key] = parsed
+            changed = True
+          else:
+            # Quoted scalar (e.g. '"123"') — not an object/array; keep it.
+            coerced[key] = value
+      else:
+        coerced[key] = value
+    else:
+      coerced[key] = value
+
+  return coerced if changed else tool_args
+
+
 async def _run_tool(agent: Any, tool_name: str, tool_args: dict[str, Any]) -> tuple[str, bool, Any]:
   """Run a tool and return (result, success, raw_tool_result)."""
   spec = agent.tools.get(tool_name)
@@ -1147,6 +1210,13 @@ async def _run_tool(agent: Any, tool_name: str, tool_args: dict[str, Any]) -> tu
       False,
       None,
     )
+
+  # Schema-aware per-value argument coercion. Some backends (notably Ollama
+  # #6155) string-encode object/array parameters; conversely a string value
+  # that merely looks like JSON is legitimate data for a string-typed
+  # parameter (e.g. write(content='{"key": "value"}')). Coerce only when the
+  # tool's schema declares the parameter as object/array AND the value parses.
+  tool_args = _coerce_schema_aware_args(spec, tool_args)
 
   # Write-blocked-path approval hook. When an approval handler is wired on the
   # agent (interactive mode), it runs BEFORE the guardrail. This gives the

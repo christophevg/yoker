@@ -297,20 +297,22 @@ class TestOllamaBackend:
       assert delta_event.tool_call.arguments_delta == '{"location": "Paris"}'
 
   @pytest.mark.asyncio
-  async def test_chat_stream_coerces_stringified_nested_arguments(self):
-    """String-encoded nested object values are parsed into dicts (#6155).
+  async def test_chat_stream_keeps_json_like_string_values_verbatim(self):
+    """String values that look like JSON are NOT parsed into dicts.
 
-    GLM via Ollama emits nested object parameters as JSON strings, e.g.
-    {"env_vars": "{\"TEST\": \"foo\"}"}. The backend must repair this
-    before tool binding, where isinstance(value, dict) would fail.
+    A string value that merely starts with '{' is legitimate data for a
+    string-typed parameter (e.g. write(content='{"key": "value"}')). The
+    backend is schema-less, so it must never rewrite such values; per-value
+    coercion is schema-aware and lives in the execution layer
+    (yoker.core._processing._coerce_schema_aware_args).
     """
     from ollama import AsyncClient
 
     tool_call = MockToolCall(
       id="call_789",
       function=MockToolCallFunction(
-        name="make",
-        arguments={"target": "test", "env_vars": '{"TEST": "tests/test_foo.py"}'},
+        name="write",
+        arguments={"path": "/tmp/data.json", "content": '{"key": "value"}'},
       ),
     )
 
@@ -336,8 +338,8 @@ class TestOllamaBackend:
       events = []
       async for chunk in backend.chat_stream(
         model="test-model",
-        messages=[{"role": "user", "content": "Run tests"}],
-        tools=[{"type": "function", "function": {"name": "make"}}],
+        messages=[{"role": "user", "content": "Run"}],
+        tools=[{"type": "function", "function": {"name": "write"}}],
       ):
         events.append(chunk)
 
@@ -345,15 +347,15 @@ class TestOllamaBackend:
       import json as json_module
 
       parsed = json_module.loads(delta_event.tool_call.arguments_delta)
-      assert parsed["target"] == "test"
-      assert parsed["env_vars"] == {"TEST": "tests/test_foo.py"}
+      assert parsed == {"path": "/tmp/data.json", "content": '{"key": "value"}'}
 
   @pytest.mark.asyncio
   async def test_chat_stream_keeps_plain_string_values_untouched(self):
     """String values not starting with { or [ pass through unchanged.
 
     A legitimate dict[str, str] value like "TEST=foo" must never be
-    mangled by the coercion, and quoted scalars stay strings.
+    mangled, and quoted scalars stay strings. (Per-value object coercion
+    is handled schema-aware in the execution layer, not in the backend.)
     """
     from ollama import AsyncClient
 

@@ -37,20 +37,16 @@ def _coerce_tool_arguments(arguments: Any, tool_name: str) -> dict[str, Any]:
 
   - the whole ``arguments`` as a JSON string (ollama/ollama-python#484),
   - a duplicated ``{"name": ..., "arguments": {...}}`` envelope
-    (ollama/ollama#11805),
-  - nested object/array values string-encoded, e.g. ``{"env_vars":
-    "{\\"TEST\\": \\"foo\\"}"}`` (ollama/ollama#6155; fixed server-side only
-    in very recent Ollama via PR #13508).
+    (ollama/ollama#11805).
 
-  The ollama SDK types inner values as ``Any`` and never coerces, so such
-  strings reach tools and fail ``isinstance(value, dict)`` checks. This
-  helper repairs the known shapes without mangling legitimate values:
-
-  - a JSON-string ``arguments`` is parsed once;
-  - a duplicated envelope is unwrapped once;
-  - string values that start with ``{`` or ``[`` are parsed one level deep;
-    anything else (including JSON literals like ``"123"`` or ``"true"``) is
-    kept verbatim so real string values are never lost.
+  These shapes are repaired here without inspecting the tool's parameter
+  schema — which the backend does not have. Per-value coercion (e.g.
+  string-encoded nested objects, ollama/ollama#6155) is deliberately NOT
+  done here: a string value that merely looks like JSON (e.g.
+  ``write(content='{"key": "value"}')``) is legitimate data, and parsing
+  it destroys the tool call. Schema-aware per-value coercion lives in the
+  execution layer instead (``yoker.core._processing``), where the tool's
+  parameter schema declares which parameters expect objects/arrays.
 
   Mirrors the defensive parsing every major consumer implements (LangChain's
   ``_parse_arguments_from_tool_call``, LiteLLM's ollama transformation).
@@ -75,26 +71,11 @@ def _coerce_tool_arguments(arguments: Any, tool_name: str) -> dict[str, Any]:
     if key == "functionName" and value == tool_name:
       # Echo artifact emitted by some models — drop it.
       continue
-    if isinstance(value, str) and value.lstrip()[:1] in ("{", "["):
-      try:
-        parsed = json.loads(value)
-      except json.JSONDecodeError:
-        coerced[key] = value
-      else:
-        if isinstance(parsed, (dict, list)):
-          slogger.info(
-            "ollama_tool_argument_coerced",
-            tool=tool_name,
-            key=key,
-            from_type=type(value).__name__,
-            to_type=type(parsed).__name__,
-          )
-          coerced[key] = parsed
-        else:
-          # e.g. a quoted scalar — not an object/array; keep the string.
-          coerced[key] = value
-    else:
-      coerced[key] = value
+    # Per-value string→object coercion is schema-aware and lives in the
+    # execution layer (yoker.core._processing) — string values that look
+    # like JSON are legitimate data for string-typed parameters and must
+    # not be rewritten here (see #6155 history and write-tool regression).
+    coerced[key] = value
   return coerced
 
 
