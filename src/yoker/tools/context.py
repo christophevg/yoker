@@ -47,7 +47,10 @@ class ToolContext:
   Provides tool-specific config, shared settings, and backends.
 
   Attributes:
-    config: Tool-specific config (WriteToolConfig, etc.)
+    config: Tool-specific config (WriteToolConfig, etc.). For plugin tools
+      this resolves to the plugin's typed config field from the augmented
+      ToolsConfig (``config.tools.<plugin-package>.<tool>``, TODO 7.2);
+      built-ins keep the flat ``config.tools.<name>`` lookup.
     shared: Shared tool settings (content_display, etc.).
     backends: Provider-specific tool backends
       ({"websearch": OllamaWebSearchBackend, ...}).

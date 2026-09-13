@@ -669,6 +669,69 @@ only govern agent-supplied `env_vars` — they do not filter the inherited
 env. Load sensitive API keys from a secrets store (not plain env vars)
 when running untrusted agents.
 
+### Plugin tool configuration
+
+Plugins can declare one typed configuration class in their manifest
+(``PluginManifest.config_class``). Yoker augments its config schema at
+load time with one field per plugin, so user TOML parses into typed
+instances that tools receive as ``ctx.config``:
+
+```toml
+[plugins]
+enabled = true
+packages = ["yoker_plugin_demo"]
+
+[plugins.trusted]
+yoker_plugin_demo = true
+
+# Per-tool plugin configuration — the table mirrors the plugin's config
+# class hierarchy rooted at [tools.<package>]:
+[tools.yoker_plugin_demo.echo]
+prefix = "Custom: "
+```
+
+Plugin side (the plugin declares its config classes and points the
+manifest at the root class):
+
+```python
+from dataclasses import dataclass, field
+
+from yoker.config import ToolConfig
+from yoker.plugins import PluginManifest
+from yoker.tools.context import ToolContext
+
+@dataclass
+class EchoToolConfig(ToolConfig):
+  prefix: str = "Echo: "
+
+@dataclass
+class DemoPluginConfig(ToolConfig):
+  echo: EchoToolConfig = field(default_factory=EchoToolConfig)
+
+def echo(message: str, ctx: ToolContext) -> str:
+  return f"{ctx.config.echo.prefix}{message}"
+
+manifest = PluginManifest(tools=[echo], config_class=DemoPluginConfig)
+```
+
+Notes:
+
+- The plugin's top-level config class must subclass
+  :class:`yoker.config.ToolConfig` — that base class provides the
+  ``enabled`` flag used for gating: ``[tools.<package>] enabled = false``
+  drops all of the plugin's tools.
+- Tool functions that declare a ``ctx: ToolContext`` parameter receive the
+  plugin's **top-level config instance** as ``ctx.config`` — the plugin
+  owns its hierarchy and navigates it inside the tool (e.g.
+  ``ctx.config.echo.prefix``). No field-naming convention is imposed; a
+  plugin may share partial config across tools and nest per-tool classes
+  however it likes. Per-tool ``enabled`` stays honored when a tool-named
+  ToolConfig field happens to exist (``[tools.<package>.<tool>] enabled =
+  false`` drops that tool), but is optional.
+- Source plugins (``agent.toml``-declared ``yoker run`` sources) load after
+  the trust gate and are not bootstrap-augmented — their tool config comes
+  with class defaults.
+
 ### Protected Files (SOFT guardrail)
 
 `permissions.blocked_write_paths` is a glob denylist of files protected

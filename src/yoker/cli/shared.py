@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any, TypeVar
 from clevis import SecurityAction, SecurityConfig, get_config
 
 from yoker.cli.sources import LoadedSource
+from yoker.config.plugin_bootstrap import augmented_config_class
 
 if TYPE_CHECKING:
   from yoker.session import Session
@@ -46,9 +47,16 @@ def load_subcommand_config(config_class: type[T]) -> T:
   Each config-backed subcommand calls this with its own ``@configclass(cmd=...)``
   config class. Clevis parses the subcommand's CLI args and merges TOML layers
   (user → project → subcommand section extraction → CLI) into the returned
-  instance.
+  instance. The class is bootstrap-augmented with plugin config fields first
+  (TODO 7.2) — the demo plugin's TOML table parses into a typed instance
+  through this loader as well (M.6 consolidation pending).
   """
-  return get_config(config_class, name="yoker", cli=True, security=get_security_config())
+  return get_config(
+    augmented_config_class(config_class),
+    name="yoker",
+    cli=True,
+    security=get_security_config(),
+  )
 
 
 def load_subcommand_config_with_manifest(
@@ -114,7 +122,10 @@ def load_subcommand_config_with_manifest(
     cfg.update(load_toml_from_fd(project_fd))
 
   # 2. Extract subcommand section (e.g. [run]) — same logic as clevis.get_config.
-  factory = get_factory(config_class)
+  #    Use the augmented class so the section-extraction factory and the
+  #    from_dict dataclass carry identical (augmented) field sets (TODO 7.2).
+  augmented_class = augmented_config_class(config_class)
+  factory = get_factory(augmented_class)
   toml_key = factory.config or factory.cmd
   if toml_key and toml_key in cfg:
     cmd_cfg = cfg.pop(toml_key)
@@ -138,7 +149,7 @@ def load_subcommand_config_with_manifest(
   apply_to_dict(factory.get_args(), cfg)
 
   # 5. Convert merged dict to config (runs __post_init__ validation).
-  return from_dict(data_class=config_class, data=cfg, config=DaciteConfig(cast=[tuple, set]))
+  return from_dict(data_class=augmented_class, data=cfg, config=DaciteConfig(cast=[tuple, set]))
 
 
 def check_enabled(config: Any) -> None:

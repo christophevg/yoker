@@ -12,6 +12,7 @@ import litellm
 from structlog import get_logger
 
 from yoker.backends import ChatChunk, ChatChunkEvent
+from yoker.config import ToolConfig, ToolsConfig
 from yoker.events import (
   ContentChunkEvent,
   ContentEndEvent,
@@ -1694,7 +1695,7 @@ def _validate_tool_args(
   # Run tool-specific validators (operational constraints)
   if spec.validators:
     base_name = spec.simple_name or spec.name
-    tool_config = agent.config.tools[base_name]
+    tool_config = _resolve_tool_config(agent, base_name, spec.namespace)
     for validator in spec.validators:
       validation = validator(tool_args, tool_config)
       if not validation.valid:
@@ -1729,6 +1730,32 @@ def _tool_needs_context(spec: ToolSpec) -> bool:
     return False
 
 
+def _resolve_tool_config(agent: Any, base_name: str, namespace: str | None = None) -> ToolConfig:
+  """Resolve a tool's ToolConfig: built-in flat lookup first, then plugin.
+
+  Built-ins keep the flat ``config.tools.<name>`` mapping. Plugin tools
+  always resolve to the plugin's TOP-LEVEL config instance
+  (``config.tools.<plugin-package>``) — the plugin owns its hierarchy and
+  navigates it inside the tool; the harness imposes no field-naming
+  convention. Plugin tools previously crashed here with AttributeError
+  (closed dataclass, ``__getitem__`` = getattr). Returns a default
+  ToolConfig when neither path matches — never raises.
+  """
+  tools_config = agent.config.tools
+  if hasattr(tools_config, base_name):
+    config = getattr(tools_config, base_name)
+    if isinstance(config, ToolConfig):
+      return config
+  # Plugin tool: the plugin's field on the augmented ToolsConfig is the
+  # tool's config — the whole plugin-level instance, however the plugin
+  # structured its internals. Field name == plugin namespace (package name).
+  if namespace is not None and hasattr(tools_config, namespace):
+    candidate = getattr(tools_config, namespace)
+    if isinstance(candidate, ToolConfig) and not isinstance(candidate, ToolsConfig):
+      return candidate
+  return ToolConfig()
+
+
 def _build_tool_context(agent: Any, spec: ToolSpec) -> ToolContext:
   """Build a ToolContext for the given tool.
 
@@ -1742,8 +1769,9 @@ def _build_tool_context(agent: Any, spec: ToolSpec) -> ToolContext:
   # Use the simple name (without namespace prefix) for config lookup.
   base_name = spec.simple_name or spec.name
 
-  # Get tool-specific config from config.tools
-  tool_config = agent.config.tools[base_name]
+  # Get tool-specific config from config.tools: plugin tools resolve to the
+  # plugin's top-level config instance (see _resolve_tool_config).
+  tool_config = _resolve_tool_config(agent, base_name, spec.namespace)
 
   # Get shared config
   shared_config = agent.config.tools_shared

@@ -101,6 +101,9 @@ def get_yoker_config(cli: bool = False) -> "Config":
   Returns:
     Config object with security settings appropriate for the environment.
   """
+  # Lazy import: plugin_bootstrap imports Config from this module (cycle).
+  from yoker.config.plugin_bootstrap import augmented_config_class
+
   security: SecurityConfig | None = None
   if os.environ.get("YOKER_DEV_MODE") == "1" or os.environ.get("PYTEST_CURRENT_TEST"):
     security = SecurityConfig(
@@ -108,7 +111,7 @@ def get_yoker_config(cli: bool = False) -> "Config":
       directory_permissions=SecurityAction.LOG,
     )
 
-  return get_config(Config, name="yoker", cli=cli, security=security)
+  return get_config(augmented_config_class(Config), name="yoker", cli=cli, security=security)
 
 
 @dataclass
@@ -1217,8 +1220,10 @@ def get_yoker_config_with_manifest(
   Raises:
     PluginError: If the manifest exists but is malformed.
   """
+  # Lazy import: plugin_bootstrap imports Config from this module (cycle).
   from clevis import build_default_cascade, get_config
 
+  from yoker.config.plugin_bootstrap import augmented_config_class
   from yoker.plugins.file_manifest import (
     PluginConfig,
     RunConfig,
@@ -1247,7 +1252,7 @@ def get_yoker_config_with_manifest(
       overrides = manifest.config_overrides
       cascade = cascade + [lambda: overrides]
 
-  config = get_config(Config, name="yoker", cascade=cascade, cli=cli)
+  config = get_config(augmented_config_class(Config), name="yoker", cascade=cascade, cli=cli)
   return config, run_config, plugin_config
 
 

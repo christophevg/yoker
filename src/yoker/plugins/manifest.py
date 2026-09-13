@@ -41,7 +41,15 @@ class PluginManifest:
     skills: List of Skill instances provided by this plugin.
     agents: List of AgentDefinition instances provided by this plugin.
     config_class: Optional configuration class for plugin tools.
-      If provided, yoker will pass configuration from yoker.toml to tools.
+      If provided, yoker augments its config schema at load time with one
+      field named after the plugin package (typed with this class) and
+      populates it from the user's yoker.toml
+      (``[tools.<package>.<tool>]`` tables — the class may be a single
+      ToolConfig subclass or nest per-tool ToolConfig subclasses as
+      fields). Tool functions that declare a ``ctx: ToolContext``
+      parameter receive the resolved tool config as ``ctx.config``.
+      Subclass :class:`yoker.config.ToolConfig` so the class carries the
+      free ``enabled`` gating used to enable/disable plugin tools.
     skills_dir: Optional directory name for skill files (default: "skills").
     agents_dir: Optional directory name for agent files (default: "agents").
     agent: Optional agent definition name to use for `yoker run`. Convenience

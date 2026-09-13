@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 
 from structlog import get_logger
 
+from yoker.config import ToolConfig, ToolsConfig
 from yoker.tools.schema import ToolSpec, build_tool_spec
 
 if TYPE_CHECKING:
@@ -44,15 +45,22 @@ def _filter_enabled_tools(
   config: "Config",
   namespace: str,
 ) -> list[ToolSpec]:
-  """Filter built-in yoker tools by their enabled flag in config.
+  """Filter tools by their enabled flag in config.
 
-  Plugin tools (non-yoker namespace) pass through unchanged. For yoker
-  tools, each tool's ``simple_name`` maps to ``config.tools.<name>.enabled``;
-  disabled tools are dropped. ``websearch``/``webfetch`` additionally
-  require ``config.backend.config.api_key``.
+  Built-in yoker tools: each tool's ``simple_name`` maps to
+  ``config.tools.<name>.enabled``; disabled tools are dropped.
+  ``websearch``/``webfetch`` additionally require
+  ``config.backend.config.api_key``.
+
+  Plugin tools (non-yoker namespace): gated by the plugin's augmented config
+  field ``config.tools.<plugin-package>`` (TODO 7.2) — a plugin-root
+  ``enabled = False`` drops the plugin's tools; a per-tool ``enabled = False``
+  drops that tool. Plugins without an augmented config field (no
+  ``config_class``, or source plugins loaded after the trust gate) pass
+  through unchanged.
   """
   if namespace != "yoker":
-    return tools
+    return _filter_plugin_tools(tools, config, namespace)
 
   enabled: list[ToolSpec] = []
   for spec in tools:
@@ -72,6 +80,43 @@ def _filter_enabled_tools(
       continue
     if name in _API_KEY_REQUIRED_TOOLS and not config.backend.config.api_key:
       logger.info("tool_disabled_no_api_key", tool=name, namespace=namespace)
+      continue
+    enabled.append(spec)
+  return enabled
+
+
+def _filter_plugin_tools(
+  tools: list[ToolSpec],
+  config: "Config",
+  namespace: str,
+) -> list[ToolSpec]:
+  """Gate plugin tools by their augmented config's enabled flags (TODO 7.2).
+
+  ``config.tools.<namespace>`` holds the plugin's top-level config (a
+  ToolConfig subclass): its ``enabled`` gates the whole plugin. Per-tool
+  ``enabled`` is opportunistic: honored only when the plugin's own
+  hierarchy happens to expose a field named after the tool that is itself
+  a ToolConfig with an ``enabled`` attribute — plugins own their internal
+  structure, the harness imposes no field-naming convention.
+  """
+  plugin_config = getattr(config.tools, namespace, None)
+  if plugin_config is None or not isinstance(plugin_config, ToolConfig):
+    return tools
+  if not plugin_config.enabled:
+    logger.info("plugin_disabled_by_config", plugin=namespace)
+    return []
+  enabled: list[ToolSpec] = []
+  for spec in tools:
+    name = spec.simple_name
+    if name is None:
+      continue
+    tool_config = getattr(plugin_config, name, None)
+    if (
+      isinstance(tool_config, ToolConfig)
+      and not isinstance(tool_config, ToolsConfig)
+      and getattr(tool_config, "enabled", True) is False
+    ):
+      logger.info("tool_disabled_by_config", tool=name, namespace=namespace)
       continue
     enabled.append(spec)
   return enabled

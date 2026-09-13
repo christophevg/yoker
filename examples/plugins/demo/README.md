@@ -1,12 +1,16 @@
 # Demo Plugin for Yoker
 
-This is a demonstration plugin for the Yoker plugin system. It shows how to create a plugin that provides tools, skills, and agents.
+This is a demonstration plugin for the Yoker plugin system. It shows how to create a plugin that provides tools, skills, and agents — including a typed tool configuration class (`config_class`, TODO 7.2).
 
 ## Components
 
 ### 1. Echo Tool
 
-A simple tool that echoes back input messages with a prefix.
+A simple tool that echoes back input messages with a prefix. The prefix
+comes from the plugin's typed configuration (see
+[Plugin tool configuration](#plugin-tool-configuration) below): tools that
+declare a `ctx: ToolContext` parameter receive the plugin's top-level
+config instance as `ctx.config` and navigate their own hierarchy.
 
 ```python
 from yoker.tools import ToolRegistry
@@ -27,6 +31,24 @@ Location: `yoker_plugin_demo/skills/greeting/SKILL.md`
 A demonstration agent definition.
 
 Location: `yoker_plugin_demo/agents/demo.md`
+
+## Plugin tool configuration
+
+The manifest declares `config_class=DemoPluginConfig` — a `ToolConfig`
+subclass with one field per tool. Yoker augments its config schema at load
+time, so users configure the tool in `yoker.toml`:
+
+```toml
+[tools.yoker_plugin_demo.echo]
+prefix = "Custom: "    # default "Echo: " preserves the classic output
+```
+
+The plugin-root class also carries `enabled` (from the `ToolConfig` base):
+`[tools.yoker_plugin_demo] enabled = false` drops all of the plugin's
+tools; `[tools.yoker_plugin_demo.echo] enabled = false` drops just the
+echo tool (per-tool `enabled` is honored because `DemoPluginConfig`
+happens to expose a tool-named `ToolConfig` field — a convention the
+harness does not impose).
 
 ## Structure
 

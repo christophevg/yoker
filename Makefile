@@ -1,4 +1,5 @@
 YOKER_FROM = .
+UV_ARGS += --with-editable examples/plugins/demo
 -include ~/.yoker/Makefile
 
 .PHONY: env-dev env-run install-pythons test test-cov test-all test-file test-one format lint typecheck check run docs docs-view build publish publish-test pre-publish clean clean-all clean-sessions help demo demos

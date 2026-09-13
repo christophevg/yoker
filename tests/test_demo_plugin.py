@@ -50,6 +50,23 @@ class TestDemoPluginManifest:
 
     assert __YOKER_MANIFEST__.agents_dir == "agents"
 
+  def test_manifest_declares_config_class(self) -> None:
+    """Manifest should declare the plugin's typed tool config class (TODO 7.2)."""
+    from yoker_plugin_demo import __YOKER_MANIFEST__, DemoPluginConfig
+
+    from yoker.config import ToolConfig
+
+    assert __YOKER_MANIFEST__.config_class is DemoPluginConfig
+    assert issubclass(DemoPluginConfig, ToolConfig)
+    # Per-tool configs are nested on the plugin root class (owner shape).
+    assert hasattr(DemoPluginConfig(), "echo")
+
+  def test_echo_config_default_preserves_behavior(self) -> None:
+    """Default prefix must preserve the pre-config output exactly."""
+    from yoker_plugin_demo import DemoPluginConfig
+
+    assert DemoPluginConfig().echo.prefix == "Echo: "
+
 
 class TestEchoTool:
   """Test echo tool implementation."""
@@ -61,26 +78,60 @@ class TestEchoTool:
 
     return build_tool_spec(echo)
 
+  @pytest.fixture
+  def echo_ctx(self):
+    """Build a minimal ToolContext with the default plugin-root config.
+
+    Direct calls must inject ctx themselves; in production the executor
+    builds it via _build_tool_context (TODO 7.2). Plugin tools receive the
+    plugin's TOP-LEVEL config and navigate their own hierarchy.
+    """
+    from yoker_plugin_demo import DemoPluginConfig
+
+    from yoker.config import ToolsSharedConfig
+    from yoker.tools.context import ToolContext
+
+    return ToolContext(config=DemoPluginConfig(), shared=ToolsSharedConfig(), backends={})
+
   @pytest.mark.asyncio
-  async def test_echo_tool_returns_input_with_prefix(self, echo_spec) -> None:
+  async def test_echo_tool_returns_input_with_prefix(self, echo_spec, echo_ctx) -> None:
     """Echo tool should return input message with 'Echo: ' prefix."""
-    result = echo_spec.execute(message="Hello, World!")
+    result = echo_spec.execute(message="Hello, World!", ctx=echo_ctx)
 
     assert result == "Echo: Hello, World!"
 
   @pytest.mark.asyncio
-  async def test_echo_tool_handles_empty_string(self, echo_spec) -> None:
+  async def test_echo_tool_handles_empty_string(self, echo_spec, echo_ctx) -> None:
     """Echo tool should handle empty string input."""
-    result = echo_spec.execute(message="")
+    result = echo_spec.execute(message="", ctx=echo_ctx)
 
     assert result == "Echo: "
 
   @pytest.mark.asyncio
-  async def test_echo_tool_coerces_non_string(self, echo_spec) -> None:
+  async def test_echo_tool_coerces_non_string(self, echo_spec, echo_ctx) -> None:
     """Echo tool stringifies non-string input."""
-    result = echo_spec.execute(message=123)
+    result = echo_spec.execute(message=123, ctx=echo_ctx)
 
     assert result == "Echo: 123"
+
+  @pytest.mark.asyncio
+  async def test_echo_tool_uses_configured_prefix(self) -> None:
+    """Echo tool navigates the plugin-root config to its own tool config."""
+    from yoker_plugin_demo import DemoPluginConfig, EchoToolConfig, echo
+
+    from yoker.config import ToolsSharedConfig
+    from yoker.tools.context import ToolContext
+
+    spec = build_tool_spec(echo)
+    ctx = ToolContext(
+      config=DemoPluginConfig(echo=EchoToolConfig(prefix="Custom: ")),
+      shared=ToolsSharedConfig(),
+      backends={},
+    )
+
+    result = spec.execute(message="Hello", ctx=ctx)
+
+    assert result == "Custom: Hello"
 
   def test_echo_tool_has_correct_name(self, echo_spec) -> None:
     """Echo tool should have 'echo' as its name."""
