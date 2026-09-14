@@ -2,6 +2,7 @@
 
 import inspect
 import json
+import os
 import re
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -32,6 +33,7 @@ from yoker.events import (
 )
 from yoker.exceptions import NetworkError
 from yoker.logging import log_timing
+from yoker.tools.annotations import GuardType
 from yoker.tools.context import ToolContext
 from yoker.tools.guardrails import Guardrail
 from yoker.tools.schema import (
@@ -1186,6 +1188,44 @@ def _coerce_schema_aware_args(spec: ToolSpec, tool_args: dict[str, Any]) -> dict
   return coerced if changed else tool_args
 
 
+def _expand_tilde_args(spec: ToolSpec, tool_args: dict[str, Any]) -> dict[str, Any]:
+  """Expand a leading ``~`` in path-guarded string arguments.
+
+  None of the filesystem tools expand ``~`` themselves — ``Path("~/x")``
+  is a literal relative path, so e.g. ``search(path="~/...")`` failed with
+  "Path not found" (and ``existence`` worse: silent ``exists=False`` for a
+  real file). Expansion happens HERE, before guardrails, so the
+  filesystem_paths allowlist validates the real post-expansion path —
+  expansion after validation would let ``~/../...`` pass as a relative
+  path and then resolve outside the allowed roots.
+
+  Only PATH_READ/PATH_WRITE-annotated parameters are touched; other
+  string parameters (and the input dict) pass through unchanged.
+  """
+  if not spec.guards:
+    return tool_args
+
+  expanded: dict[str, Any] = {}
+  changed = False
+  for key, value in tool_args.items():
+    if (
+      isinstance(value, str)
+      and value.startswith("~")
+      and spec.guards.get(key) in (GuardType.PATH_READ, GuardType.PATH_WRITE)
+    ):
+      try:
+        expanded[key] = os.path.expanduser(value)
+        if expanded[key] != value:
+          changed = True
+          logger.info("tool_path_expanded", tool=spec.name, key=key, value=expanded[key])
+      except (OSError, ValueError, RuntimeError):
+        expanded[key] = value
+    else:
+      expanded[key] = value
+
+  return expanded if changed else tool_args
+
+
 async def _run_tool(agent: Any, tool_name: str, tool_args: dict[str, Any]) -> tuple[str, bool, Any]:
   """Run a tool and return (result, success, raw_tool_result)."""
   spec = agent.tools.get(tool_name)
@@ -1218,6 +1258,11 @@ async def _run_tool(agent: Any, tool_name: str, tool_args: dict[str, Any]) -> tu
   # parameter (e.g. write(content='{"key": "value"}')). Coerce only when the
   # tool's schema declares the parameter as object/array AND the value parses.
   tool_args = _coerce_schema_aware_args(spec, tool_args)
+
+  # Expand a leading ``~`` in path-guarded arguments BEFORE the approval
+  # hook and guardrails: the filesystem_paths allowlist must validate the
+  # real post-expansion path, and the tools then receive the expanded path.
+  tool_args = _expand_tilde_args(spec, tool_args)
 
   # Write-blocked-path approval hook. When an approval handler is wired on the
   # agent (interactive mode), it runs BEFORE the guardrail. This gives the
