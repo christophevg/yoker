@@ -276,12 +276,21 @@ class ContextOverflowEvent(Event):
     estimated_tokens: The estimated token count that triggered overflow.
     max_tokens: The configured soft cap (``context.max_tokens``).
     dropped_count: Number of messages permanently removed from ``_messages``.
+    first_remaining: One-line summary of the first non-protected message
+      after truncation (where retained history starts), or None when only
+      the protected prefix remains.
+    target_tokens: The effective trim target in tokens
+      (``max_tokens * context.compact_ratio``), i.e. the estimate the
+      truncation loop trimmed to. None when the event was produced by older
+      code without hysteresis (deserialization of historical JSONL records).
   """
 
   message_count: int
   estimated_tokens: int
   max_tokens: int
   dropped_count: int
+  first_remaining: str | None = None
+  target_tokens: int | None = None
 
 
 @dataclass(frozen=True)

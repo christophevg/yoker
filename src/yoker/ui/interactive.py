@@ -48,6 +48,7 @@ TOOL_STYLE = Style(color="cyan")
 TOOL_RESULT_STYLE = Style(color="bright_black")
 STATS_STYLE = Style(color="bright_blue", dim=True)
 ERROR_STYLE = Style(color="red", bold=True)
+COMPACT_STYLE = Style(color="bright_blue")
 STEP_TITLE_STYLE = Style(bold=True, underline=True)
 
 RESPONSE_THEME = Theme({"markdown.code": Style(color="dodger_blue1")})
@@ -872,6 +873,49 @@ class InteractiveUIHandler(UIHandler):
         self.console.print()  # newline
       else:
         self.console.print(" | ".join(parts), style=STATS_STYLE)
+
+  def output_context_overflow(
+    self,
+    dropped_count: int,
+    estimated_tokens: int,
+    max_tokens: int,
+    message_count: int,
+    first_remaining: str | None = None,
+    target_tokens: int | None = None,
+  ) -> None:
+    """Output a context compaction notice (overflow truncation fired).
+
+    Renders as a blue-bordered panel so the compaction is clearly visible
+    in the transcript: the context size shrank because the framework
+    permanently dropped older non-setup messages to fit under the token
+    cap.
+
+    Args:
+      dropped_count: Number of messages permanently removed.
+      estimated_tokens: Estimated token count that triggered the overflow.
+      max_tokens: The configured soft cap (``context.max_tokens``).
+      message_count: Number of messages remaining after truncation.
+      first_remaining: One-line summary of the first non-protected message
+        after truncation (where retained history starts), or None.
+      target_tokens: Effective trim target (``max_tokens *
+        context.compact_ratio``), or None when the event carries no target
+        (pre-hysteresis records).
+    """
+    self._stop_processing_status()
+    self._stop_tool_execution_status()
+    body = (
+      f"Dropped [bold]{dropped_count}[/bold] message(s) — estimated "
+      f"{estimated_tokens:,} tokens exceeded the {max_tokens:,} cap. "
+      f"{message_count} messages remain."
+    )
+    if first_remaining:
+      body += f"\n[bold]History starts at:[/bold] {first_remaining}"
+    # Hysteresis detail: only meaningful when the trim went deeper than
+    # the cap (ratio < 1.0).
+    if target_tokens is not None and target_tokens < max_tokens:
+      body += f"\n[bold]Trimmed to:[/bold] ≈{target_tokens:,} tokens."
+    self.console.print(Panel(body, title="⚙ Context compacted", style=COMPACT_STYLE))
+    self.console.print()
 
   # === Error Output ===
 

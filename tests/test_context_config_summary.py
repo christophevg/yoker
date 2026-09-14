@@ -14,6 +14,7 @@ def _make_config(**overrides):
   """Build a minimal stand-in Config with only the fields the renderer reads."""
   from yoker.config import (
     BackendConfig,
+    ContextConfig,
     GitHubToolConfig,
     GitToolConfig,
     MakeToolConfig,
@@ -28,6 +29,7 @@ def _make_config(**overrides):
     permissions: object
     backend: BackendConfig
     plugins: PluginsConfig
+    context: ContextConfig
 
   github = overrides.get("github", GitHubToolConfig())
   make = overrides.get("make", MakeToolConfig())
@@ -36,7 +38,26 @@ def _make_config(**overrides):
   permissions = overrides.get("permissions", PermissionsConfig())
   backend = overrides.get("backend", BackendConfig())
   plugins = overrides.get("plugins", PluginsConfig())
-  return _StubConfig(tools=tools, permissions=permissions, backend=backend, plugins=plugins)
+  context = overrides.get("context", ContextConfig())
+  return _StubConfig(
+    tools=tools, permissions=permissions, backend=backend, plugins=plugins, context=context
+  )
+
+
+class TestContextCompactionRendering:
+  def test_default_ratio_shows_half_cap_target(self) -> None:
+    from yoker.config import ContextConfig
+
+    config = _make_config(context=ContextConfig(max_tokens=200_000))
+    summary = render_config_summary(config)
+    assert "context compaction: cap 200,000 tokens; trim target ≈100,000" in summary
+
+  def test_ratio_one_shows_cap_as_target(self) -> None:
+    from yoker.config import ContextConfig
+
+    config = _make_config(context=ContextConfig(max_tokens=80_000, compact_ratio=1.0))
+    summary = render_config_summary(config)
+    assert "context compaction: cap 80,000 tokens; trim target ≈80,000" in summary
 
 
 class TestGithubOperationsRendering:

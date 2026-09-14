@@ -92,6 +92,17 @@ def render_config_summary(config: Config) -> str:
       f"* write-protection active: {blocked_count} protected paths (Makefile, pyproject.toml, …)"
     )
 
+  # --- Context compaction (cap + trim target the agent must stay under) ---
+  context_cfg = getattr(config, "context", None)
+  if context_cfg is not None:
+    max_tokens = context_cfg.max_tokens
+    ratio = getattr(context_cfg, "compact_ratio", 1.0)
+    if not isinstance(ratio, int | float) or not 0 < ratio <= 1.0:
+      ratio = 1.0
+    lines.append(
+      f"* context compaction: cap {max_tokens:,} tokens; trim target ≈{int(max_tokens * ratio):,}"
+    )
+
   # --- Backend (names only, never credentials) ---
   model = getattr(config.backend.ollama, "model", None)
   lines.append(f"* backend: {config.backend.provider} (model: {model})")

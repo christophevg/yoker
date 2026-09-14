@@ -12,6 +12,10 @@ Entries below are ordered newest first; keep them short and dated.
 
 ---
 
+## 2026-09-14 — compact_ratio hysteresis added; session restart required before behavior is live.
+
+---
+
 ## 2026-09-12 — Tool-parameter schema bug fixed: restart between fixes required
 
 The "Invalid content parameter" bug had a chain of three causes, all fixed

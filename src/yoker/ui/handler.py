@@ -324,3 +324,34 @@ class UIHandler(Protocol):
   #     ``"git <operation>"`` (e.g. ``"git commit"``) and ``preview`` is a
   #     command preview (staged diff for commit, unpushed commits for push,
   #     working-tree status for checkout).
+
+  # === Context compaction notice (optional) ===
+  #
+  # ``output_context_overflow(dropped_count: int, estimated_tokens: int,
+  # max_tokens: int, message_count: int, first_remaining: str | None = None,
+  # target_tokens: int | None = None) -> None`` is an **optional** protocol
+  # method, dispatched via :class:`yoker.ui.bridge.UIBridge` on
+  # :class:`yoker.events.ContextOverflowEvent` (guarded by ``getattr``).
+  # The framework-default context management emits this event when the
+  # estimated context size exceeded ``context.max_tokens`` and older
+  # non-setup messages were permanently dropped.
+  #
+  # :class:`yoker.ui.batch.BatchUIHandler` implements it as a stderr
+  # diagnostic line; :class:`yoker.ui.interactive.InteractiveUIHandler`
+  # renders it as a blue-bordered panel. Handlers that do not implement
+  # it silently ignore compaction (previous behavior).
+  #
+  # When implemented:
+  #   output_context_overflow(dropped_count, estimated_tokens, max_tokens,
+  #     message_count, first_remaining, target_tokens) - called once per
+  #     overflow truncation. ``dropped_count`` is the number of permanently
+  #     removed messages, ``estimated_tokens`` the estimate that triggered
+  #     the overflow, ``max_tokens`` the configured soft cap, and
+  #     ``message_count`` the number of messages remaining after
+  #     truncation. ``first_remaining`` is a one-line summary of the first
+  #     non-protected message after truncation (where retained history
+  #     starts), or None when only the protected prefix remains.
+  #     ``target_tokens`` is the effective trim target
+  #     (``max_tokens * context.compact_ratio``) — None for events without
+  #     hysteresis (pre-hysteresis records); only meaningful when it is
+  #     below ``max_tokens``.

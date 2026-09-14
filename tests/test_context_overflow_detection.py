@@ -9,9 +9,14 @@ stripped from non-supporting backends always-on (no config flag).
 from typing import Any
 from unittest.mock import MagicMock
 
+import pytest
+
 from yoker.context import BaseContextManager
 from yoker.core._processing import (
+  _calibrated_estimate,
+  _capture_calibration,
   _estimate_tokens,
+  _first_remaining_summary,
   _manage_context_overflow,
   _strip_thinking_blocks,
 )
@@ -96,8 +101,13 @@ def _make_agent(
   *,
   max_tokens: int,
   supports_context_management: bool = False,
+  compact_ratio: float = 1.0,
 ) -> MagicMock:
-  """Build a minimal mock agent for _manage_context_overflow."""
+  """Build a minimal mock agent for _manage_context_overflow.
+
+  ``compact_ratio`` defaults to 1.0 so trim-mechanics tests keep pinning
+  the cap-exact behavior; hysteresis tests pass 0.5 explicitly.
+  """
   cm = BaseContextManager()
   cm._messages = list(messages)
 
@@ -107,12 +117,19 @@ def _make_agent(
   config = MagicMock()
   config.context.max_tokens = max_tokens
   config.context.overflow_keep_first_user = True
+  config.context.compact_ratio = compact_ratio
 
   agent = MagicMock()
   agent.context = cm
   agent._backend = backend
   agent.config = config
   agent._event_handlers = []
+  # Calibration state — set explicitly (MagicMock auto-attributes would be
+  # truthy Mocks and break _calibrated_estimate).
+  agent._context_fixed_tokens = None
+  agent._context_ratio = 1.0
+  agent._context_char4_at_capture = None
+  agent._context_last_input_tokens = None
   return agent
 
 
@@ -127,9 +144,7 @@ class TestManageContextOverflow:
     )
 
     async def call() -> None:
-      result = await _manage_context_overflow(agent, None, None)
-      # Returns last_input_tokens (unchanged).
-      assert result is None
+      await _manage_context_overflow(agent, None)
       # No messages dropped.
       assert len(agent.context.get_context()) == 2
 
@@ -156,7 +171,7 @@ class TestManageContextOverflow:
 
     import asyncio
 
-    asyncio.run(_manage_context_overflow(agent, None, None))
+    asyncio.run(_manage_context_overflow(agent, None))
 
     # At least one ContextOverflowEvent was emitted.
     overflow_events = [e for e in events if isinstance(e, ContextOverflowEvent)]
@@ -182,7 +197,7 @@ class TestManageContextOverflow:
     )
     import asyncio
 
-    asyncio.run(_manage_context_overflow(agent, None, None))
+    asyncio.run(_manage_context_overflow(agent, None))
     assert all("thinking" not in m for m in agent.context.get_context())
 
   def test_thinking_blocks_preserved_for_supporting_backend(self) -> None:
@@ -197,45 +212,445 @@ class TestManageContextOverflow:
     )
     import asyncio
 
-    asyncio.run(_manage_context_overflow(agent, None, None))
+    asyncio.run(_manage_context_overflow(agent, None))
     msgs = agent.context.get_context()
     assert any(m.get("thinking") == "secret" for m in msgs)
 
-  def test_stale_last_input_tokens_does_not_evict_all_droppable(self) -> None:
-    """Regression: the truncation loop must recalculate the estimate on
-    the current (truncated) message list rather than reusing the stale
-    last-turn ``last_input_tokens``. Otherwise the loop evicts ALL
-    droppable messages instead of just enough to fit under the cap.
+  def test_calibrated_dropping_drops_only_needed_units(self) -> None:
+    """Calibrated overage drops only enough units to cover it.
+
+    Regression for the "Dropped 0" bug: when the calibrated count (which
+    includes system prompt + tool schemas overhead) is over the cap while
+    the char/4 content estimate alone is under it, the loop must still
+    drop messages — charged against the calibrated count, not re-derived
+    from the heuristic.
     """
-    # last_input_tokens from the previous turn is far over the cap.
-    stale_last_input_tokens = 5000
-    # max_tokens=8; char/4 heuristic on the full list is 13, so only some
-    # of the droppable assistants need to be evicted to reach 7 (<= 8).
+    # max_tokens=20; calibrated estimate = 13 char4 content + 15 fixed
+    # = 28 -> overage 8. Each 8-char assistant is worth 2 content tokens
+    # (8 // 4), so 4 units cover the overage and the newest 2 assistants
+    # survive. The char/4 estimate of the full list is 13 (<= 20) — the
+    # old code would have dropped 0.
     agent = _make_agent(
       [
-        _msg("system", "sys"),  # 3 chars (protected)
-        _msg("user", "hi"),  # 2 chars (protected first user turn)
-        _msg("assistant", "abcdefgh"),  # 8 chars
-        _msg("assistant", "abcdefgh"),
-        _msg("assistant", "abcdefgh"),
-        _msg("assistant", "abcdefgh"),
-        _msg("assistant", "abcdefgh"),
-        _msg("assistant", "abcdefgh"),
+        _msg("system", "sys"),
+        _msg("user", "hi"),
+        _msg("assistant", "one1one1"),
+        _msg("assistant", "two2two2"),
+        _msg("assistant", "three333"),
+        _msg("assistant", "four4444"),
+        _msg("assistant", "five5555"),
+        _msg("assistant", "six6six6"),
       ],
-      max_tokens=8,
+      max_tokens=20,
     )
+    events: list[Any] = []
+    handler: EventCallback = lambda e: events.append(e)  # noqa: E731
+    agent._event_handlers = [handler]
+
+    # Seed calibration: fixed=15, ratio=1.0 — the calibrated estimate of
+    # the full list (13 content + 15 fixed = 28) is over the 20 cap, so
+    # the loop fires. Charging at ratio 1.0 drops char/4-equivalents.
+    agent._context_fixed_tokens = 15
+    agent._context_ratio = 1.0
 
     import asyncio
 
-    asyncio.run(_manage_context_overflow(agent, None, stale_last_input_tokens))
+    asyncio.run(_manage_context_overflow(agent, None))
 
     final = agent.context.get_context()
-    # The protected prefix (system + first user) survives.
     roles = [m["role"] for m in final]
     assert roles[0] == "system"
     assert "user" in roles
-    # Critical assertion: NOT all droppable assistants were evicted.
-    # Full list = 53 chars -> 13 tokens; dropping 3 assistants yields
-    # 29 chars -> 7 tokens (<= 8), so 3 assistants survive.
+    # Oldest units dropped first; enough units dropped to cover the
+    # calibrated overage (28 > 20), event reports the total.
+    event = next(e for e in events if isinstance(e, ContextOverflowEvent))
+    assert event.dropped_count >= 1
+    assert event.estimated_tokens == 28
+    assert event.max_tokens == 20
+    assert agent._context_ratio == 1.0  # unchanged by the loop
+    # The newest two assistants survive (8 tokens of overage covered by
+    # 4 dropped units charged at 2 each).
+    assistants = [m["content"] for m in final if m["role"] == "assistant"]
+    assert assistants == ["five5555", "six6six6"]
+
+  def test_calibrated_massive_overage_drops_all_droppable(self) -> None:
+    """Calibrated count far over the cap: every droppable unit is dropped.
+
+    The protected prefix (system + first user turn) survives. A count far
+    over the cap genuinely requires evicting all droppable history — the
+    cap is enforced.
+    """
+    agent = _make_agent(
+      [
+        _msg("system", "sys"),
+        _msg("user", "hi"),
+        *[_msg("assistant", "abcdefgh") for _ in range(6)],
+      ],
+      max_tokens=8,
+    )
+    agent._context_fixed_tokens = 5000
+    agent._context_ratio = 1.0
+    events: list[Any] = []
+    handler: EventCallback = lambda e: events.append(e)  # noqa: E731
+    agent._event_handlers = [handler]
+
+    import asyncio
+
+    asyncio.run(_manage_context_overflow(agent, None))
+
+    final = agent.context.get_context()
+    roles = [m["role"] for m in final]
+    assert roles[0] == "system"
+    assert "user" in roles
     assistant_count = sum(1 for m in final if m["role"] == "assistant")
-    assert assistant_count == 3, f"expected 3 assistants to survive, got {assistant_count}"
+    assert assistant_count == 0
+    event = next(e for e in events if isinstance(e, ContextOverflowEvent))
+    assert event.dropped_count == 6
+    # Calibrated estimate: 53 content chars // 4 = 13, + fixed 5000.
+    assert event.estimated_tokens == 5013
+
+  def test_calibrated_ratio_charges_dense_content(self) -> None:
+    """Dense content (high learned ratio) needs fewer dropped messages.
+
+    ratio=4.0: each dropped unit is charged 4× its char/4 size, so the
+    loop stops earlier than at ratio 1.0 for the same fixed overhead.
+    """
+    agent = _make_agent(
+      [
+        _msg("system", "sys"),
+        _msg("user", "hi"),
+        *[_msg("assistant", "abcdefgh") for _ in range(6)],
+      ],
+      max_tokens=8,
+    )
+    agent._context_fixed_tokens = 50
+    agent._context_ratio = 4.0
+    events: list[Any] = []
+    handler: EventCallback = lambda e: events.append(e)  # noqa: E731
+    agent._event_handlers = [handler]
+
+    import asyncio
+
+    asyncio.run(_manage_context_overflow(agent, None))
+
+    event = next(e for e in events if isinstance(e, ContextOverflowEvent))
+    # Estimate: content 53 chars (sys 3 + hi 2 + 6×8) // 4 = 13;
+    # 50 + 4.0*13 = 102. Each dropped unit charged 4*2 = 8 → overage 94
+    # → 12 units would be needed but only 6 droppable — all 6 dropped,
+    # loop stops dry.
+    assert event.dropped_count == 6
+    assert event.estimated_tokens == 102
+
+  def test_all_protected_emits_zero_drop_event(self) -> None:
+    """Nothing droppable (system + protected first user only): the event
+    still fires with dropped_count 0 — a real saturation signal, not the
+    estimator-mismatch artifact it used to be.
+    """
+    agent = _make_agent(
+      [_msg("system", "sys"), _msg("user", "hello")],
+      max_tokens=1,
+    )
+    # Seed calibration: fixed=1, ratio=1.0 → estimate = 2 char4 + 1 fixed.
+    agent._context_fixed_tokens = 1
+    agent._context_ratio = 1.0
+    events: list[Any] = []
+    handler: EventCallback = lambda e: events.append(e)  # noqa: E731
+    agent._event_handlers = [handler]
+
+    import asyncio
+
+    asyncio.run(_manage_context_overflow(agent, None))
+
+    event = next(e for e in events if isinstance(e, ContextOverflowEvent))
+    assert event.dropped_count == 0
+    # Calibrated estimate: "hello"=5, "sys"=3 → 8 chars // 4 = 2, + fixed 1.
+    assert event.estimated_tokens == 3
+    assert len(agent.context.get_context()) == 2
+
+  def test_first_remaining_reports_history_start(self) -> None:
+    """The event's first_remaining names the first non-protected message."""
+    agent = _make_agent(
+      [
+        _msg("system", "sys"),
+        _msg("user", "first turn"),
+        _msg("assistant", "resp1"),
+        _msg("user", "second turn"),
+        _msg("assistant", "resp2"),
+      ],
+      max_tokens=8,
+    )
+    # Seed calibration: char4 of the full list is 34//4 = 8; fixed=1 →
+    # estimate 9 > cap 8 → overage 1. Dropping resp1 (charge 1) covers
+    # it exactly; "second turn" merges into the contiguous protected
+    # user block, and "resp2" survives as retained history.
+    agent._context_fixed_tokens = 1
+    agent._context_ratio = 1.0
+    events: list[Any] = []
+    handler: EventCallback = lambda e: events.append(e)  # noqa: E731
+    agent._event_handlers = [handler]
+
+    import asyncio
+
+    asyncio.run(_manage_context_overflow(agent, None))
+
+    event = next(e for e in events if isinstance(e, ContextOverflowEvent))
+    assert event.dropped_count == 1
+    assert event.estimated_tokens == 9
+    # Protected prefix: system + the contiguous user block ("first
+    # turn", "second turn"). History starts at the retained "resp2".
+    assert event.first_remaining == "assistant: resp2"
+
+  def test_first_remaining_none_when_only_protected_remains(self) -> None:
+    """Only the protected prefix remains → first_remaining is None."""
+    agent = _make_agent(
+      [_msg("system", "sys"), _msg("user", "only turn")],
+      max_tokens=1,
+    )
+    events: list[Any] = []
+    handler: EventCallback = lambda e: events.append(e)  # noqa: E731
+    agent._event_handlers = [handler]
+
+    import asyncio
+
+    asyncio.run(_manage_context_overflow(agent, None))
+
+    event = next(e for e in events if isinstance(e, ContextOverflowEvent))
+    assert event.dropped_count == 0
+    assert event.first_remaining is None
+
+  def test_first_remaining_tool_call_summary(self) -> None:
+    """An assistant message with tool calls summarizes as role → tools."""
+
+    msgs = [
+      _msg("system", "sys"),
+      _msg("user", "first"),
+      {
+        "role": "assistant",
+        "content": "Let me check",
+        "tool_calls": [
+          {"function": {"name": "read"}},
+          {"function": {"name": "read"}},
+          {"function": {"name": "make"}},
+        ],
+      },
+    ]
+    summary = _first_remaining_summary(msgs)
+    assert summary == "assistant → tools: read ×2, make | Let me check"
+
+
+class TestCompactRatioHysteresis:
+  """Trim-target hysteresis: the loop stops at max_tokens * compact_ratio."""
+
+  def test_ratio_trims_deeper_than_cap(self) -> None:
+    """ratio 0.5 on cap 30 trims to ≈15, dropping far more than needed."""
+    # char4 of the full list: "sys"(3) + "hi"(2) + 10×8 = 85 // 4 = 21.
+    # Seed fixed=15 → calibrated estimate 15 + 21 = 36 > cap 30 (trigger).
+    # Target = int(30 * 0.5) = 15 → overage 21; each 8-char assistant
+    # charges 2, so after 10 drops overage is 1 and the loop runs dry.
+    # A cap-exact trim would need only 3 drops (overage 6) — hysteresis
+    # drops 10.
+    agent = _make_agent(
+      [
+        _msg("system", "sys"),
+        _msg("user", "hi"),
+        *[_msg("assistant", "abcdefgh") for _ in range(10)],
+      ],
+      max_tokens=30,
+      compact_ratio=0.5,
+    )
+    agent._context_fixed_tokens = 15
+    agent._context_ratio = 1.0
+    events: list[Any] = []
+    handler: EventCallback = lambda e: events.append(e)  # noqa: E731
+    agent._event_handlers = [handler]
+
+    import asyncio
+
+    asyncio.run(_manage_context_overflow(agent, None))
+
+    event = next(e for e in events if isinstance(e, ContextOverflowEvent))
+    assert event.max_tokens == 30
+    assert event.estimated_tokens == 36
+    assert event.target_tokens == 15
+    assert event.dropped_count == 10  # deeper than the 3 a cap-trim needs
+    # Ratio 1.0 would have kept 7 assistants; the target leaves none.
+    assistants = [m for m in agent.context.get_context() if m["role"] == "assistant"]
+    assert assistants == []
+
+  def test_ratio_one_reproduces_cap_trim_exactly(self) -> None:
+    """compact_ratio 1.0 keeps the trim-to-cap behavior byte-for-byte."""
+    # Same setup as above but ratio 1.0: overage = 36 - 30 = 6 → 3 drops,
+    # newest 7 assistants survive.
+    agent = _make_agent(
+      [
+        _msg("system", "sys"),
+        _msg("user", "hi"),
+        *[_msg("assistant", "abcdefgh") for _ in range(10)],
+      ],
+      max_tokens=30,
+      compact_ratio=1.0,
+    )
+    agent._context_fixed_tokens = 15
+    agent._context_ratio = 1.0
+    events: list[Any] = []
+    handler: EventCallback = lambda e: events.append(e)  # noqa: E731
+    agent._event_handlers = [handler]
+
+    import asyncio
+
+    asyncio.run(_manage_context_overflow(agent, None))
+
+    event = next(e for e in events if isinstance(e, ContextOverflowEvent))
+    assert event.max_tokens == 30
+    assert event.estimated_tokens == 36
+    assert event.target_tokens == 30
+    assert event.dropped_count == 3
+    final = agent.context.get_context()
+    assert len(final) == 9  # system + user + 7 assistants (12 - 3)
+
+  def test_missing_compact_ratio_defends_to_one(self) -> None:
+    """A config without compact_ratio behaves like ratio 1.0."""
+    # Same scenario as test_ratio_trims_deeper_than_cap (which drops all
+    # 10 at ratio 0.5); the missing attribute must fall back to 1.0 and
+    # stop at the cap after 3 drops.
+    agent = _make_agent(
+      [
+        _msg("system", "sys"),
+        _msg("user", "hi"),
+        *[_msg("assistant", "abcdefgh") for _ in range(10)],
+      ],
+      max_tokens=30,
+    )
+    del agent.config.context.compact_ratio  # MagicMock: attribute gone
+    agent._context_fixed_tokens = 15
+    agent._context_ratio = 1.0
+    events: list[Any] = []
+    handler: EventCallback = lambda e: events.append(e)  # noqa: E731
+    agent._event_handlers = [handler]
+
+    import asyncio
+
+    asyncio.run(_manage_context_overflow(agent, None))
+
+    event = next(e for e in events if isinstance(e, ContextOverflowEvent))
+    assert event.target_tokens == 30
+    assert event.dropped_count == 3
+
+  def test_event_carries_target_tokens(self) -> None:
+    """The emitted event reports the effective trim target."""
+    # Nothing droppable (protected prefix only): the event still fires.
+    # Seed calibration so the estimate is over the cap: "sys"=3 + "hi"=2
+    # = 5 chars // 4 = 1, + fixed 2 → 3 > cap 1.
+    agent = _make_agent(
+      [_msg("system", "sys"), _msg("user", "hi")],
+      max_tokens=1,
+      compact_ratio=0.5,
+    )
+    agent._context_fixed_tokens = 2
+    agent._context_ratio = 1.0
+    events: list[Any] = []
+    handler: EventCallback = lambda e: events.append(e)  # noqa: E731
+    agent._event_handlers = [handler]
+
+    import asyncio
+
+    asyncio.run(_manage_context_overflow(agent, None))
+
+    event = next(e for e in events if isinstance(e, ContextOverflowEvent))
+    assert event.target_tokens == 0  # int(1 * 0.5)
+
+  def test_first_remaining_correct_after_deeper_trim(self) -> None:
+    """A deep target trim still reports the true retained-history start."""
+    # char4: "sys"(3) + "first turn"(10) + "second turn"(11) + 3×8=24
+    # = 48 // 4 = 12; fixed=1 → estimate 13 > cap 10. Target = 5 →
+    # overage 8: each 8-char assistant charges 2, so all 3 assistants
+    # are dropped (overage 2 remains — nothing droppable left);
+    # "second turn" merges into the protected user block, so nothing but
+    # the prefix remains.
+    agent = _make_agent(
+      [
+        _msg("system", "sys"),
+        _msg("user", "first turn"),
+        _msg("user", "second turn"),
+        _msg("assistant", "resp1resp"),
+        _msg("assistant", "resp2resp"),
+        _msg("assistant", "resp3resp"),
+      ],
+      max_tokens=10,
+      compact_ratio=0.5,
+    )
+    agent._context_fixed_tokens = 1
+    agent._context_ratio = 1.0
+    events: list[Any] = []
+    handler: EventCallback = lambda e: events.append(e)  # noqa: E731
+    agent._event_handlers = [handler]
+
+    import asyncio
+
+    asyncio.run(_manage_context_overflow(agent, None))
+
+    event = next(e for e in events if isinstance(e, ContextOverflowEvent))
+    assert event.target_tokens == 5
+    assert event.dropped_count == 3
+    assert event.first_remaining is None
+
+
+class TestCaptureCalibration:
+  """_capture_calibration: fixed-overhead + density-ratio learning."""
+
+  def _agent(self) -> MagicMock:
+    agent = MagicMock()
+    agent._context_fixed_tokens = None
+    agent._context_ratio = 1.0
+    agent._context_char4_at_capture = None
+    agent._context_last_input_tokens = None
+    agent.context = BaseContextManager()
+    agent.context._messages = [_msg("user", "abcdefgh")]  # 8 chars → char4 = 2
+    return agent
+
+  def test_first_capture_learns_fixed_tokens(self) -> None:
+    """First capture: fixed = server − char4; ratio stays default."""
+    agent = self._agent()
+    _capture_calibration(agent, 102)  # 102 − 2 = 100 fixed
+    assert agent._context_fixed_tokens == 100
+    assert agent._context_ratio == 1.0
+    assert agent._context_last_input_tokens == 102
+    assert agent._context_char4_at_capture == 2
+
+  def test_second_capture_learns_ratio_from_delta(self) -> None:
+    """Growth deltas yield observed density: Δserver / Δchar4, EMA-blended."""
+    agent = self._agent()
+    _capture_calibration(agent, 102)  # fixed=100, char4 base=2
+    # Content grows: 8 → 56 chars (char4 2 → 14, Δ=12); server 102 → 150
+    # (Δ=48) → observed density 48/12 = 4.0.
+    agent.context._messages = [
+      _msg("user", "abcdefgh"),
+      _msg("assistant", "x" * 48),
+    ]
+    _capture_calibration(agent, 150)
+    assert agent._context_ratio == pytest.approx(1.0 * 0.5 + 4.0 * 0.5)
+    # Fixed re-derived from this capture: 150 − 2.5 × 14 = 115.
+    assert agent._context_fixed_tokens == 115
+
+  def test_ratio_skipped_when_char4_shrinks(self) -> None:
+    """A char4 shrink means a truncation happened — ratio is not learned."""
+    agent = self._agent()
+    _capture_calibration(agent, 102)
+    # char4 drops from 2 to 1 (content replaced by shorter content).
+    agent.context._messages = [_msg("user", "abcd")]
+    _capture_calibration(agent, 99)
+    assert agent._context_ratio == 1.0  # untouched
+    assert agent._context_last_input_tokens == 99
+
+  def test_calibrated_estimate_combines_fixed_and_ratio(self) -> None:
+    """_calibrated_estimate = fixed + ratio × char4(messages)."""
+    agent = self._agent()
+    agent._context_fixed_tokens = 100
+    agent._context_ratio = 2.0
+    estimate = _calibrated_estimate(agent, agent.context.get_context())
+    assert estimate == 100 + 2 * 2
+
+  def test_calibrated_estimate_none_without_capture(self) -> None:
+    """No server capture yet → None (caller falls back to heuristic)."""
+    agent = self._agent()
+    assert _calibrated_estimate(agent, agent.context.get_context()) is None

@@ -285,6 +285,115 @@ class TestBatchUIHandlerStats:
     assert "session" not in text
 
 
+class TestBatchUIHandlerContextOverflow:
+  """Tests for BatchUIHandler compaction notice output."""
+
+  def test_compaction_notice_to_stderr(self):
+    """The compaction notice should go to stderr."""
+    stderr = StringIO()
+    handler = BatchUIHandler(stderr=stderr)
+
+    handler.output_context_overflow(
+      dropped_count=17,
+      estimated_tokens=208412,
+      max_tokens=200000,
+      message_count=63,
+    )
+    text = stderr.getvalue()
+    assert "# Context compacted: dropped 17 message(s)" in text
+    assert "208,412 > 200,000 tokens" in text
+    assert "63 messages remain" in text
+
+  def test_compaction_notice_includes_first_remaining(self):
+    """The notice appends the history-start summary when provided."""
+    stderr = StringIO()
+    handler = BatchUIHandler(stderr=stderr)
+
+    handler.output_context_overflow(
+      dropped_count=17,
+      estimated_tokens=208412,
+      max_tokens=200000,
+      message_count=63,
+      first_remaining="user: 'resumed, let's test to see…'",
+    )
+    text = stderr.getvalue()
+    assert "history starts at: user: 'resumed, let's test to see…'" in text
+
+  def test_compaction_notice_without_first_remaining_has_no_suffix(self):
+    """A None first_remaining adds no history-start text."""
+    stderr = StringIO()
+    handler = BatchUIHandler(stderr=stderr)
+
+    handler.output_context_overflow(
+      dropped_count=1,
+      estimated_tokens=200001,
+      max_tokens=200000,
+      message_count=10,
+      first_remaining=None,
+    )
+    text = stderr.getvalue()
+    assert "# Context compacted" in text
+    assert "history starts at" not in text
+
+  def test_compaction_notice_includes_trim_target(self):
+    """A target below the cap appends the trimmed-to fragment."""
+    stderr = StringIO()
+    handler = BatchUIHandler(stderr=stderr)
+
+    handler.output_context_overflow(
+      dropped_count=17,
+      estimated_tokens=208412,
+      max_tokens=200000,
+      message_count=63,
+      target_tokens=100000,
+    )
+    text = stderr.getvalue()
+    assert "trimmed to ≈100,000" in text
+
+  def test_compaction_notice_without_trim_target_when_none(self):
+    """A None target adds no trimmed-to fragment."""
+    stderr = StringIO()
+    handler = BatchUIHandler(stderr=stderr)
+
+    handler.output_context_overflow(
+      dropped_count=17,
+      estimated_tokens=208412,
+      max_tokens=200000,
+      message_count=63,
+      target_tokens=None,
+    )
+    text = stderr.getvalue()
+    assert "trimmed to" not in text
+
+  def test_compaction_notice_without_trim_target_when_equal_to_cap(self):
+    """A target equal to the cap (ratio 1.0) adds no trimmed-to fragment."""
+    stderr = StringIO()
+    handler = BatchUIHandler(stderr=stderr)
+
+    handler.output_context_overflow(
+      dropped_count=17,
+      estimated_tokens=208412,
+      max_tokens=200000,
+      message_count=63,
+      target_tokens=200000,
+    )
+    text = stderr.getvalue()
+    assert "trimmed to" not in text
+
+  def test_compaction_notice_independent_of_show_flags(self):
+    """The compaction notice is always printed, regardless of show_* flags."""
+    stderr = StringIO()
+    handler = BatchUIHandler(show_stats=False, show_tool_calls=False, stderr=stderr)
+
+    handler.output_context_overflow(
+      dropped_count=1,
+      estimated_tokens=200001,
+      max_tokens=200000,
+      message_count=10,
+    )
+    assert "# Context compacted" in stderr.getvalue()
+
+
 class TestBatchUIHandlerErrors:
   """Tests for BatchUIHandler error output."""
 

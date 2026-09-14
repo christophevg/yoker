@@ -263,11 +263,13 @@ async def process_message(
   (hybrid: last turn's ``UsageStats.input_tokens`` primary, char/4 fallback).
   When the estimate exceeds ``config.context.max_tokens``, the framework
   default truncation fires: ``context.truncate_oldest_non_system()`` is
-  called repeatedly until the estimate is under the cap or no more
-  droppable messages remain. A ``ContextOverflowEvent`` is emitted once
-  per overflow. When the backend does not support a provider-side
-  ``context_management`` directive, thinking blocks are stripped from the
-  message list before submission (always-on fallback, no config flag).
+  called repeatedly until the estimate is under the trim target
+  (``max_tokens * config.context.compact_ratio`` — hysteresis so a growing
+  session does not re-cross the cap every turn) or no more droppable
+  messages remain. A ``ContextOverflowEvent`` is emitted once per overflow.
+  When the backend does not support a provider-side ``context_management``
+  directive, thinking blocks are stripped from the message list before
+  submission (always-on fallback, no config flag).
 
   The optional ``on_context_overflow`` hook is a future extension point
   and ships as ``None``. When provided, it receives an
@@ -297,17 +299,11 @@ async def process_message(
   # Created once per message; updated in-place by the tool-execution path.
   escalation = _EscalationState()
 
-  # Last captured UsageStats.input_tokens — the primary signal for the
-  # hybrid size check. Updated each turn from _consume_stream's stats.
-  last_input_tokens: int | None = None
-
   while True:
     # Context overflow management: estimate, truncate, strip, emit.
-    last_input_tokens = await _manage_context_overflow(
-      agent,
-      on_context_overflow,
-      last_input_tokens,
-    )
+    # The estimate is calibrated from server usage captured in earlier
+    # calls (persisted on the agent across turns).
+    await _manage_context_overflow(agent, on_context_overflow)
 
     # Start the idle watchdog scoped to the LLM streaming phase only.
     # The watchdog detects when the backend stops sending data for
@@ -322,11 +318,12 @@ async def process_message(
     finally:
       agent._stop_idle_watchdog()
 
-    # Capture input_tokens for the next iteration's size check.
-    if stats.get("input_tokens"):
-      last_input_tokens = stats["input_tokens"]
-    elif stats.get("prompt_eval_count"):
-      last_input_tokens = stats["prompt_eval_count"]
+    # Capture usage for the next iteration's size check, and update the
+    # agent's persistent context-size calibration (fixed overhead +
+    # density ratio) from the server-reported count.
+    captured = stats.get("input_tokens") or stats.get("prompt_eval_count")
+    if captured:
+      _capture_calibration(agent, captured)
 
     # Log per-API-call token usage (atomic JSONL append).
     log_call_usage(agent, stats)
@@ -345,26 +342,169 @@ async def process_message(
     await _execute_tool_calls(agent, tool_calls, thinking, content, escalation)
 
 
+def _capture_calibration(
+  agent: Any,
+  input_tokens: int,
+) -> None:
+  """Update the context-size calibration model from a server usage capture.
+
+  Maintains on the agent:
+    ``_context_fixed_tokens`` — the fixed prompt overhead (system prompt,
+      tool schemas, definitions) in tokens, re-derived every capture as
+      ``server − ratio × char4(messages)`` (self-correcting: drift in
+      either parameter is absorbed on the next capture; clamped at 0).
+      A smaller reading after a content drop is a real shrinkage and is
+      learned as such.
+    ``_context_ratio`` — real-tokens-per-char4 density of recently added
+      content, learned from consecutive capture deltas (EMA-smoothed,
+      clamped). Skipped when the delta spans a truncation (char4 shrank
+      but content was not merely appended).
+    ``_context_char4_at_capture`` / ``_context_last_input_tokens`` — the
+      learning base pair for the next delta.
+
+  With these, the overflow estimate becomes
+  ``fixed + ratio * char4(messages)``, which tracks the server count far
+  better than either the raw char/4 heuristic (overhead-blind) or the
+  stale per-call total (blind to content added after the last call).
+  """
+  char4_now = _estimate_tokens(agent.context.get_context(), None)
+  prev_server = agent._context_last_input_tokens
+  prev_char4 = agent._context_char4_at_capture
+
+  # Learn the density ratio from growth deltas between consecutive
+  # captures: both the server count and char4 grew by (only) the content
+  # added in between, so their quotient is that content's density. Skip
+  # when char4 shrank (a truncation happened in between — deltas would
+  # measure the truncation, not the density of added content).
+  if (
+    prev_server is not None
+    and prev_char4 is not None
+    and char4_now > prev_char4
+    and input_tokens > prev_server
+  ):
+    observed = (input_tokens - prev_server) / (char4_now - prev_char4)
+    # Clamp to a sane band; EMA-weight toward the new observation.
+    clamped = min(max(observed, 0.25), 8.0)
+    agent._context_ratio = agent._context_ratio * 0.5 + clamped * 0.5
+
+  # Re-derive the fixed overhead from THIS capture using the current
+  # ratio: fixed = server − ratio × char4. Re-deriving every capture
+  # keeps the estimate ≈ the server count at capture time (drift in
+  # either parameter self-corrects), instead of freezing a first-capture
+  # guess made before the ratio was known. Clamped at 0 (the overhead
+  # cannot be negative).
+  agent._context_fixed_tokens = max(int(input_tokens - agent._context_ratio * char4_now), 0)
+
+  agent._context_char4_at_capture = char4_now
+  agent._context_last_input_tokens = input_tokens
+
+
+def _calibrated_estimate(
+  agent: Any,
+  messages: list[dict[str, Any]],
+) -> int | None:
+  """Calibrated context-size estimate: ``fixed + ratio * char4(messages)``.
+
+  Returns None when no server usage has been observed yet (caller falls
+  back to the raw char/4 heuristic).
+  """
+  fixed = agent._context_fixed_tokens
+  if fixed is None:
+    return None
+  ratio = agent._context_ratio
+  estimate = fixed + int(ratio * _estimate_tokens(messages, None))
+  return int(estimate)
+
+
+def _first_remaining_summary(messages: list[dict[str, Any]]) -> str | None:
+  """Summarize the first non-protected message of ``messages`` in one line.
+
+  The protected prefix (system setup messages + the first user turn) is
+  static, so retained *history* effectively starts right after it. The
+  summary identifies where that history begins, giving a sense of the
+  compaction's impact. Returns None when nothing beyond the protected
+  prefix remains.
+
+  Shape: ``role[: brief content preview]`` for plain messages, with
+  ``role → tools: name ×N`` for assistant messages carrying tool calls
+  (content preview when the assistant also has text content).
+  """
+  protected_end = 0
+  n = len(messages)
+  while protected_end < n and messages[protected_end].get("role") == "system":
+    protected_end += 1
+  if protected_end < n and messages[protected_end].get("role") == "user":
+    # Skip the contiguous user prefix, then the first real user turn.
+    while protected_end < n and messages[protected_end].get("role") == "user":
+      protected_end += 1
+  if protected_end >= n:
+    return None
+
+  msg = messages[protected_end]
+  role = str(msg.get("role", "?"))
+  tool_calls = msg.get("tool_calls")
+  if isinstance(tool_calls, list) and tool_calls:
+    names: list[str] = []
+    for tc in tool_calls:
+      if isinstance(tc, dict):
+        fn = tc.get("function")
+        name = fn.get("name") if isinstance(fn, dict) else tc.get("name")
+        if name:
+          names.append(str(name))
+    counts: dict[str, int] = {}
+    for name in names:
+      counts[name] = counts.get(name, 0) + 1
+    parts = [f"{name} ×{c}" if c > 1 else name for name, c in counts.items()]
+    summary = f"{role} → tools: {', '.join(parts)}"
+    content = msg.get("content")
+    if isinstance(content, str) and content.strip():
+      summary += f" | {content.strip()[:40]}"
+      if len(content.strip()) > 40:
+        summary += "…"
+    return summary
+  content = msg.get("content")
+  if isinstance(content, str) and content.strip():
+    trimmed: str = content.strip()
+    preview = trimmed[:60]
+    if len(trimmed) > 60:
+      preview += "…"
+    return f"{role}: {preview}"
+  return role
+
+
 async def _manage_context_overflow(
   agent: Any,
   on_context_overflow: Callable[[OverflowContext], list[dict[str, Any]] | None] | None,
-  last_input_tokens: int | None,
-) -> int | None:
+) -> None:
   """Run the size check, truncation, event, and thinking-strip for one loop step.
 
-  Returns the (possibly updated) ``last_input_tokens`` so the caller can
-  thread it through the loop.
+  The estimate is calibrated (``fixed + ratio * char4``) whenever server
+  usage has been captured, falling back to the raw char/4 heuristic only
+  before the first capture. Calibration parameters persist on the agent
+  across turns, so every turn's first check — including tool-less turns —
+  sees a truthful size.
   """
   max_tokens = agent.config.context.max_tokens
   messages = agent.context.get_context()
-  estimated = _estimate_tokens(messages, last_input_tokens)
+  estimated = _calibrated_estimate(agent, messages)
+  if estimated is None:
+    estimated = _estimate_tokens(messages, agent._context_last_input_tokens)
 
   if estimated <= max_tokens:
     # Under the cap: still strip thinking blocks if the backend cannot
     # handle them provider-side. The strip is always-on for
     # non-supporting backends (no config flag).
     _maybe_strip_thinking(agent)
-    return last_input_tokens
+    return
+
+  # Hysteresis: trim to a FRACTION of the cap, not the cap itself. A
+  # growing session trimmed to the cap re-crosses it almost every turn —
+  # and every trim invalidates the server's prefix (KV) cache, forcing a
+  # full-price reprocess. Trimming deeper leaves headroom so the prefix
+  # survives several turns between trims. 1.0 reproduces trim-to-cap.
+  raw_ratio = getattr(agent.config.context, "compact_ratio", 1.0)
+  ratio = raw_ratio if isinstance(raw_ratio, int | float) and 0 < raw_ratio <= 1.0 else 1.0
+  target = int(max_tokens * ratio)
 
   # Over the cap: try the hook first, then the framework default.
   dropped_total = 0
@@ -381,19 +521,25 @@ async def _manage_context_overflow(
     # No hook or hook returned nothing valid: framework default.
     dropped_total = _apply_framework_default(
       agent,
-      last_input_tokens,
+      estimated,
       max_tokens,
+      target,
     )
 
-  # Emit the audit-trail event once per overflow.
-  final_count = len(agent.context.get_context())
+  # Emit the audit-trail event once per overflow, including where the
+  # retained history starts (first non-protected message). The reported
+  # sizes describe the TRIGGER state; target_tokens carries the effective
+  # trim target.
+  remaining = agent.context.get_context()
   await emit(
     ContextOverflowEvent(
       type=EventType.CONTEXT_OVERFLOW,
-      message_count=final_count,
+      message_count=len(remaining),
       estimated_tokens=estimated,
       max_tokens=max_tokens,
       dropped_count=dropped_total,
+      first_remaining=_first_remaining_summary(remaining),
+      target_tokens=target,
     ),
     agent._event_handlers,
   )
@@ -401,7 +547,6 @@ async def _manage_context_overflow(
   # Strip thinking blocks from the submitted messages when the backend
   # cannot handle them provider-side.
   _maybe_strip_thinking(agent)
-  return last_input_tokens
 
 
 def _apply_overflow_hook(
@@ -448,31 +593,41 @@ def _apply_overflow_hook(
 
 def _apply_framework_default(
   agent: Any,
-  last_input_tokens: int | None,
+  estimated: int,
   max_tokens: int,
+  target: int,
 ) -> int:
-  """Run the framework-default truncation until under the cap.
+  """Run the framework-default truncation until under ``target``.
+
+  Anchored on the SAME estimate that triggered the overflow and charged
+  in the same currency: each dropped atomic unit is charged with its
+  calibrated content estimate (char/4 × learned density ratio, computed
+  as the char4 delta before/after the drop), so the overage decreases
+  monotonically as messages are dropped. This preserves the stale-total
+  lesson — the triggering estimate is never reused as-is; dropped
+  content is subtracted from it.
+
+  ``max_tokens`` remains the trigger; ``target`` is where the loop stops
+  (``max_tokens * context.compact_ratio`` — hysteresis against
+  re-crossing the cap every turn; equal to the cap at ratio 1.0).
 
   Returns the total number of messages dropped.
   """
   keep_first_user = agent.config.context.overflow_keep_first_user
+  ratio = agent._context_ratio if agent._context_fixed_tokens is not None else 1.0
   dropped_total = 0
-  # Hard cap on iterations to avoid an infinite loop when truncation
-  # cannot reduce the estimate (e.g. all messages are protected, or the
-  # estimate is dominated by the protected prefix).
+  # Drop one atomic unit per iteration so the event's dropped_count
+  # reflects the cumulative total. The bound is a hard cap against an
+  # infinite loop when truncation cannot reduce the estimate (e.g. all
+  # messages are protected, or the estimate is dominated by the
+  # protected prefix).
   max_iterations = len(agent.context.get_context()) + 1
+
+  overage = estimated - target
   for _ in range(max_iterations):
-    messages = agent.context.get_context()
-    # Pass last_input_tokens=None so the char/4 heuristic recalculates on
-    # the current (truncated) message list. Reusing the stale last-turn
-    # usage would short-circuit _estimate_tokens and prevent the estimate
-    # from decreasing as messages are dropped, evicting all droppable
-    # history instead of just enough to fit under the cap.
-    estimated = _estimate_tokens(messages, None)
-    if estimated <= max_tokens:
+    if overage <= 0:
       break
-    # Drop one atomic unit per iteration so the event's dropped_count
-    # reflects the cumulative total.
+    before = agent.context.get_context()
     dropped = agent.context.truncate_oldest_non_system(
       keep_first_user=keep_first_user,
       drop_count=1,
@@ -480,6 +635,10 @@ def _apply_framework_default(
     if dropped <= 0:
       # No more droppable messages; stop to avoid an infinite loop.
       break
+    after = agent.context.get_context()
+    # Charge the dropped unit with its calibrated content estimate so
+    # the triggering total decreases as messages are dropped.
+    overage -= int(ratio * (_estimate_tokens(before, None) - _estimate_tokens(after, None)))
     dropped_total += dropped
   return dropped_total
 

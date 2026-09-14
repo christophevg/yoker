@@ -235,6 +235,12 @@ class ContextConfig:
       setup + skill-discovery block) and the first real user turn; only older
       non-setup messages are dropped from the tail. When False, the first
       user turn is also eligible for dropping (system messages stay protected).
+    compact_ratio: Trim target as a fraction of ``max_tokens`` (hysteresis).
+      The overflow still TRIGGERS at ``max_tokens``, but truncation continues
+      until the estimate is under ``max_tokens * compact_ratio`` — a growing
+      session then re-crosses the cap far less often, avoiding a full-price
+      server reprocess of the invalidated prefix cache on every turn.
+      Defaults to 0.5; 1.0 reproduces the trim-to-cap behavior exactly.
   """
 
   manager: str = "basic_persistence"
@@ -246,6 +252,7 @@ class ContextConfig:
   files: tuple[str, ...] = ("./AGENTS.md",)
   max_tokens: int = 200_000
   overflow_keep_first_user: bool = True
+  compact_ratio: float = 0.5
 
   def __post_init__(self) -> None:
     """Validate context configuration."""
@@ -255,6 +262,10 @@ class ContextConfig:
       ("basic_persistence", "compaction", "multi_tier"),
     )
     validate_positive_int(self.max_tokens, "context.max_tokens")
+    if not 0 < self.compact_ratio <= 1.0:
+      raise ValidationError(
+        "context.compact_ratio", self.compact_ratio, "must be in the range (0, 1]"
+      )
 
 
 @dataclass

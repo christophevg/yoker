@@ -332,6 +332,43 @@ class BatchUIHandler(UIHandler):
         parts.append(f"weekly {weekly['usage']:.0%}")
     print(f"# Stats: {', '.join(parts)}", file=self._stderr)
 
+  def output_context_overflow(
+    self,
+    dropped_count: int,
+    estimated_tokens: int,
+    max_tokens: int,
+    message_count: int,
+    first_remaining: str | None = None,
+    target_tokens: int | None = None,
+  ) -> None:
+    """Output a context compaction notice (overflow truncation fired).
+
+    Diagnostic channel (stderr) — always printed, independent of the
+    show_* flags, since compaction permanently alters the conversation.
+
+    Args:
+      dropped_count: Number of messages permanently removed.
+      estimated_tokens: Estimated token count that triggered the overflow.
+      max_tokens: The configured soft cap (``context.max_tokens``).
+      message_count: Number of messages remaining after truncation.
+      first_remaining: One-line summary of the first non-protected message
+        after truncation (where retained history starts), or None.
+      target_tokens: Effective trim target (``max_tokens *
+        context.compact_ratio``), or None when the event carries no target
+        (pre-hysteresis records).
+    """
+    suffix = f"; history starts at: {first_remaining}" if first_remaining else ""
+    # Hysteresis detail: only meaningful when the trim went deeper than
+    # the cap (ratio < 1.0).
+    if target_tokens is not None and target_tokens < max_tokens:
+      suffix += f"; trimmed to ≈{target_tokens:,}"
+    print(
+      f"# Context compacted: dropped {dropped_count} message(s) "
+      f"({estimated_tokens:,} > {max_tokens:,} tokens); "
+      f"{message_count} messages remain{suffix}",
+      file=self._stderr,
+    )
+
   # === Error Output (stderr) ===
 
   def output_error(self, error: Exception, include_traceback: bool = False) -> None:

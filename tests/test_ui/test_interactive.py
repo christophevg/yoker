@@ -883,6 +883,102 @@ class TestInteractiveUIHandlerStats:
     assert "weekly" not in text
 
 
+class TestInteractiveUIHandlerContextOverflow:
+  """Tests for the compaction notice panel."""
+
+  def test_compaction_panel_basic(self):
+    """The panel shows dropped count, sizes, and remaining messages."""
+    output = StringIO()
+    handler = InteractiveUIHandler()
+    handler.console = make_console(output)
+
+    handler.output_context_overflow(
+      dropped_count=34,
+      estimated_tokens=94273,
+      max_tokens=80000,
+      message_count=71,
+    )
+
+    text = output.getvalue()
+    assert "Context compacted" in text
+    assert "Dropped 34 message(s)" in text
+    assert "94,273" in text
+    assert "80,000" in text
+    # Panel wrapping may split this across lines — check fragments.
+    assert "messages remain" in text
+    assert "History starts at" not in text
+
+  def test_compaction_panel_with_first_remaining(self):
+    """The panel appends the history-start summary when provided."""
+    output = StringIO()
+    handler = InteractiveUIHandler()
+    handler.console = make_console(output)
+
+    handler.output_context_overflow(
+      dropped_count=34,
+      estimated_tokens=94273,
+      max_tokens=80000,
+      message_count=71,
+      first_remaining="assistant → tools: read ×2",
+    )
+
+    text = output.getvalue()
+    assert "History starts at" in text
+    assert "assistant → tools: read ×2" in text
+
+  def test_compaction_panel_shows_trim_target(self):
+    """A target below the cap adds the trimmed-to line."""
+    output = StringIO()
+    handler = InteractiveUIHandler()
+    handler.console = make_console(output)
+
+    handler.output_context_overflow(
+      dropped_count=34,
+      estimated_tokens=94273,
+      max_tokens=80000,
+      message_count=71,
+      target_tokens=40000,
+    )
+
+    text = output.getvalue()
+    assert "Trimmed to" in text
+    assert "40,000" in text
+
+  def test_compaction_panel_no_trim_target_when_none(self):
+    """A None target adds no trimmed-to line (pre-hysteresis records)."""
+    output = StringIO()
+    handler = InteractiveUIHandler()
+    handler.console = make_console(output)
+
+    handler.output_context_overflow(
+      dropped_count=34,
+      estimated_tokens=94273,
+      max_tokens=80000,
+      message_count=71,
+      target_tokens=None,
+    )
+
+    text = output.getvalue()
+    assert "Trimmed to" not in text
+
+  def test_compaction_panel_no_trim_target_when_equal_to_cap(self):
+    """A target equal to the cap (ratio 1.0) adds no trimmed-to line."""
+    output = StringIO()
+    handler = InteractiveUIHandler()
+    handler.console = make_console(output)
+
+    handler.output_context_overflow(
+      dropped_count=34,
+      estimated_tokens=94273,
+      max_tokens=80000,
+      message_count=71,
+      target_tokens=80000,
+    )
+
+    text = output.getvalue()
+    assert "Trimmed to" not in text
+
+
 class TestInteractiveUIHandlerErrors:
   """Tests for InteractiveUIHandler error display."""
 

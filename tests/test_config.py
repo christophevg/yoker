@@ -131,6 +131,29 @@ class TestConfigValidation:
       Config(context=ContextConfig(manager="invalid"))
     assert "context.manager" in str(exc_info.value)
 
+  def test_validate_zero_compact_ratio(self) -> None:
+    """compact_ratio 0 is rejected (trim target would always be 0)."""
+    with pytest.raises(ValidationError) as exc_info:
+      Config(context=ContextConfig(compact_ratio=0.0))
+    assert "context.compact_ratio" in str(exc_info.value)
+
+  def test_validate_negative_compact_ratio(self) -> None:
+    """Negative compact_ratio is rejected."""
+    with pytest.raises(ValidationError) as exc_info:
+      Config(context=ContextConfig(compact_ratio=-0.5))
+    assert "context.compact_ratio" in str(exc_info.value)
+
+  def test_validate_compact_ratio_above_one(self) -> None:
+    """compact_ratio above 1.0 is rejected (target above the cap)."""
+    with pytest.raises(ValidationError) as exc_info:
+      Config(context=ContextConfig(compact_ratio=1.5))
+    assert "context.compact_ratio" in str(exc_info.value)
+
+  def test_compact_ratio_boundaries_accepted(self) -> None:
+    """The boundary values 0.5 (default) and 1.0 (old behavior) validate."""
+    assert ContextConfig().compact_ratio == 0.5
+    assert ContextConfig(compact_ratio=1.0).compact_ratio == 1.0
+
   def test_validate_empty_filesystem_paths(self) -> None:
     """Test validation catches empty filesystem_paths during construction."""
     with pytest.raises(ValidationError) as exc_info:

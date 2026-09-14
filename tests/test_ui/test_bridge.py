@@ -271,3 +271,86 @@ class TestUIBridge:
 
     # start_processing should be called for TURN_START.
     assert "start_processing" in handler.calls
+
+  async def test_bridge_handles_context_overflow(self):
+    """UIBridge should dispatch context overflow events to the optional method."""
+    from yoker.events.types import ContextOverflowEvent
+
+    handler = MockUIHandler()
+    handler.output_context_overflow = lambda **kwargs: handler.calls.append(
+      ("output_context_overflow", kwargs)
+    )
+    bridge = UIBridge(handler)
+
+    await bridge(
+      ContextOverflowEvent(
+        type=EventType.CONTEXT_OVERFLOW,
+        message_count=63,
+        estimated_tokens=208412,
+        max_tokens=200000,
+        dropped_count=17,
+      )
+    )
+
+    assert (
+      "output_context_overflow",
+      {
+        "dropped_count": 17,
+        "estimated_tokens": 208412,
+        "max_tokens": 200000,
+        "message_count": 63,
+        "first_remaining": None,
+        "target_tokens": None,
+      },
+    ) in handler.calls
+
+  async def test_bridge_context_overflow_passes_target_tokens(self):
+    """UIBridge forwards target_tokens when the event carries one."""
+    from yoker.events.types import ContextOverflowEvent
+
+    handler = MockUIHandler()
+    handler.output_context_overflow = lambda **kwargs: handler.calls.append(
+      ("output_context_overflow", kwargs)
+    )
+    bridge = UIBridge(handler)
+
+    await bridge(
+      ContextOverflowEvent(
+        type=EventType.CONTEXT_OVERFLOW,
+        message_count=12,
+        estimated_tokens=8200,
+        max_tokens=8000,
+        dropped_count=3,
+        target_tokens=4000,
+      )
+    )
+
+    assert (
+      "output_context_overflow",
+      {
+        "dropped_count": 3,
+        "estimated_tokens": 8200,
+        "max_tokens": 8000,
+        "message_count": 12,
+        "first_remaining": None,
+        "target_tokens": 4000,
+      },
+    ) in handler.calls
+
+  async def test_bridge_context_overflow_skipped_when_absent(self):
+    """UIBridge should silently skip CONTEXT_OVERFLOW when the handler lacks the method."""
+    from yoker.events.types import ContextOverflowEvent
+
+    handler = MockUIHandler()
+    bridge = UIBridge(handler)
+
+    event = ContextOverflowEvent(
+      type=EventType.CONTEXT_OVERFLOW,
+      message_count=63,
+      estimated_tokens=208412,
+      max_tokens=200000,
+      dropped_count=17,
+    )
+    # Should not raise — the bridge guards with getattr(..., None).
+    await bridge(event)
+    assert handler.calls == []

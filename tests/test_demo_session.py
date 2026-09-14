@@ -594,6 +594,7 @@ class TestSerializeDeserializeRoundTrip:
       estimated_tokens=8200,
       max_tokens=8000,
       dropped_count=3,
+      target_tokens=4000,
     )
 
     serialized = serialize_event(original)
@@ -604,6 +605,25 @@ class TestSerializeDeserializeRoundTrip:
     assert deserialized.estimated_tokens == original.estimated_tokens
     assert deserialized.max_tokens == original.max_tokens
     assert deserialized.dropped_count == original.dropped_count
+    assert deserialized.target_tokens == original.target_tokens
+
+  def test_context_overflow_event_without_target_tokens(self) -> None:
+    """Historical JSONL records without target_tokens get the None default."""
+    record = {
+      "type": "CONTEXT_OVERFLOW",
+      "timestamp": "2026-04-21T10:30:00",
+      "data": {
+        "message_count": 12,
+        "estimated_tokens": 8200,
+        "max_tokens": 8000,
+        "dropped_count": 3,
+      },
+    }
+
+    deserialized = deserialize_event(record)
+
+    assert isinstance(deserialized, ContextOverflowEvent)
+    assert deserialized.target_tokens is None
 
 
 class TestEventRecorder:

@@ -520,6 +520,7 @@ See [docs/rationale.md](docs/rationale.md) for the full rationale and comparison
 - [x] Token usage tracking - Every LLM API call logged (model, agent, input/output tokens, duration) to `~/.yoker/usage.jsonl`, enabled by default and configurable via `[usage]` in `yoker.toml`
 - [x] Retry-limit escalation - After `agent.max_consecutive_tool_failures` (default 3) consecutive failed tool calls, a one-time system note tells the model to stop retrying and reconsider strategy
 - [x] Effective-configuration summary - The environment reminder embeds a redacted snapshot of the effective config (permission grants, paths, write-protection, backend, trusted plugins) so agents see config effects up front
+- [x] Context compaction with hysteresis - When the estimated context size exceeds `context.max_tokens`, oldest non-setup messages are dropped until the estimate is under `max_tokens * context.compact_ratio` (default 0.5) instead of just under the cap — a growing session then re-crosses the cap far less often, preserving the server's prefix (KV) cache between trims; `compact_ratio = 1.0` reproduces the old trim-to-cap behavior
 
 **Planned Features:**
 - [ ] Keyring integration - Store API keys in the OS keychain instead of config files (TODO S.1)

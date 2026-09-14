@@ -163,6 +163,20 @@ class UIBridge:
           if agent is None:
             agent = AgentDisplay(id="", name="")
           handler(agent)
+      case EventType.CONTEXT_OVERFLOW:
+        # Context overflow truncation fired — surface it via an optional
+        # ``output_context_overflow`` handler method, guarded by ``getattr``
+        # so handlers that do not implement it are unaffected.
+        handler = getattr(self.ui, "output_context_overflow", None)
+        if handler is not None:
+          handler(
+            dropped_count=event.dropped_count,  # type: ignore[attr-defined]
+            estimated_tokens=event.estimated_tokens,  # type: ignore[attr-defined]
+            max_tokens=event.max_tokens,  # type: ignore[attr-defined]
+            message_count=event.message_count,  # type: ignore[attr-defined]
+            first_remaining=getattr(event, "first_remaining", None),
+            target_tokens=getattr(event, "target_tokens", None),
+          )
       case EventType.SESSION_START | EventType.SESSION_END | EventType.AGENT_MESSAGE:
         # No UI action for these session-level events.
         pass
