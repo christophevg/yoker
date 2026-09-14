@@ -178,6 +178,22 @@ class Agent:
 
     self._event_handlers: list[EventCallback] = []
 
+    # Context-size calibration for the overflow check, updated from backend
+    # usage captures (see _processing._capture_calibration):
+    #   _context_fixed_tokens — fixed prompt overhead in tokens (system
+    #     prompt, tool schemas, definitions); None until the first capture.
+    #   _context_ratio — real-tokens-per-char4 density of recently added
+    #     content, learned from consecutive capture deltas.
+    #   _context_char4_at_capture — char/4 snapshot at the last capture
+    #     (delta-learning base).
+    #   _context_last_input_tokens — last server-reported input token
+    #     count, persisted across turns so every turn's first size check
+    #     uses the truthful number instead of the overhead-blind heuristic.
+    self._context_fixed_tokens: int | None = None
+    self._context_ratio: float = 1.0
+    self._context_char4_at_capture: int | None = None
+    self._context_last_input_tokens: int | None = None
+
     # agent process queue:
     # serializes concurrent ``process()`` calls so the backend never sees
     # parallel ``chat_stream`` invocations on the same agent. Lazily
