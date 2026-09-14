@@ -22,13 +22,21 @@
 
 ### Code Quality
 
+- [ ] **Plugin config bootstrap: string annotations crash the CLI path + plugin fields leak into CLI**
+  - **Problem 1 (clevis):** clevis `_configure_fields()` passes the raw dataclass annotation object to argparse as `type=`. When the plugin config class module uses `from __future__ import annotations` (PEP 563), annotations become strings (`'str'`), and argparse raises `ValueError: 'str' is not callable` at parser configuration — the failure surfaces as `Error: 'str' is not callable` when starting `yoker chat` with a `config_class` plugin. Reproduced 2026-09-13 (carter repo, `tests/test_scratch_bootstrap_repro.py`): probe → augment → `cli=False` load all pass; the crash only happens with `cli=True` (real chat load). Workaround: never use PEP 563 in a plugin's tool-config module.
+  - **Problem 2 (yoker, related):** the bootstrap appends one field per plugin to `ToolsConfig` via `augmented_config_class()`. These fields are CLI-visible, so every plugin config knob becomes a CLI flag (`--tools-vault-writer` etc.) and pulls the plugin's annotations into clevis's parser walk. Intended: plugin config is TOML-only.
+  - **Fix (yoker):** append the plugin fields with `metadata={"cli": False}` in `plugin_bootstrap.py::_augmented_tools_config()` so they stay loadable via TOML (`[tools.<plugin>…]`) but are excluded from CLI argument generation (clevis `register_field` supports exactly this). Plus a regression test: augmented `ChatConfig` load with `cli=True` + a `config_class` plugin.
+  - **Fix (clevis, deeper):** resolve string annotations via `typing.get_type_hints` before argparse registration so PEP 563 dataclasses work generally (touches type-walking internals — `unpack_type`/`_iter_cli_fields` — needs its own tests; higher blast radius).
+  - **Priority:** Medium — blocks any plugin whose config module uses PEP 563; the yoker-side fix is small
+  - **Severity:** Medium — startup crash (hard failure), workaround exists
+
+### Tooling notes (from 0.11.0 release session)
+
 - [ ] **PathGuardrail refactor — eliminate duplicated validation blocks between Read/Write**
   - `src/yoker/tools/guardrails/path.py`: `WritePathGuardrail.validate()` fully overrides `ReadPathGuardrail.validate()` (no `super()` call), producing large parallel blocks — empty-path check, null-byte check (added in 0.11.0), length/format checks etc. duplicated in both classes. Next safety check added to only one variant silently leaves the other unprotected (root cause of the Windows null-byte hole fixed in 0.11.0).
   - **Fix:** Factor shared validation into the base class (common checks: empty, null-byte, structure) with polymorphic plugin-URL policy ("allowed if configured" for read / "never for write"). Regression proof to preserve: platform-agnostic null-byte tests incl. `test_write_rejects_null_byte`, plus 4-case parametrized security test.
   - **Priority:** Medium
   - **Severity:** Medium — architecture-level duplication makes future divergent-guardrail bugs likely
-
-### Tooling notes (from 0.11.0 release session)
 
 - [ ] **Makefile: generalize `test-py310` into parameterized `test-py VERSION=...`** — single target forwarding to `uv run tox -e py$(VERSION)`; add same for a per-leg `check` variant if useful.
 - [ ] **conftest.py plugin fallback is silent** — `tests/conftest.py` installs the demo plugin via subprocess with `check=False` and swallowed output (pytest-configure time); failures surface later as confusing `ModuleNotFoundError`/`PluginError` in tests. Make the fallback loud (fail with clear message) or remove it now that the plugin is a proper dev dependency.
