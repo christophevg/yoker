@@ -73,8 +73,22 @@ class MockUIHandler:
     eval_tokens: int,
     usage_limits: dict | None = None,
     agent=None,
+    context_estimate: int | None = None,
+    context_max_tokens: int | None = None,
+    context_target_tokens: int | None = None,
   ) -> None:
-    self.calls.append(("output_stats", duration_ms, prompt_tokens, eval_tokens, usage_limits))
+    self.calls.append(
+      (
+        "output_stats",
+        duration_ms,
+        prompt_tokens,
+        eval_tokens,
+        usage_limits,
+        context_estimate,
+        context_max_tokens,
+        context_target_tokens,
+      )
+    )
 
   def output_error(self, error: Exception, include_traceback: bool = False) -> None:
     self.calls.append(("output_error", error))
@@ -223,7 +237,7 @@ class TestUIBridge:
         total_duration_ms=1500,
       )
     )
-    assert ("output_stats", 1500, 50, 100, None) in handler.calls
+    assert ("output_stats", 1500, 50, 100, None, None, None, None) in handler.calls
 
   async def test_bridge_handles_turn_end_with_usage_limits(self):
     """UIBridge should dispatch usage_limits in turn end stats."""
@@ -242,7 +256,7 @@ class TestUIBridge:
         usage_limits=limits,
       )
     )
-    assert ("output_stats", 1500, 50, 100, limits) in handler.calls
+    assert ("output_stats", 1500, 50, 100, limits, None, None, None) in handler.calls
 
   async def test_bridge_handles_command(self):
     """UIBridge should dispatch command result events."""

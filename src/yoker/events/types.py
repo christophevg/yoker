@@ -91,6 +91,12 @@ class TurnEndEvent(Event):
   total_duration_ms: int = 0
   # API usage limits from the backend (Ollama cloud usage API)
   usage_limits: dict[str, Any] | None = None
+  # Context gauge: calibrated estimate of the next backend call's view size
+  # (pre-compaction), plus the soft cap and trim target it is measured
+  # against. None/None when context management is off or unavailable.
+  context_estimate: int | None = None
+  context_max_tokens: int | None = None
+  context_target_tokens: int | None = None
 
 
 @dataclass(frozen=True)

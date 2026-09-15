@@ -342,7 +342,7 @@ async def process_message(
       elapsed_ms = int((time.monotonic() - turn_start) * 1000)
       usage_data = await _fetch_backend_usage(agent)
       await emit(
-        _turn_end_event(content, tool_calls, stats, elapsed_ms, usage_data),
+        _turn_end_event(content, tool_calls, stats, elapsed_ms, usage_data, agent=agent),
         agent._event_handlers,
       )
       logger.info("turn_completed", response_length=len(content), tool_calls_count=0)
@@ -1381,21 +1381,50 @@ async def _fetch_backend_usage(agent: Any) -> dict[str, Any] | None:
   return result if isinstance(result, dict) else None
 
 
+def _context_gauge(agent: Any) -> tuple[int, int, int] | None:
+  """Compute the (estimate, cap, target) context gauge for the stats line.
+
+  Returns None when context management is unavailable (no config cap), so
+  the UI falls back to the plain token-count stats line.
+  """
+  config = getattr(agent, "config", None)
+  max_tokens = getattr(getattr(config, "context", None), "max_tokens", None)
+  if not max_tokens:
+    return None
+  messages = agent.context.get_context()
+  estimate = _calibrated_estimate(agent, messages)
+  if estimate is None:
+    estimate = _estimate_tokens(messages, None)
+  ratio = getattr(getattr(config, "context", None), "compact_ratio", 0.5)
+  target = int(max_tokens * ratio)
+  return (estimate, max_tokens, target)
+
+
 def _turn_end_event(
   response: str,
   tool_calls: list[Any],
   stats: dict[str, int],
   elapsed_ms: int = 0,
   usage_data: dict[str, Any] | None = None,
+  agent: Any = None,
 ) -> TurnEndEvent:
   """Build a TurnEndEvent from consumed stream stats.
 
   Uses ``elapsed_ms`` (wall-clock) for ``total_duration_ms`` rather than
   the backend-reported value, which may only reflect the last chunk.
+
+  When the agent's config enables context management (``context.max_tokens``),
+  the event also carries the context gauge (calibrated estimate of the next
+  call's pre-compaction view, the soft cap, and the trim target) so the UI
+  can render "how full is the context before compaction hits".
   """
   limits = None
   if usage_data and "limits" in usage_data:
     limits = usage_data["limits"]
+  gauge: tuple[int, int, int] | None = None
+  if agent is not None:
+    gauge = _context_gauge(agent)
+  estimate, cap, target = gauge or (None, None, None)
   return TurnEndEvent(
     type=EventType.TURN_END,
     response=response,
@@ -1406,6 +1435,9 @@ def _turn_end_event(
     input_tokens=stats["input_tokens"],
     output_tokens=stats["output_tokens"],
     usage_limits=limits,
+    context_estimate=estimate,
+    context_max_tokens=cap,
+    context_target_tokens=target,
   )
 
 

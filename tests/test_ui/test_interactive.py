@@ -1129,6 +1129,122 @@ class TestInteractiveUIHandlerErrors:
     assert "something failed" in text
 
 
+class TestInteractiveUIHandlerContextGauge:
+  """Tests for the context gauge in output_stats (compaction-aware stats line)."""
+
+  @staticmethod
+  def _render(estimate, max_tokens, target_tokens):
+    return InteractiveUIHandler._render_context_bar(estimate, max_tokens, target_tokens)
+
+  @staticmethod
+  def _bar(text) -> str:
+    """The 20-cell bar string from the rendered Text."""
+    plain = text.plain
+    start = plain.index("ctx ") + 4
+    return plain[start : start + 20]
+
+  @staticmethod
+  def _fill_color(text) -> str:
+    """Fill color of the first fill span (ignores the reverse marker span)."""
+    for span in text.spans:
+      words = str(span.style).split(" ")
+      if words and words[0] in ("green", "yellow", "red"):
+        return words[0]
+    return ""
+
+  def test_bar_structure_and_numbers(self):
+    """53.8K of 125K with 75K target: 20 cells, fill + marker + numbers."""
+    text = self._render(53_800, 125_000, 75_000)
+    assert "53.8K/125K" in text.plain
+    bar = self._bar(text)
+    assert len(bar) == 20
+    assert bar.count("│") == 1
+    # 53.8/125 = 43% → 8 full cells + a partial ≥ half → 9 filled total,
+    # marker at round(75/125*20) = cell 12, the rest shaded ░.
+    assert bar.count("█") == 9
+    assert bar.count("░") == 10
+    assert bar.index("│") == 12
+
+  def test_green_below_target(self):
+    """Below the trim target the fill is green."""
+    assert self._fill_color(self._render(53_800, 125_000, 75_000)) == "green"
+
+  def test_yellow_between_target_and_cap(self):
+    """Between trim target and cap the fill is yellow."""
+    assert self._fill_color(self._render(81_900, 125_000, 75_000)) == "yellow"
+
+  def test_red_at_or_above_cap(self):
+    """At/above the cap the fill is red and the bar is clamped full."""
+    text = self._render(127_000, 125_000, 75_000)
+    assert self._fill_color(text) == "red"
+    # Clamped full: 19 fill cells + the always-visible target marker cell.
+    bar = self._bar(text)
+    assert bar.count("█") == 19
+    assert bar.count("│") == 1
+
+  def test_marker_swallowed_by_fill_stays_visible(self):
+    """Above the target the marker cell still renders as │, not fill."""
+    assert self._bar(self._render(102_000, 125_000, 75_000)).count("│") == 1
+
+  def test_no_marker_when_target_missing(self):
+    """Without a target the bar has no marker cell."""
+    assert "│" not in self._bar(self._render(53_800, 125_000, None))
+
+  def test_stats_line_gauge_replaces_token_pair(self):
+    """output_stats shows the gauge when a cap is configured."""
+    output = StringIO()
+    handler = InteractiveUIHandler()
+    handler.console = make_console(output)
+
+    handler.output_stats(
+      91_600,
+      53_808,
+      189,
+      context_estimate=53_800,
+      context_max_tokens=125_000,
+      context_target_tokens=75_000,
+    )
+
+    text = output.getvalue()
+    assert "53.8K/125K" in text
+    assert "tokens" not in text
+    assert "53808/189" not in text
+
+  def test_stats_line_fallback_without_cap(self):
+    """Without a cap the classic token pair is rendered unchanged."""
+    output = StringIO()
+    handler = InteractiveUIHandler()
+    handler.console = make_console(output)
+
+    handler.output_stats(91_600, 53_808, 189)
+
+    text = output.getvalue()
+    assert "53808/189 tokens" in text
+    assert "ctx" not in text
+
+  def test_stats_line_keeps_usage_limits(self):
+    """session/weekly segments survive the gauge replacement."""
+    output = StringIO()
+    handler = InteractiveUIHandler()
+    handler.console = make_console(output)
+    limits = {"session": {"usage": 0.38}, "weekly": {"usage": 0.46}}
+
+    handler.output_stats(
+      91_600,
+      53_808,
+      189,
+      usage_limits=limits,
+      context_estimate=53_800,
+      context_max_tokens=125_000,
+      context_target_tokens=75_000,
+    )
+
+    text = output.getvalue()
+    assert "session 38%" in text
+    assert "weekly" in text
+    assert "46%" in text
+
+
 class TestInteractiveUIHandlerAgentLifecycle:
   """Tests for the optional agent_spawned / agent_finished methods."""
 

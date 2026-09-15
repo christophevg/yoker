@@ -836,6 +836,9 @@ class InteractiveUIHandler(UIHandler):
     eval_tokens: int,
     usage_limits: dict[str, Any] | None = None,
     agent: AgentDisplay | None = None,
+    context_estimate: int | None = None,
+    context_max_tokens: int | None = None,
+    context_target_tokens: int | None = None,
   ) -> None:
     """Output turn statistics.
 
@@ -847,6 +850,12 @@ class InteractiveUIHandler(UIHandler):
         usage percentages.
       agent: The agent that produced this turn, or None for the primary
         agent. Shown in the stats line for multi-agent sessions.
+      context_estimate: Calibrated estimate of the next backend call's
+        pre-compaction context size (tokens), or None when unavailable.
+      context_max_tokens: The context soft cap (``context.max_tokens``),
+        or None when context management is off.
+      context_target_tokens: The trim target (cap × compact_ratio), or
+        None when context management is off.
     """
     self._stop_processing_status()
     if self.show_stats:
@@ -858,21 +867,74 @@ class InteractiveUIHandler(UIHandler):
       if agent:
         prefix = f"{BULLET}{ts}"
         self.console.print(f"{prefix}{tag}", end="")
-        parts = [f"{duration_s:.1f}s, {prompt_tokens}/{eval_tokens} tokens"]
+      # Context gauge replaces the raw token pair when a cap is configured.
+      # The whole line is built as one Text (str parts appended into it) so
+      # the bar's fill color can differ from the line's dim base style.
+      line = Text()
+      if agent:
+        line.append(f"{duration_s:.1f}s,")
       else:
-        parts = [f"{BULLET}{ts}{duration_s:.1f}s, {prompt_tokens}/{eval_tokens} tokens"]
+        line.append(f"{BULLET}{ts}{duration_s:.1f}s,")
+      if context_max_tokens and context_estimate is not None:
+        line.append(" ")
+        line.append(
+          self._render_context_bar(context_estimate, context_max_tokens, context_target_tokens)
+        )
+      else:
+        line.append(f" {prompt_tokens}/{eval_tokens} tokens")
       if usage_limits:
         session_pct = _extract_usage_pct(usage_limits, "session")
         weekly_pct = _extract_usage_pct(usage_limits, "weekly")
         if session_pct is not None:
-          parts.append(f"session {session_pct:.0%}")
+          line.append(f" | session {session_pct:.0%}")
         if weekly_pct is not None:
-          parts.append(f"weekly {weekly_pct:.0%}")
+          line.append(f" | weekly {weekly_pct:.0%}")
       if agent:
-        self.console.print(" | ".join(parts), style=STATS_STYLE, end="")
+        self.console.print(line, style=STATS_STYLE, end="")
         self.console.print()  # newline
       else:
-        self.console.print(" | ".join(parts), style=STATS_STYLE)
+        self.console.print(line, style=STATS_STYLE)
+
+  @staticmethod
+  def _render_context_bar(estimate: int, max_tokens: int, target_tokens: int | None) -> Text:
+    """Render the 20-cell context gauge: fill, target marker, numbers.
+
+    Colors the FILL by proximity to the compaction cap: green below the
+    trim target, yellow between target and cap, red at/above the cap. The
+    marker stays visible (inverted) when swallowed by the fill.
+    """
+    width = 20
+    fraction = max(0.0, min(estimate / max_tokens, 1.0))
+    filled = int(fraction * width)
+    partial = (fraction * width - filled) >= 0.5
+    marker_pos = round(target_tokens / max_tokens * width) if target_tokens else None
+    if marker_pos is not None and 0 < marker_pos < width:
+      marker_idx = marker_pos
+    else:
+      marker_idx = None
+
+    if estimate >= max_tokens:
+      fill_color = "red"
+    elif target_tokens and estimate >= target_tokens:
+      fill_color = "yellow"
+    else:
+      fill_color = "green"
+
+    bar = Text()
+    for i in range(width):
+      if marker_idx is not None and i == marker_idx:
+        # Target marker: visible even when swallowed by the fill.
+        bar.append("│", style=f"{fill_color} reverse")
+      elif i < filled or (i == filled and partial):
+        bar.append("█", style=fill_color)
+      else:
+        # Empty cells: light shade in grey so the bar reads as one track.
+        bar.append("░", style="bright_black")
+
+    text = Text(" ctx ")
+    text.append(bar)
+    text.append(f" {estimate / 1000:.1f}K/{max_tokens / 1000:.0f}K")
+    return text
 
   def output_context_overflow(
     self,

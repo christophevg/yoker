@@ -306,6 +306,9 @@ class BatchUIHandler(UIHandler):
     eval_tokens: int,
     usage_limits: dict[str, object] | None = None,
     agent: AgentDisplay | None = None,
+    context_estimate: int | None = None,
+    context_max_tokens: int | None = None,
+    context_target_tokens: int | None = None,
   ) -> None:
     """Output turn statistics.
 
@@ -315,12 +318,25 @@ class BatchUIHandler(UIHandler):
       eval_tokens: Number of evaluation tokens.
       usage_limits: Optional backend API usage limits.
       agent: The agent that produced this turn, or None.
+      context_estimate: Calibrated estimate of the next backend call's
+        pre-compaction context size (tokens), or None when unavailable.
+      context_max_tokens: The context soft cap, or None when context
+        management is off.
+      context_target_tokens: The trim target (unused in batch mode — the
+        plain-text line has no marker to place).
     """
     if not self.show_stats:
       return
-    total = prompt_tokens + eval_tokens
     duration_s = duration_ms / 1000.0
-    parts = [f"{duration_s:.1f}s", f"{total} tokens"]
+    if context_max_tokens and context_estimate is not None:
+      pct = context_estimate / context_max_tokens
+      parts = [
+        f"{duration_s:.1f}s",
+        f"ctx {context_estimate / 1000:.1f}K/{context_max_tokens / 1000:.0f}K ({pct:.0%})",
+      ]
+    else:
+      total = prompt_tokens + eval_tokens
+      parts = [f"{duration_s:.1f}s", f"{total} tokens"]
     if agent:
       parts.insert(0, agent.id)
     if usage_limits:

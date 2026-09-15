@@ -284,6 +284,35 @@ class TestBatchUIHandlerStats:
     assert "150 tokens" in text
     assert "session" not in text
 
+  def test_stats_with_context_gauge(self):
+    """With a cap, the stats line shows the context gauge instead of tokens."""
+    stderr = StringIO()
+    handler = BatchUIHandler(show_stats=True, stderr=stderr)
+
+    handler.output_stats(
+      1500,
+      50,
+      100,
+      context_estimate=53_800,
+      context_max_tokens=125_000,
+      context_target_tokens=75_000,
+    )
+    text = stderr.getvalue()
+    assert "ctx 53.8K/125K (43%)" in text
+    assert "150 tokens" not in text
+
+  def test_stats_without_context_cap_falls_back_to_tokens(self):
+    """Without a cap, the classic token count is shown."""
+    stderr = StringIO()
+    handler = BatchUIHandler(show_stats=True, stderr=stderr)
+
+    handler.output_stats(
+      1500, 50, 100, context_estimate=53_800, context_max_tokens=None, context_target_tokens=None
+    )
+    text = stderr.getvalue()
+    assert "150 tokens" in text
+    assert "ctx" not in text
+
 
 class TestBatchUIHandlerContextOverflow:
   """Tests for BatchUIHandler compaction notice output."""

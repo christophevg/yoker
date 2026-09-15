@@ -185,6 +185,9 @@ class UIHandler(Protocol):
     eval_tokens: int,
     usage_limits: dict[str, object] | None = None,
     agent: AgentDisplay | None = None,
+    context_estimate: int | None = None,
+    context_max_tokens: int | None = None,
+    context_target_tokens: int | None = None,
   ) -> None:
     """Output turn statistics.
 
@@ -196,6 +199,12 @@ class UIHandler(Protocol):
         session/weekly usage percentages). None when unavailable.
       agent: The agent that produced this turn, or None for the primary
         agent. Used for display in multi-agent sessions.
+      context_estimate: Calibrated estimate of the next backend call's
+        pre-compaction context size (tokens), or None when unavailable.
+      context_max_tokens: The context soft cap (``context.max_tokens``),
+        or None when context management is off.
+      context_target_tokens: The trim target (cap × compact_ratio), or
+        None when context management is off.
     """
     ...
 

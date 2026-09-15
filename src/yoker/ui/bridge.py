@@ -209,6 +209,9 @@ class UIBridge:
       eval_tokens=event.eval_count,  # type: ignore[attr-defined]
       usage_limits=usage_limits,
       agent=self._current_display(),
+      context_estimate=getattr(event, "context_estimate", None),
+      context_max_tokens=getattr(event, "context_max_tokens", None),
+      context_target_tokens=getattr(event, "context_target_tokens", None),
     )
 
   def _maybe_start_processing(self) -> None:

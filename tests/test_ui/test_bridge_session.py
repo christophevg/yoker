@@ -49,6 +49,9 @@ class RecordingHandler:
     eval_tokens: int,
     usage_limits: dict | None = None,
     agent=None,
+    context_estimate: int | None = None,
+    context_max_tokens: int | None = None,
+    context_target_tokens: int | None = None,
   ) -> None:
     self.calls.append(("output_stats", duration_ms, prompt_tokens, eval_tokens, usage_limits))
 
@@ -199,6 +202,9 @@ class TestUIBridgeSessionLifecycle:
         eval_tokens: int,
         usage_limits: dict | None = None,
         agent=None,
+        context_estimate: int | None = None,
+        context_max_tokens: int | None = None,
+        context_target_tokens: int | None = None,
       ) -> None:
         pass
 

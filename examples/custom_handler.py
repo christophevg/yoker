@@ -155,6 +155,9 @@ class PrintUIHandler:
     eval_tokens: int,
     usage_limits: dict[str, object] | None = None,
     agent: AgentDisplay | None = None,
+    context_estimate: int | None = None,
+    context_max_tokens: int | None = None,
+    context_target_tokens: int | None = None,
   ) -> None:
     """Print turn statistics.
 
@@ -166,6 +169,12 @@ class PrintUIHandler:
         session/weekly usage percentages). None when unavailable.
       agent_id: The agent that produced this turn, or None for the primary
         agent.
+      context_estimate: Calibrated estimate of the next backend call's
+        pre-compaction context size (tokens), or None when unavailable.
+      context_max_tokens: The context soft cap, or None when context
+        management is off.
+      context_target_tokens: The trim target, or None when context
+        management is off.
     """
     print(f"[stats] {duration_ms}ms, prompt_tokens={prompt_tokens}, eval_tokens={eval_tokens}")
 
