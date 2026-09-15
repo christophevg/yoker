@@ -2,24 +2,6 @@
 
 ## Backlog
 
-### Permission Annotations
-
-- [ ] **Subcommand-aware permission annotations (deferred — fundamental redesign)**
-  - `git`'s `path` is annotated `WritePath` because some operations consuming it
-    are destructive (checkout, rm, pull) — worst-case semantics by design. This
-    makes read-only operations (`git diff` on a protected file) fire the
-    protected-path approval prompt. The annotation system cannot express
-    "depends on subcommand" today; fixing it properly requires a fundamental
-    redesign of the permission annotation system to take subcommands into
-    account. Deferred as too big for now.
-  - Related note: `git checkout` with a branch named like a file pathspec
-    (e.g. `args={"branch": "Makefile"}`) would attempt a file restore — an
-    operation-level approval question, unchanged by this issue.
-  - **Priority:** Low (as-designed trade-off, UX cost only)
-  - **Severity:** Low — prompt is honest (see git approval-prompt provider),
-    but noisy for read operations
-
-
 ### Code Quality
 
 - [ ] **Plugin config bootstrap: string annotations crash the CLI path + plugin fields leak into CLI**
@@ -69,12 +51,13 @@
 
 ### Tool Enhancements
 
-- [ ] **Tool args: scalar type coercion at dispatch (stringified integers from GLM/Ollama)**
+- [x] **Tool args: scalar type coercion at dispatch (stringified integers from GLM/Ollama)**
   - Evidence (`bug-report-session.jsonl`, archiku/hq session 2026-09-11): the model emitted stringified scalar arguments on several calls — `{"limit": "100"}`, `{"offset": "1", "limit": "120"}`, `{"offset": "578", "limit": "24"}` — all rejected by `read` with "offset/limit must be an integer" (4 hard failures across 2 sessions), while identical calls with true integers succeeded. Same session: `search` accepted string `context_before`/`context_after` — strict typing is inconsistent tool-to-tool.
   - 0.12.0 already handles the nested-object variant of this degradation (changelog: `'{"TEST": "foo"}'`); scalars were left uncoerced.
   - **Fix:** at the single dispatch/validation choke point, coerce strings to the declared JSON-schema scalar type (int/float/bool) before validation, uniformly across tools; if coercion is impossible, fail loud with the received type in the message ("limit must be an integer, got str '100'").
   - **Priority:** Medium — 4 wasted hard failures + retries in one dogfooding session; model-dependent, will recur
   - **Severity:** Low–Medium — fail-loud is safe, but the failure is spurious
+  - **(2026-09-15: done — schema-aware per-value argument coercion at dispatch, commit `41296ec`; legit JSON-string payloads pass through verbatim. See CHANGELOG Unreleased.)**
 
 - [ ] **Verify "twice duplicated lines" `update` hazard vs. anchor-duplication guard (`beed089`)**
   - Forensics on all archived session logs (Sep 9 hq: 27 `update` calls; Sep 11 hq: 87 calls/91 results; reporting session: 13): zero actual line duplication, every diff honest, 10 duplicate-anchor attempts correctly rejected. The hazard phrase was authored in an unarchived session (between Sep 9 ~17:44 and Sep 11 13:51) and then only ever *read*, never rewritten with new evidence.
@@ -192,6 +175,12 @@ Remaining tools and enhancements not pulled into pre-release:
 - [ ] **M.4 Clean Up Duplicate Tests** — review all tests for duplicates; consolidate; maintain coverage
 - [ ] **M.6 Loader Consolidation — single shared config-loading entry path** — four entry points currently exist (`get_yoker_config`, `get_yoker_config_with_manifest`, `load_subcommand_config`, `load_subcommand_config_with_manifest` in `cli/shared.py`), spanning three invocation styles; `load_subcommand_config_with_manifest` reimplements the Clevis cascade by hand (TOML loads, section extraction, deep-merge, CLI, `from_dict`) although `build_default_cascade` + cascade layers can express the same; `get_security_config` dev/test bypass is duplicated verbatim in `config/__init__.py` and `cli/shared.py`. Consolidate into one internal `load_config(config_class, *, section=..., manifest=..., cli=...)` primitive in `yoker/config/loader.py`; needs a small Clevis addition (`get_config(..., section="run")` style parameter) or per-layer extraction in cascade lambdas. Requires every public loader to delegate — so future loaders cannot skip common behaviour (config bootstrap augmentation, security policy). Add a canary test: demo-plugin `config_class` + TOML table must yield a typed `config.tools.<plugin>.<field>` through EVERY public loader. Owner decision 2026-09-13: explicitly NOT now, backlog-only.
 
+- [ ] **M.7 Defaults audit + owner configuration cleanup**
+  - Review all personal `yoker.toml` files; identify which settings are constantly changed vs. the shipped defaults; evaluate which of those overrides should become the new defaults; then clean up all `yoker.toml` files so they contain only genuine deviations — tight, minimal configs.
+  - Mixed topic: (1) improve yoker defaults where evidence supports it, (2) tighten owner configs accordingly (verify every removal before deleting; keep a per-file diff).
+  - Related design question: extending configured lists (`allowed_operations`, `blocked_write_paths`, `filesystem_paths`, trusted plugins, ...) currently requires looking up the default, copying it and appending — no "extend the default" merge semantics. Evaluate list merge/extension semantics (e.g. an `extend` sub-key, default-merge with explicit-reset opt-out) as part of the defaults review.
+  - **Priority:** Medium
+
 ### S.1: Secure API Key Storage with Keyring
 
 - [ ] **S.1 Secure API Key Storage with Keyring** — use Python `keyring` library; during bootstrap wizard store via keyring; fallback to config file if unavailable; support all providers
@@ -223,3 +212,17 @@ Remaining tools and enhancements not pulled into pre-release:
 - [ ] **yoker-dashboard** — a web interface on top of a running yoker instance offering a visual, point and click interface to the running agentic team. Inspiration: https://github.com/Bennettxai/FounderOS-DEMO
 - [ ] **Unknown config key detection — warn on removed/renamed settings**
   Clevis (via dacite) silently ignores TOML keys that don't map to dataclass fields. After the path guardrail redesign, old keys like `allowed_extensions`, `blocked_patterns`, `blocked_extensions`, and `protected_files` are silently dropped — the user gets no feedback that their config is stale. Investigate options: (a) post-load validation in Yoker that checks the raw TOML dict for known-removed keys and warns with migration guidance, or (b) upstream support in Clevis for a strict mode that rejects unknown keys.
+- [ ] **Subcommand-aware permission annotations (deferred — fundamental redesign)**
+  - `git`'s `path` is annotated `WritePath` because some operations consuming it
+    are destructive (checkout, rm, pull) — worst-case semantics by design. This
+    makes read-only operations (`git diff` on a protected file) fire the
+    protected-path approval prompt. The annotation system cannot express
+    "depends on subcommand" today; fixing it properly requires a fundamental
+    redesign of the permission annotation system to take subcommands into
+    account. Deferred as too big for now.
+  - Related note: `git checkout` with a branch named like a file pathspec
+    (e.g. `args={"branch": "Makefile"}`) would attempt a file restore — an
+    operation-level approval question, unchanged by this issue.
+  - **Priority:** Low (as-designed trade-off, UX cost only)
+  - **Severity:** Low — prompt is honest (see git approval-prompt provider),
+    but noisy for read operations
