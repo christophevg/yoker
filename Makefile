@@ -141,3 +141,7 @@ clean-sessions: ## Delete session .jsonl files older than $(SESSION_MAX_AGE_DAYS
 		echo "Cleaning session files older than $(SESSION_MAX_AGE_DAYS) days in $$dir..."; \
 		find "$$dir" -name '*.jsonl' -type f -mtime +$(SESSION_MAX_AGE_DAYS) -print -delete; \
 	fi
+
+
+analyze-context:
+	uv run python scripts/context_report.py $(CONTEXT_FILE)

@@ -2,7 +2,9 @@
 
 Inherits from ContextManagerWrapper and adds JSONL persistence by
 overriding mutating methods: delegate to wrapped, then bulk-rewrite the
-full JSONL file via _persist_full_state(self._wrapped.get_context()).
+full JSONL file via _persist_full_state(self._wrapped.get_stored_messages())
+— the STORED truth (flags, thinking, original bodies survive compaction),
+never the projection.
 
 Record types (moved over from the former PersistenceContextManager):
   - session_start: Session metadata
@@ -174,7 +176,7 @@ class Persisted(ContextManagerWrapper):
     # history, we save the loaded messages, set the agent reference directly
     # (bypassing the clear), prepend the new system prompt, and persist the
     # combined state.
-    loaded_messages = self._wrapped.get_context()
+    loaded_messages = self._wrapped.get_stored_messages()
     has_loaded_history = len(loaded_messages) > 0
 
     # Set the agent reference directly, bypassing the BaseContextManager
@@ -189,7 +191,7 @@ class Persisted(ContextManagerWrapper):
       wrapped.clear()
       wrapped.setup_initial_context()
       wrapped.add_skill_discovery_block()
-      new_setup = wrapped.get_context()
+      new_setup = wrapped.get_stored_messages()
       # Drop the loaded system messages and old skill-discovery blocks from
       # the head; keep user/assistant/tool messages (the actual conversation).
       # Skill discovery blocks are framework-generated user messages (wrapped
@@ -207,7 +209,7 @@ class Persisted(ContextManagerWrapper):
       wrapped.setup_initial_context()
       wrapped.add_skill_discovery_block()
 
-    self._persist_full_state(wrapped.get_context())
+    self._persist_full_state(wrapped.get_stored_messages())
 
   # --- mutating overrides: delegate to wrapped, then bulk-rewrite JSONL ---
 
@@ -219,7 +221,7 @@ class Persisted(ContextManagerWrapper):
     thinking: str | None = None,
   ) -> None:
     self._wrapped.add_message(role, content, metadata=metadata, thinking=thinking)
-    self._persist_full_state(self._wrapped.get_context())
+    self._persist_full_state(self._wrapped.get_stored_messages())
 
   def add_tool_result(
     self,
@@ -231,7 +233,7 @@ class Persisted(ContextManagerWrapper):
   ) -> None:
     self._wrapped.add_tool_result(tool_name, tool_id, result, success=success, images=images)
     self._tool_call_count += 1
-    self._persist_full_state(self._wrapped.get_context())
+    self._persist_full_state(self._wrapped.get_stored_messages())
 
   def add_tool_calls(
     self,
@@ -240,41 +242,108 @@ class Persisted(ContextManagerWrapper):
     content: str = "",
   ) -> None:
     self._wrapped.add_tool_calls(tool_calls, thinking=thinking, content=content)
-    self._persist_full_state(self._wrapped.get_context())
+    self._persist_full_state(self._wrapped.get_stored_messages())
 
   def start_turn(self, user_message: str) -> None:
     self._wrapped.start_turn(user_message)
     self._last_turn_time = datetime.now()
-    self._persist_full_state(self._wrapped.get_context())
+    self._persist_full_state(self._wrapped.get_stored_messages())
 
   def end_turn(self, assistant_message: str, thinking: str | None = None) -> None:
     self._wrapped.end_turn(assistant_message, thinking=thinking)
     self._last_turn_time = datetime.now()
-    self._persist_full_state(self._wrapped.get_context())
+    self._persist_full_state(self._wrapped.get_stored_messages())
 
   def truncate_oldest_non_system(
     self,
-    keep_first_user: bool = True,
+    protect_first_user: int = 1,
+    protect_last_user: int = 1,
+    protect_last_assistant: int = 1,
+    protect_last_tool_calls: int = 1,
     drop_count: int = 1,
+    run: str | None = None,
   ) -> int:
     """Delegate to wrapped, then bulk-rewrite the JSONL file.
 
-    Permanently dropped messages are removed from the in-memory list AND
-    from the persisted JSONL file (the file is rewritten with the
-    truncated state).
+    Flagged (dropped/stubbed) messages stay in the in-memory store, so
+    the rewrite persists them — flags must survive save/load for the
+    projection to hide them after a resume.
     """
     dropped = self._wrapped.truncate_oldest_non_system(
-      keep_first_user=keep_first_user,
+      protect_first_user=protect_first_user,
+      protect_last_user=protect_last_user,
+      protect_last_assistant=protect_last_assistant,
+      protect_last_tool_calls=protect_last_tool_calls,
       drop_count=drop_count,
+      run=run,
     )
     if dropped > 0:
-      self._persist_full_state(self._wrapped.get_context())
+      self._persist_full_state(self._wrapped.get_stored_messages())
     return dropped
+
+  def protected_view(
+    self,
+    protect_first_user: int = 1,
+    protect_last_user: int = 1,
+    protect_last_assistant: int = 1,
+    protect_last_tool_calls: int = 1,
+  ) -> list[dict[str, Any]]:
+    return self._wrapped.protected_view(
+      protect_first_user=protect_first_user,
+      protect_last_user=protect_last_user,
+      protect_last_assistant=protect_last_assistant,
+      protect_last_tool_calls=protect_last_tool_calls,
+    )
 
   def replace_messages(self, messages: list[dict[str, Any]]) -> None:
     """Delegate to wrapped, then bulk-rewrite the JSONL file."""
     self._wrapped.replace_messages(messages)
-    self._persist_full_state(self._wrapped.get_context())
+    self._persist_full_state(self._wrapped.get_stored_messages())
+
+  def prune_tool_results(self, min_age_turns: int, min_chars: int, run: str | None = None) -> int:
+    """Delegate to wrapped, then bulk-rewrite the JSONL file.
+
+    Stub flags must survive save/load so the projection keeps rendering
+    stubs after a resume.
+    """
+    flagged = self._wrapped.prune_tool_results(min_age_turns, min_chars, run=run)
+    if flagged > 0:
+      self._persist_full_state(self._wrapped.get_stored_messages())
+    return flagged
+
+  def force_stub_tool_results(self, min_chars: int, run: str | None = None) -> int:
+    """Delegate to wrapped, then bulk-rewrite the JSONL file.
+
+    Same persistence rule as prune_tool_results — stub flags must
+    survive save/load so the projection keeps rendering stubs.
+    """
+    flagged = self._wrapped.force_stub_tool_results(min_chars, run=run)
+    if flagged > 0:
+      self._persist_full_state(self._wrapped.get_stored_messages())
+    return flagged
+
+  def prune_thinking(self, min_age_turns: int, run: str | None = None) -> int:
+    """Delegate to wrapped, then bulk-rewrite the JSONL file.
+
+    Thinking flags must survive save/load so the projection keeps
+    submitting flagged messages without their thinking after a resume.
+    """
+    flagged = self._wrapped.prune_thinking(min_age_turns, run=run)
+    if flagged > 0:
+      self._persist_full_state(self._wrapped.get_stored_messages())
+    return flagged
+
+  # --- compaction run reporting (chunk C persists the reports) ---
+
+  def record_compaction(self, run: dict[str, Any]) -> None:
+    self._wrapped.record_compaction(run)
+    # Persist immediately: the run must survive a crash right after a
+    # compaction (bulk rewrite — the file format is full-state anyway).
+    self._persist_full_state(self._wrapped.get_stored_messages())
+
+  @property
+  def compaction_runs(self) -> list[dict[str, Any]]:
+    return self._wrapped.compaction_runs
 
   def clear(self) -> None:
     """Clear in-memory context and truncate the JSONL file."""
@@ -290,7 +359,7 @@ class Persisted(ContextManagerWrapper):
   def save(self) -> None:
     """Persist context to storage via bulk-rewrite."""
     self._wrapped.save()
-    self._persist_full_state(self._wrapped.get_context())
+    self._persist_full_state(self._wrapped.get_stored_messages())
 
   def load(self) -> bool:
     """Load context from storage.
@@ -335,7 +404,7 @@ class Persisted(ContextManagerWrapper):
   def close(self) -> None:
     """Release resources and append a session_end marker via bulk-rewrite."""
     self._wrapped.close()
-    self._persist_full_state(self._wrapped.get_context(), end_session=True)
+    self._persist_full_state(self._wrapped.get_stored_messages(), end_session=True)
 
   def get_statistics(self) -> ContextStatistics:
     """Merge wrapped stats with persistence stats."""
@@ -401,10 +470,26 @@ class Persisted(ContextManagerWrapper):
         }
       )
 
+    # Compaction run reports ride in the same full-state rewrite, after the
+    # message records, so a resumed session keeps its compaction history.
+    for run in self._wrapped.compaction_runs:
+      records.append(
+        {
+          "type": "compaction",
+          "timestamp": run.get("timestamp"),
+          "data": run,
+        }
+      )
+
     self._atomic_write_jsonl(records)
 
   def _item_to_record(self, item: dict[str, Any]) -> tuple[str | None, dict[str, Any] | None]:
-    """Map an in-memory item to a JSONL record type and data."""
+    """Map an in-memory item to a JSONL record type and data.
+
+    Compaction flags (``pruned``) ride along on every record kind so the
+    projection can keep hiding flagged messages after a resume.
+    """
+    pruned = item.get("pruned")
     role = item.get("role")
     if role == "tool":
       return "tool_result", {
@@ -412,14 +497,18 @@ class Persisted(ContextManagerWrapper):
         "tool_id": item.get("tool_id", item["name"]),
         "result": item["content"],
         "success": item.get("success", True),
+        **({"pruned": pruned} if isinstance(pruned, dict) else {}),
       }
     if role == "assistant" and "tool_calls" in item:
       return "tool_call_message", {
         "tool_calls": item["tool_calls"],
         "thinking": item.get("thinking"),
         "content": item.get("content", ""),
+        **({"pruned": pruned} if isinstance(pruned, dict) else {}),
       }
     if role in ("user", "assistant", "system"):
+      # Plain message records persist the item dict wholesale — the flag
+      # is already embedded.
       return "message", item
     return None, None
 
@@ -535,15 +624,17 @@ class Persisted(ContextManagerWrapper):
           line_num,
           "Missing tool_id",
         )
-      wrapped._messages.append(
-        {
-          "role": "tool",
-          "name": data["tool_name"],
-          "tool_id": data["tool_id"],
-          "content": data["result"],
-          "success": data.get("success", True),
-        }
-      )
+      message: dict[str, Any] = {
+        "role": "tool",
+        "name": data["tool_name"],
+        "tool_id": data["tool_id"],
+        "content": data["result"],
+        "success": data.get("success", True),
+      }
+      # pruned is optional (old files have none) — restore when present.
+      if isinstance(data.get("pruned"), dict):
+        message["pruned"] = data["pruned"]
+      wrapped._messages.append(message)
       self._tool_call_count += 1
 
     elif record_type == "tool_call_message":
@@ -553,14 +644,26 @@ class Persisted(ContextManagerWrapper):
           line_num,
           "Missing tool_calls",
         )
-      wrapped._messages.append(
-        {
-          "role": "assistant",
-          "tool_calls": data["tool_calls"],
-          "content": data.get("content", ""),
-          "thinking": data.get("thinking"),
-        }
-      )
+      call_message: dict[str, Any] = {
+        "role": "assistant",
+        "tool_calls": data["tool_calls"],
+        "content": data.get("content", ""),
+        "thinking": data.get("thinking"),
+      }
+      if isinstance(data.get("pruned"), dict):
+        call_message["pruned"] = data["pruned"]
+      wrapped._messages.append(call_message)
+
+    elif record_type == "compaction":
+      # Compaction run report: append verbatim into the wrapped manager's
+      # history — mirroring how message records replay into _messages.
+      if "run_id" not in data:
+        raise ContextCorruptionError(
+          str(self._file_path),
+          line_num,
+          "Missing compaction run_id",
+        )
+      wrapped._compaction_runs.append(dict(data))
 
     elif record_type == "turn_start":
       ts = record.get("timestamp")
