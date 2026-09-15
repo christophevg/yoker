@@ -15,6 +15,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from yoker.config import CompactionConfig
+
 if TYPE_CHECKING:
   from yoker.config import Config
 
@@ -99,8 +101,17 @@ def render_config_summary(config: Config) -> str:
     ratio = getattr(context_cfg, "compact_ratio", 1.0)
     if not isinstance(ratio, int | float) or not 0 < ratio <= 1.0:
       ratio = 1.0
+    # Stage order from the real [context.compaction] config (defensively:
+    # old/stub configs without the attribute fall back to the defaults;
+    # an empty list renders as "disabled").
+    compaction = getattr(context_cfg, "compaction", None)
+    default_stages = "prune_tool_results, prune_thinking, force_stub_tool_results, cutoff"
+    stages = default_stages
+    if isinstance(compaction, CompactionConfig):
+      stages = ", ".join(compaction.strategies) if compaction.strategies else "disabled"
     lines.append(
-      f"* context compaction: cap {max_tokens:,} tokens; trim target ≈{int(max_tokens * ratio):,}"
+      f"* context compaction: cap {max_tokens:,} tokens; trim target ≈{int(max_tokens * ratio):,};"
+      f" stages: {stages}"
     )
 
   # --- Backend (names only, never credentials) ---

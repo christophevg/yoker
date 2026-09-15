@@ -8,8 +8,7 @@ and ContextManagerWrapper:
   - Tool-call-pair-aware (assistant tool_calls + tool results dropped
     together as an atomic unit).
   - Permanent removal from ``_messages``.
-  - ``keep_first_user=False`` drops the first user turn too (except
-    system messages and the scaffolding prefix).
+  - Protection windows can be disabled individually (``protect_*=0``).
   - Persisted: JSONL file rewritten after truncation.
   - Wrapper: delegates to wrapped.
 """
@@ -91,8 +90,8 @@ class TestProtectedSetPreserved:
     contents = [m["content"] for m in cm._messages]
     assert "skill discovery block" in contents
 
-  def test_first_real_user_turn_protected_when_keep_first_user_true(self) -> None:
-    """keep_first_user=True protects the first real user turn."""
+  def test_first_real_user_turn_protected_by_default(self) -> None:
+    """The default protect_first_user=1 protects the first real user turn."""
     cm = BaseContextManager()
     cm._messages = [
       _msg("system", "sys"),
@@ -102,7 +101,7 @@ class TestProtectedSetPreserved:
       _msg("user", "second turn"),
       _msg("assistant", "resp2"),
     ]
-    cm.truncate_oldest_non_system(keep_first_user=True, drop_count=10)
+    cm.truncate_oldest_non_system(drop_count=10)
     contents = [m["content"] for m in cm._messages]
     assert "first real turn" in contents
 
@@ -113,11 +112,12 @@ class TestOldestDroppedFromTail:
   The protected prefix (system + scaffolding + first real user turn) is at
   the head. The droppable tail is everything after it. We drop the OLDEST
   droppable messages first — i.e. the ones closest to the protected prefix —
-  so the most recent context survives.
+  so the most recent context survives. "Drop" means flag (stored=truth):
+  flagged messages stay in _messages and vanish from get_context().
   """
 
   def test_drop_one_atomic_unit_from_tail(self) -> None:
-    """A single drop_count removes the oldest droppable atomic unit."""
+    """A single drop_count flags the oldest droppable atomic unit."""
     cm = BaseContextManager()
     cm._messages = [
       _msg("system", "sys"),
@@ -128,14 +128,18 @@ class TestOldestDroppedFromTail:
     ]
     dropped = cm.truncate_oldest_non_system(drop_count=1)
     assert dropped == 1
-    contents = [m["content"] for m in cm._messages]
-    # Oldest droppable is "resp1"; most recent "resp2" survives.
+    # Stored truth keeps the message, flagged as dropped.
+    assert len(cm._messages) == 5
+    assert cm._messages[2]["pruned"]["kind"] == "dropped"
+    # The view excludes it; the most recent "resp2" survives.
+    context = cm.get_context()
+    contents = [m["content"] for m in context]
     assert "resp1" not in contents
     assert "resp2" in contents
     assert "second turn" in contents
 
   def test_drop_count_drops_multiple_units(self) -> None:
-    """drop_count=2 removes the two oldest droppable atomic units."""
+    """drop_count=2 flags the two oldest droppable atomic units."""
     cm = BaseContextManager()
     cm._messages = [
       _msg("system", "sys"),
@@ -143,24 +147,31 @@ class TestOldestDroppedFromTail:
       _msg("assistant", "resp1"),
       _msg("user", "second turn"),
       _msg("assistant", "resp2"),
+      _msg("user", "third turn"),
+      _msg("assistant", "resp3"),
     ]
     dropped = cm.truncate_oldest_non_system(drop_count=2)
     assert dropped == 2
-    contents = [m["content"] for m in cm._messages]
-    # Oldest two droppable: "resp1" and "second turn" (in order).
+    # Oldest two droppable: "resp1" and "resp2" — "second turn" is the
+    # first real user (first-user window), "third turn" the last user,
+    # "resp3" the last plain assistant; all protected.
+    flagged = [m["content"] for m in cm._messages if "pruned" in m]
+    assert flagged == ["resp1", "resp2"]
+    contents = [m["content"] for m in cm.get_context()]
     assert "resp1" not in contents
-    assert "second turn" not in contents
-    assert "resp2" in contents
+    assert "resp2" not in contents
+    assert "resp3" in contents
+    assert "second turn" in contents
 
 
 class TestToolCallPairAware:
   """Assistant tool_calls + trailing tool results are dropped together."""
 
   def test_tool_call_pair_dropped_atomically(self) -> None:
-    """An assistant tool_calls message and its tool results drop together.
+    """An assistant tool_calls message and its tool results flag together.
 
     The tool_call+tool_result pair is the OLDEST droppable unit (closest
-    to the protected prefix), so it is the first unit dropped.
+    to the protected prefix), so it is the first unit flagged.
     """
     cm = BaseContextManager()
     cm._messages = [
@@ -170,35 +181,50 @@ class TestToolCallPairAware:
       _tool_result_msg(),
       _msg("assistant", "resp1"),
       _msg("user", "second turn"),
+      _msg("assistant", "resp2"),
     ]
-    dropped = cm.truncate_oldest_non_system(drop_count=2)
-    # First drop: tool_call + tool_result (2 msgs, one atomic unit).
-    # Second drop: "resp1" (1 msg). Total = 3.
+    dropped = cm.truncate_oldest_non_system(protect_last_tool_calls=0, drop_count=2)
+    # First flag: tool_call + tool_result (2 msgs, one atomic unit).
+    # Second flag: "resp1" (1 msg). Total = 3. "resp2" is the last plain
+    # assistant (protected); "second turn" the first+last real user.
     assert dropped == 3
-    roles = [m["role"] for m in cm._messages]
+    # Stored truth keeps all seven messages; exactly three are flagged.
+    assert len(cm._messages) == 7
+    # The view excludes both units: no tool roles, no tool_calls left.
+    context = cm.get_context()
+    roles = [m["role"] for m in context]
     assert "tool" not in roles
-    # The assistant tool_calls message is gone.
-    assert not any("tool_calls" in m for m in cm._messages)
-    # "second turn" survives (most recent).
-    contents = [m["content"] for m in cm._messages]
+    assert not any("tool_calls" in m for m in context)
+    # "second turn" and "resp2" survive in the view.
+    contents = [m["content"] for m in context]
     assert "second turn" in contents
+    assert "resp2" in contents
+    assert "first turn" in contents
 
   def test_tool_call_pair_not_split_by_drop_count_one(self) -> None:
-    """drop_count=1 drops the pair as a single unit, not just the assistant."""
+    """drop_count=1 flags the pair as a single unit, not just the assistant."""
     cm = BaseContextManager()
     cm._messages = [
       _msg("system", "sys"),
       _msg("user", "first turn"),
       _tool_call_msg(),
       _tool_result_msg(),
+      _msg("assistant", "resp"),
+      _msg("user", "second turn"),
+      _tool_call_msg(),
+      {**_tool_result_msg(), "tool_id": "call_1"},
     ]
     dropped = cm.truncate_oldest_non_system(drop_count=1)
-    # The tool_call+tool_result pair is the oldest (and only) atomic unit:
-    # dropped together as one unit, not just the assistant message.
+    # The tool_call+tool_result pair is the oldest atomic unit: flagged
+    # together (2 msgs), not just the assistant message.
     assert dropped == 2
-    roles = [m["role"] for m in cm._messages]
-    assert "tool" not in roles
-    assert not any("tool_calls" in m for m in cm._messages)
+    context = cm.get_context()
+    # The FIRST pair is gone from the view; the LAST tool-call unit is
+    # protected, so its result stays.
+    tool_ids = [m["tool_id"] for m in context if m.get("role") == "tool"]
+    assert tool_ids == ["call_1"]
+    # Stored truth keeps all eight messages.
+    assert len(cm._messages) == 8
 
 
 class TestPermanentRemoval:
@@ -236,29 +262,37 @@ class TestPermanentRemoval:
     assert len(cm._messages) == 2
 
 
-class TestKeepFirstUserFalse:
-  """keep_first_user=False drops the first real user turn too."""
+class TestDisabledProtectionWindows:
+  """protect_*=0 disables a window — the covered messages become droppable."""
 
-  def test_first_user_turn_dropped_when_keep_first_user_false(self) -> None:
-    """keep_first_user=False makes the first real user turn droppable."""
+  def test_first_user_turn_dropped_when_protect_first_user_zero(self) -> None:
+    """protect_first_user=0 makes the first real user turn droppable."""
     cm = BaseContextManager()
     cm._messages = [
       _msg("system", "sys"),
       _msg("user", "scaffold"),
+      _msg("assistant", "resp0"),
       _msg("user", "first real turn"),
-      _msg("assistant", "resp"),
+      _msg("assistant", "resp1"),
       _msg("user", "second turn"),
       _msg("assistant", "resp2"),
     ]
-    cm.truncate_oldest_non_system(keep_first_user=False, drop_count=10)
-    contents = [m["content"] for m in cm._messages]
-    # System and scaffold are protected; first real turn is dropped.
+    cm.truncate_oldest_non_system(protect_first_user=0, protect_last_user=0, drop_count=10)
+    # Stored truth keeps everything; the view drops the first real turn.
+    contents = [m["content"] for m in cm.get_context()]
+    # System + scaffold are protected; "first real turn" is the first user
+    # AFTER the scaffolding run, so its window governs it — with the window
+    # off it drops. Both user windows are off, so "second turn" drops too;
+    # only the last plain assistant ("resp2") survives alongside the
+    # scaffolding.
     assert "sys" in contents
     assert "scaffold" in contents
     assert "first real turn" not in contents
+    assert "second turn" not in contents
+    assert "resp2" in contents
 
-  def test_system_messages_protected_even_when_keep_first_user_false(self) -> None:
-    """System messages stay protected regardless of keep_first_user."""
+  def test_system_messages_protected_even_with_all_windows_disabled(self) -> None:
+    """System messages stay protected regardless of the protection windows."""
     cm = BaseContextManager()
     cm._messages = [
       _msg("system", "sys1"),
@@ -266,7 +300,12 @@ class TestKeepFirstUserFalse:
       _msg("user", "first turn"),
       _msg("assistant", "resp"),
     ]
-    cm.truncate_oldest_non_system(keep_first_user=False, drop_count=10)
+    cm.truncate_oldest_non_system(
+      protect_first_user=0,
+      protect_last_user=0,
+      protect_last_assistant=0,
+      drop_count=10,
+    )
     roles = [m["role"] for m in cm._messages]
     assert roles.count("system") == 2
 
@@ -293,8 +332,10 @@ class TestPersistedRewritesJsonl:
     dropped = cm.truncate_oldest_non_system(drop_count=1)
     assert dropped == 1
 
-    # Reload from disk and verify the dropped message is gone. The oldest
-    # droppable unit ("resp1") was dropped; "resp2" survives.
+    # Reload from disk and verify the flag round-trips: the flagged
+    # message is still stored (with its pruned flag) but hidden from the
+    # view. The oldest droppable unit ("resp1") was flagged; "resp2"
+    # survives in the view.
     reloaded = Persisted(
       BaseContextManager(),
       storage_path=tmp_path,
@@ -304,6 +345,8 @@ class TestPersistedRewritesJsonl:
     contents = [m.get("content") for m in reloaded.get_context()]
     assert "resp1" not in contents
     assert "resp2" in contents
+    stored_contents = [m.get("content") for m in reloaded.get_stored_messages()]
+    assert "resp1" in stored_contents
 
 
 class TestWrapperDelegates:
@@ -322,7 +365,10 @@ class TestWrapperDelegates:
     wrapper = ContextManagerWrapper(inner)
     dropped = wrapper.truncate_oldest_non_system(drop_count=1)
     assert dropped == 1
-    contents = [m["content"] for m in inner._messages]
+    # Flag semantics: stored keeps the message; the view hides it.
+    assert len(inner._messages) == 5
+    assert "pruned" in inner._messages[2]
+    contents = [m["content"] for m in wrapper.get_context()]
     # Oldest droppable ("resp1") is dropped; "resp2" survives.
     assert "resp1" not in contents
     assert "resp2" in contents

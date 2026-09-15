@@ -176,6 +176,15 @@ class Agent:
     # back-reference triggers initial context + skill discovery block setup
     self.context.agent = self
 
+    # Projection thinking-strip switch: backends with provider-side
+    # context management (Anthropic) keep unflagged thinking in the
+    # submitted view — the provider clears it server-side. All other
+    # backends strip thinking at projection level (stored history keeps
+    # it; see BaseContextManager.get_context).
+    self.context.strip_thinking_in_view = not getattr(
+      self._backend, "supports_context_management", False
+    )
+
     self._event_handlers: list[EventCallback] = []
 
     # Context-size calibration for the overflow check, updated from backend

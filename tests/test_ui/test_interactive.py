@@ -978,6 +978,100 @@ class TestInteractiveUIHandlerContextOverflow:
     text = output.getvalue()
     assert "Trimmed to" not in text
 
+  def test_compaction_panel_stages_and_total_line(self):
+    """New-format events render one line per stage plus the total line."""
+    output = StringIO()
+    handler = InteractiveUIHandler()
+    handler.console = make_console(output)
+
+    handler.output_context_overflow(
+      dropped_count=2,
+      estimated_tokens=90985,
+      max_tokens=80000,
+      message_count=41,
+      target_tokens=40000,
+      stages=[
+        {"name": "prune_tool_results", "messages": 0, "tokens": 12_300},
+        {"name": "cutoff", "messages": 0, "tokens": 38_500},
+      ],
+      sent_count=28,
+      remaining_estimated_tokens=38_400,
+    )
+
+    text = output.getvalue()
+    # Per-stage lines with the −N msg / −X K tokens format.
+    assert "prune_tool_results" in text
+    assert "−12.3K tokens" in text
+    assert "cutoff" in text
+    assert "−38.5K tokens" in text
+    # Total line: pruned total + achieved remain + stored/sent split.
+    assert "−50.8K" in text
+    assert "≈38.4K remain" in text
+    assert "41 stored / 28 sent" in text
+    # The Trimmed-to line now shows the ACHIEVED value, not the target.
+    assert "Trimmed to" in text
+    assert "38.4K" in text
+    # Old-format target value no longer appears in the trimmed line…
+    # (target semantics live in the total line only; the raw number may
+    # still appear inside "40,000-cap" formatting — assert the old
+    # formatting form is gone.)
+    assert "≈40,000 tokens." not in text
+
+  def test_compaction_panel_old_event_byte_identical(self):
+    """Old-format events (no stages/sent/remaining) render exactly as
+    before: target-based Trimmed-to, no stage lines, no total line."""
+    output = StringIO()
+    handler = InteractiveUIHandler()
+    handler.console = make_console(output)
+
+    handler.output_context_overflow(
+      dropped_count=34,
+      estimated_tokens=94273,
+      max_tokens=80000,
+      message_count=71,
+      first_remaining="assistant → tools: read ×2",
+      target_tokens=40000,
+    )
+
+    text = output.getvalue()
+    assert "Context compacted" in text
+    assert "Dropped 34 message(s)" in text
+    assert "94,273" in text
+    assert "80,000" in text
+    assert "messages remain" in text
+    assert "History starts at" in text
+    assert "Trimmed to" in text
+    assert "≈40,000 tokens." in text
+    # No new-format lines for old events.
+    assert "stored /" not in text
+    assert "remain" not in text.replace("messages remain", "")
+    for stage_name in ("prune_tool_results", "prune_thinking", "cutoff:"):
+      assert stage_name not in text
+    assert "total:" not in text
+
+  def test_compaction_panel_stages_without_sent_count(self):
+    """Stages present but sent_count None (partial new format): the
+    stored/sent suffix is omitted, the remain figure still shown."""
+    output = StringIO()
+    handler = InteractiveUIHandler()
+    handler.console = make_console(output)
+
+    handler.output_context_overflow(
+      dropped_count=1,
+      estimated_tokens=90_985,
+      max_tokens=80_000,
+      message_count=41,
+      target_tokens=40_000,
+      stages=[{"name": "prune_tool_results", "messages": 0, "tokens": 50_985}],
+      sent_count=None,
+      remaining_estimated_tokens=39_000,
+    )
+
+    text = output.getvalue()
+    assert "prune_tool_results" in text
+    assert "≈39.0K remain" in text
+    assert "stored /" not in text
+
 
 class TestInteractiveUIHandlerErrors:
   """Tests for InteractiveUIHandler error display."""

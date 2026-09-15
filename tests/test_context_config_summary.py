@@ -59,6 +59,31 @@ class TestContextCompactionRendering:
     summary = render_config_summary(config)
     assert "context compaction: cap 80,000 tokens; trim target ≈80,000" in summary
 
+  def test_default_stage_order_shown(self) -> None:
+    """Without a compaction config attribute (old/stub configs), the
+    framework default stage order is shown."""
+    config = _make_config()
+    summary = render_config_summary(config)
+    assert "stages: prune_tool_results, prune_thinking, force_stub_tool_results, cutoff" in summary
+
+  def test_configured_stage_order_shown(self) -> None:
+    """A configured compaction strategies list is rendered in order."""
+    from yoker.config import CompactionConfig, ContextConfig
+
+    compaction = CompactionConfig(strategies=("cutoff", "prune_tool_results"))
+    config = _make_config(context=ContextConfig(compaction=compaction))
+    summary = render_config_summary(config)
+    assert "stages: cutoff, prune_tool_results" in summary
+
+  def test_empty_strategies_shows_disabled(self) -> None:
+    """An empty strategies list (compaction disabled) is rendered as such."""
+    from yoker.config import CompactionConfig, ContextConfig
+
+    compaction = CompactionConfig(strategies=())
+    config = _make_config(context=ContextConfig(compaction=compaction))
+    summary = render_config_summary(config)
+    assert "stages: disabled" in summary
+
 
 class TestGithubOperationsRendering:
   def test_read_only_set_mentions_write_ops_not_enabled(self) -> None:

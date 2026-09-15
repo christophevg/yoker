@@ -329,12 +329,16 @@ class UIHandler(Protocol):
   #
   # ``output_context_overflow(dropped_count: int, estimated_tokens: int,
   # max_tokens: int, message_count: int, first_remaining: str | None = None,
-  # target_tokens: int | None = None) -> None`` is an **optional** protocol
+  # target_tokens: int | None = None, stages: list[dict] | None = None,
+  # sent_count: int | None = None, remaining_estimated_tokens: int | None = None,
+  # run_id: str | None = None, floor_tokens: int | None = None,
+  # target_clamped: bool = False) -> None`` is an **optional** protocol
   # method, dispatched via :class:`yoker.ui.bridge.UIBridge` on
   # :class:`yoker.events.ContextOverflowEvent` (guarded by ``getattr``).
   # The framework-default context management emits this event when the
-  # estimated context size exceeded ``context.max_tokens`` and older
-  # non-setup messages were permanently dropped.
+  # estimated context size exceeded ``context.max_tokens`` and the
+  # compaction pipeline pruned/flagged older non-setup messages to bring
+  # the submitted view back under the trim target.
   #
   # :class:`yoker.ui.batch.BatchUIHandler` implements it as a stderr
   # diagnostic line; :class:`yoker.ui.interactive.InteractiveUIHandler`
@@ -343,15 +347,30 @@ class UIHandler(Protocol):
   #
   # When implemented:
   #   output_context_overflow(dropped_count, estimated_tokens, max_tokens,
-  #     message_count, first_remaining, target_tokens) - called once per
-  #     overflow truncation. ``dropped_count`` is the number of permanently
-  #     removed messages, ``estimated_tokens`` the estimate that triggered
-  #     the overflow, ``max_tokens`` the configured soft cap, and
-  #     ``message_count`` the number of messages remaining after
-  #     truncation. ``first_remaining`` is a one-line summary of the first
-  #     non-protected message after truncation (where retained history
+  #     message_count, first_remaining, target_tokens, stages, sent_count,
+  #     remaining_estimated_tokens, run_id, floor_tokens, target_clamped)
+  #     - called once per compaction (suppressed when the pipeline flagged
+  #     nothing and dropped nothing).
+  #     ``dropped_count`` is the number of messages newly flagged by this
+  #     run (stored-based; legacy meaning "permanently removed"),
+  #     ``estimated_tokens`` the estimate that triggered the overflow,
+  #     ``max_tokens`` the configured soft cap, and ``message_count`` the
+  #     number of STORED messages after the pipeline.
+  #     ``first_remaining`` is a one-line summary of the first
+  #     non-protected message after compaction (where retained history
   #     starts), or None when only the protected prefix remains.
-  #     ``target_tokens`` is the effective trim target
-  #     (``max_tokens * context.compact_ratio``) — None for events without
-  #     hysteresis (pre-hysteresis records); only meaningful when it is
-  #     below ``max_tokens``.
+  #     ``target_tokens`` is the trim TARGET (``max_tokens *
+  #     context.compact_ratio``) — None for events without hysteresis
+  #     (pre-hysteresis records); only meaningful when it is below
+  #     ``max_tokens``. ``stages`` lists the pipeline stages with non-zero
+  #     impact ({"name", "messages", "tokens"} — tokens is the
+  #     view-estimate reduction attributable to the stage), empty/None for
+  #     old events. ``sent_count`` is the number of messages in the
+  #     submitted view after the pipeline (what the model sees), and
+  #     ``remaining_estimated_tokens`` the ACHIEVED post-pipeline view
+  #     estimate — the truthful landing point — both None for old events.
+  #     ``run_id`` is this compaction run's id (flags carry it in their
+  #     ``pruned.run`` metadata), ``floor_tokens`` the calibrated estimate
+  #     of the PROTECTED VIEW, and ``target_clamped`` True when the
+  #     effective cutoff target was raised to that floor — all None/False
+  #     for old events.

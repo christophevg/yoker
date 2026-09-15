@@ -176,6 +176,12 @@ class UIBridge:
             message_count=event.message_count,  # type: ignore[attr-defined]
             first_remaining=getattr(event, "first_remaining", None),
             target_tokens=getattr(event, "target_tokens", None),
+            stages=getattr(event, "stages", None) or [],
+            sent_count=getattr(event, "sent_count", None),
+            remaining_estimated_tokens=getattr(event, "remaining_estimated_tokens", None),
+            run_id=getattr(event, "run_id", None),
+            floor_tokens=getattr(event, "floor_tokens", None),
+            target_clamped=getattr(event, "target_clamped", False),
           )
       case EventType.SESSION_START | EventType.SESSION_END | EventType.AGENT_MESSAGE:
         # No UI action for these session-level events.

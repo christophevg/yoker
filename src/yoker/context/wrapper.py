@@ -84,20 +84,74 @@ class ContextManagerWrapper:
   def get_messages(self) -> list[dict[str, Any]]:
     return self._wrapped.get_messages()
 
+  def get_stored_messages(self) -> list[dict[str, Any]]:
+    return self._wrapped.get_stored_messages()
+
+  @property
+  def strip_thinking_in_view(self) -> bool:
+    """Forward the projection thinking-strip switch to the wrapped manager."""
+    return getattr(self._wrapped, "strip_thinking_in_view", True)
+
+  @strip_thinking_in_view.setter
+  def strip_thinking_in_view(self, value: bool) -> None:
+    self._wrapped.strip_thinking_in_view = value
+
   # --- context overflow management ---
 
   def truncate_oldest_non_system(
     self,
-    keep_first_user: bool = True,
+    protect_first_user: int = 1,
+    protect_last_user: int = 1,
+    protect_last_assistant: int = 1,
+    protect_last_tool_calls: int = 1,
     drop_count: int = 1,
+    run: str | None = None,
   ) -> int:
     return self._wrapped.truncate_oldest_non_system(
-      keep_first_user=keep_first_user,
+      protect_first_user=protect_first_user,
+      protect_last_user=protect_last_user,
+      protect_last_assistant=protect_last_assistant,
+      protect_last_tool_calls=protect_last_tool_calls,
       drop_count=drop_count,
+      run=run,
+    )
+
+  def protected_view(
+    self,
+    protect_first_user: int = 1,
+    protect_last_user: int = 1,
+    protect_last_assistant: int = 1,
+    protect_last_tool_calls: int = 1,
+  ) -> list[dict[str, Any]]:
+    return self._wrapped.protected_view(
+      protect_first_user=protect_first_user,
+      protect_last_user=protect_last_user,
+      protect_last_assistant=protect_last_assistant,
+      protect_last_tool_calls=protect_last_tool_calls,
     )
 
   def replace_messages(self, messages: list[dict[str, Any]]) -> None:
     self._wrapped.replace_messages(messages)
+
+  # --- context overflow pipeline stages ---
+
+  def prune_tool_results(self, min_age_turns: int, min_chars: int, run: str | None = None) -> int:
+    return self._wrapped.prune_tool_results(min_age_turns, min_chars, run=run)
+
+  def force_stub_tool_results(self, min_chars: int, run: str | None = None) -> int:
+    return self._wrapped.force_stub_tool_results(min_chars, run=run)
+
+  def prune_thinking(self, min_age_turns: int, run: str | None = None) -> int:
+    return self._wrapped.prune_thinking(min_age_turns, run=run)
+
+  # --- compaction run reporting ---
+
+  def record_compaction(self, run: dict[str, Any]) -> None:
+    self._wrapped.record_compaction(run)
+
+  @property
+  def compaction_runs(self) -> list[dict[str, Any]]:
+    return self._wrapped.compaction_runs
 
   # --- turn lifecycle ---
 

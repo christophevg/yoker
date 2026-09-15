@@ -1,5 +1,7 @@
 """Tests for Clevis CLI generation with multi-provider backend config."""
 
+import pytest
+
 
 class TestCliGeneration:
   """Tests for Clevis CLI argument generation."""
@@ -47,6 +49,48 @@ class TestCliGeneration:
     assert anthropic_api_key.metadata.get("cli") is False, (
       "AnthropicConfig.api_key should have cli=False"
     )
+
+  def test_compaction_cli_args_absent_metadata(self) -> None:
+    """The compaction field is marked cli=False (TOML-only nested config)."""
+    import dataclasses
+
+    from yoker.config import ContextConfig
+
+    field = next(f for f in dataclasses.fields(ContextConfig) if f.name == "compaction")
+    assert field.metadata.get("cli") is False, "ContextConfig.compaction should have cli=False"
+
+  def test_compaction_cli_args_absent_parse(self, monkeypatch, tmp_path) -> None:
+    """No --context-compaction-* CLI flags are accepted by the chat parser.
+
+    Behavioral proof mirroring test_chat_flags.py: driving the real Clevis
+    parse through ``load_subcommand_config`` — a would-be generated flag
+    must be rejected with SystemExit (argparse: unrecognized argument).
+    """
+    import sys
+    from importlib import reload
+
+    from clevis import _reset_factories
+
+    import yoker.cli.commands
+    from yoker.cli.shared import load_subcommand_config
+
+    _reset_factories()
+    reload(yoker.cli.commands)
+    monkeypatch.setenv("YOKER_DEV_MODE", "1")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    try:
+      monkeypatch.setattr(
+        sys,
+        "argv",
+        ["yoker", "chat", "--context-compaction-strategies", "cutoff"],
+        raising=False,
+      )
+      with pytest.raises(SystemExit):
+        load_subcommand_config(yoker.cli.commands.ChatConfig)
+    finally:
+      _reset_factories()
+      reload(yoker.cli.commands)
 
   def test_backend_provider_choices(self) -> None:
     """BackendConfig provider field accepts all three providers."""

@@ -3,7 +3,7 @@
 from pathlib import Path
 
 import pytest
-from clevis import SecurityAction, SecurityConfig, get_config
+from clevis import ConfigError, SecurityAction, SecurityConfig, get_config
 
 from yoker.config import (
   BackendConfig,
@@ -153,6 +153,246 @@ class TestConfigValidation:
     """The boundary values 0.5 (default) and 1.0 (old behavior) validate."""
     assert ContextConfig().compact_ratio == 0.5
     assert ContextConfig(compact_ratio=1.0).compact_ratio == 1.0
+
+  def test_compaction_defaults(self) -> None:
+    """Missing [context.compaction] yields the 4 default stages + thresholds."""
+    from yoker.config import CompactionConfig, ContextConfig
+
+    config = ContextConfig()
+    assert isinstance(config.compaction, CompactionConfig)
+    assert config.compaction.strategies == (
+      "prune_tool_results",
+      "prune_thinking",
+      "force_stub_tool_results",
+      "cutoff",
+    )
+    assert config.compaction.prune_tool_results.min_age_turns == 3
+    assert config.compaction.prune_tool_results.min_chars == 2048
+    assert config.compaction.prune_thinking.min_age_turns == 3
+    assert config.compaction.force_stub_tool_results.min_chars == 4096
+    assert config.compaction.cutoff.protect_first_user == 1
+    assert config.compaction.cutoff.protect_last_user == 1
+    assert config.compaction.cutoff.protect_last_assistant == 1
+    assert config.compaction.cutoff.protect_last_tool_calls == 1
+
+  def test_compaction_unknown_strategy_rejected(self) -> None:
+    """An unknown stage name fails validation with the known names listed."""
+    from yoker.config import CompactionConfig
+
+    with pytest.raises(ValidationError) as exc_info:
+      CompactionConfig(strategies=("prune_tool_results", "bogus"))
+    assert "context.compaction.strategies" in str(exc_info.value)
+    assert "bogus" in str(exc_info.value)
+
+  def test_compaction_duplicate_strategy_rejected(self) -> None:
+    """A duplicated stage name is rejected (order = execution order)."""
+    from yoker.config import CompactionConfig
+
+    with pytest.raises(ValidationError) as exc_info:
+      CompactionConfig(strategies=("cutoff", "cutoff"))
+    assert "context.compaction.strategies" in str(exc_info.value)
+    assert "duplicate" in str(exc_info.value)
+
+  def test_compaction_empty_strategies_accepted(self) -> None:
+    """An empty strategies list is valid (compaction disabled — user's risk)."""
+    from yoker.config import CompactionConfig
+
+    assert CompactionConfig(strategies=()).strategies == ()
+    assert CompactionConfig(strategies=[]).strategies == ()
+
+  def test_compaction_non_string_strategy_rejected(self) -> None:
+    """Non-string entries in the strategies list are rejected."""
+    from yoker.config import CompactionConfig
+
+    with pytest.raises(ValidationError):
+      CompactionConfig(strategies=("cutoff", 42))  # type: ignore[list-item]
+
+  def test_compaction_bad_params_rejected(self) -> None:
+    """Negative/non-bool stage parameters fail validation with the dotted path."""
+    from yoker.config import (
+      CutoffConfig,
+      ForceStubToolResultsConfig,
+      PruneThinkingConfig,
+      PruneToolResultsConfig,
+    )
+
+    with pytest.raises(ValidationError) as exc_info:
+      PruneToolResultsConfig(min_age_turns=-1)
+    assert "prune_tool_results.min_age_turns" in str(exc_info.value)
+
+    with pytest.raises(ValidationError) as exc_info:
+      PruneToolResultsConfig(min_chars=-5)
+    assert "prune_tool_results.min_chars" in str(exc_info.value)
+
+    with pytest.raises(ValidationError) as exc_info:
+      PruneThinkingConfig(min_age_turns=-1)
+    assert "prune_thinking.min_age_turns" in str(exc_info.value)
+
+    with pytest.raises(ValidationError) as exc_info:
+      ForceStubToolResultsConfig(min_chars=-1)
+    assert "force_stub_tool_results.min_chars" in str(exc_info.value)
+
+    with pytest.raises(ValidationError) as exc_info:
+      CutoffConfig(protect_first_user=-1)
+    assert "cutoff.protect_first_user" in str(exc_info.value)
+
+    with pytest.raises(ValidationError) as exc_info:
+      CutoffConfig(protect_last_user=-1)
+    assert "cutoff.protect_last_user" in str(exc_info.value)
+
+    with pytest.raises(ValidationError) as exc_info:
+      CutoffConfig(protect_last_assistant=-1)
+    assert "cutoff.protect_last_assistant" in str(exc_info.value)
+
+    with pytest.raises(ValidationError) as exc_info:
+      CutoffConfig(protect_last_tool_calls=-1)
+    assert "cutoff.protect_last_tool_calls" in str(exc_info.value)
+
+  def test_compaction_zero_params_accepted(self) -> None:
+    """Zero thresholds are valid — 0 disables the age/size/protection gate."""
+    from yoker.config import CutoffConfig, ForceStubToolResultsConfig, PruneToolResultsConfig
+
+    config = PruneToolResultsConfig(min_age_turns=0, min_chars=0)
+    assert config.min_age_turns == 0
+    assert config.min_chars == 0
+
+    force = ForceStubToolResultsConfig(min_chars=0)
+    assert force.min_chars == 0
+
+    cutoff = CutoffConfig(
+      protect_first_user=0,
+      protect_last_user=0,
+      protect_last_assistant=0,
+      protect_last_tool_calls=0,
+    )
+    assert cutoff.protect_first_user == 0
+    assert cutoff.protect_last_user == 0
+    assert cutoff.protect_last_assistant == 0
+    assert cutoff.protect_last_tool_calls == 0
+
+  def test_compaction_toml_round_trip(
+    self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+  ) -> None:
+    """A TOML with [context.compaction] tables loads into the typed config."""
+    from unittest.mock import patch
+
+    (tmp_path / "yoker.toml").write_text(
+      "\n".join(
+        [
+          "[context]",
+          "max_tokens = 80_000",
+          "",
+          "[context.compaction]",
+          'strategies = ["cutoff", "prune_tool_results"]',
+          "",
+          "[context.compaction.prune_tool_results]",
+          "min_age_turns = 1",
+          "min_chars = 512",
+          "",
+          "[context.compaction.prune_thinking]",
+          "min_age_turns = 2",
+          "",
+          "[context.compaction.force_stub_tool_results]",
+          "min_chars = 1024",
+          "",
+          "[context.compaction.cutoff]",
+          "protect_last_user = 2",
+        ]
+      ),
+      encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    with patch.object(Path, "home", return_value=tmp_path / "home"):
+      security = SecurityConfig(
+        file_permissions=SecurityAction.LOG,
+        directory_permissions=SecurityAction.LOG,
+      )
+      config = get_config(Config, name="yoker", cli=False, security=security)
+
+    compaction = config.context.compaction
+    assert config.context.max_tokens == 80_000
+    assert compaction.strategies == ("cutoff", "prune_tool_results")
+    assert compaction.prune_tool_results.min_age_turns == 1
+    assert compaction.prune_tool_results.min_chars == 512
+    assert compaction.prune_thinking.min_age_turns == 2
+    assert compaction.force_stub_tool_results.min_chars == 1024
+    assert compaction.cutoff.protect_last_user == 2
+
+  def test_compaction_toml_absent_yields_defaults(
+    self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+  ) -> None:
+    """A TOML with [context] but no compaction keys keeps the defaults."""
+    from unittest.mock import patch
+
+    (tmp_path / "yoker.toml").write_text("[context]\nmax_tokens = 50_000\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    with patch.object(Path, "home", return_value=tmp_path / "home"):
+      security = SecurityConfig(
+        file_permissions=SecurityAction.LOG,
+        directory_permissions=SecurityAction.LOG,
+      )
+      config = get_config(Config, name="yoker", cli=False, security=security)
+
+    assert config.context.max_tokens == 50_000
+    assert config.context.compaction.strategies == (
+      "prune_tool_results",
+      "prune_thinking",
+      "force_stub_tool_results",
+      "cutoff",
+    )
+
+  def test_compaction_toml_legacy_keep_first_user_ignored(
+    self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+  ) -> None:
+    """A pre-rename TOML with cutoff.keep_first_user silently falls back.
+
+    Known limitation (TODO.md: clevis/dacite ignores TOML keys that don't
+    map to dataclass fields): the legacy boolean is dropped and cutoff
+    uses the new protect_* defaults. Expected breaking change — the
+    boolean was replaced by the four ``protect_*`` integer windows.
+    """
+    from unittest.mock import patch
+
+    (tmp_path / "yoker.toml").write_text(
+      "[context.compaction.cutoff]\nkeep_first_user = false\n", encoding="utf-8"
+    )
+    monkeypatch.chdir(tmp_path)
+    with patch.object(Path, "home", return_value=tmp_path / "home"):
+      security = SecurityConfig(
+        file_permissions=SecurityAction.LOG,
+        directory_permissions=SecurityAction.LOG,
+      )
+      config = get_config(Config, name="yoker", cli=False, security=security)
+
+    cutoff = config.context.compaction.cutoff
+    # Unknown key dropped; the four new windows default to 1.
+    assert not hasattr(cutoff, "keep_first_user")
+    assert cutoff.protect_first_user == 1
+    assert cutoff.protect_last_user == 1
+    assert cutoff.protect_last_assistant == 1
+    assert cutoff.protect_last_tool_calls == 1
+
+  def test_compaction_toml_unknown_strategy_rejected_load(
+    self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+  ) -> None:
+    """An unknown stage name in TOML fails the whole config load."""
+    from unittest.mock import patch
+
+    (tmp_path / "yoker.toml").write_text(
+      '[context.compaction]\nstrategies = ["nonsense"]\n', encoding="utf-8"
+    )
+    monkeypatch.chdir(tmp_path)
+    # The schema's __post_init__ raises ValidationError; clevis may wrap it
+    # in ConfigError — either means the load failed, which is the contract.
+    with (
+      patch.object(Path, "home", return_value=tmp_path / "home"),
+      pytest.raises((ConfigError, ValidationError)),
+    ):
+      security = SecurityConfig(
+        file_permissions=SecurityAction.LOG,
+        directory_permissions=SecurityAction.LOG,
+      )
+      get_config(Config, name="yoker", cli=False, security=security)
 
   def test_validate_empty_filesystem_paths(self) -> None:
     """Test validation catches empty filesystem_paths during construction."""

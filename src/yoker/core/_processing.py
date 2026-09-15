@@ -5,7 +5,10 @@ import json
 import os
 import re
 import time
+import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
+from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, TypedDict, cast
 
 import httpx
@@ -13,7 +16,13 @@ import litellm
 from structlog import get_logger
 
 from yoker.backends import ChatChunk, ChatChunkEvent
-from yoker.config import ToolConfig, ToolsConfig
+from yoker.config import (
+  DEFAULT_COMPACTION_STAGES,
+  CompactionConfig,
+  ToolConfig,
+  ToolsConfig,
+)
+from yoker.context.manager import _prune_stub_text
 from yoker.events import (
   ContentChunkEvent,
   ContentEndEvent,
@@ -491,10 +500,9 @@ async def _manage_context_overflow(
     estimated = _estimate_tokens(messages, agent._context_last_input_tokens)
 
   if estimated <= max_tokens:
-    # Under the cap: still strip thinking blocks if the backend cannot
-    # handle them provider-side. The strip is always-on for
-    # non-supporting backends (no config flag).
-    _maybe_strip_thinking(agent)
+    # Under the cap: nothing to do. Thinking handling happens entirely at
+    # projection level in get_context (strip_thinking_in_view / pruned
+    # flags) — no physical strip runs here anymore.
     return
 
   # Hysteresis: trim to a FRACTION of the cap, not the cap itself. A
@@ -506,9 +514,15 @@ async def _manage_context_overflow(
   ratio = raw_ratio if isinstance(raw_ratio, int | float) and 0 < raw_ratio <= 1.0 else 1.0
   target = int(max_tokens * ratio)
 
-  # Over the cap: try the hook first, then the framework default.
+  # Over the cap: try the hook first, then the framework pipeline.
   dropped_total = 0
+  stages: list[dict[str, Any]] = []
+  run_id: str | None = None
+  floor_tokens: int | None = None
+  target_clamped = False
+  hook_path = False
   if on_context_overflow is not None:
+    hook_path = True
     dropped_total = _apply_overflow_hook(
       agent,
       on_context_overflow,
@@ -517,36 +531,87 @@ async def _manage_context_overflow(
       max_tokens,
     )
 
-  if dropped_total == 0:
-    # No hook or hook returned nothing valid: framework default.
-    dropped_total = _apply_framework_default(
-      agent,
-      estimated,
-      max_tokens,
-      target,
+  if not hook_path or dropped_total == 0:
+    # No hook, hook returned nothing valid, or a hook attended but
+    # achieved nothing: run the framework pipeline.
+    (
+      dropped_total,
+      stages,
+      run_id,
+      floor_tokens,
+      target_clamped,
+    ) = _run_compaction_pipeline(agent, estimated, target)
+
+  # Post-pipeline truth: the ACHIEVED view estimate and sent-message count
+  # (what the next submission actually contains — stubs shrink bodies,
+  # dropped/flagged messages leave the view, so sent_count can be far
+  # below the stored count). Fallback stays content-sensitive (None, not
+  # the stale server total) — see _estimate_of.
+  remaining = agent.context.get_context()
+  remaining_estimate = _calibrated_estimate(agent, remaining)
+  if remaining_estimate is None:
+    remaining_estimate = _estimate_tokens(remaining, None)
+
+  # No-op suppression: a pipeline pass that achieved nothing (no dropped
+  # messages, no stage flagged anything) emits NO event — the overflow
+  # was not actually resolved by compaction and the audit trail would be
+  # noise. The hook path keeps its historical always-emit behavior.
+  if (
+    not hook_path
+    and run_id is not None
+    and dropped_total == 0
+    and all(s["messages"] == 0 for s in stages)
+  ):
+    return
+
+  # Record the compaction run for later persistence (chunk C) — even
+  # when the event was suppressed, the run report is honest history.
+  # A hook-attended overflow writes no record: the hook did the work.
+  if not hook_path:
+    agent.context.record_compaction(
+      {
+        "run_id": run_id,
+        "timestamp": datetime.now().isoformat(),
+        "trigger_estimate": estimated,
+        "max_tokens": max_tokens,
+        "target": target,
+        "floor_tokens": floor_tokens,
+        "target_clamped": target_clamped,
+        "stages": stages,
+        "dropped_count": dropped_total,
+        "remaining_estimate": remaining_estimate,
+        "sent_count": len(remaining),
+        "first_remaining": _first_remaining_summary(remaining),
+      }
     )
 
   # Emit the audit-trail event once per overflow, including where the
   # retained history starts (first non-protected message). The reported
-  # sizes describe the TRIGGER state; target_tokens carries the effective
-  # trim target.
-  remaining = agent.context.get_context()
+  # sizes describe the TRIGGER state (message_count/dropped_count stay
+  # stored-based for compatibility); remaining_estimated_tokens carries
+  # the truthful post-pipeline result. target_tokens keeps the ORIGINAL
+  # ratio target — floor_tokens/target_clamped carry the clamp truth.
+  # A hook-attended overflow reports no run identity: the hook replaced
+  # messages directly (no stage flags), so run_id/stages stay unset.
+  event_run_id = None if hook_path else run_id
   await emit(
     ContextOverflowEvent(
       type=EventType.CONTEXT_OVERFLOW,
-      message_count=len(remaining),
+      message_count=len(agent.context.get_stored_messages()),
       estimated_tokens=estimated,
       max_tokens=max_tokens,
       dropped_count=dropped_total,
       first_remaining=_first_remaining_summary(remaining),
       target_tokens=target,
+      stages=stages if not hook_path else [],
+      sent_count=len(remaining),
+      remaining_estimated_tokens=remaining_estimate,
+      run_id=event_run_id,
+      floor_tokens=None if hook_path else floor_tokens,
+      target_clamped=False if hook_path else target_clamped,
     ),
     agent._event_handlers,
   )
-
-  # Strip thinking blocks from the submitted messages when the backend
-  # cannot handle them provider-side.
-  _maybe_strip_thinking(agent)
 
 
 def _apply_overflow_hook(
@@ -591,75 +656,306 @@ def _apply_overflow_hook(
   return max(dropped, 0)
 
 
-def _apply_framework_default(
+def _noop_hook(ctx: OverflowContext) -> list[dict[str, Any]]:
+  """A hook that accepts the overflow but changes nothing.
+
+  Forces the HOOK PATH in ``_manage_context_overflow`` (no pipeline run —
+  no stages, no run_id, no compaction record) while keeping the
+  always-emit behavior of a hook-attended overflow. Used by tests that
+  pin zero-drop event emission.
+  """
+  return list(ctx["messages"])
+
+
+@dataclass
+class StageParams:
+  """Resolved compaction stage thresholds (per-stage, from config).
+
+  Built by :func:`_resolve_stage_params` from the real
+  ``[context.compaction]`` config; the defensive getattr fallbacks keep
+  stub/mock configs (which carry no ``compaction`` attribute) working with
+  the framework defaults.
+  """
+
+  min_age_turns: int = 3
+  min_chars: int = 2048
+  force_stub_min_chars: int = 4096
+  protect_first_user: int = 1
+  protect_last_user: int = 1
+  protect_last_assistant: int = 1
+  protect_last_tool_calls: int = 1
+
+
+def _resolve_compaction_config(agent: Any) -> CompactionConfig | None:
+  """Return the agent's compaction config, or None when absent.
+
+  Read defensively (``__dict__`` lookup): a MagicMock would auto-create a
+  truthy Mock on attribute access, so the attribute must come from the
+  object itself, not the class's auto-attr machinery.
+  """
+  context_cfg = agent.config.context.__dict__.get("compaction")
+  return context_cfg if isinstance(context_cfg, CompactionConfig) else None
+
+
+def _resolve_stage_params(agent: Any) -> StageParams:
+  """Resolve per-stage thresholds from config, falling back to defaults.
+
+  Old/stub configs without ``context.compaction`` get the framework
+  defaults (identical values).
+  """
+  compaction = _resolve_compaction_config(agent)
+  if compaction is None:
+    return StageParams()
+  return StageParams(
+    min_age_turns=compaction.prune_tool_results.min_age_turns,
+    min_chars=compaction.prune_tool_results.min_chars,
+    force_stub_min_chars=compaction.force_stub_tool_results.min_chars,
+    protect_first_user=compaction.cutoff.protect_first_user,
+    protect_last_user=compaction.cutoff.protect_last_user,
+    protect_last_assistant=compaction.cutoff.protect_last_assistant,
+    protect_last_tool_calls=compaction.cutoff.protect_last_tool_calls,
+  )
+
+
+def _resolve_stages(agent: Any) -> list[str]:
+  """Resolve the compaction stage order from config.
+
+  Real configs carry ``context.compaction.strategies`` (validated by the
+  config schema); old/stub configs without the attribute fall back to the
+  framework default order.
+  """
+  compaction = _resolve_compaction_config(agent)
+  if compaction is not None:
+    return list(compaction.strategies)
+  return list(DEFAULT_COMPACTION_STAGES)
+
+
+def _run_compaction_pipeline(
   agent: Any,
   estimated: int,
-  max_tokens: int,
   target: int,
-) -> int:
-  """Run the framework-default truncation until under ``target``.
+) -> tuple[int, list[dict[str, Any]], str | None, int | None, bool]:
+  """Run the framework-default compaction pipeline (chunk B).
 
-  Anchored on the SAME estimate that triggered the overflow and charged
-  in the same currency: each dropped atomic unit is charged with its
-  calibrated content estimate (char/4 × learned density ratio, computed
-  as the char4 delta before/after the drop), so the overage decreases
-  monotonically as messages are dropped. This preserves the stale-total
-  lesson — the triggering estimate is never reused as-is; dropped
-  content is subtracted from it.
+  Stages run in resolved order; each stage only FLAGS stored messages
+  (stored=truth) through the context manager, then the view
+  (``get_context``) is re-estimated. Content-preserving stages (the
+  prunes and stubs) run UNCONDITIONALLY — they never drop messages, so
+  early-stopping only saves an idempotent pass while losing the per-run
+  audit record. Only the destructive cutoff stage may stop early: it
+  targets the EFFECTIVE target, clamped up to the protection floor —
+  the calibrated estimate of the protected view rendered exactly as
+  ``get_context`` renders it — so cutoff can never aim below what the
+  protected content alone already weighs.
 
-  ``max_tokens`` remains the trigger; ``target`` is where the loop stops
-  (``max_tokens * context.compact_ratio`` — hysteresis against
-  re-crossing the cap every turn; equal to the cap at ratio 1.0).
+  Flagging counts are per-run: every flagging call receives this run's
+  id, stored in the flag's ``pruned.run`` metadata, and each stage
+  reports the count of flags created by THIS run (not cumulative —
+  earlier runs' flags must not inflate this run's report).
 
-  Returns the total number of messages dropped.
+  Returns:
+    (dropped_total, stages, run_id, floor_tokens, target_clamped) —
+    dropped_total is the total newly flagged this run (the event's
+    stored-based ``dropped_count``), ``stages`` the per-stage impact
+    list, ``run_id`` None when no stages were configured,
+    ``floor_tokens`` the protected-view estimate (None when no cutoff
+    stage ran or no stages at all), and ``target_clamped`` whether the
+    cutoff target was raised to the floor.
   """
-  keep_first_user = agent.config.context.overflow_keep_first_user
-  ratio = agent._context_ratio if agent._context_fixed_tokens is not None else 1.0
-  dropped_total = 0
-  # Drop one atomic unit per iteration so the event's dropped_count
-  # reflects the cumulative total. The bound is a hard cap against an
-  # infinite loop when truncation cannot reduce the estimate (e.g. all
-  # messages are protected, or the estimate is dominated by the
-  # protected prefix).
-  max_iterations = len(agent.context.get_context()) + 1
+  stages_config = _resolve_stages(agent)
+  if not stages_config:
+    return 0, [], None, None, False
 
-  overage = estimated - target
-  for _ in range(max_iterations):
-    if overage <= 0:
+  run_id = uuid.uuid4().hex[:8]
+  dropped_total = 0
+  stages: list[dict[str, Any]] = []
+  floor_tokens: int | None = None
+  target_clamped = False
+
+  for stage in stages_config:
+    # Per-stage flag kind — each stage marks messages with its own kind.
+    params = _resolve_stage_params(agent)
+    if stage == "prune_tool_results":
+      flag_kind = "stub"
+      flagged = agent.context.prune_tool_results(params.min_age_turns, params.min_chars, run=run_id)
+    elif stage == "prune_thinking":
+      flag_kind = "thinking"
+      flagged = agent.context.prune_thinking(params.min_age_turns, run=run_id)
+    elif stage == "force_stub_tool_results":
+      flag_kind = "stub"
+      flagged = agent.context.force_stub_tool_results(params.force_stub_min_chars, run=run_id)
+    elif stage == "cutoff":
+      flag_kind = "dropped"
+      # The floor: calibrated estimate of the PROTECTED VIEW — rendered
+      # exactly as get_context renders it, so the estimate matches what
+      # the backend would receive. The effective cutoff target is the
+      # ratio target clamped up to that floor: cutoff can never aim
+      # below what the protected content alone already weighs.
+      floor_view = agent.context.protected_view(
+        protect_first_user=params.protect_first_user,
+        protect_last_user=params.protect_last_user,
+        protect_last_assistant=params.protect_last_assistant,
+        protect_last_tool_calls=params.protect_last_tool_calls,
+      )
+      floor_tokens = _estimate_of_view(agent, floor_view)
+      effective_target = max(target, floor_tokens)
+      target_clamped = floor_tokens > target
+      flagged = _cutoff_to_target(agent, params, effective_target, run_id)
+      dropped_total = flagged
+    else:
+      # Unknown stage name (config typo): skip rather than crash.
+      continue
+
+    # Per-stage impact from FRESH view re-estimates (before = the view
+    # state before this stage's flags; after = now), never from
+    # credited deltas. Only content that actually shrank or vanished
+    # changes the estimate, so the delta is the stage's real effect.
+    after = _estimate_of(agent)
+    before = after + _view_delta_of_run_flags(agent, stage, flag_kind, run_id)
+    stages.append(
+      {
+        "name": stage,
+        "messages": _count_flagged_for_stage(agent, stage, flag_kind, run_id),
+        "tokens": before - after,
+        "estimate": after,
+        "run_id": run_id,
+      }
+    )
+  return dropped_total, stages, run_id, floor_tokens, target_clamped
+
+
+def _view_delta_of_run_flags(agent: Any, stage: str, flag_kind: str, run_id: str) -> int:
+  """Estimate the view-char4 delta this run's flags for a stage account for.
+
+  Reconstructs the pre-stage view char4 from the post-stage one: for
+  each message flagged by THIS stage in THIS run, the view previously
+  carried the full content (or the full thinking payload) and now
+  carries the stub text (or nothing). ``dropped`` flags vanish from the
+  view entirely; ``stub`` tool bodies shrink to the stub text;
+  ``thinking`` flags lose the thinking payload. The estimate keeps the
+  per-stage ``tokens`` impact honest without storing pre-stage views.
+  """
+  total_chars = 0
+  for message in agent.context.get_stored_messages():
+    flag = message.get("pruned")
+    if (
+      not isinstance(flag, dict)
+      or flag.get("stage") != stage
+      or flag.get("kind") != flag_kind
+      or flag.get("run") != run_id
+    ):
+      continue
+    kind = flag.get("kind")
+    if kind == "dropped":
+      total_chars += _stored_message_chars(message)
+    elif kind == "stub" and message.get("role") == "tool":
+      total_chars += len(message.get("content") or "") - len(_prune_stub_text(message))
+    elif kind == "thinking":
+      total_chars += len(message.get("thinking") or "")
+  return total_chars // 4
+
+
+def _stored_message_chars(message: dict[str, Any]) -> int:
+  """The char4 input of one stored message, matching _estimate_tokens."""
+  total_chars = 0
+  content = message.get("content") or ""
+  if isinstance(content, str):
+    total_chars += len(content)
+  thinking = message.get("thinking") or ""
+  if isinstance(thinking, str):
+    total_chars += len(thinking)
+  tool_calls = message.get("tool_calls")
+  if isinstance(tool_calls, list):
+    total_chars += len(json.dumps(tool_calls))
+  return total_chars
+
+
+def _count_flagged_for_stage(
+  agent: Any, stage: str, flag_kind: str, run_id: str | None = None
+) -> int:
+  """Count stored messages flagged by THIS stage, scoped to this run.
+
+  Counts only flags whose ``pruned.run`` equals this run's id — earlier
+  compaction runs' flags (same stage, same kind) must not inflate this
+  run's report. Within one run a stage never re-flags an already-flagged
+  message, so the per-run count equals the number this run newly
+  flagged, including when the cutoff stage flags across repeated unit
+  drops. Deterministic and contract-free: the flags are the truth.
+  """
+  return sum(
+    1
+    for message in agent.context.get_stored_messages()
+    if (flag := message.get("pruned")) is not None
+    and flag.get("stage") == stage
+    and flag.get("kind") == flag_kind
+    and (run_id is None or flag.get("run") == run_id)
+  )
+
+
+def _cutoff_to_target(
+  agent: Any, params: StageParams, target: int, run_id: str | None = None
+) -> int:
+  """Flag the oldest units as dropped until the VIEW estimate is under target.
+
+  Exactly the previous selection semantics (oldest-first, protection
+  windows, atomic tool-call units, contiguous to preserve pairing) — but
+  the stop decision is a FRESH view re-estimate after each unit, never an
+  accumulated credited delta, so a learned ratio that underestimates
+  code-dense content cannot cause an overshoot. The caller passes the
+  EFFECTIVE target (ratio target clamped up to the protection floor) and
+  this run's id, stored on every flag for per-run reporting.
+
+  Returns the number of messages newly flagged as dropped.
+  """
+  dropped_total = 0
+  max_units = len(agent.context.get_stored_messages()) + 1
+  for _ in range(max_units):
+    if _estimate_of(agent) <= target:
       break
-    before = agent.context.get_context()
     dropped = agent.context.truncate_oldest_non_system(
-      keep_first_user=keep_first_user,
+      protect_first_user=params.protect_first_user,
+      protect_last_user=params.protect_last_user,
+      protect_last_assistant=params.protect_last_assistant,
+      protect_last_tool_calls=params.protect_last_tool_calls,
       drop_count=1,
+      run=run_id,
     )
     if dropped <= 0:
       # No more droppable messages; stop to avoid an infinite loop.
       break
-    after = agent.context.get_context()
-    # Charge the dropped unit with its calibrated content estimate so
-    # the triggering total decreases as messages are dropped.
-    overage -= int(ratio * (_estimate_tokens(before, None) - _estimate_tokens(after, None)))
     dropped_total += dropped
   return dropped_total
 
 
-def _maybe_strip_thinking(agent: Any) -> None:
-  """Strip thinking blocks from ``_messages`` when the backend lacks support.
+def _estimate_of(agent: Any) -> int:
+  """Calibrated estimate of the current view, raw char/4 fallback.
 
-  Always-on for non-supporting backends (no config flag). For supporting
-  backends (Anthropic), the provider-side ``context_management`` directive
-  is forwarded via ``_chat_stream`` instead, so no client-side strip runs.
-  Replaces the message list via ``replace_messages`` so wrappers
-  (Persisted) persist the stripped state — thinking blocks from prior
-  turns would otherwise accumulate and blow up the context.
+  The fallback must stay content-sensitive (``last_input_tokens=None``):
+  passing the stale server total would return a constant that never
+  decreases as the pipeline prunes, and the cutoff loop would drain the
+  whole history. The calibrated path already satisfies this — the fixed
+  overhead is defined against char4 at capture time, so
+  ``fixed + ratio × char4(view)`` is monotone in the view's char4.
   """
-  backend = agent._backend
-  if getattr(backend, "supports_context_management", False):
-    return
-  messages = agent.context.get_context()
-  if not any("thinking" in m for m in messages):
-    return
-  agent.context.replace_messages(_strip_thinking_blocks(messages))
+  view = agent.context.get_context()
+  estimate = _calibrated_estimate(agent, view)
+  if estimate is None:
+    estimate = _estimate_tokens(view, None)
+  return estimate
+
+
+def _estimate_of_view(agent: Any, view: list[dict[str, Any]]) -> int:
+  """Calibrated estimate of an arbitrary rendered view (e.g. protected_view).
+
+  Same policy as :func:`_estimate_of` — calibrated when server usage has
+  been observed, raw content-sensitive char/4 fallback otherwise — but
+  for an arbitrary rendered message list (the floor computation must
+  estimate the PROTECTED subset, not the whole view).
+  """
+  estimate = _calibrated_estimate(agent, view)
+  if estimate is None:
+    estimate = _estimate_tokens(view, None)
+  return estimate
 
 
 async def _chat_stream(agent: Any) -> AsyncIterator[ChatChunk]:
@@ -668,7 +964,8 @@ async def _chat_stream(agent: Any) -> AsyncIterator[ChatChunk]:
   For backends that support ``context_management`` (Anthropic), the
   thinking-clearing directive is forwarded so the provider drops thinking
   blocks from prior turns server-side. Non-supporting backends receive
-  ``None`` (the client-side strip in ``_maybe_strip_thinking`` handles it).
+  ``None`` — for them, get_context() already omits thinking from the
+  submitted view (projection-level strip; stored history keeps it).
 
   Returns an async iterator over ChatChunk events.
   """

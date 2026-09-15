@@ -214,6 +214,154 @@ class BackendConfig:
     return GenericConfig(model="")
 
 
+DEFAULT_COMPACTION_STAGES = [
+  "prune_tool_results",
+  "prune_thinking",
+  "force_stub_tool_results",
+  "cutoff",
+]
+"""Framework-default compaction pipeline — order = execution order.
+
+Lives with the config schema because the ``[context.compaction]`` strategies
+list is validated against these names; the pipeline runner imports it rather
+than keeping its own copy.
+"""
+
+
+@dataclass
+class PruneToolResultsConfig:
+  """Thresholds for the ``prune_tool_results`` compaction stage.
+
+  A tool result is stubbed when its body exceeds ``min_chars`` and at
+  least ``min_age_turns`` completed turns follow it.
+  """
+
+  min_age_turns: int = 3
+  min_chars: int = 2048
+
+  def __post_init__(self) -> None:
+    """Validate stage thresholds (0 disables the age/size gate)."""
+    validate_non_negative_int(
+      self.min_age_turns, "context.compaction.prune_tool_results.min_age_turns"
+    )
+    validate_non_negative_int(self.min_chars, "context.compaction.prune_tool_results.min_chars")
+
+
+@dataclass
+class PruneThinkingConfig:
+  """Thresholds for the ``prune_thinking`` compaction stage."""
+
+  min_age_turns: int = 3
+
+  def __post_init__(self) -> None:
+    """Validate stage thresholds."""
+    validate_non_negative_int(self.min_age_turns, "context.compaction.prune_thinking.min_age_turns")
+
+
+@dataclass
+class ForceStubToolResultsConfig:
+  """Thresholds for the ``force_stub_tool_results`` compaction stage.
+
+  The age-blind, last content-preserving pass: stubs EVERY tool result
+  whose body exceeds ``min_chars`` regardless of age — the final attempt
+  to shrink the view by flagging content before the destructive cutoff
+  stage runs.
+  """
+
+  min_chars: int = 4096
+
+  def __post_init__(self) -> None:
+    """Validate stage threshold (0 stubs every non-empty result)."""
+    validate_non_negative_int(
+      self.min_chars, "context.compaction.force_stub_tool_results.min_chars"
+    )
+
+
+@dataclass
+class CutoffConfig:
+  """Thresholds for the ``cutoff`` compaction stage.
+
+  Protection windows (all counted as N most-recent-first / N oldest,
+  0 disables a window) around the oldest-first message drop:
+    - ``protect_first_user``: first N real user messages after the
+      scaffolding prefix;
+    - ``protect_last_user``: last N user messages in the whole store;
+    - ``protect_last_assistant``: last N plain assistant messages
+      (``role=assistant`` WITHOUT ``tool_calls``);
+    - ``protect_last_tool_calls``: last N tool-call units — an
+      assistant ``tool_calls`` frame plus ALL its tool results,
+      protected together with the frame.
+  """
+
+  protect_first_user: int = 1
+  protect_last_user: int = 1
+  protect_last_assistant: int = 1
+  protect_last_tool_calls: int = 1
+
+  def __post_init__(self) -> None:
+    """Validate stage parameters."""
+    for name in (
+      "protect_first_user",
+      "protect_last_user",
+      "protect_last_assistant",
+      "protect_last_tool_calls",
+    ):
+      validate_non_negative_int(getattr(self, name), f"context.compaction.cutoff.{name}")
+
+
+@dataclass
+class CompactionConfig:
+  """Compaction pipeline configuration (TOML-only — excluded from CLI args).
+
+  Stages run in ``strategies`` order before the message cutoff; each prunes
+  cheap-to-regenerate content so the destructive cutoff stays a rare
+  backstop. An empty ``strategies`` list disables compaction entirely —
+  the context then grows until the provider rejects the request.
+  """
+
+  strategies: tuple[str, ...] = field(
+    default_factory=lambda: tuple(DEFAULT_COMPACTION_STAGES),
+    metadata={
+      "help": (
+        "Compaction stages in execution order; empty list disables compaction"
+        " (context grows until the provider rejects the request)"
+      )
+    },
+  )
+  prune_tool_results: PruneToolResultsConfig = field(default_factory=PruneToolResultsConfig)
+  prune_thinking: PruneThinkingConfig = field(default_factory=PruneThinkingConfig)
+  force_stub_tool_results: ForceStubToolResultsConfig = field(
+    default_factory=ForceStubToolResultsConfig
+  )
+  cutoff: CutoffConfig = field(default_factory=CutoffConfig)
+
+  def __post_init__(self) -> None:
+    """Validate the strategies list (known names, no duplicates; [] allowed)."""
+    # TOML arrays arrive as lists; the schema stores a tuple (project
+    # convention — the config writer renders tuples, not lists). Both are
+    # accepted here so clevis-loaded values and hand-built configs agree.
+    if not isinstance(self.strategies, list | tuple) or not all(
+      isinstance(strategy, str) for strategy in self.strategies
+    ):
+      raise ValidationError(
+        "context.compaction.strategies",
+        self.strategies,
+        "must be a list of stage names",
+      )
+    self.strategies = tuple(self.strategies)
+    seen: set[str] = set()
+    for stage in self.strategies:
+      if stage not in DEFAULT_COMPACTION_STAGES:
+        raise ValidationError(
+          "context.compaction.strategies",
+          stage,
+          "unknown stage (known: " + ", ".join(DEFAULT_COMPACTION_STAGES) + ")",
+        )
+      if stage in seen:
+        raise ValidationError("context.compaction.strategies", stage, "duplicate stage")
+      seen.add(stage)
+
+
 @dataclass
 class ContextConfig:
   """Context management configuration.
@@ -230,17 +378,17 @@ class ContextConfig:
     max_tokens: Soft cap on estimated context tokens before overflow truncation
       kicks in. The size check uses last turn's ``UsageStats.input_tokens``
       when available, falling back to a char/4 heuristic. Defaults to 200_000.
-    overflow_keep_first_user: When True, the framework-default truncation
-      protects the contiguous ``role=user`` scaffolding prefix (system prompt
-      setup + skill-discovery block) and the first real user turn; only older
-      non-setup messages are dropped from the tail. When False, the first
-      user turn is also eligible for dropping (system messages stay protected).
     compact_ratio: Trim target as a fraction of ``max_tokens`` (hysteresis).
       The overflow still TRIGGERS at ``max_tokens``, but truncation continues
       until the estimate is under ``max_tokens * compact_ratio`` — a growing
       session then re-crosses the cap far less often, avoiding a full-price
       server reprocess of the invalidated prefix cache on every turn.
       Defaults to 0.5; 1.0 reproduces the trim-to-cap behavior exactly.
+    compaction: Compaction pipeline configuration (TOML-only). Stages prune
+      cheap-to-regenerate content (old tool results, old thinking) before
+      the destructive message cutoff; see :class:`CompactionConfig`.
+      Excluded from CLI generation — nested-table-of-tables config is
+      TOML-only, like api_key fields.
   """
 
   manager: str = "basic_persistence"
@@ -251,8 +399,11 @@ class ContextConfig:
   fresh: bool = False
   files: tuple[str, ...] = ("./AGENTS.md",)
   max_tokens: int = 200_000
-  overflow_keep_first_user: bool = True
   compact_ratio: float = 0.5
+  compaction: CompactionConfig = field(
+    default_factory=CompactionConfig,
+    metadata={"cli": False, "help": "Compaction pipeline (TOML-only)"},
+  )
 
   def __post_init__(self) -> None:
     """Validate context configuration."""
@@ -1286,6 +1437,10 @@ __all__ = [
   "ProviderConfig",
   # Other configuration classes
   "ContextConfig",
+  "CompactionConfig",
+  "PruneToolResultsConfig",
+  "PruneThinkingConfig",
+  "CutoffConfig",
   "HandlerConfig",
   "PermissionsConfig",
   "ToolConfig",

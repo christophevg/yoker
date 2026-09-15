@@ -340,27 +340,61 @@ class BatchUIHandler(UIHandler):
     message_count: int,
     first_remaining: str | None = None,
     target_tokens: int | None = None,
+    stages: list[dict[str, Any]] | None = None,
+    sent_count: int | None = None,
+    remaining_estimated_tokens: int | None = None,
+    run_id: str | None = None,
+    floor_tokens: int | None = None,
+    target_clamped: bool = False,
   ) -> None:
-    """Output a context compaction notice (overflow truncation fired).
+    """Output a context compaction notice (overflow compaction fired).
 
     Diagnostic channel (stderr) — always printed, independent of the
-    show_* flags, since compaction permanently alters the conversation.
+    show_* flags, since compaction alters what the model sees.
 
     Args:
-      dropped_count: Number of messages permanently removed.
+      dropped_count: Number of messages newly flagged by this compaction
+        run (stored-based).
       estimated_tokens: Estimated token count that triggered the overflow.
       max_tokens: The configured soft cap (``context.max_tokens``).
-      message_count: Number of messages remaining after truncation.
+      message_count: Number of STORED messages after the pipeline.
       first_remaining: One-line summary of the first non-protected message
-        after truncation (where retained history starts), or None.
-      target_tokens: Effective trim target (``max_tokens *
+        after compaction (where retained history starts), or None.
+      target_tokens: The trim TARGET (``max_tokens *
         context.compact_ratio``), or None when the event carries no target
         (pre-hysteresis records).
+      stages: Per-stage impact dicts ({name, messages, tokens}), non-zero
+        stages only — or None/[] for old events.
+      sent_count: Messages in the submitted view after the pipeline, or
+        None for old events.
+      remaining_estimated_tokens: ACHIEVED post-pipeline view estimate, or
+        None for old events.
+      run_id: This compaction run's id, or None for old events.
+      floor_tokens: Calibrated estimate of the PROTECTED VIEW, or None.
+      target_clamped: True when the effective cutoff target was raised to
+        the floor (protected content alone exceeds the ratio target).
     """
+    del run_id  # batch stays minimal; the run id lives in flags/stages
     suffix = f"; history starts at: {first_remaining}" if first_remaining else ""
-    # Hysteresis detail: only meaningful when the trim went deeper than
-    # the cap (ratio < 1.0).
-    if target_tokens is not None and target_tokens < max_tokens:
+    if stages:
+      total_tokens = sum(stage.get("tokens", 0) for stage in stages)
+      names = ", ".join(str(stage.get("name", "?")) for stage in stages)
+      suffix += f"; stages {names} freed ≈{total_tokens / 1000:.1f}K"
+      if remaining_estimated_tokens is not None:
+        suffix += f"; ≈{remaining_estimated_tokens / 1000:.1f}K remain"
+        if sent_count is not None:
+          suffix += f" ({message_count} stored / {sent_count} sent)"
+    # Floor clamp: protected content alone outweighs the ratio target —
+    # the cutoff aimed at the floor instead.
+    if target_clamped and floor_tokens is not None:
+      suffix += f"; target raised to floor ≈{floor_tokens / 1000:.1f}K"
+    # Hysteresis detail: only when the achieved value is absent (old
+    # events) and the trim went deeper than the cap (ratio < 1.0).
+    if (
+      remaining_estimated_tokens is None
+      and target_tokens is not None
+      and target_tokens < max_tokens
+    ):
       suffix += f"; trimmed to ≈{target_tokens:,}"
     print(
       f"# Context compacted: dropped {dropped_count} message(s) "

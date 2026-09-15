@@ -92,36 +92,89 @@ class ContextManager(Protocol):
   def get_messages(self) -> list[dict[str, Any]]:
     """All recorded messages (excludes tool results)."""
 
+  def get_stored_messages(self) -> list[dict[str, Any]]:
+    """All stored messages — the compaction TRUTH the projection views.
+
+    Includes tool results and everything get_context() may hide or stub:
+    persistence must save this, not the projection.
+    """
+
+  @property
+  def strip_thinking_in_view(self) -> bool:
+    """Whether the projection drops unflagged thinking (see get_context)."""
+    return True
+
+  @strip_thinking_in_view.setter
+  def strip_thinking_in_view(self, value: bool) -> None:
+    del value
+
   # --- context overflow management ---
 
   def truncate_oldest_non_system(
     self,
-    keep_first_user: bool = True,
+    protect_first_user: int = 1,
+    protect_last_user: int = 1,
+    protect_last_assistant: int = 1,
+    protect_last_tool_calls: int = 1,
     drop_count: int = 1,
+    run: str | None = None,
   ) -> int:
-    """Permanently drop the oldest non-setup messages from the tail.
+    """Flag the oldest non-protected messages as dropped — no physical removal.
 
-    The protected set is never dropped:
+    Compaction treats stored messages as TRUTH: selected messages are
+    marked with ``pruned.kind == "dropped"`` metadata and excluded from
+    the submitted view (get_context), while the store and the persisted
+    history keep everything.
+
+    The protected set is never flagged:
       - all ``role=system`` messages
       - the contiguous ``role=user`` scaffolding prefix emitted by
         :meth:`add_skill_discovery_block` (and any other user messages
         that appear before the first real user turn)
-      - the first real user turn (the first ``role=user`` message after
-        the scaffolding prefix) when ``keep_first_user`` is True
+      - the first ``protect_first_user`` real user messages after the
+        scaffolding prefix
+      - the last ``protect_last_user`` user messages in the whole store
+      - the last ``protect_last_assistant`` plain assistant messages
+        (``role=assistant`` without ``tool_calls``)
+      - the last ``protect_last_tool_calls`` tool-call units — an
+        assistant ``tool_calls`` frame plus all its trailing
+        ``role=tool`` result messages, protected together
 
-    Tool-call pairs are dropped atomically: an assistant message carrying
+    Tool-call pairs are flagged atomically: an assistant message carrying
     ``tool_calls`` is never split from its trailing ``role=tool`` result
-    messages — they are dropped together as a single unit.
+    messages — they are flagged together as a single unit. Already-flagged
+    units are skipped without consuming ``drop_count``.
 
     Args:
-      keep_first_user: When True, protect the first real user turn in
-        addition to system messages and the scaffolding prefix. When
-        False, the first user turn is also eligible for dropping (system
-        messages remain protected).
-      drop_count: Number of atomic units (tool-call-pair-aware) to drop.
+      protect_first_user: Number of first real user messages (after the
+        scaffolding prefix) to protect.
+      protect_last_user: Number of last user messages to protect.
+      protect_last_assistant: Number of last plain assistant messages to
+        protect.
+      protect_last_tool_calls: Number of last tool-call units to protect
+        (frame + results together).
+      drop_count: Number of atomic units (tool-call-pair-aware) to flag.
+      run: Optional compaction run id stored in the flag metadata, so
+        per-run reporting can count THIS run's flags.
 
     Returns:
-      The number of messages permanently removed from ``_messages``.
+      The number of messages newly flagged as dropped.
+    """
+
+  def protected_view(
+    self,
+    protect_first_user: int = 1,
+    protect_last_user: int = 1,
+    protect_last_assistant: int = 1,
+    protect_last_tool_calls: int = 1,
+  ) -> list[dict[str, Any]]:
+    """The cutoff-protected subset rendered exactly as get_context renders.
+
+    Same protected set as :meth:`protected_context` (framework
+    scaffolding + the four protection windows, store order), but passed
+    through the shared projection (stub rendering, thinking strips,
+    flag removal, image contract) — the protection floor the cutoff
+    stage can never go below, in backend-submission shape.
     """
 
   def replace_messages(self, messages: list[dict[str, Any]]) -> None:
@@ -133,7 +186,9 @@ class ContextManager(Protocol):
       - the thinking-block stripping fallback (for backends that do not
         support a provider-side ``context_management`` directive) replaces
         the message list with a stripped copy so thinking blocks from
-        prior turns do not accumulate.
+        prior turns do not accumulate. (Superseded: stripping now happens
+        at projection level in get_context; replace_messages remains for
+        the overflow hook.)
 
     Implementations that persist (e.g. :class:`Persisted`) must rewrite
     their storage after replacing the in-memory list.
@@ -142,6 +197,71 @@ class ContextManager(Protocol):
       messages: The new message list (owned by the context manager after
         the call; callers should not retain references to the same list).
     """
+
+  def prune_tool_results(self, min_age_turns: int, min_chars: int, run: str | None = None) -> int:
+    """Flag old, large tool results as stubs — no physical removal.
+
+    Framework-default compaction pipeline stage. Selection: ``role=tool``
+    messages whose body exceeds ``min_chars`` chars and whose age is at
+    least ``min_age_turns`` completed turns (position-derived, never
+    wall-clock). User/assistant/system and already-flagged messages are
+    never touched. Tool-call pairing stays intact: the flagged result
+    keeps role/name/tool_id and the projection renders a deterministic
+    stub.
+
+    Args:
+      min_age_turns: Minimum completed turns after the result to flag it.
+      min_chars: Minimum body length (chars) for a result to be stubbed.
+      run: Optional compaction run id stored in the flag metadata, so
+        per-run reporting can count THIS run's flags.
+
+    Returns:
+      The number of tool results newly flagged as stubs.
+    """
+
+  def force_stub_tool_results(self, min_chars: int, run: str | None = None) -> int:
+    """Flag every large tool result as a stub, regardless of age — no removal.
+
+    Framework-default compaction pipeline stage: the age-blind, last
+    content-preserving pass before the destructive cutoff — stubs EVERY
+    ``role=tool`` result whose body exceeds ``min_chars`` (already
+    flagged, non-tool and short-body messages are never touched).
+
+    Args:
+      min_chars: Minimum body length (chars) for a result to be stubbed.
+      run: Optional compaction run id stored in the flag metadata, so
+        per-run reporting can count THIS run's flags.
+
+    Returns:
+      The number of tool results newly flagged as stubs.
+    """
+
+  def prune_thinking(self, min_age_turns: int, run: str | None = None) -> int:
+    """Flag old ``thinking`` payloads as pruned — no physical removal.
+
+    Framework-default compaction pipeline stage. Flags messages whose
+    ``thinking`` payload is at least ``min_age_turns`` completed turns old
+    (position-derived age) with ``pruned.kind == "thinking"``; the
+    projection strips flagged thinking for every backend while the message
+    itself stays in the view.
+
+    Args:
+      min_age_turns: Minimum completed turns after the message to flag it.
+      run: Optional compaction run id stored in the flag metadata, so
+        per-run reporting can count THIS run's flags.
+
+    Returns:
+      The number of messages newly flagged.
+    """
+
+  # --- compaction run reporting ---
+
+  def record_compaction(self, run: dict[str, Any]) -> None:
+    """Record a compaction run report for later persistence (chunk C)."""
+
+  @property
+  def compaction_runs(self) -> list[dict[str, Any]]:
+    """Copies of the recorded compaction run reports, oldest first."""
 
   # --- turn lifecycle ---
 

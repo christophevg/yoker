@@ -380,6 +380,77 @@ class TestBatchUIHandlerContextOverflow:
     text = stderr.getvalue()
     assert "trimmed to" not in text
 
+  def test_compaction_notice_with_stages_and_landing(self):
+    """New-format events append the stages fragment and the achieved
+    remainder with the stored/sent split; no target-based fragment."""
+    stderr = StringIO()
+    handler = BatchUIHandler(stderr=stderr)
+
+    handler.output_context_overflow(
+      dropped_count=2,
+      estimated_tokens=90985,
+      max_tokens=80000,
+      message_count=41,
+      target_tokens=40000,
+      stages=[
+        {"name": "prune_tool_results", "messages": 0, "tokens": 12_300},
+        {"name": "cutoff", "messages": 0, "tokens": 38_500},
+      ],
+      sent_count=28,
+      remaining_estimated_tokens=38_400,
+    )
+    text = stderr.getvalue()
+    assert "# Context compacted" in text
+    assert "stages prune_tool_results, cutoff freed ≈50.8K" in text
+    assert "≈38.4K remain (41 stored / 28 sent)" in text
+    # Old target-based fragment suppressed when the achieved value exists.
+    assert "trimmed to" not in text
+
+  def test_compaction_notice_old_event_renders_as_before(self):
+    """Old-format events keep the exact legacy stderr rendering."""
+    stderr = StringIO()
+    handler = BatchUIHandler(stderr=stderr)
+
+    handler.output_context_overflow(
+      dropped_count=17,
+      estimated_tokens=208412,
+      max_tokens=200000,
+      message_count=63,
+      first_remaining="user: resumed",
+      target_tokens=100000,
+    )
+    text = stderr.getvalue()
+    assert (
+      "# Context compacted: dropped 17 message(s) "
+      "(208,412 > 200,000 tokens); 63 messages remain; "
+      "history starts at: user: resumed; trimmed to ≈100,000" in text
+    )
+    # No new-format fragments for old events.
+    assert "stages" not in text
+    assert "remain (" not in text
+
+  def test_compaction_notice_stages_without_landing(self):
+    """Stages present but remaining None: stage fragment shown, no remain."""
+    stderr = StringIO()
+    handler = BatchUIHandler(stderr=stderr)
+
+    handler.output_context_overflow(
+      dropped_count=1,
+      estimated_tokens=90985,
+      max_tokens=80000,
+      message_count=41,
+      target_tokens=40000,
+      stages=[{"name": "prune_tool_results", "messages": 0, "tokens": 50_985}],
+      sent_count=None,
+      remaining_estimated_tokens=None,
+    )
+    text = stderr.getvalue()
+    assert "stages prune_tool_results freed ≈51.0K" in text
+    # No achieved-remainder fragment (only the base line's "messages remain").
+    assert "remain (" not in text
+    # Remaining None → today's target-based rendering is kept.
+    assert "trimmed to ≈40,000" in text
+
   def test_compaction_notice_independent_of_show_flags(self):
     """The compaction notice is always printed, regardless of show_* flags."""
     stderr = StringIO()

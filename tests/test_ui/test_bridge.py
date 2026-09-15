@@ -301,6 +301,12 @@ class TestUIBridge:
         "message_count": 63,
         "first_remaining": None,
         "target_tokens": None,
+        "stages": [],
+        "sent_count": None,
+        "remaining_estimated_tokens": None,
+        "run_id": None,
+        "floor_tokens": None,
+        "target_clamped": False,
       },
     ) in handler.calls
 
@@ -334,6 +340,60 @@ class TestUIBridge:
         "message_count": 12,
         "first_remaining": None,
         "target_tokens": 4000,
+        "stages": [],
+        "sent_count": None,
+        "remaining_estimated_tokens": None,
+        "run_id": None,
+        "floor_tokens": None,
+        "target_clamped": False,
+      },
+    ) in handler.calls
+
+  async def test_bridge_context_overflow_passes_stages_and_landing(self):
+    """UIBridge forwards stages, sent_count, remaining_estimated_tokens."""
+    from yoker.events.types import ContextOverflowEvent
+
+    handler = MockUIHandler()
+    handler.output_context_overflow = lambda **kwargs: handler.calls.append(
+      ("output_context_overflow", kwargs)
+    )
+    bridge = UIBridge(handler)
+
+    await bridge(
+      ContextOverflowEvent(
+        type=EventType.CONTEXT_OVERFLOW,
+        message_count=41,
+        estimated_tokens=90_985,
+        max_tokens=80_000,
+        dropped_count=2,
+        target_tokens=40_000,
+        stages=[
+          {"name": "prune_tool_results", "messages": 0, "tokens": 12_300},
+          {"name": "cutoff", "messages": 0, "tokens": 38_500},
+        ],
+        sent_count=28,
+        remaining_estimated_tokens=38_400,
+      )
+    )
+
+    assert (
+      "output_context_overflow",
+      {
+        "dropped_count": 2,
+        "estimated_tokens": 90_985,
+        "max_tokens": 80_000,
+        "message_count": 41,
+        "first_remaining": None,
+        "target_tokens": 40_000,
+        "stages": [
+          {"name": "prune_tool_results", "messages": 0, "tokens": 12_300},
+          {"name": "cutoff", "messages": 0, "tokens": 38_500},
+        ],
+        "sent_count": 28,
+        "remaining_estimated_tokens": 38_400,
+        "run_id": None,
+        "floor_tokens": None,
+        "target_clamped": False,
       },
     ) in handler.calls
 

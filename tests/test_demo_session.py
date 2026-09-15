@@ -607,6 +607,37 @@ class TestSerializeDeserializeRoundTrip:
     assert deserialized.dropped_count == original.dropped_count
     assert deserialized.target_tokens == original.target_tokens
 
+  def test_context_overflow_event_with_stages_and_landing(self) -> None:
+    """New Slice-2 fields (stages, sent_count, remaining_estimated_tokens)
+    round-trip as plain dicts — no recorder changes needed."""
+    timestamp = datetime(2026, 4, 21, 10, 30, 0)
+    original = ContextOverflowEvent(
+      type=EventType.CONTEXT_OVERFLOW,
+      timestamp=timestamp,
+      message_count=41,
+      estimated_tokens=90_985,
+      max_tokens=80_000,
+      dropped_count=2,
+      target_tokens=40_000,
+      stages=[
+        {"name": "prune_tool_results", "messages": 0, "tokens": 12_300},
+        {"name": "cutoff", "messages": 0, "tokens": 38_500},
+      ],
+      sent_count=28,
+      remaining_estimated_tokens=38_400,
+    )
+
+    serialized = serialize_event(original)
+    deserialized = deserialize_event(serialized)
+
+    assert isinstance(deserialized, ContextOverflowEvent)
+    assert deserialized.stages == [
+      {"name": "prune_tool_results", "messages": 0, "tokens": 12_300},
+      {"name": "cutoff", "messages": 0, "tokens": 38_500},
+    ]
+    assert deserialized.sent_count == 28
+    assert deserialized.remaining_estimated_tokens == 38_400
+
   def test_context_overflow_event_without_target_tokens(self) -> None:
     """Historical JSONL records without target_tokens get the None default."""
     record = {

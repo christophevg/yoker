@@ -882,24 +882,43 @@ class InteractiveUIHandler(UIHandler):
     message_count: int,
     first_remaining: str | None = None,
     target_tokens: int | None = None,
+    stages: list[dict[str, Any]] | None = None,
+    sent_count: int | None = None,
+    remaining_estimated_tokens: int | None = None,
+    run_id: str | None = None,
+    floor_tokens: int | None = None,
+    target_clamped: bool = False,
   ) -> None:
-    """Output a context compaction notice (overflow truncation fired).
+    """Output a context compaction notice (overflow compaction fired).
 
     Renders as a blue-bordered panel so the compaction is clearly visible
     in the transcript: the context size shrank because the framework
-    permanently dropped older non-setup messages to fit under the token
-    cap.
+    pipeline pruned/flagged older non-setup messages to fit under the
+    token cap.
 
     Args:
-      dropped_count: Number of messages permanently removed.
+      dropped_count: Number of messages newly flagged by this compaction
+        run (stored-based).
       estimated_tokens: Estimated token count that triggered the overflow.
       max_tokens: The configured soft cap (``context.max_tokens``).
-      message_count: Number of messages remaining after truncation.
+      message_count: Number of STORED messages after the pipeline.
       first_remaining: One-line summary of the first non-protected message
-        after truncation (where retained history starts), or None.
-      target_tokens: Effective trim target (``max_tokens *
+        after compaction (where retained history starts), or None.
+      target_tokens: The trim TARGET (``max_tokens *
         context.compact_ratio``), or None when the event carries no target
         (pre-hysteresis records).
+      stages: Per-stage impact dicts ({name, messages, tokens}), non-zero
+        stages only — or None/[] for old events.
+      sent_count: Messages in the submitted view after the pipeline, or
+        None for old events.
+      remaining_estimated_tokens: ACHIEVED post-pipeline view estimate —
+        the truthful landing point — or None for old events.
+      run_id: This compaction run's id (8-hex; flags carry it in their
+        ``pruned.run`` metadata), or None for old events.
+      floor_tokens: Calibrated estimate of the PROTECTED VIEW — the floor
+        the cutoff target can never be clamped below — or None.
+      target_clamped: True when the effective cutoff target was raised to
+        the floor (protected content alone exceeds the ratio target).
     """
     self._stop_processing_status()
     self._stop_tool_execution_status()
@@ -910,9 +929,40 @@ class InteractiveUIHandler(UIHandler):
     )
     if first_remaining:
       body += f"\n[bold]History starts at:[/bold] {first_remaining}"
-    # Hysteresis detail: only meaningful when the trim went deeper than
-    # the cap (ratio < 1.0).
-    if target_tokens is not None and target_tokens < max_tokens:
+    # Per-stage impact, one line per non-zero stage, then a total line
+    # that separates the pruned-token total from the achieved result.
+    if stages:
+      total_msgs = 0
+      total_tokens = 0
+      for stage in stages:
+        name = stage.get("name", "?")
+        stage_msgs = stage.get("messages", 0)
+        stage_tokens = stage.get("tokens", 0)
+        total_msgs += stage_msgs
+        total_tokens += stage_tokens
+        body += f"\n{name}: −{stage_msgs} msg, −{stage_tokens / 1000:.1f}K tokens"
+      summary = f"total: −{total_msgs} msg, −{total_tokens / 1000:.1f}K"
+      if remaining_estimated_tokens is not None:
+        sent_part = (
+          f" ({message_count} stored / {sent_count} sent)" if sent_count is not None else ""
+        )
+        summary += f" → ≈{remaining_estimated_tokens / 1000:.1f}K remain{sent_part}"
+      body += f"\n[bold]{summary}[/bold]"
+    # Floor clamp: when the protected content alone outweighs the ratio
+    # target, the cutoff aimed at the floor instead — surface it, or the
+    # "Trimmed to" figure below looks like a bug.
+    if target_clamped and floor_tokens is not None:
+      body += (
+        f"\n[bold]Target raised to floor:[/bold] ≈{floor_tokens / 1000:.1f}K tokens "
+        f"(protected content exceeds target)."
+      )
+    # Truthful landing: when the event reports the achieved result, show
+    # it (the target semantics live in the total line's "→ ≈X remain").
+    # Old events without the achieved estimate keep the target rendering.
+    if remaining_estimated_tokens is not None:
+      if remaining_estimated_tokens < max_tokens:
+        body += f"\n[bold]Trimmed to:[/bold] ≈{remaining_estimated_tokens / 1000:.1f}K tokens."
+    elif target_tokens is not None and target_tokens < max_tokens:
       body += f"\n[bold]Trimmed to:[/bold] ≈{target_tokens:,} tokens."
     self.console.print(Panel(body, title="⚙ Context compacted", style=COMPACT_STYLE))
     self.console.print()

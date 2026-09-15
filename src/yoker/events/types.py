@@ -265,24 +265,55 @@ class AgentMessageEvent(Event):
 
 @dataclass(frozen=True)
 class ContextOverflowEvent(Event):
-  """Emitted once when context overflow truncation fires.
+  """Emitted once when context overflow compaction fires.
 
   Audit trail for the framework-default context management: the size check
-  estimated the conversation had grown past ``context.max_tokens`` and one
-  or more non-setup messages were permanently dropped from the tail.
+  estimated the conversation had grown past ``context.max_tokens`` and the
+  compaction pipeline flagged/stubbed older non-setup messages to bring
+  the submitted view back under the trim target.
+
+  Stored-vs-sent semantics: ``message_count`` and ``dropped_count``
+  describe the STORED history (all messages kept on disk, including
+  stubbed ones and — with flag-based compaction — the bodies hidden from
+  the view); ``sent_count`` is what the NEXT submission actually contains
+  after the projection applied every flag.
 
   Attributes:
-    message_count: Number of messages in the context after truncation.
+    message_count: Number of messages in the stored context after the
+      pipeline (compaction keeps stored messages — flags only change the
+      view; a cutoff-flagged message remains in the store too, so this
+      no longer decreases with flag-based compaction).
     estimated_tokens: The estimated token count that triggered overflow.
     max_tokens: The configured soft cap (``context.max_tokens``).
-    dropped_count: Number of messages permanently removed from ``_messages``.
+    dropped_count: Number of messages newly cut-off-flagged by the
+      pipeline (stored-based; legacy meaning "permanently removed").
     first_remaining: One-line summary of the first non-protected message
-      after truncation (where retained history starts), or None when only
+      after compaction (where retained history starts), or None when only
       the protected prefix remains.
     target_tokens: The effective trim target in tokens
-      (``max_tokens * context.compact_ratio``), i.e. the estimate the
-      truncation loop trimmed to. None when the event was produced by older
+      (``max_tokens * context.compact_ratio``), i.e. the goal the
+      pipeline trimmed toward. None when the event was produced by older
       code without hysteresis (deserialization of historical JSONL records).
+    stages: Per-stage impact, ONLY stages with non-zero impact, in run
+      order: ``{"name": str, "messages": int, "tokens": int}`` where
+      ``tokens`` is the view-estimate reduction attributable to the stage
+      (estimate before → after that stage). Empty for events produced by
+      older code.
+    sent_count: Number of messages in the submitted view
+      (``get_context()``) after the pipeline — i.e. what the model will
+      actually see. None for events produced by older code.
+    remaining_estimated_tokens: The ACHIEVED post-pipeline view estimate
+      (the truthfulness fix: the old panel showed the TARGET, not the
+      result). None for events produced by older code.
+    run_id: This compaction run's id (8-hex) — flags carry it in their
+      ``pruned.run`` metadata, so per-run reporting can count THIS run's
+      messages. None for events produced by older code.
+    floor_tokens: Calibrated estimate of the PROTECTED VIEW — the floor
+      the cutoff target can never be clamped below. None when no clamp
+      was needed/older code.
+    target_clamped: True when the effective cutoff target was raised to
+      the floor because the protected content alone exceeds the ratio
+      target (the pipeline then aims at the floor).
   """
 
   message_count: int
@@ -291,6 +322,12 @@ class ContextOverflowEvent(Event):
   dropped_count: int
   first_remaining: str | None = None
   target_tokens: int | None = None
+  stages: list[dict[str, Any]] = field(default_factory=list)
+  sent_count: int | None = None
+  remaining_estimated_tokens: int | None = None
+  run_id: str | None = None
+  floor_tokens: int | None = None
+  target_clamped: bool = False
 
 
 @dataclass(frozen=True)
