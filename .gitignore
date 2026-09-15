@@ -43,6 +43,9 @@ logs/
 # Local configuration (root only)
 /yoker.toml
 
+# Transient session-handover notes (kept on disk, never committed)
+SESSION.md
+
 # Environment files with secrets
 .env
 .env.local
