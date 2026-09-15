@@ -21,6 +21,53 @@
   as a `compaction` record (run id, per-stage impact, achieved estimate)
   and every pruned flag carries the originating run id — inspect it with
   `python scripts/context_report.py <session.jsonl> [--json]`.
+- **Image file reading for vision models**: `read` on an image file
+  (png/jpg/jpeg/gif/webp/bmp) attaches the file as a path reference on
+  the role=tool message — the Ollama backend serializes it to base64 at
+  submission time, so session persistence stays lean (only the path is
+  stored); `offset`/`limit` are rejected for images, the file-size
+  guardrail still applies, and the litellm backend strips the `images`
+  key to keep cross-backend session resumption safe. Image refs are
+  sent **once**: context assembly drops refs from tool messages that
+  predate the most recent assistant message, so long conversations stop
+  re-sending the base64 payload every turn — a stateless, retry-safe
+  and resume-safe rule; harness instructions state the send-once
+  contract.
+- **`--resume last`**: `yoker chat --resume last` resumes the most
+  recently active session.
+- **Plugin tool config bootstrap (TODO 7.2)**: plugins declare a typed
+  `config_class` in their manifest; a bootstrap probe discovers them
+  via Clevis and augments the config schema with one field per plugin
+  before the single normal config load. Plugin tools receive the
+  plugin's top-level config instance as `ctx.config`
+  (`config.tools.<plugin>.<tool>`), with `enabled` gating via the
+  `ToolConfig` base class; the demo plugin ships an example.
+- **Schema-aware per-value argument coercion at dispatch**: degraded
+  argument shapes emitted by models (GLM via Ollama — stringified
+  scalars like `{"limit": "100"}`, JSON-stringified objects) are
+  coerced to the declared schema type at the single dispatch choke
+  point, while legitimate JSON-string payloads (e.g.
+  `write(content='{"key": "value"}')`) pass through verbatim — fixing
+  the blunt Ollama workaround that mangled such content into a dict
+  ("Invalid content parameter").
+- **`update` anchor-duplication guard, EOF termination, better hints**:
+  ambiguous (repeated) anchors are rejected loudly with match line
+  numbers, an explicit escape hatch (`allow_duplicate_anchor`) covers
+  intentional duplication, and inserts terminate cleanly at EOF.
+- **Weekday in the system prompt date**: e.g. "Thursday, 2026-09-10",
+  so agents know the day of week.
+
+### Changed
+- **`read` offset error states 1-indexed numbering**: the out-of-range
+  error now explicitly states that line numbers are 1-indexed and that
+  1 is the first line — agents repeatedly misread the old message as
+  0-based and burned a call on it.
+
+### Removed
+- **Dead `permissions.network_access` config field**: never enforced by
+  any tool, guardrail, or setup code — its only runtime effect was
+  rendering a false reminder that made spawned researchers wrongly
+  conclude they had no web access and refuse research work.
 
 ### Fixed
 - **Guardrail denylist depth bypass**: the default `blocked_write_paths`
@@ -37,6 +84,33 @@
   batch/sub-agent mode remains fail-safe HARD. Tests: new nested-path
   regression suite (incident shape `<root>/scratch-hq-runner/Makefile`),
   every default-denylist case now exercised at nested depth.
+- **Bare-generic tool annotations destroyed parameter typing**:
+  `Annotated`-stripping matched any `get_args()` result, so a bare
+  generic (`dict[str, str] | None`) collapsed to `str` and its schema
+  declared the wrong JSON type (`make.env_vars` → `"string"`). The
+  strip is now gated on `__metadata__`; parameter typing derives from
+  the real type (`env_vars` → `"object"`, `write.content` →
+  `"string"`). Root cause of the tool-parameter schema bug chain.
+- **`write`/`update` type-mismatch errors are self-correcting**: the
+  error names the actual runtime type and the remedy instead of a
+  generic message that caused blind retry loops.
+- **Leading `~` in path-guarded tool arguments is expanded before the
+  guardrails**: `~/...` paths previously stayed relative, so
+  `search`/`read`/`list` failed with "Path not found" and `existence`
+  silently returned `exists=False` for real files. Expansion happens
+  before the approval hook and guardrails, so the `filesystem_paths`
+  allowlist validates the real post-expansion path and `~/..` escapes
+  are caught.
+- **Session-injected tools respect `tools:` grants**: `agent`,
+  `send_message` and `release_agent` were registered after the
+  definition filter ran, so every session agent saw them regardless of
+  its declared grants — breaking least-privilege. The filter is
+  re-applied after injection (default: all-granted; explicit grants
+  must list the tools; `tools: []` agents get none).
+- **Session listing reports the bare session id and sorts by last
+  activity**: `list_sessions()` previously reported the JSONL file stem
+  (the combined `{session_id}-{agent_id}` id for per-agent files) and
+  sorted by start time rather than recency.
 
 ## 0.12.0 — 2026-09-04
 
