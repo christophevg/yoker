@@ -1,5 +1,27 @@
 ## Unreleased
 
+### Added
+- **Configurable compaction pipeline**: context overflow now runs a stage
+  pipeline before dropping messages — `prune_tool_results` stubs old large
+  tool-result bodies, `prune_thinking` flags old reasoning payloads,
+  `force_stub_tool_results` age-blind stubs any remaining oversized tool
+  result, and `cutoff` (backstop) drops the oldest non-setup messages,
+  stopping as soon as the estimate is under `max_tokens * context.compact_ratio`.
+  Stages and thresholds are configured via the new `[context.compaction]`
+  TOML section (`strategies` order + per-stage params; TOML-only, no CLI
+  flags; empty `strategies` disables compaction). Cutoff protects setup
+  windows (`protect_first_user`, `protect_last_user`,
+  `protect_last_assistant`, `protect_last_tool_calls`, each default 1)
+  and clamps its target to a floor (`floor_tokens`, default 10% of
+  `max_tokens` — `target_clamped` reports it). Fully-flagged (no-op) runs
+  emit no event. The overflow event and compaction panel now report
+  per-stage impact (messages flagged + tokens saved) and the truthful
+  achieved token estimate; stored history (JSONL) keeps everything,
+  including thinking. Each compaction run is recorded in the session JSONL
+  as a `compaction` record (run id, per-stage impact, achieved estimate)
+  and every pruned flag carries the originating run id — inspect it with
+  `python scripts/context_report.py <session.jsonl> [--json]`.
+
 ### Fixed
 - **Guardrail denylist depth bypass**: the default `blocked_write_paths`
   and `blocked_paths` entries used bare patterns (`Makefile`, `.git`,
