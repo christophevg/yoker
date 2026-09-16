@@ -62,6 +62,34 @@
   `AgentDefinition()` with a hardcoded prompt — the primary/default
   agent can now be fine-tuned like any other agent definition, and a
   user/config/plugin definition named `primary` overrides the built-in.
+- **Agent-feedback triage improvements (feedback.md, 2026-09-12 report)**:
+  - **No-shell reminder names the make execution path**: the injected
+    "no shell access" instruction now explicitly points to the
+    Makefile/`make` tool as the execution environment for anything the
+    project's targets encode — while stating the Makefile is NOT an
+    escape hatch for arbitrary shell execution (no smuggling shell into
+    targets, no treating missing targets as license for custom commands).
+  - **`make` result leads with the verdict** (`verdict` +
+    `outcome` fields, plus `passed_leg`/`failed_leg` on failure) so
+    exit-0 is never misread as an error under stderr bookkeeping noise.
+    These short fields are exempt from `post_filter`, so the pass/fail
+    verdict survives even an aggressive error-oriented filter.
+  - **`update`/`write` distinguish a true no-op from "applied but
+    identical"**: `update` with `old_string == new_string` reports
+    "No-op: old_string equals new_string — nothing changed" (diagnosis
+    likely wrong); an edit/write that resolves to identical bytes reports
+    "(applied, but file content is identical — verify this is intended)"
+    instead of the ambiguous "(no content change)".
+  - **Content-search binary floor**: `search` (content mode) skips
+    binary junk — cache dirs (`.mypy_cache`, `.venv`, `node_modules`,
+    ...) and binary extensions (`.db`, `.pyc`, `.so`, images, archives)
+    — even with `include_ignored=True`, which once dragged ~14
+    `.mypy_cache/**/*.db` junk "matches" into results hiding 2 real
+    ones. `include_binaries=True` is the explicit opt-in; filename
+    search and single-file targets are never affected. Floor
+    suppressions are counted and reported in `hidden_by_ignore`, and
+    the zero-result hint names the right remedy (`include_binaries` vs
+    `include_ignored`).
 
 ### Changed
 - **`read` offset error states 1-indexed numbering**: the out-of-range
