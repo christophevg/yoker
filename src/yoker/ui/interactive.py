@@ -46,7 +46,7 @@ THINKING_STYLE = Style(color="grey66")
 RESPONSE_STYLE = Style(color="black")
 TOOL_STYLE = Style(color="cyan")
 TOOL_RESULT_STYLE = Style(color="bright_black")
-STATS_STYLE = Style(color="bright_blue", dim=True)
+STATUS_STYLE = Style(color="blue3")
 ERROR_STYLE = Style(color="red", bold=True)
 COMPACT_STYLE = Style(color="bright_blue")
 STEP_TITLE_STYLE = Style(bold=True, underline=True)
@@ -74,7 +74,7 @@ THINKING_THEME = Theme(
 
 _BANNER_TOOL_LIMIT = 8
 
-BULLET = "⏺ "
+BULLET = "▶ "
 
 
 def _hex_to_rgb(hex_color: str) -> tuple[int, int, int] | None:
@@ -570,17 +570,67 @@ class InteractiveUIHandler(UIHandler):
     self.stream_thinking(text)
     self.end_thinking_stream(len(text))
 
+  # === Status Line Construction ===
+
+  def _start_output_line(
+    self,
+    status: str | Text,
+    end: str = "\n",
+    style: Style = STATUS_STYLE,
+    agent: AgentDisplay | None = None,
+  ) -> None:
+    # every output line starts with: ▶ [07:35:23] researcher@yoker:
+    line = Text()
+    line.append(f"{BULLET}{self._ts()}")
+    cwd = f"@{Path().cwd().stem}"
+    if agent:
+      # The agent color's background spans the whole agent@cwd unit; the
+      # ": " separator stays outside it.
+      line.append(Text.from_markup(self._agent_tag(agent, suffix=cwd)))
+      line.append(": ")
+    else:
+      line.append(f"{cwd}: ")
+    line.append(status)
+    self.console.print(line, end=end, style=style)
+
+  def _ts(self) -> str:
+    ts = strftime("%H:%M:%S", localtime())
+    if self.show_time:
+      return f"[{ts}] "
+    return ""
+
+  def _agent_tag(self, agent: AgentDisplay | None, suffix: str = "") -> str:
+    """Build a Rich-markup agent tag string for output lines.
+
+    Returns a string like ``"release-manager"`` when agent is non-None,
+    or an empty string when agent is None (primary agent, single-agent
+    sessions). When the agent definition has a color, the tag is rendered
+    with that color as the background and a contrasting foreground.
+
+    ``suffix`` is rendered inside the colored span when a color is set —
+    e.g. ``suffix="@yoker"`` extends the background over ``agent@cwd`` —
+    and plain-concatenated when no color is set.
+
+    The tag carries no separator — call sites add their own (e.g.
+    ``": "`` or ``" Agent spawned"``). The string includes Rich markup
+    tags so it must be resolved via ``Text.from_markup`` before being
+    appended into a ``Text`` object, or used in contexts that interpret
+    markup directly (console.print, streamer.append).
+    """
+    if agent is None:
+      return ""
+    if agent.color:
+      fg = _contrast_fg(agent.color)
+      return f"[{fg} on {agent.color}]{agent.id}{suffix}[/]"
+    return f"{agent.id}{suffix}"
+
   # === Content Output ===
 
   def start_content_stream(self, agent: AgentDisplay | None = None) -> None:
     """Start streaming content."""
     self._stop_tool_execution_status()
     self._stop_processing_status()
-    # Print the bullet + timestamp + agent tag via console (interprets Rich
-    # markup for colored tags), not via the Markdown streamer (which would
-    # treat markup as literal text).
-    tag = self._agent_tag(agent)
-    self.console.print(f"{BULLET}{self._ts()}{tag}", end="")
+    self._start_output_line("", end="", style=RESPONSE_STYLE, agent=agent)
 
   def stream_content(self, chunk: str, content_type: str = "text/plain") -> None:
     """Stream a content chunk.
@@ -610,8 +660,7 @@ class InteractiveUIHandler(UIHandler):
       return
     self._stop_tool_execution_status()
     self._stop_processing_status()
-    tag = self._agent_tag(agent)
-    self.console.print(f"{BULLET}{self._ts()}{tag}", end="", style=THINKING_STYLE)
+    self._start_output_line("", end="", style=THINKING_STYLE, agent=agent)
 
   def stream_thinking(self, chunk: str) -> None:
     """Stream a thinking chunk.
@@ -647,7 +696,7 @@ class InteractiveUIHandler(UIHandler):
     self._stop_tool_execution_status()
     self._stop_processing_status()
     tag = self._agent_tag(agent)
-    self.console.print(f"[cyan]↳ {self._ts()}{tag}Agent spawned[/cyan]")
+    self.console.print(f"[cyan]↳ {self._ts()}{tag} Agent spawned[/cyan]")
 
   def agent_finished(self, agent: AgentDisplay) -> None:
     """Surface that a sub-agent has finished and been removed.
@@ -658,7 +707,7 @@ class InteractiveUIHandler(UIHandler):
     self._stop_tool_execution_status()
     self._stop_processing_status()
     tag = self._agent_tag(agent)
-    self.console.print(f"[dim]↳ {self._ts()}{tag}Agent finished[/dim]")
+    self.console.print(f"[dim]↳ {self._ts()}{tag} Agent finished[/dim]")
 
   # === Protected-file / git-operation approval (MBI-009 T12) ===
 
@@ -764,15 +813,13 @@ class InteractiveUIHandler(UIHandler):
       return
     self._stop_processing_status()
     details = format_tool_args(tool_name, args, self._content_display)
-    tag = self._agent_tag(agent)
+    self._start_output_line(f"{tool_name}(", end="", style=TOOL_STYLE, agent=agent)
     if "\n" in details:
-      self.console.print(f"{BULLET}{self._ts()}{tag}{tool_name}(", style=TOOL_STYLE)
       for line in details.splitlines():
         self.console.print(f"    {line}", style=TOOL_STYLE)
       self.console.print("  )", style=TOOL_STYLE)
     else:
-      self.console.print(f"{BULLET}{self._ts()}{tag}{tool_name}", end="", style=TOOL_STYLE)
-      self.console.print(f"({details})")
+      self.console.print(f"{details})")
     self._start_tool_execution_status(tool_name)
 
   def output_tool_result(self, tool_name: str, success: bool, result: str) -> None:
@@ -858,42 +905,31 @@ class InteractiveUIHandler(UIHandler):
         None when context management is off.
     """
     self._stop_processing_status()
-    if self.show_stats:
-      duration_s = duration_ms / 1000.0
-      ts = self._ts()
-      tag = self._agent_tag(agent)
-      # Print the agent tag separately (without STATS_STYLE's dim) so
-      # colored tags are as vibrant as in content/tool-call lines.
-      if agent:
-        prefix = f"{BULLET}{ts}"
-        self.console.print(f"{prefix}{tag}", end="")
-      # Context gauge replaces the raw token pair when a cap is configured.
-      # The whole line is built as one Text (str parts appended into it) so
-      # the bar's fill color can differ from the line's dim base style.
-      line = Text()
-      if agent:
-        line.append(f"{duration_s:.1f}s,")
-      else:
-        line.append(f"{BULLET}{ts}{duration_s:.1f}s,")
-      if context_max_tokens and context_estimate is not None:
-        line.append(" ")
-        line.append(
-          self._render_context_bar(context_estimate, context_max_tokens, context_target_tokens)
-        )
-      else:
-        line.append(f" {prompt_tokens}/{eval_tokens} tokens")
-      if usage_limits:
-        session_pct = _extract_usage_pct(usage_limits, "session")
-        weekly_pct = _extract_usage_pct(usage_limits, "weekly")
-        if session_pct is not None:
-          line.append(f" | session {session_pct:.0%}")
-        if weekly_pct is not None:
-          line.append(f" | weekly {weekly_pct:.0%}")
-      if agent:
-        self.console.print(line, style=STATS_STYLE, end="")
-        self.console.print()  # newline
-      else:
-        self.console.print(line, style=STATS_STYLE)
+    if not self.show_stats:
+      return
+
+    # example stats line
+    # ▶ [07:35:23] researcher@yoker: 3.1s, ██░░░│░░ 2.2K/15K | session 0% | weekly 50%
+    #                             ^^^^  ^^ ^ ^ ^
+    #                             /     /  |   \  \
+    #                      duration used cutoff max remaining to cap
+    line = Text()
+    line.append(f"{duration_ms / 1000:.1f}s, ")
+    if context_max_tokens and context_estimate is not None:
+      line.append(
+        self._render_context_bar(context_estimate, context_max_tokens, context_target_tokens)
+      )
+    else:
+      line.append(f"{prompt_tokens}/{eval_tokens} tokens")
+    if usage_limits:
+      session_pct = _extract_usage_pct(usage_limits, "session")
+      weekly_pct = _extract_usage_pct(usage_limits, "weekly")
+      if session_pct is not None:
+        line.append(f" | session {session_pct:.0%}")
+      if weekly_pct is not None:
+        line.append(f" | weekly {weekly_pct:.0%}")
+
+    self._start_output_line(line, agent=agent)
 
   @staticmethod
   def _render_context_bar(estimate: int, max_tokens: int, target_tokens: int | None) -> Text:
@@ -931,7 +967,7 @@ class InteractiveUIHandler(UIHandler):
         # Empty cells: light shade in grey so the bar reads as one track.
         bar.append("░", style="bright_black")
 
-    text = Text(" ctx ")
+    text = Text()
     text.append(bar)
     text.append(f" {estimate / 1000:.1f}K/{max_tokens / 1000:.0f}K")
     return text
@@ -1080,30 +1116,6 @@ class InteractiveUIHandler(UIHandler):
         output=self.console,
       )
     return self._response_streamer
-
-  def _agent_tag(self, agent: AgentDisplay | None) -> str:
-    """Build a Rich-markup agent tag string for output lines.
-
-    Returns a string like ``"release-manager: "`` when agent is non-None,
-    or an empty string when agent is None (primary agent, single-agent
-    sessions). When the agent definition has a color, the tag is rendered
-    with that color as the background and a contrasting foreground.
-
-    The returned string includes Rich markup tags so it must be used in
-    contexts that support Rich markup (console.print, streamer.append).
-    """
-    if agent is None:
-      return ""
-    if agent.color:
-      fg = _contrast_fg(agent.color)
-      return f"[{fg} on {agent.color}]{agent.id}[/] "
-    return f"{agent.id}: "
-
-  def _ts(self) -> str:
-    ts = strftime("%H:%M:%S", localtime())
-    if self.show_time:
-      return f"[{ts}] "
-    return ""
 
   def _print_error(self, msg: str, exc: Exception | None = None) -> None:
     if exc:

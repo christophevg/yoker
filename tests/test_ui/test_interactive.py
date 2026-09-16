@@ -826,7 +826,7 @@ class TestInteractiveUIHandlerStats:
   """Tests for InteractiveUIHandler stats output."""
 
   def test_output_stats_prints_simple_format(self):
-    """output_stats should print the simpler RichUIHandler format."""
+    """Without a cap, output_stats renders the classic token pair."""
     output = StringIO()
     handler = InteractiveUIHandler()
     handler.console = make_console(output)
@@ -1139,9 +1139,7 @@ class TestInteractiveUIHandlerContextGauge:
   @staticmethod
   def _bar(text) -> str:
     """The 20-cell bar string from the rendered Text."""
-    plain = text.plain
-    start = plain.index("ctx ") + 4
-    return plain[start : start + 20]
+    return text.plain[:20]
 
   @staticmethod
   def _fill_color(text) -> str:
@@ -1210,18 +1208,6 @@ class TestInteractiveUIHandlerContextGauge:
     assert "tokens" not in text
     assert "53808/189" not in text
 
-  def test_stats_line_fallback_without_cap(self):
-    """Without a cap the classic token pair is rendered unchanged."""
-    output = StringIO()
-    handler = InteractiveUIHandler()
-    handler.console = make_console(output)
-
-    handler.output_stats(91_600, 53_808, 189)
-
-    text = output.getvalue()
-    assert "53808/189 tokens" in text
-    assert "ctx" not in text
-
   def test_stats_line_keeps_usage_limits(self):
     """session/weekly segments survive the gauge replacement."""
     output = StringIO()
@@ -1288,10 +1274,10 @@ class TestInteractiveUIHandlerAgentLifecycle:
     assert handler._agent_tag(None) == ""
 
   def test_agent_tag_no_color(self):
-    """_agent_tag returns 'id: ' when no color is set."""
+    """_agent_tag returns the bare id when no color is set."""
     handler = InteractiveUIHandler()
     tag = handler._agent_tag(AgentDisplay(id="researcher", name="researcher"))
-    assert tag == "researcher: "
+    assert tag == "researcher"
 
   def test_agent_tag_with_color(self):
     """_agent_tag returns Rich markup with bg/fg when color is set."""
@@ -1301,6 +1287,20 @@ class TestInteractiveUIHandlerAgentLifecycle:
     assert "#FF6B35" in tag
     # Should have Rich markup brackets
     assert "[" in tag and "]" in tag
+
+  def test_agent_tag_suffix_inside_colored_span(self):
+    """The suffix lands inside the colored span (background covers it)."""
+    handler = InteractiveUIHandler()
+    tag = handler._agent_tag(
+      AgentDisplay(id="researcher", name="researcher", color="#FF6B35"), suffix="@yoker"
+    )
+    assert tag == "[black on #FF6B35]researcher@yoker[/]"
+
+  def test_agent_tag_suffix_plain_when_no_color(self):
+    """Without a color the suffix is simply concatenated."""
+    handler = InteractiveUIHandler()
+    tag = handler._agent_tag(AgentDisplay(id="researcher", name="researcher"), suffix="@yoker")
+    assert tag == "researcher@yoker"
 
   def test_agent_tag_dark_bg_uses_white_fg(self):
     """_agent_tag uses white foreground for dark backgrounds."""
