@@ -64,9 +64,12 @@ class TestAppendResultDiff:
     # difflib emits -two -three +TWO +THREE +four (block replacement).
     assert result.startswith("Done (+3 \u22122)")
 
-  def test_no_content_change(self) -> None:
+  def test_identical_content_reports_applied_identical(self) -> None:
+    """T2 wording: the diff helper's no-change suffix is explicit."""
     result = _append_result_diff("File updated successfully", "same\n", "same\n", "f.txt")
-    assert result == "File updated successfully (no content change)"
+    assert result == (
+      "File updated successfully (applied, but file content is identical — verify this is intended)"
+    )
 
   def test_truncated_diff_preserves_stat(self) -> None:
     old = "".join(f"line{i}\n" for i in range(100))
@@ -179,12 +182,16 @@ class TestWriteResultDiff:
     assert "\n+new2" in result.result
 
   @pytest.mark.asyncio
-  async def test_overwrite_identical_content_no_change(self, tmp_path) -> None:
+  async def test_overwrite_identical_content_message(self, tmp_path) -> None:
+    """Identical overwrite reports 'applied, but identical' (T2 wording)."""
     file = tmp_path / "same.txt"
     file.write_text("same\n")
     result = await write(str(file), "same\n", make_write_ctx())
     assert result.success
-    assert result.result == "File written successfully (1 lines, 5 bytes) (no content change)"
+    assert result.result == (
+      "File written successfully (1 lines, 5 bytes)"
+      " (applied, but file content is identical — verify this is intended)"
+    )
 
   def test_build_message_new_file(self) -> None:
     from pathlib import Path as P

@@ -91,15 +91,30 @@ when you see it; the file can always be read again if needed.
 
   @staticmethod
   def no_shell_reminder() -> str:
-    """Return the no-shell-access operating instruction line.
+    """Return the no-shell-access operating instruction block.
 
     Kept as a separate constant-like accessor so tests (and future
     context managers) can assert on the exact guidance text.
+
+    2026-09-16 (agent feedback T0): the original wording made agents
+    claim "nothing was executed" while a fully-green ``make check`` was
+    one call away. The block now names the Makefile/`make`-tool
+    execution path explicitly AND closes the loophole it would open:
+    the Makefile is not an escape hatch for arbitrary shell execution —
+    it encodes the project's own targets, nothing else.
     """
     return (
       "**IMPORTANT** — You have NO shell or CLI access. There is no Bash tool. "
-      "If a task requires running shell commands, STOP and tell the user — "
-      "do not improvise or simulate."
+      "Do not improvise or simulate raw shell commands. If a task requires "
+      "running shell commands, STOP and tell the user — BUT first check for "
+      "a `Makefile`: when the project has one, its targets (via the `make` "
+      "tool) are your execution environment for anything the Makefile "
+      "encodes (check, test, run, …). "
+      "The Makefile is NOT an escape hatch for arbitrary shell execution: "
+      "run its declared targets as-is; do not smuggle shell commands into "
+      "it (e.g. via `make`-invoked one-liners or env-var tricks) and do not "
+      "treat missing Makefile targets as a reason to construct custom "
+      "commands — if no target exists for what you need, ask the user."
     )
 
   def _load_context_files(self) -> str | None:

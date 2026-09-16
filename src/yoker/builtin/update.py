@@ -367,20 +367,41 @@ async def update(
       ctx=ctx,
     )
 
-    if operation_inferred:
-      result_message = (
-        f"File updated successfully (operation inferred: '{operation}'). "
-        "Next time, provide an explicit 'operation' to avoid inference."
-      )
+    if result_content == old_content:
+      # T2 (agent feedback): distinguish a true no-op from "applied but
+      # resolved to identical content". The old single "(no content
+      # change)" suffix read as "done" when the edit text itself was
+      # already present — costing blind patch cycles. A no-op means the
+      # diagnosis was wrong; applied-but-identical means the edit ran
+      # and legitimately produced the same bytes.
+      if operation == "replace" and line_range is None and old_string == new_string:
+        result_message = (
+          "No-op: old_string equals new_string — nothing changed. "
+          "If you expected a difference, re-read the file; your diagnosis may be wrong."
+        )
+      else:
+        result_message = (
+          "Applied, but file content is identical after the edit — verify this is intended."
+        )
+      if operation_inferred:
+        result_message += f" (operation inferred: '{operation}')"
     else:
-      result_message = "File updated successfully"
+      if operation_inferred:
+        result_message = (
+          f"File updated successfully (operation inferred: '{operation}'). "
+          "Next time, provide an explicit 'operation' to avoid inference."
+        )
+      else:
+        result_message = "File updated successfully"
 
-    # EOF-touching operations guarantee a terminal newline; surface the
-    # byte change when one was added (never silent normalization).
-    if old_content and not old_content.endswith("\n") and result_content.endswith("\n"):
-      result_message = result_message + " (added missing trailing newline at EOF)"
+      # EOF-touching operations guarantee a terminal newline; surface the
+      # byte change when one was added (never silent normalization).
+      if old_content and not old_content.endswith("\n") and result_content.endswith("\n"):
+        result_message = result_message + " (added missing trailing newline at EOF)"
 
-    result_message = _append_result_diff(result_message, old_content, result_content, resolved.name)
+      result_message = _append_result_diff(
+        result_message, old_content, result_content, resolved.name
+      )
 
     return ToolResult(
       success=True,
@@ -419,9 +440,10 @@ def _append_result_diff(
   added = sum(1 for line in diff_lines if line.startswith("+") and not line.startswith("+++"))
   removed = sum(1 for line in diff_lines if line.startswith("-") and not line.startswith("---"))
 
-  # No-op edit (e.g. replace with identical text): stat-only.
+  # T2 (agent feedback): "no content change" read as "done" when it may
+  # mean the write was a waste or a mistake. Say what actually happened.
   if added == 0 and removed == 0:
-    return f"{result_message} (no content change)"
+    return f"{result_message} (applied, but file content is identical — verify this is intended)"
 
   stat = f"{result_message} (+{added} \u2212{removed})"
 

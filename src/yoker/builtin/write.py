@@ -306,7 +306,9 @@ def _append_result_diff(
   removed = sum(1 for line in diff_lines if line.startswith("-") and not line.startswith("---"))
 
   if added == 0 and removed == 0:
-    return f"{result_message} (no content change)"
+    # T2 (agent feedback): "no content change" read as "done" when it may
+    # mean the write was a waste or a mistake. Say what actually happened.
+    return f"{result_message} (applied, but file content is identical — verify this is intended)"
 
   stat = f"{result_message} (+{added} \u2212{removed})"
 

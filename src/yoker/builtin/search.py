@@ -59,6 +59,75 @@ _FALLBACK_SKIP_DIRS: frozenset[str] = frozenset(
   }
 )
 
+# T5 (agent feedback): binary junk floor for CONTENT search. These are
+# excluded even with include_ignored=True — cache/db noise (e.g.
+# .mypy_cache/**/*.db) once returned ~14 junk "matches" hiding 2 real
+# ones. Directory names are matched as any path segment; extensions by
+# suffix. include_binaries=True opts back in; filename search is never
+# affected.
+_BINARY_FLOOR_DIRS: frozenset[str] = frozenset(
+  {
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".tox",
+    ".nox",
+    ".venv",
+    "venv",
+    "node_modules",
+    "__pycache__",
+    ".git",
+    ".svn",
+    ".hg",
+  }
+)
+
+_BINARY_FLOOR_SUFFIXES: frozenset[str] = frozenset(
+  {
+    ".db",
+    ".sqlite",
+    ".sqlite3",
+    ".pyc",
+    ".pyo",
+    ".so",
+    ".dylib",
+    ".dll",
+    ".exe",
+    ".bin",
+    ".o",
+    ".a",
+    ".obj",
+    ".whl",
+    ".tar",
+    ".gz",
+    ".zip",
+    ".bz2",
+    ".xz",
+    ".7z",
+    ".rar",
+    ".pdf",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".webp",
+    ".bmp",
+    ".ico",
+    ".icns",
+    ".mp3",
+    ".mp4",
+    ".mov",
+    ".avi",
+    ".woff",
+    ".woff2",
+    ".ttf",
+    ".otf",
+    ".eot",
+    ".class",
+    ".jar",
+  }
+)
+
 
 async def search(
   path: Annotated[
@@ -86,6 +155,7 @@ async def search(
   exclude_pattern: str = "",
   count_only: bool = False,
   include_ignored: bool = False,
+  include_binaries: bool = False,
 ) -> ToolResult:
   """Search for patterns in files.
 
@@ -107,10 +177,17 @@ async def search(
     count_only: Return per-file counts only, no matched content (content search only).
     include_ignored: Include files/directories that match ignore patterns
       (.gitignore, skip_dirs, dotfiles). Default False.
+    include_binaries: Opt back into binary-junk files for CONTENT search
+      (cache dirs like .mypy_cache/.venv and binary extensions like .db,
+      .pyc, .so, images, archives). The binary floor is a safety net that
+      stays active even with include_ignored=True; this flag is the only
+      way through. Filename search is never affected by the floor.
 
   Returns:
     ToolResult with search results. When any enhanced parameter is non-default,
     a flat ``content_metadata`` dict is attached for grep-style UI rendering.
+    Content-search results suppressed by the binary floor are counted in
+    ``hidden_by_ignore`` (T5), so a zero-result stays explainable.
   """
   if not path:
     return ToolResult(success=False, error="Missing required parameter: path")
@@ -210,8 +287,17 @@ async def search(
   # Get blocked_path patterns for internal enforcement
   blocked_patterns = ctx.blocked_path_patterns if ctx else []
 
+  # T5 (agent feedback): binary-junk floor for CONTENT search only.
+  # Cache dirs and binary extensions are excluded even with
+  # include_ignored=True (that flag once dragged .mypy_cache/**/*.db
+  # noise into results); include_binaries=True is the explicit opt-in.
+  # A single-file target is never filtered — the caller chose that file.
+  effective_include_binaries = bool(include_binaries)
+  binary_floor = search_type == "content" and not effective_include_binaries and resolved.is_dir()
+
   try:
     hidden_skips: list[int] = [0]
+    floor_skips: list[int] = [0]
     if search_type == "content":
       matches, total, truncated, files_searched, counts = _search_content(
         resolved,
@@ -227,6 +313,8 @@ async def search(
         matcher=matcher,
         blocked_patterns=blocked_patterns,
         skip_counter=hidden_skips,
+        binary_floor=binary_floor,
+        floor_counter=floor_skips,
       )
       if effective_count_only:
         result = {
@@ -265,14 +353,33 @@ async def search(
 
     # #61: report visibility. A bare "no matches" reads as absence; when
     # ignore rules suppressed entries, say so and hint at include_ignored.
+    # T5: floor suppressions are counted separately so the zero-result
+    # hint names the right remedy — include_binaries lifts the floor,
+    # include_ignored does not.
     hidden = hidden_skips[0]
-    if hidden > 0:
-      result["hidden_by_ignore"] = hidden
+    floor_hidden = floor_skips[0]
+    total_hidden = hidden + floor_hidden
+    if total_hidden > 0:
+      result["hidden_by_ignore"] = total_hidden
       if total == 0:
-        result["hint"] = (
-          f"{hidden} file(s)/dir(s) were hidden by ignore rules — "
-          "retry with include_ignored=true if the target may be ignored"
-        )
+        if floor_hidden > 0 and hidden == 0:
+          # Only the floor suppressed entries: name its remedy.
+          result["hint"] = (
+            f"{floor_hidden} binary/cache file(s) were hidden by the binary floor — "
+            "retry with include_binaries=true if the target is a cache/binary file "
+            "(include_ignored alone will not lift the binary floor)"
+          )
+        elif hidden > 0 and floor_hidden == 0:
+          result["hint"] = (
+            f"{hidden} file(s)/dir(s) were hidden by ignore rules — "
+            "retry with include_ignored=true if the target may be ignored"
+          )
+        else:
+          result["hint"] = (
+            f"{hidden} file(s)/dir(s) were hidden by ignore rules and "
+            f"{floor_hidden} binary/cache file(s) by the binary floor — "
+            "retry with include_ignored=true and/or include_binaries=true"
+          )
 
     logger.info(
       "search_success",
@@ -325,6 +432,23 @@ def _validate_regex(pattern: str) -> tuple[bool, str]:
     return False, f"Invalid regex pattern: {e}"
 
 
+def _is_binary_floor_hit(
+  file_path: Path,
+) -> bool:
+  """T5: does this path fall under the binary-junk floor?
+
+  Matches when any path segment is a known cache/dependency directory OR
+  the filename carries a binary junk suffix. Called for content search
+  only (the floor is disabled for filename search and single-file
+  targets).
+  """
+  parts = file_path.parts
+  for part in parts:
+    if part in _BINARY_FLOOR_DIRS:
+      return True
+  return file_path.suffix.lower() in _BINARY_FLOOR_SUFFIXES
+
+
 def _walk_files(
   root: Path,
   include_pattern: str = "",
@@ -332,6 +456,8 @@ def _walk_files(
   matcher: IgnoreMatcher | None = None,
   blocked_patterns: list[Any] | None = None,
   skip_counter: list[int] | None = None,
+  binary_floor: bool = False,
+  floor_counter: list[int] | None = None,
 ) -> Iterator[Path]:
   """Walk directory tree, yielding files, applying optional glob filters on filename.
 
@@ -347,6 +473,13 @@ def _walk_files(
   it — reported so the caller can distinguish "no matches" from "no
   matches because everything is hidden" (#61). Blocked-path suppression
   is a separate enforcement mechanism and is NOT counted.
+
+  T5: when ``binary_floor`` is True, binary-junk files (cache dirs,
+  binary extensions) are pruned from CONTENT search even with
+  ``include_ignored=True``; their count goes to ``floor_counter`` (kept
+  separate from ignore-rule suppressions so the zero-result hint can name
+  the right remedy). Floor suppressions ARE reported in
+  ``hidden_by_ignore`` (they reduce visibility just the same).
   """
   if root.is_file():
     # Even single files must pass the blocked check
@@ -375,6 +508,30 @@ def _walk_files(
         d for d in dirnames if not is_path_blocked(Path(dirpath) / d, root, blocked_patterns)
       ]
 
+    # T5: prune floor directories here (in-place, before file iteration)
+    # so the whole subtree is skipped, not just files inside it. Only
+    # count dirs that are NOT also ignored by the matcher — an ignored
+    # dir is already counted by the matcher branch above; counting it
+    # twice would inflate hidden_by_ignore and misattribute the remedy.
+    if binary_floor:
+      ignored_names: set[str] = set()
+      if matcher is not None:
+        for d in dirnames:
+          if matcher.should_skip_dir(d) or matcher.should_ignore_path(
+            Path(dirpath) / d, is_dir=True
+          ):
+            ignored_names.add(d)
+      kept_floor: list[str] = []
+      for d in dirnames:
+        if d in ignored_names:
+          continue
+        if d in _BINARY_FLOOR_DIRS:
+          if floor_counter is not None:
+            floor_counter[0] += 1
+          continue
+        kept_floor.append(d)
+      dirnames[:] = kept_floor
+
     for filename in filenames:
       if matcher is not None:
         file_path = Path(dirpath) / filename
@@ -392,6 +549,15 @@ def _walk_files(
       if exclude_pattern and fnmatch.fnmatchcase(filename, exclude_pattern):
         continue
       file_path = Path(dirpath) / filename
+      # T5: binary-junk floor — prune BEFORE the blocked check (the floor
+      # is a visibility concern, not a security one; counting keeps a
+      # zero-result explainable). Floor suppressions go to their own
+      # counter so the caller can distinguish them from ignore-rule
+      # suppressions when choosing the hint.
+      if binary_floor and _is_binary_floor_hit(file_path):
+        if floor_counter is not None:
+          floor_counter[0] += 1
+        continue
       # Internal enforcement of blocked_paths
       if blocked_patterns and is_path_blocked(file_path, root, blocked_patterns):
         continue
@@ -424,6 +590,8 @@ def _search_content(
   matcher: IgnoreMatcher | None = None,
   blocked_patterns: list[Any] | None = None,
   skip_counter: list[int] | None = None,
+  binary_floor: bool = False,
+  floor_counter: list[int] | None = None,
 ) -> tuple[list[dict[str, Any]], int, bool, int, dict[str, int]]:
   """Search file contents using regex."""
   matches: list[dict[str, Any]] = []
@@ -446,6 +614,8 @@ def _search_content(
     matcher=matcher,
     blocked_patterns=blocked_patterns,
     skip_counter=skip_counter,
+    binary_floor=binary_floor,
+    floor_counter=floor_counter,
   ):
     if time.monotonic() - start_time > timeout_seconds:
       truncated = True

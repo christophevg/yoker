@@ -288,6 +288,8 @@ class TestHiddenVisibilityReporting:
     assert result.success is True
     assert result.result["total_matches"] == 0
     assert result.result["hidden_by_ignore"] >= 1
+    # T5: .py content is never floor-suppressed, so the hint stays the
+    # include_ignored variant.
     assert "include_ignored=true" in result.result["hint"]
 
   @pytest.mark.asyncio

@@ -593,7 +593,7 @@ class TestMakeToolErrorHandling:
 
 
 class TestMakeToolResultStructure:
-  """ToolResult.result dict shape: exit_code, stdout, stderr."""
+  """ToolResult.result dict shape: verdict, outcome, exit_code, stdout, stderr."""
 
   @pytest.mark.asyncio
   async def test_success_result_dict_keys(self, tmp_path: Path) -> None:
@@ -602,8 +602,16 @@ class TestMakeToolResultStructure:
     ctx = _make_context()
     result = await spec.execute(target="check", ctx=ctx, cwd=str(tmp_path))
     assert result.success
-    assert set(result.result.keys()) == {"exit_code", "stdout", "stderr"}
+    assert set(result.result.keys()) == {
+      "verdict",
+      "outcome",
+      "exit_code",
+      "stdout",
+      "stderr",
+    }
     assert result.result["exit_code"] == 0
+    assert result.result["outcome"] == "pass"
+    assert result.result["verdict"] == "make 'check' passed (exit 0)"
     assert result.error is None
 
   @pytest.mark.asyncio

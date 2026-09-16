@@ -22,6 +22,11 @@ Security model
   ``_execute_tool`` after ``post_filter`` is applied. If the (filtered)
   output exceeds ``max_output_kb``, an error is returned guiding the LLM
   to use ``post_filter`` to narrow the output.
+- Outcome (T4/T6, agent feedback): the result dict leads with a
+  ``verdict`` line and an ``outcome`` field (``pass``/``fail``, plus
+  ``passed_leg``/``failed_leg`` on failure) so exit-0 is never misread
+  as an error under stderr noise. These fields are exempt from
+  post_filter so the pass/fail verdict survives filtered runs.
 
 Residual risk (R5): the subprocess env is ``{**os.environ, **validated_env}``,
 so Makefile recipes inherit the yoker process env. Any secret present in
@@ -57,6 +62,11 @@ _TARGET_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._%+\-]*$")
 # plus owner's five.
 _FORBIDDEN_TARGET_CHARS: frozenset[str] = frozenset({";", "|", "&", "$", "`", "\n", "\r", "\x00"})
 
+# T6 (agent feedback): the outcome field of the result dict. Kept as
+# module constants so tests can assert on the exact values.
+_OUTCOME_PASSED = "pass"
+_OUTCOME_FAILED = "fail"
+
 
 async def make(
   target: Annotated[str, Text("Makefile target name (e.g., 'check', 'test')")],
@@ -87,13 +97,21 @@ async def make(
       stderr).
 
   Returns:
-    A ``ToolResult`` whose ``result`` is ``{"exit_code": int, "stdout": str,
-    "stderr": str}``. ``success`` is True iff ``exit_code == 0``. On failure
-    ``error`` carries the relevant output (stdout + stderr when non-verbose,
-    stderr only when verbose). Output size is enforced centrally in
-    ``_execute_tool`` after ``post_filter`` is applied — if the (filtered)
-    output exceeds ``max_output_kb``, an error is returned instead of
-    silent truncation.
+    A ``ToolResult`` whose ``result`` is a dict with ``verdict`` (one-line
+    pass/fail status with the exit code), ``outcome`` (``"pass"`` or
+    ``"fail"``), ``exit_code``, ``stdout`` and ``stderr``. On failure the
+    dict also carries ``passed_leg``/``failed_leg`` (the make invocation
+    ran; the target failed). ``success`` is True iff ``exit_code == 0``.
+    On failure ``error`` carries the relevant output (stdout + stderr when
+    non-verbose, stderr only when verbose). Output size is enforced
+    centrally in ``_execute_tool`` after ``post_filter`` is applied — if
+    the (filtered) output exceeds ``max_output_kb``, an error is returned
+    instead of silent truncation.
+
+    Note (T6, agent feedback): with ``post_filter`` active, ``stdout``/
+    ``stderr`` are filtered line-by-line, but ``verdict``, ``outcome``,
+    ``passed_leg`` and ``failed_leg`` are exempt — the pass/fail verdict
+    survives even an aggressive error-oriented filter.
 
   See the module docstring for the full security model, including the
   R5 env-inheritance residual risk.
@@ -210,16 +228,36 @@ async def make(
   # is applied. The make tool returns full stdout/stderr so that post_filter
   # can grep through the complete output (failures are typically at the end).
   exit_code = proc.returncode
-  success = exit_code == 0
 
   stdout_out = stdout or ""
   stderr_out = stderr or ""
 
+  # T4/T6 (agent feedback): lead the dict with the outcome so exit-0 is
+  # never framed as an error (make prints bookkeeping to stderr), and so
+  # the verdict survives an aggressive post_filter — string values are
+  # filtered line-by-line, but a short verdict may still be stripped;
+  # the non-string ``outcome`` field is preserved by post_filter by
+  # construction (_filter_dict_values only filters string values).
+  success = exit_code == 0
+  outcome = _OUTCOME_PASSED if success else _OUTCOME_FAILED
+  verdict = (
+    f"make '{target}' passed (exit {exit_code})"
+    if success
+    else f"make '{target}' failed (exit {exit_code})"
+  )
   result = {
+    "verdict": verdict,
+    "outcome": outcome,
     "exit_code": exit_code,
     "stdout": stdout_out,
     "stderr": stderr_out,
   }
+  if not success:
+    # T6: which leg failed. The make binary ran and the target failed —
+    # the "leg" wording is for gate-style Makefiles (lint/format/test);
+    # for plain targets it simply confirms the target itself failed.
+    result["passed_leg"] = "make"
+    result["failed_leg"] = "target"
 
   # On failure, the error field is what the LLM sees (line 862 in
   # _processing.py: f"Error: {tool_result.error}"). Tools like pytest,

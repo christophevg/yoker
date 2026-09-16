@@ -2117,13 +2117,21 @@ def _filter_dict_values(
 
   Non-string values (ints, bools, None) are left unchanged.
 
+  T6 (agent feedback): short structural fields — ``verdict``, ``outcome``,
+  ``passed_leg``, ``failed_leg`` — are exempt from filtering. They carry
+  the pass/fail verdict, which is exactly what an aggressive error-oriented
+  post_filter would otherwise strip (leaving the LLM unable to tell pass
+  from fail in a filtered make run).
+
   Returns (new_dict, changed). If no values were filtered, returns the
   original dict unchanged with changed=False.
   """
   changed = False
   new_data: dict[str, Any] = {}
   for key, value in data.items():
-    if isinstance(value, str) and value:
+    if key in _DICT_FILTER_EXEMPT_FIELDS:
+      new_data[key] = value
+    elif isinstance(value, str) and value:
       filtered, val_changed = _filter_lines(value, regex, pattern)
       if val_changed:
         new_data[key] = filtered
@@ -2133,6 +2141,14 @@ def _filter_dict_values(
     else:
       new_data[key] = value
   return new_data, changed
+
+
+# T6 (agent feedback): dict result fields exempt from post_filter. Short
+# structural fields that carry the pass/fail verdict survive aggressive
+# error-oriented filters (which would otherwise strip every string value).
+_DICT_FILTER_EXEMPT_FIELDS: frozenset[str] = frozenset(
+  {"verdict", "outcome", "passed_leg", "failed_leg"}
+)
 
 
 def _enforce_output_limit(result: ToolResult, agent: Any, spec: ToolSpec) -> ToolResult:
