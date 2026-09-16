@@ -128,6 +128,64 @@ class TestSpawnAllowlist:
         await session.spawn("researcher", requester=requester)
 
 
+class TestCreateAgentIdentity:
+  """R1/R4: Session assigns the runtime id + parent linkage to every agent."""
+
+  @staticmethod
+  def _def(name: str) -> AgentDefinition:
+    return AgentDefinition(simple_name=name, description=name.capitalize(), tools=("read",))
+
+  @pytest.mark.asyncio
+  async def test_primary_agent_has_id_but_no_parent(self) -> None:
+    """The primary agent gets its session id ('primary') but no parent —
+    identity attribution works for it too; only spawn-tree linkage is absent."""
+    config = Config()
+    async with Session(config=config) as session:
+      assert session.agent._agent_id == "primary"
+      assert session.agent._parent_agent_id is None
+
+  @pytest.mark.asyncio
+  async def test_spawned_child_gets_id_and_parent(self) -> None:
+    """A spawned child carries its session id and the requester's id."""
+    config = Config()
+    async with Session(config=config) as session:
+      session.agents.register(self._def("researcher"))
+      requester = session.agent  # real primary agent — registered in the map
+      with patch.object(session_module, "Agent") as mock_agent_cls:
+        mock_child = MagicMock()
+        mock_child.process = AsyncMock(return_value="ok")
+        mock_child.aclose = AsyncMock()
+        mock_child.tools = MagicMock()
+        mock_agent_cls.return_value = mock_child
+
+        requester_id = session._id_of(requester)
+        child, child_id = await session._spawn_internal("researcher", requester=requester)
+
+      assert child._agent_id == child_id == "researcher"
+      assert child._parent_agent_id == requester_id
+
+  @pytest.mark.asyncio
+  async def test_unregistered_requester_degrades_to_none_parent(self) -> None:
+    """Tolerant lookup: an unregistered requester yields parent None —
+    telemetry must never break agent creation."""
+    config = Config()
+    async with Session(config=config) as session:
+      session.agents.register(self._def("researcher"))
+      with patch.object(session_module, "Agent") as mock_agent_cls:
+        mock_child = MagicMock()
+        mock_child.process = AsyncMock(return_value="ok")
+        mock_child.aclose = AsyncMock()
+        mock_child.tools = MagicMock()
+        mock_agent_cls.return_value = mock_child
+
+        child, child_id = await session._spawn_internal(
+          "researcher", requester=_make_requester(allowlist=("researcher",))
+        )
+
+      assert child._agent_id == child_id
+      assert child._parent_agent_id is None
+
+
 class TestSpawnMaxAgents:
   """Tests for the session max_agents cap."""
 

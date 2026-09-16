@@ -44,6 +44,7 @@ from yoker.session.tools import (
   make_send_message_tool,
   make_spawn_agent_tool,
 )
+from yoker.usage.logger import KIND_RELEASE, KIND_SPAWN, log_session_usage
 
 logger = get_logger(__name__)
 
@@ -309,6 +310,18 @@ class Session:
         definition_name=agent.definition.simple_name or name,
       )
     )
+
+    # Telemetry: spawn record with parent linkage (R1/R4).
+    log_session_usage(
+      self.config.usage,
+      session_id=self.id,
+      kind=KIND_SPAWN,
+      agent=agent.definition.name,
+      agent_id=agent_id,
+      parent_agent_id=agent._parent_agent_id,
+      model=agent.model,
+      detail={"requester": requester.definition.name if requester is not None else None},
+    )
     return agent, agent_id
 
   def _create_agent(
@@ -402,6 +415,19 @@ class Session:
     # window) never trigger a timeout. No wrapping is needed.
     agent._approval_handler = self._approval_handler
 
+    # Session-assigned identity for per-agent telemetry attribution
+    # (usage log agent_id/parent_agent_id). The parent is the requesting
+    # agent when spawned by another agent; the primary agent has none.
+    # Tolerant reverse-lookup: an unregistered requester (never happens
+    # via the spawn tool) degrades to parent_agent_id=None instead of
+    # failing the spawn — telemetry must never break agent creation.
+    agent._agent_id = agent_id
+    agent._parent_agent_id = (
+      next((aid for aid, a in self._agents_map.items() if a is requester), None)
+      if requester is not None
+      else None
+    )
+
     # Back-reference so UI commands (e.g. /agents) can reach the session's
     # AgentRegistry through agent._session.
     agent._session = self
@@ -469,6 +495,16 @@ class Session:
         session_id=self.id,
         agent_id=agent_id,
       )
+    )
+    # Telemetry: release record with the agent's lifecycle totals (R1/R4).
+    log_session_usage(
+      self.config.usage,
+      session_id=self.id,
+      kind=KIND_RELEASE,
+      agent=agent.definition.name,
+      agent_id=agent_id,
+      parent_agent_id=agent._parent_agent_id,
+      model=agent.model,
     )
     self._agents_map = {aid: a for aid, a in self._agents_map.items() if a is not agent}
     await agent.aclose()

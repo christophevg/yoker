@@ -37,6 +37,7 @@ from yoker.skills import SkillRegistry, load_skills
 from yoker.tools import ToolRegistry
 from yoker.tools.guardrails import Guardrail
 from yoker.tools.guardrails.path import ReadPathGuardrail, WritePathGuardrail
+from yoker.usage.logger import log_error_usage
 
 if TYPE_CHECKING:
   from yoker.session import Session
@@ -48,6 +49,12 @@ class Agent:
   """Asynchronous agent that chats with model backends and uses tools."""
 
   _session: "Session | None" = None
+
+  # Session-assigned runtime identity (set by Session._create_agent for
+  # agents in a session; None for standalone agents). Feeds per-agent
+  # attribution in the telemetry log (usage/logger.py).
+  _agent_id: str | None = None
+  _parent_agent_id: str | None = None
 
   def __init__(
     self,
@@ -446,6 +453,14 @@ class Agent:
               ),
               self._event_handlers,
             )
+          )
+          # Telemetry: error record for the timeout (R1 — error/retry
+          # counts in the rollup). Best-effort, never raises.
+          log_error_usage(
+            self,
+            source="idle_watchdog",
+            message=f"LLM stream idle for {idle:.1f}s (timeout {timeout_seconds}s)",
+            detail={"idle_seconds": idle, "timeout_seconds": timeout_seconds},
           )
           return
     except asyncio.CancelledError:

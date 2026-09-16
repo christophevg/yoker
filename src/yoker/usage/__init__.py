@@ -5,6 +5,40 @@ atomic on POSIX: parallel sessions/processes never interleave lines.
 (Windows does not provide this guarantee.)
 """
 
-from .logger import UsageLogger, UsageRecord, log_call_usage
+from .logger import (
+  KIND_COMPACTION,
+  KIND_ERROR,
+  KIND_LLM_CALL,
+  KIND_RELEASE,
+  KIND_SPAWN,
+  KIND_TOOL_CALL,
+  KIND_TURN,
+  UsageLogger,
+  UsageRecord,
+  log_call_usage,
+  log_compaction_usage,
+  log_error_usage,
+  log_session_usage,
+  log_tool_call_usage,
+  log_turn_usage,
+  log_usage_record,
+)
 
-__all__ = ["UsageLogger", "UsageRecord", "log_call_usage"]
+__all__ = [
+  "KIND_COMPACTION",
+  "KIND_ERROR",
+  "KIND_LLM_CALL",
+  "KIND_RELEASE",
+  "KIND_SPAWN",
+  "KIND_TOOL_CALL",
+  "KIND_TURN",
+  "UsageLogger",
+  "UsageRecord",
+  "log_call_usage",
+  "log_compaction_usage",
+  "log_error_usage",
+  "log_session_usage",
+  "log_tool_call_usage",
+  "log_turn_usage",
+  "log_usage_record",
+]

@@ -52,7 +52,13 @@ from yoker.tools.schema import (
   ValidationResult,
   describe_expected_arguments,
 )
-from yoker.usage.logger import log_call_usage
+from yoker.usage.logger import (
+  log_call_usage,
+  log_compaction_usage,
+  log_error_usage,
+  log_tool_call_usage,
+  log_turn_usage,
+)
 
 logger = get_logger(__name__)
 
@@ -302,6 +308,9 @@ async def process_message(
   # calls).  Provider-supplied total_duration_ms only covers the last
   # chunk's latency; this measures the real elapsed time the user waited.
   turn_start = time.monotonic()
+  # Per-turn LLM call counter for the turn telemetry record — the tokens
+  # themselves live on the per-call llm_call records (no double-count).
+  llm_calls = 0
 
   # Retry-limit escalation state: consecutive failed tool calls this turn,
   # and whether the escalation note has been injected since the last reset.
@@ -336,6 +345,7 @@ async def process_message(
 
     # Log per-API-call token usage (atomic JSONL append).
     log_call_usage(agent, stats)
+    llm_calls += 1
 
     if not tool_calls:
       agent.context.end_turn(content, thinking=thinking or None)
@@ -344,6 +354,15 @@ async def process_message(
       await emit(
         _turn_end_event(content, tool_calls, stats, elapsed_ms, usage_data, agent=agent),
         agent._event_handlers,
+      )
+      # Telemetry: turn boundary record (R1) — wall-clock duration and
+      # counts; tokens are NOT repeated here (they live on llm_call
+      # records, so log sums never double-count).
+      log_turn_usage(
+        agent,
+        duration_ms=elapsed_ms,
+        tool_calls_count=len(tool_calls),
+        llm_calls=llm_calls,
       )
       logger.info("turn_completed", response_length=len(content), tool_calls_count=0)
       return content
@@ -568,22 +587,24 @@ async def _manage_context_overflow(
   # when the event was suppressed, the run report is honest history.
   # A hook-attended overflow writes no record: the hook did the work.
   if not hook_path:
-    agent.context.record_compaction(
-      {
-        "run_id": run_id,
-        "timestamp": datetime.now().isoformat(),
-        "trigger_estimate": estimated,
-        "max_tokens": max_tokens,
-        "target": target,
-        "floor_tokens": floor_tokens,
-        "target_clamped": target_clamped,
-        "stages": stages,
-        "dropped_count": dropped_total,
-        "remaining_estimate": remaining_estimate,
-        "sent_count": len(remaining),
-        "first_remaining": _first_remaining_summary(remaining),
-      }
-    )
+    run_report = {
+      "run_id": run_id,
+      "timestamp": datetime.now().isoformat(),
+      "trigger_estimate": estimated,
+      "max_tokens": max_tokens,
+      "target": target,
+      "floor_tokens": floor_tokens,
+      "target_clamped": target_clamped,
+      "stages": stages,
+      "dropped_count": dropped_total,
+      "remaining_estimate": remaining_estimate,
+      "sent_count": len(remaining),
+      "first_remaining": _first_remaining_summary(remaining),
+    }
+    agent.context.record_compaction(run_report)
+    # Telemetry: compaction record (R1/AC4) — the run report rides in
+    # detail; discarded-view tokens are derivable from the stages.
+    log_compaction_usage(agent, run_report)
 
   # Emit the audit-trail event once per overflow, including where the
   # retained history starts (first non-protected message). The reported
@@ -1497,6 +1518,15 @@ def _maybe_inject_escalation(agent: Any, escalation: _EscalationState) -> None:
     consecutive_failures=escalation.consecutive_failures,
     limit=limit,
   )
+  # Telemetry: error record for the retry-limit escalation (R1). The
+  # per-call failures are already on their tool_call records; this marks
+  # the escalation event itself. Best-effort, never raises.
+  log_error_usage(
+    agent,
+    source="tool_failure_escalation",
+    message=f"{escalation.consecutive_failures} consecutive tool failures (limit {limit})",
+    detail={"consecutive_failures": escalation.consecutive_failures, "limit": limit},
+  )
 
 
 def _deduplicate_tool_calls(tool_calls: list[Any]) -> list[Any]:
@@ -1564,6 +1594,7 @@ async def _execute_single_tool_call(
   # to the LLM so it can self-correct instead of getting a confusing
   # "missing required argument" message.
   parse_error = getattr(call, "parse_error", None)
+  tool_started = time.monotonic()
   if parse_error:
     hint = _expected_arguments_hint(agent, tool_name)
     result = f"Error: {parse_error}.{hint}"
@@ -1571,8 +1602,22 @@ async def _execute_single_tool_call(
     tool_result = None
   else:
     result, success, tool_result = await _run_tool(agent, tool_name, tool_args)
+  tool_duration_ms = int((time.monotonic() - tool_started) * 1000)
 
   logger.debug("tool_result", tool=tool_name, success=success)
+
+  # Telemetry: one tool_call record per dispatched call (R1) — success
+  # AND failure (parse errors, guardrail blocks, unknown tools all count
+  # as success=False errors in the rollup). Best-effort.
+  log_tool_call_usage(
+    agent,
+    tool_name,
+    success=success,
+    duration_ms=tool_duration_ms,
+    bytes_in=len(json.dumps(tool_args, default=str).encode()),
+    bytes_out=len(str(result).encode()),
+  )
+
   await emit(
     ToolResultEvent(
       type=EventType.TOOL_RESULT,
