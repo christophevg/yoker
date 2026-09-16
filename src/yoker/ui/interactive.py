@@ -816,7 +816,7 @@ class InteractiveUIHandler(UIHandler):
     self._start_output_line(f"{tool_name}(", end="", style=TOOL_STYLE, agent=agent)
     if "\n" in details:
       for line in details.splitlines():
-        self.console.print(f"    {line}", style=TOOL_STYLE)
+        self.console.print(f"\n    {line}", style=TOOL_STYLE)
       self.console.print("  )", style=TOOL_STYLE)
     else:
       self.console.print(f"{details})")

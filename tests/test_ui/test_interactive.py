@@ -668,6 +668,25 @@ class TestInteractiveUIHandlerToolOutput:
     assert "chars" in text
     assert long_value not in text
 
+  def test_output_tool_call_multiline_args_on_separate_lines(self):
+    """Multi-line arg blocks start each detail line on a new line."""
+    output = StringIO()
+    handler = InteractiveUIHandler(show_tool_calls=True, show_time=False)
+    handler.console = make_console(output)
+
+    handler.output_tool_call(
+      "read",
+      {"path": "/tmp/file.txt", "operation": "read", "offset": 1, "limit": 10},
+    )
+
+    text = output.getvalue()
+    # First detail line follows the call line on a fresh line, not glued.
+    assert "read(\n" in text
+    assert "\n    path:" in text
+    assert "\n    offset: 1," in text
+    # The block closes on its own line.
+    assert "\n  )" in text
+
   def test_output_tool_call_shows_preview_for_write(self):
     """output_tool_call should show a preview for write/update content args."""
     output = StringIO()
