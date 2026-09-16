@@ -129,8 +129,9 @@ class TestSessionRegistryPopulationEdge:
     # Should not raise; the warning is logged.
     session = Session(config=config)
     assert session.agents is not None
-    # Registry is empty because the directory didn't exist.
-    assert list(session.agents.names) == []
+    # The non-existent directory contributed no agents; the registry holds
+    # only the built-in primary definition.
+    assert list(session.agents.names) == ["yoker:primary"]
 
   def test_load_agents_warns_on_malformed_definition(self, tmp_path) -> None:
     """A malformed agent definition file is warned about, not raised."""
@@ -188,18 +189,23 @@ class TestRegisterPrimaryAgent:
     # send_message is always injected when an agent is part of a session.
     assert "yoker:send_message" in primary.tools.names
 
-  def test_create_agent_disambiguates_primary_names(self) -> None:
-    """A second _create_agent call with the same definition name gets a -2 suffix."""
+  def test_create_agent_disambiguates_definitionless_names(self) -> None:
+    """A second _create_agent call with no definition name gets a -2 suffix.
+
+    The primary path always has a definition now (the bundled primary.md);
+    this test exercises the degenerate definition-less fallback whose
+    id-base is the neutral "agent".
+    """
     config = Config()
     session = Session(config=config)
-    # __init__ already registered the primary as "primary"; a second
-    # _create_agent call with the same default definition gets disambiguated.
+    # __init__ registered the primary (id "primary"); definition-less
+    # _create_agent calls fall back to the neutral "agent" id base.
     first, first_id = session._create_agent(requester=None, config=config)
-    assert first_id == "primary-2"
+    assert first_id == "agent"
     second, second_id = session._create_agent(requester=None, config=config)
-    assert second_id == "primary-3"
-    assert session.get_agent("primary-2") is first
-    assert session.get_agent("primary-3") is second
+    assert second_id == "agent-2"
+    assert session.get_agent("agent") is first
+    assert session.get_agent("agent-2") is second
 
 
 SESSION_TOOLS = ("yoker:agent", "yoker:send_message", "yoker:release_agent")

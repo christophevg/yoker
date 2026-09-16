@@ -377,7 +377,7 @@ class Session:
     backend = self.get_backend(derived_config)
 
     agent_id = self._generate_agent_name(
-      (agent_definition.simple_name if agent_definition is not None else None) or name or "primary"
+      (agent_definition.simple_name if agent_definition is not None else None) or name or "agent"
     )
     # per-agent context manager — Session owns the lifecycle, factory hides construction
     cm = create_context_manager(self.config, agent_id)
@@ -423,7 +423,7 @@ class Session:
     if agent_path is not None:
       return load_agent_definition(agent_path)
 
-    # option 3: configured agent or the default definition
+    # option 3: configured agent, the bundled primary, or the default definition
     reference = self.config.agent.name or self.config.agents.definition or None
     if reference:
       # option 3a: a file path
@@ -440,7 +440,12 @@ class Session:
           f"If it comes from a plugin, ensure plugins are enabled ([plugins] enabled = true) and the plugin package is listed in [plugins] packages."
         ) from exc
 
-    return definition
+    # option 3c: no reference — the bundled primary definition from the
+    # registry (fallback of last resort, same source the registry registered).
+    try:
+      return self.agents.resolve("primary")
+    except ValueError:
+      return None
 
   async def release(self, agent: Agent) -> None:
     """Release a spawned agent: emit AGENT_FINISHED, cancel its consumer task, and remove from the active map.

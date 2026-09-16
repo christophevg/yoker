@@ -9,7 +9,7 @@ from collections import UserDict
 
 from structlog import get_logger
 
-from yoker.agents import load_agent_definitions
+from yoker.agents import load_agent_definitions, load_builtin_primary_definition
 from yoker.agents.schema import AgentDefinition
 from yoker.config import Config
 from yoker.plugins.loader import load_plugins
@@ -79,6 +79,26 @@ class AgentRegistry(UserDict[str, AgentDefinition]):
   def load(self, config: Config, extra_plugins: tuple[str, ...] = ()) -> None:
     self.register_config_agents(config)
     self.register_plugin_agents(config, extra_plugins)
+    self.register_builtin_primary(config)
+
+  def register_builtin_primary(self, config: "Config") -> None:
+    """Register the bundled ``yoker:primary`` agent definition.
+
+    The built-in primary is registered LAST (after configured directories and
+    plugins) and only when no other definition named ``primary`` was
+    registered — user/config/plugin definitions win, the built-in is the
+    fallback. This makes the primary agent a real, overridable registry
+    entry instead of a hardcoded synthetic definition.
+    """
+    if self.get("yoker:primary") is not None or "primary" in {
+      d.simple_name for d in self.data.values()
+    }:
+      logger.debug("builtin_primary_skipped_user_definition_exists")
+      return
+    try:
+      self.register(load_builtin_primary_definition(), namespace=None)
+    except Exception as e:
+      logger.warning("builtin_primary_registration_failed", error=str(e))
 
   @property
   def agents(self) -> list[AgentDefinition]:

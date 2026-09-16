@@ -68,7 +68,10 @@ src/yoker/
 ├── agents/                  # Agent definition parsing (schema, loader, registry)
 │   ├── schema.py            # AgentDefinition frozen dataclass (from Markdown+frontmatter)
 │   ├── loader.py            # Parse Markdown+YAML frontmatter; load from dirs/packages
+│   │                        #   + load_builtin_primary_definition() for primary.md
 │   ├── registry.py          # AgentRegistry (UserDict keyed by namespaced name)
+│   ├── definitions/
+│   │   └── primary.md       # Bundled primary agent definition (yoker:primary)
 │   └── validator.py         # validate_agent_definition against config constraints
 │
 ├── backends/                # Provider-neutral backend layer

@@ -216,3 +216,91 @@ class TestAgentDefinitionLoading:
     # agent_definition should be used, not agent_path
     assert agent.definition is not None
     assert agent.definition.name == "test"
+
+
+class TestBuiltinPrimaryDefinition:
+  """The bundled primary agent definition (yoker/agents/definitions/primary.md).
+
+  The primary agent is a real registry entry — loaded from a Markdown
+  definition file inside the package — instead of a synthetic
+  ``AgentDefinition()`` with hardcoded prompt. User/config/plugin
+  definitions named ``primary`` win over the built-in.
+  """
+
+  def test_load_builtin_primary_definition_loads_file(self):
+    """The bundled file loads, parses, and carries the expected identity."""
+    from yoker.agents import load_builtin_primary_definition
+
+    definition = load_builtin_primary_definition()
+    assert definition.name == "yoker:primary"
+    assert definition.simple_name == "primary"
+    assert definition.namespace == "yoker"
+    assert definition.system_prompt.strip() != ""
+    assert definition.source_path.endswith("primary.md")
+
+  def test_session_registry_contains_builtin_primary(self):
+    """A default Session's registry contains yoker:primary."""
+    from yoker.config import Config
+
+    session = Session(config=Config())
+    assert "yoker:primary" in session.agents.names
+
+  def test_session_primary_uses_bundled_definition(self):
+    """The primary agent's definition resolves to the bundled yoker:primary."""
+    from yoker.config import Config
+
+    session = Session(config=Config())
+    assert session.agent.definition.name == "yoker:primary"
+    assert session.agent.definition.simple_name == "primary"
+    assert session._id_of(session.agent) == "primary"
+
+  def test_session_primary_id_survives_resume_filenaming(self):
+    """Context filename still resolves with the primary's agent id.
+
+    The runtime id stays "primary" (simple_name of the definition), so
+    existing session files (``{session_id}-primary.jsonl``) keep matching
+    without migration.
+    """
+    from yoker.config import Config
+    from yoker.context.factory import _session_file_path
+
+    config = Config()
+    session = Session(config=config)
+    file_path = _session_file_path(config, "sess-abc", session._id_of(session.agent))
+    assert file_path.name == "sess-abc-primary.jsonl"
+
+  def test_user_primary_wins_over_builtin(self, tmp_path):
+    """A user-configured agent named 'primary' wins; no collision crash."""
+    from yoker.config import AgentsConfig, Config
+
+    agents_dir = tmp_path / "agents"
+    agents_dir.mkdir()
+    (agents_dir / "primary.md").write_text(
+      "---\nname: primary\ndescription: My custom primary\n---\nCustom prompt\n",
+      encoding="utf-8",
+    )
+    config = Config(agents=AgentsConfig(directories=(str(agents_dir),)))
+    session = Session(config=config)
+    # The user definition replaced the built-in slot; the primary agent
+    # uses it, not the bundled one.
+    assert session.agent.definition.system_prompt == "Custom prompt"
+    assert session.agent.definition.source_path.endswith("primary.md")
+    # Exactly one 'primary' definition is registered.
+    primary_defs = [d for d in session.agents.agents if d.simple_name == "primary"]
+    assert len(primary_defs) == 1
+
+  def test_standalone_agent_uses_bundled_prompt(self):
+    """A standalone Agent without config falls back to the bundled prompt."""
+    from yoker.config import Config
+
+    agent = Agent(config=Config())
+    assert agent.definition.name == "yoker:primary"
+    assert agent.definition.system_prompt.strip() != ""
+
+  def test_builder_default_prompt_matches_bundled_file(self):
+    """yoker.agent() default prompt equals the bundled primary's prompt."""
+    import yoker
+    from yoker.agents import load_builtin_primary_definition
+
+    built = yoker.agent(config=yoker.Config())
+    assert built.definition.system_prompt == load_builtin_primary_definition().system_prompt

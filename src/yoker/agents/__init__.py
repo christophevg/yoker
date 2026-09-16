@@ -6,6 +6,7 @@ Provides schema, loader, and validator for agent definitions.
 from yoker.agents.loader import (
   load_agent_definition,
   load_agent_definitions,
+  load_builtin_primary_definition,
   parse_frontmatter,
 )
 from yoker.agents.registry import AgentRegistry
@@ -26,6 +27,7 @@ __all__ = [
   # Loader
   "load_agent_definition",
   "load_agent_definitions",
+  "load_builtin_primary_definition",
   "parse_frontmatter",
   # Validator
   "validate_agent_definition",

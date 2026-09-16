@@ -18,6 +18,7 @@ from structlog import get_logger
 from yoker.agents.schema import ALL_AGENTS, ALL_TOOLS, AgentDefinition
 from yoker.exceptions import ConfigurationError, FileNotFoundError
 from yoker.resources import (
+  find_package_subdirectory,
   is_dir,
   iter_files,
   parse_yaml_frontmatter,
@@ -345,9 +346,44 @@ def load_agent_definitions(
       ) from None
 
 
+def load_builtin_primary_definition() -> AgentDefinition:
+  """Load the bundled primary agent definition from package resources.
+
+  The primary agent — the default agent used when no explicit definition,
+  agent path, or config reference is provided — is defined like any other
+  agent in ``yoker/agents/definitions/primary.md`` so it can be improved
+  without code changes. This loader resolves that file via
+  :func:`yoker.resources.find_package_subdirectory` and parses it with the
+  standard collection loader.
+
+  Returns:
+    The :class:`AgentDefinition` parsed from the bundled ``primary.md``
+    (namespaced ``yoker:primary``).
+
+  Raises:
+    ConfigurationError: When the bundled file is missing or invalid
+      (packaging error, not a user-facing condition).
+  """
+  directory = find_package_subdirectory("yoker", "agents/definitions")
+  if directory is None:
+    raise ConfigurationError(
+      setting="yoker/agents/definitions",
+      message="Bundled primary agent definition directory not found in package resources",
+    )
+  definitions = list(load_agent_definitions(directory, namespace="yoker"))
+  matches = [d for d in definitions if d.simple_name == "primary"]
+  if not matches:
+    raise ConfigurationError(
+      setting="yoker/agents/definitions",
+      message="Bundled primary agent definition ('primary.md') not found in package resources",
+    )
+  return matches[0]
+
+
 __all__ = [
   "parse_frontmatter",
   "parse_agent_definition",
   "load_agent_definition",
   "load_agent_definitions",
+  "load_builtin_primary_definition",
 ]

@@ -19,6 +19,7 @@ from yoker.agents import (
   ALL_TOOLS,
   AgentDefinition,
   load_agent_definition,
+  load_builtin_primary_definition,
   validate_agent_definition,
 )
 from yoker.backends import ModelBackend, create_backend
@@ -742,8 +743,14 @@ class Agent:
     elif self.config.agents.definition:
       reference = self.config.agents.definition
     else:
-      # not provided, not in config
-      return AgentDefinition()
+      # not provided, not in config — the bundled primary definition
+      # (yoker/agents/definitions/primary.md). Falls back to the schema
+      # default only when the bundled file cannot be loaded (packaging
+      # problem), keeping AgentDefinition() constructible in tests.
+      try:
+        return load_builtin_primary_definition()
+      except Exception:
+        return AgentDefinition()
 
     # An existing filesystem path is loaded directly. A non-path reference is
     # a name that must be resolved by the Session layer before constructing

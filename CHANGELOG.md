@@ -56,6 +56,12 @@
   intentional duplication, and inserts terminate cleanly at EOF.
 - **Weekday in the system prompt date**: e.g. "Thursday, 2026-09-10",
   so agents know the day of week.
+- **Primary agent as a real definition file**: the default primary
+  agent is now loaded from `yoker/agents/definitions/primary.md` inside
+  the package (registered as `yoker:primary`) instead of a synthetic
+  `AgentDefinition()` with a hardcoded prompt — the primary/default
+  agent can now be fine-tuned like any other agent definition, and a
+  user/config/plugin definition named `primary` overrides the built-in.
 
 ### Changed
 - **`read` offset error states 1-indexed numbering**: the out-of-range

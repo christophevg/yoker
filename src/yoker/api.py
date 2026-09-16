@@ -26,7 +26,12 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Literal, TypeVar
 
-from yoker.agents import ALL_TOOLS, AgentDefinition, load_agent_definition
+from yoker.agents import (
+  ALL_TOOLS,
+  AgentDefinition,
+  load_agent_definition,
+  load_builtin_primary_definition,
+)
 from yoker.backends import ModelBackend
 from yoker.config import (
   KNOWN_PROVIDERS,
@@ -162,18 +167,18 @@ def _build_config_and_definition(
     resolved_definition = load_agent_definition(agent_path)
   if resolved_definition is None and agent_path is None:
     # Build an in-memory AgentDefinition only when the caller overrode
-    # something; otherwise let the Agent constructor build the default
-    # AgentDefinition() (tools=ALL_TOOLS, system_prompt="You are a helpful
-    # assistant."). tools is passed through UNCHANGED — no None→ALL_TOOLS
-    # bridge — so the api.py contract matches the AgentDefinition contract:
-    # tools=ALL_TOOLS (default or explicit) → all tools; tools=None/[] → no
-    # tools; tools=["read", ...] → filter.
+    # something; otherwise let the Agent constructor build the bundled
+    # primary definition (yoker/agents/definitions/primary.md). tools is
+    # passed through UNCHANGED — no None→ALL_TOOLS bridge — so the api.py
+    # contract matches the AgentDefinition contract: tools=ALL_TOOLS
+    # (default or explicit) → all tools; tools=None/[] → no tools;
+    # tools=["read", ...] → filter.
     if system_prompt is not None or tools is not ALL_TOOLS:
       resolved_definition = AgentDefinition(
         simple_name="custom" if tools is not ALL_TOOLS else None,
         system_prompt=system_prompt
         if system_prompt is not None
-        else "You are a helpful assistant.",
+        else load_builtin_primary_definition().system_prompt,
         tools=tools,
       )
 
