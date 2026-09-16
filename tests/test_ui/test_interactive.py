@@ -992,7 +992,7 @@ class TestInteractiveUIHandlerContextOverflow:
       target_tokens=40000,
       stages=[
         {"name": "prune_tool_results", "messages": 0, "tokens": 12_300},
-        {"name": "cutoff", "messages": 0, "tokens": 38_500},
+        {"name": "cutoff", "messages": 2, "tokens": 38_500},
       ],
       sent_count=28,
       remaining_estimated_tokens=38_400,
@@ -1008,6 +1008,10 @@ class TestInteractiveUIHandlerContextOverflow:
     assert "−50.8K" in text
     assert "≈38.4K remain" in text
     assert "41 stored / 28 sent" in text
+    # Headline reports the ALL-stage total ("Trimmed"), not the
+    # cutoff-only dropped_count, and marks remain as stored-based.
+    assert "Trimmed 2 message(s)" in text
+    assert "messages remain (stored)" in text
     # The Trimmed-to line now shows the ACHIEVED value, not the target.
     assert "Trimmed to" in text
     assert "38.4K" in text
@@ -1016,6 +1020,33 @@ class TestInteractiveUIHandlerContextOverflow:
     # still appear inside "40,000-cap" formatting — assert the old
     # formatting form is gone.)
     assert "≈40,000 tokens." not in text
+
+  def test_compaction_panel_headline_sums_all_stages(self):
+    """The headline shows the all-stage message total — not the
+    cutoff-only dropped_count that once read "Dropped 0" above
+    "total: −122 msg" (regression for the self-contradicting panel)."""
+    output = StringIO()
+    handler = InteractiveUIHandler()
+    handler.console = make_console(output)
+
+    handler.output_context_overflow(
+      dropped_count=0,
+      estimated_tokens=125_598,
+      max_tokens=125_000,
+      message_count=257,
+      stages=[
+        {"name": "prune_tool_results", "messages": 33, "tokens": 41_900},
+        {"name": "prune_thinking", "messages": 87, "tokens": 54_600},
+        {"name": "force_stub_tool_results", "messages": 2, "tokens": 11_200},
+        {"name": "cutoff", "messages": 0, "tokens": 0},
+      ],
+      sent_count=257,
+      remaining_estimated_tokens=65_400,
+    )
+
+    text = output.getvalue()
+    assert "Trimmed 122 message(s)" in text
+    assert "total: −122 msg" in text
 
   def test_compaction_panel_old_event_byte_identical(self):
     """Old-format events (no stages/sent/remaining) render exactly as

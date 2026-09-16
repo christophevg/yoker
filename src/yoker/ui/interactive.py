@@ -996,7 +996,8 @@ class InteractiveUIHandler(UIHandler):
 
     Args:
       dropped_count: Number of messages newly flagged by this compaction
-        run (stored-based).
+        run (stored-based). Cutoff-stage count only; with stage data the
+        headline shows the all-stage total instead.
       estimated_tokens: Estimated token count that triggered the overflow.
       max_tokens: The configured soft cap (``context.max_tokens``).
       message_count: Number of STORED messages after the pipeline.
@@ -1020,24 +1021,39 @@ class InteractiveUIHandler(UIHandler):
     """
     self._stop_processing_status()
     self._stop_tool_execution_status()
-    body = (
-      f"Dropped [bold]{dropped_count}[/bold] message(s) — estimated "
-      f"{estimated_tokens:,} tokens exceeded the {max_tokens:,} cap. "
-      f"{message_count} messages remain."
-    )
+    # Stage totals up front: ``dropped_count`` covers ONLY the cutoff
+    # stage, so a headline built from it understates the pipeline's effect
+    # when prune/stub stages also fired ("Dropped 0" above "total: −122
+    # msg"). With stage data present the headline reports the ALL-stage
+    # total, with a verb that does not imply deletion — prune/stub stages
+    # flag and stub, they do not remove. Old events (no stages) keep the
+    # legacy "Dropped" rendering.
+    total_msgs = 0
+    total_tokens = 0
+    for stage in stages or []:
+      total_msgs += stage.get("messages", 0)
+      total_tokens += stage.get("tokens", 0)
+    if stages:
+      body = (
+        f"Trimmed [bold]{total_msgs}[/bold] message(s) — estimated "
+        f"{estimated_tokens:,} tokens exceeded the {max_tokens:,} cap. "
+        f"{message_count} messages remain (stored)."
+      )
+    else:
+      body = (
+        f"Dropped [bold]{dropped_count}[/bold] message(s) — estimated "
+        f"{estimated_tokens:,} tokens exceeded the {max_tokens:,} cap. "
+        f"{message_count} messages remain."
+      )
     if first_remaining:
       body += f"\n[bold]History starts at:[/bold] {first_remaining}"
     # Per-stage impact, one line per non-zero stage, then a total line
     # that separates the pruned-token total from the achieved result.
     if stages:
-      total_msgs = 0
-      total_tokens = 0
       for stage in stages:
         name = stage.get("name", "?")
         stage_msgs = stage.get("messages", 0)
         stage_tokens = stage.get("tokens", 0)
-        total_msgs += stage_msgs
-        total_tokens += stage_tokens
         body += f"\n{name}: −{stage_msgs} msg, −{stage_tokens / 1000:.1f}K tokens"
       summary = f"total: −{total_msgs} msg, −{total_tokens / 1000:.1f}K"
       if remaining_estimated_tokens is not None:

@@ -423,13 +423,15 @@ class TestBatchUIHandlerContextOverflow:
       target_tokens=40000,
       stages=[
         {"name": "prune_tool_results", "messages": 0, "tokens": 12_300},
-        {"name": "cutoff", "messages": 0, "tokens": 38_500},
+        {"name": "cutoff", "messages": 2, "tokens": 38_500},
       ],
       sent_count=28,
       remaining_estimated_tokens=38_400,
     )
     text = stderr.getvalue()
     assert "# Context compacted" in text
+    # Headline reports the ALL-stage total, not the cutoff-only count.
+    assert "# Context compacted: trimmed 2 message(s)" in text
     assert "stages prune_tool_results, cutoff freed ≈50.8K" in text
     assert "≈38.4K remain (41 stored / 28 sent)" in text
     # Old target-based fragment suppressed when the achieved value exists.
@@ -479,6 +481,31 @@ class TestBatchUIHandlerContextOverflow:
     assert "remain (" not in text
     # Remaining None → today's target-based rendering is kept.
     assert "trimmed to ≈40,000" in text
+
+  def test_compaction_notice_headline_sums_all_stages(self):
+    """The headline shows the all-stage total — not the cutoff-only
+    dropped_count that once read "dropped 0" while the stage list freed
+    messages via prune/stub stages (self-contradicting notice)."""
+    stderr = StringIO()
+    handler = BatchUIHandler(stderr=stderr)
+
+    handler.output_context_overflow(
+      dropped_count=0,
+      estimated_tokens=125_598,
+      max_tokens=125_000,
+      message_count=257,
+      stages=[
+        {"name": "prune_tool_results", "messages": 33, "tokens": 41_900},
+        {"name": "prune_thinking", "messages": 87, "tokens": 54_600},
+        {"name": "force_stub_tool_results", "messages": 2, "tokens": 11_200},
+        {"name": "cutoff", "messages": 0, "tokens": 0},
+      ],
+      sent_count=257,
+      remaining_estimated_tokens=65_400,
+    )
+    text = stderr.getvalue()
+    assert "# Context compacted: trimmed 122 message(s)" in text
+    assert "0 dropped" not in text
 
   def test_compaction_notice_independent_of_show_flags(self):
     """The compaction notice is always printed, regardless of show_* flags."""

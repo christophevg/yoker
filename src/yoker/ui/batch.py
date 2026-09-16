@@ -370,7 +370,8 @@ class BatchUIHandler(UIHandler):
 
     Args:
       dropped_count: Number of messages newly flagged by this compaction
-        run (stored-based).
+        run (stored-based). Cutoff-stage count only; with stage data the
+        headline shows the all-stage total instead.
       estimated_tokens: Estimated token count that triggered the overflow.
       max_tokens: The configured soft cap (``context.max_tokens``).
       message_count: Number of STORED messages after the pipeline.
@@ -391,6 +392,11 @@ class BatchUIHandler(UIHandler):
         the floor (protected content alone exceeds the ratio target).
     """
     del run_id  # batch stays minimal; the run id lives in flags/stages
+    # ``dropped_count`` covers ONLY the cutoff stage; with stage data the
+    # headline reports the ALL-stage total ("Trimmed") — prune/stub stages
+    # flag/stub rather than remove. Old events keep the legacy rendering.
+    headline_count = sum(stage.get("messages", 0) for stage in stages) if stages else dropped_count
+    headline_verb = "trimmed" if stages else "dropped"
     suffix = f"; history starts at: {first_remaining}" if first_remaining else ""
     if stages:
       total_tokens = sum(stage.get("tokens", 0) for stage in stages)
@@ -413,7 +419,7 @@ class BatchUIHandler(UIHandler):
     ):
       suffix += f"; trimmed to ≈{target_tokens:,}"
     print(
-      f"# Context compacted: dropped {dropped_count} message(s) "
+      f"# Context compacted: {headline_verb} {headline_count} message(s) "
       f"({estimated_tokens:,} > {max_tokens:,} tokens); "
       f"{message_count} messages remain{suffix}",
       file=self._stderr,

@@ -76,6 +76,15 @@
   conclude they had no web access and refuse research work.
 
 ### Fixed
+- **Compaction panel contradicted itself on dropped messages**: the
+  headline's "Dropped N message(s)" counted ONLY the `cutoff` stage
+  (``dropped_count``'s stored-based semantics), while the per-stage
+  `total:` line summed all stages — e.g. "Dropped 0 message(s)" directly
+  above "total: −122 msg". With stage data present, both handlers now
+  headline the all-stage total with a verb that doesn't imply deletion
+  ("Trimmed N message(s)", since prune/stub stages flag/stub rather than
+  remove) and mark the remain figure as stored-based; legacy events
+  (no stages) keep the old "Dropped" rendering.
 - **Guardrail denylist depth bypass**: the default `blocked_write_paths`
   and `blocked_paths` entries used bare patterns (`Makefile`, `.git`,
   `.env`, ...) which only match at the top level of an allowed root — an
