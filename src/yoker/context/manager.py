@@ -89,6 +89,10 @@ class BaseContextManager:
     message: dict[str, Any] = {
       "role": role,
       "content": content,
+      # Framework-internal append timestamp. Never submitted to the
+      # backend (stripped by the projection) — persistence uses it as
+      # the record's true append time across bulk rewrites.
+      "_appended_at": datetime.now().isoformat(),
     }
     if metadata:
       message["metadata"] = metadata
@@ -115,6 +119,8 @@ class BaseContextManager:
       "tool_id": tool_id,
       "content": result,
       "success": success,
+      # Framework-internal append timestamp (see add_message).
+      "_appended_at": datetime.now().isoformat(),
     }
     if images:
       message["images"] = images
@@ -142,6 +148,8 @@ class BaseContextManager:
       "role": "assistant",
       "tool_calls": tool_calls,
       "content": content,
+      # Framework-internal append timestamp (see add_message).
+      "_appended_at": datetime.now().isoformat(),
     }
     if thinking:
       assistant_msg["thinking"] = thinking
@@ -186,7 +194,10 @@ class BaseContextManager:
          set (backends without provider-side context management) — stored
          thinking itself is retained, so persistence keeps the history;
       4. the framework-internal ``pruned`` flag never leaks into the
-         backend payload.
+         backend payload;
+      5. the framework-internal ``_appended_at`` append timestamp never
+         leaks into the backend payload either (persistence metadata —
+         see :func:`_strip_pruned_metadata`, which strips both keys).
 
     The ``images`` send-once contract (:func:`_strip_stale_images`) is
     applied by the callers over their own item list.
@@ -444,8 +455,17 @@ class BaseContextManager:
     See ``ContextManager.replace_messages`` in the Protocol for the full
     contract. Used by the overflow hook (validated replacement list) and
     the thinking-block stripping fallback.
+
+    Incoming items without the internal ``_appended_at`` stamp (hook
+    replacements derive from the projected view, which strips it) are
+    stamped ONCE here — replacement time IS their append time. Without
+    this, the persist-side fallback would re-stamp those records with a
+    fresh time on every later bulk rewrite (timestamp drift).
     """
-    self._messages = list(messages)
+    now = datetime.now().isoformat()
+    self._messages = [dict(item) for item in messages]
+    for item in self._messages:
+      item.setdefault("_appended_at", now)
 
   def _protected_indices(
     self,
@@ -707,11 +727,14 @@ def _strip_pruned_metadata(messages: list[dict[str, Any]]) -> list[dict[str, Any
 
   The flag drives the projection but must not leak into the backend
   payload. View dicts are already fresh copies, so the key is removed in
-  place on the view only.
+  place on the view only. The internal ``_appended_at`` append timestamp
+  is stripped in the same pass — persistence metadata, never submitted.
   """
   for index, message in enumerate(messages):
-    if "pruned" in message:
-      messages[index] = {key: value for key, value in message.items() if key != "pruned"}
+    if "pruned" in message or "_appended_at" in message:
+      messages[index] = {
+        key: value for key, value in message.items() if key not in ("pruned", "_appended_at")
+      }
   return messages
 
 

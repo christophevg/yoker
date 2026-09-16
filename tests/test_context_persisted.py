@@ -596,3 +596,168 @@ class TestPersistedBugFixes:
     assert context[2]["content"] == "contents of foo.py"
     assert context[3]["role"] == "assistant"
     assert context[3]["content"] == "Done reading foo.py."
+
+
+class TestPersistedAppendTimestamps:
+  """Tests for true per-record append timestamps across bulk rewrites.
+
+  The bulk rewrite regenerates every JSONL record on each mutation; the
+  framework-internal ``_appended_at`` stamp rides on the stored item so
+  each record keeps its ORIGINAL append time instead of all lines
+  converging on the last-write time (the broken-timestamps bug).
+  """
+
+  @staticmethod
+  def _record_lines(path: Path) -> list[dict]:
+    with open(path) as f:
+      return [json.loads(line.strip()) for line in f if line.strip()]
+
+  def test_distinct_append_timestamps_after_multiple_mutations(self, tmp_path: Path) -> None:
+    """AC1: lines written by different mutations carry distinct timestamps."""
+    session_id = "ts-distinct"
+    cm = Persisted(SimpleContextManager(), storage_path=tmp_path, session_id=session_id)
+    cm.add_message("user", "first")
+    cm.add_message("assistant", "second")
+    cm.add_message("user", "third")
+    cm.save()
+
+    records = self._record_lines(tmp_path / f"{session_id}.jsonl")
+    message_records = [r for r in records if r["type"] == "message"]
+    assert len(message_records) == 3
+    stamps = [r["timestamp"] for r in message_records]
+    # Monotonically non-decreasing and not all identical (the bug made
+    # every line carry the same last-write time).
+    assert stamps == sorted(stamps)
+    assert len(set(stamps)) == 3
+
+  def test_timestamps_survive_subsequent_rewrites(self, tmp_path: Path) -> None:
+    """Old lines keep their original times when later mutations rewrite the file."""
+    session_id = "ts-stable"
+    cm = Persisted(SimpleContextManager(), storage_path=tmp_path, session_id=session_id)
+    cm.add_message("user", "early message")
+    cm.save()
+
+    path = tmp_path / f"{session_id}.jsonl"
+    early_stamps = {
+      r["data"]["content"]: r["timestamp"]
+      for r in self._record_lines(path)
+      if r["type"] == "message"
+    }
+
+    # A later mutation rewrites the whole file — the early line must not
+    # be re-stamped with the rewrite time.
+    cm.add_message("user", "late message")
+    cm.save()
+
+    late_stamps = {
+      r["data"]["content"]: r["timestamp"]
+      for r in self._record_lines(path)
+      if r["type"] == "message"
+    }
+    assert late_stamps["early message"] == early_stamps["early message"]
+    assert late_stamps["late message"] > late_stamps["early message"]
+
+  def test_tool_and_tool_call_records_carry_original_times(self, tmp_path: Path) -> None:
+    """tool_call_message / tool_result records use their own append times."""
+    session_id = "ts-tool-records"
+    cm = Persisted(SimpleContextManager(), storage_path=tmp_path, session_id=session_id)
+    cm.add_tool_calls([{"id": "call_1", "function": {"name": "read", "arguments": {}}}])
+    cm.add_tool_result("read", "call_1", "result body", success=True)
+    cm.save()
+
+    records = self._record_lines(tmp_path / f"{session_id}.jsonl")
+    by_type = {
+      r["type"]: r["timestamp"]
+      for r in records
+      if r["type"] in ("tool_call_message", "tool_result")
+    }
+    assert len(by_type) == 2
+    assert by_type["tool_result"] >= by_type["tool_call_message"]
+
+  def test_timestamps_survive_save_load_roundtrip(self, tmp_path: Path) -> None:
+    """After load(), rewritten records keep their original append times."""
+    session_id = "ts-roundtrip"
+    cm1 = Persisted(SimpleContextManager(), storage_path=tmp_path, session_id=session_id)
+    cm1.add_message("user", "before resume")
+    cm1.save()
+    cm1.close()
+
+    path = tmp_path / f"{session_id}.jsonl"
+    before = {
+      r["data"]["content"]: r["timestamp"]
+      for r in self._record_lines(path)
+      if r["type"] == "message"
+    }
+
+    cm2 = Persisted(SimpleContextManager(), storage_path=tmp_path, session_id=session_id)
+    assert cm2.load() is True
+    cm2.add_message("user", "after resume")
+    cm2.save()
+
+    after = {
+      r["data"]["content"]: r["timestamp"]
+      for r in self._record_lines(path)
+      if r["type"] == "message"
+    }
+    assert after["before resume"] == before["before resume"]
+    assert after["after resume"] > after["before resume"]
+
+  def test_appended_at_never_leaks_into_view_or_payload(self, tmp_path: Path) -> None:
+    """The internal stamp is stripped from get_context() and from the
+    message-record data payload (on-disk format unchanged)."""
+    session_id = "ts-no-leak"
+    cm = Persisted(SimpleContextManager(), storage_path=tmp_path, session_id=session_id)
+    cm.add_message("user", "hello")
+
+    view = cm.get_context()
+    assert view, "expected non-empty view"
+    assert all("_appended_at" not in m for m in view)
+
+    records = self._record_lines(tmp_path / f"{session_id}.jsonl")
+    message_data = [r["data"] for r in records if r["type"] == "message"]
+    assert message_data, "expected message records"
+    assert all("_appended_at" not in d for d in message_data)
+
+  def test_unstamped_items_fall_back_to_rewrite_time(self, tmp_path: Path) -> None:
+    """Items without ``_appended_at`` (e.g. overflow-hook replacements)
+    still persist — stamped with the rewrite time."""
+    session_id = "ts-fallback"
+    cm = Persisted(SimpleContextManager(), storage_path=tmp_path, session_id=session_id)
+    cm._wrapped.replace_messages([{"role": "user", "content": "hook replacement"}])
+    cm.save()
+
+    records = self._record_lines(tmp_path / f"{session_id}.jsonl")
+    message_records = [r for r in records if r["type"] == "message"]
+    assert len(message_records) == 1
+    assert message_records[0]["timestamp"]  # parseable timestamp present
+    from datetime import datetime
+
+    datetime.fromisoformat(message_records[0]["timestamp"])
+
+  def test_replaced_item_stamp_survives_later_rewrites(self, tmp_path: Path) -> None:
+    """NB-1 regression: replace_messages stamps unstamped items ONCE at
+    replacement time — a later rewrite must NOT re-stamp them (no drift)."""
+    session_id = "ts-replace-stable"
+    cm = Persisted(SimpleContextManager(), storage_path=tmp_path, session_id=session_id)
+    cm._wrapped.replace_messages([{"role": "user", "content": "hook replacement"}])
+    cm.save()
+
+    path = tmp_path / f"{session_id}.jsonl"
+    first = {
+      r["data"]["content"]: r["timestamp"]
+      for r in self._record_lines(path)
+      if r["type"] == "message"
+    }
+
+    # A later mutation rewrites the whole file — the replaced item keeps
+    # the stamp from replace_messages time, not the new rewrite time.
+    cm.add_message("user", "later message")
+    cm.save()
+
+    second = {
+      r["data"]["content"]: r["timestamp"]
+      for r in self._record_lines(path)
+      if r["type"] == "message"
+    }
+    assert second["hook replacement"] == first["hook replacement"]
+    assert second["later message"] > first["hook replacement"]

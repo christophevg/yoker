@@ -392,7 +392,12 @@ class TestReplaceMessages:
     cm._messages = [_msg("system", "old")]
     new_msgs = [_msg("system", "new"), _msg("user", "u")]
     cm.replace_messages(new_msgs)
-    assert cm._messages == new_msgs
+    # Content matches; the internal _appended_at stamp is added by
+    # replace_messages itself (replacement time = append time).
+    assert [(m["role"], m["content"]) for m in cm._messages] == [
+      (m["role"], m["content"]) for m in new_msgs
+    ]
+    assert all("_appended_at" in m for m in cm._messages)
 
   def test_replace_messages_copies_caller_list(self) -> None:
     """replace_messages copies the caller's list (no shared reference)."""

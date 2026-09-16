@@ -439,7 +439,15 @@ class Persisted(ContextManagerWrapper):
       }
     ]
 
+    now = datetime.now().isoformat()
     for item in messages:
+      # True append time: every stored item carries the framework-internal
+      # ``_appended_at`` stamp from its creation (restored from the record
+      # timestamp on load). The bulk rewrite regenerates ALL records on
+      # every mutation — without the carried stamp, re-stamping with
+      # datetime.now() here would give every line the last-write time
+      # (the broken-timestamps bug this fixes).
+      ts = item.get("_appended_at") or now
       # Emit a turn_start marker for each user message so list_sessions can
       # count turns. The marker is a pure boundary marker — the user content
       # lives in the `message` record below, avoiding duplicate persistence.
@@ -447,7 +455,7 @@ class Persisted(ContextManagerWrapper):
         records.append(
           {
             "type": "turn_start",
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": ts,
             "data": {},
           }
         )
@@ -456,7 +464,7 @@ class Persisted(ContextManagerWrapper):
         records.append(
           {
             "type": record_type,
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": ts,
             "data": data,
           }
         )
@@ -508,8 +516,10 @@ class Persisted(ContextManagerWrapper):
       }
     if role in ("user", "assistant", "system"):
       # Plain message records persist the item dict wholesale — the flag
-      # is already embedded.
-      return "message", item
+      # is already embedded. The internal ``_appended_at`` stamp does NOT
+      # ride in the data payload: the record envelope carries the append
+      # time, and load() restores the stamp from it.
+      return "message", {k: v for k, v in item.items() if k != "_appended_at"}
     return None, None
 
   def _ensure_storage_directory(self) -> None:
@@ -615,6 +625,13 @@ class Persisted(ContextManagerWrapper):
           line_num,
           "Missing message fields",
         )
+      # Restore the internal append timestamp from the record envelope so
+      # the next bulk rewrite re-stamps this line with its ORIGINAL time
+      # instead of the rewrite time. Plain message records persist the
+      # item dict wholesale, so drop a stale pre-serialization value first.
+      data.pop("_appended_at", None)
+      if record.get("timestamp"):
+        data["_appended_at"] = record["timestamp"]
       wrapped._messages.append(data)
 
     elif record_type == "tool_result":
@@ -634,6 +651,10 @@ class Persisted(ContextManagerWrapper):
       # pruned is optional (old files have none) — restore when present.
       if isinstance(data.get("pruned"), dict):
         message["pruned"] = data["pruned"]
+      # Restore the internal append timestamp from the record envelope
+      # (see the message-record branch above).
+      if record.get("timestamp"):
+        message["_appended_at"] = record["timestamp"]
       wrapped._messages.append(message)
       self._tool_call_count += 1
 
@@ -652,6 +673,10 @@ class Persisted(ContextManagerWrapper):
       }
       if isinstance(data.get("pruned"), dict):
         call_message["pruned"] = data["pruned"]
+      # Restore the internal append timestamp from the record envelope
+      # (see the message-record branch above).
+      if record.get("timestamp"):
+        call_message["_appended_at"] = record["timestamp"]
       wrapped._messages.append(call_message)
 
     elif record_type == "compaction":

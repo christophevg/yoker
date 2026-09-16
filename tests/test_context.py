@@ -429,13 +429,52 @@ class TestListSessions:
     time.sleep(0.01)
 
     # Activity in the FIRST session makes it the most recently active.
-    cm1.resume("sessionfirst", storage_path=tmp_path).save()
-    cm1.close()
+    # With true append timestamps, a bare resume (load + save, no new
+    # messages) does NOT count as activity — records keep their original
+    # append times. Real activity (a new turn) is what moves the session
+    # back to the front.
+    resumed = Persisted.resume("sessionfirst", storage_path=tmp_path)
+    resumed.start_turn("Follow-up after resume")
+    resumed.end_turn("Response after resume")
+    resumed.save()
+    resumed.close()
 
     sessions = list_sessions(tmp_path)
     assert len(sessions) == 2
     assert sessions[0].session_id == "sessionfirst"
     assert sessions[1].session_id == "sessionsecond"
+
+  def test_bare_resume_does_not_bump_last_activity(self, tmp_path: Path) -> None:
+    """With true append timestamps, resuming without adding messages does
+    not re-stamp records — the session keeps its original activity time."""
+    import time
+
+    from yoker.context import list_sessions
+
+    cm1 = Persisted(SimpleContextManager(), storage_path=tmp_path, session_id="resumefirst")
+    cm1.start_turn("First message")
+    cm1.end_turn("First response")
+    cm1.save()
+    cm1.close()
+
+    time.sleep(0.01)
+
+    cm2 = Persisted(SimpleContextManager(), storage_path=tmp_path, session_id="resumesecond")
+    cm2.start_turn("Second message")
+    cm2.end_turn("Second response")
+    cm2.save()
+    cm2.close()
+
+    time.sleep(0.01)
+
+    # Bare resume of the older session — no new messages.
+    Persisted.resume("resumefirst", storage_path=tmp_path).close()
+
+    sessions = list_sessions(tmp_path)
+    assert len(sessions) == 2
+    # The bare-resumed session did NOT move to the front: no new activity.
+    assert sessions[0].session_id == "resumesecond"
+    assert sessions[1].session_id == "resumefirst"
 
   def test_session_last_message_preview(self, tmp_path: Path) -> None:
     """Test that last_message contains preview of last user message."""
