@@ -51,6 +51,11 @@
 
 ### Tool Enhancements
 
+- [ ] **Agent feedback T1: `verify="compiles"` parameter on `write`/`update`**
+  - Source: feedback.md (2026-09-12 agent friction report), item T1 — highest field value of all items. The diff channel (#62) shows *what changed* but never verifies the result *parses*: agents kept shipping Python with a syntax error, seeing "File written successfully", and burning turns on the next import/pytest failure.
+  - **Design (owner-approved 2026-09-16):** optional `verify` parameter on `write`/`update`; for `.py` targets, `verify="compiles"` runs an in-memory `ast.parse` on the resulting content — no subprocess, works in the tool sandbox. On failure the tool returns an error with the parse exception and line/column, and does NOT write (update) / returns the write failure.
+  - **Decision:** NOT enabled by default (owner: "not by default, we can review later, if agents always turn it on"). Ship the opt-in parameter, observe usage, revisit default after field experience.
+  - **Priority:** Medium — highest-value item from the friction report; small, self-contained
 - [x] **Tool args: scalar type coercion at dispatch (stringified integers from GLM/Ollama)**
   - Evidence (`bug-report-session.jsonl`, archiku/hq session 2026-09-11): the model emitted stringified scalar arguments on several calls — `{"limit": "100"}`, `{"offset": "1", "limit": "120"}`, `{"offset": "578", "limit": "24"}` — all rejected by `read` with "offset/limit must be an integer" (4 hard failures across 2 sessions), while identical calls with true integers succeeded. Same session: `search` accepted string `context_before`/`context_after` — strict typing is inconsistent tool-to-tool.
   - 0.12.0 already handles the nested-object variant of this degradation (changelog: `'{"TEST": "foo"}'`); scalars were left uncoerced.
@@ -71,6 +76,8 @@
 - [ ] **#67: bootstrap wizard intercepts `--help`/`--version`** — **Priority:** Low (owner: very low, needs more incidents)
 
 - [ ] **#69: `git` tool: missing `stash` + branch deletion** — **Priority:** Low (owner: needs more incidents; permission-model design needed when picked up). Overlaps with the `git restore` / `git stash` line below.
+- [ ] **Agent feedback T3: `git init` operation — REJECTED (owner decision 2026-09-16)**
+  - Feedback.md item T3 proposed adding `init` to the git tool's allowed/auto-approved commands. Owner ruling: `git init` is so fundamental to the overall workflow that it stays a manual, owner-performed action. Recorded here so the proposal is not re-raised; remove only with a new owner decision.
 
 - [ ] **`search` tool: `include_pattern` for directories** — cannot search within a specific subdirectory pattern
 - [ ] **`read` tool: binary file detection** — reading a binary file returns garbled content. Should detect and warn/skip like `search` does
