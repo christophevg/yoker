@@ -89,6 +89,14 @@
 - [ ] **`file` tool: `diff` sub-operation** — compare two files without reading both into context
 
 ### UX Polish
+- [ ] **Interactive UI: generic tool-result preview on success lines** (source: feedback-basset.md, 2026-09-16)
+  - Plugin/read-style tools that return a plain `str` render only `✓ Success (N chars)` — the result is invisible to the owner (it went to the model only). Extend `InteractiveUIHandler.output_tool_result` to render a compact preview of the result string on success: first 1–3 lines, middle-collapsed via `truncate_content_preview`, keeping the char count.
+  - **Owner decisions (2026-09-16):**
+    1. **Suppress the preview when a `ToolContentEvent` follows for the same call** — tools setting `content_metadata` would otherwise render twice (agent-facing result + rich block). Note: `ToolContentEvent` fires after the result event, so suppression needs lookahead/state in the UI or bridge.
+    2. Compact by default; fine-tune via config only if noise annoys the owner in practice.
+    3. Preview lines must be Rich-escaped (shared `escape_rich_markup` in `ui/formatting.py` — lands with the filename-escaping fix).
+  - Respect `show_tool_calls` gating + `ContentDisplayConfig`; failures already render fully (`_print_error`). Composes with the plugin-side `content_metadata` mechanism (dual-audience `ToolResult`). BatchUIHandler already prints 50-char detail — closes interactive/batch parity.
+  - **Priority:** Medium — post-0.13.0 (new UI feature; convergence mode keeps 0.13.0 to cleanup + compaction fixes)
 - [ ] **Tool-call progress indicator `[#Turn/#Request/#ToolCall]` next to the timestamp** — scrolling bursts of tool calls give no sense of position or volume
   - Idea (2026-09-03, dogfooding session): compact progress tag on tool-call lines, e.g. `● 14:32:07 [#T2/R3/4/7] read(...)` — dim/styled to match `TOOL_STYLE`; optionally on result lines too.
   - Domain model (verified in code): a turn = 1..N server requests (`process_message` `while True` loop, `core/_processing.py:301`); each request may carry a batch of tool calls (`_execute_tool_calls`, `_processing.py:953`). Batch size known only at execution time (after dedup); no turn-wide total is knowable — the model decides turn-by-turn whether to continue. Honest counters only: per-batch `{x}/{N}`, running turn count `#k`, request index.

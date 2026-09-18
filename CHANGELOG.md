@@ -104,6 +104,18 @@
   conclude they had no web access and refuse research work.
 
 ### Fixed
+- **Rich markup injection via filenames in tool-content display**: a
+  filename containing square brackets (e.g. `report[red].txt`) was
+  interpolated unescaped into the `_show_summary`, `_show_full_content`
+  and `_show_diff_content` header lines, so Rich interpreted it as a
+  style tag (swallowed or restyled output). Filenames are now escaped
+  via a shared `escape_rich_markup` helper (`ui/formatting.py`)
+  delegating to Rich's canonical `rich.markup.escape` — which also
+  removes a spurious trailing backslash the previous inline escaping
+  produced on `]` characters (Rich only treats `\[` as an escape).
+  Also replaces the inline escaping in `output_prompt` and the
+  content-line loops. (Found by the basset session,
+  feedback-basset.md.)
 - **Compaction panel contradicted itself on dropped messages**: the
   headline's "Dropped N message(s)" counted ONLY the `cutoff` stage
   (``dropped_count``'s stored-based semantics), while the per-stage

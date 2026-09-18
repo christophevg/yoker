@@ -15,6 +15,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from rich.markup import escape
+
 from yoker.config import ContentDisplayConfig
 
 # Module-level fallback defaults (used when no ContentDisplayConfig is passed).
@@ -259,7 +261,22 @@ def _format_git_args(args: dict[str, Any], cfg: ContentDisplayConfig) -> str:
   return " ".join(parts) if parts else _format_inline(args, cfg)
 
 
+def escape_rich_markup(text: str) -> str:
+  """Escape Rich markup characters so text renders literally.
+
+  Console printing interprets ``[style]`` tags; user- or tool-supplied
+  text (filenames, tool results) must be escaped before being
+  interpolated into a ``console.print`` call.
+
+  Delegates to Rich's canonical :func:`rich.markup.escape` — it escapes
+  ``[`` (and backslash-tag sequences); ``]`` needs no escaping and
+  escaping it would render a spurious backslash.
+  """
+  return escape(text)
+
+
 __all__ = [
+  "escape_rich_markup",
   "format_tool_args",
   "truncate_content_preview",
 ]

@@ -796,6 +796,64 @@ class TestInteractiveUIHandlerToolOutput:
     assert "-old" in text
     assert "+new" in text
 
+  def test_output_tool_content_summary_bracketed_filename(self):
+    """_show_summary should escape Rich markup in filenames."""
+    output = StringIO()
+    handler = InteractiveUIHandler(show_tool_calls=True)
+    handler.console = make_console(output)
+
+    handler.output_tool_content(
+      "write",
+      "write",
+      "/tmp/repor[t red].txt",
+      None,
+      "application/x-summary",
+      {"lines": 5, "is_new_file": True},
+    )
+    text = output.getvalue()
+    # The filename must render literally — brackets intact, no spurious
+    # backslashes, and the bracketed segment not consumed as a style tag.
+    assert "Creating new file repor[t red].txt" in text
+
+  def test_output_tool_content_full_bracketed_filename(self):
+    """_show_full_content header should escape Rich markup in filenames."""
+    output = StringIO()
+    handler = InteractiveUIHandler(show_tool_calls=True)
+    handler.console = make_console(output)
+
+    handler.output_tool_content(
+      "read",
+      "read",
+      "/tmp/repor[t red].txt",
+      "content line",
+      "text/plain",
+      {},
+    )
+    text = output.getvalue()
+    # The filename must render literally — brackets intact, no spurious
+    # backslashes, and the bracketed segment not consumed as a style tag.
+    assert "repor[t red].txt" in text
+    assert "content line" in text
+
+  def test_output_tool_content_diff_bracketed_filename(self):
+    """_show_diff_content header should escape Rich markup in filenames."""
+    output = StringIO()
+    handler = InteractiveUIHandler(show_tool_calls=True)
+    handler.console = make_console(output)
+
+    handler.output_tool_content(
+      "update",
+      "replace",
+      "/tmp/repor[t red].txt",
+      "@@ -1,1 +1,1 @@\n-old\n+new",
+      "text/x-diff",
+      {},
+    )
+    text = output.getvalue()
+    # The filename must render literally — brackets intact, no spurious
+    # backslashes, and the bracketed segment not consumed as a style tag.
+    assert "repor[t red].txt" in text
+
 
 class TestInteractiveUIHandlerCommandOutput:
   """Tests for InteractiveUIHandler command output."""

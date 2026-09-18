@@ -37,7 +37,11 @@ from yoker.core import Agent
 from yoker.exceptions import NetworkError, ToolError
 from yoker.markdown import MarkdownStreamer
 from yoker.ui.agent_display import AgentDisplay
-from yoker.ui.formatting import format_tool_args, truncate_content_preview
+from yoker.ui.formatting import (
+  escape_rich_markup,
+  format_tool_args,
+  truncate_content_preview,
+)
 from yoker.ui.handler import UIHandler
 
 # Styles for console output
@@ -509,7 +513,7 @@ class InteractiveUIHandler(UIHandler):
     if not self.show_prompts or not text:
       return
     self.console.print()
-    escaped = text.replace("[", "\\[").replace("]", "\\]")
+    escaped = escape_rich_markup(text)
     self.console.print(Panel(escaped, style=PROMPT_STYLE, box=box.SIMPLE_HEAD))
 
   # === Info / step / command output ===
@@ -815,8 +819,9 @@ class InteractiveUIHandler(UIHandler):
     details = format_tool_args(tool_name, args, self._content_display)
     self._start_output_line(f"{tool_name}(", end="", style=TOOL_STYLE, agent=agent)
     if "\n" in details:
+      self.console.print()
       for line in details.splitlines():
-        self.console.print(f"\n    {line}", style=TOOL_STYLE)
+        self.console.print(f"    {line}", style=TOOL_STYLE)
       self.console.print("  )", style=TOOL_STYLE)
     else:
       self.console.print(f"{details})")
@@ -1157,6 +1162,7 @@ class InteractiveUIHandler(UIHandler):
       filename: Basename of file.
       metadata: Summary metadata.
     """
+    filename = escape_rich_markup(filename)
     if operation == "write":
       lines = metadata.get("lines", 0)
       is_new_file = metadata.get("is_new_file", False)
@@ -1216,12 +1222,14 @@ class InteractiveUIHandler(UIHandler):
 
     if was_truncated:
       shown = cd.preview_head_lines + cd.preview_tail_lines
-      self.console.print(f"\n  {filename}  ({total} lines, showing {shown} of {total})")
+      self.console.print(
+        f"\n  {escape_rich_markup(filename)}  ({total} lines, showing {shown} of {total})"
+      )
     else:
-      self.console.print(f"\n  {filename}")
+      self.console.print(f"\n  {escape_rich_markup(filename)}")
 
     for line in previewed.splitlines():
-      escaped_line = line.replace("[", "\\[").replace("]", "\\]")
+      escaped_line = escape_rich_markup(line)
       if line.startswith("... ") and "lines hidden" in line:
         self.console.print(f"  [dim]{escaped_line}[/dim]")
       else:
@@ -1294,9 +1302,11 @@ class InteractiveUIHandler(UIHandler):
 
     if was_truncated:
       shown = cd.preview_head_lines + cd.preview_tail_lines
-      self.console.print(f"  {filename}  (diff: {total} lines, showing {shown} of {total})")
+      self.console.print(
+        f"  {escape_rich_markup(filename)}  (diff: {total} lines, showing {shown} of {total})"
+      )
     else:
-      self.console.print(f"  {filename}")
+      self.console.print(f"  {escape_rich_markup(filename)}")
 
     for line in previewed.splitlines():
       if line.startswith("--- ") or line.startswith("+++ "):
@@ -1304,7 +1314,7 @@ class InteractiveUIHandler(UIHandler):
       if line.startswith("diff --"):
         continue
 
-      escaped_line = line.replace("[", "\\[").replace("]", "\\]")
+      escaped_line = escape_rich_markup(line)
 
       if line.startswith("... ") and "lines hidden" in line:
         self.console.print(f"  [dim]{escaped_line}[/dim]")
