@@ -1821,7 +1821,16 @@ async def _run_tool(agent: Any, tool_name: str, tool_args: dict[str, Any]) -> tu
     with log_timing("tool_execution", tool=tool_name):
       tool_result = await _execute_tool(spec, agent, tool_args)
     success = tool_result.success
-    result = str(tool_result.result) if success else f"Error: {tool_result.error}"
+    # Failed ToolResults normally carry the message in ``error`` (see the
+    # ToolResult contract). Some plugins leave error=None and put their
+    # soft-failure message in ``result`` instead — fall back to it so
+    # "Error: None" is never shown to the UI or the model (both need the
+    # message to react). 'Failed' covers the fully-empty case.
+    result = (
+      str(tool_result.result)
+      if success
+      else f"Error: {tool_result.error or tool_result.result or 'Failed'}"
+    )
     return result, success, tool_result
   except Exception as e:
     logger.error("tool_error", tool=tool_name, error=str(e))

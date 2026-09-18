@@ -187,6 +187,59 @@ class TestRunToolSchemaAwareCoercion:
     assert received["content"] == '{"key": "value"}'
 
   @pytest.mark.asyncio
+  async def test_run_tool_failure_falls_back_to_result_when_error_is_none(self) -> None:
+    """Regression (basset soft-failure): a failed ToolResult that carries its
+    message in ``result`` with error=None must NOT surface as "Error: None" —
+    the fallback chain is error -> result -> 'Failed'."""
+    received: dict = {}
+
+    async def flaky_tool(path: Annotated[str, Text("Path")]) -> ToolResult:
+      """A plugin tool reporting soft failure per the basset pattern."""
+      received["path"] = path
+      return ToolResult(success=False, result="no symbol named 'foo'")
+
+    spec = build_tool_spec(flaky_tool, namespace="basset", name="retrieve")
+    agent = self._make_agent(spec)
+
+    result, success, _ = await _run_tool_call(agent, "basset:retrieve", {"path": "/x.py"})
+
+    assert not success
+    assert result == "Error: no symbol named 'foo'"
+
+  @pytest.mark.asyncio
+  async def test_run_tool_failure_prefers_error_field(self) -> None:
+    """Contract-conformant plugins: the ``error`` message wins over ``result``."""
+
+    async def conformant_tool(path: Annotated[str, Text("Path")]) -> ToolResult:
+      """A plugin tool that follows the ToolResult error contract."""
+      return ToolResult(success=False, result="ignored", error="path not allowed")
+
+    spec = build_tool_spec(conformant_tool, namespace="basset", name="retrieve")
+    agent = self._make_agent(spec)
+
+    result, success, _ = await _run_tool_call(agent, "basset:retrieve", {"path": "/x"})
+
+    assert not success
+    assert result == "Error: path not allowed"
+
+  @pytest.mark.asyncio
+  async def test_run_tool_failure_with_both_empty_says_failed(self) -> None:
+    """Fully-empty failed ToolResult renders the literal 'Failed' — never
+    'Error: None'."""
+
+    async def empty_tool(path: Annotated[str, Text("Path")]) -> ToolResult:
+      """A plugin tool that fails without any message."""
+      return ToolResult(success=False)
+
+    spec = build_tool_spec(empty_tool, namespace="basset", name="retrieve")
+    agent = self._make_agent(spec)
+
+    result, success, _ = await _run_tool_call(agent, "basset:retrieve", {"path": "/x"})
+
+    assert not success
+    assert result == "Error: Failed"
+
+  @pytest.mark.asyncio
   async def test_run_tool_coerces_real_make_tool_env_vars(self) -> None:
     """End-to-end with the REAL make tool: string-encoded env_vars is coerced.
 
