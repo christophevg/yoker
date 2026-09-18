@@ -325,8 +325,135 @@ def make_release_agent_tool(session: "Session") -> Any:
   return release_agent
 
 
+def make_stats_tool(session: "Session", caller_id: str) -> Any:
+  """Build the Session-injected ``stats`` tool for a specific agent.
+
+  ``stats`` reports run statistics from the harness telemetry log
+  (``~/.yoker/usage.jsonl``), scoped to the calling agent (``self``),
+  its spawn tree (``subtree``) or the whole session (``session``).
+  The caller's agent_id is captured at injection time — the same
+  closure pattern as ``send_message``. Read-only; never writes anything.
+
+  Args:
+    session: The :class:`Session` that owns the agent (back-reference —
+      supplies the session id, the live agent map for subtree resolution
+      and the config with the usage-log path).
+    caller_id: The calling agent's session-assigned runtime id (scope
+      ``self``/``subtree`` anchor).
+
+  Returns:
+    The ``stats`` tool callable (async function).
+  """
+  from yoker.usage.report import load_usage
+  from yoker.usage.rollup import (
+    SCOPE_SELF,
+    SCOPE_SESSION,
+    SCOPE_SUBTREE,
+    SCOPES,
+    render_stats,
+    rollup,
+    subtree_ids,
+  )
+
+  async def stats(
+    scope: Annotated[
+      str,
+      Text(
+        "Statistics scope: 'self' (this agent's own activity), 'subtree' "
+        "(this agent plus everything it spawned, directly or transitively), "
+        "or 'session' (all agents in this session, incl. spawn/release "
+        "lifecycle and peak concurrency)."
+      ),
+    ] = SCOPE_SELF,
+    since: Annotated[
+      str,
+      Text(
+        "Optional ISO-8601 timestamp watermark: count only records with "
+        "ts strictly after this value. Lets an agent measure work done "
+        "since a known point (e.g. the ts of a stats call it made earlier)."
+      ),
+    ] = "",
+  ) -> ToolResult:
+    """Read this session's run statistics from the telemetry log.
+
+    Returns per-scope aggregates: turns, wall-clock, LLM calls, token
+    counts (exact — only llm_call rows carry tokens), tool calls with
+    success/failure and byte sizes, errors, compaction runs (dropped
+    messages), and for scope=session also spawn/release counts and peak
+    agent concurrency. Combine scope='self' + since to attribute work
+    done between two points in time.
+    """
+    if scope not in SCOPES:
+      return ToolResult(
+        success=False,
+        error=f"Unknown scope: {scope!r} (expected one of: {', '.join(SCOPES)})",
+      )
+
+    since_ts: str | None = None
+    if since:
+      since_ts = since
+    try:
+      records, _skipped = load_usage(session.config.usage.path)
+    except Exception as e:
+      logger.error("stats load failed", caller_id=caller_id, error=str(e))
+      return ToolResult(success=False, error=f"Could not read the telemetry log: {e}")
+
+    # Session-scoped view FIRST: the log accumulates every session and
+    # agent ids are session-local (primary recurs everywhere), so tree
+    # resolution must see only this session's records (N1). The tree is
+    # resolved from FULL history — a child spawned before the watermark
+    # that was since released must still count in the subtree (N2).
+    session_records = [r for r in records if r.get("session_id") == session.id]
+
+    # The `since` watermark applies to AGGREGATION only, never to tree
+    # resolution — delta mode still reports the whole spawn tree's work.
+    delta_records = (
+      [r for r in session_records if str(r.get("ts", "")) > since_ts]
+      if since_ts is not None
+      else session_records
+    )
+
+    # Subtree resolution: full session history unioned with the live agent
+    # map (the map rescues children whose spawn record predates the log).
+    if scope == SCOPE_SUBTREE:
+      live_parents = {
+        aid: getattr(a, "_parent_agent_id", None) for aid, a in session._agents_map.items()
+      }
+      ids = subtree_ids(caller_id, session_records, live_parents)
+    elif scope == SCOPE_SELF:
+      ids = {caller_id}
+    else:
+      ids = None
+
+    scope_results: dict[str, dict[str, Any]] = {}
+    if scope == SCOPE_SELF or scope == SCOPE_SUBTREE:
+      scope_results[scope] = rollup(
+        delta_records, session_id=session.id, scope=scope, agent_ids=ids
+      )
+    # session scope: report BOTH the requested scope and the session
+    # context — the agent sees its own numbers in session perspective
+    # without a second call.
+    if scope == SCOPE_SESSION:
+      scope_results[SCOPE_SELF] = rollup(
+        delta_records, session_id=session.id, scope=SCOPE_SELF, agent_ids={caller_id}
+      )
+      scope_results[SCOPE_SESSION] = rollup(
+        delta_records, session_id=session.id, scope=SCOPE_SESSION
+      )
+
+    text = render_stats(scope_results)
+    if since_ts is not None:
+      text = f"since: {since_ts}\n\n{text}"
+    return ToolResult(success=True, result=text)
+
+  stats.__name__ = "stats"
+  stats.__yoker_name__ = "stats"  # type: ignore[attr-defined]
+  return stats
+
+
 __all__ = [
   "make_spawn_agent_tool",
   "make_send_message_tool",
   "make_release_agent_tool",
+  "make_stats_tool",
 ]

@@ -43,6 +43,7 @@ from yoker.session.tools import (
   make_release_agent_tool,
   make_send_message_tool,
   make_spawn_agent_tool,
+  make_stats_tool,
 )
 from yoker.usage.logger import KIND_RELEASE, KIND_SPAWN, log_session_usage
 
@@ -512,15 +513,17 @@ class Session:
   def inject_tools(self, agent: Agent, agent_id: str) -> None:
     """Inject Session-injected tools onto an agent
 
-    Registers ``agent``, ``send_message``, and ``release_agent`` on the
-    agent's tool registry. The Session captures itself in the closure
-    (back-reference) so the tools can call ``session.spawn`` /
-    ``session.send`` / ``session.release`` at execution time.
-    ``ListAgents`` is deferred and is NOT injected.
+    Registers ``agent``, ``send_message``, ``release_agent``, and
+    ``stats`` on the agent's tool registry. The Session captures itself
+    in the closure (back-reference) so the tools can call
+    ``session.spawn`` / ``session.send`` / ``session.release`` /
+    telemetry rollups at execution time. ``ListAgents`` is deferred and
+    is NOT injected.
 
     ``agent`` and ``release_agent`` are gated by ``config.tools.agent.enabled``
-    (the existing global kill-switch). ``send_message`` is always injected
-    when an agent is part of a session.
+    (the existing global kill-switch). ``send_message`` and ``stats``
+    are always injected when an agent is part of a session (``stats``
+    is read-only reporting and not tied to spawning).
 
     Least-privilege: after registration the definition's tool filter is
     re-applied, so session tools survive only when the definition grants
@@ -554,6 +557,14 @@ class Session:
       make_send_message_tool(self, agent_id),
       namespace="yoker",
       name="send_message",
+    )
+    # stats: read-only telemetry rollup, always available to session
+    # agents (not gated by tools.agent.enabled — that switch governs
+    # spawning, not reporting). Stripped by explicit tools: filters below.
+    agent.tools.register(
+      make_stats_tool(self, agent_id),
+      namespace="yoker",
+      name="stats",
     )
 
     definition = agent.definition
