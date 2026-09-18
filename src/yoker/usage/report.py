@@ -17,13 +17,17 @@ CACHED_INPUT_NOTE = (
 def load_usage(path: str | Path) -> tuple[list[dict[str, Any]], int]:
   """Read a usage JSONL file.
 
+  ``~`` in the path is expanded (mirrors the write side in
+  :class:`~yoker.usage.logger.UsageLogger` — the stats tool passes the
+  config path through unmodified).
+
   Returns:
     Tuple of (parsed records, skipped-line count). Blank and malformed
     lines are skipped and counted.
   """
   records: list[dict[str, Any]] = []
   skipped = 0
-  with open(path, encoding="utf-8") as f:
+  with open(Path(path).expanduser(), encoding="utf-8") as f:
     for line in f:
       if not line.strip():
         continue

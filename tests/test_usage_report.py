@@ -76,6 +76,22 @@ class TestLoadUsage:
     with pytest.raises(FileNotFoundError):
       load_usage(tmp_path / "nope.jsonl")
 
+  def test_tilde_path_expanded(self, tmp_path: Any, monkeypatch: Any) -> None:
+    """The read side expands ``~`` exactly like the write side — the stats
+    tool passes the config path (default ``~/.yoker/usage.jsonl``) through
+    unmodified (live-tested bug: tilde was opened literally)."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    log_dir = tmp_path / ".yoker"
+    log_dir.mkdir()
+    log_path = log_dir / "usage.jsonl"
+    log_path.write_text(json.dumps(_record()) + "\n")
+
+    records, skipped = load_usage("~/.yoker/usage.jsonl")
+
+    assert skipped == 0
+    assert len(records) == 1
+    assert records[0]["model"] == "glm-5.3-flash"
+
 
 class TestMatchModel:
   """Tests for logged-name → pricing-key mapping."""
