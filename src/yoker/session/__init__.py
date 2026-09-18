@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import copy
 import os
+import time
 import uuid
 from collections.abc import Awaitable, Callable
 from pathlib import Path
@@ -45,7 +46,14 @@ from yoker.session.tools import (
   make_spawn_agent_tool,
   make_stats_tool,
 )
-from yoker.usage.logger import KIND_RELEASE, KIND_SPAWN, log_session_usage
+from yoker.usage.logger import (
+  KIND_RELEASE,
+  KIND_RUN_END,
+  KIND_RUN_START,
+  KIND_SPAWN,
+  log_run_usage,
+  log_session_usage,
+)
 
 logger = get_logger(__name__)
 
@@ -98,6 +106,12 @@ class Session:
     # ``_create_agent`` so subagents get the same interactive approval
     # flow as the primary agent.
     self._approval_handler: Callable[[str, str, str], Awaitable[bool]] | None = None
+    # R3 telemetry: monotonic timestamp set by __aenter__, consumed by
+    # __aexit__ for the run_end duration. Initialized to 0.0 so manual
+    # misuse (__aexit__ without __aenter__ — impossible via `async with`)
+    # degrades to a bogus duration in a best-effort record instead of an
+    # AttributeError.
+    self._run_started_at: float = 0.0
 
     configure_logging(self.config.logging, console=console_logging)
 
@@ -120,6 +134,15 @@ class Session:
 
   async def __aenter__(self) -> Session:
     """Enter the session context; emit SESSION_START."""
+    # R3 telemetry: run_start opens the run bracket in the usage log.
+    # monotonic() (not wall clock) measures the bracket; ts carries UTC.
+    self._run_started_at = time.monotonic()
+    log_run_usage(
+      self.config.usage,
+      session_id=self.id,
+      kind=KIND_RUN_START,
+      detail={"pid": os.getpid()},
+    )
     self._emit(SessionStartEvent(type=EventType.SESSION_START, session_id=self.id))
     return self
 
@@ -134,6 +157,23 @@ class Session:
     Outstanding spawned agent tasks are cancelled before the SESSION_END
     event is emitted so handlers observe a clean teardown order.
     """
+    # R3 telemetry: run_end closes the bracket — written FIRST so an
+    # exception during teardown still yields a closed bracket. Crash
+    # detection: run_start without run_end = the process died here.
+    outcome = "error" if exc is not None else "completed"
+    detail: dict[str, Any] = {
+      "outcome": outcome,
+      "duration_ms": int((time.monotonic() - self._run_started_at) * 1000),
+      "agents_active": len(self._agents_map),
+    }
+    if exc is not None:
+      detail["error"] = f"{type(exc).__name__}: {exc}"
+    log_run_usage(
+      self.config.usage,
+      session_id=self.id,
+      kind=KIND_RUN_END,
+      detail=detail,
+    )
     for task in list(self._tasks):
       task.cancel()
     # Await cancellation so the tasks observe CancelledError.

@@ -11,12 +11,15 @@ import pytest
 from yoker.config import Config, UsageConfig
 from yoker.usage import (
   KIND_RELEASE,
+  KIND_RUN_END,
+  KIND_RUN_START,
   KIND_SPAWN,
   UsageLogger,
   UsageRecord,
   log_call_usage,
   log_compaction_usage,
   log_error_usage,
+  log_run_usage,
   log_session_usage,
   log_tool_call_usage,
   log_turn_usage,
@@ -399,6 +402,37 @@ class TestTelemetryRecordKinds:
     assert all(r["agent_id"] == "researcher-1" for r in records)
     assert all(r["parent_agent_id"] == "primary" for r in records)
     assert records[0]["detail"] == {"requester": "primary"}
+
+  def test_run_lifecycle_records(self, tmp_path: Any, monkeypatch: Any) -> None:
+    """R3: run_start/run_end bracket one session context in the log —
+    no agent identity (the run is the subject), pid + outcome detail."""
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    path = tmp_path / "usage.jsonl"
+
+    log_run_usage(
+      UsageConfig(enabled=True, path=path),
+      session_id="sess-run",
+      kind=KIND_RUN_START,
+      detail={"pid": 12345},
+    )
+    log_run_usage(
+      UsageConfig(enabled=True, path=path),
+      session_id="sess-run",
+      kind=KIND_RUN_END,
+      detail={"outcome": "completed", "duration_ms": 60000, "agents_active": 2},
+    )
+
+    records = _read_lines(path)
+    assert [r["kind"] for r in records] == ["run_start", "run_end"]
+    assert all(r["session_id"] == "sess-run" for r in records)
+    # Run records carry no agent identity — the run is the subject.
+    assert all(r["agent_id"] is None for r in records)
+    assert all(r["agent"] == "session" for r in records)
+    assert records[0]["detail"] == {"pid": 12345}
+    assert records[1]["detail"]["outcome"] == "completed"
+    assert records[1]["detail"]["agents_active"] == 2
+    # Token invariant: run records contribute nothing.
+    assert all(r["input_tokens"] == 0 and r["output_tokens"] == 0 for r in records)
 
   def test_token_sum_invariant_llm_call_exclusive(self, tmp_path: Any, monkeypatch: Any) -> None:
     """Mixed-kind log: only llm_call rows carry tokens — summing the log's

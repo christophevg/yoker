@@ -1,6 +1,37 @@
 ## Unreleased
 
 ### Added
+- **Run statistics (telemetry + stats tool + run lifecycle)**: the
+  harness now records and reports per-agent run statistics. The
+  `~/.yoker/usage.jsonl` log becomes the harness telemetry log: every
+  record gains `agent_id` + `parent_agent_id` (session-assigned
+  identity, spawn-tree linkage for per-agent attribution) and a `kind`
+  (`llm_call`, `tool_call`, `turn`, `spawn`, `release`, `compaction`,
+  `error`) — tool calls with success/duration/I-O bytes, turn wall-clock
+  (no tokens — every token is counted exactly once on `llm_call` rows),
+  spawn/release lifecycle, compaction runs and operational errors
+  (idle-watchdog timeouts, retry-limit escalations). New
+  Session-injected `yoker:stats` tool (scopes `self` / `subtree` /
+  `session`, optional ISO `since` watermark for delta mode): per-scope
+  turn/token/tool/error counts, compaction dropped-message rollup and —
+  on `session` scope — spawn/release counts and peak agent concurrency.
+  Spawn-tree resolution is session-scoped and watermark-immune (a
+  released child still counts). Every `Session` context now writes a
+  `run_start`/`run_end` bracket to the log (pid, outcome
+  completed/error, run duration, agents-active-at-exit): a `run_start`
+  without a matching `run_end` means the process crashed — the basis
+  for run accounting and crash detection.
+- **Context-log append timestamps (bug fix)**: context JSONL records
+  used to carry the *file rewrite* time — every line in a resumed
+  session showed the same last-save timestamp. Records now carry their
+  true append time: adders stamp items at creation
+  (`_appended_at`), `Persisted` uses that stamp as the record
+  timestamp (fallback: rewrite time), and `load()` restores stamps so
+  rewrites keep original times across resumes. Consequence: a bare
+  resume (load + save, no new messages) no longer bumps a session's
+  "last activity" — `list_sessions` / `--resume last` sort by real
+  conversation activity. (Bug report + owner decisions from the carter
+  session, feedback-carter.md.)
 - **Generic tool-result preview on success lines**: a successful tool
   call now renders a compact preview of its result string under the
   ``✓ Success (N chars)`` line — default: first 3 lines via the shared

@@ -2,8 +2,9 @@
 
 This module is the harness telemetry log (run-statistics R1/R4): one
 append-only JSONL channel carrying per-event records — LLM API calls,
-tool calls, turn boundaries, agent spawn/release, compaction runs and
-errors — each attributable per ``agent_id`` with parent linkage.
+tool calls, turn boundaries, agent spawn/release, compaction runs,
+errors and the run lifecycle bracket (run_start/run_end, R3) — each
+attributable per ``agent_id`` with parent linkage where applicable.
 """
 
 import json
@@ -26,6 +27,11 @@ KIND_SPAWN = "spawn"
 KIND_RELEASE = "release"
 KIND_COMPACTION = "compaction"
 KIND_ERROR = "error"
+# Run lifecycle (R3): one pair per Session context. run_start without a
+# matching run_end in the log = the process crashed or was killed — the
+# basis for crash detection and run accounting.
+KIND_RUN_START = "run_start"
+KIND_RUN_END = "run_end"
 
 
 @dataclass(frozen=True)
@@ -48,6 +54,8 @@ class UsageRecord:
     output_tokens: Completion tokens as reported by the backend (0 when unknown).
     duration_ms: API call duration in milliseconds (llm_call), tool
       execution wall-clock (tool_call), turn wall-clock (turn), or 0.
+      run_end records keep the flat field at 0 and carry the run
+      duration in ``detail["duration_ms"]`` instead.
     thinking_chars: Client-side char count of the thinking stream. Used with a
       calibrated chars-per-token ratio to estimate the thinking-token share;
       reported token counts are untouched.
@@ -58,7 +66,10 @@ class UsageRecord:
     parent_agent_id: Session-assigned id of the spawning agent (None for
       primary/standalone agents) — spawn-tree linkage for per-agent
       attribution.
-    kind: Event kind — one of the KIND_* constants.
+    kind: Event kind — one of the KIND_* constants. Lifecycle kinds
+      (spawn/release/run_start/run_end) differ in identity: spawn/release
+      carry agent identity (agent_id + parent_agent_id); run_start/run_end
+      carry none — there the run is the subject.
     tool: Tool name (tool_call records) or error source label (error
       records, e.g. ``idle_watchdog``); None for other kinds.
     success: Tool outcome (tool_call records — False for parse errors,
@@ -333,6 +344,36 @@ def log_error_usage(
   log_usage_record(agent.config.usage, record)
 
 
+def log_run_usage(
+  usage_config: Any,
+  *,
+  session_id: str,
+  kind: str,
+  detail: dict[str, Any] | None = None,
+) -> None:
+  """Log a run-lifecycle record (run_start/run_end). Best-effort.
+
+  Used by Session.__aenter__/__aexit__ to bracket one session context in
+  the log. Crash detection: a run_start whose run_end is missing means
+  the process died before clean teardown. No agent identity is attached
+  — the run is the subject, not any single agent.
+  """
+  record = UsageRecord(
+    ts=_now_iso(),
+    session_id=session_id,
+    model="unknown",
+    agent="session",
+    input_tokens=0,
+    output_tokens=0,
+    duration_ms=0,
+    agent_id=None,
+    parent_agent_id=None,
+    kind=kind,
+    detail=detail,
+  )
+  log_usage_record(usage_config, record)
+
+
 def log_session_usage(
   usage_config: Any,
   *,
@@ -371,6 +412,8 @@ __all__ = [
   "KIND_ERROR",
   "KIND_LLM_CALL",
   "KIND_RELEASE",
+  "KIND_RUN_END",
+  "KIND_RUN_START",
   "KIND_SPAWN",
   "KIND_TOOL_CALL",
   "KIND_TURN",
@@ -379,6 +422,7 @@ __all__ = [
   "log_call_usage",
   "log_compaction_usage",
   "log_error_usage",
+  "log_run_usage",
   "log_session_usage",
   "log_tool_call_usage",
   "log_turn_usage",

@@ -1,11 +1,14 @@
 """Tests for the Session class — async context manager + lifecycle."""
 
 import asyncio
+import json
+import os
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
 
-from yoker.config import Config
+from yoker.config import Config, UsageConfig
 from yoker.events import SessionEndEvent, SessionStartEvent
 from yoker.session import Session
 
@@ -60,6 +63,87 @@ class TestSessionLifecycle:
     end_events = [e for e in received if isinstance(e, SessionEndEvent)]
     assert len(end_events) == 1
     assert end_events[0].session_id == session.id
+
+  @pytest.mark.asyncio
+  async def test_run_bracket_written_to_usage_log(self, tmp_path: Any, monkeypatch: Any) -> None:
+    """R3: entering/exiting the session context writes run_start/run_end
+    to the usage log — outcome completed, positive duration, agents_active.
+
+    delenv(PYTEST_CURRENT_TEST) lets the usage logger write but would
+    also strip the enabled-gate's pytest bypass — YOKER_DEV_MODE=1
+    re-supplies the gate bypass without blocking usage logging."""
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    monkeypatch.setenv("YOKER_DEV_MODE", "1")
+    log_path = tmp_path / "usage.jsonl"
+
+    session = Session(config=Config(), session_id="run-bracket-test")
+    session.config.usage = UsageConfig(enabled=True, path=str(log_path))
+    async with session:
+      pass
+
+    with open(log_path) as f:
+      records = [json.loads(line) for line in f if line.strip()]
+    run_records = [r for r in records if r.get("kind", "").startswith("run_")]
+    assert [r["kind"] for r in run_records] == ["run_start", "run_end"]
+    assert all(r["session_id"] == "run-bracket-test" for r in run_records)
+    assert run_records[0]["detail"]["pid"] == os.getpid()
+    assert run_records[1]["detail"]["outcome"] == "completed"
+    assert run_records[1]["detail"]["duration_ms"] >= 0
+    assert run_records[1]["detail"]["agents_active"] == 1  # primary only
+
+  @pytest.mark.asyncio
+  async def test_run_end_logs_error_outcome_on_exception(
+    self, tmp_path: Any, monkeypatch: Any
+  ) -> None:
+    """An exception escaping the context marks run_end outcome=error with
+    the error summary, and the bracket still closes."""
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    monkeypatch.setenv("YOKER_DEV_MODE", "1")
+    log_path = tmp_path / "usage.jsonl"
+
+    session = Session(config=Config(), session_id="run-error-test")
+    session.config.usage = UsageConfig(enabled=True, path=str(log_path))
+    with pytest.raises(RuntimeError, match="boom"):
+      async with session:
+        raise RuntimeError("boom")
+
+    with open(log_path) as f:
+      records = [json.loads(line) for line in f if line.strip()]
+    run_end = [r for r in records if r.get("kind") == "run_end"]
+    assert len(run_end) == 1  # bracket closed despite the exception
+    assert run_end[0]["detail"]["outcome"] == "error"
+    assert "RuntimeError: boom" in run_end[0]["detail"]["error"]
+
+  @pytest.mark.asyncio
+  async def test_run_end_written_before_teardown_releases(
+    self, tmp_path: Any, monkeypatch: Any
+  ) -> None:
+    """run_end is written FIRST in __aexit__ — even if teardown then
+    raises, the bracket is closed (crash detection stays honest). The
+    exc parameter only carries BODY exceptions, so a clean body yields
+    outcome=completed even when teardown subsequently fails."""
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    monkeypatch.setenv("YOKER_DEV_MODE", "1")
+    log_path = tmp_path / "usage.jsonl"
+
+    session = Session(config=Config(), session_id="run-teardown-test")
+    session.config.usage = UsageConfig(enabled=True, path=str(log_path))
+
+    from unittest.mock import AsyncMock
+
+    with pytest.raises(RuntimeError, match="teardown fail"):
+      async with session:
+        # Sabotage teardown: aclose raises.
+        session._agents_map["primary"].aclose = AsyncMock(side_effect=RuntimeError("teardown fail"))  # type: ignore[union-attr]
+
+    # Teardown raised and propagated — but run_end was written first.
+    with open(log_path) as f:
+      records = [json.loads(line) for line in f if line.strip()]
+    run_end = [r for r in records if r.get("kind") == "run_end"]
+    assert len(run_end) == 1
+    # Body was clean, so outcome reflects the body — but the bracket
+    # CLOSED despite the teardown failure (the point of writing first).
+    assert run_end[0]["detail"]["outcome"] == "completed"
 
   @pytest.mark.asyncio
   async def test_outstanding_tasks_cancelled_on_exit(self) -> None:
