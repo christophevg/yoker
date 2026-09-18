@@ -169,6 +169,70 @@ class TestAggregate:
     assert agg["sessions"] == 2
     assert agg["calls"] == 3
 
+  def test_mixed_kind_records_do_not_inflate_calls(self) -> None:
+    """Telemetry kinds (turn, tool_call, ...) carry no tokens by design and
+    must not be counted as calls or bucketed under models — but they DO
+    contribute to the session set and the time range."""
+    records = [
+      _record(session_id="sess-1", ts="2026-09-01T12:00:00+00:00"),
+      # A turn record: no tokens, new session id, later ts.
+      _record(
+        kind="turn",
+        session_id="sess-2",
+        ts="2026-09-01T13:00:00+00:00",
+        input_tokens=0,
+        output_tokens=0,
+      ),
+      # A tool_call record with an unknown model name — must NOT create
+      # an unknown_models bucket (non-call records skip bucketing).
+      _record(
+        kind="tool_call",
+        session_id="sess-1",
+        ts="2026-09-01T13:30:00+00:00",
+        model="glm-5.3-flash:cloud",
+        input_tokens=0,
+        output_tokens=0,
+      ),
+    ]
+
+    agg = aggregate(records, PRICING)
+
+    # One call (the llm_call row), two sessions (both kinds contribute),
+    # time range spans all three records.
+    assert agg["calls"] == 1
+    assert agg["sessions"] == 2
+    assert agg["first_ts"] == "2026-09-01T12:00:00+00:00"
+    assert agg["last_ts"] == "2026-09-01T13:30:00+00:00"
+    assert agg["total_input_tokens"] == 1000
+    assert agg["total_output_tokens"] == 100
+    assert agg["models"]["glm-5.3-flash"]["calls"] == 1
+    assert agg["unknown_models"] == {}
+
+  def test_legacy_records_without_kind_count_as_calls(self) -> None:
+    """Pre-telemetry logs have no kind field — they keep reporting as
+    llm_calls (identical to the old behavior)."""
+    records = [_record()]  # _record() sets no kind key
+
+    agg = aggregate(records, PRICING)
+
+    assert agg["calls"] == 1
+    assert agg["models"]["glm-5.3-flash"]["calls"] == 1
+
+  def test_every_kind_is_excluded_except_llm_call(self) -> None:
+    """Parametrized pin: each non-llm_call kind contributes zero calls,
+    zero tokens and zero cost."""
+    kinds = ["turn", "tool_call", "spawn", "release", "compaction", "error"]
+    for kind in kinds:
+      records = [
+        _record(),
+        _record(kind=kind, input_tokens=0, output_tokens=0),
+      ]
+      agg = aggregate(records, PRICING)
+      assert agg["calls"] == 1, f"kind={kind}"
+      assert agg["total_input_tokens"] == 1000, f"kind={kind}"
+      assert agg["total_output_tokens"] == 100, f"kind={kind}"
+      assert agg["total_cost"] == agg["models"]["glm-5.3-flash"]["cost"], f"kind={kind}"
+
   def test_first_last_ts(self) -> None:
     # ts strings are ISO 8601 (lexicographically sortable); the report shows
     # first/last seen in file order, so records arrive out of order here.

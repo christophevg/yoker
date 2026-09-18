@@ -93,6 +93,12 @@ def calibration_ratio(records: list[dict[str, Any]]) -> float | None:
 def aggregate(records: list[dict[str, Any]], pricing: dict[str, Any]) -> dict[str, Any]:
   """Aggregate records per model and compute costs.
 
+  Only ``kind="llm_call"`` records (or records without a ``kind`` field —
+  pre-telemetry logs) count as calls: they are the only rows carrying
+  token counts, by design. Other kinds (turn, tool_call, spawn, release,
+  compaction, error) are excluded from model buckets and call counts but
+  still contribute to the session set and the time range.
+
   Models are keyed by their matched pricing name, in order of first
   appearance. Unknown models (no pricing entry) accumulate tokens under
   ``unknown_models`` and contribute $0. Records missing input/output keys
@@ -117,6 +123,10 @@ def aggregate(records: list[dict[str, Any]], pricing: dict[str, Any]) -> dict[st
   total_content_chars = 0
 
   for record in records:
+    # Records without ``kind`` are pre-telemetry llm_call rows — treat
+    # them as llm_calls (old logs keep reporting identically).
+    is_llm_call = record.get("kind", "llm_call") == "llm_call"
+
     input_tokens = record.get("input_tokens") or 0
     output_tokens = record.get("output_tokens") or 0
     thinking_chars = record.get("thinking_chars") or 0
@@ -129,6 +139,14 @@ def aggregate(records: list[dict[str, Any]], pricing: dict[str, Any]) -> dict[st
       if first_ts is None:
         first_ts = ts
       last_ts = ts
+
+    # Non-llm_call records (turn/tool_call/spawn/release/compaction/error)
+    # carry no tokens by design — but they would still inflate the call
+    # count and char sums if bucketed as calls. Skip them entirely for
+    # model buckets; sessions and the time range above stay over ALL
+    # records.
+    if not is_llm_call:
+      continue
 
     logged_name = record.get("model") or "unknown"
     price_key = match_model(logged_name, pricing)
@@ -199,7 +217,9 @@ def aggregate(records: list[dict[str, Any]], pricing: dict[str, Any]) -> dict[st
   total_est_thinking = round(total_thinking_chars / ratio) if ratio else 0
 
   return {
-    "calls": len(records),
+    # Call count = llm_call rows only (non-llm_call records are skipped
+    # in the loop above).
+    "calls": sum(1 for r in records if r.get("kind", "llm_call") == "llm_call"),
     "sessions": len(sessions),
     "first_ts": first_ts,
     "last_ts": last_ts,
