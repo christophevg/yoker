@@ -586,7 +586,7 @@ class InteractiveUIHandler(UIHandler):
     # every output line starts with: ▶ [07:35:23] researcher@yoker:
     line = Text()
     line.append(f"{BULLET}{self._ts()}")
-    cwd = f"@{Path().cwd().stem}"
+    cwd = f"@{Path().cwd().name}"
     if agent:
       # The agent color's background spans the whole agent@cwd unit; the
       # ": " separator stays outside it.
