@@ -45,6 +45,7 @@ guides/getting-started-with-yoker
 guides/getting-started-with-ollama
 guides/getting-started-with-gemini
 guides/creating-agentic-packages
+guides/monitoring-usage
 models
 plugins
 rationale
@@ -91,6 +92,7 @@ api/index
 - [x] Protected files - SOFT guardrail blocking agent `write`/`update` to a configurable denylist (`**/Makefile`, `**/pyproject.toml`, `**/yoker.toml`, `**/uv.lock`, `**/.git/config`, `**/.github/workflows/*.yml`, ... — `**/` patterns protect these names at any depth, so scratch subdirectories don't bypass the denylist) with interactive approve-on-diff in `yoker chat` and a simple block in batch/`yoker run`; empty tuple opts out
 - [x] Secure API key handling - Masked input, `chmod 600` config files
 - [x] Session persistence - Resume hint on shutdown, `--resume` flag for continuing conversations
+- [x] Run statistics - Telemetry log (`~/.yoker/usage.jsonl`: per-call LLM usage, tool calls, turns, agent spawn/release, compaction runs, errors, run lifecycle bracket) plus the agent-facing `stats` tool (self/subtree/session scopes, `since` watermark for delta measurement) and the `make usage` cost report
 - [x] AGENTS.md context injection - Project-specific instructions auto-loaded into system prompt
 - [x] Dict-based agent/skill directories - Namespace-aware directory configuration
 
