@@ -1,6 +1,23 @@
 ## Unreleased
 
 ### Added
+- **Generic tool-result preview on success lines**: a successful tool
+  call now renders a compact preview of its result string under the
+  ``✓ Success (N chars)`` line — default: first 3 lines via the shared
+  middle-collapse convention, and every shown line capped at the
+  existing ``arg_preview_head + arg_preview_tail`` budget (long
+  single-line results like dict reprs collapse to ``head…tail`` instead
+  of dumping the whole string) — read-style tools whose result went to
+  the model only were invisible to the owner before. Preview is
+  Rich-escaped, respects ``show_tool_calls`` and the new
+  ``[content] tool_result_preview_lines`` setting (0 disables).
+  Suppressed when the tool also emits rich owner-facing content
+  (``ToolContentEvent`` via ``ToolResult.content_metadata``): the new
+  ``ToolResultEvent.has_content`` flag (set at the emit branch in the
+  core, no lookahead needed) tells handlers to skip the preview so a
+  call is never rendered twice. Failure results keep rendering fully.
+  (Proposal + owner decisions from the basset session,
+  feedback-basset.md.)
 - **Configurable compaction pipeline**: context overflow now runs a stage
   pipeline before dropping messages — `prune_tool_results` stubs old large
   tool-result bodies, `prune_thinking` flags old reasoning payloads,

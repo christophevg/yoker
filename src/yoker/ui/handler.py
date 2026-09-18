@@ -147,13 +147,18 @@ class UIHandler(Protocol):
     """
     ...
 
-  def output_tool_result(self, tool_name: str, success: bool, result: str) -> None:
+  def output_tool_result(
+    self, tool_name: str, success: bool, result: str, *, has_content: bool = False
+  ) -> None:
     """Output tool result status.
 
     Args:
       tool_name: Name of tool.
       success: Whether tool succeeded.
       result: Result text or error message.
+      has_content: Whether a rich ToolContentEvent follows for the same
+        call — handlers rendering a plain result preview suppress it
+        then to avoid rendering the call twice.
     """
     ...
 

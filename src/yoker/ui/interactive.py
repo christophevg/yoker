@@ -827,15 +827,26 @@ class InteractiveUIHandler(UIHandler):
       self.console.print(f"{details})")
     self._start_tool_execution_status(tool_name)
 
-  def output_tool_result(self, tool_name: str, success: bool, result: str) -> None:
+  def output_tool_result(
+    self, tool_name: str, success: bool, result: str, *, has_content: bool = False
+  ) -> None:
     """Output tool result status.
 
     Stops the tool-execution spinner if active before rendering the result.
+
+    On success, a compact preview of the result string is rendered under
+    the status line (``tool_result_preview_lines``, middle-collapsed) —
+    the model saw the full result, the owner sees at least a first
+    impression. Suppressed when ``has_content`` is set (a rich
+    ToolContentEvent follows for the same call) to avoid rendering the
+    call twice.
 
     Args:
       tool_name: Name of tool.
       success: Whether tool succeeded.
       result: Result text or error message.
+      has_content: Whether a rich ToolContentEvent follows for the same
+        call.
     """
     if not self.show_tool_calls:
       return
@@ -844,9 +855,42 @@ class InteractiveUIHandler(UIHandler):
     if success:
       self.console.print("  [green]✓ Success[/green]", end="")
       self.console.print(f" ({len(result)} chars)", style=TOOL_RESULT_STYLE)
+      self._print_result_preview(result, has_content=has_content)
     else:
       self.console.print("  [red]𐄂 Fail[/red]")
       self._print_error(result if result else "Failed")
+
+  def _print_result_preview(self, result: str, *, has_content: bool = False) -> None:
+    """Print the compact result preview under the success status line.
+
+    Respects ``tool_result_preview_lines`` (0 disables), middle-collapses
+    long results via ``truncate_content_preview`` (head lines + hidden
+    marker, same convention as content display) and caps each shown line
+    at ``arg_preview_head + arg_preview_tail`` — long single-line results
+    (e.g. dict reprs) collapse to ``head…tail`` instead of dumping the
+    whole string. All preview text is Rich-escaped.
+
+    Args:
+      result: The successful tool's result string.
+      has_content: When True, suppress the preview entirely — a rich
+        ToolContentEvent renders the same call separately.
+    """
+    if has_content:
+      return
+    cd = self._content_display
+    max_lines = cd.tool_result_preview_lines
+    text = result.strip()
+    if max_lines <= 0 or not text:
+      return
+
+    previewed, _was_truncated, _total = truncate_content_preview(text, max_lines, max_lines, 0)
+    budget = cd.arg_preview_head + cd.arg_preview_tail
+    for line in previewed.splitlines():
+      if len(line) > budget + 1:
+        head = line[: cd.arg_preview_head]
+        tail = line[len(line) - cd.arg_preview_tail :] if cd.arg_preview_tail else ""
+        line = f"{head}…{tail}"
+      self.console.print(f"  {escape_rich_markup(line)}", style=TOOL_RESULT_STYLE)
 
   def output_tool_content(
     self,

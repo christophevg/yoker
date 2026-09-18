@@ -854,6 +854,97 @@ class TestInteractiveUIHandlerToolOutput:
     # backslashes, and the bracketed segment not consumed as a style tag.
     assert "repor[t red].txt" in text
 
+  def test_output_tool_result_success_shows_preview(self):
+    """output_tool_result renders a compact preview under the success line."""
+    output = StringIO()
+    handler = InteractiveUIHandler(show_tool_calls=True)
+    handler.console = make_console(output)
+
+    handler.output_tool_result("search", True, "files: 35\nloc: 4,620")
+
+    text = output.getvalue()
+    assert "✓ Success" in text
+    assert "files: 35" in text
+    assert "loc: 4,620" in text
+
+  def test_output_tool_result_preview_truncated(self):
+    """A long multi-line result shows head lines plus the collapse marker."""
+    output = StringIO()
+    handler = InteractiveUIHandler(show_tool_calls=True)
+    handler.console = make_console(output)
+
+    result = "\n".join(f"line {i}" for i in range(1, 11))
+    handler.output_tool_result("read", True, result)
+
+    text = output.getvalue()
+    assert "line 1" in text
+    assert "line 3" in text
+    # Marker from the shared helper; note its count is end-exclusive
+    # (lines 4-10 = 7 lines, helper reports 6) — pre-existing off-by-one.
+    assert "lines hidden (4" in text
+    assert "line 4" not in text
+
+  def test_output_tool_result_preview_caps_long_lines(self):
+    """A long single-line result collapses to head…tail, not a full dump."""
+    output = StringIO()
+    handler = InteractiveUIHandler(show_tool_calls=True)
+    handler.console = make_console(output)
+
+    handler.output_tool_result("search", True, "x" * 743)
+
+    text = output.getvalue()
+    assert "x" * 30 in text  # head budget (arg_preview_head)
+    assert "…" in text
+    assert "x" * 743 not in text
+
+  def test_output_tool_result_preview_suppressed_when_content_follows(self):
+    """has_content=True suppresses the preview (rich block renders instead)."""
+    output = StringIO()
+    handler = InteractiveUIHandler(show_tool_calls=True)
+    handler.console = make_console(output)
+
+    handler.output_tool_result("write", True, "File written successfully", has_content=True)
+
+    text = output.getvalue()
+    assert "✓ Success" in text
+    assert "File written successfully" not in text
+
+  def test_output_tool_result_preview_disabled_via_config(self):
+    """tool_result_preview_lines=0 disables the preview."""
+    output = StringIO()
+    handler = InteractiveUIHandler(show_tool_calls=True)
+    handler.console = make_console(output)
+    handler._content_display.tool_result_preview_lines = 0
+
+    handler.output_tool_result("search", True, "files: 35")
+
+    text = output.getvalue()
+    assert "✓ Success" in text
+    assert "files: 35" not in text
+
+  def test_output_tool_result_preview_escapes_markup(self):
+    """Preview lines are Rich-escaped — brackets render literally."""
+    output = StringIO()
+    handler = InteractiveUIHandler(show_tool_calls=True)
+    handler.console = make_console(output)
+
+    handler.output_tool_result("search", True, "found: [red]flag[/red]")
+
+    text = output.getvalue()
+    assert "found: [red]flag[/red]" in text
+
+  def test_output_tool_result_failure_no_preview(self):
+    """Failures keep rendering the full error — no preview interference."""
+    output = StringIO()
+    handler = InteractiveUIHandler(show_tool_calls=True)
+    handler.console = make_console(output)
+
+    handler.output_tool_result("read", False, "Error message here")
+
+    text = output.getvalue()
+    assert "ERROR" in text
+    assert "Error message here" in text
+
 
 class TestInteractiveUIHandlerCommandOutput:
   """Tests for InteractiveUIHandler command output."""

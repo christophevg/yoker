@@ -214,7 +214,9 @@ class TestUIBridgeSessionLifecycle:
       def output_tool_call(self, tool_name: str, args: dict, agent=None) -> None:
         pass
 
-      def output_tool_result(self, tool_name: str, success: bool, result: str) -> None:
+      def output_tool_result(
+        self, tool_name: str, success: bool, result: str, *, has_content: bool = False
+      ) -> None:
         pass
 
       def output_tool_content(self, *args, **kwargs) -> None:

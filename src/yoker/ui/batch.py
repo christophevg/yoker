@@ -255,13 +255,17 @@ class BatchUIHandler(UIHandler):
     agent_tag = f"[{agent.id}]" if agent else ""
     print(f"# Tool{agent_tag}: {tool_name}({args_str})", file=self._stderr)
 
-  def output_tool_result(self, tool_name: str, success: bool, result: str) -> None:
+  def output_tool_result(
+    self, tool_name: str, success: bool, result: str, *, has_content: bool = False
+  ) -> None:
     """Output tool result status.
 
     Args:
       tool_name: Name of tool.
       success: Whether tool succeeded.
       result: Result text or error message.
+      has_content: Unused here (batch prints a fixed-length detail line;
+        the rich ToolContentEvent renders via output_tool_content).
     """
     if not self.show_tool_calls:
       return

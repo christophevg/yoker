@@ -1624,6 +1624,9 @@ async def _execute_single_tool_call(
       tool_name=tool_name,
       result=str(result),
       success=success,
+      has_content=bool(
+        success and tool_result is not None and tool_result.content_metadata is not None
+      ),
     ),
     agent._event_handlers,
   )

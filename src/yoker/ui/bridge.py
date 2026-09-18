@@ -134,6 +134,7 @@ class UIBridge:
           event.tool_name,  # type: ignore[attr-defined]
           event.success,  # type: ignore[attr-defined]
           event.result,  # type: ignore[attr-defined]
+          has_content=event.has_content,  # type: ignore[attr-defined]
         )
         # Restart the processing spinner for the next step (model is
         # processing the tool result and deciding what to do next).

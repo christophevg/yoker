@@ -649,6 +649,10 @@ class ContentDisplayConfig:
       using middle-collapse.
     preview_tail_lines: Lines shown from the bottom when content is truncated
       using middle-collapse.
+    tool_result_preview_lines: Lines of a successful tool's result string
+      shown as a preview under the ``✓ Success`` status line. 0 disables
+      the preview; results whose content is rendered separately via a
+      ToolContentEvent are never previewed.
   """
 
   verbosity: str = "summary"  # "silent", "summary", "content"
@@ -663,6 +667,7 @@ class ContentDisplayConfig:
   multiline_arg_threshold: int = 3
   preview_head_lines: int = 5
   preview_tail_lines: int = 5
+  tool_result_preview_lines: int = 3
 
 
 @dataclass

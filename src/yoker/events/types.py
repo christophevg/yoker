@@ -163,6 +163,10 @@ class ToolResultEvent(Event):
   tool_name: str
   result: str
   success: bool = True
+  # True when a ToolContentEvent with rich owner-facing rendering follows
+  # for the same call — UIs suppress the plain result preview then, so
+  # the call is not rendered twice (agent-facing + rich block).
+  has_content: bool = False
 
 
 @dataclass(frozen=True)

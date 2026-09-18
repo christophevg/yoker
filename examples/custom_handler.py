@@ -117,13 +117,16 @@ class PrintUIHandler:
     """
     print(f"[tool call] {tool_name}({args})")
 
-  def output_tool_result(self, tool_name: str, success: bool, result: str) -> None:
+  def output_tool_result(
+    self, tool_name: str, success: bool, result: str, *, has_content: bool = False
+  ) -> None:
     """Print a tool result.
 
     Args:
       tool_name: Name of the tool.
       success: Whether the tool succeeded.
       result: Result text or error message.
+      has_content: Whether a rich content event follows for the same call.
     """
     print(f"[tool result] {tool_name} success={success}: {result}")
 

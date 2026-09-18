@@ -89,7 +89,7 @@
 - [ ] **`file` tool: `diff` sub-operation** — compare two files without reading both into context
 
 ### UX Polish
-- [ ] **Interactive UI: generic tool-result preview on success lines** (source: feedback-basset.md, 2026-09-16)
+- [x] **Interactive UI: generic tool-result preview on success lines** (source: feedback-basset.md, 2026-09-16) — **DONE 2026-09-16, pulled into 0.13.0 by owner decision** (small enough to be cleanup-adjacent; CHANGELOG Unreleased → Added)
   - Plugin/read-style tools that return a plain `str` render only `✓ Success (N chars)` — the result is invisible to the owner (it went to the model only). Extend `InteractiveUIHandler.output_tool_result` to render a compact preview of the result string on success: first 1–3 lines, middle-collapsed via `truncate_content_preview`, keeping the char count.
   - **Owner decisions (2026-09-16):**
     1. **Suppress the preview when a `ToolContentEvent` follows for the same call** — tools setting `content_metadata` would otherwise render twice (agent-facing result + rich block). Note: `ToolContentEvent` fires after the result event, so suppression needs lookahead/state in the UI or bridge.
