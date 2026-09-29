@@ -196,6 +196,31 @@ Remaining tools and enhancements not pulled into pre-release:
   - Related design question: extending configured lists (`allowed_operations`, `blocked_write_paths`, `filesystem_paths`, trusted plugins, ...) currently requires looking up the default, copying it and appending — no "extend the default" merge semantics. Evaluate list merge/extension semantics (e.g. an `extend` sub-key, default-merge with explicit-reset opt-out) as part of the defaults review.
   - **Priority:** Medium
 
+- [ ] **M.8 Image-ref calibration poisoning: phantom context gauge + phantom compaction trigger (deferred 2026-09-22)**
+
+  Investigated 2026-09-22 (owner-confirmed mechanism, no fix this session — 0.13.0 convergence mode; full trace below so no re-investigation is needed).
+
+  - **Symptom:** during the bpmn-tools render-refinement session, the interactive gauge showed `82.2K/125K` at turn end (13:32:51), and after the next turn (plain git-commit + `make check` work, ~10–15K tokens of content) showed `25.7K/125K`. No compaction panel was shown. Looks like a silent compaction / "fresh context"; it is neither.
+
+  - **Root cause:** interaction between the **image send-once contract** and the **self-correcting calibration model**.
+    - Tool-result image refs are file *paths* (`src/yoker/builtin/read.py` — the file is never decoded; the ref rides on the tool-result message and the **Ollama backend serializes it to base64 in the submitted request**). The estimate (`char4` in `_estimate_tokens` / `_context_gauge`) counts only `content` + `thinking` + `tool_calls` — **image payloads are invisible to char4** — but the **server's `prompt_eval_count` / `input_tokens` includes the base64 image tokens**.
+    - `_capture_calibration(agent, input_tokens)` (`src/yoker/core/_processing.py`, called after every LLM call at ~line 342) re-derives `fixed = server − ratio × char4`. On a capture from a request that carried an image, the image tokens are structurally absorbed into **`agent._context_fixed_tokens`**, inflating every later estimate (`fixed + ratio × char4(view)` — the gauge) with tokens that are not in the view.
+    - On the next request the stale image ref is stripped from the view by `_strip_stale_images` (`src/yoker/context/manager.py` ~line 782 — stateless send-once: a tool result keeps its `images` only when it appears after the most recent assistant message). The following capture is image-free → `fixed` re-derives cleanly → gauge collapses (82.2K → 25.7K). **No compaction ran** — correct, since the strip is a projection rule (no `pruned` flags, no `ContextOverflowEvent`/panel; the no-op suppression only fires when a pipeline pass flagged nothing).
+
+  - **Impact 1 (cosmetic, observed):** gauge sawtooth — inflates on image-bearing turns, collapses on the next.
+  - **Impact 2 (dangerous):** the same inflated estimate is the **trigger** of `_manage_context_overflow` (`src/yoker/core/_processing.py` ~line 503). A session whose loop reads/renders a fresh image every turn rides a calibration sawtooth that can cross `context.max_tokens` on phantom tokens → the compaction pipeline flags real history as `dropped` for tokens that would never be submitted again — and the panel then launders it as a legitimate overflow.
+  - **Aggravator (unconfirmed hypothesis):** `glm-5.3-flash:cloud` is an Ollama *cloud* model; an unstable/cache-discounted `prompt_eval_count` across identical prefixes would poison calibration in both directions.
+
+  - **Agreed fix direction (owner + agent, deferred):** decouple the two mechanisms through the token-estimation channel — **compaction must only ever react to tokens it can see (char4) and control** (images are invisible to char4 and owned by send-once, not compaction):
+    1. **Calibration gate** in the processing loop: if the submitted view carried `images` (cheap single pass where the submission is built), skip `_capture_calibration` for that response (no `fixed` re-derivation, no ratio update). Next image-free capture self-corrects; the phantom trigger becomes structurally impossible (over-cap estimate then ⇒ real text ⇒ pipeline run is genuinely correct).
+    2. **Telemetry:** record image count alongside `input_tokens` on the `llm_call` usage record (`src/yoker/usage/logger.py::log_call_usage`) so an image sawtooth is diagnosable in `~/.yoker/usage.jsonl`.
+    3. **Deliberately NOT chosen:** surfacing the image strip via the compaction UI panel (owner's first instinct, rejected after analysis: the strip re-fires on every subsequent `get_context()` → needs dedup + a new event/bridge/handler path inside a projection getter that must stay byte-deterministic; it would explain the symptom but leave the trigger defect, and be noise in image-heavy loops). The read tool result already tells the model "visible on this request only".
+    4. **Possible follow-up:** synthetic per-image token weight so the gauge is truthful *during* image-bearing turns (post-gate direction of error is under-count — the safe one).
+
+  - **Ground-truth check that would confirm (not run — bpmn-tools context/ and `~/.yoker/usage.jsonl` were outside this session's allowed paths):** `grep '"kind":"compaction"' ~/.yoker/usage.jsonl` in the 13:30–13:45 window (none expected between the two status lines) + `input_tokens` sawtooth in `llm_call` records (≈56K delta ≈ the image) + `pruned` flags in that session's JSONL under `../bpmn-tools/context/`.
+
+  - **Tests to write when picked up:** calibration skipped when submission carries images; gauge stays stable across a strip; no compaction under cap with an image-bearing turn; compaction still fires on genuinely-over-cap text.
+  - **Priority:** Medium — correctness of the 0.13.0 flagship feature (compaction) in image workflows; gauge cosmetics otherwise
 ### S.1: Secure API Key Storage with Keyring
 
 - [ ] **S.1 Secure API Key Storage with Keyring** — use Python `keyring` library; during bootstrap wizard store via keyring; fallback to config file if unavailable; support all providers
