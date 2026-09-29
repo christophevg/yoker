@@ -1,68 +1,17 @@
-#!/usr/bin/env python3
-"""Analyze yoker session JSONL files: tool errors, bad-edit flows, recovery.
+"""tool_error_analyzer.py — mine yoker session JSONLs for tool-usage errors.
 
-Fact-based analysis of tool usage across session files: how often each
-error class occurs, when edits follow failures without re-reads (the
-corruption surface), and what recovery behavior looks like. Built to
-replace anecdote (incident reports) with data.
-
-Stdlib-only on purpose: must parse session files produced by ANY yoker
-version, including older ones — importing yoker would couple the analysis
-to the running checkout (same rationale as context_report.py).
-
-Record shapes (see src/yoker/context/persisted.py):
-  message            {role, content, [pruned]}
-  tool_call_message  {tool_calls: [{id, name, arguments}], content, [thinking], [pruned]}
-  tool_result        {tool_name, tool_id, result, success, [pruned]}
-  compaction         {run_id, stages, dropped_count, ...}
-  session_start / turn_start / turn_end / session_end
-
-Method (locked decisions 2026-09-29):
-  Layer 1  failed tool results classified by error taxonomy (works without
-           call/result pairing — classification is on the result text).
-  Layer 2  per-path state machine, session-wide (cross-agent): file truth
-           is session-wide, so the last state on a path is global.
-           Each write is classified by the state BEFORE it:
-             fail after write_ok   → c2-benefit   (strict read-after-write
-                                     guard would have prevented a failed edit)
-             ok   after write_ok   → c2-harmless  (same guard = pure overhead)
-             fail after write_fail → blind-retry (Issue 3: same-path writes
-                                     pre-constructed on the belief the first
-                                     edit worked)
-             ok   after write_fail → blind-recovery (Issue 1/2: editing on a
-                                     stale mental model)
-             *    after stub_read  → stub-edit   (Issue 1: edit after a
-                                     force-stubbed read)
-             fail after read_ok    → failed-even-after-reread (tool UX)
-             ok   after read_ok    → guard-satisfied baseline (no counter)
-             *    first touch      → first-touch (neutral)
-  Layer 3  same mechanism from the recovery viewpoint + fail-streak depths
-           per path (consecutive failures without a re-read between).
-
-Pairing is by tool_id; unpaired results (legacy files) classify on Layer 1
-only and are counted separately. Files are included whole when their mtime
-is ≥ the cutoff ("process all files max N days old" — file-level criterion;
-sessions are append-only, so old lines belong to recently active sessions).
-Exit 0 always — analysis tool, not validator; malformed lines are counted,
-shown, and skipped.
-
-Usage:
-  python scripts/tool_error_analyzer.py                       # defaults: 15d, ./local/context/*.jsonl
-  python scripts/tool_error_analyzer.py 30                    # last 30 days
-  python scripts/tool_error_analyzer.py 30 ../basset/local/context/*.jsonl
-  python scripts/tool_error_analyzer.py --json                # machine-readable
-
-Read the census section before trusting the analysis sections — it is the
-review gate: unexpected record shapes mean the parsing rules need a look.
+Investigation instrument (not product): fact-based analysis of the update-
+tool problem — failure taxonomy, edit-chain C2 pricing, recovery behavior,
+misuse forensics. Reads ./local/context/*.jsonl (cwd glob pattern
+overridable); see _parse_file for the record schema.
 """
 
-from __future__ import annotations
-
 import argparse
+import difflib
 import glob
 import json
-import re
 import os
+import re
 import sys
 from collections import Counter
 from datetime import datetime, timedelta, timezone
@@ -70,449 +19,481 @@ from pathlib import Path
 from typing import Any
 
 # ============================================================================
-# Configuration / constants
+# Configuration
 # ============================================================================
 
 DEFAULT_CONTEXT_FILES = "./local/context/*.jsonl"
 DEFAULT_SINCE_DAYS = 15
-_MAX_EXAMPLES = 3          # condensed report: ≤3 examples per category
-_RESULT_PREVIEW = 120      # example excerpt width
-_STREAK_TOP = 5            # fail-streak table rows
-_PATH_TOP = 5              # top failing paths per tool
+_EXAMPLES_PER_CATEGORY = 3
+_DETAIL_ROWS = 5
+_STREAK_TOP = 5
+_BIG_PATCH_LINES = 20
+_RETRY_SIM_THRESHOLD = 0.9
+_RESULT_PREVIEW = 120
 
-# Category → regexes (case-insensitive) matched against the tool_result
-# text. Patterns mirror the real error strings the tools emit
-# (src/yoker/builtin/update.py et al.). Unmatched errors → "other", kept
-# visible so patterns can be tightened next iteration.
-ERROR_TAXONOMY: dict[str, tuple[str, ...]] = {
+ERROR_CATEGORIES = {
   "search-not-found": (
     r"search text not found",
   ),
   "ambiguous-match": (
     r"appears multiple times",
-    r"ambiguous anchor",
-  ),
-  "no-op-edit": (
-    r"no-op: old_string equals new_string",
-    r"applied, but file content is identical",
   ),
   "anchor-duplication": (
     r"doesn't need to be repeated",
   ),
+  "no-op-edit": (
+    r"no-op: old_string equals new_string",
+  ),
   "invalid-arguments": (
     r"invalid arguments",
     r"unknown argument",
-  ),
-  "path/validation": (
-    r"invalid path",
-    r"path is not a file",
-    r"file not found",
-    r"permission denied",
-    r"invalid operation",
-    r"invalid .* parameter",
-    r"invalid line_number",
-    r"diff size exceeds limit",
-    r"symlink",
-    r"must be a \[start, end\] pair",
-    r"out of range",
-    r"line numbers are 1-indexed",
-    r"line_range end .* must be >= start",
-    r"line_range values must be integers",
-    r"line_range start .* must be >= 1",
-    r"parameter 'operation' is required",
-    r"error reading file",
-    r"error updating file",
+    r"missing required argument",
   ),
   "guardrail-protected": (
     r"write-protected",
-    r"blocked.*write",
-    r"denied by .*guardrail",
+    r"invalid path",
+    r"path outside allowed",
+    r"file is write-protected",
   ),
-  "out-of-scope": (
-    r"unknown tool",
-    r"tool .* not found",
-    r"no such (tool|command)",
+  "not-found": (
+    r"file not found",
   ),
-  "other": (),  # unmatched failures land here — classified below explicitly
+  "other": (),  # fallback — never matches, receives unmatched errors
 }
 
-STUB_MARKER_SUBSTR = "pruned by force_stub_tool_results"
-
-# Tools whose success falsifies file state (chain/recovery analysis domain).
-WRITE_TOOLS = {"update", "write"}
-READ_TOOLS = {"read"}
+_STUB_MARKER = "pruned by force_stub_tool_results"
+_WRITE_TOOLS = ("update", "write", "update2")
+_READ_TOOLS = ("read",)
 
 # ============================================================================
-# Per-file parsing
+# Parsing + per-file analysis
 # ============================================================================
 
 
-def _parse_file(path: Path) -> tuple[list[tuple[int, dict[str, Any] | None, str | None]], dict[str, Any]]:
-  """Read a JSONL file into (line_number, record | None, error | None) entries.
-
-  Malformed lines are kept as errors so the report can point at them and
-  continue (exit 0 always). Meta (session_id/agent_id/start_time) is read
-  from the session_start record; legacy combined ids are split on the first
-  dash (all current session ids are dash-free UUIDs).
-  """
-  entries: list[tuple[int, dict[str, Any] | None, str | None]] = []
-  meta: dict[str, Any] = {"session_id": None, "agent_id": None, "start_time": None}
+def _parse_file(path: Path) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+  """Line-ordered stream of tool_call/tool_result records from a session file."""
+  stream: list[dict[str, Any]] = []
+  meta: dict[str, Any] = {}
   with open(path, encoding="utf-8") as f:
-    for line_num, line in enumerate(f, start=1):
-      line = line.strip()
-      if not line:
-        continue
+    for i, line in enumerate(f, 1):
       try:
-        record = json.loads(line)
-      except json.JSONDecodeError as e:
-        entries.append((line_num, None, f"invalid JSON: {e.msg}"))
+        rec = json.loads(line)
+      except json.JSONDecodeError:
+        stream.append({"line": i, "record": None})
         continue
-      entries.append((line_num, record, None))
-      if record.get("type") == "session_start" and not meta["session_id"]:
-        data = record.get("data") or {}
-        meta["session_id"] = data.get("session_id")
-        meta["agent_id"] = data.get("agent_id")
-        meta["start_time"] = data.get("start_time") or record.get("timestamp")
-  return entries, meta
+      rtype = rec.get("type")
+      data = rec.get("data") or {}
+      if rtype in ("tool_call_message", "tool_result", "session_start", "turn_start"):
+        stream.append({"line": i, "record": rec})
+      if rtype == "session_start" and isinstance(data, dict):
+        meta["session_id"] = data.get("session_id") or Path(path).name
+        meta["agents"] = data.get("agents") or []
+  return stream, meta
 
 
-def _parse_arguments(raw: Any) -> dict | None:
-  """tool_calls[].arguments: dict or JSON string; malformed → None."""
-  if isinstance(raw, dict):
-    return raw
-  if isinstance(raw, str):
+def _call_args(call: dict) -> dict:
+  args = call.get("arguments")
+  if isinstance(args, str):
     try:
-      parsed = json.loads(raw)
-      return parsed if isinstance(parsed, dict) else None
-    except (json.JSONDecodeError, ValueError):
-      return None
-  return None
+      args = json.loads(args)
+    except (json.JSONDecodeError, TypeError):
+      args = {}
+  return args if isinstance(args, dict) else {}
 
 
-def _classify_error(text: Any) -> str:
-  """Classify a failed tool-result text by the taxonomy; fallback "other"."""
-  s = text if isinstance(text, str) else ("" if text is None else str(text))
-  s = s.lower()
-  for category, patterns in ERROR_TAXONOMY.items():
+def _call_meta(call: dict) -> tuple[str, dict]:
+  """(tool_name, parsed_args) from a persisted call record.
+
+  Calls persist OpenAI-style: {"id", "function": {"name", "arguments"}} —
+  unwrap "function" when present; tolerate flat {"name", "arguments"}.
+  """
+  func = call.get("function")
+  if isinstance(func, dict):
+    call = func
+  name = call.get("name")
+  return (str(name) if name is not None else ""), _call_args(call)
+
+
+def _classify(text: str) -> str:
+  low = text.lower()
+  for category, patterns in ERROR_CATEGORIES.items():
     for pattern in patterns:
-      if re.search(pattern, s):
+      if re.search(pattern, low):
         return category
   return "other"
 
 
-# ============================================================================
-# Phase 0: schema census (the review gate)
-# ============================================================================
+def analyze_file(path: Path) -> dict[str, Any]:
+  """One session file → {meta, failures, transitions, chains,...}.
 
-
-def _census(files: list[Path]) -> dict[str, Any]:
-  """Record-type / field census across the corpus.
-
-  Purpose: validate the parse assumptions BEFORE the analysis is trusted —
-  record-type coverage, data keys per type, call↔result pairing coverage,
-  call argument shapes per tool, update operation values, stub markers,
-  compaction stage names.
+  Calls and results paired by tool_id. Write-tools update per-path state:
+  read → fresh; read with stub marker → stubbed; write ok → settled;
+  write fail → failing (streak + retry-chain tracking).
   """
-  types: Counter = Counter()
-  keys_by_type: dict[str, Counter] = {}
-  result_fields: Counter = Counter()
-  pairing: Counter = Counter()
-  arg_keys: dict[str, Counter] = {}
-  update_ops: Counter = Counter()
-  agent_attributed_results: Counter = Counter()
-  files_with_stubs: set[str] = set()
-  files_with_computed: set[str] = set()
-  files_with_tool_records: set[str] = set()
-  stage_counts: Counter = Counter()
+  stream, meta = _parse_file(path)
+  calls_by_id: dict[str, dict] = {}
+  failures: list[dict] = []
+  transitions: Counter = Counter()
+  stub_reads = 0
+  stub_edits: list[dict] = []
+  fail_streaks: list[dict] = []
+  write_walk: list[dict] = []
+  parallel_same_path: list[dict] = []
+  malformed: list[str] = []
+  tool_results: Counter = Counter()
 
-  for path in files:
-    entries, meta = _parse_file(path)
-    sid = str(meta.get("session_id") or path.name)
-    for _, record, error in entries:
-      if record is None or error is not None:
-        continue
-      rtype = record.get("type")
-      if not isinstance(rtype, str):
-        continue
-      types[rtype] += 1
-      data = record.get("data") or {}
-      if isinstance(data, dict):
-        keys_by_type.setdefault(rtype, Counter()).update(data.keys())
+  state: dict[str, str] = {}      # resolved path → fresh|stubbed|settled|failing
+  streak: dict[str, int] = {}
+  streak_first: dict[str, str] = {}
+  chain: dict[str, int] = {}      # path → same-mistake retry depth
+  chain_first: dict[str, dict] = {}
 
-      if rtype == "tool_result":
-        files_with_tool_records.add(sid)
-        result_fields.update(data.keys())
-        pairing["with tool_id"] += 1 if isinstance(data.get("tool_id"), str) else 0
-        if not data.get("tool_id"):
-          pairing["without tool_id"] += 1
-        # Stub detection (Issue 1 raw material): stub marker text OR a
-        # pruned flag naming the force_stub stage.
-        result_text = data.get("result")
-        pruned = data.get("pruned")
-        is_stub = (
-          isinstance(result_text, str) and STUB_MARKER_SUBSTR in result_text
-        ) or (
-          isinstance(pruned, dict) and "force_stub" in json.dumps(pruned)
-        )
-        if is_stub:
-          files_with_stubs.add(sid)
-      elif rtype == "tool_call_message":
-        files_with_tool_records.add(sid)
-        calls = data.get("tool_calls")
-        if isinstance(calls, list):
-          files_with_computed.add(sid)
-          files_with_stub_records_placeholder = None  # placeholder removed
-          for call in calls:
-            if not isinstance(call, dict):
-              continue
-            name = call.get("name")
-            args = _parse_arguments(call.get("arguments"))
-            if isinstance(name, str):
-              arg_keys.setdefault(name, Counter()).update((args or {}).keys())
-            if name == "update" and isinstance(args, dict):
-              op = args.get("operation")
-              update_ops[op if isinstance(op, str) and op else "(inferred)"] += 1
-      elif rtype == "compaction":
-        for stage in data.get("stages", []) if isinstance(data.get("stages"), list) else []:
-          if isinstance(stage, dict):
-            stage_counts[str(stage.get("name", "?"))] += 1
-
-  total_results = sum(types.get(t, 0) for t in ("tool_result",))
-  return {
-    "files": len(files),
-    "files_with_tool_records": len(files_with_tool_records),
-    "record_types": dict(sorted(types.items())),
-    "keys_by_type": {k: dict(v) for k, v in sorted(keys_by_type.items())},
-    "result_fields": dict(sorted(result_fields.items())),
-    "pairing": dict(pairing),
-    "pairing_coverage": (
-      f"{pairing['with tool_id']}/{total_results} results carry tool_id"
-      if total_results else "no tool_result records in corpus"
-    ),
-    "arg_keys_per_tool": {k: dict(v) for k, v in sorted(arg_keys.items())},
-    "update_operation_values": dict(sorted(update_ops.items(), key=lambda kv: -kv[1])),
-    "agent_attributed_results": dict(agent_attributed_results),
-    "files_with_stubbed_reads": len(files_with_stubs),
-    "compaction_stage_counts": dict(sorted(stage_counts.items())),
-    "review_gate": (
-      "REVIEW this census before trusting the analysis sections — "
-      "unexpected record shapes mean the parsing rules need a look."
-    ),
-  }
-
-
-# ============================================================================
-# Per-file analysis (Layers 1–3)
-# ============================================================================
-
-
-def _analyze_file(path: Path) -> dict[str, Any]:
-  """All three layers for one file, driven by one interleaved event pass.
-
-  Calls are registered by tool_id when their frame is seen; results are
-  paired via that registry and drive a session-wide per-path state machine.
-  Each write result is classified by the state before it (one mechanism
-  covering C2 pricing, recovery, Issue-1 stub edits, and tool-UX signals).
-  """
-  entries, meta = _parse_file(path)
-
-  failures: list[dict[str, Any]] = []       # Layer 1: {line, tool, category, excerpt}
-  transition_counts: Counter = Counter()    # {(prev, outcome): n}
-  stub_reads: Counter = Counter()           # per path: stubbed-read events
-  stub_edits: list[dict[str, Any]] = []
-  fail_streaks: list[dict[str, Any]] = []   # closed streaks: {path, depth, first_category}
-  unpaired_results: list[dict[str, Any]] = []
-  write_char_reads: list[int] = []          # read-result sizes (C2 overhead proxy)
-  read_count = 0
-  write_count = 0
-  malformed: list[tuple[int, str]] = []
-
-  calls_by_id: dict[str, dict[str, Any]] = {}
-  state: dict[str, str] = {}                # normalized path → last state
-  streak: dict[str, int] = {}               # normalized path → current fail streak
-  streak_first_cat: dict[str, str] = {}
-
-  def norm(raw_path: str) -> str:
-    return os.path.normpath(raw_path)
-
-  for line_num, record, error in entries:
-    if record is None or error is not None:
-      malformed.append((line_num, error or "unparseable"))
+  for item in stream:
+    rec = item["record"]
+    line = item["line"]
+    if rec is None:
+      malformed.append(f"{path}: {line}")
       continue
-    rtype = record.get("type")
-    data = record.get("data")
+    rtype = rec.get("type")
+    data = rec.get("data") or {}
 
-    if rtype == "tool_call_message" and isinstance(data, dict):
-      calls = data.get("tool_calls")
-      if isinstance(calls, list):
-        for call in calls:
-          if not isinstance(call, dict):
-            continue
-          tool_id = call.get("id")
-          args = _parse_arguments(call.get("arguments"))
-          if isinstance(tool_id, str):
-            calls_by_id[tool_id] = {
-              "name": call.get("name"),
-              "path": _path_from_call_args(args),
-              "operation": args.get("operation") if isinstance(args, dict) else None,
-            }
+    if rtype == "tool_call_message":
+      for call in data.get("tool_calls") or []:
+        if not isinstance(call, dict) or not call.get("id"):
+          continue
+        tool_id = str(call["id"])
+        name, args = _call_meta(call)
+        calls_by_id[tool_id] = {"name": name, "args": args, "line": line}
+        base = name.split("__")[-1]
+        if base in _WRITE_TOOLS:
+          p = args.get("path")
+          if isinstance(p, str) and p:
+            # Group calls from the same message hitting the same path.
+            pass
+      # parallel same-path stacking (Layer 4): calls in one message that
+      # touch the same file — second call was built before the first ran.
+      writes_in_msg: dict[str, dict] = {}
+      for call in data.get("tool_calls") or []:
+        if not isinstance(call, dict):
+          continue
+        name = _call_meta(call)[0].split("__")[-1]
+        args = _call_args(call)
+        if name in _WRITE_TOOLS and isinstance(args.get("path"), str) and args["path"]:
+          key = os.path.normpath(args["path"])
+          if key in writes_in_msg:
+            parallel_same_path.append({
+              "line": line,
+              "path": args["path"],
+              "first": writes_in_msg[key].get("operation"),
+              "second": args.get("operation"),
+            })
+          writes_in_msg[key] = args
+      continue
 
-    elif rtype == "tool_result" and isinstance(data, dict):
+    if rtype == "tool_result":
       tool_id = data.get("tool_id")
-      tool_name = data.get("tool_name")
-      call = calls_by_id.get(tool_id) if isinstance(tool_id, str) else None
-      call_path = call["path"] if call else None
-
-      # -- Layer 1: classification (works without pairing) ------------------
-      if data.get("success") is False:
-        catalog = _classify_error(data.get("result"))
-        failures.append({
-          "line": line_num,
-          "tool": tool_name,
-          "category": catalog,
-          "excerpt": (data.get("result") or "")[:_RESULT_PREVIEW],
-        })
-        if call_path:
-          key = norm(call_path)
-          if streak.get(key):
-            streak[key] += 1
-          else:
-            streak[key] = 1
-          streak_first_cat.setdefault(key, catalog)
-
-      # -- Stub reads (Issue 1 raw material) --------------------------------
+      if not isinstance(tool_id, str) or tool_id not in calls_by_id:
+        continue
+      call = calls_by_id[tool_id]
+      tool_name = str(call["name"] or "").split("__")[-1]
+      success = data.get("success") is not False
+      result_text = data.get("result") or ""
       pruned = data.get("pruned")
-      is_stub = (
-        isinstance(data.get("result"), str) and STUB_MARKER_SUBSTR in data["result"]
-      ) or (
-        isinstance(pruned, dict) and "force_stub" in json.dumps(pruned)
-      )
+      is_stub = isinstance(pruned, dict) and "force_stub" in json.dumps(pruned)
+      is_stub = is_stub or _STUB_MARKER in result_text
+      tool_results[tool_name] += 1
 
-      if call_path and tool_name in READ_TOOLS:
-        read_count += 1
-        if is_stub:
-          stub_reads[norm(call_path)] += 1
-          state[norm(call_path)] = "stub_read"   # stub ≠ valid truth
-        else:
-          write_char_reads.append(len(data.get("result") or ""))
-          state[norm(call_path)] = "read_ok"
+      base = call["name"].split("__")[-1]
+      raw_path = _call_args_from_id(calls_by_id, tool_id).get("path")
+      resolved = os.path.normpath(raw_path) if isinstance(raw_path, str) and raw_path else None
+
+      if not success:
+        failures.append({
+          "line": line,
+          "tool": tool_name,
+          "category": _classify(result_text),
+          "path": resolved,
+          "excerpt": result_text[:_RESULT_PREVIEW],
+        })
+        if resolved and tool_name in _WRITE_TOOLS:
+          streak[resolved] = streak.get(resolved, 0) + 1
+          streak_first.setdefault(resolved, _classify(result_text))
+
+      if resolved and tool_name in _READ_TOOLS:
+        state[resolved] = "stubbed" if is_stub else "fresh"
+        stub_reads += is_stub
         continue
 
-      # -- Writes (update/write): classify by prev state -------------------
-      if call_path and tool_name in WRITE_TOOLS:
-        key = norm(call_path)
-        prev = state.get(key)
-        success = data.get("success") is not False
+      if resolved and tool_name in _WRITE_TOOLS:
+        prev = state.get(resolved)
         outcome = "ok" if success else "fail"
-        transition_counts[(prev, outcome)] += 1
-        write_count += 1
-        if prev == "stub_read":
-          stub_edits.append({"path": call_path, "line": line_num, "tool": tool_name})
+        transitions[(prev, outcome)] += 1
+        if prev == "stubbed" and success:
+          stub_edits.append({"path": raw_path, "line": line, "tool": tool_name})
         if success:
-          streak.pop(key, None)
-          streak_first_cat.pop(key, None)
-        # state = own outcome (failures leave the machine in write_fail)
-        state[key] = "write_ok" if success else "write_fail"
+          streak.pop(resolved, None)
+        entry = {
+          "line": line,
+          "path": resolved,
+          "raw_path": raw_path,
+          "tool": tool_name,
+          "success": success,
+          "prev": prev,
+          "category": _classify(result_text) if not success else None,
+          "args": call["args"],
+        }
+        write_walk.append(entry)
+
+        # same-mistake chain: consecutive same-path failures
+        if not success:
+          chain[resolved] = chain.get(resolved, 0) + 1
+          if chain[resolved] == 1:
+            chain_first[resolved] = entry
+          else:
+            fail_streaks.append({
+              "depth": chain[resolved],
+              "first_category": streak_first.get(resolved, "?"),
+              "path": raw_path,
+              "file": str(path),
+            })
+        else:
+          if chain.get(resolved, 0) >= 2:
+            fail_streaks.append({
+              "depth": chain[resolved],
+              "first_category": chain_first[resolved]["category"] or "?",
+              "path": raw_path,
+              "file": str(path),
+            })
+          chain.pop(resolved, None)
+          chain_first.pop(resolved, None)
+          state[resolved] = "settled"
         continue
-
-    elif rtype == "compaction" and isinstance(data, dict):
-      # Last-timestamp tracking not needed — mtime gates file inclusion.
-      del data  # compaction records parsed in census only
-
-  # Close open streaks (EOF with path still failing).
-  for key, depth in streak.items():
-    if depth > 0:
-      fail_streaks.append({
-        "depth": depth,
-        "first_category": streak_first_cat.get(key, "?"),
-        "path": key,
-      })
 
   return {
-    "file": str(path),
-    "session_id": meta.get("session_id"),
-    "agent_id": meta.get("agent_id"),
-    "start_time": meta.get("start_time"),
+    "meta": meta,
+    "malformed": malformed,
     "failures": failures,
-    "unpaired_results": unpaired_results,
-    "transitions": transition_counts,
+    "transitions": transitions,
+    "tool_results": tool_results,
     "stub_reads": stub_reads,
     "stub_edits": stub_edits,
     "fail_streaks": fail_streaks,
-    "read_sizes": write_char_reads,
-    "read_count": read_count,
-    "write_count": write_count,
-    "malformed": malformed,
-    "tools": Counter(),
+    "write_walk": write_walk,
+    "parallel_same_path": parallel_same_path,
+  }
+
+
+def _call_args_from_id(calls_by_id: dict[str, dict], tool_id: str) -> dict:
+  return calls_by_id[tool_id].get("args") or {}
+
+
+# ============================================================================
+# Layer 4 helpers
+# ============================================================================
+
+
+def _arg_lines(args: dict, key: str) -> int:
+  value = args.get(key)
+  if not isinstance(value, str) or not value:
+    return 0
+  return value.count("\n") + 1
+
+
+def _similarity(a: str, b: str) -> float:
+  if not isinstance(a, str) or not isinstance(b, str):
+    return 0.0
+  return difflib.SequenceMatcher(None, a, b).ratio()
+
+
+def analyze_write_walk(write_walk: list[dict]) -> dict:
+  """Layer 4: misuse forensics from the write-walk stream."""
+  patch_len_ok: list[int] = []
+  patch_len_fail: list[int] = []
+  retry_chains: list[dict] = []
+  give_ups: list[dict] = []
+  strategy_notes: Counter = Counter()
+
+  last_by_path: dict[str, dict] = {}
+  fail_repeat: dict[str, int] = {}
+  ends_failing: dict[str, dict] = {}
+
+  for w in write_walk:
+    key = w["path"]
+    args = w["args"] if isinstance(w.get("args"), dict) else {}
+    old_lines_count = _arg_lines(args, "old_string")
+    old_string = args.get("old_string") if isinstance(args.get("old_string"), str) else ""
+
+    if w["tool"] and w["tool"].endswith("update") and old_lines_count:
+      if w["success"]:
+        patch_len_ok.append(old_lines_count)
+      else:
+        patch_len_fail.append(old_lines_count)
+
+    prev = last_by_path.get(key)
+    if not w["success"]:
+      ends_failing[key] = w
+      if prev and not prev["success"]:
+        sim = _similarity(old_string, prev.get("old_string", ""))
+        if sim >= _RETRY_SIM_THRESHOLD or (old_string and old_string == prev.get("old_string")):
+          fail_repeat[key] = fail_repeat.get(key, 0) + 1
+          if fail_repeat[key] == 1:
+            retry_chains.append({
+              "path": w["raw_path"], "file": None, "start_line": prev["line"],
+            })
+          retry_chains[-1]["retries"] = fail_repeat[key]
+          retry_chains[-1]["last_line"] = w["line"]
+        else:
+          fail_repeat[key] = 0
+    else:
+      ends_failing.pop(key, None)
+      if prev and not prev["success"]:
+        changes = []
+        sim = _similarity(old_string, prev.get("old_string", ""))
+        if old_lines_count and old_lines_count < _arg_lines(prev.get("args"), "old_string"):
+          changes.append("shorter-patch")
+        if not old_lines_count or sim < _RETRY_SIM_THRESHOLD:
+          changes.append("different-anchor")
+        strategy_notes["+".join(changes) or "same-args-succeeded"] += 1
+      fail_repeat.pop(key, None)
+    last_by_path[key] = {
+      "args": args, "old_string": old_string, "success": w["success"], "line": w["line"],
+    }
+
+  give_ups = sorted(ends_failing.values(), key=lambda w: w["line"])
+  return {
+    "patch_len_ok": patch_len_ok, "patch_len_fail": patch_len_fail,
+    "retry_chains": retry_chains, "give_ups": give_ups,
+    "strategy_notes": strategy_notes,
   }
 
 
 # ============================================================================
-# Aggregation across files
+# Census (review gate)
 # ============================================================================
 
 
-def build_report(files: list[Path], since: datetime, skipped: list[tuple[str, str]]) -> dict[str, Any]:
-  """Aggregate per-file models into the corpus report model."""
-  failures: list[dict[str, Any]] = []
-  failures_by_tool_cat: Counter = Counter()
-  failures_by_tool: Counter = Counter()
-  tool_calls: Counter = Counter()
-  transitions: Counter = Counter()
-  stub_edits: list[dict[str, Any]] = []
-  stub_read_events = 0
-  malformed: list[tuple[str, int, str]] = []
-  read_sizes: list[int] = []
-  write_events_total = 0
-  file_summaries: list[dict[str, Any]] = []
-  unpaired_total = 0
+def census(files: list[Path]) -> dict:
+  """Record-type/key census + pairing coverage — the parse-assumptions gate."""
+  types: Counter = Counter()
+  keys_by_type: dict[str, Counter] = {}
+  pairing: Counter = Counter()
+  arg_keys: dict[str, Counter] = {}
+  update_ops: Counter = Counter()
+  stub_files: set[str] = set()
 
   for path in files:
-    f = _analyze_file(path)
-    tool_results = sum(n for _, n in f["tools"].items())
+    _stream, meta = _parse_file(path)
+    sid = str(meta.get("session_id") or path.name)
+    with open(path, encoding="utf-8") as f:
+      for line in f:
+        try:
+          rec = json.loads(line)
+        except json.JSONDecodeError:
+          continue
+        rtype = rec.get("type")
+        data = rec.get("data") or {}
+        if not rtype:
+          continue
+        types[rtype] += 1
+        if isinstance(data, dict):
+          keys_by_type.setdefault(rtype, Counter()).update(data.keys())
+        if rtype == "tool_result":
+          pairing["with" if isinstance(data.get("tool_id"), str) else "without"] += 1
+          pruned = data.get("pruned")
+          if (isinstance(pruned, dict) and "force_stub" in json.dumps(pruned)) or isinstance(data.get("result"), str) and _STUB_MARKER in data["result"]:
+            stub_files.add(sid)
+        elif rtype == "tool_call_message":
+          for call in data.get("tool_calls") or []:
+            if not isinstance(call, dict):
+              continue
+            name = _call_meta(call)[0].split("__")[-1]
+            args = _call_args(call)
+            arg_keys.setdefault(name, Counter()).update(args.keys())
+            if name == "update" and isinstance(args.get("operation"), str):
+              update_ops[args["operation"]] += 1
+
+  return {
+    "files": len(files),
+    "record_types": dict(sorted(types.items())),
+    "pairing": dict(pairing),
+    "arg_keys_per_tool": {k: dict(v) for k, v in sorted(arg_keys.items())},
+    "update_operation_values": dict(sorted(update_ops.items(), key=lambda kv: -kv[1])),
+    "files_with_stubbed_results": len(stub_files),
+  }
+
+
+# ============================================================================
+# Aggregation + report
+# ============================================================================
+
+
+def build_report(files: list[Path], since: datetime, skipped: list[tuple[str, str]]) -> dict:
+  """Aggregate per-file models into one report model."""
+  failures: list[dict] = []
+  failures_by_tool_cat: Counter = Counter()
+  tool_results: Counter = Counter()
+  transitions: Counter = Counter()
+  stub_edits: list[dict] = []
+  stub_read_events = 0
+  fail_streaks: list[dict] = []
+  malformed: list[tuple[str, str]] = []
+  parallel_same_path: list[dict] = []
+  patch_len_ok: list[int] = []
+  patch_len_fail: list[int] = []
+  retry_chains: list[dict] = []
+  give_ups: list[dict] = []
+  strategy_notes: Counter = Counter()
+  file_summaries: list[dict] = []
+
+  for path in files:
+    try:
+      f = analyze_file(path)
+    except OSError as e:
+      skipped.append((str(path), f"read failed: {e}"))
+      continue
+
+    events = sum(f["tool_results"].values())
+    tool_results.update(f["tool_results"])
     file_summaries.append({
-      "file": f["file"],
-      "session_id": f["session_id"],
-      "agent_id": f["agent_id"],
-      "start_time": f["start_time"],
-      "tool_events": tool_results,
-      "writes": f["write_count"],
-      "reads": f["read_count"],
-      "failures": len(f["failures"]),
+      "file": str(path),
+      "session_id": f["meta"].get("session_id"),
+      "tool_events": events,
     })
     for failure in f["failures"]:
-        failure = dict(failure)
-        failure["file"] = f["file"]
-        failure["session_id"] = f["session_id"]
-        failures.append(failure)
-        failures_by_tool_cat[(failure["tool"], failure["category"])] += 1
-        failures_by_tool[failure["tool"]] += 1
-    for tool_result in f["tools"]:
-      pass
+      rec = dict(failure)
+      rec["file"] = str(path)
+      failures.append(rec)
+      failures_by_tool_cat[(rec["tool"], rec["category"])] += 1
     transitions.update(f["transitions"])
     stub_edits.extend(f["stub_edits"])
-    stub_read_events += sum(f["stub_reads"].values())
-    unpaired_total += len(f["unpaired_results"])
-    read_sizes.extend(f["read_sizes"])
-    write_events_total += f["write_count"]
-    for line_num, error_text in f["malformed"]:
-      malformed.append((f["file"], line_num, error_text))
+    stub_read_events += f["stub_reads"]
+    fail_streaks.extend(f["fail_streaks"])
+    parallel_same_path.extend(f["parallel_same_path"])
+    malformed.extend((str(path), m) for m in f["malformed"])
 
-  # C2 pricing: overhead estimate from read-result sizes (chars//4 ≈ tokens,
-  # same rough convention as context_report.py).
-  avg_read_tokens = (sum(read_sizes) // 4 // len(read_sizes)) if read_sizes else 0
+    l4 = analyze_write_walk(f["write_walk"])
+    patch_len_ok.extend(l4["patch_len_ok"])
+    patch_len_fail.extend(l4["patch_len_fail"])
+    for c in l4["retry_chains"]:
+      c["file"] = str(path)
+      retry_chains.append(c)
+    give_ups.extend(dict(g, file=str(path)) for g in l4["give_ups"])
+    strategy_notes.update(l4["strategy_notes"])
 
+  # C2 pricing
+  chain_links = transitions.get(("settled", "ok"), 0) + transitions.get(("settled", "fail"), 0)
+  harm = transitions.get(("settled", "fail"), 0)
+  harmless = transitions.get(("settled", "ok"), 0)
+  avg_read_tokens = 0
   c2 = {
-    "chain_links": transitions.get(("write_ok", "ok"), 0)
-                  + transitions.get(("write_ok", "fail"), 0),
-    "links_resolved_harmless": transitions.get(("write_ok", "ok"), 0),
-    "links_resolved_benefit": transitions.get(("write_ok", "fail"), 0),
-    "overhead_estimate_tokens": transitions.get(("write_ok", "ok"), 0) * avg_read_tokens,
-    "overhead_note": "harmless links × avg read size in chars//4 ≈ tokens — rough",
+    "chain_links": chain_links,
+    "harm": harm,
+    "harmless": harmless,
+    "overhead": harmless * avg_read_tokens,
   }
 
   streak_buckets = Counter(
-    "3+" if s["depth"] >= 3 else str(s["depth"]) for s in []
+    "3+" if s["depth"] >= 3 else str(s["depth"]) for s in fail_streaks
   )
 
   return {
@@ -520,24 +501,17 @@ def build_report(files: list[Path], since: datetime, skipped: list[tuple[str, st
       "files": len(files),
       "since": since.isoformat(),
       "skipped": skipped,
-      "malformed_lines": len(malformed),
-      "malformed_detail": [
-        {"file": f, "line": ln, "error": e} for f, ln, e in malformed[:20]
-      ],
-      "tool_result_records": sum(tool_calls.values()),
-      "unpaired_results": unpaired_total,
+      "malformed": len(malformed),
       "busiest": sorted(
         (s for s in file_summaries if s["tool_events"] > 0),
         key=lambda s: -s["tool_events"],
-      )[:5],
+      )[:_DETAIL_ROWS],
     },
-    "census": _census(files) if files else {"files": 0},
+    "census": census(files) if files else {"files": 0},
     "layer1": {
       "total_failures": len(failures),
-      "by_tool_and_category": {f"{t} :: {c}": n for (t, c), n in failures_by_tool_cat.most_common()},
-      "by_tool": {
-        t: {"calls": n, "failures": failures_by_tool.get(t, 0)}
-        for t, n in tool_calls.most_common()
+      "by_tool_and_category": {
+        f"{t} :: {c}": n for (t, c), n in failures_by_tool_cat.most_common()
       },
       "examples": _examples(failures),
     },
@@ -546,134 +520,121 @@ def build_report(files: list[Path], since: datetime, skipped: list[tuple[str, st
       "transitions": {f"{p}->{o}": n for (p, o), n in transitions.most_common()},
     },
     "layer3": {
-      "fail_streaks": sorted(
-        streak_buckets.items(), key=lambda kv: -kv[1]
-      ),
-      "streak_detail": sorted(
-        (s for s in local_streaks),
-        key=lambda s: -s["depth"],
-      )[:_STREAK_TOP],
+      "fail_streaks": sorted(streak_buckets.items(), key=lambda kv: -kv[1]),
+      "streak_detail": sorted(fail_streaks, key=lambda s: -s["depth"])[:_STREAK_TOP],
       "stub_reads": stub_read_events,
       "stub_edits": stub_edits[:_STREAK_TOP],
-      "stub_edit_count": len(stub_edits),
+    },
+    "layer4": {
+      "patch_len_ok_avg": (sum(patch_len_ok) // len(patch_len_ok)) if patch_len_ok else 0,
+      "patch_len_fail_avg": (sum(patch_len_fail) // len(patch_len_fail)) if patch_len_fail else 0,
+      "patch_len_fail_over_big": sum(v >= _BIG_PATCH_LINES for v in patch_len_fail),
+      "patch_len_ok_over_big": sum(v >= _BIG_PATCH_LINES for v in patch_len_ok),
+      "give_ups": give_ups[:_DETAIL_ROWS],
+      "give_up_count": len(give_ups),
+      "retry_chains": sorted(retry_chains, key=lambda c: -c.get("retries", 0))[:_DETAIL_ROWS],
+      "retry_chain_count": len(retry_chains),
+      "strategy_notes": dict(strategy_notes.most_common()),
+      "parallel_same_path": len(parallel_same_path),
     },
   }
 
 
-def _examples(failures: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
-  """Group failures by category; ≤3 examples each, condensed fields."""
-  grouped: dict[str, list[dict[str, Any]]] = {}
+def _examples(failures: list[dict]) -> dict[str, list[dict]]:
+  grouped: dict[str, list[dict]] = {}
   for failure in failures:
     grouped.setdefault(failure["category"], []).append({
       "tool": failure["tool"],
-      "path_or_line": failure.get("path") or failure.get("line"),
+      "line": failure.get("line"),
       "file": failure["file"],
-      "excerpt": failure["excerpt"],
+      "excerpt": failure.get("excerpt", ""),
     })
-  return {cat: items[:_MAX_EXAMPLES] for cat, items in grouped.items()}
+  return {k: v[:_EXAMPLES_PER_CATEGORY] for k, v in grouped.items()}
 
 
 # ============================================================================
-# Rendering
+# Rendering + main
 # ============================================================================
 
 
-def _render_census_lines(census: dict[str, Any], lines: list[str]) -> None:
-  add = lines.append
-  add(f"--- Phase 0 census ({census['files']} files) ---")
-  add(f"  files with tool records: {census.get('files_with_tool_records', 0)}")
-  add("  record types:")
-  for rtype, count in census.get("record_types", {}).items():
-    add(f"    {rtype:<22} {count}")
-  add(f"  result pairing: {census.get('pairing_coverage', 'n/a')}")
-  add("  update operation values:")
-  for op, count in census.get("update_operation_values", {}).items():
-    add(f"    {op:<14} {count}")
-  add(f"  files with stubbed reads: {census.get('files_with_stubbed_reads', 0)}")
-  stages = census.get("compaction_stage_counts", {})
-  if stages:
-    add("  compaction stages:")
-    for stage, count in stages.items():
-      add(f"    {stage:<34} {count}")
-  add(f"  >> {census.get('review_gate', '')}")
-
-
-def render_text(report: dict[str, Any]) -> str:
-  """Render the report model as the human-readable condensed report."""
+def render_text(report: dict) -> str:
+  """Condensed human report — census section is a review gate first."""
   lines: list[str] = []
   add = lines.append
   corpus = report["corpus"]
 
   add("=== Yoker Tool Error Analyzer ===")
-  add(f"files:      {corpus['files']} (since {corpus['since']})")
-  add(f"tool records: {corpus['tool_result_records']}  "
-      f"unpaired (legacy): {corpus['unpaired_results']}  "
-      f"malformed lines skipped: {corpus['malformed_lines']}")
+  add(f"files: {corpus['files']} (since {corpus['since']})  "
+      f"malformed lines: {corpus['malformed']}  skipped: {len(corpus['skipped'])}")
   if corpus["skipped"]:
     for skipped_file, reason in corpus["skipped"]:
       add(f"  SKIPPED {skipped_file}: {reason}")
   if corpus["busiest"]:
     add("  busiest sessions:")
     for s in corpus["busiest"]:
-      add(f"    {s['tool_events']:>5} events  {s['session_id']}  {s['file']}")
+      add(f"    {s['tool_events']:>5} events  {s['session_id']}")
   add("")
 
-  _render_census_lines(report["census"], lines)
+  cen = report["census"]
+  add("--- Census (review gate: unexpected shapes = parsing needs a look) ---")
+  add(f"  record types: {cen['record_types']}")
+  add(f"  tool_id pairing: {cen['pairing']}")
+  add(f"  update2-related arg keys: {cen['arg_keys_per_tool'].get('update2', '(no update2 use yet)')}")
+  add(f"  files with stubbed results: {cen['files_with_stubbed_results']}")
   add("")
 
   l1 = report["layer1"]
-  add(f"--- Layer 1: tool failures ({l1['total_failures']}) ---")
-  add("  by tool :: category:")
+  add("--- Layer 1: failures ---")
+  add(f"  total: {l1['total_failures']}")
   for key, count in l1["by_tool_and_category"].items():
     add(f"    {count:>5}  {key}")
-  add("")
-  add("  examples (≤3 per category):")
+  add("  examples:")
   for category, items in l1["examples"].items():
     add(f"    [{category}]")
     for item in items:
-      add(f"      {item['file']} · {item['tool']} · {item['path_or_line']}")
-      add(f"        {item['excerpt']}")
+      add(f"      {item['file']}:{item.get('line', '?')} · {item['tool']} · {item.get('excerpt', '')[:100]}")
   add("")
 
   l2 = report["layer2"]
   c2 = l2["c2"]
-  add("--- Layer 2: strict read-after-write (C2) simulation on edit chains ---")
-  add(f"  chain links (edit after edit, no read between): {c2['chain_links']}")
-  add(f"    harm (failed edit after clean edit):         {c2['links_resolved_benefit']}")
-  add(f"    overhead (clean edit after clean edit):      {c2['links_resolved_harmless']}")
-  add(f"    est. strict-C2 token overhead:               ~{c2['overhead_estimate_tokens']}")
-  add(f"      ({c2['overhead_note']})")
-  add(f"  all transitions: {l2['transitions']}")
+  add("--- Layer 2: strict-C2 simulation (edit chains) ---")
+  add(f"  chain links: {c2['chain_links']}   harm: {c2['harm']}   "
+      f"harmless: {c2['harmless']}   est overhead: ~{c2['overhead']} tokens")
+  add(f"  transitions: {l2['transitions']}")
   add("")
 
   l3 = report["layer3"]
-  add("--- Layer 3: recovery & corruption-flow signals ---")
-  add(f"  fail-streak depth distribution: {dict(l3['fail_streaks']) or '(none)'}")
+  add("--- Layer 3: recovery signals ---")
+  add(f"  fail-streak depths: {dict(l3['fail_streaks']) or '(none)'}")
   for s in l3["streak_detail"]:
-    add(f"    depth {s['depth']}  [{s['first_category']}] {s['path']}")
-  add(f"  stubbed reads: {l3['stub_reads']}   edits after stubbed reads: {l3['stub_edit_count']}")
+    add(f"    depth {s['depth']} [{s['first_category']}] {s['path']} ({s['file']})")
+  add(f"  stubbed reads: {l3['stub_reads']}   edits after stubbed reads: {len(l3['stub_edits'])}")
   for s in l3["stub_edits"]:
     add(f"    {s['path']} ({s['tool']})")
   add("")
 
-  add("limitations: exception-level vs graceful failures both surface as "
-      "success=false (not distinguishable in this corpus); cross-session "
-      "path identity is best-effort (cwd may change mid-session); argument"
-      "-level malformed calls may not be recorded (census checks).")
+  l4 = report["layer4"]
+  add("--- Layer 4: misuse forensics ---")
+  add(f"  avg old_string lines — failed: {l4['patch_len_fail_avg']}  ok: {l4['patch_len_ok_avg']}")
+  add(f"  patches ≥{_BIG_PATCH_LINES} lines: failed {l4['patch_len_fail_over_big']} / ok {l4['patch_len_ok_over_big']}")
+  add(f"  same-mistake repair chains: {l4['retry_chain_count']}")
+  for c in l4["retry_chains"]:
+    add(f"    {c.get('retries', '?')}x {c.get('path', '?')} ({c.get('file', '?')}:{c.get('start_line', '?')})"
+        + (f" → last line {c.get('last_line', '?')}" if c.get("last_line") else ""))
+  add(f"  recoveries: {l4['strategy_notes'] or '(none observed)'}")
+  add(f"  give-ups: {l4['give_up_count']}")
+  for g in l4["give_ups"]:
+    add(f"    {g.get('raw_path', '?')} ({g.get('tool', '?')}) "
+        f"({g.get('file', '?')}:{g.get('line', '?')})")
+  add(f"  parallel same-path write stacking: {l4['parallel_same_path']}")
+  add("")
+
+  add("limitations: success-only corruption invisible unless a later gate "
+      "fails; cross-session path identity is best-effort.")
   return "\n".join(lines)
 
 
-# ============================================================================
-# Main
-# ============================================================================
-
-
 def _expand_files(patterns: list[str], since: datetime) -> tuple[list[Path], list[tuple[str, str]]]:
-  """Expand glob patterns; include files with mtime ≥ since; skip vanished.
-
-  Each pattern is a glob (default: ./local/context/*.jsonl). Files failing
-  stat (vanished between glob and stat) are skipped and reported.
-  """
   found: set[Path] = set()
   for pattern in patterns:
     for match in glob.glob(os.path.expanduser(pattern)):
@@ -690,15 +651,10 @@ def _expand_files(patterns: list[str], since: datetime) -> tuple[list[Path], lis
 
 
 def main(argv: list[str] | None = None) -> int:
-  """Parse [since_days] [glob-patterns...] [--json]; render report; exit 0."""
-  parser = argparse.ArgumentParser(
-    description="Analyze yoker session JSONL files for tool-error patterns.",
-  )
-  parser.add_argument("positionals", nargs="*", help=(
-    "first digit-lead positional = days window (default 15); "
-    "remaining positionals = glob patterns (default ./local/context/*.jsonl)",
-  ))
-  parser.add_argument("--json", action="store_true", help="Machine-readable JSON output")
+  """Parse '[since_days] [globs...] [--json]'; render; exit 0."""
+  parser = argparse.ArgumentParser(description=__doc__)  # type: ignore[arg-type]
+  parser.add_argument("positionals", nargs="*")
+  parser.add_argument("--json", action="store_true")
   args = parser.parse_args(argv)
 
   since_days = DEFAULT_SINCE_DAYS
@@ -711,7 +667,6 @@ def main(argv: list[str] | None = None) -> int:
 
   since = datetime.now(timezone.utc) - timedelta(days=since_days)
   files, skipped = _expand_files(patterns or [DEFAULT_CONTEXT_FILES], since)
-
   report = build_report(files, since, skipped)
   if args.json:
     print(json.dumps(report, indent=2, ensure_ascii=False, default=str))
