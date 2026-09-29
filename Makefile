@@ -145,3 +145,9 @@ clean-sessions: ## Delete session .jsonl files older than $(SESSION_MAX_AGE_DAYS
 
 analyze-context:
 	uv run python scripts/context_report.py $(CONTEXT_FILE)
+
+SINCE_DAYS    ?= 15
+CONTEXT_FILES ?= ./local/context/*.jsonl
+
+analyze-tool-errors:
+	uv run python scripts/tool_error_analyzer.py $(SINCE_DAYS) $(CONTEXT_FILES)
