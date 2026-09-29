@@ -613,11 +613,9 @@ class UpdateToolConfig(ToolConfig):
   """Update tool configuration.
 
   Attributes:
-    require_exact_match: Whether to require exact match for updates by default.
     max_diff_size_kb: Maximum diff size in KB.
   """
 
-  require_exact_match: bool = True
   max_diff_size_kb: int = 100
 
   def __post_init__(self) -> None:

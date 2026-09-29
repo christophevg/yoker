@@ -78,24 +78,6 @@ class TestUpdateNoOpDistinction:
     assert "your diagnosis may be wrong" in result.result
 
   @pytest.mark.asyncio
-  async def test_replace_fuzzy_whitespace_change_is_not_noop(self, tmp_path: Path) -> None:
-    """Fuzzy replace with same text but different whitespace CHANGES content."""
-    file = tmp_path / "f.txt"
-    file.write_text("alpha  beta\n")
-    result = await update(
-      str(file),
-      _update_context(),
-      operation="replace",
-      old_string="alpha beta",
-      new_string="alpha beta",
-      require_exact_match=False,
-    )
-    assert result.success
-    # The fuzzy match collapses "alpha  beta" -> "alpha beta": a real change.
-    assert not result.result.startswith("No-op:")
-    assert result.result.startswith("File updated successfully")
-
-  @pytest.mark.asyncio
   async def test_append_empty_new_string_is_applied_identical(self, tmp_path: Path) -> None:
     """append('') normalizes EOF but content may stay identical."""
     file = tmp_path / "f.txt"

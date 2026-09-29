@@ -54,7 +54,6 @@ async def _dummy_update(
   new_string: Annotated[str, Text("Replacement text")] = "",
   line_number: Any = None,
   line_range: Any = None,
-  require_exact_match: Any = None,
 ) -> Any:
   """Stand-in for the real update tool — never actually called."""
   ...

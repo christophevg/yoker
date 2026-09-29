@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from yoker.builtin import update as update_tool
-from yoker.config import Config, ToolsConfig, UpdateToolConfig
+from yoker.config import Config
 from yoker.tools import ToolRegistry
 from yoker.tools.context import ToolContext
 from yoker.tools.schema import ToolResult
@@ -80,7 +80,7 @@ class TestUpdateTool:
     """update tool rejects when multiple matches and exact match required."""
     file_path = tmp_path / "test.txt"
     file_path.write_text("hello hello hello")
-    config = Config(tools=ToolsConfig(update=UpdateToolConfig(require_exact_match=True)))
+    config = Config()
     spec = _update_spec()
     ctx = _update_context(config)
     result = await spec.execute(
@@ -98,7 +98,7 @@ class TestUpdateTool:
     """update tool allows single match when exact match required."""
     file_path = tmp_path / "test.txt"
     file_path.write_text("hello world")
-    config = Config(tools=ToolsConfig(update=UpdateToolConfig(require_exact_match=True)))
+    config = Config()
     spec = _update_spec()
     ctx = _update_context(config)
     result = await spec.execute(
@@ -111,6 +111,60 @@ class TestUpdateTool:
     assert result.success is True
     # EOF-touching replace: file guaranteed newline-terminated.
     assert file_path.read_text() == "hello universe\n"
+
+  @pytest.mark.asyncio
+  async def test_regression_no_flexible_fallback_after_removal(self, tmp_path: Path) -> None:
+    """Regression: flexible matching is gone — whitespace-differing old_string refuses.
+
+    Reproduces the fusion bug (2026-09-29, /tmp/repro A-vs-B): with
+    require_exact_match=False (now removed), an indented needle absorbed the
+    PRECEDING line's terminator as its leading whitespace, fusing two lines
+    and reporting success. Byte-exact matching must refuse instead and the
+    file must stay byte-identical.
+    """
+    file_path = tmp_path / "repro.txt"
+    file_path.write_text('  "sleep",\n  "update",\n  "webfetch",\n')
+    spec = _update_spec()
+    ctx = _update_context()
+    result = await spec.execute(
+      path=str(file_path),
+      operation="replace",
+      old_string='"update",\n "webfetch",',  # mid-span whitespace differs: NOT byte-exact present
+      new_string='"update",\n  "update2",\n  "webfetch",',
+      ctx=ctx,
+    )
+    assert result.success is False
+    assert "not found" in (result.error or "").lower()
+    # Byte-identical — nothing applied, nothing fused.
+    assert file_path.read_text() == '  "sleep",\n  "update",\n  "webfetch",\n'
+
+  @pytest.mark.asyncio
+  async def test_regression_indented_needle_never_absorbs_previous_terminator(
+    self, tmp_path: Path
+  ) -> None:
+    """Regression (end-to-end): an exact indented needle leaves line count intact.
+
+    Guards the fusion class structurally: after any successful replace with
+    an indented needle, every physical line still holds exactly one logical
+    entry.
+    """
+    file_path = tmp_path / "repro2.txt"
+    file_path.write_text('  "sleep",\n  "update",\n  "webfetch",\n')
+    spec = _update_spec()
+    ctx = _update_context()
+    result = await spec.execute(
+      path=str(file_path),
+      operation="replace",
+      old_string='  "update",\n  "webfetch",',  # exact: includes its own indentation
+      new_string='  "update",\n  "update2",\n  "webfetch",',
+      ctx=ctx,
+    )
+    assert result.success is True
+    content = file_path.read_text()
+    assert content == '  "sleep",\n  "update",\n  "update2",\n  "webfetch",\n'
+    nonempty = [line for line in content.split("\n") if line.strip()]
+    # Each physical line holds exactly one logical entry — no fused lines.
+    assert all(line.count('"') <= 2 for line in nonempty)
 
   @pytest.mark.asyncio
   async def test_replace_no_match(self, tmp_path: Path) -> None:
@@ -128,25 +182,6 @@ class TestUpdateTool:
     )
     assert result.success is False
     assert "not found" in result.error.lower()
-
-  @pytest.mark.asyncio
-  async def test_replace_not_exact_match_allows_first(self, tmp_path: Path) -> None:
-    """update tool replaces first match when exact match not required."""
-    file_path = tmp_path / "test.txt"
-    file_path.write_text("hello hello hello")
-    config = Config(tools=ToolsConfig(update=UpdateToolConfig(require_exact_match=False)))
-    spec = _update_spec()
-    ctx = _update_context(config)
-    result = await spec.execute(
-      path=str(file_path),
-      operation="replace",
-      old_string="hello",
-      new_string="world",
-      ctx=ctx,
-    )
-    assert result.success is True
-    # EOF-touching replace: file guaranteed newline-terminated.
-    assert file_path.read_text() == "world hello hello\n"
 
   @pytest.mark.asyncio
   async def test_insert(self, tmp_path: Path) -> None:

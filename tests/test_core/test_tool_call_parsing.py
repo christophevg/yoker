@@ -145,7 +145,6 @@ class TestBuildToolCallArgumentParsing:
       "  old_content: str,\n"
       "  old_string: str,\n"
       "  new_string: str,\n"
-      "  require_exact_match: bool,\n"
       ") -> str:\n"
       '  """Replace old_string with new_string."""\n'
       "  occurrences = old_content.count(old_string)\n"

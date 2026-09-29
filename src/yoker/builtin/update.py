@@ -22,9 +22,7 @@ The ``replace`` and ``delete`` operations support two ways to identify the
 target text:
 
 1. **String match** (default): provide ``old_string`` to find the text to
-   replace or delete. When ``require_exact_match`` is true (config default),
-   the string must appear exactly once. When false, whitespace is normalized
-   for matching, and the first match is used.
+   replace or delete. The string must appear exactly once, byte-exact.
 
 2. **Line-range match**: provide ``line_range`` as ``[start, end]``
    (1-indexed, inclusive) to replace or delete a range of lines without
@@ -49,7 +47,6 @@ duplicating the anchor is intentional.
 
 import difflib
 import os
-import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any
 
@@ -97,9 +94,7 @@ async def update(
   old_string: Annotated[
     str,
     Text(
-      "Text to find (required for replace and delete). Must match exactly when "
-      "require_exact_match is true. When false, whitespace is normalized for "
-      "matching and multiple matches use the first occurrence."
+      "Text to find (required for replace and delete). Must appear exactly once, byte-exact.",
     ),
   ] = "",
   new_string: Annotated[
@@ -144,13 +139,6 @@ async def update(
     Text(
       "Position of the insert relative to anchor: 'after' (default) or "
       "'before'. Only used together with anchor."
-    ),
-  ] = None,
-  require_exact_match: Annotated[
-    bool | None,
-    Text(
-      "Override the config default for exact match. When false, whitespace is "
-      "normalized for matching and multiple matches use the first occurrence."
     ),
   ] = None,
   allow_duplicate_anchor: Annotated[
@@ -203,10 +191,8 @@ async def update(
     logger.warning("update_invalid_config_type", config_type=type(update_config).__name__)
     return ToolResult(success=False, error="Invalid configuration for update tool")
 
-  # Per-call override takes precedence over config default
-  exact_match = (
-    require_exact_match if require_exact_match is not None else update_config.require_exact_match
-  )
+  # Exact matching is the only semantics; flexible matching was removed
+  # (it could absorb the preceding line's terminator — see CHANGELOG).
   max_diff_size_kb = update_config.max_diff_size_kb
 
   if not isinstance(path, str) or not path.strip():
@@ -334,7 +320,7 @@ async def update(
 
   try:
     if operation == "replace":
-      result_content = _do_replace(old_content, old_string, new_string, line_range, exact_match)
+      result_content = _do_replace(old_content, old_string, new_string, line_range)
     elif operation == "insert":
       result_content = _do_insert(
         old_content, line_number, new_string, anchor, position, allow_duplicate_anchor
@@ -342,7 +328,7 @@ async def update(
     elif operation == "append":
       result_content = _do_append(old_content, new_string)
     elif operation == "delete":
-      result_content = _do_delete(old_content, old_string, line_number, line_range, exact_match)
+      result_content = _do_delete(old_content, old_string, line_number, line_range)
     else:
       return ToolResult(success=False, error="Invalid operation")
   except ValueError as e:
@@ -687,7 +673,6 @@ def _do_replace(
   old_string: str,
   new_string: str,
   line_range: list[int] | None,
-  require_exact_match: bool,
 ) -> str:
   """Replace content by string match or line range.
 
@@ -695,8 +680,7 @@ def _do_replace(
   inclusive) with ``new_string``, ignoring ``old_string`` entirely.
 
   When ``line_range`` is None, uses ``old_string`` to find and replace.
-  With ``require_exact_match=True``, the string must appear exactly once.
-  With ``require_exact_match=False``, whitespace is normalized for matching.
+  The string must appear exactly once, byte-exact.
   """
   if line_range is not None:
     return _replace_line_range(old_content, line_range, new_string)
@@ -704,7 +688,7 @@ def _do_replace(
   if not old_string:
     raise ValueError("Either old_string or line_range is required for replace")
 
-  return _replace_string(old_content, old_string, new_string, require_exact_match)
+  return _replace_string(old_content, old_string, new_string)
 
 
 def _replace_line_range(
@@ -753,50 +737,27 @@ def _replace_string(
   old_content: str,
   old_string: str,
   new_string: str,
-  require_exact_match: bool,
 ) -> str:
-  """Replace old_string with new_string, optionally with fuzzy matching.
+  """Replace old_string with new_string, byte-exact matching.
 
-  EOF-touching: when the match overlaps the file's last line, the result
-  is guaranteed newline-terminated (a missing terminal newline is added);
-  matches strictly before the last line leave the file byte-exact.
+  The string must appear exactly once. EOF-touching: when the match
+  overlaps the file's last line, the result is guaranteed
+  newline-terminated (a missing terminal newline is added); matches
+  strictly before the last line leave the file byte-exact.
   """
-  if require_exact_match:
-    occurrences = old_content.count(old_string)
+  occurrences = old_content.count(old_string)
 
-    if occurrences == 0:
-      raise ValueError(_not_found_error(old_content, old_string))
+  if occurrences == 0:
+    raise ValueError(_not_found_error(old_content, old_string))
 
-    if occurrences > 1:
-      raise ValueError(_multiple_matches_error(old_content, old_string))
+  if occurrences > 1:
+    raise ValueError(_multiple_matches_error(old_content, old_string))
 
-    match_end = old_content.find(old_string) + len(old_string)
-    result = old_content.replace(old_string, new_string, 1)
-    if match_end > old_content.rfind("\n") + 1:
-      result = _ensure_trailing_newline(result)
-    return result
-
-  # Whitespace-insensitive matching: find the first occurrence where
-  # whitespace-normalized content matches the normalized search string.
-  return _fuzzy_replace(old_content, old_string, new_string)
-
-
-def _fuzzy_replace(old_content: str, old_string: str, new_string: str) -> str:
-  """Replace first whitespace-insensitive match of old_string."""
-  # Build a regex that treats any whitespace run in old_string as \s+
-  escaped = re.escape(old_string)
-  pattern = re.sub(r"\\ ", r"\\s+", escaped)
-  # Also normalize: any sequence of escaped spaces/tabs -> \s+
-  pattern = re.sub(r"(?:\\ )+", r"\\s+", pattern)
-
-  match = re.search(pattern, old_content)
-  if match:
-    result = old_content[: match.start()] + new_string + old_content[match.end() :]
-    if match.end() > old_content.rfind("\n") + 1:
-      result = _ensure_trailing_newline(result)
-    return result
-
-  raise ValueError(_not_found_error(old_content, old_string))
+  match_end = old_content.find(old_string) + len(old_string)
+  result = old_content.replace(old_string, new_string, 1)
+  if match_end > old_content.rfind("\n") + 1:
+    result = _ensure_trailing_newline(result)
+  return result
 
 
 def _ensure_trailing_newline(text: str) -> str:
@@ -1018,9 +979,11 @@ def _do_delete(
   old_string: str,
   line_number: Any,
   line_range: list[int] | None,
-  require_exact_match: bool,
 ) -> str:
-  """Delete content by old_string, line number, or line range."""
+  """Delete content by old_string, line number, or line range.
+
+  old_string matching is byte-exact and must produce exactly one match.
+  """
   if line_range is not None:
     return _delete_line_range(old_content, line_range)
 
@@ -1048,28 +1011,16 @@ def _do_delete(
     return "".join(lines)
 
   if old_string:
-    if require_exact_match:
-      occurrences = old_content.count(old_string)
-      if occurrences == 0:
-        raise ValueError(_not_found_error(old_content, old_string))
-      if occurrences > 1:
-        raise ValueError(_multiple_matches_error(old_content, old_string))
-      match_end = old_content.find(old_string) + len(old_string)
-      result = old_content.replace(old_string, "", 1)
-      if match_end > old_content.rfind("\n") + 1:
-        result = _ensure_trailing_newline(result)
-      return result
-
-    # Fuzzy delete
-    escaped = re.escape(old_string)
-    pattern = re.sub(r"(?:\\ )+", r"\\s+", escaped)
-    match = re.search(pattern, old_content)
-    if match:
-      result = old_content[: match.start()] + old_content[match.end() :]
-      if match.end() > old_content.rfind("\n") + 1:
-        result = _ensure_trailing_newline(result)
-      return result
-    raise ValueError(_not_found_error(old_content, old_string))
+    occurrences = old_content.count(old_string)
+    if occurrences == 0:
+      raise ValueError(_not_found_error(old_content, old_string))
+    if occurrences > 1:
+      raise ValueError(_multiple_matches_error(old_content, old_string))
+    match_end = old_content.find(old_string) + len(old_string)
+    result = old_content.replace(old_string, "", 1)
+    if match_end > old_content.rfind("\n") + 1:
+      result = _ensure_trailing_newline(result)
+    return result
 
   raise ValueError("Either old_string, line_number, or line_range is required for delete")
 
