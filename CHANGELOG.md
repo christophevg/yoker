@@ -150,6 +150,16 @@
   any tool, guardrail, or setup code — its only runtime effect was
   rendering a false reminder that made spawned researchers wrongly
   conclude they had no web access and refuse research work.
+- **`update` tool flexible (whitespace-normalized) matching**: the
+  `require_exact_match` tool parameter and the
+  `tools.update.require_exact_match` config field are gone; matching is
+  now always byte-exact and unique-occurrence. Root cause: flexible
+  matching could absorb the *preceding* line's terminator as leading
+  whitespace when the needle's first line was indented, fusing two lines,
+  corrupting the file, and reporting success (reproduced live; see the
+  update-tool investigation). Anything "close but not exact" now refuses
+  with the closest real line as feedback instead of applying.
+  Configs setting the removed field hard-fail.
 
 ### Fixed
 - **Rich markup injection via filenames in tool-content display**: a
