@@ -1,7 +1,17 @@
 ## Unreleased
 
 ### Added
-- **Run statistics (telemetry + stats tool + run lifecycle)**: the
+- **Calling-agent identity in `ToolContext`**: tools can now identify
+  their caller — `ctx.agent` (new `AgentInfo` frozen dataclass,
+  re-exported from `yoker.tools`) carries `id` (the session-assigned
+  runtime id, the same LLM-facing string reference used by
+  `send_message`; standalone agents fall back to their definition name)
+  and `definition` (the agent definition name, e.g. `c3:researcher`).
+  Populated by the tool executor from the live Agent; strings only, so
+  the Agent/ToolContext stays Session-agnostic (`ctx.session` remains
+  `None` — session-aware tools keep their closure capture).
+
+### Run statistics (telemetry + stats tool + run lifecycle): the
   harness now records and reports per-agent run statistics. The
   `~/.yoker/usage.jsonl` log becomes the harness telemetry log: every
   record gains `agent_id` + `parent_agent_id` (session-assigned

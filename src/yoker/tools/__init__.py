@@ -12,7 +12,7 @@ from yoker.tools.annotations import (
   Url,
   WritePath,
 )
-from yoker.tools.context import ToolContext
+from yoker.tools.context import AgentInfo, ToolContext
 from yoker.tools.guardrails import Guardrail
 from yoker.tools.guardrails.path import ReadPathGuardrail, WritePathGuardrail
 from yoker.tools.registry import ToolRegistry
@@ -42,6 +42,7 @@ __all__ = [
   "WritePathGuardrail",
   "ToolRegistry",
   "ToolContext",
+  "AgentInfo",
   # Annotations
   "GuardType",
   "Text",

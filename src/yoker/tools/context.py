@@ -9,6 +9,13 @@ session-aware tools (e.g. ``send_message``) can reach the
 tool uses closure capture instead, but ``ToolContext.session`` is the
 canonical injection point for future session-aware tools.
 
+``ToolContext`` also carries the calling agent's identity as
+:class:`AgentInfo` (``ctx.agent.id`` / ``ctx.agent.definition``),
+populated by the tool executor from the live Agent. ``id`` is the
+session-assigned runtime id — the same LLM-facing string reference used
+by ``send_message`` — and falls back to the definition name for
+standalone agents (no Session), so tools always see a usable identifier.
+
 ``ToolContext`` also carries an optional ``approval_handler`` — an async
 callable that tools can use to request interactive approval before
 executing operations that need user confirmation (e.g. git commit/push).
@@ -39,6 +46,23 @@ if TYPE_CHECKING:
   ApprovalHandler = Callable[[str, str, str], Awaitable[bool]]
 
 
+@dataclass(frozen=True)
+class AgentInfo:
+  """Identity of the agent that is executing a tool.
+
+  Attributes:
+    id: The agent's session-assigned runtime id — the same LLM-facing
+      string reference used by ``send_message`` and the ``stats`` tool
+      scopes. Standalone agents (no Session) fall back to their
+      definition name.
+    definition: The calling agent's definition name (``yoker:primary``,
+      ``c3:researcher``, ...). Always set by the executor.
+  """
+
+  id: str
+  definition: str
+
+
 @dataclass
 class ToolContext:
   """Execution context for tools.
@@ -56,6 +80,10 @@ class ToolContext:
       ({"websearch": OllamaWebSearchBackend, ...}).
     session: The :class:`Session` owning the calling agent, when the agent
       runs inside a session. ``None`` on the single-agent path.
+    agent: Identity of the calling agent (:class:`AgentInfo`), populated
+      by the executor from the live Agent. The empty placeholder
+      ``AgentInfo(id="", definition="")`` applies when a ToolContext is
+      constructed directly (tests, defaults) — bypassing the executor.
     approval_handler: Optional async callable
       ``(label: str, preview: str, kind: str) -> bool`` for interactive
       approval. ``None`` in batch mode; tools must fail-safe to denial.
@@ -68,8 +96,9 @@ class ToolContext:
   shared: "ToolsSharedConfig"  # content_display, etc.
   backends: dict[str, Any]  # {"websearch": OllamaWebSearchBackend, ...}
   session: "Session | None" = None
+  agent: AgentInfo = field(default_factory=lambda: AgentInfo(id="", definition=""))
   approval_handler: "ApprovalHandler | None" = None
   blocked_path_patterns: list[Any] = field(default_factory=list)
 
 
-__all__ = ["ToolContext"]
+__all__ = ["AgentInfo", "ToolContext"]

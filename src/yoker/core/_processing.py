@@ -43,7 +43,7 @@ from yoker.events import (
 from yoker.exceptions import NetworkError
 from yoker.logging import log_timing
 from yoker.tools.annotations import GuardType
-from yoker.tools.context import ToolContext
+from yoker.tools.context import AgentInfo, ToolContext
 from yoker.tools.guardrails import Guardrail
 from yoker.tools.schema import (
   ApprovalPrompt,
@@ -2385,9 +2385,19 @@ def _build_tool_context(agent: Any, spec: ToolSpec) -> ToolContext:
   # Get backends dict (may be empty dict if backends not yet set up)
   backends = getattr(agent, "_tool_backends", {})
 
-  # The Agent is Session-agnostic and does not carry a Session reference.
+  # Calling-agent identity: the Session-assigned runtime id (the same
+  # LLM-facing string reference the send_message/agent tools use), with a
+  # fallback to the definition name for standalone agents (no Session), so
+  # tools always see a usable identifier. Strings only — the Agent stays
+  # Session-agnostic and the ToolContext never exposes the Agent object.
   # Session-aware tools (send_message, agent) capture the Session in their
   # closures at injection time, so ToolContext.session is left as None.
+  _definition = getattr(agent, "definition", None)
+  agent_info = AgentInfo(
+    id=getattr(agent, "_agent_id", None) or (getattr(_definition, "name", "") or ""),
+    definition=(getattr(_definition, "name", "") or ""),
+  )
+
   # Compile blocked_path_patterns from the read guardrail for traversal
   # tools (search/list) to enforce internally on every file they touch.
   blocked_path_patterns: list[Any] = []
@@ -2400,6 +2410,7 @@ def _build_tool_context(agent: Any, spec: ToolSpec) -> ToolContext:
     shared=shared_config,
     backends=backends,
     session=None,
+    agent=agent_info,
     approval_handler=getattr(agent, "_approval_handler", None),
     blocked_path_patterns=blocked_path_patterns,
   )
