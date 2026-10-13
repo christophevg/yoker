@@ -2,6 +2,7 @@
 
 import json
 import math
+import sys
 from typing import Any
 
 import pytest
@@ -76,6 +77,10 @@ class TestLoadUsage:
     with pytest.raises(FileNotFoundError):
       load_usage(tmp_path / "nope.jsonl")
 
+  @pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="expanduser() tilde semantics are POSIX (HOME); Windows uses USERPROFILE",
+  )
   def test_tilde_path_expanded(self, tmp_path: Any, monkeypatch: Any) -> None:
     """The read side expands ``~`` exactly like the write side — the stats
     tool passes the config path (default ``~/.yoker/usage.jsonl``) through

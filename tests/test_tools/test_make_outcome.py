@@ -10,6 +10,7 @@ as an error.
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import pytest
@@ -18,6 +19,14 @@ from yoker.builtin.make import _OUTCOME_FAILED, _OUTCOME_PASSED, make
 from yoker.config import Config, ToolsConfig
 from yoker.tools import ToolRegistry
 from yoker.tools.context import ToolContext
+
+# POSIX-only: the make tool refuses to run on Windows (platform gate — the R4
+# process-group kill relies on os.killpg + SIGKILL + start_new_session). Same
+# skip as test_make.py; these tests exercise the POSIX subprocess path.
+pytestmark = pytest.mark.skipif(
+  sys.platform == "win32",
+  reason="make tool requires POSIX process-group support",
+)
 
 
 def _write_makefile(tmp_path: Path, content: str) -> None:
