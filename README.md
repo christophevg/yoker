@@ -549,6 +549,7 @@ The interactive session supports:
 | `/context` | Show current conversation context |
 | `/tools` | List available tools and their availability |
 | `/agents` | Show loaded and available agents |
+| `/export [path]` | Export the last response to a file (default: `yoker-response-<HHMMSS>.md` in the current directory) |
 
 ### Thinking Mode
 

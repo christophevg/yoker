@@ -14,6 +14,7 @@ from yoker.ui.commands.agents import create_command as create_agents_command
 from yoker.ui.commands.base import Command, CommandHandler
 from yoker.ui.commands.config import create_config_command
 from yoker.ui.commands.context import create_command as create_context_command
+from yoker.ui.commands.export import create_command as create_export_command
 from yoker.ui.commands.help import create_command as create_help_command
 from yoker.ui.commands.session import create_command as create_session_command
 from yoker.ui.commands.skills import create_command as create_skills_command
@@ -152,5 +153,6 @@ def create_default_registry() -> CommandRegistry:
   registry.register(create_agents_command())
   registry.register(create_session_command())
   registry.register(create_config_command())
+  registry.register(create_export_command())
 
   return registry

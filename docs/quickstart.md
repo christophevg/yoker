@@ -314,6 +314,7 @@ The session supports:
 | `/context` | Show current conversation context |
 | `/tools` | List all known tools with availability |
 | `/agents` | Show loaded agent and known agents |
+| `/export [path]` | Export the last response to a file (default: `yoker-response-<HHMMSS>.md` in the current directory) |
 
 Any command name that matches a loaded skill is treated as a skill invocation. For
 example, if a skill named `example` is loaded, `/example` injects the skill content
