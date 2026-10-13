@@ -464,6 +464,131 @@ class TestGitToolReadOnlyOperations:
     assert "# Modified" in result.result
 
   @pytest.mark.asyncio
+  async def test_git_log_on_file_at_repo_root(self, git_repo: Path) -> None:
+    """
+    Given: A Git repo where a file has its own commit history
+    When: Executing git log with path pointing to that file
+    Then: Returns only the commits that touched that file
+    """
+    (git_repo / "app.py").write_text("# v1\n")
+    subprocess.run(["git", "add", "app.py"], cwd=git_repo, check=True, capture_output=True)
+    subprocess.run(
+      ["git", "commit", "-m", "Add app file"],
+      cwd=git_repo,
+      check=True,
+      capture_output=True,
+    )
+    (git_repo / "app.py").write_text("# v2\n")
+    subprocess.run(["git", "add", "app.py"], cwd=git_repo, check=True, capture_output=True)
+    subprocess.run(
+      ["git", "commit", "-m", "Update app file"],
+      cwd=git_repo,
+      check=True,
+      capture_output=True,
+    )
+
+    config = GitToolConfig()
+    spec = _git_spec()
+    ctx = _git_context(config=config)
+    result = await spec.execute(operation="log", path=str(git_repo / "app.py"), ctx=ctx)
+
+    assert result.success
+    assert "Add app file" in result.result
+    assert "Update app file" in result.result
+    assert "Initial commit" not in result.result
+
+  @pytest.mark.asyncio
+  async def test_git_log_on_file_in_subdirectory(self, git_repo: Path) -> None:
+    """
+    Given: A Git repo with a committed file in a nested subdirectory
+    When: Executing git log with path pointing to that file
+    Then: Returns commit history scoped to that file (repo root auto-detected)
+    """
+    subdir = git_repo / "src" / "deep" / "module"
+    subdir.mkdir(parents=True)
+    tracked_file = subdir / "code.py"
+    tracked_file.write_text("# version 1\n")
+    subprocess.run(
+      ["git", "add", "src/deep/module/code.py"],
+      cwd=git_repo,
+      check=True,
+      capture_output=True,
+    )
+    subprocess.run(
+      ["git", "commit", "-m", "Add nested file for log"],
+      cwd=git_repo,
+      check=True,
+      capture_output=True,
+    )
+    tracked_file.write_text("# version 2\n")
+    subprocess.run(
+      ["git", "add", "src/deep/module/code.py"],
+      cwd=git_repo,
+      check=True,
+      capture_output=True,
+    )
+    subprocess.run(
+      ["git", "commit", "-m", "Update nested file for log"],
+      cwd=git_repo,
+      check=True,
+      capture_output=True,
+    )
+
+    config = GitToolConfig()
+    spec = _git_spec()
+    ctx = _git_context(config=config)
+    result = await spec.execute(operation="log", path=str(tracked_file), ctx=ctx)
+
+    assert result.success
+    assert "Add nested file for log" in result.result
+    assert "Update nested file for log" in result.result
+
+  @pytest.mark.asyncio
+  async def test_git_log_on_file_with_ref(self, git_repo: Path) -> None:
+    """
+    Given: A Git repo with interleaved commits for different files
+    When: Executing git log with both a ref in args and a file path
+    Then: Returns only commits reachable from the ref that touched that file
+    """
+    (git_repo / "file1.txt").write_text("one\n")
+    subprocess.run(["git", "add", "file1.txt"], cwd=git_repo, check=True, capture_output=True)
+    subprocess.run(
+      ["git", "commit", "-m", "Add file one"],
+      cwd=git_repo,
+      check=True,
+      capture_output=True,
+    )
+    (git_repo / "README.md").write_text("# Modified\n")
+    subprocess.run(["git", "add", "README.md"], cwd=git_repo, check=True, capture_output=True)
+    subprocess.run(
+      ["git", "commit", "-m", "Update readme"],
+      cwd=git_repo,
+      check=True,
+      capture_output=True,
+    )
+    (git_repo / "file1.txt").write_text("one updated\n")
+    subprocess.run(["git", "add", "file1.txt"], cwd=git_repo, check=True, capture_output=True)
+    subprocess.run(
+      ["git", "commit", "-m", "Update file one"],
+      cwd=git_repo,
+      check=True,
+      capture_output=True,
+    )
+
+    config = GitToolConfig()
+    spec = _git_spec()
+    ctx = _git_context(config=config)
+    result = await spec.execute(
+      operation="log", path=str(git_repo / "file1.txt"), ctx=ctx, args={"ref": "HEAD~2"}
+    )
+
+    assert result.success
+    assert "Add file one" in result.result
+    assert "Update file one" not in result.result
+    assert "Update readme" not in result.result
+    assert "Initial commit" not in result.result
+
+  @pytest.mark.asyncio
   async def test_git_branch_lists_branches(self, git_repo: Path) -> None:
     """
     Given: A valid Git repository with multiple branches

@@ -256,7 +256,7 @@ async def git(
   path: Annotated[
     str,
     WritePath(
-      "Filesystem path to the Git repository, or file for diff/show operations. NOT for branch names or revision ranges — use 'ref' in args for those."
+      "Filesystem path to the Git repository, or file for diff/show/log operations. NOT for branch names or revision ranges — use 'ref' in args for those."
     ),
   ] = ".",
   ctx: ToolContext = None,  # type: ignore[assignment]
@@ -267,6 +267,7 @@ async def git(
       "\n"
       "status: {short: bool, porcelain: bool}\n"
       "log: {oneline: bool, n: int (1-100), since: str, until: str, author: str, format: str, ref: str (git revision/branch/range, e.g. 'main..feature', 'HEAD~5')}\n"
+      "  - To log a specific file, set the 'path' parameter to the file path, not an arg.\n"
       "diff: {cached: bool (staged changes), stat: bool (diffstat), name_only: bool, ref: str (git revision/branch/range, e.g. 'main..feature', 'v1.0')}\n"
       "  - To diff a specific file, set the 'path' parameter to the file path, not an arg.\n"
       "  - Use 'ref' in args to diff between branches/commits. Do NOT put branch names in 'path'.\n"
@@ -291,9 +292,9 @@ async def git(
   push, checkout, rebase) require interactive approval unless explicitly
   added to ``auto_permission`` in config.
 
-  For diff and show, to scope to a specific file, pass the file path as the
-  'path' parameter (not as an arg). Example: git(operation='diff',
-  path='src/main.py') shows changes for that file only.
+  For diff, show, and log, to scope to a specific file, pass the file path as
+  the 'path' parameter (not as an arg). Example: git(operation='log',
+  path='src/main.py') shows history for that file only.
 
   For log and diff, to specify a branch, commit, or revision range, use the
   'ref' argument in 'args'. Example: git(operation='log', args={'ref':
@@ -347,7 +348,7 @@ async def git(
   work_dir: Path
 
   if resolved_path.is_file():
-    file_operations = {"diff", "show"}
+    file_operations = {"diff", "show", "log"}
     if operation in file_operations:
       repo_root = _find_git_root(resolved_path)
       if repo_root is None:
