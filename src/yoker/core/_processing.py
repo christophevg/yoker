@@ -336,12 +336,11 @@ async def process_message(
     finally:
       agent._stop_idle_watchdog()
 
-    # Capture usage for the next iteration's size check, and update the
+    # Capture usage for the next iteration's size check: update the
     # agent's persistent context-size calibration (fixed overhead +
-    # density ratio) from the server-reported count.
-    captured = stats.get("input_tokens") or stats.get("prompt_eval_count")
-    if captured:
-      _capture_calibration(agent, captured)
+    # density ratio) from the server-reported count — skipped when the
+    # submitted request carried image refs (see _capture_usage).
+    _capture_usage(agent, stats)
 
     # Log per-API-call token usage (atomic JSONL append).
     log_call_usage(agent, stats)
@@ -368,6 +367,39 @@ async def process_message(
       return content
 
     await _execute_tool_calls(agent, tool_calls, thinking, content, escalation)
+
+
+def _submission_image_count(messages: list[dict[str, Any]]) -> int:
+  """Count send-once image refs carried by a submitted view.
+
+  The M.8 gate's input: image refs ride tool-result messages, serialize
+  to base64 server-side on THIS request only, and are invisible to the
+  char/4 estimate; a non-negative count > 0 means the post-response
+  usage capture must not re-derive the calibration (see
+  :func:`_capture_usage`).
+  """
+  return sum(len(m.get("images") or ()) for m in messages)
+
+
+def _capture_usage(agent: Any, stats: dict[str, Any]) -> None:
+  """Extract the server token count from ``stats`` and feed calibration.
+
+  Gate of the M.8 fix: when the submitted request carried image refs
+  (``_context_submission_image_count`` > 0, set by :func:`_chat_stream`),
+  the server ``input_tokens`` includes the base64-serialized images while
+  the estimate's char4 does not. Re-deriving ``fixed = server − ratio ×
+  char4`` from such a capture absorbs the image tokens into ``fixed`` —
+  every later estimate then rides phantom tokens that can trigger
+  compaction for content that would never be submitted again. The whole
+  capture is therefore skipped; the next image-free request's capture
+  self-corrects (its delta spans only the text added between the two
+  recorded captures — the skipped capture's image tokens never enter a
+  delta). Before the first submission the count is 0, so an implicit
+  attribute default is safe.
+  """
+  captured = stats.get("input_tokens") or stats.get("prompt_eval_count")
+  if captured and not getattr(agent, "_context_submission_image_count", 0):
+    _capture_calibration(agent, captured)
 
 
 def _capture_calibration(
@@ -998,10 +1030,18 @@ async def _chat_stream(agent: Any) -> AsyncIterator[ChatChunk]:
       if getattr(agent._backend, "supports_context_management", False)
       else None
     )
+    # The exact view submitted this request. Send-once image refs riding
+    # it (a tool result's ``images`` list) serialize to base64 server-side:
+    # the server's input_tokens include them but the char/4 estimate of
+    # the view does not. Recording the count here lets the post-response
+    # capture skip its re-derivation (see _capture_usage) — the defect
+    # behind M.8's phantom-gauge/phantom-compaction trigger.
+    messages = agent.context.get_context()
+    agent._context_submission_image_count = _submission_image_count(messages)
     # chat_stream returns an async generator - iterate directly without await
     async for chunk in agent._backend.chat_stream(
       model=agent.model,
-      messages=agent.context.get_context(),
+      messages=messages,
       tools=agent.tools.get_schemas(),
       think=agent.thinking_mode.is_enabled,
       context_management=context_management,

@@ -206,10 +206,16 @@ class Agent:
     #   _context_last_input_tokens — last server-reported input token
     #     count, persisted across turns so every turn's first size check
     #     uses the truthful number instead of the overhead-blind heuristic.
+    #   _context_submission_image_count — image refs carried by the last
+    #     SUBMITTED view (send-once images serialize to base64 server-side):
+    #     server input_tokens include those tokens but char4 does not, so a
+    #     capture from an image-bearing request must not re-derive
+    #     ``fixed`` (see _capture_usage; TODO.md M.8).
     self._context_fixed_tokens: int | None = None
     self._context_ratio: float = 1.0
     self._context_char4_at_capture: int | None = None
     self._context_last_input_tokens: int | None = None
+    self._context_submission_image_count: int = 0
 
     # agent process queue:
     # serializes concurrent ``process()`` calls so the backend never sees

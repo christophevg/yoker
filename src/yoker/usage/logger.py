@@ -84,7 +84,11 @@ class UsageRecord:
       None for other kinds.
     detail: Kind-specific payload (e.g. turn tool_calls_count, compaction
       run report excerpt, error description). Never a substitute for the
-      flat fields — only supplementary data.
+      flat fields — only supplementary data. On ``llm_call`` records:
+      ``{"images": n}`` when the submitted view carried send-once image
+      refs (n > 0) — image tokens inflate the server count but are
+      invisible to the char/4 estimate, so an image sawtooth in the
+      gauge/usage log is diagnosable from this key (TODO.md M.8).
   """
 
   ts: str
@@ -216,6 +220,14 @@ def log_call_usage(agent: Any, stats: dict[str, int]) -> None:
     agent_id=agent_id,
     parent_agent_id=parent_agent_id,
     kind=KIND_LLM_CALL,
+    # Image refs riding the submitted view (send-once) inflate the server
+    # token count but are invisible to the estimate — recorded so a
+    # gauge/token sawtooth is diagnosable as image-caused (TODO.md M.8).
+    detail=(
+      {"images": agent._context_submission_image_count}
+      if getattr(agent, "_context_submission_image_count", 0)
+      else None
+    ),
   )
   log_usage_record(usage_config, record)
 

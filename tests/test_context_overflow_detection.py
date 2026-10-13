@@ -8,6 +8,7 @@ from non-supporting backends always-on (no config flag).
 """
 
 import json
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -24,11 +25,13 @@ from yoker.context import BaseContextManager
 from yoker.core._processing import (
   _calibrated_estimate,
   _capture_calibration,
+  _capture_usage,
   _estimate_tokens,
   _first_remaining_summary,
   _manage_context_overflow,
   _noop_hook,
   _strip_thinking_blocks,
+  _submission_image_count,
 )
 from yoker.events import ContextOverflowEvent, EventCallback, EventType
 
@@ -744,6 +747,96 @@ class TestCaptureCalibration:
     """No server capture yet → None (caller falls back to heuristic)."""
     agent = self._agent()
     assert _calibrated_estimate(agent, agent.context.get_context()) is None
+
+
+class TestCaptureImageGate:
+  """The M.8 gate: image-bearing submissions must not re-derive calibration."""
+
+  def _agent(self) -> MagicMock:
+    agent = MagicMock()
+    agent._context_fixed_tokens = None
+    agent._context_ratio = 1.0
+    agent._context_char4_at_capture = None
+    agent._context_last_input_tokens = None
+    agent._context_submission_image_count = 0
+    agent.context = BaseContextManager()
+    agent.context._messages = [_msg("user", "abcdefgh")]  # 8 chars → char4 = 2
+    return agent
+
+  def test_image_free_capture_runs_calibration(self) -> None:
+    """No images on the submission → capture proceeds as before."""
+    agent = self._agent()
+    _capture_usage(agent, {"input_tokens": 102})  # 102 − 2 = 100 fixed
+    assert agent._context_fixed_tokens == 100
+
+  def test_image_bearing_capture_is_skipped(self) -> None:
+    """The defect's regression test: images ⇒ NO fixed re-derivation, NO ratio."""
+    agent = self._agent()
+    _capture_calibration(agent, 102)  # clean base: fixed=100, char4 base=2
+    agent._context_submission_image_count = 1
+    # Server counted the image: big input_tokens, char4 grew only by text.
+    agent.context._messages = [
+      _msg("user", "abcdefgh"),
+      _msg("tool", "r", tool_id="t", images=["photo.png"]),
+    ]
+    _capture_usage(agent, {"input_tokens": 5000})
+    assert agent._context_fixed_tokens == 100  # NOT poisoned by the image
+    assert agent._context_last_input_tokens == 102  # learning base untouched
+
+  def test_gate_attribute_defaults_to_zero_when_absent(self) -> None:
+    """Pre-first-submission agents lack the attr — gate treats as 0."""
+    agent = SimpleNamespace(
+      _context_fixed_tokens=None,
+      _context_ratio=1.0,
+      _context_char4_at_capture=None,
+      _context_last_input_tokens=None,
+      context=BaseContextManager(),
+    )
+    agent.context._messages = [_msg("user", "abcdefgh")]
+    _capture_usage(agent, {"input_tokens": 102})
+    assert agent._context_fixed_tokens == 100
+
+  def test_skipped_capture_never_entered_a_delta(self) -> None:
+    """Next image-free capture measures text added since the last RECORDED one."""
+    agent = self._agent()
+    _capture_calibration(agent, 102)  # recorded base: server=102, char4=2
+    # Image-bearing request in between (its capture is skipped): +48-char
+    # assistant turn + image ref; server count jumps way beyond the text.
+    agent._context_submission_image_count = 1
+    agent.context._messages = [
+      _msg("user", "abcdefgh"),
+      _msg("assistant", "y" * 48),
+      _msg("tool", "r", tool_id="t", images=["photo.png"]),
+    ]
+    _capture_usage(agent, {"input_tokens": 5000})  # would poison; skipped
+    # Image-free capture later: only the 36-char user turn appended since —
+    # but the learning base is still the FIRST capture (server=102, char4=2),
+    # so the delta spans all real text added between the two recorded
+    # captures (8+48+36=92 chars → char4 delta 21... let the numbers speak).
+    agent._context_submission_image_count = 0
+    agent.context._messages.append(_msg("user", "z" * 36))
+    _capture_usage(agent, {"input_tokens": 5001})
+    assert agent._context_char4_at_capture == _estimate_tokens(agent.context.get_context(), None)
+    assert agent._context_last_input_tokens == 5001
+
+  def test_submission_image_count_counts_all_views(self) -> None:
+    """Every tool-result ``images`` list in the view counts, batch or sequential."""
+    assert (
+      _submission_image_count(
+        [
+          _msg("user", "hi"),
+          _msg("assistant", "reading both"),
+          _msg("tool", "r1", tool_id="t1", images=["a.png"]),
+          _msg("tool", "r2", tool_id="t2", images=["b.png"]),
+        ]
+      )
+      == 2
+    )
+
+  def test_submission_image_count_zero_without_images(self) -> None:
+    """Image-free views count 0; missing key tolerated."""
+    assert _submission_image_count([_msg("user", "hi")]) == 0
+    assert _submission_image_count([]) == 0
 
 
 def _estimate_of_view_char4(messages: list[dict[str, Any]]) -> int:

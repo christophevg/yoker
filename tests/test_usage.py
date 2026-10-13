@@ -49,6 +49,7 @@ def _agent(tmp_path: Any, *, enabled: bool = True, path: str | None = None) -> S
     context=SimpleNamespace(get_session_id=lambda: "sess-42"),
     model="glm-5.3-flash:cloud",
     definition=SimpleNamespace(name="main"),
+    _context_submission_image_count=0,
   )
 
 
@@ -206,6 +207,32 @@ class TestLogCallUsage:
     log_call_usage(agent, {"prompt_eval_count": 0, "eval_count": 0, "total_duration_ms": 100})
 
     assert not path.exists()
+
+  def test_image_bearing_call_records_images_in_detail(
+    self, tmp_path: Any, monkeypatch: Any
+  ) -> None:
+    """llm_call record carries {"images": n} when the submitted view had images (M.8)."""
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)  # bypass pytest guard
+    path = tmp_path / "usage.jsonl"
+    agent = _agent(tmp_path, path=path)
+    agent._context_submission_image_count = 2
+
+    log_call_usage(agent, {"input_tokens": 9000, "output_tokens": 50})
+
+    (record,) = _read_lines(path)
+    assert record["detail"] == {"images": 2}
+
+  def test_image_free_call_records_no_detail(self, tmp_path: Any, monkeypatch: Any) -> None:
+    """No images on the submission → detail stays None (no key/value noise)."""
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)  # bypass pytest guard
+    path = tmp_path / "usage.jsonl"
+    agent = _agent(tmp_path, path=path)
+    agent._context_submission_image_count = 0
+
+    log_call_usage(agent, {"input_tokens": 100, "output_tokens": 50})
+
+    (record,) = _read_lines(path)
+    assert record["detail"] is None
 
   def test_skips_when_disabled(self, tmp_path: Any, monkeypatch: Any) -> None:
     monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)  # bypass pytest guard
