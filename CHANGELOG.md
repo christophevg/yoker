@@ -180,6 +180,23 @@
   Configs setting the removed field hard-fail.
 
 ### Fixed
+- **Path guardrails never matched on Windows**: glob denylists
+  (`blocked_paths`, `blocked_write_paths`) compiled to regexes that
+  only understand `/`, while the absolute-path matching candidate kept
+  platform separators (`str(resolved)` → backslashes on Windows), so
+  every protected-name pattern (`**/Makefile`, `**/.git`, `.env.*`, …)
+  silently failed to match — write/update to any protected file was
+  ALLOWED on Windows, and search/list traversal checks too. POSIX was
+  unmasked only via the abs-candidate ancestor accident. Two fixes:
+  absolute candidates are now POSIX-normalized (`Path.as_posix()`),
+  and `**/`/`/**/` compile to *zero-or-more* segments
+  (`(?:.*/)?`) — `**/Makefile` now matches a root-level `Makefile` by
+  construction instead of by accident; bare `**` keeps legacy
+  anything-matching; trailing `/**` still requires content below the
+  directory. Pinned by a new `TestGlobToRegexSemantics` unit class.
+  (Surfaced by Windows CI after extending the matrix to 3.13/3.14;
+  the failure set predates that commit — Windows CI had been red since
+  2026-09-26.)
 - **Rich markup injection via filenames in tool-content display**: a
   filename containing square brackets (e.g. `report[red].txt`) was
   interpolated unescaped into the `_show_summary`, `_show_full_content`

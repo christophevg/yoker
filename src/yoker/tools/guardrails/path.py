@@ -47,10 +47,19 @@ def _glob_to_regex(pattern: str) -> re.Pattern[str]:
   """Translate a glob pattern to a compiled case-insensitive regex.
 
   Supports:
-    - ``**`` — zero or more path segments (including slashes)
+    - ``**/`` — zero or more leading/intervening path segments
+      (``**/Makefile`` matches ``Makefile`` and ``a/b/Makefile``;
+      ``a/**/b`` matches ``a/b`` and ``a/x/y/b``)
+    - ``**`` — anything including ``/`` (legacy fallback for ``**``
+      not adjacent to a segment boundary)
     - ``*`` — one path segment (no slashes)
     - ``?`` — any single character (no slashes)
     - ``[...]`` — character class
+
+  Candidates are matched against POSIX-normalized path strings
+  (``Path.as_posix()``), so patterns always use ``/`` regardless of
+  platform — on Windows, backslash paths are normalized to ``/`` before
+  matching.
 
   Args:
     pattern: Glob pattern string.
@@ -60,17 +69,25 @@ def _glob_to_regex(pattern: str) -> re.Pattern[str]:
   """
   result: list[str] = ["(?i)"]
   i = 0
-  while i < len(pattern):
+  n = len(pattern)
+  while i < n:
     c = pattern[i]
-    if c == "*":
-      if i + 1 < len(pattern) and pattern[i + 1] == "*":
-        # ** — matches anything including /
-        result.append(".*")
-        i += 2
-      else:
-        # * — matches one segment (no /)
-        result.append("[^/]*")
-        i += 1
+    if c == "/" and pattern[i + 1 : i + 3] == "**" and i + 3 < n and pattern[i + 3] == "/":
+      # "/**/" — zero or more segments between the two slashes
+      result.append("(?:.*/)?")
+      i += 4
+    elif c == "*" and i == 0 and pattern[i : i + 3] == "**/":
+      # Leading "**/" — zero or more leading segments, including none
+      result.append("(?:.*/)?")
+      i += 3
+    elif c == "*" and pattern[i + 1 : i + 2] == "*":
+      # ** not at a segment boundary — matches anything including /
+      result.append(".*")
+      i += 2
+    elif c == "*":
+      # * — matches one segment (no /)
+      result.append("[^/]*")
+      i += 1
     elif c == "?":
       result.append("[^/]")
       i += 1
@@ -150,7 +167,8 @@ def is_path_blocked(
     candidates.append(relative)
   except ValueError:
     pass  # Outside root — will be caught by absolute path check below
-  candidates.append(str(file_path))
+  # POSIX-normalized so patterns match identically on all platforms.
+  candidates.append(file_path.as_posix())
 
   for candidate in candidates:
     parts = candidate.split("/")
@@ -356,7 +374,10 @@ class ReadPathGuardrail(Guardrail):
     relative = self._relative_to_root(resolved)
     if relative:
       candidates.append(relative)
-    candidates.append(str(resolved))
+    # POSIX-normalized so patterns match identically on all platforms —
+    # str() would yield backslashes on Windows, which the "/"-only
+    # pattern regexes can never match.
+    candidates.append(resolved.as_posix())
 
     for candidate in candidates:
       parts = candidate.split("/")

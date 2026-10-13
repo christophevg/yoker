@@ -254,6 +254,85 @@ class TestGlobPatternBypasses:
     assert result.valid is True
 
 
+class TestGlobToRegexSemantics:
+  """Unit tests for the glob-to-regex translation (Windows regression).
+
+  The guardrail matches patterns against POSIX-normalized path strings
+  (``Path.as_posix()``). On Windows the absolute-path candidate contains
+  forward slashes only after normalization — and ``**/`` must match at
+  the root of an allowed root with ZERO leading segments, not just at
+  depth. These tests pin the translator semantics directly.
+  """
+
+  @staticmethod
+  def _matcher(pattern: str):
+    from yoker.tools.guardrails.path import _glob_to_regex
+
+    return _glob_to_regex(pattern).match
+
+  def test_double_star_slash_matches_root_level(self) -> None:
+    """**/name matches a name at the root (zero segments) and at depth."""
+    match = self._matcher("**/Makefile")
+    assert match("Makefile")
+    assert match("scratch/Makefile")
+    assert match("a/b/Makefile")
+    # Windows-flavoured absolute candidate after as_posix() normalization
+    assert match("C:/Users/x/proj/Makefile")
+
+  def test_double_star_slash_not_a_name_prefix(self) -> None:
+    """**/name must not absorb into longer names."""
+    match = self._matcher("**/Makefile")
+    assert not match("MyMakefile")
+    assert not match("a/MyMakefile")
+    assert not match("Makefile.bak")
+
+  def test_mid_double_star_zero_or_more_segments(self) -> None:
+    """a/**/b matches a/b and any depth between."""
+    match = self._matcher("a/**/b")
+    assert match("a/b")
+    assert match("a/x/b")
+    assert match("a/x/y/b")
+    assert not match("a/b/c")
+    assert not match("x/a/b")
+
+  def test_trailing_double_star_requires_content(self) -> None:
+    """dir/** requires at least one segment below dir."""
+    match = self._matcher("dir/**")
+    assert match("dir/x")
+    assert match("dir/x/y")
+    assert not match("dir")
+
+  def test_bare_double_star_matches_anything(self) -> None:
+    """Bare ** (no segment boundary) keeps legacy anything-matching."""
+    match = self._matcher("a**b")
+    assert match("ab")
+    assert match("ax/yb")
+    assert not match("a/xc")
+
+  def test_git_hooks_pattern_family(self) -> None:
+    """The **/.git/hooks/* default blocks hook files at any depth."""
+    match = self._matcher("**/.git/hooks/*")
+    assert match(".git/hooks/pre-commit")
+    assert match("sub/.git/hooks/pre-push")
+    assert match("C:/w/.git/hooks/pre-commit")
+    # The hooks directory itself is not matched (needs a trailing segment)
+    assert not match(".git/hooks")
+
+  def test_workflow_yml_pattern(self) -> None:
+    """**/.github/workflows/*.yml blocks only .yml workflow files at depth."""
+    match = self._matcher("**/.github/workflows/*.yml")
+    assert match("sub/.github/workflows/deploy.yml")
+    assert match("C:/w/.github/workflows/ci.yml")
+    assert not match("sub/.github/workflows/deploy.yaml")
+
+  def test_dotenv_family(self) -> None:
+    """**/.env.* blocks env variants at any depth including root."""
+    match = self._matcher("**/.env.*")
+    assert match(".env.local")
+    assert match("a/b/.env.production")
+    assert not match(".env")
+
+
 class TestUnicodeAndSpecialChars:
   """Test Unicode and special character handling."""
 
