@@ -87,6 +87,12 @@ image you read is shown to you on that request only — it is stripped from all
 subsequent requests to keep usage/token cost contained. If you will need an
 image's contents later in the conversation, describe it in your response text
 when you see it; the file can always be read again if needed.
+When several images are attached on the same request (a batch of reads), that
+request is your single opportunity to see them together: describe or summarize
+all of them in that response, not only the most recent. To compare multiple
+images side by side, read them in one batch. If you read images one at a time,
+describe each one before the next tool call, since an image read earlier may
+already be gone from later requests.
 """
 
   @staticmethod

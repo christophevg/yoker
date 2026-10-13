@@ -221,6 +221,8 @@ Remaining tools and enhancements not pulled into pre-release:
 
   - **Tests to write when picked up:** calibration skipped when submission carries images; gauge stays stable across a strip; no compaction under cap with an image-bearing turn; compaction still fires on genuinely-over-cap text.
   - **Priority:** Medium — correctness of the 0.13.0 flagship feature (compaction) in image workflows; gauge cosmetics otherwise
+
+- **2026-10-03 follow-up (live failure, instructions fixed):** batch-read test (image1.png + image2.png in one tool-call turn) confirms the strip rule is CORRECT for parallel reads — all images arrive attached on the next request. The live owner-observed failure was model-side: an agent did not describe all batch images in its response and afterwards believed it had received only the last one. Mitigation landed today (text-only): batch-aware summarization guidance in both surfaces — `src/yoker/builtin/read.py` tool-result text ("If multiple images are attached on this request, describe all of them in this response, not only this one.") and the `# Image Reads` env block in `src/yoker/context/basic.py` (batch request = single chance to see them together; batch reads to compare images; sequential reads → describe each before the next call). Sequential-read strip cliff (option A: strip boundary = last assistant message with non-empty content) remains deferred; new wording deliberately neutral so option A can land later without text churn.
 ### S.1: Secure API Key Storage with Keyring
 
 - [ ] **S.1 Secure API Key Storage with Keyring** — use Python `keyring` library; during bootstrap wizard store via keyring; fallback to config file if unavailable; support all providers

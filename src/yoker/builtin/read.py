@@ -228,7 +228,9 @@ async def _read_file(path_str: str, offset: int | None, limit: int | None) -> To
         f"Image file: {resolved} ({mime}, {size_bytes} bytes) attached for the model to see.\n"
         "The image is visible on this request only and is removed from context on your "
         "next turn. If you will need its contents later, describe it in your response now; "
-        "you can also read the file again if needed."
+        "you can also read the file again if needed. If multiple images are "
+        "attached on this request, describe all of them in this response, not "
+        "only this one."
       ),
       content_metadata={
         "operation": "read",
