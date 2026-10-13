@@ -208,7 +208,7 @@ async def make(
     )
     stdout = stdout_b.decode("utf-8", errors="replace") if stdout_b else ""
     stderr = stderr_b.decode("utf-8", errors="replace") if stderr_b else ""
-  except asyncio.TimeoutError:
+  except TimeoutError:
     # R4: kill the whole process group (start_new_session created one).
     _kill_process_group(proc.pid)
     # Reap to avoid zombie; collect any partial output the child produced.
@@ -216,7 +216,7 @@ async def make(
       stdout_b, stderr_b = await asyncio.wait_for(proc.communicate(), timeout=5)
       stdout = stdout_b.decode("utf-8", errors="replace") if stdout_b else ""
       stderr = stderr_b.decode("utf-8", errors="replace") if stderr_b else ""
-    except asyncio.TimeoutError:
+    except TimeoutError:
       pass
     logger.warning("make_timeout", target=target, timeout_ms=effective_timeout_ms)
     return ToolResult(

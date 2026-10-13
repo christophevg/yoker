@@ -835,7 +835,7 @@ async def _execute_command(
     raise
   try:
     stdout_b, stderr_b = await asyncio.wait_for(proc.communicate(), timeout=timeout_seconds)
-  except asyncio.TimeoutError:
+  except TimeoutError:
     proc.kill()
     await proc.wait()
     raise subprocess.TimeoutExpired(cmd=cmd, timeout=timeout_seconds) from None

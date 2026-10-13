@@ -1028,13 +1028,13 @@ async def github(
     )
     stdout = stdout_b.decode("utf-8", errors="replace") if stdout_b else ""
     stderr = stderr_b.decode("utf-8", errors="replace") if stderr_b else ""
-  except asyncio.TimeoutError:
+  except TimeoutError:
     _kill_process_group(proc.pid)
     try:
       stdout_b, stderr_b = await asyncio.wait_for(proc.communicate(), timeout=5)
       stdout = stdout_b.decode("utf-8", errors="replace") if stdout_b else ""
       stderr = stderr_b.decode("utf-8", errors="replace") if stderr_b else ""
-    except asyncio.TimeoutError:
+    except TimeoutError:
       pass
     logger.warning("github_timeout", operation=operation, timeout_ms=effective_timeout_ms)
     return ToolResult(
@@ -1757,7 +1757,7 @@ async def _convert_to_draft(repo: str, number: int, timeout_ms: int) -> tuple[bo
     stdout_b, stderr_b = await asyncio.wait_for(proc.communicate(), timeout=timeout_ms / 1000)
     stdout = stdout_b.decode("utf-8", errors="replace") if stdout_b else ""
     stderr = stderr_b.decode("utf-8", errors="replace") if stderr_b else ""
-  except (FileNotFoundError, asyncio.TimeoutError, OSError) as exc:
+  except (TimeoutError, FileNotFoundError, OSError) as exc:
     return False, f"Failed to fetch PR node_id: {exc}"
 
   if proc.returncode != 0:
@@ -1786,7 +1786,7 @@ async def _convert_to_draft(repo: str, number: int, timeout_ms: int) -> tuple[bo
     stdout_b, stderr_b = await asyncio.wait_for(proc.communicate(), timeout=timeout_ms / 1000)
     stdout = stdout_b.decode("utf-8", errors="replace") if stdout_b else ""
     stderr = stderr_b.decode("utf-8", errors="replace") if stderr_b else ""
-  except (FileNotFoundError, asyncio.TimeoutError, OSError) as exc:
+  except (TimeoutError, FileNotFoundError, OSError) as exc:
     return False, f"GraphQL mutation failed: {exc}"
 
   if proc.returncode != 0:
@@ -1807,7 +1807,7 @@ async def _run_gh(cmd: list[str], timeout_ms: int) -> tuple[int, str, str]:
       start_new_session=True,
     )
     stdout_b, stderr_b = await asyncio.wait_for(proc.communicate(), timeout=timeout_ms / 1000)
-  except (FileNotFoundError, asyncio.TimeoutError, OSError) as exc:
+  except (TimeoutError, FileNotFoundError, OSError) as exc:
     return 1, "", f"Failed to run gh: {exc}"
   stdout = stdout_b.decode("utf-8", errors="replace") if stdout_b else ""
   stderr = stderr_b.decode("utf-8", errors="replace") if stderr_b else ""
@@ -1908,7 +1908,7 @@ async def _fetch_api_comments(url: str, jq: str, timeout_ms: int) -> list[dict[s
     )
     stdout_b, _stderr_b = await asyncio.wait_for(proc.communicate(), timeout=timeout_ms / 1000)
     stdout = stdout_b.decode("utf-8", errors="replace") if stdout_b else ""
-  except (FileNotFoundError, asyncio.TimeoutError, OSError):
+  except (TimeoutError, FileNotFoundError, OSError):
     return []
 
   if proc.returncode != 0:

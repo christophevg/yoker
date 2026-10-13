@@ -18,7 +18,7 @@ anyone working on the codebase.
 
 ### Prerequisites
 
-- Python 3.10 or later
+- Python 3.11 or later
 - [uv](https://docs.astral.sh/uv/) for dependency management
 - Git
 

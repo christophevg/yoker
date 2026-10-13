@@ -859,7 +859,7 @@ make check    # Type checking + linting
 make docs     # Build documentation
 ```
 
-Requires Python 3.10+. Uses [uv](https://docs.astral.sh/uv/) for dependency management. See [AGENTS.md](AGENTS.md) for project conventions.
+Requires Python 3.11+. Uses [uv](https://docs.astral.sh/uv/) for dependency management. See [AGENTS.md](AGENTS.md) for project conventions.
 
 ## Contributing
 

@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- Python 3.10 or higher
+- Python 3.11 or higher
 - An LLM provider account — Ollama (free tier available), OpenAI, Anthropic, or
   Google Gemini. The bootstrap wizard walks you through setting up any of them.
 

@@ -36,7 +36,7 @@ import os
 import signal
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from clevis import SecurityError
 from structlog import get_logger
@@ -207,7 +207,7 @@ async def _run_loop(
           stopped_reason = "max duration reached"
           break
 
-      ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+      ts = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
       out.write(f"\n--- Iteration {i}/{max_iterations} [{ts}] ---\n")
       out.flush()
 
@@ -218,7 +218,7 @@ async def _run_loop(
         )
         completed += 1
         consecutive_failures = 0
-      except asyncio.TimeoutError:
+      except TimeoutError:
         consecutive_failures += 1
         out.write(f"Iteration {i} timed out after {iteration_timeout}s\n")
         logger.warning("loop_iteration_timeout", iteration=i)
@@ -298,7 +298,7 @@ async def _interruptible_sleep(seconds: int, stop_flag: asyncio.Event) -> None:
   """Sleep for ``seconds`` but wake early if ``stop_flag`` is set."""
   try:
     await asyncio.wait_for(stop_flag.wait(), timeout=seconds)
-  except asyncio.TimeoutError:
+  except TimeoutError:
     pass  # normal — the full interval elapsed
 
 

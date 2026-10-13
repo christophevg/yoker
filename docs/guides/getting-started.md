@@ -30,7 +30,7 @@ end.
 
 ## Step 1 — Set up Python and uv
 
-yoker is a Python application. You need Python 3.10 or newer, and we recommend
+yoker is a Python application. You need Python 3.11 or newer, and we recommend
 `uv` to manage the install (it is fast and keeps things tidy).
 
 ### macOS
@@ -58,7 +58,7 @@ pip install uv
 Verify both are available:
 
 ```bash
-python3 --version   # 3.10 or higher
+python3 --version   # 3.11 or higher
 uv --version
 ```
 
@@ -85,7 +85,7 @@ A little more work, but still quick.
 Verify both are available:
 
 ```bash
-python --version   # 3.10 or higher
+python --version   # 3.11 or higher
 uv --version
 ```
 
@@ -104,7 +104,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 Verify both are available:
 
 ```bash
-python3 --version   # 3.10 or higher
+python3 --version   # 3.11 or higher
 uv --version
 ```
 

@@ -5,7 +5,6 @@ permission-required operations, security guardrails (injection prevention, path
 restrictions, output sanitization), and error handling.
 """
 
-import asyncio
 import subprocess
 import sys
 from pathlib import Path
@@ -2175,12 +2174,12 @@ class TestGitToolErrorHandling:
 
     # Mock asyncio.create_subprocess_exec to simulate timeout
     proc = mocker.MagicMock()
-    proc.communicate = mocker.AsyncMock(side_effect=asyncio.TimeoutError())
+    proc.communicate = mocker.AsyncMock(side_effect=TimeoutError())
     proc.wait = mocker.AsyncMock()
     proc.kill = mocker.MagicMock()
     mocker.patch.object(git_module.asyncio, "create_subprocess_exec", return_value=proc)
     # Also mock asyncio.wait_for to propagate the TimeoutError
-    mocker.patch.object(git_module.asyncio, "wait_for", side_effect=asyncio.TimeoutError())
+    mocker.patch.object(git_module.asyncio, "wait_for", side_effect=TimeoutError())
 
     result = await spec.execute(operation="status", path=str(repo), ctx=ctx)
 

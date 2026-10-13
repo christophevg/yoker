@@ -8,7 +8,7 @@ version = "0.12.0"
 description = "A Python-first agent harness framework with configurable tools and guardrails - one who yokes agents together"
 readme = "README.md"
 license = {text = "MIT"}
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 authors = [
   {name = "Christophe VG", email = "contact@christophe.vg"}
 ]
@@ -16,9 +16,10 @@ classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Developers",
   "Programming Language :: Python :: 3",
-  "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
   "Topic :: Scientific/Engineering :: Artificial Intelligence",
   "Typing :: Typed",
 ]
@@ -42,7 +43,6 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
   "pytest>=8.0.0",
-  "tomli>=1.1.0; python_version < '3.11'",
   "pytest-cov>=5.0.0",
   "pytest-asyncio>=0.23.0",
   "pytest-mock>=3.10.0",
@@ -91,7 +91,7 @@ asyncio_mode = "auto"
 addopts = "-v --cov=yoker --cov-report=term-missing"
 
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.11"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
@@ -106,7 +106,7 @@ strict_equality = true
 
 [tool.ruff]
 line-length = 100
-target-version = "py310"
+target-version = "py311"
 indent-width = 2
 
 [tool.ruff.lint]
@@ -143,7 +143,7 @@ exclude_lines = [
 ]
 
 [tool.tox]
-env_list = ["py310", "py311", "py312"]
+env_list = ["py311", "py312", "py313", "py314"]
 
 [tool.tox.env_run_base]
 description = "run tests with pytest"
@@ -153,14 +153,17 @@ commands = [
   ["pytest", "tests", "-v", "--cov=yoker", "--cov-report=term-missing"],
 ]
 
-[tool.tox.env.py310]
-base_python = ["python3.10"]
+[tool.tox.env.py313]
+base_python = ["python3.13"]
 
 [tool.tox.env.py311]
 base_python = ["python3.11"]
 
 [tool.tox.env.py312]
 base_python = ["python3.12"]
+
+[tool.tox.env.py314]
+base_python = ["python3.14"]
 
 [tool.uv.workspace]
 members = ["examples/plugins/demo"]

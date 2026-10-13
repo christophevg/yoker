@@ -27,7 +27,7 @@ demos-to-docs   Copy generated demo files to docs/_static folder
 docs-view       Build and open documentation
 docs            Build HTML documentation
 format-check    Run all quality checks
-install-pythons Install Python 3.10, 3.11, 3.12
+install-pythons Install Python 3.11, 3.12, 3.13, 3.14
 publish-test    Publish to TestPyPI
 upload          Upload to PyPI only (DON'T USE DIRECTLY — use `publish` target)
 ```

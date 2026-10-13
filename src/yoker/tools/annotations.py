@@ -17,11 +17,11 @@ Example:
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 
-class GuardType(str, Enum):
+class GuardType(StrEnum):
   """Functional type of a guardrailed string parameter."""
 
   PATH_READ = "path_read"

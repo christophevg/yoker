@@ -15,7 +15,7 @@ leaking into the agent.
 
 ### Prerequisites
 
-- Python 3.10 or higher
+- Python 3.11 or higher
 - An LLM provider — Ollama (free tier), OpenAI, Anthropic, or Google Gemini.
   Run `python -m yoker` with no config to launch the bootstrap wizard, which
   guides you through provider selection and model setup.

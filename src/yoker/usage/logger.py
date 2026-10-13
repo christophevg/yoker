@@ -10,7 +10,7 @@ attributable per ``agent_id`` with parent linkage where applicable.
 import json
 import os
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -149,7 +149,7 @@ class UsageLogger:
 
 
 def _now_iso() -> str:
-  return datetime.now(timezone.utc).isoformat()
+  return datetime.now(UTC).isoformat()
 
 
 def _agent_ids(agent: Any) -> tuple[str | None, str | None]:

@@ -16,8 +16,8 @@ env-dev: ## Install all dependencies (dev + docs)
 env-run: ## Install runtime dependencies only
 	uv sync
 
-install-pythons: ## Install Python 3.10, 3.11, 3.12
-	uv python install 3.10 3.11 3.12
+install-pythons: ## Install Python 3.11, 3.12, 3.13, 3.14
+	uv python install 3.11 3.12 3.13 3.14
 
 ## Testing
 
@@ -30,8 +30,8 @@ test-cov: env-dev ## Run tests with coverage
 test-all: env-dev ## Run tests on all Python versions
 	uv run tox
 
-test-py310: env-dev ## Run tests on Python 3.10
-	uv run tox -e py310
+test-py313: env-dev ## Run tests on Python 3.13
+	uv run tox -e py313
 
 ## Code Quality
 

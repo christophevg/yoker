@@ -7,7 +7,6 @@ truncation, the Windows platform gate, and the flat ``content_metadata``
 shape consumed by ``core/_processing.py``.
 """
 
-import asyncio
 import json
 import sys
 from typing import Any
@@ -59,7 +58,7 @@ def _mock_popen(
   proc.pid = pid
   proc.returncode = returncode
   if timeout:
-    proc.communicate = mocker.AsyncMock(side_effect=asyncio.TimeoutError())
+    proc.communicate = mocker.AsyncMock(side_effect=TimeoutError())
   else:
     proc.communicate = mocker.AsyncMock(
       return_value=(stdout.encode("utf-8"), stderr.encode("utf-8"))

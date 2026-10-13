@@ -150,6 +150,14 @@
     `include_ignored`).
 
 ### Changed
+- **Drop Python 3.10, add 3.13 and 3.14**: `requires-python` is now
+  `>=3.11`; supported floor is 3.11, CI matrix and tox run
+  3.11/3.12/3.13/3.14. Falling 3.10 also unlocks modernizations:
+  `asyncio.TimeoutError` → builtin `TimeoutError`,
+  `datetime.timezone.utc` → `datetime.UTC`, `GuardType` →
+  `enum.StrEnum` (all equivalent here — verified against every
+  consumer), and the version-guarded `tomllib` test shim collapses to a
+  plain stdlib re-export (the `tomli` backport dev-dependency is gone).
 - **`read` offset error states 1-indexed numbering**: the out-of-range
   error now explicitly states that line numbers are 1-indexed and that
   1 is the first line — agents repeatedly misread the old message as
