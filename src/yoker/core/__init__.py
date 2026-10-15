@@ -630,17 +630,24 @@ class Agent:
     namespaced name. When ``tools is ALL_TOOLS`` (the ``[]`` sentinel) the
     loop body doesn't execute — there is nothing to warn about.
 
-    Session-injected tools (``agent``, ``send_message``, ``release_agent``)
-    are registered AFTER construction by ``Session.inject_tools`` and are
-    therefore not in the registry yet — they are recognized by name here so
-    an explicit grant does not warn "unavailable".
+    Session-injected tools (``agent``, ``send_message``, ``release_agent``,
+    ``stats``) are registered AFTER construction by ``Session.inject_tools``
+    and are therefore not in the registry yet — they are recognized by name
+    here (bare or ``yoker:``-prefixed, matching the spelling tolerance the
+    session filter applies) so an explicit grant does not warn
+    "unavailable".
     """
     if not self.definition.tools:
       return  # ALL_TOOLS ([]) or explicit [] — nothing to check
     available = {name.lower() for name in self.tools.names}
     # Session-injected tools live behind the yoker: namespace but are
     # registered post-construction; treat bare grants as satisfied.
-    session_injected = {"yoker:agent", "yoker:send_message", "yoker:release_agent"}
+    session_injected = {
+      "yoker:agent",
+      "yoker:send_message",
+      "yoker:release_agent",
+      "yoker:stats",
+    }
 
     missing: list[str] = []
 
@@ -649,7 +656,8 @@ class Agent:
       if ":" in normalized:
         matched = normalized in available or normalized in session_injected
       else:
-        matched = normalized in available or f"yoker:{normalized}" in available
+        bare = f"yoker:{normalized}"
+        matched = normalized in available or bare in available or bare in session_injected
       if not matched:
         missing.append(requested)
 

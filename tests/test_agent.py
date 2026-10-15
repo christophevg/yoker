@@ -164,6 +164,33 @@ class TestAgentToolRegistry:
     assert len(matching) == 1
     assert matching[0].kwargs["missing_tools"] == ["missing_tool", "yoker:also_missing"]
 
+  def test_agent_no_warning_for_session_injected_tools(self) -> None:
+    """Explicit grants of session-injected tools don't warn "unavailable".
+
+    ``stats``, ``agent``, ``send_message`` and ``release_agent`` are
+    registered post-construction by Session.inject_tools; at Agent
+    construction they are recognized by name, bare or yoker:-prefixed.
+    """
+    from unittest.mock import patch
+
+    from yoker.agents import AgentDefinition
+
+    agent_def = AgentDefinition(
+      simple_name="test",
+      description="Test agent",
+      tools=("stats", "yoker:agent", "send_message", "yoker:release_agent"),
+      system_prompt="Test prompt",
+    )
+    with patch("yoker.core.logger.warning") as mock_warning:
+      Agent(config=Config(), agent_definition=agent_def)
+
+    unavailable = [
+      call
+      for call in mock_warning.call_args_list
+      if call.args and call.args[0] == "agent tools unavailable"
+    ]
+    assert unavailable == []
+
 
 class TestAgentEventHandlers:
   """Tests for Agent event handler management."""
