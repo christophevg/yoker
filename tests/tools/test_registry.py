@@ -81,6 +81,14 @@ class TestToolRegistry:
     names = registry.names
     assert names == ["alpha", "zeta"]
 
+  def test_namespaces_deduplicated_and_sorted(self) -> None:
+    """namespaces returns each namespace once, sorted alphabetically."""
+    registry = ToolRegistry()
+    registry.register(read_file, namespace="vault")
+    registry.register(read_file, name="read_file_2", namespace="vault")
+    registry.register(read_file, name="read_file_3", namespace="basset")
+    assert registry.namespaces == ["basset", "vault"]
+
   def test_explicit_name_override(self) -> None:
     """An explicit name override can be provided."""
     registry = ToolRegistry()

@@ -244,8 +244,8 @@ class ToolRegistry(UserDict[str, ToolSpec]):
 
   @property
   def namespaces(self) -> list[str]:
-    """Return all registered tool namespaces sorted alphabetically."""
-    return sorted([tool.namespace for tool in self.data.values() if tool.namespace])
+    """Return unique registered tool namespaces sorted alphabetically."""
+    return sorted({tool.namespace for tool in self.data.values() if tool.namespace})
 
   @property
   def names(self) -> list[str]:
