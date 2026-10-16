@@ -10,7 +10,7 @@ import pytest
 
 from yoker.backends.ollama import OllamaBackend
 from yoker.backends.protocol import ChatChunkEvent
-from yoker.config import BackendConfig, Config, OllamaConfig
+from yoker.config import BackendConfig, Config, OllamaConfig, OllamaParameters
 
 
 @dataclass
@@ -525,6 +525,76 @@ class TestOllamaBackend:
       assert call_kwargs["tools"] == tools
       assert call_kwargs["think"] is True
       assert call_kwargs["stream"] is True
+
+
+class TestOllamaBackendOptions:
+  """Tests for forwarding backend.ollama.parameters as request options."""
+
+  @staticmethod
+  def _config_with_parameters(**parameter_values: Any) -> Config:
+    """Build a Config whose Ollama backend carries the given parameters."""
+    return Config(
+      backend=BackendConfig(
+        provider="ollama",
+        ollama=OllamaConfig(
+          model="test-model",
+          base_url="http://localhost:11434",
+          parameters=OllamaParameters(**parameter_values),
+        ),
+      )
+    )
+
+  async def _capture_chat_kwargs(self, config: Config) -> dict[str, Any]:
+    """Run chat_stream against a spec-mocked client and return its kwargs."""
+    from ollama import AsyncClient
+
+    mock_client = AsyncMock(spec=AsyncClient)
+    mock_client.chat = AsyncMock(
+      return_value=_async_iter(
+        [MockChunk(message=MockMessage(), done=True, prompt_eval_count=1, eval_count=1)]
+      )
+    )
+    with patch("yoker.backends.ollama.AsyncClient", return_value=mock_client):
+      backend = OllamaBackend(config)
+      async for _ in backend.chat_stream(
+        model="test-model",
+        messages=[{"role": "user", "content": "Hi"}],
+      ):
+        pass
+    return mock_client.chat.call_args.kwargs
+
+  @pytest.mark.asyncio
+  async def test_parameters_forwarded_as_options(self):
+    """Configured parameters are flattened into the chat request options."""
+    config = self._config_with_parameters(
+      temperature=0.5, num_ctx=4096, seed=42
+    )
+
+    call_kwargs = await self._capture_chat_kwargs(config)
+
+    assert call_kwargs["options"] == {
+      "temperature": 0.5,
+      "num_ctx": 4096,
+      "seed": 42,
+    }
+
+  @pytest.mark.asyncio
+  async def test_unset_parameters_filtered_from_options(self):
+    """None-valued parameters are dropped; server defaults remain in force."""
+    config = self._config_with_parameters(temperature=0.5)
+
+    call_kwargs = await self._capture_chat_kwargs(config)
+
+    assert call_kwargs["options"] == {"temperature": 0.5}
+
+  @pytest.mark.asyncio
+  async def test_default_parameters_yield_empty_options(self):
+    """With no configured parameters the options mapping is empty."""
+    config = _create_mock_config()  # OllamaParameters() defaults (all None)
+
+    call_kwargs = await self._capture_chat_kwargs(config)
+
+    assert call_kwargs["options"] == {}
 
 
 class TestOllamaBackendFetchUsage:

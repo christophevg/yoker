@@ -180,6 +180,15 @@
   Configs setting the removed field hard-fail.
 
 ### Fixed
+- **Ollama backend ignored `backend.ollama.parameters`**: the
+  `OllamaParameters` config (`temperature`, `top_p`, `top_k`, `num_ctx`,
+  `num_predict`, `repeat_penalty`, `seed`) was parsed, validated and
+  documented (`examples/yoker.toml`) but never forwarded to the Ollama
+  client — a configured temperature silently had no effect.
+  `chat_stream` now flattens the parameters into the request's
+  `options` mapping (fields map 1:1 onto `ollama.Options`, `None`
+  entries filtered; empty config ≙ no options), mirroring the litellm
+  backend's parameter flattening.
 - **Path guardrails never matched on Windows**: glob denylists
   (`blocked_paths`, `blocked_write_paths`) compiled to regexes that
   only understand `/`, while the absolute-path matching candidate kept

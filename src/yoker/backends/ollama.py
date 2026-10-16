@@ -9,6 +9,7 @@ import json
 import logging
 import os
 from collections.abc import AsyncIterator
+from dataclasses import asdict
 from typing import TYPE_CHECKING, Any, cast
 
 import httpx
@@ -223,6 +224,16 @@ class OllamaBackend(ModelBackend):
     in_tool_call: dict[int, bool] = {}  # tool_index -> in_block
     tool_call_buffer: dict[int, dict[str, Any]] = {}  # tool_index -> accumulated data
 
+    # Build sampling options from backend.ollama.parameters. Field names map
+    # 1:1 onto ollama.Options; None-valued entries are filtered so unset
+    # parameters fall back to server defaults. When nothing is configured the
+    # mapping is empty — equivalent to no options set (mirrors the litellm
+    # backend's None-flattening).
+    ollama_config = cast("OllamaConfig", self.config.backend.config)
+    options = {
+      key: value for key, value in asdict(ollama_config.parameters).items() if value is not None
+    }
+
     # Call ollama.AsyncClient.chat with stream=True
     stream = await self._client.chat(
       model=model,
@@ -230,6 +241,7 @@ class OllamaBackend(ModelBackend):
       tools=tools,
       stream=True,
       think=think,
+      options=options,
     )
 
     # Process the stream
