@@ -714,16 +714,22 @@ class SearchToolConfig(ToolConfig):
     max_regex_complexity: Maximum regex complexity level.
     max_results: Maximum search results to return.
     timeout_ms: Search timeout in milliseconds.
+    max_output_kb: Maximum serialized result size in KB. Enforced as a
+      graceful in-tool byte budget (truncated matches + hint, see
+      ``yoker.builtin.search``) AND as a hard backstop centrally
+      (``_enforce_output_limit``, same as make/github).
   """
 
   max_regex_complexity: str = "medium"
   max_results: int = 500
   timeout_ms: int = 10000
+  max_output_kb: int = 50
 
   def __post_init__(self) -> None:
     """Validate search tool configuration."""
     validate_positive_int(self.max_results, "tools.search.max_results")
     validate_positive_int(self.timeout_ms, "tools.search.timeout_ms")
+    validate_positive_int(self.max_output_kb, "tools.search.max_output_kb")
 
 
 @dataclass

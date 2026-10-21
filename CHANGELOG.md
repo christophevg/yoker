@@ -1,6 +1,16 @@
 ## Unreleased
 
 ### Added
+- **Search output-size protection (T7)**: the `yoker:search` result is now
+  budgeted — every rendered content/context line is capped at 500 chars
+  with a visible `… (+N chars truncated)` marker, and the total serialized
+  result is capped by the new `tools.search.max_output_kb` knob
+  (default 50KB, same value backs the central `_enforce_output_limit`
+  backstop already used for make/github). When the budget is hit the scan
+  stops early, `truncated` is set and a remedy hint names the narrowing
+  options (specific pattern, fewer results/context, `count_only`). This
+  closes the hole where a single giant line (minified JS, data URIs)
+  produced a 352K-char result consuming the context.
 - **Calling-agent identity in `ToolContext`**: tools can now identify
   their caller — `ctx.agent` (new `AgentInfo` frozen dataclass,
   re-exported from `yoker.tools`) carries `id` (the session-assigned

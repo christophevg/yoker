@@ -36,6 +36,31 @@ ABSOLUTE_TIMEOUT_MS: int = 30000
 MAX_CONTEXT_LINES: int = 20
 CAT_N_WIDTH = 6
 
+# T7 (owner report): a single giant line (minified JS, data URIs ...) once
+# produced a 352K-char search result that consumed almost the whole context
+# window. Two caps guard against that:
+#   - MAX_LINE_CHARS limits every rendered content/context line ("content",
+#     "context_before"/"context_after" entries); excess is elided with a
+#     visible marker.
+#   - A total byte budget (``SearchToolConfig.max_output_kb``, default 50)
+#     stops match collection when the serialized size is exceeded: matches
+#     stop, ``truncated`` flips true and a hint names the remedies. The same
+#     value backs the hard central gate (``_enforce_output_limit``), which
+#     rejects anything the graceful budget still lets through; the budget is
+#     enforced at 90% so the gate never false-trips on a graceful result.
+MAX_LINE_CHARS: int = 500
+_RESULT_BUDGET_FRACTION: float = 0.9
+
+
+def _serialize_size(data: Any) -> int:
+  """Measure the serialized size of ``data`` like the central gate does (T7).
+
+  ``_enforce_output_limit`` runs ``str(result)`` then UTF-8-encodes it — use
+  the identical measurement so in-tool budget and hard backstop agree.
+  """
+  return len(str(data).encode("utf-8"))
+
+
 FORBIDDEN_PATTERNS: tuple[str, ...] = (
   r"\([^)]*[+*][^)]*\)[+*]",
   r"\([^)]*\|[^)]*\)[+*]",
@@ -188,6 +213,13 @@ async def search(
     a flat ``content_metadata`` dict is attached for grep-style UI rendering.
     Content-search results suppressed by the binary floor are counted in
     ``hidden_by_ignore`` (T5), so a zero-result stays explainable.
+
+    Output-size protection (T7): every rendered content/context line is
+    capped at ``MAX_LINE_CHARS`` with a visible truncation marker, and the
+    total serialized result is budgeted by ``config.max_output_kb`` —
+    when the budget is hit, collection stops early, ``truncated`` is set
+    and a remedy hint is attached. A backstop gate re-checks the same
+    knob centrally after post_filter.
   """
   if not path:
     return ToolResult(success=False, error="Missing required parameter: path")
@@ -298,12 +330,16 @@ async def search(
   try:
     hidden_skips: list[int] = [0]
     floor_skips: list[int] = [0]
+    # T7: tool-level output budget from config (same knob backs the central
+    # gate); applies to the content-search path below. 0 disables it.
+    result_budget_bytes = int(config.max_output_kb) * 1024 if int(config.max_output_kb) > 0 else 0
     if search_type == "content":
       matches, total, truncated, files_searched, counts = _search_content(
         resolved,
         search_pattern,
         effective_max_results,
         effective_timeout_ms,
+        result_budget_bytes=result_budget_bytes,
         case_insensitive=effective_case_insensitive,
         context_before=effective_context_before,
         context_after=effective_context_after,
@@ -380,6 +416,19 @@ async def search(
             f"{floor_hidden} binary/cache file(s) by the binary floor — "
             "retry with include_ignored=true and/or include_binaries=true"
           )
+
+    # T7: budget hit during a CONTENT search — the result was cut off
+    # mid-scan. Name the remedies so the caller can narrow instead of
+    # re-running blind. (Truncation by max_results alone doesn't get the
+    # hint: the result still shows its full requested slice; the central
+    # backstop still guards its size.)
+    if truncated and search_type == "content" and len(matches) < effective_max_results:
+      result["hint"] = (
+        "Result truncated by the output-size budget — narrow the search: "
+        "use a more specific pattern, reduce max_results or context_before/"
+        "context_after, add an include_pattern/exclude_pattern, or use "
+        "count_only=true for a per-file overview"
+      )
 
     logger.info(
       "search_success",
@@ -568,12 +617,25 @@ def _render_context_lines(lines: list[str], start_idx: int, count: int) -> list[
   """Render up to ``count`` lines starting at 0-indexed ``start_idx`` as cat -n strings.
 
   ``start_idx`` is clamped to file boundaries; fewer lines are returned at edges.
+  Each line is additionally capped at ``MAX_LINE_CHARS`` (T7) so a giant line
+  cannot blow up the result; excess is elided with a visible marker.
   """
   if count <= 0:
     return []
   end = max(start_idx, min(len(lines), start_idx + count))
   slice_lines = lines[start_idx:end]
-  return [f"{start_idx + j + 1:>{CAT_N_WIDTH}}\t{line}" for j, line in enumerate(slice_lines)]
+  return [
+    f"{start_idx + j + 1:>{CAT_N_WIDTH}}\t{_cap_line(line)}" for j, line in enumerate(slice_lines)
+  ]
+
+
+def _cap_line(line: str) -> str:
+  """Cap a rendered line at ``MAX_LINE_CHARS``, appending an elision marker (T7)."""
+  stripped = line.strip()
+  if len(stripped) <= MAX_LINE_CHARS:
+    return stripped
+  omitted = len(stripped) - MAX_LINE_CHARS
+  return f"{stripped[:MAX_LINE_CHARS]}… (+{omitted} chars truncated)"
 
 
 def _search_content(
@@ -581,6 +643,7 @@ def _search_content(
   pattern: str,
   max_results: int,
   timeout_ms: int,
+  result_budget_bytes: int = 0,
   case_insensitive: bool = False,
   context_before: int = 0,
   context_after: int = 0,
@@ -593,7 +656,13 @@ def _search_content(
   binary_floor: bool = False,
   floor_counter: list[int] | None = None,
 ) -> tuple[list[dict[str, Any]], int, bool, int, dict[str, int]]:
-  """Search file contents using regex."""
+  """Search file contents using regex.
+
+  ``result_budget_bytes`` (T7) caps the total serialized size of the
+  returned ``matches`` (or ``counts``) — measured the same way the central
+  backstop measures ``str(result)`` so the two layers agree. ``0`` disables
+  the budget (used by tests of the budget-free path).
+  """
   matches: list[dict[str, Any]] = []
   counts: dict[str, int] = {}
   total_count = 0
@@ -606,6 +675,14 @@ def _search_content(
   start_time = time.monotonic()
   timeout_seconds = timeout_ms / 1000.0
   collect_context = (context_before > 0 or context_after > 0) and not count_only
+
+  # T7: total serialized-size budget. Sized like the central backstop
+  # (``_enforce_output_limit``) measures ``str(result)``; enforced at 90% so
+  # overhead (outer dict, hint, JSON wrapping) never makes a graceful
+  # result false-trip the hard gate. On budget hit: stop collecting and
+  # stop scanning — ``total_count`` is a lower bound, same as a timeout.
+  budget_bytes = int(result_budget_bytes * _RESULT_BUDGET_FRACTION)
+  budget_used = 0
 
   for file_path in _walk_files(
     root,
@@ -643,7 +720,7 @@ def _search_content(
             match: dict[str, Any] = {
               "file": file_str,
               "line": line_num,
-              "content": line.strip(),
+              "content": _cap_line(line),
             }
             if collect_context:
               match_idx = line_num - 1
@@ -651,9 +728,18 @@ def _search_content(
               before_count = match_idx - before_start
               match["context_before"] = _render_context_lines(lines, before_start, before_count)
               match["context_after"] = _render_context_lines(lines, match_idx + 1, context_after)
+            size = _serialize_size(match)
+            if budget_bytes > 0 and budget_used + size > budget_bytes:
+              break
+            budget_used += size
             matches.append(match)
       if count_only and file_count > 0:
         counts[file_str] = file_count
+        if 0 < budget_bytes < _serialize_size(counts):
+          # T7: per-file counts exceed the budget — stop scanning; the
+          # counts dict is reported truncated.
+          truncated = True
+          break
     except (UnicodeDecodeError, PermissionError, OSError):
       continue
 

@@ -9,7 +9,7 @@ from yoker.builtin import search
 from yoker.builtin.search import (
   ABSOLUTE_MAX_RESULTS,
 )
-from yoker.config import Config, PermissionsConfig
+from yoker.config import Config, PermissionsConfig, SearchToolConfig, ToolsConfig
 from yoker.tools import ToolRegistry
 from yoker.tools.context import ToolContext
 from yoker.tools.guardrails.path import ReadPathGuardrail
@@ -1768,3 +1768,159 @@ class TestSearchToolFilePath:
     assert dir_result.success
     assert dir_result.result["total_matches"] == 2
     assert dir_result.result["files_searched"] == 2
+
+
+def _config_with_budget(kb: int) -> Config:
+  """Build a Config with the search tool's max_output_kb set (module-level helper)."""
+  return Config(tools=ToolsConfig(search=SearchToolConfig(max_output_kb=kb)))
+
+
+class TestSearchToolOutputBudget:
+  """T7: output-size protection — line cap, byte budget, hint, backstop."""
+
+  @pytest.mark.asyncio
+  async def test_giant_line_capped(self, tmp_path: Path) -> None:
+    """A single giant matched line is elided at MAX_LINE_CHARS with a marker."""
+    giant = "x" * 5000
+    (tmp_path / "giant.js").write_text(f'nav.src="{giant}";\n')
+
+    spec = _search_spec()
+    ctx = _search_context()
+    result = await spec.execute(path=str(tmp_path), ctx=ctx, pattern="nav", type="content")
+
+    assert result.success
+    content = result.result["matches"][0]["content"]
+    assert len(content) <= 560  # MAX_LINE_CHARS + marker
+    assert content.endswith("chars truncated)")
+
+  @pytest.mark.asyncio
+  async def test_context_lines_capped(self, tmp_path: Path) -> None:
+    """Context lines are capped the same as matched lines."""
+    giant = "y" * 5000
+    (tmp_path / "f.txt").write_text(f"before {giant}\nTARGET\n")
+
+    spec = _search_spec()
+    ctx = _search_context()
+    result = await spec.execute(
+      path=str(tmp_path), ctx=ctx, pattern="TARGET", type="content", context_before=1
+    )
+
+    assert result.success
+    ctx_line = result.result["matches"][0]["context_before"][0]
+    assert len(ctx_line) <= 580  # prefix + MAX_LINE_CHARS + marker
+    assert ctx_line.endswith("chars truncated)")
+
+  @pytest.mark.asyncio
+  async def test_normal_lines_not_capped(self, tmp_path: Path) -> None:
+    """Regular-length lines pass through unchanged (no marker)."""
+    (tmp_path / "f.txt").write_text("short line\n")
+
+    spec = _search_spec()
+    ctx = _search_context()
+    result = await spec.execute(path=str(tmp_path), ctx=ctx, pattern="short", type="content")
+
+    assert result.success
+    assert result.result["matches"][0]["content"] == "short line"
+
+  @pytest.mark.asyncio
+  async def test_budget_stops_collection_and_sets_truncated(self, tmp_path: Path) -> None:
+    """With a tiny budget, matches stop early, truncated=True, hint present."""
+    # 20 matches, each ~1KB after line-cap context; budget 5KB can't hold all.
+    for i in range(20):
+      (tmp_path / f"f{i:02d}.txt").write_text("TODO: " + "z" * 900 + "\n")
+
+    spec = _search_spec()
+    ctx = _search_context(_config_with_budget(5))
+    result = await spec.execute(path=str(tmp_path), ctx=ctx, pattern="TODO", type="content")
+
+    assert result.success
+    assert result.result["truncated"] is True
+    assert len(result.result["matches"]) < 20
+    assert "output-size budget" in result.result["hint"]
+    # Graceful result must never trip the 5KB backstop: serialized size < 5KB.
+    assert len(str(result.result).encode("utf-8")) < 5 * 1024
+
+  @pytest.mark.asyncio
+  async def test_budget_default_config_allows_typical_results(self, tmp_path: Path) -> None:
+    """Default 50KB budget does not truncate a small result set."""
+    (tmp_path / "f.txt").write_text("TODO: a\nTODO: b\n")
+
+    spec = _search_spec()
+    ctx = _search_context()
+    result = await spec.execute(path=str(tmp_path), ctx=ctx, pattern="TODO", type="content")
+
+    assert result.success
+    assert result.result["truncated"] is False
+    assert "hint" not in result.result
+
+  @pytest.mark.asyncio
+  async def test_budget_count_only_truncates_counts(self, tmp_path: Path) -> None:
+    """count_only mode applies the same budget to the counts dict."""
+    # Long *file content paths* would hit OS name-length limits; use nested
+    # subdirs to make each file's full path long without a huge filename.
+    for i in range(50):
+      d = tmp_path / f"d{i:02d}" / ("n" * 60)
+      d.mkdir(parents=True, exist_ok=True)
+      (d / "todo.txt").write_text("TODO\n")
+
+    spec = _search_spec()
+    ctx = _search_context(_config_with_budget(5))  # 50 long paths ≈ 9KB > 5KB budget
+    result = await spec.execute(
+      path=str(tmp_path), ctx=ctx, pattern="TODO", type="content", count_only=True
+    )
+
+    assert result.success
+    assert result.result["truncated"] is True
+    assert len(result.result["counts"]) < 50  # dict cut before all 50 files
+    assert "output-size budget" in result.result["hint"]
+
+  @pytest.mark.asyncio
+  async def test_filename_search_untouched_by_budget(self, tmp_path: Path) -> None:
+    """Filename search keeps count-capping only; budget knob doesn't cut it."""
+    for i in range(30):
+      (tmp_path / f"f{i:02d}.py").write_text("x\n")
+
+    spec = _search_spec()
+    ctx = _search_context(_config_with_budget(20))
+    result = await spec.execute(path=str(tmp_path), ctx=ctx, pattern="*.py", type="filename")
+
+    assert result.success
+    assert result.result["truncated"] is False  # count cap (max_results=500) not reached
+    assert len(result.result["matches"]) == 30
+
+  def test_max_output_kb_defaults_to_50(self) -> None:
+    """SearchToolConfig exposes max_output_kb=50 and validates it."""
+    from yoker.exceptions import ValidationError
+
+    cfg = SearchToolConfig()
+    assert cfg.max_output_kb == 50
+    with pytest.raises(ValidationError):
+      SearchToolConfig(max_output_kb=0)
+
+
+class TestSearchToolOutputBudgetBackstop:
+  """T7: the central _enforce_output_limit gate engages for search config."""
+
+  def test_search_config_exposes_max_output_kb_for_central_gate(self) -> None:
+    """The central gate reads max_output_kb off SearchToolConfig (getattr contract)."""
+    config = Config()
+    assert config.tools.search.max_output_kb == 50
+
+    # The gate resolves tool config by simple name and reads the attr:
+    tool_config = config.tools["search"]
+    assert getattr(tool_config, "max_output_kb", None) == 50
+
+  @pytest.mark.asyncio
+  async def test_huge_config_budget_still_hard_capped_by_backstop(self, tmp_path: Path) -> None:
+    """Even with a small max_output_kb, in-tool budget keeps result under the knob."""
+    big_line = "q" * 1000
+    for i in range(80):
+      (tmp_path / f"f{i:02d}.txt").write_text(f"TODO {big_line} {i}\n")
+
+    spec = _search_spec()
+    ctx = _search_context(_config_with_budget(10))  # 80KB of matches into 10KB budget
+    result = await spec.execute(path=str(tmp_path), ctx=ctx, pattern="TODO", type="content")
+
+    assert result.success
+    assert result.result["truncated"] is True
+    assert len(str(result.result).encode("utf-8")) < 10 * 1024
