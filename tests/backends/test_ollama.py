@@ -566,9 +566,7 @@ class TestOllamaBackendOptions:
   @pytest.mark.asyncio
   async def test_parameters_forwarded_as_options(self):
     """Configured parameters are flattened into the chat request options."""
-    config = self._config_with_parameters(
-      temperature=0.5, num_ctx=4096, seed=42
-    )
+    config = self._config_with_parameters(temperature=0.5, num_ctx=4096, seed=42)
 
     call_kwargs = await self._capture_chat_kwargs(config)
 
