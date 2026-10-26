@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from yoker.builtin import websearch
-from yoker.config import Config
+from yoker.config import Config, ToolsConfig, WebSearchToolConfig
 from yoker.tools import ToolRegistry
 from yoker.tools.context import ToolContext
 from yoker.tools.web.backend import WebSearchBackend
@@ -410,6 +410,141 @@ def mock_backend() -> MagicMock:
     ]
   )
   return backend
+
+
+# T7 (websearch): output-size protection — snippet cap, byte budget, hint.
+
+
+def _config_with_budget(kb: int) -> Config:
+  """Build a Config with the websearch tool's max_output_kb set."""
+  return Config(tools=ToolsConfig(websearch=WebSearchToolConfig(max_output_kb=kb)))
+
+
+def _giant_results(n: int, snippet_len: int = 2000) -> list[SearchResult]:
+  """Build n SearchResult objects with oversized snippets."""
+  return [
+    SearchResult(
+      title=f"Result {i}",
+      url=f"https://example.com/{i}",
+      snippet="x" * snippet_len,
+      source="test",
+    )
+    for i in range(n)
+  ]
+
+
+class TestWebSearchOutputBudget:
+  """Output-size protection for websearch: snippet cap, byte budget, hint."""
+
+  @pytest.mark.asyncio
+  async def test_giant_snippet_capped(self, mock_backend: MagicMock) -> None:
+    """Given a backend returning a giant snippet, when executed,
+    Then the snippet is elided at MAX_SNIPPET_CHARS with a marker."""
+    from yoker.builtin.websearch import MAX_SNIPPET_CHARS
+
+    mock_backend.search = AsyncMock(
+      return_value=[SearchResult(title="T", url="https://x.com", snippet="y" * 5000, source="t")]
+    )
+    spec = _websearch_spec()
+    ctx = _get_ctx(backend=mock_backend)
+    result = await spec.execute(query="test", ctx=ctx)
+
+    assert result.success
+    snippet = result.result["results"][0]["snippet"]
+    assert len(snippet) <= MAX_SNIPPET_CHARS + 120  # marker adds ~100 chars
+    assert "chars truncated" in snippet
+    assert "webfetch" in snippet
+
+  @pytest.mark.asyncio
+  async def test_normal_snippet_not_capped(self, mock_backend: MagicMock) -> None:
+    """Given normal-length snippets, when executed,
+    Then they pass through unchanged (no marker)."""
+    spec = _websearch_spec()
+    ctx = _get_ctx(backend=mock_backend)
+    result = await spec.execute(query="test", ctx=ctx)
+
+    assert result.success
+    assert result.result["results"][0]["snippet"] == "Snippet 1"
+    assert result.result["results"][1]["snippet"] == "Snippet 2"
+
+  @pytest.mark.asyncio
+  async def test_budget_stops_inclusion_and_sets_truncated(self, mock_backend: MagicMock) -> None:
+    """Given a tiny budget and 20 giant-snippet results, when executed,
+    Then inclusion stops early, truncated=True, hint present,
+    And the result stays under the budget (backstop never false-trips)."""
+    mock_backend.search = AsyncMock(return_value=_giant_results(20))
+    spec = _websearch_spec()
+    ctx = ToolContext(
+      config=_config_with_budget(5).tools.websearch,
+      shared=Config().tools_shared,
+      backends={"websearch": mock_backend},
+    )
+    result = await spec.execute(query="test", ctx=ctx)
+
+    assert result.success
+    assert result.result["truncated"] is True
+    assert result.result["count"] < 20
+    assert result.result["total_hits"] == 20
+    assert "output-size budget" in result.result["hint"]
+    assert len(str(result.result).encode("utf-8")) < 5 * 1024
+
+  @pytest.mark.asyncio
+  async def test_budget_default_config_allows_typical_results(
+    self, mock_backend: MagicMock
+  ) -> None:
+    """Given the default 50KB budget and small results, when executed,
+    Then nothing is truncated and no hint is set."""
+    spec = _websearch_spec()
+    ctx = _get_ctx(backend=mock_backend)
+    result = await spec.execute(query="test", ctx=ctx)
+
+    assert result.success
+    assert result.result["count"] == 2
+    assert "truncated" not in result.result
+    assert "hint" not in result.result
+
+  def test_max_output_kb_defaults_to_50(self) -> None:
+    """Given WebSearchToolConfig, when defaults are inspected,
+    Then max_output_kb is 50 and 0 is rejected."""
+    from yoker.exceptions import ValidationError
+
+    cfg = WebSearchToolConfig()
+    assert cfg.max_output_kb == 50
+    with pytest.raises(ValidationError):
+      WebSearchToolConfig(max_output_kb=0)
+
+
+class TestWebSearchOutputBudgetBackstop:
+  """The central _enforce_output_limit gate engages for websearch config."""
+
+  def test_websearch_config_exposes_max_output_kb_for_central_gate(self) -> None:
+    """Given a default Config, when the tool config is resolved by name,
+    Then the gate's getattr contract finds max_output_kb."""
+    from yoker.config import ToolsConfig
+
+    config = Config()
+    assert config.tools.websearch.max_output_kb == 50
+
+    # The gate resolves tool config by simple name and reads the attr:
+    tool_config = ToolsConfig()["websearch"]
+    assert getattr(tool_config, "max_output_kb", None) == 50
+
+  @pytest.mark.asyncio
+  async def test_giant_ollama_response_stays_under_backstop_size(
+    self, mock_backend: MagicMock
+  ) -> None:
+    """Given the default config and a 300KB-snippet backend response
+    (observed in the field), when executed, Then the snippet cap alone
+    keeps the serialized result far below the central gate's 50KB."""
+    # Field observation: Ollama returned ~300KB per "snippet".
+    mock_backend.search = AsyncMock(return_value=_giant_results(10, snippet_len=300_000))
+    spec = _websearch_spec()
+    ctx = _get_ctx(backend=mock_backend)
+    result = await spec.execute(query="test", ctx=ctx)
+
+    assert result.success
+    assert result.result["count"] == 10
+    assert len(str(result.result).encode("utf-8")) < 50 * 1024
 
 
 @pytest.fixture

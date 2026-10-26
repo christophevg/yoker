@@ -987,6 +987,13 @@ class WebSearchToolConfig(ToolConfig):
     domain_allowlist: Domains to allow (empty = all allowed).
     domain_blocklist: Domains to block (empty = none blocked).
     block_private_cidrs: Whether to block private IP ranges.
+    max_output_kb: Maximum serialized result size in KB. Enforced as a
+      graceful in-tool byte budget (truncated results + hint, see
+      ``yoker.builtin.websearch``) AND as a hard backstop centrally
+      (``_enforce_output_limit``, same as make/github/search). Backstop
+      motivation: Ollama web_search has been observed to return full-page
+      content per "snippet" (300KB+ per hit), which can dwarf a whole
+      context window.
   """
 
   backend: str = "ollama"
@@ -998,6 +1005,11 @@ class WebSearchToolConfig(ToolConfig):
   domain_allowlist: tuple[str, ...] = ()
   domain_blocklist: tuple[str, ...] = ()
   block_private_cidrs: bool = True
+  max_output_kb: int = 50
+
+  def __post_init__(self) -> None:
+    """Validate web search tool configuration."""
+    validate_positive_int(self.max_output_kb, "tools.websearch.max_output_kb")
 
 
 @dataclass

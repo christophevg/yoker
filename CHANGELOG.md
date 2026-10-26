@@ -1,6 +1,18 @@
 ## Unreleased
 
 ### Added
+- **Websearch output-size protection (T7 pattern)**: the `yoker:websearch`
+  result is now budgeted — every result's snippet is capped at 500 chars
+  with a visible `… (+N chars truncated — use webfetch on the URL for
+  full content)` marker, and the total serialized result is capped by the
+  new `tools.websearch.max_output_kb` knob (default 50KB, same value
+  backs the central `_enforce_output_limit` backstop already used for
+  make/github/search). When the budget is hit, result inclusion stops
+  early, `truncated` + `total_hits` are set and a remedy hint names the
+  options (fewer results, more specific query, webfetch a URL). Field
+  evidence: Ollama web_search returns full-page text as the per-result
+  "snippet" (300KB+ per hit; a research session accumulated 9M chars
+  across a handful of searches, triggering repeated context compaction).
 - **Search output-size protection (T7)**: the `yoker:search` result is now
   budgeted — every rendered content/context line is capped at 500 chars
   with a visible `… (+N chars truncated)` marker, and the total serialized
