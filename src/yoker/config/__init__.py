@@ -262,18 +262,26 @@ class PruneThinkingConfig:
 class ForceStubToolResultsConfig:
   """Thresholds for the ``force_stub_tool_results`` compaction stage.
 
-  The age-blind, last content-preserving pass: stubs EVERY tool result
-  whose body exceeds ``min_chars`` regardless of age — the final attempt
-  to shrink the view by flagging content before the destructive cutoff
-  stage runs.
+  The recency-fenced, last content-preserving pass: stubs every tool
+  result whose body exceeds ``min_chars`` and whose age is at least
+  ``min_age_turns`` — the final attempt to shrink the view by flagging
+  content before the destructive cutoff stage runs. The default gate of
+  1 spares the IN-FLIGHT turn's results (age 0): content the model has
+  not finished consuming is never stubbed, so a mid-turn overflow cannot
+  destroy the tool outputs the current turn still depends on. ``0``
+  restores the historical age-blind behavior.
   """
 
   min_chars: int = 4096
+  min_age_turns: int = 1
 
   def __post_init__(self) -> None:
-    """Validate stage threshold (0 stubs every non-empty result)."""
+    """Validate stage thresholds (age gate 0 = age-blind, historical)."""
     validate_non_negative_int(
       self.min_chars, "context.compaction.force_stub_tool_results.min_chars"
+    )
+    validate_non_negative_int(
+      self.min_age_turns, "context.compaction.force_stub_tool_results.min_age_turns"
     )
 
 

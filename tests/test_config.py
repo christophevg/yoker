@@ -170,6 +170,7 @@ class TestConfigValidation:
     assert config.compaction.prune_tool_results.min_chars == 2048
     assert config.compaction.prune_thinking.min_age_turns == 3
     assert config.compaction.force_stub_tool_results.min_chars == 4096
+    assert config.compaction.force_stub_tool_results.min_age_turns == 1
     assert config.compaction.cutoff.protect_first_user == 1
     assert config.compaction.cutoff.protect_last_user == 1
     assert config.compaction.cutoff.protect_last_assistant == 1
@@ -233,6 +234,10 @@ class TestConfigValidation:
     assert "force_stub_tool_results.min_chars" in str(exc_info.value)
 
     with pytest.raises(ValidationError) as exc_info:
+      ForceStubToolResultsConfig(min_age_turns=-1)
+    assert "force_stub_tool_results.min_age_turns" in str(exc_info.value)
+
+    with pytest.raises(ValidationError) as exc_info:
       CutoffConfig(protect_first_user=-1)
     assert "cutoff.protect_first_user" in str(exc_info.value)
 
@@ -258,6 +263,8 @@ class TestConfigValidation:
 
     force = ForceStubToolResultsConfig(min_chars=0)
     assert force.min_chars == 0
+    force0 = ForceStubToolResultsConfig(min_age_turns=0)
+    assert force0.min_age_turns == 0
 
     cutoff = CutoffConfig(
       protect_first_user=0,

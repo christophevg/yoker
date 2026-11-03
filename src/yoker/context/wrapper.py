@@ -138,8 +138,10 @@ class ContextManagerWrapper:
   def prune_tool_results(self, min_age_turns: int, min_chars: int, run: str | None = None) -> int:
     return self._wrapped.prune_tool_results(min_age_turns, min_chars, run=run)
 
-  def force_stub_tool_results(self, min_chars: int, run: str | None = None) -> int:
-    return self._wrapped.force_stub_tool_results(min_chars, run=run)
+  def force_stub_tool_results(
+    self, min_chars: int, min_age_turns: int = 1, run: str | None = None
+  ) -> int:
+    return self._wrapped.force_stub_tool_results(min_chars, min_age_turns, run=run)
 
   def prune_thinking(self, min_age_turns: int, run: str | None = None) -> int:
     return self._wrapped.prune_thinking(min_age_turns, run=run)

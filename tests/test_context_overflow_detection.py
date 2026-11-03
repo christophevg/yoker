@@ -1141,24 +1141,27 @@ class TestCompactionPipeline:
     assert cm.get_stored_messages()[2]["pruned"]["run"] == "older"
 
   def test_force_stub_dispatches_with_config_threshold(self) -> None:
-    """force_stub_tool_results stubs young results the age-gated prune skipped.
+    """force_stub stubs consumed-turn results the age-gated prune skipped.
 
-    The age-gated prune (min_age_turns=1) leaves the LAST tool result
-    (age 0, body 20,000 > the configured 5,000 threshold) unflagged;
-    force_stub (min_chars=5000) then stubs it — which alone brings the
-    view under the target, so the cutoff has nothing left to drop.
+    Old results with big bodies (20,000 > the configured 5,000
+    threshold) are 2 turns old — the age-gated prune (gate 3) leaves
+    them unflagged; force_stub (min_chars=5000, gate 1) then stubs them
+    — which alone brings the view under the target, so the cutoff has
+    nothing left to drop.
     """
-    messages = [_msg("system", "sys"), _msg("user", "hi")]
-    for i in range(3):
-      messages.append(_msg("assistant", f"turn {i}"))
-      messages.append(_tool_result("read", f"t{i}", "x" * 2000))
-    messages.append(_msg("assistant", "done"))
-    # The last (age-0) tool result carries a 20,000-char body — young but
-    # HUGE, exactly the case force_stub exists for.
+    messages = [_msg("system", "sys"), _msg("user", "hi"), _msg("assistant", "turn 1")]
+    # Two huge results from a CONSUMED turn: with the final "done" prose
+    # appended below, both have ≥ 1 completed turn after them (ages 2 and
+    # 1) — consumable history, exactly force_stub's territory.
     messages.append(_tool_result("read", "t-big", "x" * 20_000))
+    messages.append(_tool_result("read", "t-big2", "x" * 20_000))
+    messages.append(_msg("assistant", "done"))
     agent = _pipeline_agent(messages, max_tokens=6000, compact_ratio=0.5)
+    agent.config.context.compaction.prune_tool_results = PruneToolResultsConfig(
+      min_age_turns=3, min_chars=2048
+    )
     agent.config.context.compaction.force_stub_tool_results = ForceStubToolResultsConfig(
-      min_chars=5000
+      min_chars=5000, min_age_turns=1
     )
     events: list[Any] = []
     handler: EventCallback = lambda e: events.append(e)  # noqa: E731
@@ -1170,24 +1173,76 @@ class TestCompactionPipeline:
 
     event = next(e for e in events if isinstance(e, ContextOverflowEvent))
     assert event.run_id is not None
-    # Raw char/4: total chars = 5 + 3×(6+2000) + 5 + 20000 = 26,036 →
-    # trigger 6509 > cap 8000? NO — under cap. Cap must sit below the
-    # trigger: 6000 → trigger 6509 > 6000, target 3000. The huge body
-    # alone is ≈5000 tokens, so stubbing it must land below that.
+    # Raw char/4: total chars ≈ 2×20,000 + small ≈ 40,049 → trigger
+    # ≈10,012 > cap 6000, target 3000. Each stub saves ≈19,990 chars
+    # (≈4997 tokens), so stubbing one already lands ≈5015 → still over
+    # 3000 → BOTH get stubbed → ≈18 < target.
     assert event.estimated_tokens > event.max_tokens
-    # force_stub stubbed the huge young result (stage name on its flag).
+    # Both huge results (age ≥ 1) were stubbed by force_stub — prune's
+    # gate of 3 skipped them.
     stored = agent.context.get_stored_messages()
-    big_flag = stored[-1].get("pruned", {})
-    assert big_flag.get("kind") == "stub"
-    assert big_flag.get("stage") == "force_stub_tool_results"
-    # Stubbing it (−4999) already landed under the target (3000): the
-    # cutoff stage had NOTHING left to drop — the frame+results stay.
+    fs_flags = [m["pruned"]["stage"] for m in stored if m.get("pruned", {}).get("kind") == "stub"]
+    assert fs_flags == ["force_stub_tool_results", "force_stub_tool_results"]
+    # Stubbing both (−≈10K tokens) landed far under the target (3000):
+    # the cutoff stage had NOTHING left to drop — the units fully stay.
     assert event.dropped_count == 0
     assert event.remaining_estimated_tokens is not None
     assert event.remaining_estimated_tokens <= event.target_tokens
-    # Stored truth keeps every body; the view shows the stub only.
-    assert len(stored[-1]["content"]) == 20_000
-    assert "elided" in agent.context.get_context()[-1]["content"]
+
+  def test_force_stub_spare_in_flight_turn_result(self) -> None:
+    """Mid-turn overflow: the fresh result survives force_stub intact.
+
+    The reported failure: a huge tool result arrives mid-turn, the next
+    pre-call estimate crosses the cap, and the age-blind pass destroyed
+    exactly that fresh content. With the default fence (gate 1) the
+    age-0 result must stay untouched; the cutoff stage compensates by
+    dropping OLD history instead — a whole unit, never the fresh result.
+    """
+    messages = [_msg("system", "sys"), _msg("user", "commit please")]
+    messages.append(_msg("assistant", "turn 1"))
+    messages.append(_tool_result("read", "t1", "y" * 3000))
+    for i in range(2):
+      messages.append(_msg("assistant", f"turn {i + 2}"))
+      messages.append(_tool_result("read", f"t{i + 2}", "y" * 3000))
+    # In-flight structure: the skill result follows an assistant
+    # tool_calls FRAME (a plain assistant would be a completed turn and
+    # lift the result above age 0).
+    messages.append(
+      {
+        "role": "assistant",
+        "content": "loading skill",
+        "tool_calls": [{"id": "t-skill", "name": "yoker:skill", "arguments": {}}],
+      }
+    )
+    messages.append(_tool_result("yoker:skill", "t-skill", "y" * 30_000))
+    agent = _pipeline_agent(messages, max_tokens=6000, compact_ratio=0.5)
+    events: list[Any] = []
+    handler: EventCallback = lambda e: events.append(e)  # noqa: E731
+    agent._event_handlers = [handler]
+
+    import asyncio
+
+    asyncio.run(_manage_context_overflow(agent, None))
+
+    event = next(e for e in events if isinstance(e, ContextOverflowEvent))
+    assert event.estimated_tokens > event.max_tokens
+    stored = agent.context.get_stored_messages()
+    # THE fence: the in-flight skill result is never flagged, and its
+    # body reaches the view byte-for-byte — the model can now follow the
+    # skill instructions it just loaded.
+    assert "pruned" not in stored[-1]
+    fresh_view = agent.context.get_context()[-1]
+    assert fresh_view["content"] == stored[-1]["content"]
+    assert len(fresh_view["content"]) == 30_000
+    # No stub flags anywhere (all results are ≤ 3000 chars ≪ 4096, or
+    # age-0 like the skill output) and the cutoff dropped OLD units only.
+    stages_by_name = {s["name"]: s for s in event.stages}
+    assert stages_by_name["force_stub_tool_results"]["messages"] == 0
+    assert stages_by_name["cutoff"]["messages"] > 0
+    # The dropped content is genuinely old: the LAST completed-turn unit
+    # and the in-flight skill result all stay in the view.
+    surviving_tools = [m["tool_id"] for m in agent.context.get_context() if m.get("role") == "tool"]
+    assert surviving_tools[-1] == "t-skill"
 
   def test_early_exit_prune_alone_reaches_target(self) -> None:
     """Prune reaching the target: cutoff still runs (unconditional), drops 0."""

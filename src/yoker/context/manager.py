@@ -360,29 +360,47 @@ class BaseContextManager:
       flagged += 1
     return flagged
 
-  def force_stub_tool_results(self, min_chars: int, run: str | None = None) -> int:
-    """Flag every large tool result as a stub, regardless of age.
+  def force_stub_tool_results(
+    self, min_chars: int, min_age_turns: int = 1, run: str | None = None
+  ) -> int:
+    """Flag large tool results as stubs below the in-flight-turn fence.
 
-    Pipeline stage 3 — the age-blind, last content-preserving pass: runs
-    after the age-gated prunes when the view is still over target, and
-    stubs EVERY tool result whose body exceeds ``min_chars`` — its age no
-    longer matters, only the destructive cutoff stage may follow.
+    Pipeline stage 3 — the recency-fenced, last content-preserving pass:
+    runs after the age-gated prunes when the view is still over target,
+    and stubs every tool result whose body exceeds ``min_chars`` AND
+    whose age is at least ``min_age_turns`` — only the destructive cutoff
+    stage may follow, so this is the last chance to shrink big content
+    while keeping its skeleton (pairing intact, ``re-run`` hint).
+
+    The age gate's one job: never stub a result the model has not yet
+    finished consuming. Age of 0 means no completed turn follows the
+    message (see :meth:`_ages_after_completed_turns`) — i.e. the result
+    belongs to the in-flight turn and the model is mid-task with it;
+    stubbing such a result is exactly the fresh-skill-output failure
+    this gate exists to prevent. The default gate of 1 therefore spares
+    every age-0 result; 0 restores the historical age-blind behavior.
+
     Already-flagged, non-tool and short-body messages are never touched.
 
     Args:
       min_chars: Minimum body length (chars) for a result to be stubbed.
+      min_age_turns: Minimum completed turns after the result (0 = the
+        historical age-blind pass; 1 = spare the in-flight turn).
       run: Optional compaction run id stored in the flag metadata, so
         per-run reporting can count THIS run's flags.
 
     Returns:
       The number of tool results newly flagged as stubs.
     """
+    ages = self._ages_after_completed_turns()
     flagged = 0
-    for message in self._messages:
+    for index, message in enumerate(self._messages):
       if message.get("role") != "tool" or "pruned" in message:
         continue
       content = message.get("content")
       if not isinstance(content, str) or len(content) <= min_chars:
+        continue
+      if ages[index] < min_age_turns:
         continue
       message["pruned"] = _pruned_metadata(
         "stub", "force_stub_tool_results", chars=len(content), run=run

@@ -311,13 +311,15 @@ class Persisted(ContextManagerWrapper):
       self._persist_full_state(self._wrapped.get_stored_messages())
     return flagged
 
-  def force_stub_tool_results(self, min_chars: int, run: str | None = None) -> int:
+  def force_stub_tool_results(
+    self, min_chars: int, min_age_turns: int = 1, run: str | None = None
+  ) -> int:
     """Delegate to wrapped, then bulk-rewrite the JSONL file.
 
     Same persistence rule as prune_tool_results — stub flags must
     survive save/load so the projection keeps rendering stubs.
     """
-    flagged = self._wrapped.force_stub_tool_results(min_chars, run=run)
+    flagged = self._wrapped.force_stub_tool_results(min_chars, min_age_turns, run=run)
     if flagged > 0:
       self._persist_full_state(self._wrapped.get_stored_messages())
     return flagged

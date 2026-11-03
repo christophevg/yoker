@@ -3,9 +3,10 @@
 The cutoff stage drops oldest-first, but a protection set is never flagged:
 framework scaffolding (system + leading user run) is always safe, and four
 windows (first user, last user, last plain assistant, last tool-call unit)
-protect recent context. ``force_stub_tool_results`` is the age-blind,
-last content-preserving pass before cutoff. Compaction runs are recorded
-for later persistence (chunk C).
+protect recent context. ``force_stub_tool_results`` is the age-fenced,
+last content-preserving pass before cutoff: its ``min_age_turns`` gate
+spares the in-flight turn's results. Compaction runs are recorded for
+later persistence (chunk C).
 """
 
 from typing import Any
@@ -39,10 +40,10 @@ def _tool_result_msg(content: str = "result") -> dict[str, Any]:
 
 
 class TestForceStubToolResults:
-  """force_stub_tool_results stubs big tool results regardless of age."""
+  """force_stub_tool_results stubs big results BELOW the in-flight-turn fence."""
 
-  def test_flags_big_result_even_at_age_zero(self) -> None:
-    """A large result immediately followed by its turn is still stubbed."""
+  def test_flags_big_result_at_age_one(self) -> None:
+    """A large result from a consumed (completed) turn is stubbed."""
     cm = BaseContextManager()
     cm._messages = [
       _msg("system", "sys"),
@@ -64,14 +65,74 @@ class TestForceStubToolResults:
     assert tool_view["content"].startswith("[elided: read")
     assert "force_stub_tool_results" in tool_view["content"]
 
-  def test_skips_small_results(self) -> None:
-    """Bodies at or under min_chars are never flagged."""
+  def test_spare_in_flight_turn_results_by_default(self) -> None:
+    """A mid-turn result (age 0) is never stubbed at the default gate 1.
+
+    The mid-turn failure case: a fresh skill/tool output arrives, the
+    estimate crosses the cap before the next backend call, and the pass
+    must NOT destroy the content the model still depends on.
+    """
     cm = BaseContextManager()
-    cm._messages = [_tool_result_msg("x" * 4096)]
+    cm._messages = [
+      _msg("system", "sys"),
+      _msg("user", "commit please"),
+      _tool_call_msg(),
+      _tool_result_msg("x" * 5000),  # in-flight turn: no completed turn after it
+    ]
+    assert cm.force_stub_tool_results(min_chars=4096) == 0
+    assert "pruned" not in cm._messages[3]
+    # The body is intact in the view.
+    view = cm.get_context()
+    tool_view = next(m for m in view if m.get("role") == "tool")
+    assert tool_view["content"] == cm._messages[3]["content"]
+
+  def test_age_gate_zero_restores_age_blind(self) -> None:
+    """Gate 0 = the historical age-blind pass (stub age-0 results too)."""
+    cm = BaseContextManager()
+    cm._messages = [
+      _msg("system", "sys"),
+      _msg("user", "commit please"),
+      _tool_call_msg(),
+      _tool_result_msg("x" * 5000),
+    ]
+    assert cm.force_stub_tool_results(min_chars=4096, min_age_turns=0) == 1
+    assert cm._messages[3]["pruned"]["stage"] == "force_stub_tool_results"
+
+  def test_explicit_gate_spares_young_flags_old(self) -> None:
+    """Gate 2 stubs only results two+ completed turns old."""
+    cm = BaseContextManager()
+    cm._messages = [
+      _msg("system", "sys"),
+      _msg("user", "turn 1"),
+      _tool_call_msg(),
+      _tool_result_msg("x" * 5000),
+      _msg("assistant", "resp1"),
+      _msg("user", "turn 2"),
+      _tool_call_msg(),
+      _tool_result_msg("y" * 5000),
+      _msg("assistant", "resp2"),
+      _msg("user", "turn 3"),
+    ]
+    # Ages: first result has 2 completed turns after it, second has 1.
+    assert cm.force_stub_tool_results(min_chars=4096, min_age_turns=2) == 1
+    assert "pruned" in cm._messages[3]
+    assert "pruned" not in cm._messages[7]
+
+  def test_skips_small_results(self) -> None:
+    """Bodies at or under min_chars are never flagged (consumed turns)."""
+    cm = BaseContextManager()
+    cm._messages = [
+      _tool_result_msg("x" * 4096),
+      _msg("assistant", "done"),  # completes the turn → age 1 ≥ gate
+    ]
     assert cm.force_stub_tool_results(min_chars=4096) == 0
 
   def test_skips_already_flagged(self) -> None:
-    """An already-flagged (stubbed) result is not re-flagged by the pass."""
+    """An already-flagged (stubbed) result is not re-flagged by the pass.
+
+    Age-0 here — the already-flagged skip fires BEFORE the age gate
+    would also have spared it, pinning the ordering of the two guards.
+    """
     cm = BaseContextManager()
     result = _tool_result_msg("x" * 5000)
     result["pruned"] = {"kind": "stub", "stage": "prune_tool_results", "at": "t"}

@@ -219,16 +219,22 @@ class ContextManager(Protocol):
       The number of tool results newly flagged as stubs.
     """
 
-  def force_stub_tool_results(self, min_chars: int, run: str | None = None) -> int:
-    """Flag every large tool result as a stub, regardless of age — no removal.
+  def force_stub_tool_results(
+    self, min_chars: int, min_age_turns: int = 1, run: str | None = None
+  ) -> int:
+    """Flag large tool results as stubs below the in-flight-turn fence.
 
-    Framework-default compaction pipeline stage: the age-blind, last
-    content-preserving pass before the destructive cutoff — stubs EVERY
-    ``role=tool`` result whose body exceeds ``min_chars`` (already
-    flagged, non-tool and short-body messages are never touched).
+    Framework-default compaction pipeline stage: the recency-fenced,
+    last content-preserving pass before the destructive cutoff — stubs
+    every ``role=tool`` result whose body exceeds ``min_chars`` AND whose
+    age is at least ``min_age_turns`` completed turns (default 1 = the
+    in-flight turn's results are spared, i.e. never stub unconsumed
+    content; 0 = the historical age-blind pass). Already-flagged,
+    non-tool and short-body messages are never touched.
 
     Args:
       min_chars: Minimum body length (chars) for a result to be stubbed.
+      min_age_turns: Minimum completed turns after the result to flag it.
       run: Optional compaction run id stored in the flag metadata, so
         per-run reporting can count THIS run's flags.
 

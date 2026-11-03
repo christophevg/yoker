@@ -733,6 +733,7 @@ class StageParams:
   min_age_turns: int = 3
   min_chars: int = 2048
   force_stub_min_chars: int = 4096
+  force_stub_min_age_turns: int = 1
   protect_first_user: int = 1
   protect_last_user: int = 1
   protect_last_assistant: int = 1
@@ -763,6 +764,7 @@ def _resolve_stage_params(agent: Any) -> StageParams:
     min_age_turns=compaction.prune_tool_results.min_age_turns,
     min_chars=compaction.prune_tool_results.min_chars,
     force_stub_min_chars=compaction.force_stub_tool_results.min_chars,
+    force_stub_min_age_turns=compaction.force_stub_tool_results.min_age_turns,
     protect_first_user=compaction.cutoff.protect_first_user,
     protect_last_user=compaction.cutoff.protect_last_user,
     protect_last_assistant=compaction.cutoff.protect_last_assistant,
@@ -836,7 +838,9 @@ def _run_compaction_pipeline(
       flagged = agent.context.prune_thinking(params.min_age_turns, run=run_id)
     elif stage == "force_stub_tool_results":
       flag_kind = "stub"
-      flagged = agent.context.force_stub_tool_results(params.force_stub_min_chars, run=run_id)
+      flagged = agent.context.force_stub_tool_results(
+        params.force_stub_min_chars, params.force_stub_min_age_turns, run=run_id
+      )
     elif stage == "cutoff":
       flag_kind = "dropped"
       # The floor: calibrated estimate of the PROTECTED VIEW — rendered
