@@ -754,8 +754,12 @@ class AgentToolConfig(ToolConfig):
     pass
 
 
-# Matches valid Makefile target names per GNU make conventions.
-_TARGET_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._%+\-]*$")
+# Valid Makefile target names for the make tool: used both for tool-side
+# target validation (yoker.builtin.make aliases this as _TARGET_RE) and for
+# validating allowed_env_vars keys. '/' is allowed — path-style targets
+# (docs/html) are valid GNU make targets. The first char is restricted to
+# alnum to reject leading dashes (flag injection: --eval, -C, -j).
+MAKE_TARGET_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._%+\-/]*$")
 
 
 @dataclass
@@ -840,7 +844,7 @@ class MakeToolConfig(ToolConfig):
     validate_positive_int(self.max_output_kb, "tools.make.max_output_kb")
     validate_positive_int(self.max_env_var_bytes, "tools.make.max_env_var_bytes")
     for target in self.allowed_env_vars:
-      if not _TARGET_NAME_RE.fullmatch(target):
+      if not MAKE_TARGET_RE.fullmatch(target):
         raise ValidationError(
           "tools.make.allowed_env_vars",
           target,
@@ -1491,6 +1495,8 @@ __all__ = [
   "IgnoreConfig",
   "SkillToolConfig",
   "ToolsConfig",
+  # Module-level constants
+  "MAKE_TARGET_RE",
   "AgentsConfig",
   "SkillsConfig",
   "PluginsConfig",

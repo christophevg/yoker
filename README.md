@@ -494,7 +494,7 @@ See [docs/rationale.md](docs/rationale.md) for the full rationale and comparison
 - [x] `mkdir` tool - Create directories with recursive parent creation and depth limits
 - [x] `git` tool - Git operations (status, log, diff, branch, show) with permission-controlled commit/push
 - [x] `github` tool - GitHub operations via `gh` CLI (issues, PRs, workflows, releases, labels; read ops always available, write ops like `issue_create`, `issue_comment`, `issue_edit`, `label_create`, `pr_create` require config opt-in; write ops may omit `repo` to use the current git repository)
-- [x] `make` tool - Execute Makefile targets (e.g., `make check`, `make test`) with target validation, per-target env var allowlist, and process-group timeout enforcement.
+- [x] `make` tool - Execute Makefile targets (e.g., `make check`, `make test`, `make docs/html`) with target validation, per-target env var allowlist, and process-group timeout enforcement.
 - [x] `websearch` tool - Web search with SSRF protection, domain filtering, and rate limiting
 - [x] `webfetch` tool - Fetch web content with SSRF protection, URL validation, and size limits
 - [x] `sleep` tool - Pause execution (1–300s) for polling intervals between checks
@@ -641,7 +641,8 @@ allowed_extensions = [".txt", ".md", ".py"]
 The `make` tool executes Makefile targets with target validation, a
 per-target env var allowlist, and process-group timeout enforcement. The
 `make` tool requires POSIX process-group support and is not available on
-Windows.
+Windows. Target names may contain `/` (path-style targets like
+`docs/html`).
 
 ```toml
 [tools.make]

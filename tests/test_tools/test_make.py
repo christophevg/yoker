@@ -103,6 +103,51 @@ class TestMakeToolTargetValidation:
     assert "ok" in result.result["stdout"]
 
   @pytest.mark.asyncio
+  async def test_path_style_target_accepted(self, tmp_path: Path) -> None:
+    """Slash target (docs/html) runs end-to-end against a real Makefile."""
+    _write_makefile(tmp_path, "docs/html:\n\t@echo docs-ok\n")
+    spec = _make_spec()
+    ctx = _make_context()
+    result = await spec.execute(target="docs/html", ctx=ctx, cwd=str(tmp_path))
+    assert result.success
+    assert result.result["exit_code"] == 0
+    assert "docs-ok" in result.result["stdout"]
+
+  @pytest.mark.asyncio
+  async def test_slash_target_env_allowlist_key(self, tmp_path: Path) -> None:
+    """allowed_env_vars may key a slash target; lookup matches verbatim."""
+    _write_makefile(tmp_path, "docs/html:\n\t@echo $(TEST)\n")
+    config = MakeToolConfig(allowed_env_vars={"docs/html": ("TEST",)})
+    spec = _make_spec()
+    ctx = _make_context(config=config)
+    result = await spec.execute(
+      target="docs/html",
+      ctx=ctx,
+      cwd=str(tmp_path),
+      env_vars={"TEST": "sub/test_file.py"},
+    )
+    assert result.success
+    assert "sub/test_file.py" in result.result["stdout"]
+
+  @pytest.mark.asyncio
+  async def test_leading_slash_target_rejected(self, makefile_dir: Path) -> None:
+    """'/etc/passwd' still rejected — first char must be alphanumeric (R2)."""
+    spec = _make_spec()
+    ctx = _make_context()
+    result = await spec.execute(target="/etc/passwd", ctx=ctx, cwd=str(makefile_dir))
+    assert not result.success
+    assert "invalid" in result.error.lower()
+
+  @pytest.mark.asyncio
+  async def test_invalid_target_message_lists_allowed_chars(self, makefile_dir: Path) -> None:
+    """The rejection message states the allowed character set."""
+    spec = _make_spec()
+    ctx = _make_context()
+    result = await spec.execute(target="a b", ctx=ctx, cwd=str(makefile_dir))
+    assert not result.success
+    assert "alphanumerics and . _ % + - /" in result.error
+
+  @pytest.mark.asyncio
   async def test_target_with_space_rejected(self, makefile_dir: Path) -> None:
     """'rm -rf /' rejected — space not in _TARGET_RE."""
     spec = _make_spec()

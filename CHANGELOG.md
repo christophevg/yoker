@@ -1,5 +1,17 @@
 ## Unreleased
 
+### Changed
+- **`make` tool accepts path-style targets**: target names may now contain
+  `/` (e.g. `docs/html`, `build/all`) — valid GNU make targets that were
+  previously rejected as "Invalid make target name". The target pattern is
+  now a single shared constant, `yoker.config.MAKE_TARGET_RE` (public),
+  used both by the make tool and by the `[tools.make.allowed_env_vars]` key
+  validation, so the two validations cannot drift. The rejection message now
+  states the allowed character set. Security surface unchanged: leading char
+  must still be alphanumeric (no flag injection), shell metacharacters are
+  still rejected, and the invocation remains a no-shell list-argv subprocess.
+  (Reported from live use: agent could not run a slashed Makefile target.)
+
 ### Added
 - **Websearch output-size protection (T7 pattern)**: the `yoker:websearch`
   result is now budgeted — every result's snippet is capped at 500 chars

@@ -7,9 +7,11 @@ and process-group kill on timeout (R4).
 
 Security model
 --------------
-- Target validation (R2/R3): target must match GNU make target syntax
-  (``_TARGET_RE``), reject leading dashes (flag injection), reject
-  shell metacharacters (``_FORBIDDEN_TARGET_CHARS``), length <= 256.
+- Target validation (R2/R3): target must match the make-target pattern
+  (``_TARGET_RE``, sourced from ``yoker.config.MAKE_TARGET_RE`` — path-style
+  targets like ``docs/html`` are allowed), reject leading dashes (flag
+  injection), reject shell metacharacters (``_FORBIDDEN_TARGET_CHARS``),
+  length <= 256.
 - cwd (R1): resolved via ``Path.resolve()`` and validated by WritePathGuardrail
   against ``permissions.filesystem_paths``.
 - env_vars (Q1/Q2/Q4): per-target allowlist (deny-by-default) +
@@ -38,7 +40,6 @@ a secrets store (not plain env vars) when running untrusted agents.
 
 import asyncio
 import os
-import re
 import signal
 import sys
 from pathlib import Path
@@ -46,7 +47,7 @@ from typing import Annotated, Any
 
 from structlog import get_logger
 
-from yoker.config import MakeToolConfig
+from yoker.config import MAKE_TARGET_RE, MakeToolConfig
 from yoker.tools.annotations import Text, WritePath
 from yoker.tools.context import ToolContext
 from yoker.tools.guardrails.env import validate_env_vars
@@ -54,9 +55,9 @@ from yoker.tools.schema import ToolResult
 
 logger = get_logger(__name__)
 
-# GNU make target name syntax. The first char is restricted to alnum to
-# reject leading dashes (flag injection: --eval, -C, -j).
-_TARGET_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._%+\-]*$")
+# Valid make target names. Single source of truth in yoker.config
+# (MAKE_TARGET_RE) — the allowed_env_vars key validation must stay in lockstep.
+_TARGET_RE = MAKE_TARGET_RE
 
 # Characters never permitted in a target name. Matches git's FORBIDDEN_CHARS
 # plus owner's five.
@@ -79,8 +80,9 @@ async def make(
   """Execute a Makefile target via ``make <target>``.
 
   Args:
-    target: Makefile target name (e.g., ``"check"``, ``"test"``). Validated
-      against GNU make target syntax; leading dashes and shell
+    target: Makefile target name (e.g., ``"check"``, ``"test"``,
+      ``"docs/html"``). Validated against the make-target pattern
+      (``yoker.config.MAKE_TARGET_RE``); leading dashes and shell
       metacharacters are rejected.
     ctx: Tool execution context carrying the ``MakeToolConfig``.
     cwd: Working directory containing the Makefile. Resolved and checked
@@ -143,7 +145,10 @@ async def make(
   if len(target) > 256:
     return ToolResult(success=False, error="Parameter 'target' exceeds 256 characters")
   if not _TARGET_RE.fullmatch(target):
-    return ToolResult(success=False, error=f"Invalid make target name: {target!r}")
+    return ToolResult(
+      success=False,
+      error=f"Invalid make target name: {target!r} (allowed: alphanumerics and . _ % + - /)",
+    )
   for char in _FORBIDDEN_TARGET_CHARS:
     if char in target:
       return ToolResult(success=False, error="Parameter 'target' contains forbidden character")
