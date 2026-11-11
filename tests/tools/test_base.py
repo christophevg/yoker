@@ -72,6 +72,66 @@ class TestToolSpec:
     assert spec.schema["function"]["name"] == "my_tool"
     assert "value" in spec.schema["function"]["parameters"]["properties"]
 
+  def test_description_joins_wrapped_first_paragraph(self) -> None:
+    """A summary wrapped over physical lines is joined, not cut mid-sentence."""
+
+    async def my_tool(value: str) -> str:
+      """Register a widget and return its id; the serial may be
+      auto-assigned when none is supplied."""
+      return value
+
+    spec = build_tool_spec(my_tool)
+    assert spec.description == (
+      "Register a widget and return its id; the serial may be auto-assigned when none is supplied."
+    )
+
+  def test_description_stops_at_blank_line_before_sections(self) -> None:
+    """The description is the first paragraph; Args/Returns stay out."""
+
+    async def my_tool(value: str) -> str:
+      """Split content into chunks.
+
+      Args:
+        value: The content to split.
+      """
+      return value
+
+    spec = build_tool_spec(my_tool)
+    assert spec.description == "Split content into chunks."
+
+  def test_description_stops_at_section_header_without_blank_line(self) -> None:
+    """A section header directly after the summary also ends it."""
+
+    async def my_tool(value: str) -> str:
+      """Split content into chunks.
+      Args:
+        value: The content to split.
+      """
+      return value
+
+    spec = build_tool_spec(my_tool)
+    assert spec.description == "Split content into chunks."
+
+  def test_description_single_line_unchanged(self) -> None:
+    """Single-line docstrings keep their exact behavior."""
+
+    async def my_tool(value: str) -> str:
+      """A concise tool."""
+      return value
+
+    spec = build_tool_spec(my_tool)
+    assert spec.description == "A concise tool."
+
+  def test_description_whitespace_only_docstring_raises(self) -> None:
+    """A whitespace-only docstring still fails registration."""
+
+    async def my_tool(value: str) -> str:
+      """ """
+      return value
+
+    with pytest.raises(ValueError, match="needs a description"):
+      build_tool_spec(my_tool)
+
   def test_tool_registry_accepts_function(self) -> None:
     """ToolRegistry can register a plain function and retrieve its spec."""
 

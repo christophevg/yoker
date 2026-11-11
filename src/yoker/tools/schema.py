@@ -326,15 +326,34 @@ def _resolve_name(
   return resolved
 
 
+_GOOGLE_SECTION_HEADERS = frozenset(
+  {"Args:", "Returns:", "Raises:", "Attributes:", "Yields:", "Examples:"}
+)
+
+
 def _resolve_description(tool: Callable[..., Any]) -> str:
-  """Resolve the tool description from callable metadata."""
+  """Resolve the tool description from callable metadata.
+
+  The description is the docstring's first paragraph: all lines up to
+  the first blank line or Google-style section header, joined with
+  single spaces. This keeps a summary sentence wrapped across physical
+  lines intact instead of cutting it at the first line.
+  """
   explicit = getattr(tool, "__yoker_description__", None)
   if isinstance(explicit, str):
     return explicit.strip()
 
   doc = inspect.getdoc(tool)
   if doc:
-    return doc.strip().splitlines()[0]
+    lines: list[str] = []
+    for line in doc.strip().splitlines():
+      stripped = line.strip()
+      if not stripped or stripped in _GOOGLE_SECTION_HEADERS:
+        break
+      lines.append(stripped)
+    summary = " ".join(lines)
+    if summary:
+      return summary
 
   raise ValueError("A tool needs a description!")
 

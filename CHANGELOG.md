@@ -214,6 +214,15 @@
   Configs setting the removed field hard-fail.
 
 ### Fixed
+- **Tool descriptions cut at the first physical docstring line**: registration
+  (`yoker.tools.schema._resolve_description`) took the docstring's first
+  physical line, so tools whose summary sentence wrapped onto a second line
+  were registered with a mid-sentence description — losing e.g. behavioral
+  contracts stated after the wrap. The description is now the docstring's
+  **first paragraph**: lines up to the first blank line or Google-style
+  section header (`Args:`/`Returns:`/…), joined with single spaces.
+  Google-style docstrings that put nothing after the summary are unaffected;
+  explicit `__yoker_description__` still takes precedence.
 - **Ollama backend ignored `backend.ollama.parameters`**: the
   `OllamaParameters` config (`temperature`, `top_p`, `top_k`, `num_ctx`,
   `num_predict`, `repeat_penalty`, `seed`) was parsed, validated and
