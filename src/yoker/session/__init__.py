@@ -106,6 +106,13 @@ class Session:
     # ``_create_agent`` so subagents get the same interactive approval
     # flow as the primary agent.
     self._approval_handler: Callable[[str, str, str], Awaitable[bool]] | None = None
+    # Session-wide host-side tool-argument hook (per-agent injection point).
+    # Optional sync or async callable; applied by the processing loop on
+    # every dispatched tool call (see Agent._tool_args_hook and
+    # _processing._apply_tool_args_hook). Set ``session._tool_args_hook = fn``
+    # programmatically to transform tool args (e.g. inject extra arguments)
+    # for every agent in the session.
+    self._tool_args_hook: Callable[[str, dict[str, Any]], dict[str, Any] | None] | None = None
     # R3 telemetry: monotonic timestamp set by __aenter__, consumed by
     # __aexit__ for the run_end duration. Initialized to 0.0 so manual
     # misuse (__aexit__ without __aenter__ — impossible via `async with`)
@@ -455,6 +462,11 @@ class Session:
     # prompts (which happen during tool execution, outside the watchdog
     # window) never trigger a timeout. No wrapping is needed.
     agent._approval_handler = self._approval_handler
+
+    # Propagate the session-wide tool-args hook (host-side injection point)
+    # so spawned agents apply the same argument transformation as the
+    # primary agent.
+    agent._tool_args_hook = self._tool_args_hook
 
     # Session-assigned identity for per-agent telemetry attribution
     # (usage log agent_id/parent_agent_id). The parent is the requesting

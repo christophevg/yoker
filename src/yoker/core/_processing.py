@@ -1,5 +1,6 @@
 """Message processing logic for the async Agent."""
 
+import asyncio
 import inspect
 import json
 import os
@@ -1806,6 +1807,49 @@ def _expand_tilde_args(spec: ToolSpec, tool_args: dict[str, Any]) -> dict[str, A
   return expanded if changed else tool_args
 
 
+# Host-side per-agent tool-argument hook signature. Receives the canonical
+# (namespaced) tool name and the model-provided arguments; returns a dict to
+# replace them, or None to keep them unchanged.
+ToolArgsHook = Callable[[str, dict[str, Any]], dict[str, Any] | None]
+
+
+async def _apply_tool_args_hook(
+  agent: Any, spec: ToolSpec, tool_args: dict[str, Any]
+) -> dict[str, Any]:
+  """Apply the agent's optional tool-args hook (host-side injection point).
+
+  Runs once per dispatched call, after the tool spec is resolved and BEFORE
+  coercion/expansion, so hook-injected values receive the same normalizing
+  treatment (schema-aware coercion, tilde expansion, guardrail validation)
+  as model-provided ones.
+
+  The hook receives the canonical tool name and the raw arguments; it may
+  return a replacement dict or ``None`` to keep the arguments unchanged
+  (in-place mutation of both hook-supplied and model-provided dicts is
+  allowed and visible). Fail-safe by design: if the hook is missing,
+  raises, or returns a non-dict, the original arguments pass through and a
+  warning is logged — a broken hook must never break a tool call.
+  """
+  hook = getattr(agent, "_tool_args_hook", None)
+  if hook is None:
+    return tool_args
+  try:
+    replacement = (
+      await hook(spec.name, tool_args)
+      if asyncio.iscoroutinefunction(hook)
+      else hook(spec.name, tool_args)
+    )
+  except Exception as e:
+    logger.warning("tool_args_hook_error", tool=spec.name, error=str(e))
+    return tool_args
+  if replacement is None:
+    return tool_args
+  if not isinstance(replacement, dict):
+    logger.warning("tool_args_hook_invalid_return", tool=spec.name)
+    return tool_args
+  return replacement
+
+
 async def _run_tool(agent: Any, tool_name: str, tool_args: dict[str, Any]) -> tuple[str, bool, Any]:
   """Run a tool and return (result, success, raw_tool_result)."""
   spec = agent.tools.get(tool_name)
@@ -1831,6 +1875,12 @@ async def _run_tool(agent: Any, tool_name: str, tool_args: dict[str, Any]) -> tu
       False,
       None,
     )
+
+  # Per-agent host-side hook: inspect/modify tool arguments before any
+  # normalization. Injected values then receive the same treatment
+  # (coercion, tilde expansion, guardrail validation) as model-provided
+  # ones. Fail-safe; run with the original args when no hook is wired.
+  tool_args = await _apply_tool_args_hook(agent, spec, tool_args)
 
   # Schema-aware per-value argument coercion. Some backends (notably Ollama
   # #6155) string-encode object/array parameters; conversely a string value
@@ -2067,7 +2117,6 @@ async def _execute_tool(spec: ToolSpec, agent: Any, tool_args: dict[str, Any]) -
 
   # Call the tool
   result = spec.execute(*bound.args, **bound.kwargs)
-
   # Handle async
   if inspect.isawaitable(result):
     result = await result

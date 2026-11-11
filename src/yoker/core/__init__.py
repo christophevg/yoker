@@ -67,6 +67,7 @@ class Agent:
     backend: "ModelBackend | None" = None,
     parse_cli_args: bool = False,
     console_logging: bool = True,
+    tool_args_hook: "Callable[[str, dict[str, Any]], dict[str, Any] | None] | None" = None,
   ) -> None:
     """Initialize the async agent.
 
@@ -85,6 +86,12 @@ class Agent:
       parse_cli_args: Whether to parse CLI arguments
       console_logging: Whether to enable console logging. The CLI sets this to
         False so the UI layer owns all terminal output.
+      tool_args_hook: Optional host-side hook (sync or async) invoked on
+        every dispatched tool call, receiving ``(canonical tool name,
+        arguments dict)``. Return a dict to replace the arguments or
+        ``None`` to keep them unchanged. Fail-safe: on error the tool runs
+        with the original arguments. The stored attribute
+        (``agent._tool_args_hook``) can also be reassigned later.
     """
 
     # load env vars from .env files (we shouldn't have to do this, but hey 😇)
@@ -253,6 +260,17 @@ class Agent:
     # the soft block fires for write-blocked files and the git tool blocks.
     # Typed as a narrow callable so the Agent stays UI-agnostic.
     self._approval_handler: Callable[[str, str, str], Awaitable[bool]] | None = None
+
+    # Host-side tool-argument hook (per-agent injection point). Optional sync
+    # or async callable invoked by the processing loop (_run_tool →
+    # _apply_tool_args_hook) on EVERY dispatched tool call, after the tool
+    # spec is resolved and before argument normalization/guardrails. Receives
+    # (canonical namespaced tool name, arguments dict); returns a replacement
+    # dict or None to keep the arguments unchanged. Wire via the
+    # `tool_args_hook` constructor kwarg or reassign the attribute later.
+    self._tool_args_hook: Callable[[str, dict[str, Any]], dict[str, Any] | None] | None = (
+      tool_args_hook
+    )
 
     # check that all requested tools for the agent are available (warn before filtering)
     self._warn_missing_tools()

@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import os
-from collections.abc import AsyncIterator, Coroutine
+from collections.abc import AsyncIterator, Callable, Coroutine
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Literal, TypeVar
@@ -205,6 +205,7 @@ def agent(
   agent_definition: AgentDefinition | None = None,
   thinking: ThinkingLiteral = "on",
   event_handler: EventCallback | None = None,
+  tool_args_hook: Callable[[str, dict[str, Any]], dict[str, Any] | None] | None = None,
   config: Config | None = None,
   context_manager: ContextManager | None = None,
   backend: ModelBackend | None = None,
@@ -240,6 +241,10 @@ def agent(
     thinking: Thinking mode for the model.
     event_handler: Optional callback (sync or async) receiving every event
       emitted by the agent.
+    tool_args_hook: Optional host-side hook (sync or async) invoked on every
+      dispatched tool call with ``(canonical tool name, arguments dict)``.
+      Return a dict to replace the arguments or ``None`` to keep them.
+      Fail-safe: if the hook raises, the tool runs with the original args.
     config: Optional explicit :class:`Config`. When omitted and no model /
       provider / plugins overrides are given, the Agent constructor
       discovers the config from the filesystem via :func:`get_yoker_config`.
@@ -286,6 +291,7 @@ def agent(
     plugins=plugins or (),
     console_logging=console_logging,
     backend=backend,
+    tool_args_hook=tool_args_hook,
   )
 
   if skills is not None:
@@ -361,6 +367,7 @@ async def session(
   agent_definition: AgentDefinition | None = None,
   thinking: ThinkingLiteral = "on",
   event_handler: EventCallback | None = None,
+  tool_args_hook: Callable[[str, dict[str, Any]], dict[str, Any] | None] | None = None,
   config: Config | None = None,
 ) -> AsyncIterator[Session]:
   """Open a multi-turn session with automatic context persistence.
@@ -398,6 +405,10 @@ async def session(
     thinking: Thinking mode for the model.
     event_handler: Optional callback (sync or async) receiving every event
       emitted by the agent.
+    tool_args_hook: Optional host-side hook (sync or async) invoked on every
+      dispatched tool call with ``(canonical tool name, arguments dict)``.
+      Return a dict to replace the arguments or ``None`` to keep them.
+      Fail-safe: if the hook raises, the tool runs with the original args.
     config: Optional explicit :class:`Config`. When omitted and no model /
       provider / plugins overrides are given, the Agent constructor
       discovers the config from the filesystem via :func:`get_yoker_config`.
@@ -438,6 +449,10 @@ async def session(
     agent_path=forwarded_path,
     extra_plugins=tuple(plugins) if plugins is not None else (),
   )
+  # Wire the host-side tool-args hook after construction (Session has no
+  # constructor kwarg for it); _create_agent propagates it to spawned agents.
+  if tool_args_hook is not None:
+    core._tool_args_hook = tool_args_hook
 
   if skills is not None:
     Agent.filter_skills(core.agent.skills, skills)
