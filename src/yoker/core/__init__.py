@@ -68,6 +68,7 @@ class Agent:
     parse_cli_args: bool = False,
     console_logging: bool = True,
     tool_args_hook: "Callable[[str, dict[str, Any]], dict[str, Any] | None] | None" = None,
+    context_vars: "list[Any] | None" = None,
   ) -> None:
     """Initialize the async agent.
 
@@ -92,6 +93,12 @@ class Agent:
         ``None`` to keep them unchanged. Fail-safe: on error the tool runs
         with the original arguments. The stored attribute
         (``agent._tool_args_hook``) can also be reassigned later.
+      context_vars: Optional list of :class:`yoker.tools.Binding` (or
+        protocol-compatible ``.key``/``.value``) objects to bind for this
+        agent's run. Values are stored keyed by ``key`` and injected into
+        every :class:`ToolContext` as ``bindings`` — the harness → tools
+        channel for live operating-context resources (e.g. a provider
+        session). See :meth:`bind`.
     """
 
     # load env vars from .env files (we shouldn't have to do this, but hey 😇)
@@ -272,6 +279,15 @@ class Agent:
       tool_args_hook
     )
 
+    # Harness-provided operating-context bindings (key → live value), fed to
+    # tools via ToolContext.bindings. Populated via the `context_vars`
+    # constructor kwarg or :meth:`bind` (both validate the protocol
+    # contract: objects must carry a non-None ``.key``). Late bind() calls
+    # still take effect — the executor snapshots the dict fresh per call.
+    self._context_vars: dict[str, Any] = {}
+    if context_vars:
+      self.bind(*context_vars)
+
     # check that all requested tools for the agent are available (warn before filtering)
     self._warn_missing_tools()
 
@@ -310,6 +326,45 @@ class Agent:
     )
     self._event_handlers.append(handler)
     return handler
+
+  def bind(self, *vars: Any) -> "Agent":
+    """Bind host-provided :class:`Binding`-protocol objects to this agent.
+
+    Each object must carry a non-None ``.key`` (the namespaced identifier
+    owned by the module defining the variable) and an optional ``.value``
+    (the live resource for this agent's run). Values are stored keyed by
+    ``key`` and injected into every tool call's :class:`ToolContext` as
+    ``bindings`` — provider tools resolve them via ``ctx.get(...)`` using
+    their own key, so the harness never needs provider-specific names.
+
+    Chaining: returns ``self``, so ``Agent(...).bind(session).process(...)``
+    works. Calling ``bind`` again with the same ``key`` raises
+    :class:`ValueError` (duplicate-key guard — mirrors ToolRegistry), so
+    two providers colliding on a key fail loudly at bind time.
+
+    Args:
+      vars: One or more :class:`yoker.tools.Binding` objects (or any
+        structurally-compatible ``.key``/``.value`` objects). Late calls
+        take effect immediately — the tool executor snapshots the
+        binding dict fresh on every tool call.
+
+    Returns:
+      This agent, for chaining.
+
+    Raises:
+      ValueError: When a binding lacks a ``.key`` or a key is already bound.
+    """
+    for var in vars:
+      key = getattr(var, "key", None)
+      if key is None:
+        raise ValueError(
+          f"Binding-like object must define a non-None '.key' (got {type(var).__name__}: {var!r})."
+        )
+      if key in self._context_vars:
+        raise ValueError(f"Binding '{key}' is already bound (duplicate key).")
+      self._context_vars[key] = getattr(var, "value", None)
+      logger.info("binding_bound", key=key)
+    return self
 
   async def do(
     self,

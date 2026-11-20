@@ -82,6 +82,7 @@ class Session:
     thinking_mode: ThinkingMode | None = None,
     console_logging: bool = CONSOLE_LOGGING,
     on_event: EventCallback | None = None,
+    context_vars: list[Any] | None = None,
   ) -> None:
     self.id: str = session_id if session_id is not None else uuid.uuid4().hex
     # stamp the session id onto the context config — single source of truth
@@ -113,6 +114,24 @@ class Session:
     # programmatically to transform tool args (e.g. inject extra arguments)
     # for every agent in the session.
     self._tool_args_hook: Callable[[str, dict[str, Any]], dict[str, Any] | None] | None = None
+    # Session-wide harness-provided operating-context bindings (key → live
+    # value). Propagated to every agent created via ``_create_agent``
+    # (primary + spawned children) so shared resources (e.g. a provider
+    # session) reach all agents' tools. Set programmatically via
+    # ``session._context_vars = {...}`` or the ``context_vars`` kwarg of the
+    # :func:`yoker.api.session` facade before the first turn.
+    self._context_vars: dict[str, Any] = {}
+    # Constructor-seeded bindings, normalized here so the primary agent
+    # (constructed below via _create_agent) already receives them.
+    if context_vars:
+      for var in context_vars:
+        key = getattr(var, "key", None)
+        if key is None:
+          raise ValueError(
+            "Binding-like object must define a non-None '.key' "
+            f"(got {type(var).__name__}: {var!r})."
+          )
+        self._context_vars[key] = getattr(var, "value", None)
     # R3 telemetry: monotonic timestamp set by __aenter__, consumed by
     # __aexit__ for the run_end duration. Initialized to 0.0 so manual
     # misuse (__aexit__ without __aenter__ — impossible via `async with`)
@@ -467,6 +486,14 @@ class Session:
     # so spawned agents apply the same argument transformation as the
     # primary agent.
     agent._tool_args_hook = self._tool_args_hook
+
+    # Propagate session-wide operating-context bindings (harness → tools
+    # channel). Copy, not reference: a child's bind() calls must not leak
+    # into the session-wide or sibling binding dicts. Defensive read
+    # (getattr) so non-Agent stand-ins (spec'd test mocks) don't crash.
+    merged = dict(getattr(agent, "_context_vars", {}))
+    merged.update(self._context_vars)
+    agent._context_vars = merged
 
     # Session-assigned identity for per-agent telemetry attribution
     # (usage log agent_id/parent_agent_id). The parent is the requesting

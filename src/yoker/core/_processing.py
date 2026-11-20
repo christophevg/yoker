@@ -2506,4 +2506,8 @@ def _build_tool_context(agent: Any, spec: ToolSpec) -> ToolContext:
     agent=agent_info,
     approval_handler=getattr(agent, "_approval_handler", None),
     blocked_path_patterns=blocked_path_patterns,
+    # Harness-provided operating-context bindings (Agent._context_vars,
+    # populated via Agent.bind() / context_vars kwarg / Session propagation).
+    # Fresh copy per call: late bind() calls take effect immediately.
+    bindings=dict(getattr(agent, "_context_vars", {})),
   )

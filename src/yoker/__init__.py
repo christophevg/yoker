@@ -45,6 +45,7 @@ from yoker.exceptions import (
   YokerError,
 )
 from yoker.session import Session
+from yoker.tools import Binding
 
 __version__ = "0.12.0"
 __author__ = "Christophe VG"
@@ -56,6 +57,8 @@ __all__ = [
   # Core classes
   "Agent",
   "Session",
+  # Tool framework (harness → tools binding protocol)
+  "Binding",
   # Pythonic utility API (MBI-003)
   "process",
   "do",

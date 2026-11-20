@@ -47,6 +47,30 @@ if TYPE_CHECKING:
 
 
 @dataclass(frozen=True)
+class Binding:
+  """Host-provided variable carried to tools via :class:`ToolContext.bindings`.
+
+  Reference implementation of the binding protocol: any object with a
+  ``key`` (unique, namespaced string) and a ``value`` (the live resource
+  for the agent's run) satisfies it. The ``key`` is owned by the module
+  that defines the variable — provider tools resolve their bound value
+  via :meth:`ToolContext.get` using the same key, so the harness never
+  needs to know provider-specific names:
+
+    session = Client().__enter__()        # returns Binding("provider.session", ...)
+    Agent(...).bind(session)              # harness binds, keys travel with the binding
+    ctx.get("provider.session")           # provider tool resolves by its own key
+
+  Named ``Binding`` (not ``ContextVar``) to avoid collision with the
+  stdlib ``contextvars.ContextVar``, which has different semantics
+  (task-local, no module-owned keys).
+  """
+
+  key: str
+  value: Any = None
+
+
+@dataclass(frozen=True)
 class AgentInfo:
   """Identity of the agent that is executing a tool.
 
@@ -90,6 +114,12 @@ class ToolContext:
     blocked_path_patterns: Compiled glob patterns for ``blocked_paths``
       enforcement during file traversal (used by search/list). Empty list
       when no blocked_paths are configured.
+    bindings: Host-provided variables (harness → tools channel), keyed by
+      the :class:`Binding` key string. Populated by the tool executor
+      from the calling agent's ``_context_vars`` (set via ``Agent.bind()``
+      or session-level propagation); fresh copy on every tool call so late
+      ``bind()`` calls take effect. Empty dict for agents without bindings
+      (CLI / batch runs) — tools must ``get()`` and degrade gracefully.
   """
 
   config: "ToolConfig"  # Tool-specific config (WriteToolConfig, etc.)
@@ -99,6 +129,18 @@ class ToolContext:
   agent: AgentInfo = field(default_factory=lambda: AgentInfo(id="", definition=""))
   approval_handler: "ApprovalHandler | None" = None
   blocked_path_patterns: list[Any] = field(default_factory=list)
+  bindings: dict[str, Any] = field(default_factory=dict)
+
+  def get(self, ref: "Binding | str") -> Any | None:
+    """Return the value bound for a variable reference, or ``None``.
+
+    Args:
+      ref: A :class:`Binding` object (matched by its ``key``) or the
+        key string directly. ``None`` means the variable was not bound
+        for this agent's run — tools must degrade gracefully (e.g.
+        fail with "not bound — run inside a harness binding context").
+    """
+    return self.bindings.get(ref.key if isinstance(ref, Binding) else ref)
 
 
-__all__ = ["AgentInfo", "ToolContext"]
+__all__ = ["AgentInfo", "Binding", "ToolContext"]

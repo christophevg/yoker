@@ -210,6 +210,7 @@ def agent(
   context_manager: ContextManager | None = None,
   backend: ModelBackend | None = None,
   console_logging: bool = True,
+  context_vars: list[Any] | None = None,
 ) -> Agent:
   """Build a configured, reusable :class:`Agent`.
 
@@ -260,6 +261,10 @@ def agent(
       helpers (:func:`process`, :func:`do`) and :func:`session` set this
       to ``False`` so they stay quiet; the default here matches the
       :class:`Agent` constructor.
+    context_vars: Optional list of :class:`yoker.tools.Binding`
+      (protocol-compatible ``.key``/``.value``) objects to bind for this
+      agent's run — values reach tool calls as ``ToolContext.bindings``
+      and are resolved by provider tools via ``ctx.get(key)``.
 
   Returns:
     A fully constructed :class:`yoker.Agent` instance.
@@ -292,6 +297,7 @@ def agent(
     console_logging=console_logging,
     backend=backend,
     tool_args_hook=tool_args_hook,
+    context_vars=context_vars,
   )
 
   if skills is not None:
@@ -369,6 +375,7 @@ async def session(
   event_handler: EventCallback | None = None,
   tool_args_hook: Callable[[str, dict[str, Any]], dict[str, Any] | None] | None = None,
   config: Config | None = None,
+  context_vars: list[Any] | None = None,
 ) -> AsyncIterator[Session]:
   """Open a multi-turn session with automatic context persistence.
 
@@ -414,6 +421,11 @@ async def session(
       discovers the config from the filesystem via :func:`get_yoker_config`.
       When provided (or when overrides need applying), a programmatic
       :class:`Config` is used as the base.
+    context_vars: Optional list of :class:`yoker.tools.Binding`
+      (protocol-compatible ``.key``/``.value``) objects bound session-wide:
+      every agent in the session (primary + spawned children) gets their
+      values injected into tool calls as ``ToolContext.bindings``. Bind
+      before the first turn.
 
   Yields:
     The real :class:`yoker.session.Session` with a registered primary
@@ -440,6 +452,8 @@ async def session(
   base.context.fresh = fresh
 
   # Session.__init__ owns plugin loading, backend, and primary-agent creation
+  # (context_vars is a constructor kwarg — the primary agent is created
+  # during __init__, so post-construction assignment would miss it).
   core = Session(
     config=base,
     session_id=id,
@@ -448,6 +462,7 @@ async def session(
     agent_definition=resolved_definition,
     agent_path=forwarded_path,
     extra_plugins=tuple(plugins) if plugins is not None else (),
+    context_vars=context_vars,
   )
   # Wire the host-side tool-args hook after construction (Session has no
   # constructor kwarg for it); _create_agent propagates it to spawned agents.
