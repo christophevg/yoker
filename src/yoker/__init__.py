@@ -33,6 +33,7 @@ from yoker.events import (
   ThinkingStartEvent,
   ToolCallEvent,
   ToolResultEvent,
+  TurnAbortedEvent,
   TurnEndEvent,
   TurnStartEvent,
 )
@@ -41,6 +42,7 @@ from yoker.exceptions import (
   ContextCorruptionError,
   FileNotFoundError,
   SessionNotFoundError,
+  TurnAbortedError,
   ValidationError,
   YokerError,
 )
@@ -76,6 +78,7 @@ __all__ = [
   "EventType",
   "TurnStartEvent",
   "TurnEndEvent",
+  "TurnAbortedEvent",
   "ThinkingStartEvent",
   "ThinkingChunkEvent",
   "ThinkingEndEvent",
@@ -95,4 +98,5 @@ __all__ = [
   "FileNotFoundError",
   "SessionNotFoundError",
   "ContextCorruptionError",
+  "TurnAbortedError",
 ]

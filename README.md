@@ -507,6 +507,7 @@ See [docs/rationale.md](docs/rationale.md) for the full rationale and comparison
 - [x] Agent definitions - Load agents from Markdown files with YAML frontmatter
 - [x] Package plugins - Load tools, skills, and agents from Python packages with `--with`
 - [x] Multiline input - `Esc+Enter` for newlines, `Enter` to submit
+- [x] Turn abort - `Esc+Esc` while a turn is running aborts it cleanly: the agent stays usable, partial streaming output is discarded, a running tool finishes and its result is kept (no Ctrl+C + resume dance)
 - [x] Rich output - Styled terminal output with Rich
 - [x] Event-driven architecture - Library-first design with event emission
 - [x] Context persistence - Session resumption with JSONL storage
@@ -538,6 +539,7 @@ The interactive session supports:
 - **History search**: `Ctrl+R` to search through history
 - **Keyboard navigation**: Arrow keys, Ctrl+A/E for cursor positioning
 - **Text selection**: Click and drag to select output, copy with Ctrl+Shift+C or Cmd+C
+- **Turn abort**: While a turn is running, press `Esc` twice (within ~0.6 s) to abort it cleanly — partial streaming output is discarded and the session returns to the prompt. If a tool was executing, it finishes and its result is kept. `Ctrl+C` while a turn is running exits after the same clean teardown.
 
 ### Slash Commands
 

@@ -34,6 +34,7 @@ from yoker.events.types import (
   ToolCallEvent,
   ToolContentEvent,
   ToolResultEvent,
+  TurnAbortedEvent,
   TurnEndEvent,
   TurnStartEvent,
 )
@@ -43,6 +44,7 @@ from yoker.events.types import (
 EVENT_CLASS_MAP: dict[EventType, type[Event]] = {
   EventType.TURN_START: TurnStartEvent,
   EventType.TURN_END: TurnEndEvent,
+  EventType.TURN_ABORTED: TurnAbortedEvent,
   EventType.THINKING_START: ThinkingStartEvent,
   EventType.THINKING_CHUNK: ThinkingChunkEvent,
   EventType.THINKING_END: ThinkingEndEvent,

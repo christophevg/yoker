@@ -13,6 +13,22 @@
   (Reported from live use: agent could not run a slashed Makefile target.)
 
 ### Added
+- **Turn abort (Esc+Esc)**: in the interactive CLI, pressing `Esc` twice
+  within ~0.6 s while a turn is running aborts the turn cleanly — the agent
+  stays alive and the session returns to the prompt with a dim
+  `■ Turn aborted.` notice; no Ctrl+C + session-resume dance needed. When
+  the LLM stream is in flight the partial streaming output is discarded;
+  when a tool is executing, the running tool finishes and its result is
+  kept while the remaining tool calls of the batch are recorded as aborted
+  (`■ Turn aborted — the running tool finished; no further LLM call.`).
+  `Ctrl+C` while a turn is running requests the same clean abort and the
+  process exits after teardown; a second press force-exits immediately
+  (`Ctrl+C` at the idle prompt behaves as before). New public API surface:
+  `Agent.abort() -> bool` (False when idle; idempotent, safe from signal
+  handlers), `Session.abort_foreground()` (aborts the deepest in-flight
+  agent; a sub-agent abort unwinds the parent turn), exception
+  `yoker.TurnAbortedError` and event `yoker.TurnAbortedEvent` (phase
+  `"streaming"` | `"tools"`, reason `"user"`).
 - **Websearch output-size protection (T7 pattern)**: the `yoker:websearch`
   result is now budgeted — every result's snippet is capped at 500 chars
   with a visible `… (+N chars truncated — use webfetch on the URL for

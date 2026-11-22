@@ -143,6 +143,18 @@ class BatchUIHandler(UIHandler):
     """
     print(text, file=self._stdout)
 
+  def turn_aborted(self, phase: str = "streaming", reason: str = "user") -> None:
+    """Notice that the current turn was aborted.
+
+    Args:
+      phase: Where the abort landed: ``"streaming"`` or ``"tools"``.
+      reason: Why the abort happened (``"user"`` today).
+    """
+    if phase == "tools":
+      self.output_info("Turn aborted — the running tool finished; no further LLM call.")
+    else:
+      self.output_info("Turn aborted.")
+
   async def output_step_title(self, step: int, total: int, title: str) -> None:
     """Output a wizard step title as plain text.
 

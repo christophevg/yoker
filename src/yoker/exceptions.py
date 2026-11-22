@@ -214,6 +214,17 @@ class AgentError(YokerError):
   """
 
 
+class TurnAbortedError(YokerError):
+  """Raised when the user (or a harness) aborts the in-flight turn via ``Agent.abort()``.
+
+  Not an error condition — a control-flow signal: the turn is cut short,
+  the agent stays alive, and the next ``process()`` call starts fresh.
+  """
+
+  def __init__(self, message: str = "Turn aborted by user") -> None:
+    super().__init__(message)
+
+
 class SkillError(YokerError):
   """Exception for skill execution errors.
 
@@ -241,4 +252,5 @@ __all__ = [
   "ToolError",
   "AgentError",
   "SkillError",
+  "TurnAbortedError",
 ]

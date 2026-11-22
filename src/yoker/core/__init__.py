@@ -30,7 +30,7 @@ from yoker.core._processing import emit, process_message
 from yoker.core._setup import create_web_guardrails
 from yoker.core.thinking import ThinkingMode
 from yoker.events import EventCallback, EventType, TimeoutEvent
-from yoker.exceptions import ConfigurationError, SkillError
+from yoker.exceptions import ConfigurationError, SkillError, TurnAbortedError
 from yoker.logging import configure_logging
 from yoker.plugins import load_plugins, warn_plugins_disabled
 from yoker.skills import SkillRegistry, load_skills
@@ -257,6 +257,18 @@ class Agent:
     # TimeoutError on the future and goes back to waiting on the queue —
     # the agent stays alive for the next ``process()`` call.
     self._timed_out: bool = False
+    # Set by :meth:`abort` when the user (or a harness) requests a stop of
+    # the in-flight turn. Like ``_timed_out`` this flag lets the consumer
+    # distinguish an abort-cancellation from an external cancellation and
+    # resolve the future with ``TurnAbortedError`` instead of propagating
+    # ``CancelledError`` — the agent stays alive for the next ``process()``
+    # call. The flag is reset by the consumer once the abort is observed.
+    self._abort_requested: bool = False
+    # ``"streaming"`` while the LLM stream is being consumed, ``"tools"``
+    # while tool calls are being executed, ``None`` between turns. Used by
+    # ``abort()`` to decide whether the in-flight turn can be cancelled
+    # immediately (streaming) or must let the running tool finish first.
+    self._turn_phase: str | None = None
 
     # Protected-file / git-operation approval handler (MBI-009 T12). Optional
     # async callable wired by the CLI in interactive mode. When set, the
@@ -546,6 +558,43 @@ class Agent:
       # Normal shutdown — the consumer completed or aclose was called.
       pass
 
+  def abort(self) -> bool:
+    """Request a clean abort of the in-flight turn, if any.
+
+    Semantics:
+
+    - LLM streaming in flight → the stream is cancelled now (partial
+      output is discarded); the turn ends immediately without an extra
+      LLM call.
+    - Tool(s) in flight → the currently executing tool runs to
+      completion and its result is recorded in the context; no further
+      LLM call is made. Remaining tool calls in the batch are recorded
+      as aborted tool results.
+    - No turn in flight → no-op, returns ``False``.
+
+    The agent stays alive either way: the awaiting ``process()`` caller
+    sees :class:`~yoker.exceptions.TurnAbortedError` and the next
+    ``process()`` call starts a fresh turn. Idempotent and safe to call
+    from signal handlers and other tasks.
+
+    Returns:
+        ``True`` if an in-flight turn was aborted, ``False`` otherwise.
+    """
+    if self._turn_phase is None:
+      return False
+    self._abort_requested = True
+    if self._turn_phase == "streaming":
+      if self._process_task is not None and not self._process_task.done():
+        self._process_task.cancel()
+    # In "tools" phase the running tool is left alone; the processing
+    # loop observes `_abort_requested` between tool calls and stops.
+    return True
+
+  @property
+  def abort_requested(self) -> bool:
+    """``True`` once an abort has been requested for the current turn."""
+    return self._abort_requested
+
   async def process(self, message: str) -> str:
     """Process a single message and return the response.
 
@@ -615,6 +664,12 @@ class Agent:
           self._timed_out = False
           if not future.done():
             future.set_exception(TimeoutError("Agent idle timeout"))
+        elif self._abort_requested:
+          # User/harness abort: fail this one turn with TurnAbortedError.
+          # The consumer goes back to waiting on the queue — the agent
+          # stays alive for the next process() call.
+          if not future.done():
+            future.set_exception(TurnAbortedError())
         else:
           # External cancellation (aclose or caller cancel): propagate
           # CancelledError to the awaiting process() caller, then

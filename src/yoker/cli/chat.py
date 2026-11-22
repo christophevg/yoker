@@ -10,8 +10,11 @@ Session via the event bridge, and starts the REPL loop.
 import asyncio
 import json
 import os
+import signal
 import sys
+import time
 from pathlib import Path
+from typing import Any
 
 from clevis import SecurityError
 from ollama import ResponseError
@@ -24,7 +27,7 @@ from yoker.cli.shared import abort, check_enabled, load_subcommand_config
 from yoker.config import Config
 from yoker.context.session import _bare_session_id
 from yoker.core import Agent
-from yoker.exceptions import NetworkError, YokerError
+from yoker.exceptions import NetworkError, TurnAbortedError, YokerError
 from yoker.logging import configure_logging
 from yoker.session import Session
 from yoker.ui import BatchUIHandler, InteractiveUIHandler, UIBridge, UIHandler
@@ -217,7 +220,20 @@ async def _run_with_session(
     bridge.set_agent_resolver(_resolve_agent)
 
     _wire_approval_handler(session, ui)
-    await _run_repl(session.agent, ui, commands, prompt=config.prompt)
+    await _run_repl(session.agent, ui, commands, prompt=config.prompt, session=session)
+
+
+class _TurnInterrupt(KeyboardInterrupt):
+  """Ctrl+C was pressed during a turn and the abort has been requested.
+
+  ``_process_turn`` raises this once the turn has unwound, so the REPL's
+  existing ``except KeyboardInterrupt`` branches exit the process —
+  preserving Ctrl+C's external behavior (process terminates) while the
+  in-flight turn is torn down cleanly first (stream cancelled / current
+  tool completed, context consistent, abort recorded). A second Ctrl+C
+  during the same turn raises a plain ``KeyboardInterrupt`` from the
+  signal handler for an immediate exit.
+  """
 
 
 def _wire_approval_handler(session: Session, ui: UIHandler) -> None:
@@ -238,13 +254,244 @@ def _wire_approval_handler(session: Session, ui: UIHandler) -> None:
   if not hasattr(ui, "confirm_approval"):
     return
 
-  session._approval_handler = ui.confirm_approval
+  handler = ui.confirm_approval
+
+  async def _approval_with_paused_watcher(label: str, preview: str, kind: str = "file") -> bool:
+    # The approval prompt reads via input(); the Esc-Esc watcher owns stdin
+    # in cbreak mode during a turn, so it must yield the terminal for the
+    # duration of the prompt or neither would see the keystrokes reliably.
+    watcher = _active_watcher
+    if watcher is not None:
+      watcher.pause()
+    try:
+      return bool(await handler(label, preview, kind))
+    finally:
+      if watcher is not None:
+        watcher.resume()
+
+  session._approval_handler = _approval_with_paused_watcher
   # Also wire on the primary agent (already constructed in __init__).
-  session.agent._approval_handler = ui.confirm_approval
+  session.agent._approval_handler = _approval_with_paused_watcher
+
+
+# The watcher for the in-flight turn, if any. Set by ``_process_turn`` and
+# consumed by the approval wrapper in ``_wire_approval_handler`` so the
+# watcher can yield stdin to the approval prompt while it runs.
+_active_watcher: "_EscAbortWatcher | None" = None
+
+
+def _esc_watcher_active(ui: UIHandler) -> bool:
+  """Is it safe to poke at the raw terminal right now?
+
+  The Esc-Esc abort watcher owns stdin in cbreak mode while a turn runs.
+  It must not be active in batch mode (stdin may not be a TTY) nor while a
+  handler owns the terminal itself (the interactive approval prompt reads
+  via ``input()`` — stealing those keystrokes would corrupt it).
+  """
+  if not sys.stdin.isatty():
+    return False
+  is_tty = getattr(ui, "_is_tty", None)
+  return True if is_tty is None else bool(is_tty)
+
+
+class _EscAbortWatcher:
+  """Reads stdin in cbreak mode during a turn and triggers abort on Esc Esc.
+
+  The turn runs with stdin inherited from the REPL; prompt_toolkit is idle
+  (the user is not at the prompt while the agent is working). This watcher
+  flips the terminal into cbreak mode for the duration of the turn and
+  watches for a double-Esc (within ``_DOUBLE_ESC_WINDOW`` seconds). A
+  single Esc is inert; other keys are consumed and dropped (the user
+  should not be typing mid-turn anyway).
+
+  On POSIX this uses ``termios``/``tty`` + ``os.read`` on stdin driven by
+  the event loop's reader callback. On Windows or when stdin is not a
+  TTY the watcher is a no-op; Esc-Esc then has no effect (the turn can
+  still be aborted programmatically via ``Agent.abort()``).
+
+  Terminal state is always restored on exit (best-effort, ``finally``).
+  """
+
+  _DOUBLE_ESC_WINDOW = 0.6
+
+  def __init__(self, session: Session | None, ui: UIHandler) -> None:
+    self._session = session
+    self._ui = ui
+    self._fd: int | None = None
+    self._saved: Any = None
+    self._loop: asyncio.AbstractEventLoop | None = None
+    self._last_esc: float | None = None
+    self._active = False
+
+  def start(self) -> None:
+    if self._session is None or not _esc_watcher_active(self._ui):
+      return
+    try:
+      import termios
+      import tty
+    except ImportError:  # non-POSIX platform
+      logger.debug("esc_watcher_unavailable", reason="no termios")
+      return
+    try:
+      self._fd = sys.stdin.fileno()
+      self._saved = termios.tcgetattr(self._fd)
+      tty.setcbreak(self._fd)
+      self._loop = asyncio.get_running_loop()
+      self._loop.add_reader(self._fd, self._on_readable)
+      self._active = True
+    except (OSError, termios.error, ValueError) as e:
+      logger.debug("esc_watcher_unavailable", reason=str(e))
+      self._restore()
+
+  def pause(self) -> None:
+    """Temporarily restore the terminal and detach the read callback.
+
+    Used while another component (the approval prompt, which reads via
+    ``input()``) owns stdin, so the watcher never races it for keystrokes.
+    """
+    if not self._active:
+      return
+    if self._loop is not None and self._fd is not None:
+      try:
+        self._loop.remove_reader(self._fd)
+      except (OSError, ValueError):
+        pass
+    self._restore_terminal_only()
+
+  def resume(self) -> None:
+    """Re-attach after a :meth:`pause`. Best-effort; failure leaves the
+    watcher inactive for the rest of the turn (abort simply unavailable)."""
+    if self._fd is None or self._saved is None:
+      return
+    try:
+      import tty
+
+      tty.setcbreak(self._fd)
+      if self._loop is not None:
+        self._loop.add_reader(self._fd, self._on_readable)
+    except Exception as e:
+      logger.debug("esc_watcher_resume_failed", reason=str(e))
+      self.stop()
+
+  def stop(self) -> None:
+    if not self._active and self._fd is None:
+      return
+    self._active = False
+    if self._loop is not None and self._fd is not None:
+      try:
+        self._loop.remove_reader(self._fd)
+      except (OSError, ValueError):
+        pass
+    self._restore()
+
+  def _restore_terminal_only(self) -> None:
+    if self._fd is not None and self._saved is not None:
+      try:
+        import termios
+
+        termios.tcsetattr(self._fd, termios.TCSADRAIN, self._saved)
+      except Exception:
+        logger.warning("esc_watcher_restore_failed")
+
+  def _restore(self) -> None:
+    if self._fd is not None and self._saved is not None:
+      try:
+        import termios
+
+        termios.tcsetattr(self._fd, termios.TCSADRAIN, self._saved)
+      except Exception:
+        logger.warning("esc_watcher_restore_failed")
+    self._fd = None
+    self._saved = None
+    self._loop = None
+
+  def _on_readable(self) -> None:
+    try:
+      data = os.read(self._fd, 64)  # type: ignore[arg-type]
+    except OSError:
+      self.stop()
+      return
+    if not data:
+      return
+    now = time.monotonic()
+    for byte in data:
+      if byte == 0x1B:  # ESC
+        if self._last_esc is not None and (now - self._last_esc) <= self._DOUBLE_ESC_WINDOW:
+          self._last_esc = None
+          self._trigger()
+          return
+        self._last_esc = now
+      else:
+        # Any other byte breaks the double-Esc sequence.
+        self._last_esc = None
+
+  def _trigger(self) -> None:
+    logger.info("esc_abort_requested")
+    try:
+      assert self._session is not None
+      self._session.abort_foreground()
+    except Exception:
+      logger.exception("esc_abort_failed")
+
+
+async def _process_turn(
+  agent: Agent,
+  message: str,
+  ui: UIHandler,
+  session: Session | None,
+) -> None:
+  """Run one turn with the Esc-Esc abort watcher active.
+
+  The watcher is a no-op outside interactive TTY sessions; the abort
+  itself is delivered via :meth:`Session.abort_foreground`, which resolves
+  the deepest (spawned) agent before falling back to the primary.
+  """
+  global _active_watcher
+  watcher = _EscAbortWatcher(session, ui)
+  _active_watcher = watcher
+  watcher.start()
+
+  interrupted = {"count": 0}
+
+  def _sigint_abort(_signum, _frame):  # type: ignore[no-untyped-def]
+    # Ctrl+C during a turn: first press requests the same clean abort as
+    # Esc-Esc and the process exits once the turn unwinds (see below).
+    # A second press force-exits immediately.
+    interrupted["count"] += 1
+    if interrupted["count"] > 1:
+      signal.signal(signal.SIGINT, signal.default_int_handler)
+      raise KeyboardInterrupt
+    target = (session.foreground_agent if session is not None else None) or agent
+    target.abort()
+
+  try:
+    previous_sigint = signal.signal(signal.SIGINT, _sigint_abort)
+  except ValueError:
+    # Not in the main thread — leave the default KeyboardInterrupt behavior.
+    previous_sigint = None
+  try:
+    try:
+      await agent.process(message)
+    except TurnAbortedError:
+      if interrupted["count"]:
+        # Ctrl+C triggered this abort — unwind out of the REPL like a
+        # normal Ctrl+C, but only after the turn tore down cleanly.
+        raise _TurnInterrupt() from None
+      # Esc-Esc: stay in the session.
+      raise
+  finally:
+    if previous_sigint is not None:
+      signal.signal(signal.SIGINT, previous_sigint)
+    watcher.stop()
+    _active_watcher = None
 
 
 async def _run_repl(
-  agent: Agent, ui: UIHandler, commands: CommandRegistry, prompt: str = ""
+  agent: Agent,
+  ui: UIHandler,
+  commands: CommandRegistry,
+  prompt: str = "",
+  session: Session | None = None,
 ) -> None:
   """Run the interactive or batch REPL loop.
 
@@ -254,13 +501,17 @@ async def _run_repl(
   When ``prompt`` is non-empty, it is sent to the agent as the first message
   before entering the REPL loop. The response is shown, then the user can
   continue the conversation interactively.
+
+  When ``session`` is provided (interactive CLI), an Esc-Esc keypress during
+  a turn requests a clean abort of the foreground agent's turn via
+  :meth:`Session.abort_foreground`; the REPL then returns to the prompt.
   """
   await ui.start(agent)
 
   try:
     if prompt.strip():
       try:
-        await agent.process(prompt)
+        await _process_turn(agent, prompt, ui, session)
       except NetworkError as e:
         ui.output_error(e)
         if not e.recoverable:
@@ -269,6 +520,10 @@ async def _run_repl(
         ui.output_error(e)
       except ResponseError as e:
         ui.output_error(e)
+      except TurnAbortedError:
+        # The TURN_ABORTED event already surfaced the notice via the UI
+        # handler; just return to the prompt.
+        pass
       except YokerError as e:
         ui.output_error(e)
         return
@@ -292,7 +547,7 @@ async def _run_repl(
           if result:
             ui.output_command_result(result)
         else:
-          await agent.process(user_input)
+          await _process_turn(agent, user_input, ui, session)
 
       except NetworkError as e:
         ui.output_error(e)
@@ -303,6 +558,10 @@ async def _run_repl(
         continue
       except ResponseError as e:
         ui.output_error(e)
+        continue
+      except TurnAbortedError:
+        # The TURN_ABORTED event already surfaced the notice via the UI
+        # handler; just return to the prompt.
         continue
       except YokerError as e:
         ui.output_error(e)

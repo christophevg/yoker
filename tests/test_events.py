@@ -34,6 +34,7 @@ class TestEventTypes:
     expected = [
       "TURN_START",
       "TURN_END",
+      "TURN_ABORTED",
       "THINKING_START",
       "THINKING_CHUNK",
       "THINKING_END",

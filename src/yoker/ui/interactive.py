@@ -516,6 +516,29 @@ class InteractiveUIHandler(UIHandler):
     escaped = escape_rich_markup(text)
     self.console.print(Panel(escaped, style=PROMPT_STYLE, box=box.SIMPLE_HEAD))
 
+  def turn_aborted(self, phase: str = "streaming", reason: str = "user") -> None:
+    """Render a notice that the current turn was aborted by the user.
+
+    Called by the UI bridge when a ``TURN_ABORTED`` event is emitted (e.g.
+    the user pressed Esc twice during a turn, or a harness called
+    ``Agent.abort()``). The agent remains usable for the next turn; the
+    partial turn's output is not recorded in the context.
+
+    Args:
+      phase: Where the abort landed: ``"streaming"`` (LLM stream
+        cancelled immediately) or ``"tools"`` (current tool finished; no
+        further LLM call is made).
+      reason: Why the abort happened (``"user"`` today).
+    """
+    self._stop_tool_execution_status()
+    self._stop_processing_status()
+    if phase == "tools":
+      self.console.print(
+        "[dim]■ Turn aborted — the running tool finished; no further LLM call.[/dim]"
+      )
+    else:
+      self.console.print("[dim]■ Turn aborted.[/dim]")
+
   # === Info / step / command output ===
 
   def output_info(self, text: str) -> None:

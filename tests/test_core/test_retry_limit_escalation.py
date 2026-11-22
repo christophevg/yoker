@@ -40,6 +40,10 @@ def make_agent(limit: int) -> MagicMock:
   """Build a mock agent with the escalation limit configured."""
   agent = MagicMock()
   agent.config.agent.max_consecutive_tool_failures = limit
+  # The tool-execution loop consults ``agent._abort_requested`` (truthy on a
+  # bare MagicMock) — make it a real bool so the abort path stays inert.
+  agent._abort_requested = False
+  agent._turn_phase = None
   return agent
 
 

@@ -20,6 +20,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from yoker.agents import AgentDefinition
+from yoker.exceptions import TurnAbortedError
 from yoker.session.tools import (
   make_release_agent_tool,
   make_send_message_tool,
@@ -628,3 +629,51 @@ class TestReleaseAgentToolDelegation:
 
     assert not result.success
     assert "Release agent error" in result.error
+
+
+class TestContagiousTurnAbort:
+  """Contagious abort: the user aborted the child's turn — TurnAbortedError
+  must propagate out of the tool (the parent's turn unwinds the same way),
+  never be rendered as an ordinary tool failure the model could retry."""
+
+  @pytest.mark.asyncio
+  async def test_spawn_agent_re_raises_turn_aborted(self) -> None:
+    """The agent tool re-raises the child's abort instead of returning an error result."""
+    agent_def = AgentDefinition(
+      simple_name="researcher",
+      description="Researcher",
+      tools=("read",),
+    )
+    session = _make_session_with_registry(agent_def=agent_def)
+    mock_child = MagicMock()
+    mock_child.process = AsyncMock(side_effect=TurnAbortedError())
+    session._spawn_internal = AsyncMock(return_value=(mock_child, "researcher"))
+    session.release = AsyncMock()
+    requester = _make_requester(allowlist=("researcher",))
+
+    spec = _spawn_agent_spec(session=session, requester=requester)
+    with pytest.raises(TurnAbortedError):
+      await spec.execute(agent_name="researcher", prompt="find X")
+
+    session._spawn_internal.assert_awaited_once()
+    # The child is NOT released on abort (same convention as the timeout
+    # path) — it stays in the active map, inspectable via send_message.
+    session.release.assert_not_called()
+
+  @pytest.mark.asyncio
+  async def test_send_message_re_raises_turn_aborted(self) -> None:
+    """The send_message tool re-raises the target's abort instead of returning an error result."""
+    target_agent = MagicMock(name="researcher")
+    sender_agent = MagicMock(name="coordinator")
+    session = MagicMock()
+    session._agents_map = {
+      "researcher": target_agent,
+      "coordinator": sender_agent,
+    }
+    session.send = AsyncMock(side_effect=TurnAbortedError())
+
+    spec = _send_message_spec(session=session, from_id="coordinator")
+    with pytest.raises(TurnAbortedError):
+      await spec.execute(to="researcher", message="hi")
+
+    session.send.assert_awaited_once()

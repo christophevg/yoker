@@ -293,6 +293,20 @@ The README.md file describes **Yoker**, a Python-based agent harness...
 Goodbye!
 ```
 
+### Aborting a Turn
+
+While the agent is working, press `Esc` twice (within about 0.6 s) to abort
+the turn cleanly. Partial streaming output is discarded and a dim
+`■ Turn aborted.` notice appears; the session returns to the prompt with the
+agent still usable — no `Ctrl+C` + session-resume dance needed.
+
+If a tool was executing when you aborted, the running tool finishes and its
+result is kept; remaining tool calls of the batch are skipped.
+
+`Ctrl+C` while a turn is running exits Yoker after the same clean teardown;
+press it twice to force-quit immediately. At the idle prompt, `Ctrl+C`
+behaves as before.
+
 ### Interactive Input Features
 
 The session supports:

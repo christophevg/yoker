@@ -23,6 +23,7 @@ from yoker.events.types import (
   ToolCallEvent,
   ToolContentEvent,
   ToolResultEvent,
+  TurnAbortedEvent,
   TurnEndEvent,
   TurnStartEvent,
 )
@@ -35,6 +36,7 @@ __all__ = [
   # Turn
   "TurnStartEvent",
   "TurnEndEvent",
+  "TurnAbortedEvent",
   # Thinking
   "ThinkingStartEvent",
   "ThinkingChunkEvent",

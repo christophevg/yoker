@@ -39,6 +39,7 @@ from yoker.events import (
   SessionEvent,
   SessionStartEvent,
 )
+from yoker.exceptions import TurnAbortedError
 from yoker.logging import configure_logging
 from yoker.session.tools import (
   make_release_agent_tool,
@@ -101,6 +102,12 @@ class Session:
     self._tasks: set[asyncio.Task] = set()
     # Tracks disambiguation suffix counters per definition name.
     self._name_counters: dict[str, int] = {}
+    # Foreground-agent stack. Empty = the session's primary agent is in
+    # the foreground. Each ``spawn_agent``/``send_message`` push mounts the
+    # child for the duration of the child's turn; on completion it is
+    # popped again. Esc-Esc aborts the *deepest* agent (the one actually
+    # consuming the turn), which is then contagious down the unwind.
+    self._foreground_stack: list[Agent] = []
     # Session-wide approval handler for interactive protected-file / git
     # operation approval. Wired by the CLI (``_wire_approval_handler``)
     # after construction. Propagated to every agent created via
@@ -268,6 +275,43 @@ class Session:
     when the agent has finished and been removed.
     """
     return self._agents_map.get(name)
+
+  def _push_foreground(self, agent: Agent) -> None:
+    """Mark ``agent`` as the deepest in-flight agent."""
+    self._foreground_stack.append(agent)
+
+  def _pop_foreground(self) -> None:
+    if self._foreground_stack:
+      self._foreground_stack.pop()
+
+  @property
+  def foreground_agent(self) -> Agent:
+    """The agent currently running in the foreground.
+
+    Empty stack means the session's primary agent is the foreground
+    agent; otherwise the deepest spawned/send_message target.
+    """
+    if self._foreground_stack:
+      return self._foreground_stack[-1]
+    return self.agent
+
+  def abort_foreground(self) -> bool:
+    """Request a clean abort of the foreground turn.
+
+    Delegates to :meth:`Agent.abort` on the deepest in-flight agent
+    (see :attr:`foreground_agent`). If that agent is currently streaming
+    its turn is cancelled immediately; if a tool is in flight the tool
+    runs to completion and the agent stops before its next LLM call.
+    The abort is contagious: because the parent turn unwinds through the
+    same mechanism when the child's ``process()`` raises
+    :class:`~yoker.exceptions.TurnAbortedError`, calling this once
+    unwinds the whole foreground chain to the primary agent.
+
+    Returns:
+        ``True`` if an abort was requested, ``False`` if the foreground
+        agent had no turn in flight.
+    """
+    return self.foreground_agent.abort()
 
   def _generate_agent_name(self, definition_name: str) -> str:
     """Disambiguate a definition name into a unique session agent name.
@@ -738,8 +782,14 @@ class Session:
       )
     )
 
+    self._push_foreground(to)
     try:
       return await to.process(content)
+    except TurnAbortedError:
+      # Aborted turn: propagate so the caller's turn unwinds the same way
+      # (contagious abort) instead of being reported as a tool failure the
+      # model could try to "fix" by re-issuing the call.
+      raise
     except Exception as e:
       logger.warning(
         "session_send_failed",
@@ -748,6 +798,8 @@ class Session:
         error=str(e),
       )
       return f"Error: agent '{to_id}' failed: {e}"
+    finally:
+      self._pop_foreground()
 
   @staticmethod
   def _derive_config(parent_config: Config, agent_definition: AgentDefinition) -> Config:

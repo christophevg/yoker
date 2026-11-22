@@ -61,6 +61,7 @@ from typing import TYPE_CHECKING, Annotated, Any
 from structlog import get_logger
 
 from yoker.agents.schema import ALL_AGENTS
+from yoker.exceptions import TurnAbortedError
 from yoker.tools.annotations import Text
 from yoker.tools.schema import ToolResult
 
@@ -161,16 +162,28 @@ def make_spawn_agent_tool(session: "Session", requester: "Agent") -> Any:
     try:
       child, agent_id = await session._spawn_internal(agent_name, requester=requester)
 
+      session._push_foreground(child)
       try:
-        response = await child.process(prompt)
-      except TimeoutError as e:
-        # The agent's idle watchdog fired — the LLM backend was unresponsive
-        # for longer than the configured timeout (config.agent.timeout_seconds).
-        # The agent is NOT released — it stays in the active map so the parent
-        # can retry (the timeout may be a transient LLM server issue).
-        raise TimeoutError(
-          f"Sub-agent '{agent_id}' timed out after {child.config.agent.timeout_seconds} seconds"
-        ) from e
+        try:
+          response = await child.process(prompt)
+        except TurnAbortedError:
+          # Contagious abort: the child's turn was aborted. Propagate so the
+          # parent's turn unwinds through the same path instead of treating
+          # the abort as an ordinary tool failure the model could retry.
+          # The child stays in the active map (same convention as the
+          # timeout path) — inspectable via send_message / stats.
+          logger.info("spawn_agent aborted", agent_name=agent_name, agent_id=agent_id)
+          raise
+        except TimeoutError as e:
+          # The agent's idle watchdog fired — the LLM backend was unresponsive
+          # for longer than the configured timeout (config.agent.timeout_seconds).
+          # The agent is NOT released — it stays in the active map so the parent
+          # can retry (the timeout may be a transient LLM server issue).
+          raise TimeoutError(
+            f"Sub-agent '{agent_id}' timed out after {child.config.agent.timeout_seconds} seconds"
+          ) from e
+      finally:
+        session._pop_foreground()
 
       if ephemeral:
         # Single-shot: release the agent immediately after its response.
@@ -188,6 +201,11 @@ def make_spawn_agent_tool(session: "Session", requester: "Agent") -> Any:
     except TimeoutError as e:
       logger.warning("spawn_agent timeout", agent_name=agent_name)
       return ToolResult(success=False, error=str(e))
+    except TurnAbortedError:
+      # Contagious abort — do not convert to a tool error. The parent's
+      # turn unwinds via the same path as its own abort.
+      logger.info("spawn_agent aborted", agent_name=agent_name)
+      raise
     except ValueError as e:
       # Allowlist rejection, unknown agent, depth/capacity violation.
       logger.warning("spawn_agent rejected", agent_name=agent_name, error=str(e))
@@ -265,6 +283,10 @@ def make_send_message_tool(session: "Session", from_id: str) -> Any:
     except ValueError as e:
       logger.warning("send_message target not found", from_id=from_id, to_id=to, error=str(e))
       return ToolResult(success=False, error=str(e))
+    except TurnAbortedError:
+      # Contagious abort — propagate, don't render as a tool error.
+      logger.info("send_message aborted", from_id=from_id, to_id=to)
+      raise
     except Exception as e:
       logger.error("send_message error", from_id=from_id, to_id=to, error=str(e))
       return ToolResult(success=False, error=f"Send message error: {e}")

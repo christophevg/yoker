@@ -58,6 +58,7 @@ class EventType(Enum):
 
   # Agent health
   AGENT_TIMEOUT = auto()
+  TURN_ABORTED = auto()
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -358,3 +359,22 @@ class TimeoutEvent(Event):
 
   idle_seconds: float
   timeout_seconds: int
+
+
+@dataclass(frozen=True)
+class TurnAbortedEvent(Event):
+  """Emitted when the user aborts an in-flight turn via ``Agent.abort()``.
+
+  The agent stays alive and is ready for the next ``process()`` call;
+  the turn is simply cut short. Depending on where the abort landed, the
+  event's ``phase`` is ``"streaming"`` (the LLM stream was cancelled) or
+  ``"tools"`` (a tool was allowed to finish; no further LLM call is made).
+
+  Attributes:
+    phase: Where the abort landed: ``"streaming"`` or ``"tools"``.
+    reason: Why the abort happened — always ``"user"`` today, reserved for
+      programmatic aborts (harnesses) in the future.
+  """
+
+  phase: str
+  reason: str = "user"

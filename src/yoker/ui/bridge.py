@@ -154,6 +154,11 @@ class UIBridge:
         self._maybe_agent_lifecycle(event, "agent_spawned")
       case EventType.AGENT_FINISHED:
         self._maybe_agent_lifecycle(event, "agent_finished")
+      case EventType.TURN_ABORTED:
+        # The turn was aborted (user pressed Esc Esc, or a harness called
+        # abort()). Stop the processing spinner and let the handler render
+        # a notice if it supports it.
+        self._handle_turn_aborted(event)
       case EventType.AGENT_TIMEOUT:
         # The idle watchdog fired — show a timeout notice if the handler
         # supports it, otherwise let the TimeoutError propagate to the
@@ -190,6 +195,30 @@ class UIBridge:
       case _:
         # Unknown event type - ignore
         pass
+
+  def _handle_turn_aborted(self, event: Event) -> None:
+    """Handle an aborted turn: stop the spinner and surface a notice.
+
+    Mirrors :meth:`_handle_turn_end` but for the abort path — no usage
+    stats to render, just stop the processing indicator and let an
+    optional handler method (``turn_aborted``) render the notice.
+
+    Args:
+      event: TurnAbortedEvent with the abort ``phase`` ("streaming" |
+        "tools") and ``reason``.
+    """
+    stop = getattr(self.ui, "stop_processing", None)
+    if stop is not None:
+      stop()
+    stop_tool = getattr(self.ui, "stop_tool_execution_status", None)
+    if stop_tool is not None:
+      stop_tool()
+    handler = getattr(self.ui, "turn_aborted", None)
+    if handler is not None:
+      handler(
+        getattr(event, "phase", "streaming"),
+        getattr(event, "reason", "user"),
+      )
 
   def _handle_turn_end(self, event: Event) -> None:
     """Handle turn end event by outputting stats.

@@ -38,10 +38,11 @@ from yoker.events import (
   ToolCallEvent,
   ToolContentEvent,
   ToolResultEvent,
+  TurnAbortedEvent,
   TurnEndEvent,
   TurnStartEvent,
 )
-from yoker.exceptions import NetworkError
+from yoker.exceptions import NetworkError, TurnAbortedError
 from yoker.logging import log_timing
 from yoker.tools.annotations import GuardType
 from yoker.tools.context import AgentInfo, ToolContext
@@ -302,6 +303,8 @@ async def process_message(
   to the threshold. A value of ``0`` disables the escalation.
   """
   logger.info("turn_started", message_preview=message[:50])
+  agent._turn_phase = None
+  agent._abort_requested = False
   await emit(TurnStartEvent(type=EventType.TURN_START, message=message), agent._event_handlers)
   agent.context.start_turn(message)
 
@@ -309,19 +312,53 @@ async def process_message(
   # calls).  Provider-supplied total_duration_ms only covers the last
   # chunk's latency; this measures the real elapsed time the user waited.
   turn_start = time.monotonic()
-  # Per-turn LLM call counter for the turn telemetry record — the tokens
-  # themselves live on the per-call llm_call records (no double-count).
-  llm_calls = 0
-
   # Retry-limit escalation state: consecutive failed tool calls this turn,
   # and whether the escalation note has been injected since the last reset.
   # Created once per message; updated in-place by the tool-execution path.
   escalation = _EscalationState()
 
+  # llm_calls lives in a one-element box so the loop and the abort
+  # finalizer agree on the count when the loop unwinds via exception.
+  llm_calls_box = [0]
+
+  try:
+    try:
+      return await _process_message_loop(
+        agent, message, turn_start, llm_calls_box, escalation, on_context_overflow
+      )
+    except asyncio.CancelledError:
+      # Abort requested while the turn was doing something other than the
+      # guarded streaming section (e.g. context compaction, tool batch
+      # boundary): finish abort semantics uniformly instead of leaking a raw
+      # CancelledError at the caller.
+      if agent._abort_requested:
+        agent._stop_idle_watchdog()
+        phase = agent._turn_phase or "streaming"
+        await _finalize_aborted_turn(agent, phase, turn_start, llm_calls_box[0])
+        raise TurnAbortedError() from None
+      raise
+  finally:
+    # Whatever happens, the turn is over (or the caller saw the exception):
+    # never leave a stale phase behind, or a later abort() call would
+    # target a finished turn / the consumer's queue.get().
+    agent._turn_phase = None
+
+
+async def _process_message_loop(
+  agent: Any,
+  message: str,
+  turn_start: float,
+  llm_calls_box: list[int],
+  escalation: _EscalationState,
+  on_context_overflow: Callable[[OverflowContext], list[dict[str, Any]] | None] | None,
+) -> str:
   while True:
     # Context overflow management: estimate, truncate, strip, emit.
     # The estimate is calibrated from server usage captured in earlier
-    # calls (persisted on the agent across turns).
+    # calls (persisted on the agent across turns). Mark the phase as
+    # "streaming" before starting so abort() can cancel us here too —
+    # cancelling during compaction is safe (same abort path).
+    agent._turn_phase = "streaming"
     await _manage_context_overflow(agent, on_context_overflow)
 
     # Start the idle watchdog scoped to the LLM streaming phase only.
@@ -331,6 +368,7 @@ async def process_message(
     timeout_seconds = agent.config.agent.timeout_seconds
     agent._touch_activity()
     agent._start_idle_watchdog(timeout_seconds)
+    agent._turn_phase = "streaming"
     try:
       stream = _chat_stream(agent)
       content, thinking, tool_calls, stats = await _consume_stream(agent, stream)
@@ -345,7 +383,7 @@ async def process_message(
 
     # Log per-API-call token usage (atomic JSONL append).
     log_call_usage(agent, stats)
-    llm_calls += 1
+    llm_calls_box[0] += 1
 
     if not tool_calls:
       agent.context.end_turn(content, thinking=thinking or None)
@@ -362,12 +400,22 @@ async def process_message(
         agent,
         duration_ms=elapsed_ms,
         tool_calls_count=len(tool_calls),
-        llm_calls=llm_calls,
+        llm_calls=llm_calls_box[0],
       )
       logger.info("turn_completed", response_length=len(content), tool_calls_count=0)
       return content
 
-    await _execute_tool_calls(agent, tool_calls, thinking, content, escalation)
+    agent._turn_phase = "tools"
+    aborted = await _execute_tool_calls(agent, tool_calls, thinking, content, escalation)
+    # Honour an abort that landed in the narrow window after the last tool
+    # finished but before the loop rolls into the next LLM call (there is
+    # no await between _execute_tool_calls returning and this check for a
+    # signal/watcher to interpose earlier).
+    if aborted or agent._abort_requested:
+      agent._turn_phase = None
+      await _finalize_aborted_turn(agent, "tools", turn_start, llm_calls_box[0], aborted)
+      raise TurnAbortedError()
+    agent._turn_phase = None
 
 
 def _submission_image_count(messages: list[dict[str, Any]]) -> int:
@@ -1174,106 +1222,111 @@ async def _consume_stream(
     "content_chars": 0,
   }
 
-  async for chunk in stream:
-    # Reset the idle timer on every chunk received — the LLM backend is
-    # actively producing data, so the agent is not idle.
-    agent._touch_activity()
-    if chunk.event == ChatChunkEvent.CONTENT_START:
-      if in_thinking and agent.thinking_mode.is_visible:
+  try:
+    async for chunk in stream:
+      # Reset the idle timer on every chunk received — the LLM backend is
+      # actively producing data, so the agent is not idle.
+      agent._touch_activity()
+      if chunk.event == ChatChunkEvent.CONTENT_START:
+        if in_thinking and agent.thinking_mode.is_visible:
+          await emit(
+            ThinkingEndEvent(type=EventType.THINKING_END, total_length=len(thinking)),
+            agent._event_handlers,
+          )
+          in_thinking = False
+        if not in_content:
+          in_content = True
+          await emit(ContentStartEvent(type=EventType.CONTENT_START), agent._event_handlers)
+
+      elif chunk.event == ChatChunkEvent.CONTENT_DELTA:
+        if not in_content:
+          in_content = True
+          await emit(ContentStartEvent(type=EventType.CONTENT_START), agent._event_handlers)
+        text = chunk.text or ""
+        content += text
         await emit(
-          ThinkingEndEvent(type=EventType.THINKING_END, total_length=len(thinking)),
+          ContentChunkEvent(type=EventType.CONTENT_CHUNK, text=text, content_type="text/plain"),
           agent._event_handlers,
         )
-        in_thinking = False
-      if not in_content:
-        in_content = True
-        await emit(ContentStartEvent(type=EventType.CONTENT_START), agent._event_handlers)
 
-    elif chunk.event == ChatChunkEvent.CONTENT_DELTA:
-      if not in_content:
-        in_content = True
-        await emit(ContentStartEvent(type=EventType.CONTENT_START), agent._event_handlers)
-      text = chunk.text or ""
-      content += text
-      await emit(
-        ContentChunkEvent(type=EventType.CONTENT_CHUNK, text=text, content_type="text/plain"),
-        agent._event_handlers,
-      )
+      elif chunk.event == ChatChunkEvent.CONTENT_STOP:
+        if in_content:
+          await emit(
+            ContentEndEvent(type=EventType.CONTENT_END, total_length=len(content)),
+            agent._event_handlers,
+          )
+          in_content = False
 
-    elif chunk.event == ChatChunkEvent.CONTENT_STOP:
-      if in_content:
-        await emit(
-          ContentEndEvent(type=EventType.CONTENT_END, total_length=len(content)),
-          agent._event_handlers,
-        )
-        in_content = False
-
-    elif chunk.event == ChatChunkEvent.THINKING_START:
-      if not in_thinking and agent.thinking_mode.is_visible:
-        in_thinking = True
-        await emit(ThinkingStartEvent(type=EventType.THINKING_START), agent._event_handlers)
-
-    elif chunk.event == ChatChunkEvent.THINKING_DELTA:
-      text = chunk.text or ""
-      thinking += text
-      if agent.thinking_mode.is_visible:
-        if not in_thinking:
+      elif chunk.event == ChatChunkEvent.THINKING_START:
+        if not in_thinking and agent.thinking_mode.is_visible:
           in_thinking = True
           await emit(ThinkingStartEvent(type=EventType.THINKING_START), agent._event_handlers)
-        await emit(
-          ThinkingChunkEvent(type=EventType.THINKING_CHUNK, text=text), agent._event_handlers
-        )
 
-    elif chunk.event == ChatChunkEvent.THINKING_STOP:
-      if in_thinking and agent.thinking_mode.is_visible:
-        await emit(
-          ThinkingEndEvent(type=EventType.THINKING_END, total_length=len(thinking)),
-          agent._event_handlers,
-        )
-        in_thinking = False
+      elif chunk.event == ChatChunkEvent.THINKING_DELTA:
+        text = chunk.text or ""
+        thinking += text
+        if agent.thinking_mode.is_visible:
+          if not in_thinking:
+            in_thinking = True
+            await emit(ThinkingStartEvent(type=EventType.THINKING_START), agent._event_handlers)
+          await emit(
+            ThinkingChunkEvent(type=EventType.THINKING_CHUNK, text=text), agent._event_handlers
+          )
 
-    elif chunk.event == ChatChunkEvent.TOOL_CALL_START:
-      if chunk.tool_call:
-        index = chunk.tool_call.index
-        tool_call_buffers[index] = {
-          "id": chunk.tool_call.id,
-          "name": chunk.tool_call.name,
-          "arguments_json": "",
-        }
+      elif chunk.event == ChatChunkEvent.THINKING_STOP:
+        if in_thinking and agent.thinking_mode.is_visible:
+          await emit(
+            ThinkingEndEvent(type=EventType.THINKING_END, total_length=len(thinking)),
+            agent._event_handlers,
+          )
+          in_thinking = False
 
-    elif chunk.event == ChatChunkEvent.TOOL_CALL_DELTA:
-      if chunk.tool_call:
-        index = chunk.tool_call.index
-        if index in tool_call_buffers:
-          tool_call_buffers[index]["arguments_json"] += chunk.tool_call.arguments_delta or ""
+      elif chunk.event == ChatChunkEvent.TOOL_CALL_START:
+        if chunk.tool_call:
+          index = chunk.tool_call.index
+          tool_call_buffers[index] = {
+            "id": chunk.tool_call.id,
+            "name": chunk.tool_call.name,
+            "arguments_json": "",
+          }
 
-    elif chunk.event == ChatChunkEvent.TOOL_CALL_STOP:
-      if chunk.tool_call:
-        index = chunk.tool_call.index
-        if index in tool_call_buffers:
-          # Build a tool call object compatible with the existing tool execution logic
-          buffer = tool_call_buffers[index]
-          tool_calls.append(_build_tool_call(buffer))
+      elif chunk.event == ChatChunkEvent.TOOL_CALL_DELTA:
+        if chunk.tool_call:
+          index = chunk.tool_call.index
+          if index in tool_call_buffers:
+            tool_call_buffers[index]["arguments_json"] += chunk.tool_call.arguments_delta or ""
 
-    elif chunk.event == ChatChunkEvent.USAGE:
-      if chunk.usage:
-        # Map UsageStats to stats dict for TurnEndEvent
-        if chunk.usage.prompt_eval_count is not None:
-          stats["prompt_eval_count"] = chunk.usage.prompt_eval_count
-        if chunk.usage.eval_count is not None:
-          stats["eval_count"] = chunk.usage.eval_count
-        if chunk.usage.total_duration_ms is not None:
-          stats["total_duration_ms"] = chunk.usage.total_duration_ms
-        if chunk.usage.input_tokens is not None:
-          stats["input_tokens"] = chunk.usage.input_tokens
-        if chunk.usage.output_tokens is not None:
-          stats["output_tokens"] = chunk.usage.output_tokens
+      elif chunk.event == ChatChunkEvent.TOOL_CALL_STOP:
+        if chunk.tool_call:
+          index = chunk.tool_call.index
+          if index in tool_call_buffers:
+            # Build a tool call object compatible with the existing tool execution logic
+            buffer = tool_call_buffers[index]
+            tool_calls.append(_build_tool_call(buffer))
 
-    elif chunk.event == ChatChunkEvent.DONE:
-      # Stream complete
-      pass
+      elif chunk.event == ChatChunkEvent.USAGE:
+        if chunk.usage:
+          # Map UsageStats to stats dict for TurnEndEvent
+          if chunk.usage.prompt_eval_count is not None:
+            stats["prompt_eval_count"] = chunk.usage.prompt_eval_count
+          if chunk.usage.eval_count is not None:
+            stats["eval_count"] = chunk.usage.eval_count
+          if chunk.usage.total_duration_ms is not None:
+            stats["total_duration_ms"] = chunk.usage.total_duration_ms
+          if chunk.usage.input_tokens is not None:
+            stats["input_tokens"] = chunk.usage.input_tokens
+          if chunk.usage.output_tokens is not None:
+            stats["output_tokens"] = chunk.usage.output_tokens
 
-  # Close any open streams
+      elif chunk.event == ChatChunkEvent.DONE:
+        # Stream complete
+        pass
+  except asyncio.CancelledError:
+    # Abort path: close any open streams so the UI is not left mid-block.
+    # The partial content/thinking accumulated so far is discarded — the
+    # turn is aborted, and the next process() call starts fresh.
+    await _close_streams(agent, in_content, in_thinking, content, thinking)
+    raise
   await _close_streams(agent, in_content, in_thinking, content, thinking)
 
   # Token counts come from the API; chars are the client-side raw signal
@@ -1418,6 +1471,45 @@ def _build_tool_call(buffer: dict[str, Any]) -> Any:
   return ToolCall(buffer.get("id"), buffer.get("name", ""), buffer.get("arguments_json", ""))
 
 
+ABORTED_TOOL_RESULT = "Tool execution aborted by user before it started"
+
+
+async def _finalize_aborted_turn(
+  agent: Any,
+  phase: str,
+  turn_start: float,
+  llm_calls: int,
+  tool_calls_count: int = 0,
+) -> None:
+  """Finalize a turn aborted by the user — shared by the streaming (via
+  CancelledError) and tool-phase abort paths.
+
+  Emits ``TurnAbortedEvent`` and logs the turn as aborted so telemetry can
+  distinguish aborts from completions. Does NOT touch the conversation
+  context — abort never rolls back or rewrites recorded messages.
+  """
+  agent._turn_phase = None
+  agent._abort_requested = False
+  elapsed_ms = int((time.monotonic() - turn_start) * 1000)
+  logger.info(
+    "turn_aborted",
+    phase=phase,
+    llm_calls=llm_calls,
+    tool_calls_count=tool_calls_count,
+    elapsed_ms=elapsed_ms,
+  )
+  await emit(
+    TurnAbortedEvent(type=EventType.TURN_ABORTED, phase=phase, reason="user"),
+    agent._event_handlers,
+  )
+  log_turn_usage(
+    agent,
+    duration_ms=elapsed_ms,
+    tool_calls_count=tool_calls_count,
+    llm_calls=llm_calls,
+  )
+
+
 async def _close_streams(
   agent: Any, in_content: bool, in_thinking: bool, content: str, thinking: str
 ) -> None:
@@ -1513,12 +1605,19 @@ async def _execute_tool_calls(
   thinking: str,
   content: str = "",
   escalation: _EscalationState | None = None,
-) -> None:
+) -> int:
   """Deduplicate and execute tool calls, emitting events.
 
   When an ``escalation`` state object is provided, per-call outcomes update
   it (failures increment, successes reset) and the retry-limit escalation
   note is injected when the configured threshold is reached.
+
+  If an abort is requested while tool calls remain, the currently running
+  tool is allowed to finish; the remaining, not-yet-started calls are NOT
+  executed — each gets a synthetic ``ToolResultEvent`` and a matching
+  ``tool_result`` message in the context so the recorded assistant message's
+  ``tool_calls`` all have results. Returns the number of skipped calls
+  (0 when the batch completed normally).
   """
   unique_calls = _deduplicate_tool_calls(tool_calls)
   if unique_calls:
@@ -1534,10 +1633,70 @@ async def _execute_tool_calls(
     ]
     agent.context.add_tool_calls(formatted, thinking=thinking or None, content=content)
 
-  for call in unique_calls:
-    await _execute_single_tool_call(agent, call, escalation)
+  skipped = 0
+  for i, call in enumerate(unique_calls):
+    if agent._abort_requested:
+      skipped += 1
+      await _abort_tool_call(agent, call)
+      continue
+    try:
+      await _execute_single_tool_call(agent, call, escalation)
+    except TurnAbortedError:
+      # An abort unwound out of the tool itself (a spawned sub-agent was
+      # aborted). Record this call as aborted too, then mark the rest of
+      # the batch the same way so every tool_calls entry has a paired
+      # tool_result, and set the abort flag so the caller stops the turn.
+      agent._abort_requested = True
+      skipped += 1
+      await _abort_tool_call(agent, call)
+      for rest in unique_calls[i + 1 :]:
+        skipped += 1
+        await _abort_tool_call(agent, rest)
+      break
     if escalation is not None:
       _maybe_inject_escalation(agent, escalation)
+  return skipped
+
+
+async def _abort_tool_call(agent: Any, call: Any) -> None:
+  """Record an aborted (never-executed) tool call.
+
+  Emits the same ToolCallEvent/ToolResultEvent pair UIs already handle,
+  records a ``tool_result`` in the context so the assistant message's
+  ``tool_calls`` all have matching results, and logs telemetry.
+  """
+  tool_name = (
+    call.function.name.replace("__", ":", 1) if "__" in call.function.name else call.function.name
+  )
+  tool_args = call.function.arguments
+  await emit(
+    ToolCallEvent(type=EventType.TOOL_CALL, tool_name=tool_name, arguments=tool_args),
+    agent._event_handlers,
+  )
+  await emit(
+    ToolResultEvent(
+      type=EventType.TOOL_RESULT,
+      tool_name=tool_name,
+      result=ABORTED_TOOL_RESULT,
+      success=False,
+      has_content=False,
+    ),
+    agent._event_handlers,
+  )
+  agent.context.add_tool_result(
+    tool_name=tool_name,
+    tool_id=getattr(call, "id", tool_name),
+    result=ABORTED_TOOL_RESULT,
+    success=False,
+  )
+  log_tool_call_usage(
+    agent,
+    tool_name,
+    success=False,
+    duration_ms=0,
+    bytes_in=len(json.dumps(tool_args, default=str).encode()),
+    bytes_out=len(ABORTED_TOOL_RESULT.encode()),
+  )
 
 
 def _maybe_inject_escalation(agent: Any, escalation: _EscalationState) -> None:
@@ -1926,6 +2085,11 @@ async def _run_tool(agent: Any, tool_name: str, tool_args: dict[str, Any]) -> tu
       else f"Error: {tool_result.error or tool_result.result or 'Failed'}"
     )
     return result, success, tool_result
+  except TurnAbortedError:
+    # A sub-agent aborted (or this agent's own abort propagated through a
+    # tool such as spawn_agent). Never swallow it into a tool-error
+    # string — re-raise so the abort unwinds this turn to the consumer.
+    raise
   except Exception as e:
     logger.error("tool_error", tool=tool_name, error=str(e))
     return f"Error executing tool: {e}", False, None
