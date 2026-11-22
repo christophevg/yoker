@@ -307,6 +307,10 @@ result is kept; remaining tool calls of the batch are skipped.
 press it twice to force-quit immediately. At the idle prompt, `Ctrl+C`
 behaves as before.
 
+Note: keystrokes typed while a turn is running (other than the abort
+shortcuts) are not buffered — they are discarded and will not appear in
+the next prompt. Wait for the prompt before typing your next message.
+
 ### Interactive Input Features
 
 The session supports:

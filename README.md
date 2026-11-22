@@ -540,6 +540,7 @@ The interactive session supports:
 - **Keyboard navigation**: Arrow keys, Ctrl+A/E for cursor positioning
 - **Text selection**: Click and drag to select output, copy with Ctrl+Shift+C or Cmd+C
 - **Turn abort**: While a turn is running, press `Esc` twice (within ~0.6 s) to abort it cleanly — partial streaming output is discarded and the session returns to the prompt. If a tool was executing, it finishes and its result is kept. `Ctrl+C` while a turn is running exits after the same clean teardown.
+- **No type-ahead**: Keystrokes typed while a turn is running (other than the abort shortcuts) are discarded — wait for the prompt before typing your next message.
 
 ### Slash Commands
 
