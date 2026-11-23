@@ -8,6 +8,9 @@ from unittest.mock import patch
 import pytest
 from clevis import SecurityError
 
+from yoker.cli.commands import ChatConfig
+from yoker.config import AgentsConfig
+
 # Explicit reference to the real yoker.session module — the package-level
 # `session` FUNCTION re-export (yoker.api) shadows the submodule attribute
 # on Python 3.10, so string patches like "yoker.session.Agent" fail there.
@@ -21,13 +24,20 @@ class TestMainErrorHandling:
     """Test that ValueError from invalid agent path is caught and displayed cleanly."""
     # Simulate running: python -m yoker --agents-definition /nonexistent
     test_args = ["yoker", "--agents-definition", "/nonexistent/agent.md"]
+    # Hermetic config: pure defaults plus the same agent-definition value the
+    # real loader would have parsed from the simulated CLI args above — the
+    # host/repo yoker.toml (and the plugin packages it declares) cannot leak.
+    hermetic_config = ChatConfig(agents=AgentsConfig(definition="/nonexistent/agent.md"))
 
     with patch.object(sys, "argv", test_args):
       with patch("sys.stderr", new_callable=StringIO) as mock_stderr:
         # The ValueError is raised by Session._resolve_definition (before
         # Agent construction), so the Agent mock is not exercised; patch
         # session_module.Agent for consistency with the Session-based path.
-        with patch.object(session_module, "Agent") as mock_agent_cls:
+        with (
+          patch("yoker.cli.chat.load_subcommand_config", return_value=hermetic_config),
+          patch.object(session_module, "Agent") as mock_agent_cls,
+        ):
           mock_agent_cls.side_effect = ValueError("Agent definition file not found")
           with pytest.raises(SystemExit) as exc_info:
             from yoker.__main__ import main
@@ -54,7 +64,12 @@ class TestMainErrorHandling:
 
     with patch.object(sys, "argv", test_args):
       with patch("sys.stderr", new_callable=StringIO) as mock_stderr:
-        with patch("yoker.cli.chat.config_provided", return_value=True):
+        # Hermetic: the config loader is patched so the host/repo yoker.toml
+        # (and the plugin packages it declares) cannot leak into this test.
+        with (
+          patch("yoker.cli.chat.load_subcommand_config", return_value=ChatConfig()),
+          patch("yoker.cli.chat.config_provided", return_value=True),
+        ):
           with patch.object(session_module, "Agent") as mock_agent_cls:
             error_msg = (
               "Configuration file /path/to/yoker.toml is readable by group/other "

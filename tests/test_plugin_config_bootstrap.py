@@ -116,6 +116,27 @@ class TestConfigLoaders:
     assert isinstance(plugin_config, DemoPluginConfig)
     assert plugin_config.echo.prefix == "Custom: "
 
+  def test_hermetic_mode_ignores_host_and_project_config(self, tmp_path: Path) -> None:
+    """user=False + project=False: a present ./yoker.toml is ignored entirely.
+
+    Pins the hermetic contract: no file discovery, no plugin bootstrap — the
+    returned Config holds pure defaults. This keeps the test suite free of
+    host-/repo-level yoker.toml interference (a dev-config plugin package
+    used to leak into unrelated tests via config discovery).
+    """
+    from yoker.config import get_yoker_config
+
+    _write_toml(
+      '[harness]\nname = "host-marker"\n\n' + DEMO_PLUGIN_TOML + "\n"
+      '[tools.yoker_plugin_demo.echo]\nprefix = "Host: "\n',
+      tmp_path,
+    )
+
+    config = get_yoker_config(user=False, project=False)
+
+    assert config.harness.name == "yoker"  # default — host marker not loaded
+    assert not hasattr(config.tools, "yoker_plugin_demo")  # probe skipped
+
   def test_load_subcommand_config_loads_demo_plugin_config(self, tmp_path: Path) -> None:
     """load_subcommand_config: same TOML through the subcommand path (canary 2)."""
     import yoker.cli.commands

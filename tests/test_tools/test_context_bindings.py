@@ -77,7 +77,8 @@ class TestAgentBind:
   """Agent.bind() stores values keyed by key, validates the contract."""
 
   def _agent(self) -> Agent:
-    return Agent()
+    # Hermetic: explicit default config — no discovery of host/repo yoker.toml.
+    return Agent(config=Config())
 
   def test_bind_actually_stores(self) -> None:
     agent = self._agent()
@@ -116,7 +117,7 @@ class TestAgentBind:
       self._agent().bind(KeylessVar())
 
   def test_constructor_context_vars(self) -> None:
-    agent = Agent(context_vars=[Binding(key="provider.session", value="conn")])
+    agent = Agent(config=Config(), context_vars=[Binding(key="provider.session", value="conn")])
     assert agent._context_vars == {"provider.session": "conn"}
 
   def test_late_bind_takes_effect(self) -> None:

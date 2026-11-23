@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from yoker.cli.commands import ChatConfig
 from yoker.config import Config, UIConfig
 from yoker.exceptions import NetworkError, YokerError
 from yoker.ui import BatchUIHandler, InteractiveUIHandler
@@ -383,7 +384,12 @@ class TestMainIntegration:
       # already-bound reference, so the mock would be bypassed. Patch
       # session_module.Agent instead — that is the reference the code under
       # test actually calls.
-      with patch.object(session_module, "Agent") as mock_agent_cls:
+      # Hermetic: the config loader is patched so the host/repo yoker.toml
+      # (and the plugin packages it declares) cannot leak into this test.
+      with (
+        patch("yoker.cli.chat.load_subcommand_config", return_value=ChatConfig()),
+        patch.object(session_module, "Agent") as mock_agent_cls,
+      ):
         mock_agent_instance = mock_agent_cls.return_value
         mock_agent_instance.aclose = AsyncMock()
         mock_agent_instance.config = Config(

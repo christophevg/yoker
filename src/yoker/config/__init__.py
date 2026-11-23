@@ -82,7 +82,7 @@ if TYPE_CHECKING:
   from yoker.plugins.file_manifest import PluginConfig, RunConfig
 
 
-def get_yoker_config(cli: bool = False) -> "Config":
+def get_yoker_config(cli: bool = False, user: bool = True, project: bool = True) -> "Config":
   """Get Yoker configuration with dev/test security bypass.
 
   This is the recommended way to load Yoker configuration. It automatically
@@ -97,6 +97,12 @@ def get_yoker_config(cli: bool = False) -> "Config":
 
   Args:
     cli: Whether to parse CLI arguments (default: False for library mode).
+    user: Whether to load the user-level config (~/.yoker.toml).
+    project: Whether to load the project-level config (./yoker.toml). With
+      both ``user`` and ``project`` set to False, no config file is
+      discovered at all: the returned Config holds pure defaults and the
+      plugin-config bootstrap probe is skipped (no files → nothing to
+      discover). Useful for hermetic tests and containers.
 
   Returns:
     Config object with security settings appropriate for the environment.
@@ -111,7 +117,11 @@ def get_yoker_config(cli: bool = False) -> "Config":
       directory_permissions=SecurityAction.LOG,
     )
 
-  return get_config(augmented_config_class(Config), name="yoker", cli=cli, security=security)
+  # No config files → nothing to discover: skip the plugin-config bootstrap
+  # probe (it has its own file-discovery cascade) and file loading entirely.
+  clz = augmented_config_class(Config) if (user or project) else Config
+
+  return get_config(clz, name="yoker", cli=cli, security=security, user=user, project=project)
 
 
 @dataclass

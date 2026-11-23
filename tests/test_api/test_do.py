@@ -5,6 +5,7 @@ import asyncio
 import pytest
 
 import yoker
+from yoker.config import Config
 from yoker.core import Agent
 from yoker.exceptions import SkillError
 
@@ -31,19 +32,19 @@ class TestDo:
 
   async def test_do_returns_response(self, patched_do) -> None:
     """do() returns the assistant reply for the skill invocation."""
-    result = await yoker.do("commit", "fix the bug")
+    result = await yoker.do("commit", "fix the bug", config=Config())
     assert result == "reply:commit:fix the bug"
     assert patched_do == [("commit", "fix the bug", "")]
 
   async def test_do_forwards_args(self, patched_do) -> None:
     """do() forwards the args kwarg to the skill."""
-    await yoker.do("commit", "fix the bug", args="--amend")
+    await yoker.do("commit", "fix the bug", args="--amend", config=Config())
     assert patched_do == [("commit", "fix the bug", "--amend")]
 
   async def test_do_constructs_and_discards_agent(self, patched_do) -> None:
     """do() is stateless — each call builds a fresh agent."""
-    await yoker.do("commit", "first")
-    await yoker.do("commit", "second")
+    await yoker.do("commit", "first", config=Config())
+    await yoker.do("commit", "second", config=Config())
     assert patched_do == [
       ("commit", "first", ""),
       ("commit", "second", ""),
@@ -57,7 +58,7 @@ class TestDo:
 
     monkeypatch.setattr(Agent, "do", fake_do)
     with pytest.raises(SkillError):
-      await yoker.do("does-not-exist", "hi")
+      await yoker.do("does-not-exist", "hi", config=Config())
 
 
 class TestRunSyncDo:
@@ -65,7 +66,10 @@ class TestRunSyncDo:
 
   def test_run_sync_do_returns_response(self, patched_do) -> None:
     """run_sync runs the async do and returns the reply."""
-    assert yoker.run_sync(yoker.do("commit", "fix the bug")) == "reply:commit:fix the bug"
+    assert (
+      yoker.run_sync(yoker.do("commit", "fix the bug", config=Config()))
+      == "reply:commit:fix the bug"
+    )
 
   def test_run_sync_do_in_running_loop_raises(self, patched_do) -> None:
     """run_sync inside a running loop raises RuntimeError (no nesting)."""

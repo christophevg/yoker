@@ -31,14 +31,14 @@ class TestProcess:
 
   async def test_process_returns_response(self, patched_process) -> None:
     """process() returns the assistant reply for the prompt."""
-    result = await yoker.process("hello")
+    result = await yoker.process("hello", config=Config())
     assert result == "reply:hello"
     assert patched_process == ["hello"]
 
   async def test_process_constructs_and_discards_agent(self, patched_process) -> None:
     """process() is stateless — each call builds a fresh agent."""
-    await yoker.process("first")
-    await yoker.process("second")
+    await yoker.process("first", config=Config())
+    await yoker.process("second", config=Config())
     assert patched_process == ["first", "second"]
 
   async def test_process_with_model_override(self, monkeypatch) -> None:
@@ -62,7 +62,7 @@ class TestProcess:
       return "ok"
 
     monkeypatch.setattr("yoker.core.process_message", handler)
-    await yoker.process("hi", system_prompt="You are a reviewer.")
+    await yoker.process("hi", system_prompt="You are a reviewer.", config=Config())
     assert captured["prompt"] == "You are a reviewer."
 
   async def test_process_with_empty_system_prompt(self, monkeypatch) -> None:
@@ -74,7 +74,7 @@ class TestProcess:
       return "ok"
 
     monkeypatch.setattr("yoker.core.process_message", handler)
-    await yoker.process("hi", system_prompt="")
+    await yoker.process("hi", system_prompt="", config=Config())
     assert captured["prompt"] == ""
 
   async def test_process_with_tools_filter(self, monkeypatch) -> None:
@@ -86,7 +86,7 @@ class TestProcess:
       return "ok"
 
     monkeypatch.setattr("yoker.core.process_message", handler)
-    await yoker.process("hi", tools=["read"])
+    await yoker.process("hi", tools=["read"], config=Config())
     # Only read-related tools remain; the exact set depends on the builtin
     # manifest but must be a strict subset of all tools and contain 'read'.
     assert any("read" in t for t in captured["tools"])
@@ -121,7 +121,7 @@ class TestProcess:
       return "ok"
 
     monkeypatch.setattr("yoker.core.process_message", handler)
-    await yoker.process("hi", event_handler=lambda e: received.append(e))
+    await yoker.process("hi", event_handler=lambda e: received.append(e), config=Config())
     assert len(received) >= 1
     assert any(isinstance(e, TurnStartEvent) for e in received)
 
@@ -131,7 +131,7 @@ class TestRunSync:
 
   def test_run_sync_returns_response(self, patched_process) -> None:
     """run_sync runs the async process and returns the reply."""
-    assert yoker.run_sync(yoker.process("hello")) == "reply:hello"
+    assert yoker.run_sync(yoker.process("hello", config=Config())) == "reply:hello"
 
   def test_run_sync_in_running_loop_raises(self, patched_process) -> None:
     """run_sync inside a running loop raises RuntimeError (no nesting)."""

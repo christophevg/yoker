@@ -4,6 +4,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from yoker.config import Config
 from yoker.context import (
   BaseContextManager,
   ContextManager,
@@ -164,7 +165,8 @@ class TestContextManagerWrapperWithSimpleContextManager:
     )
     wrapped = SimpleContextManager()
     cm = ContextManagerWrapper(wrapped)
-    Agent(config=None, agent_definition=agent_def, context_manager=cm)  # type: ignore[arg-type]
+    # Hermetic: explicit default config — no discovery of host/repo yoker.toml.
+    Agent(config=Config(), agent_definition=agent_def, context_manager=cm)
 
     messages = cm.get_messages()
     system_messages = [m for m in messages if m.get("role") == "system"]
@@ -188,7 +190,8 @@ class TestContextManagerWrapperWithSimpleContextManager:
     )
     wrapped = BaseContextManager()
     cm = ContextManagerWrapper(wrapped)
-    Agent(config=None, agent_definition=agent_def, context_manager=cm)  # type: ignore[arg-type]
+    # Hermetic: explicit default config — no discovery of host/repo yoker.toml.
+    Agent(config=Config(), agent_definition=agent_def, context_manager=cm)
 
     messages = cm.get_messages()
     system_messages = [m for m in messages if m.get("role") == "system"]

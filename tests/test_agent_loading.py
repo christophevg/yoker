@@ -32,8 +32,10 @@ class TestAgentDefinitionFileValidation:
 
   def test_invalid_file_path_without_session_raises(self):
     """Without a Session, an unresolvable name reference raises a clear ValueError."""
+    from yoker.config import Config
+
     with pytest.raises(ValueError, match="cannot be resolved by a standalone Agent"):
-      Agent(agent_path="/nonexistent/path/to/agent.md")
+      Agent(config=Config(), agent_path="/nonexistent/path/to/agent.md")
 
   def test_valid_file_path_loads_successfully(self):
     """Test that valid file path loads successfully."""
