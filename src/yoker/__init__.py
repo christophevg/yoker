@@ -49,7 +49,7 @@ from yoker.exceptions import (
 from yoker.session import Session
 from yoker.tools import Binding
 
-__version__ = "0.12.0"
+__version__ = "0.13.0"
 __author__ = "Christophe VG"
 
 __all__ = [

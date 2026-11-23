@@ -18,6 +18,202 @@ Key differentiators:
 
 ## Version Notes
 
+### 0.13.0
+
+**New Features:**
+- **Configurable compaction pipeline**: context overflow no longer drops
+  messages outright — a stage pipeline runs first (`prune_tool_results`
+  stubs old large tool-result bodies, `prune_thinking` flags old
+  reasoning payloads, `force_stub_tool_results` age-blind stubs any
+  remaining oversized tool result, `cutoff` drops the oldest non-setup
+  messages as a backstop), stopping as soon as the estimate is under
+  `max_tokens * context.compact_ratio`. Stages and thresholds are
+  configured via the new `[context.compaction]` TOML section (empty
+  `strategies` disables compaction); cutoff protects setup windows and
+  clamps its target to a floor (`floor_tokens`, default 10% of
+  `max_tokens`). Each run is recorded in the session JSONL as a
+  `compaction` record; inspect with
+  `python scripts/context_report.py <session.jsonl> [--json]`.
+- **Run statistics (telemetry + `yoker:stats` tool)**: the
+  `~/.yoker/usage.jsonl` log becomes the harness telemetry log — every
+  record gains `agent_id` + `parent_agent_id` and a `kind` (`llm_call`,
+  `tool_call`, `turn`, `spawn`, `release`, `compaction`, `error`), so tool
+  calls (success/duration/I-O bytes), turn wall-clock, spawn/release
+  lifecycle, compaction runs and operational errors are attributable
+  per-agent. The new Session-injected `yoker:stats` tool reports
+  per-scope (`self` / `subtree` / `session`) counts with an optional ISO
+  `since` watermark for delta mode, plus spawn/release counts and peak
+  agent concurrency on `session` scope; every `Session` writes a
+  `run_start`/`run_end` bracket — a bare `run_start` means the process
+  crashed.
+- **Turn abort (Esc+Esc)**: in the interactive CLI, pressing `Esc` twice
+  within ~0.6 s while a turn runs aborts it cleanly — the agent stays
+  alive and the session returns to the prompt; a running tool finishes
+  and its result is kept while the remaining tool calls of the batch are
+  recorded as aborted. New public API surface: `Agent.abort() -> bool`,
+  `Session.abort_foreground()`, exception `yoker.TurnAbortedError` and
+  event `yoker.TurnAbortedEvent`; `Ctrl+C` during a turn requests the
+  same clean abort (a second press force-exits).
+- **Harness-provided bindings channel**: embedding code (the harness) can
+  feed live operating-context resources (e.g. a provider session) to the
+  tools an agent executes, without per-agent tool re-registration — new
+  `Binding` frozen key/value protocol in `yoker.tools.context`,
+  `Agent(context_vars=...)` plus chainable `bind()`, merged and
+  propagated (copy-not-reference) to spawned agents via
+  `Session(context_vars=...)`.
+- **Host-side tool-argument hook**: `Agent` gains an optional
+  `tool_args_hook` constructor kwarg (sync or async callable) invoked on
+  every dispatched tool call; it may replace the arguments or keep them,
+  and runs after tool-spec resolution but before coercion/tilde-expansion
+  so hook-injected values get the same normalizing treatment. Fail-safe
+  by design: a missing, raising or invalid-return hook never breaks a
+  tool call. `Session` propagates it to spawned agents; the `agent()` /
+  `session()` facades accept the kwarg.
+- **Image file reading for vision models**: `read` on an image file
+  (png/jpg/jpeg/gif/webp/bmp) attaches it as a path reference on the tool
+  message — the Ollama backend serializes to base64 at submission time,
+  so only the path is persisted (the litellm backend strips the `images`
+  key for cross-backend resume safety). Image refs are sent once: refs
+  from tool messages predating the most recent assistant message are
+  dropped, so long conversations stop re-sending the base64 payload
+  every turn.
+- **Websearch output-size protection**: every result's snippet is capped
+  at 500 chars with a visible `… (+N chars truncated — use webfetch on
+  the URL for full content)` marker, and the total serialized result is
+  capped by the new `tools.websearch.max_output_kb` knob (default 50KB) —
+  when the budget is hit, `truncated` + `total_hits` are set and a remedy
+  hint names the options (fewer results, more specific query, webfetch a
+  URL).
+- **Search output-size protection**: every rendered content/context line
+  is capped at 500 chars with a visible `… (+N chars truncated)` marker,
+  and the total serialized result is capped by the new
+  `tools.search.max_output_kb` knob (default 50KB) — closes the hole
+  where a single giant line (minified JS, data URIs) produced a
+  352K-char result consuming the context.
+- **Calling-agent identity in `ToolContext`**: tools can identify their
+  caller via `ctx.agent` — a new `AgentInfo` frozen dataclass (re-exported
+  from `yoker.tools`) carrying the runtime `id` and the agent definition
+  name; strings only, so `ToolContext` stays Session-agnostic.
+- **Plugin tool config bootstrap**: plugins declare a typed
+  `config_class` in their manifest; a bootstrap probe augments the config
+  schema with one field per plugin before the normal config load, and
+  plugin tools receive the plugin's config instance as `ctx.config`
+  (`config.tools.<plugin>.<tool>`), with `enabled` gating via the
+  `ToolConfig` base class.
+- **Schema-aware per-value argument coercion at dispatch**: degraded
+  argument shapes emitted by models (stringified scalars like
+  `{"limit": "100"}`, JSON-stringified objects) are coerced to the
+  declared schema type at the dispatch choke point, while legitimate
+  JSON-string payloads (e.g. `write(content='{"key": "value"}')`) pass
+  through verbatim — replacing the blunt Ollama workaround that mangled
+  such content ("Invalid content parameter").
+- **Generic tool-result preview on success lines**: a successful tool
+  call renders a compact preview of its result under the
+  `✓ Success (N chars)` line (first 3 lines by default, long single-line
+  results collapse to `head…tail`), configurable via the new
+  `[content] tool_result_preview_lines` setting (0 disables) and
+  suppressed when the tool also emits rich owner-facing content.
+- **`--resume last`**: `yoker chat --resume last` resumes the most
+  recently active session.
+- **Primary agent as a real definition file**: the default primary agent
+  loads from `yoker/agents/definitions/primary.md` inside the package
+  (registered as `yoker:primary`) instead of a synthetic definition, so
+  it can be fine-tuned like any other agent definition; a user/config/
+  plugin definition named `primary` overrides the built-in.
+- **`update` anchor-duplication guard**: ambiguous (repeated) anchors are
+  rejected loudly with their match line numbers, an explicit
+  `allow_duplicate_anchor` escape hatch covers intentional duplication,
+  and inserts terminate cleanly at EOF.
+- **Weekday in the system prompt date**: e.g. "Thursday, 2026-09-10", so
+  agents know the day of week.
+
+**Changes:**
+- **`make` tool accepts path-style targets**: target names may contain
+  `/` (e.g. `docs/html`, `build/all`) — previously rejected. The target
+  pattern is now the public shared constant `yoker.config.MAKE_TARGET_RE`,
+  used by both the make tool and the `[tools.make.allowed_env_vars]` key
+  validation. Security surface unchanged: leading character must be
+  alphanumeric, shell metacharacters are rejected, and the invocation
+  remains a no-shell list-argv subprocess.
+- **Python 3.10 dropped, 3.13 and 3.14 added** (breaking — see the
+  migration guide): `requires-python` is now `>=3.11`; CI and tox run
+  3.11/3.12/3.13/3.14. Dropping 3.10 unlocks equivalent modernizations
+  (builtin `TimeoutError`, `datetime.UTC`, `enum.StrEnum`) and removes
+  the `tomli` backport dev-dependency.
+- **Tool descriptions use the docstring's first paragraph**: registration
+  no longer cuts the description at the first physical docstring line, so
+  tools whose summary sentence wraps keep their stated behavioral
+  contracts.
+- **Agent-feedback triage improvements**: the no-shell reminder names the
+  Makefile/`make` tool as the execution environment (while barring shell
+  smuggling into targets); `make` results lead with `verdict`/`outcome`
+  fields exempt from `post_filter`; `update`/`write` distinguish a true
+  no-op from "applied but identical"; content search skips cache dirs and
+  binary junk (`include_binaries=true` is the explicit opt-in, floor
+  suppressions counted in `hidden_by_ignore`).
+- **`read` offset error states 1-indexed numbering**: the out-of-range
+  error explicitly states line numbers are 1-indexed and that 1 is the
+  first line.
+
+**Removed:**
+- **`update` tool flexible matching** (breaking — see the migration
+  guide): the `require_exact_match` tool parameter and the
+  `tools.update.require_exact_match` config field are gone; matching is
+  now always byte-exact and unique-occurrence, and configs setting the
+  removed field hard-fail. Near-matches are refused with the closest real
+  line as feedback instead of being applied.
+- **Dead `permissions.network_access` config field**: never enforced by
+  any tool, guardrail or setup code — its only runtime effect was
+  rendering a false reminder; remove it from `yoker.toml` if present.
+
+**Fixed:**
+- **Path guardrails never matched on Windows**: glob denylists compiled
+  to regexes that only understand `/` while match candidates kept
+  backslashes — writes to protected files were silently allowed on
+  Windows. Absolute candidates are now POSIX-normalized (`as_posix()`)
+  and `**/` compiles to zero-or-more segments; pinned by
+  `TestGlobToRegexSemantics`.
+- **Guardrail denylist depth bypass**: bare default-denylist patterns
+  (`Makefile`, `.git`, `.env`, ...) only matched at the top level of an
+  allowed root; all security-sensitive defaults now use the `**/` prefix
+  so they protect at any depth (bare patterns keep their root-only
+  semantics).
+- **Ollama backend ignored `backend.ollama.parameters`**: configured
+  parameters (temperature, top_p, top_k, num_ctx, ...) were parsed and
+  documented but never forwarded; `chat_stream` now flattens them into
+  the request's `options` mapping.
+- **Context-log append timestamps**: context JSONL records carried the
+  file-rewrite time, so every line in a resumed session shared one
+  timestamp; records now carry their true append time, and a bare resume
+  no longer bumps the session's last activity (`list_sessions` /
+  `--resume last` sort by real conversation activity).
+- **Rich markup injection via filenames**: filenames containing square
+  brackets (e.g. `report[red].txt`) were interpolated unescaped into
+  display headers, so Rich interpreted them as style tags; filenames are
+  now escaped via a shared `escape_rich_markup` helper.
+- **Compaction panel contradicted itself on dropped messages**: the
+  headline counted only the `cutoff` stage while the per-stage total
+  summed all stages; with stage data both handlers now headline the
+  all-stage total ("Trimmed N message(s)").
+- **Bare-generic tool annotations destroyed parameter typing**: a bare
+  generic annotation (`dict[str, str] | None`) collapsed to `str` and
+  declared the wrong JSON type; the `Annotated`-strip is now gated on
+  `__metadata__` (root cause of the tool-parameter schema bug chain).
+- **Leading `~` in path-guarded arguments is expanded before the
+  guardrails**: `~/...` paths previously stayed relative and failed with
+  "Path not found"; expansion happens before the approval hook and
+  guardrails, so the allowlist validates the real post-expansion path.
+- **Session-injected tools respect `tools:` grants**: `agent`,
+  `send_message` and `release_agent` were registered after the definition
+  filter ran, so every session agent saw them regardless of declared
+  grants — breaking least-privilege; the filter is re-applied after
+  injection (see the migration guide).
+- **`write`/`update` type-mismatch errors are self-correcting**: the
+  error names the actual runtime type and the remedy instead of causing
+  blind retry loops.
+- **Session listing reports the bare session id** (not the JSONL file
+  stem) and sorts by last activity.
+
 ### 0.12.0
 
 **New Features:**
@@ -77,6 +273,50 @@ Key differentiators:
 - **update tool `line_range` inference fix**: line-based replaces are no
   longer silently appended at end of file; inferred operations name
   themselves in the result.
+
+## Migration Guides
+
+### From 0.12.x to 0.13.x
+
+Three breaking changes; most installations also need one agent-definition
+check. Everything else is opt-in.
+
+**Breaking Changes:**
+- **Python 3.10 support dropped**: `requires-python` is now `>=3.11`
+  (CI/tox run 3.11/3.12/3.13/3.14). Upgrade Python before upgrading;
+  no code changes are needed on 3.11+ — the unlocked modernizations
+  (builtin `TimeoutError`, `datetime.UTC`, `enum.StrEnum`) are verified
+  equivalent for all consumers.
+- **`update` tool flexible matching removed**: the `require_exact_match`
+  tool parameter and the `tools.update.require_exact_match` config field
+  are gone; matching is now always byte-exact and unique-occurrence.
+  Configs setting the removed field hard-fail.
+  Near-matches are refused with the closest real line as feedback
+  instead of being applied.
+- **`permissions.network_access` config field removed**: the field was
+  never enforced by any tool, guardrail or setup code — remove it from
+  `yoker.toml` if present.
+
+```toml
+# Before (0.12.x)
+[permissions]
+network_access = false
+
+[tools.update]
+require_exact_match = true
+
+# After (0.13.x)
+# (both sections removed)
+```
+
+**Behavior change to verify:**
+- **Session-injected tools now respect `tools:` grants**: `agent`,
+  `send_message` and `release_agent` were previously registered after
+  the definition filter, so every session agent had them regardless of
+  its declared grants. Definitions without a `tools:` list keep the
+  default all-granted behavior; definitions with an **explicit**
+  `tools:` list must now name these tools to retain them, and
+  `tools: []` agents get none.
 
 ## Overview
 

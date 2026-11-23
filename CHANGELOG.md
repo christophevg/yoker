@@ -1,4 +1,4 @@
-## Unreleased
+## 0.13.0 — 2026-11-23
 
 ### Changed
 - **`make` tool accepts path-style targets**: target names may now contain
@@ -13,6 +13,42 @@
   (Reported from live use: agent could not run a slashed Makefile target.)
 
 ### Added
+- **Hermetic config loading**: `get_yoker_config` gains `user` and `project`
+  flags (both default `True`, matching previous behavior). With both set to
+  `False` no config file is discovered — the returned `Config` holds pure
+  defaults and the plugin-config bootstrap probe is skipped (no files →
+  nothing to discover). Intended for hermetic test runs and containers:
+  host- and repo-level `yoker.toml` files (which may declare plugins) can
+  no longer leak into unrelated test sessions; the test suite now pins its
+  own config state explicitly.
+- **Host-side tool-argument hook**: `Agent` gains an optional
+  `tool_args_hook` constructor kwarg (sync or async callable) invoked on
+  every dispatched tool call with `(canonical tool name, arguments dict)`;
+  return a dict to replace the arguments or `None` to keep them (in-place
+  mutation also allowed). It runs after tool-spec resolution and BEFORE
+  coercion/tilde-expansion, so hook-injected values receive the same
+  normalizing treatment as model-provided ones and guardrails validate the
+  final values. Fail-safe by design: a missing, raising or invalid-return
+  hook never breaks a tool call — the original arguments pass through with
+  a warning. `Session` propagates `session._tool_args_hook` to spawned
+  agents, and the `agent()` / `session()` facades accept the kwarg. Same
+  pattern as the existing `_approval_handler` /
+  `on_context_overflow` extension points.
+  (Tests: `tests/test_core/test_tool_args_hook.py`.)
+- **Harness-provided bindings channel**: embedding code (the harness) can
+  feed live operating-context resources (e.g. a provider session) to the
+  tools an agent executes, without per-agent tool re-registration — the
+  provider module owns the key, the harness only passes the object. New
+  `Binding` frozen key/value protocol in `yoker.tools.context` (key owned
+  by the defining module; named Binding, not ContextVar, to avoid the
+  stdlib collision), `ToolContext.bindings` field with `ctx.get(ref)`
+  lookup accepting a `Binding` object or key string. `Agent` gains a
+  `context_vars` constructor kwarg plus chainable `bind()` (duplicate-key
+  guard, mirrors `ToolRegistry`); `Session(context_vars=...)` merges and
+  propagates bindings to spawned agents (copy-not-reference, late binds
+  take effect via a fresh copy per `ToolContext`); `context_vars` kwarg on
+  the `agent()` / `session()` facades.
+  (Tests: `tests/test_tools/test_context_bindings.py`.)
 - **Turn abort (Esc+Esc)**: in the interactive CLI, pressing `Esc` twice
   within ~0.6 s while a turn is running aborts the turn cleanly — the agent
   stays alive and the session returns to the prompt with a dim
