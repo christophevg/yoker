@@ -54,3 +54,4 @@ SESSION.md
 local/
 tmp/
 /reporting
+*.local

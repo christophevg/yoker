@@ -1,5 +1,6 @@
 YOKER_FROM = .
 UV_ARGS += --with-editable examples/plugins/demo
+-include Makefile.local
 -include ~/.yoker/Makefile
 
 .PHONY: env-dev env-run install-pythons test test-cov test-all test-file test-one format lint typecheck check run docs docs-view build publish publish-test pre-publish clean clean-all clean-sessions help demo demos
@@ -81,7 +82,7 @@ demo: ## Generate main session screenshot (media/session.svg)
 	uv run python scripts/demo_session.py --script demos/$(DEMO).md
 
 demos: ## Generate all demo screenshots
-	uv run python scripts/demo_session.py --scripts-dir demos/
+	uv run $(UV_ARGS) python scripts/demo_session.py --scripts-dir demos/
 
 demos-to-docs:  ## Copy the generated demo files to the docs/_static folder
 	cp media/demo-*.svg docs/_static/
