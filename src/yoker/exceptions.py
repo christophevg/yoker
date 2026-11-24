@@ -214,6 +214,22 @@ class AgentError(YokerError):
   """
 
 
+class ConcurrentLoopError(RuntimeError):
+  """Raised when an Agent is used from a second, still-running event loop.
+
+  :meth:`yoker.core.Agent.process` supports sequential use across event
+  loops (one ``asyncio.run(agent.process(msg))`` per turn, as in sync
+  wrappers): when the loop the serialization machinery was created on has
+  been torn down, that machinery is rebuilt on the current loop. Using
+  the same agent from two live loops concurrently is not supported and
+  fails loud with this error instead of silently forking consumers.
+
+  Deliberately derives from :class:`RuntimeError` — this is the
+  asyncio-native error family, and existing ``except RuntimeError``
+  handlers around ``process()`` keep working.
+  """
+
+
 class TurnAbortedError(YokerError):
   """Raised when the user (or a harness) aborts the in-flight turn via ``Agent.abort()``.
 

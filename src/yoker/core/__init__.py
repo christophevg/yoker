@@ -30,7 +30,7 @@ from yoker.core._processing import emit, process_message
 from yoker.core._setup import create_web_guardrails
 from yoker.core.thinking import ThinkingMode
 from yoker.events import EventCallback, EventType, TimeoutEvent
-from yoker.exceptions import ConfigurationError, SkillError, TurnAbortedError
+from yoker.exceptions import ConcurrentLoopError, ConfigurationError, SkillError, TurnAbortedError
 from yoker.logging import configure_logging
 from yoker.plugins import load_plugins, warn_plugins_disabled
 from yoker.skills import SkillRegistry, load_skills
@@ -234,9 +234,17 @@ class Agent:
     # agent process queue:
     # serializes concurrent ``process()`` calls so the backend never sees
     # parallel ``chat_stream`` invocations on the same agent. Lazily
-    # initialized on the first ``process()`` call.
+    # initialized on the first ``process()`` call, and — when the loop it
+    # was created on has since been closed — rebuilt from scratch on the
+    # newly running loop (sequential cross-loop reuse, e.g. one
+    # ``asyncio.run(agent.process(msg))`` per turn from a sync wrapper).
+    # ``_process_loop`` records the loop the current machinery is bound to;
+    # it is the discriminator for the rebuild-vs-reuse decision in
+    # ``process()``. Reuse from a second, still-running loop fails loud
+    # with ``ConcurrentLoopError`` (no silent consumer forking).
     self._process_queue: asyncio.Queue[tuple[str, asyncio.Future[str]]] | None = None
     self._process_task: asyncio.Task[None] | None = None
+    self._process_loop: asyncio.AbstractEventLoop | None = None
 
     # idle-timeout watchdog. The watchdog monitors the LLM streaming
     # phase only (``_consume_stream``): if the agent has not received any
@@ -610,11 +618,34 @@ class Agent:
     ``CancelledError`` to the awaiting caller.
     """
     if self._process_queue is None:
+      # First use: create the machinery on the current loop.
       self._process_queue = asyncio.Queue()
+      self._process_loop = asyncio.get_running_loop()
+      self._process_task = asyncio.ensure_future(self._process_consumer())
+    else:
+      loop = asyncio.get_running_loop()
+      if loop is not self._process_loop:
+        if self._process_loop is not None and self._process_loop.is_closed():
+          # Sequential cross-loop reuse (e.g. one asyncio.run() per turn
+          # from a sync wrapper): the old loop was torn down, killing the
+          # old consumer task. The old queue's waiters/futures are bound
+          # to the dead loop and can never be delivered — discarding them
+          # is the only correct action. Rebuild all machinery here.
+          self._process_queue = self._reset_process_machinery()
+          self._process_loop = loop
+        else:
+          raise ConcurrentLoopError(
+            "Agent used from a second, still-running event loop; sequential "
+            "loops (e.g. one asyncio.run() per turn) are supported, but "
+            "concurrent use across two live loops is not."
+          )
     loop = asyncio.get_running_loop()
     future: asyncio.Future[str] = loop.create_future()
     await self._process_queue.put((message, future))
     if self._process_task is None or self._process_task.done():
+      # Normally unreachable: the consumer is (re)started with the queue.
+      # Defensive path only, for a task that ended for an unknown reason
+      # without its loop being closed.
       self._process_task = asyncio.ensure_future(self._process_consumer())
     try:
       return await future
@@ -686,6 +717,36 @@ class Agent:
           future.set_exception(exc)
       finally:
         self._process_queue.task_done()
+
+  def _reset_process_machinery(self) -> asyncio.Queue[tuple[str, asyncio.Future[str]]]:
+    """Discard dead-loop process machinery and create fresh pieces.
+
+    Called from ``process()`` when the loop the machinery was created on
+    has been closed (sequential cross-loop reuse, e.g. one
+    ``asyncio.run(agent.process(msg))`` per turn from a sync wrapper).
+    The old loop's teardown already killed the old consumer task; this
+    helper drains any futures still enqueued on the dead loop (their
+    awaiters are gone with it — cancellation is best-effort so that
+    ``future.cancel()`` on a dead-loop future does not raise), starts
+    a new consumer on the current loop, clears the idle-watchdog
+    artifact, and returns the fresh queue for the caller to install.
+
+    Returns:
+        The newly created :class:`asyncio.Queue` bound to the current loop.
+    """
+    if self._process_queue is not None:
+      while not self._process_queue.empty():
+        _, pending = self._process_queue.get_nowait()
+        if not pending.done():
+          try:
+            pending.cancel()
+          except RuntimeError:
+            # Future bound to the dead loop; best-effort cancellation only.
+            pass
+    self._stop_idle_watchdog()
+    self._idle_watchdog_task = None
+    self._process_task = asyncio.ensure_future(self._process_consumer())
+    return asyncio.Queue()
 
   async def aclose(self) -> None:
     """Cancel the background process-consumer task if still running.

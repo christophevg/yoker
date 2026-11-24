@@ -5,16 +5,29 @@ When ``Session.send`` injects a message directly into
 calls must not happen. The Agent owns an ``asyncio.Queue`` and a
 background consumer that processes requests one at a time. The public
 ``process()`` API is unchanged — the queueing is transparent.
+
+Cross-loop reuse of one Agent instance (sequential turns, e.g. one
+``asyncio.run(agent.process(msg))`` per turn from a sync wrapper) is
+supported: when the serialization machinery's loop was closed (the
+``asyncio.run`` teardown), ``process()`` rebuilds it on the new loop.
+Use from a second, still-running loop fails loud with
+``ConcurrentLoopError``.
 """
 
 import asyncio
-from typing import Any
+import threading
+import time
+from collections.abc import Coroutine
+from typing import Any, TypeVar
 from unittest.mock import MagicMock
 
 import pytest
 
 from yoker.config import Config
 from yoker.core import Agent
+from yoker.exceptions import ConcurrentLoopError
+
+_T = TypeVar("_T")
 
 
 def _make_agent() -> Agent:
@@ -37,6 +50,52 @@ def _patch_process_message(monkeypatch: pytest.MonkeyPatch, handler: Any) -> Non
   ``yoker.core.__init__`` so the consumer sees it.
   """
   monkeypatch.setattr("yoker.core.process_message", handler)
+
+
+class _BackgroundLoop:
+  """A private event loop running on a side thread.
+
+  Lets a test execute coroutines on a *different*, live event loop
+  (bridged via ``run_coroutine_threadsafe``) and tear it down the way
+  ``asyncio.run`` does: cancel all pending tasks, stop the loop, close it.
+  """
+
+  def __init__(self) -> None:
+    self.loop = asyncio.new_event_loop()
+    self._thread = threading.Thread(target=self.loop.run_forever, daemon=True)
+
+  def start(self) -> None:
+    """Start the loop on its side thread and wait until it is running."""
+    self._thread.start()
+    for _ in range(1000):
+      if self.loop.is_running():
+        return
+      time.sleep(0.01)
+    msg = "Background event loop failed to start"
+    raise RuntimeError(msg)
+
+  def run(self, coro: Coroutine[Any, Any, _T]) -> _T:
+    """Run ``coro`` on the background loop and block until it completes."""
+    return asyncio.run_coroutine_threadsafe(coro, self.loop).result(timeout=30)
+
+  def stop(self) -> None:
+    """Tear the loop down asyncio.run-style: cancel tasks, stop, close."""
+
+    async def _shutdown() -> None:
+      current = asyncio.current_task()
+      assert current is not None
+      pending = [t for t in asyncio.all_tasks(self.loop) if t is not current and not t.done()]
+      for task in pending:
+        task.cancel()
+      if pending:
+        await asyncio.gather(*pending, return_exceptions=True)
+
+    if self.loop.is_closed():
+      return
+    asyncio.run_coroutine_threadsafe(_shutdown(), self.loop).result(timeout=10)
+    self.loop.call_soon_threadsafe(self.loop.stop)
+    self._thread.join(timeout=10)
+    self.loop.close()
 
 
 class TestProcessQueueSerialization:
@@ -271,3 +330,187 @@ class TestAgentAclose:
     # The task should now be done (cancelled) — not pending.
     assert task.done()
     assert task.cancelled()
+
+
+class TestResetProcessMachinery:
+  """``Agent._reset_process_machinery`` rebuilds dead-loop machinery."""
+
+  @pytest.mark.asyncio
+  async def test_reset_drains_pending_futures(self) -> None:
+    """Stale futures enqueued on the dead loop are drained and cancelled.
+
+    Fabricates the post-teardown state directly (queue with a future
+    created on a since-closed loop) and runs the reset helper on the
+    current loop, mirroring what ``process()`` does on a rebuild.
+    """
+    agent = _make_agent()
+
+    dead_loop = asyncio.new_event_loop()
+    stale_future = dead_loop.create_future()  # bound to the (about-to-die) loop
+    dead_loop.close()
+
+    stale_queue: asyncio.Queue[tuple[str, asyncio.Future[str]]] = asyncio.Queue()
+    stale_queue.put_nowait(("stale", stale_future))  # non-blocking: no loop check
+    agent._process_queue = stale_queue
+    agent._process_loop = dead_loop
+
+    fresh = agent._reset_process_machinery()
+    agent._process_queue = fresh  # mirror the caller inside process()
+
+    assert fresh is not stale_queue
+    assert stale_queue.empty()  # drained
+    assert stale_future.cancelled()  # best-effort cancel succeeded
+    assert agent._process_task is not None
+    assert not agent._process_task.done()  # new consumer started
+    assert agent._idle_watchdog_task is None  # artifact cleared
+
+    await agent.aclose()
+    assert agent._process_task is None
+
+
+class TestCrossLoopReuse:
+  """Sequential cross-loop reuse of one Agent across event loops.
+
+  Regression tests for the "Queue is bound to a different event loop"
+  crash: a sync wrapper (e.g. a Prefect task) running one turn per
+  ``asyncio.run()`` against a persistent Agent. Turn 1's loop teardown
+  (cancel pending tasks + close) dead-ends the serialization machinery;
+  turn 2 must rebuild it on the new loop instead of crashing. Use from a
+  second, still-running loop fails loud with ``ConcurrentLoopError``.
+  """
+
+  @pytest.mark.asyncio
+  async def test_two_sequential_closed_loop_turns(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Turn 1 on one loop, teardown, turn 2 on another — both succeed.
+
+    Mirrors the incident: one agent, one turn per loop, the first loop's
+    asyncio.run-style teardown (cancel pending + close) between turns.
+    """
+    agent = _make_agent()
+    seen: list[str] = []
+
+    async def handler(_agent: Agent, message: str) -> str:
+      seen.append(message)
+      return f"reply:{message}"
+
+    _patch_process_message(monkeypatch, handler)
+
+    bg = _BackgroundLoop()
+    bg.start()
+    result1 = bg.run(agent.process("first"))
+    bg.stop()  # teardown: cancels the consumer, closes loop 1
+    assert agent._process_loop is not None
+    assert agent._process_loop.is_closed()
+
+    result2 = await agent.process("second")  # new loop = the test loop
+
+    assert result1 == "reply:first"
+    assert result2 == "reply:second"
+    assert seen == ["first", "second"]
+    # Rebuilt machinery is now bound to the running (test) loop.
+    assert agent._process_loop is asyncio.get_running_loop()
+
+    await agent.aclose()
+
+  @pytest.mark.asyncio
+  async def test_rebuild_discards_old_machinery(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    """After a rebuild, queue/task/loop are all fresh objects."""
+    agent = _make_agent()
+
+    async def handler(_agent: Agent, message: str) -> str:
+      return "ok"
+
+    _patch_process_message(monkeypatch, handler)
+
+    bg = _BackgroundLoop()
+    bg.start()
+    bg.run(agent.process("turn-1"))
+    old_task = agent._process_task
+    old_queue = agent._process_queue
+    old_loop = agent._process_loop
+    bg.stop()
+
+    assert old_task is not None and old_task.done()  # cancelled by teardown
+    assert old_queue is not None
+    assert old_loop is not None and old_loop.is_closed()
+
+    result = await agent.process("turn-2")
+    assert result == "ok"
+    assert agent._process_task is not old_task
+    assert agent._process_queue is not old_queue
+    assert agent._process_loop is not old_loop
+    assert agent._process_loop is asyncio.get_running_loop()
+    assert agent._idle_watchdog_task is None
+
+    await agent.aclose()
+
+  @pytest.mark.asyncio
+  async def test_second_live_loop_rejected(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A second, still-running loop gets a loud ConcurrentLoopError.
+
+    Turn 1 runs on a background loop that is kept ALIVE; the next call
+    from the (different, live) test loop must raise ConcurrentLoopError
+    and must not fork a second consumer or enqueue anything. After the
+    background loop is torn down, the agent recovers via the rebuild
+    path — the failed call left no corrupt state.
+    """
+    agent = _make_agent()
+    seen: list[str] = []
+
+    async def handler(_agent: Agent, message: str) -> str:
+      seen.append(message)
+      return "ok"
+
+    _patch_process_message(monkeypatch, handler)
+
+    bg = _BackgroundLoop()
+    bg.start()
+    old_task = None
+    try:
+      bg.run(agent.process("turn-1"))
+      old_task = agent._process_task
+      assert old_task is not None
+
+      # Machinery lives on the still-running background loop; the test
+      # loop is a second live loop → fail loud before any enqueue.
+      with pytest.raises(ConcurrentLoopError, match="still-running event loop"):
+        await agent.process("turn-2")
+      assert agent._process_task is old_task  # no consumer forking
+      assert seen == ["turn-1"]  # nothing was enqueued
+    finally:
+      bg.stop()
+
+    # Recovery: teardown closed the machinery's loop → rebuild succeeds.
+    result = await agent.process("turn-3")
+    assert result == "ok"
+    assert seen == ["turn-1", "turn-3"]
+    assert agent._process_loop is asyncio.get_running_loop()
+
+    await agent.aclose()
+
+  @pytest.mark.asyncio
+  async def test_aclose_cancels_only_current_consumer(
+    self, monkeypatch: pytest.MonkeyPatch
+  ) -> None:
+    """After a rebuild, aclose() closes the current consumer cleanly."""
+    agent = _make_agent()
+
+    async def handler(_agent: Agent, message: str) -> str:
+      return "ok"
+
+    _patch_process_message(monkeypatch, handler)
+
+    bg = _BackgroundLoop()
+    bg.start()
+    bg.run(agent.process("turn-1"))
+    old_task = agent._process_task
+    bg.stop()
+
+    assert await agent.process("turn-2") == "ok"  # rebuild on the test loop
+    new_task = agent._process_task
+    assert new_task is not None and new_task is not old_task
+
+    await agent.aclose()
+    assert agent._process_task is None
+    assert new_task.done()
+    assert new_task.cancelled()
