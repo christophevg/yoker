@@ -2,6 +2,12 @@
 
 These tests verify the behavior of the Ollama backend for web search,
 including result parsing, error handling, and API integration.
+
+Since the per-call-client refactor, the backend holds a CLIENT FACTORY
+(``client_factory``) instead of a client instance; each ``search()`` call
+creates a fresh client via the factory and closes it (``async with``).
+Tests mock the factory so every call receives the shared mock — mirroring
+the per-call pattern with zero network use.
 """
 
 from dataclasses import dataclass
@@ -41,28 +47,37 @@ def mock_response(items: list[dict[str, str]]) -> MockWebSearchResponse:
   )
 
 
-def create_mock_client(response: MockWebSearchResponse | None = None) -> MagicMock:
-  """Create a mock Ollama Client with web_search method."""
+def create_mock_factory(response: MockWebSearchResponse | None = None) -> MagicMock:
+  """Create a mock client FACTORY returning a mock ollama Client.
+
+  The produced mock client supports the async context manager protocol
+  (``async with factory() as client:`` yields the client itself) and
+  exposes its ``web_search`` AsyncMock for call assertions.
+  """
   client = MagicMock()
   client.web_search = AsyncMock(return_value=response or mock_response([]))
-  return client
+  client.__aenter__.return_value = client
+  client.__aexit__.return_value = False
+  factory = MagicMock(return_value=client, name="client_factory")
+  factory.client = client  # expose for assertions
+  return factory
 
 
 class TestOllamaWebSearchBackendSchema:
   """Tests for OllamaWebSearchBackend initialization and configuration."""
 
-  def test_initialization_with_client(self) -> None:
+  def test_initialization_with_client_factory(self) -> None:
     """
-    Given: Creating OllamaWebSearchBackend with a client
+    Given: Creating OllamaWebSearchBackend with a client factory
     When: Initializing the backend
-    Then: Creates backend with client and default settings
+    Then: Creates backend with factory and default settings
     """
-    client = create_mock_client()
-    backend = OllamaWebSearchBackend(async_client=client)
+    factory = create_mock_factory()
+    backend = OllamaWebSearchBackend(client_factory=factory)
 
     assert backend._backend_name == "ollama"
     assert backend._timeout_seconds == 30
-    assert backend._client is client
+    assert backend._client_factory is factory
 
   def test_custom_timeout(self) -> None:
     """
@@ -70,8 +85,8 @@ class TestOllamaWebSearchBackendSchema:
     When: Initializing the backend
     Then: Uses provided timeout
     """
-    client = create_mock_client()
-    backend = OllamaWebSearchBackend(async_client=client, timeout_seconds=60)
+    factory = create_mock_factory()
+    backend = OllamaWebSearchBackend(client_factory=factory, timeout_seconds=60)
 
     assert backend._timeout_seconds == 60
 
@@ -81,8 +96,8 @@ class TestOllamaWebSearchBackendSchema:
     When: Checking backend type/identifier
     Then: Returns 'ollama' as backend identifier
     """
-    client = create_mock_client()
-    backend = OllamaWebSearchBackend(async_client=client)
+    factory = create_mock_factory()
+    backend = OllamaWebSearchBackend(client_factory=factory)
 
     assert backend._backend_name == "ollama"
 
@@ -93,14 +108,14 @@ class TestOllamaWebSearchBackendSearch:
   @pytest.mark.asyncio
   async def test_search_returns_list_of_results(self) -> None:
     """
-    Given: A backend with mocked client
+    Given: A backend with mocked client factory
     When: Calling search() with valid query
     Then: Returns list of SearchResult objects
     """
-    client = create_mock_client(
+    factory = create_mock_factory(
       mock_response([{"title": "Result 1", "url": "https://example.com/1", "content": "Content 1"}])
     )
-    backend = OllamaWebSearchBackend(async_client=client)
+    backend = OllamaWebSearchBackend(client_factory=factory)
     results = await backend.search(query="test query")
 
     assert isinstance(results, list)
@@ -109,14 +124,14 @@ class TestOllamaWebSearchBackendSearch:
   @pytest.mark.asyncio
   async def test_search_result_has_required_fields(self) -> None:
     """
-    Given: A backend with mocked client
+    Given: A backend with mocked client factory
     When: Getting search results
     Then: Each SearchResult has title, url, snippet, source fields
     """
-    client = create_mock_client(
+    factory = create_mock_factory(
       mock_response([{"title": "Test", "url": "https://example.com", "content": "Snippet"}])
     )
-    backend = OllamaWebSearchBackend(async_client=client)
+    backend = OllamaWebSearchBackend(client_factory=factory)
     results = await backend.search(query="test query")
 
     for result in results:
@@ -132,10 +147,10 @@ class TestOllamaWebSearchBackendSearch:
     When: Getting search results
     Then: source field is 'ollama' for all results
     """
-    client = create_mock_client(
+    factory = create_mock_factory(
       mock_response([{"title": "Test", "url": "https://example.com", "content": "Content"}])
     )
-    backend = OllamaWebSearchBackend(async_client=client)
+    backend = OllamaWebSearchBackend(client_factory=factory)
     results = await backend.search(query="test query")
 
     for result in results:
@@ -144,11 +159,11 @@ class TestOllamaWebSearchBackendSearch:
   @pytest.mark.asyncio
   async def test_search_with_default_max_results(self) -> None:
     """
-    Given: A backend with mocked client
+    Given: A backend with mocked client factory
     When: Calling search() without max_results
     Then: Returns up to 10 results (Ollama default)
     """
-    client = create_mock_client(
+    factory = create_mock_factory(
       mock_response(
         [
           {"title": f"Result {i}", "url": f"https://example.com/{i}", "content": f"Content {i}"}
@@ -156,7 +171,7 @@ class TestOllamaWebSearchBackendSearch:
         ]
       )
     )
-    backend = OllamaWebSearchBackend(async_client=client)
+    backend = OllamaWebSearchBackend(client_factory=factory)
     results = await backend.search(query="test query")
 
     assert len(results) == 10  # Capped at 10
@@ -164,11 +179,11 @@ class TestOllamaWebSearchBackendSearch:
   @pytest.mark.asyncio
   async def test_search_with_custom_max_results(self) -> None:
     """
-    Given: A backend with mocked client
+    Given: A backend with mocked client factory
     When: Calling search() with max_results=5
     Then: Returns only 5 results
     """
-    client = create_mock_client(
+    factory = create_mock_factory(
       mock_response(
         [
           {"title": f"Result {i}", "url": f"https://example.com/{i}", "content": f"Content {i}"}
@@ -176,7 +191,7 @@ class TestOllamaWebSearchBackendSearch:
         ]
       )
     )
-    backend = OllamaWebSearchBackend(async_client=client)
+    backend = OllamaWebSearchBackend(client_factory=factory)
     results = await backend.search(query="test query", max_results=5)
 
     assert len(results) == 5
@@ -188,7 +203,7 @@ class TestOllamaWebSearchBackendSearch:
     When: Calling search() with max_results=20
     Then: Returns only 10 results (Ollama hard limit)
     """
-    client = create_mock_client(
+    factory = create_mock_factory(
       mock_response(
         [
           {"title": f"Result {i}", "url": f"https://example.com/{i}", "content": f"Content {i}"}
@@ -196,7 +211,7 @@ class TestOllamaWebSearchBackendSearch:
         ]
       )
     )
-    backend = OllamaWebSearchBackend(async_client=client)
+    backend = OllamaWebSearchBackend(client_factory=factory)
     results = await backend.search(query="test query", max_results=20)
 
     assert len(results) == 10  # Hard cap at 10
@@ -208,8 +223,8 @@ class TestOllamaWebSearchBackendSearch:
     When: Calling search()
     Then: Returns empty list
     """
-    client = create_mock_client(mock_response([]))
-    backend = OllamaWebSearchBackend(async_client=client)
+    factory = create_mock_factory(mock_response([]))
+    backend = OllamaWebSearchBackend(client_factory=factory)
     results = await backend.search(query="test query")
 
     assert results == []
@@ -217,15 +232,36 @@ class TestOllamaWebSearchBackendSearch:
   @pytest.mark.asyncio
   async def test_search_preserves_query(self) -> None:
     """
-    Given: A backend with mocked client
+    Given: A backend with mocked client factory
     When: Calling search() with specific query
-    Then: Passes query to client.web_search
+    Then: Passes query to the per-call client's web_search
     """
-    client = create_mock_client(mock_response([]))
-    backend = OllamaWebSearchBackend(async_client=client)
+    factory = create_mock_factory(mock_response([]))
+    backend = OllamaWebSearchBackend(client_factory=factory)
     await backend.search(query="Python asyncio tutorial")
 
-    client.web_search.assert_called_once_with("Python asyncio tutorial", max_results=10)
+    factory.client.web_search.assert_called_once_with("Python asyncio tutorial", max_results=10)
+
+
+class TestOllamaWebSearchBackendPerCallPattern:
+  """The per-call client pattern: fresh client per call, closed after."""
+
+  @pytest.mark.asyncio
+  async def test_each_search_creates_and_closes_client(self) -> None:
+    """
+    Given: A backend with a mocked client factory
+    When: Calling search() twice
+    Then: The factory is called once per search and both clients are
+      entered and exited via the async context manager protocol
+    """
+    factory = create_mock_factory(mock_response([]))
+    backend = OllamaWebSearchBackend(client_factory=factory)
+    await backend.search(query="one")
+    await backend.search(query="two")
+
+    assert factory.call_count == 2
+    assert factory.client.__aenter__.await_count == 2
+    assert factory.client.__aexit__.await_count == 2
 
 
 class TestOllamaWebSearchBackendErrorHandling:
@@ -234,13 +270,13 @@ class TestOllamaWebSearchBackendErrorHandling:
   @pytest.mark.asyncio
   async def test_ollama_connection_error(self) -> None:
     """
-    Given: A backend with mocked client that fails to connect
+    Given: A backend with mocked factory whose client fails to connect
     When: Calling search()
     Then: Raises WebSearchError with connection message
     """
-    client = create_mock_client()
-    client.web_search = AsyncMock(side_effect=ConnectionError("Connection refused"))
-    backend = OllamaWebSearchBackend(async_client=client)
+    factory = create_mock_factory()
+    factory.client.web_search = AsyncMock(side_effect=ConnectionError("Connection refused"))
+    backend = OllamaWebSearchBackend(client_factory=factory)
 
     with pytest.raises(WebSearchError) as exc_info:
       await backend.search(query="test query")
@@ -250,13 +286,13 @@ class TestOllamaWebSearchBackendErrorHandling:
   @pytest.mark.asyncio
   async def test_ollama_timeout_error(self) -> None:
     """
-    Given: A backend with mocked client that times out
+    Given: A backend with mocked factory whose client times out
     When: Calling search()
     Then: Raises WebSearchError with timeout message
     """
-    client = create_mock_client()
-    client.web_search = AsyncMock(side_effect=TimeoutError("Request timed out"))
-    backend = OllamaWebSearchBackend(async_client=client)
+    factory = create_mock_factory()
+    factory.client.web_search = AsyncMock(side_effect=TimeoutError("Request timed out"))
+    backend = OllamaWebSearchBackend(client_factory=factory)
 
     with pytest.raises(WebSearchError) as exc_info:
       await backend.search(query="test query")
@@ -266,13 +302,13 @@ class TestOllamaWebSearchBackendErrorHandling:
   @pytest.mark.asyncio
   async def test_ollama_rate_limit_error(self) -> None:
     """
-    Given: A backend with mocked client that returns rate limit error
+    Given: A backend with mocked factory whose client rate-limits
     When: Calling search()
     Then: Raises WebSearchError with rate limit message
     """
-    client = create_mock_client()
-    client.web_search = AsyncMock(side_effect=Exception("429 Rate Limited"))
-    backend = OllamaWebSearchBackend(async_client=client)
+    factory = create_mock_factory()
+    factory.client.web_search = AsyncMock(side_effect=Exception("429 Rate Limited"))
+    backend = OllamaWebSearchBackend(client_factory=factory)
 
     with pytest.raises(WebSearchError) as exc_info:
       await backend.search(query="test query")
@@ -282,18 +318,34 @@ class TestOllamaWebSearchBackendErrorHandling:
   @pytest.mark.asyncio
   async def test_ollama_error_includes_backend_name(self) -> None:
     """
-    Given: A backend with mocked client that raises error
+    Given: A backend with mocked factory whose client raises error
     When: Catching WebSearchError
     Then: Error includes backend name
     """
-    client = create_mock_client()
-    client.web_search = AsyncMock(side_effect=Exception("Unknown error"))
-    backend = OllamaWebSearchBackend(async_client=client)
+    factory = create_mock_factory()
+    factory.client.web_search = AsyncMock(side_effect=Exception("Unknown error"))
+    backend = OllamaWebSearchBackend(client_factory=factory)
 
     with pytest.raises(WebSearchError) as exc_info:
       await backend.search(query="test query")
 
     assert exc_info.value.backend == "ollama"
+
+  @pytest.mark.asyncio
+  async def test_client_closed_even_when_search_fails(self) -> None:
+    """
+    Given: A per-call client whose web_search raises
+    When: The search fails
+    Then: The client is STILL exited (no leak on the error path)
+    """
+    factory = create_mock_factory()
+    factory.client.web_search = AsyncMock(side_effect=RuntimeError("boom"))
+    backend = OllamaWebSearchBackend(client_factory=factory)
+
+    with pytest.raises(WebSearchError):
+      await backend.search(query="test query")
+
+    assert factory.client.__aexit__.await_count == 1
 
 
 class TestOllamaWebSearchBackendResultParsing:
@@ -302,11 +354,11 @@ class TestOllamaWebSearchBackendResultParsing:
   @pytest.mark.asyncio
   async def test_handles_unicode_in_results(self) -> None:
     """
-    Given: A backend with mocked client returning Unicode text
+    Given: A backend with mocked factory returning Unicode text
     When: Calling search()
     Then: Preserves Unicode characters in SearchResult fields
     """
-    client = create_mock_client(
+    factory = create_mock_factory(
       mock_response(
         [
           {
@@ -317,7 +369,7 @@ class TestOllamaWebSearchBackendResultParsing:
         ]
       )
     )
-    backend = OllamaWebSearchBackend(async_client=client)
+    backend = OllamaWebSearchBackend(client_factory=factory)
     results = await backend.search(query="test")
 
     assert len(results) > 0
@@ -326,16 +378,16 @@ class TestOllamaWebSearchBackendResultParsing:
   @pytest.mark.asyncio
   async def test_handles_empty_url_in_result(self) -> None:
     """
-    Given: A backend with mocked client returning result with empty URL
+    Given: A backend with mocked factory returning result with empty URL
     When: Calling search()
     Then: Returns result with empty URL (graceful handling)
     """
-    client = create_mock_client(
+    factory = create_mock_factory(
       mock_response(
         [{"title": "Result with empty URL", "url": "", "content": "This result has no URL"}]
       )
     )
-    backend = OllamaWebSearchBackend(async_client=client)
+    backend = OllamaWebSearchBackend(client_factory=factory)
     results = await backend.search(query="test")
 
     assert isinstance(results, list)
@@ -344,17 +396,17 @@ class TestOllamaWebSearchBackendResultParsing:
   @pytest.mark.asyncio
   async def test_handles_long_snippets(self) -> None:
     """
-    Given: A backend with mocked client returning very long snippets
+    Given: A backend with mocked factory returning very long snippets
     When: Calling search()
     Then: Returns results (snippets may be truncated or kept as-is)
     """
     long_content = "A" * 10000
-    client = create_mock_client(
+    factory = create_mock_factory(
       mock_response(
         [{"title": "Long Result", "url": "https://example.com", "content": long_content}]
       )
     )
-    backend = OllamaWebSearchBackend(async_client=client)
+    backend = OllamaWebSearchBackend(client_factory=factory)
     results = await backend.search(query="test")
 
     assert isinstance(results, list)
@@ -370,8 +422,8 @@ class TestOllamaWebSearchBackendTimeout:
     When: Checking timeout configuration
     Then: Uses default 30 seconds
     """
-    client = create_mock_client()
-    backend = OllamaWebSearchBackend(async_client=client)
+    factory = create_mock_factory()
+    backend = OllamaWebSearchBackend(client_factory=factory)
 
     assert backend._timeout_seconds == 30
 
@@ -381,8 +433,8 @@ class TestOllamaWebSearchBackendTimeout:
     When: Checking timeout configuration
     Then: Uses provided timeout
     """
-    client = create_mock_client()
-    backend = OllamaWebSearchBackend(async_client=client, timeout_seconds=60)
+    factory = create_mock_factory()
+    backend = OllamaWebSearchBackend(client_factory=factory, timeout_seconds=60)
 
     assert backend._timeout_seconds == 60
 
@@ -393,12 +445,12 @@ class TestOllamaWebSearchBackendIntegration:
   @pytest.mark.asyncio
   async def test_real_ollama_client_format(self) -> None:
     """
-    Given: A backend with mocked client returning typical format
+    Given: A backend with mocked factory returning typical format
     When: Calling search()
     Then: Parses results correctly
     """
     # Typical Ollama web_search response format
-    client = create_mock_client(
+    factory = create_mock_factory(
       mock_response(
         [
           {
@@ -414,7 +466,7 @@ class TestOllamaWebSearchBackendIntegration:
         ]
       )
     )
-    backend = OllamaWebSearchBackend(async_client=client)
+    backend = OllamaWebSearchBackend(client_factory=factory)
     results = await backend.search(query="Python asyncio", max_results=2)
 
     assert len(results) == 2

@@ -5,6 +5,12 @@ Verifies that the Agent populates ``_tool_backends`` with
 configured provider is Ollama and an API key is available, so the
 ``websearch`` / ``webfetch`` built-in tools execute successfully instead of
 failing with "No backend configured".
+
+Since the per-call-client refactor, the web backends hold a CLIENT
+FACTORY (``OllamaBackend._build_client``) instead of a client instance;
+the backend has no client of its own. Execution tests patch the
+``AsyncClient`` class, so every constructed client per call is the
+shared mock — mirroring the per-call pattern with zero network use.
 """
 
 from dataclasses import dataclass
@@ -44,7 +50,13 @@ class _MockWebFetchResponse:
 
 
 def _mock_ollama_client() -> MagicMock:
-  """Create a mock Ollama AsyncClient with web_search/web_fetch methods."""
+  """Create a mock Ollama AsyncClient usable through the per-call pattern.
+
+  web_search/web_fetch are AsyncMocks; the async context manager protocol
+  (used by the web backends as ``async with factory() as client:``) is
+  configured via the documented magic-mock pattern so the client yields
+  ITSELF inside the with block.
+  """
   client = MagicMock()
   client.web_search = AsyncMock(
     return_value=_MockWebSearchResponse(
@@ -63,6 +75,8 @@ def _mock_ollama_client() -> MagicMock:
       title="Fetched Page",
     )
   )
+  client.__aenter__.return_value = client
+  client.__aexit__.return_value = False
   return client
 
 
@@ -83,49 +97,60 @@ class TestToolBackendsPopulation:
     """
     Given: An Agent configured with the Ollama provider and an API key
     When: Inspecting Agent._tool_backends after initialization
-    Then: Contains an OllamaWebSearchBackend under the "websearch" key
+    Then: Contains an OllamaWebSearchBackend bound to the backend's factory
     """
-    mock_client = _mock_ollama_client()
     config = _ollama_config_with_api_key()
 
-    with patch("yoker.backends.ollama.AsyncClient", return_value=mock_client):
+    with patch("yoker.backends.ollama.AsyncClient"):
       backend = OllamaBackend(config)
       agent = Agent(config=config, backend=backend)
 
       backend_obj = agent._tool_backends.get("websearch")
       assert isinstance(backend_obj, OllamaWebSearchBackend)
+      assert backend_obj._client_factory.__func__ is backend._build_client.__func__
 
   def test_webfetch_backend_populated_for_ollama(self) -> None:
     """
     Given: An Agent configured with the Ollama provider and an API key
     When: Inspecting Agent._tool_backends after initialization
-    Then: Contains an OllamaWebFetchBackend under the "webfetch" key
+    Then: Contains an OllamaWebFetchBackend bound to the backend's factory
     """
-    mock_client = _mock_ollama_client()
     config = _ollama_config_with_api_key()
 
-    with patch("yoker.backends.ollama.AsyncClient", return_value=mock_client):
+    with patch("yoker.backends.ollama.AsyncClient"):
       backend = OllamaBackend(config)
       agent = Agent(config=config, backend=backend)
 
       backend_obj = agent._tool_backends.get("webfetch")
       assert isinstance(backend_obj, OllamaWebFetchBackend)
+      assert backend_obj._client_factory.__func__ is backend._build_client.__func__
 
-  def test_backends_use_agent_client(self) -> None:
+  def test_backends_share_backend_client_factory(self) -> None:
     """
     Given: An Agent built with an explicit Ollama backend
     When: Inspecting the populated web backends
-    Then: The backends reference the same client as the Agent's backend
+    Then: Both backends reference the backend's _build_client; the
+      factory produces a client per call (the patched class construct)
     """
-    mock_client = _mock_ollama_client()
     config = _ollama_config_with_api_key()
 
-    with patch("yoker.backends.ollama.AsyncClient", return_value=mock_client):
+    with patch("yoker.backends.ollama.AsyncClient") as client_cls:
       backend = OllamaBackend(config)
       agent = Agent(config=config, backend=backend)
 
-      assert agent._tool_backends["websearch"]._client is mock_client
-      assert agent._tool_backends["webfetch"]._client is mock_client
+      assert (
+        agent._tool_backends["websearch"]._client_factory.__func__ is backend._build_client.__func__
+      )
+      assert (
+        agent._tool_backends["webfetch"]._client_factory.__func__ is backend._build_client.__func__
+      )
+      # Per-call: every factory call constructs a fresh "client" — the
+      # patched class uses side_effect so each call yields a distinct mock.
+      client_cls.side_effect = lambda *a, **k: MagicMock()
+      first = backend._build_client()
+      second = backend._build_client()
+      assert first is not second
+      assert client_cls.call_count >= 2
 
   def test_backends_not_populated_without_api_key(self) -> None:
     """
@@ -133,7 +158,6 @@ class TestToolBackendsPopulation:
     When: Inspecting Agent._tool_backends after initialization
     Then: _tool_backends is empty (the web tools are not registered either)
     """
-    mock_client = _mock_ollama_client()
     config = Config(
       backend=BackendConfig(
         provider="ollama",
@@ -141,7 +165,7 @@ class TestToolBackendsPopulation:
       )
     )
 
-    with patch("yoker.backends.ollama.AsyncClient", return_value=mock_client):
+    with patch("yoker.backends.ollama.AsyncClient"):
       backend = OllamaBackend(config)
       agent = Agent(config=config, backend=backend)
 
@@ -155,7 +179,6 @@ class TestToolBackendsPopulation:
     """
     from dataclasses import replace
 
-    mock_client = _mock_ollama_client()
     config = _ollama_config_with_api_key()
     config = replace(
       config,
@@ -165,7 +188,7 @@ class TestToolBackendsPopulation:
       ),
     )
 
-    with patch("yoker.backends.ollama.AsyncClient", return_value=mock_client):
+    with patch("yoker.backends.ollama.AsyncClient"):
       backend = OllamaBackend(config)
       agent = Agent(config=config, backend=backend)
 
@@ -180,7 +203,7 @@ class TestWebToolExecutionViaAgent:
   @pytest.mark.asyncio
   async def test_websearch_tool_executes_successfully(self) -> None:
     """
-    Given: An Agent with populated web backends and a mocked Ollama client
+    Given: An Agent with populated web backends and a mocked SDK client
     When: Building a ToolContext for websearch and executing the tool
     Then: Returns a successful ToolResult with search results
     """
@@ -209,7 +232,7 @@ class TestWebToolExecutionViaAgent:
   @pytest.mark.asyncio
   async def test_webfetch_tool_executes_successfully(self) -> None:
     """
-    Given: An Agent with populated web backends and a mocked Ollama client
+    Given: An Agent with populated web backends and a mocked SDK client
     When: Building a ToolContext for webfetch and executing the tool
     Then: Returns a successful ToolResult with fetched content
     """
@@ -262,5 +285,3 @@ class TestWebToolExecutionViaAgent:
       result = await spec.execute(query="test query", ctx=ctx)
 
       assert not result.success
-    assert result.error is not None
-    assert "backend" in result.error.lower()

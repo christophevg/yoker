@@ -86,6 +86,11 @@ class OllamaBackend(ModelBackend):
   Wraps the ollama.AsyncClient and provides streaming chat via chat_stream().
   Translates Ollama's delta-style streaming into ChatChunk events with
   synthesized block boundaries.
+
+  The AsyncClient is NOT held persistently — it is created per call
+  (see ``_build_client``): a persistent httpx connection pool binds its
+  connections to the event loop they were created on, which breaks
+  sequential cross-loop agent reuse. See ``_build_client``'s docstring.
   """
 
   # Ollama does not support a provider-side context_management directive.
@@ -98,7 +103,6 @@ class OllamaBackend(ModelBackend):
       config: Yoker configuration object.
     """
     self.config = config
-    # Create AsyncClient from ollama config
     # Validation happens in BackendConfig.__post_init__()
     # Type assertion: OllamaConfig is guaranteed non-None when provider='ollama'
     ollama_config = cast("OllamaConfig", config.backend.config)
@@ -110,7 +114,30 @@ class OllamaBackend(ModelBackend):
         logger.warning("OLLAMA_API_KEY in environment and Yoker config don't match!")
       os.environ["OLLAMA_API_KEY"] = ollama_config.api_key
 
-    self._client = AsyncClient(
+    # NOTE: clients are created PER CALL (chat_stream / fetch_usage and the
+    # web tool backends) instead of held persistently. A persistent httpx
+    # connection pool binds its connections to the event loop they were
+    # created on — after a loop teardown (e.g. one asyncio.run() per turn
+    # from a sync wrapper), reuse raises "RuntimeError: Event loop is
+    # closed" (probed empirically; see
+    # tests/backends/test_cross_loop_httpx_pool.py). Per-call clients are
+    # loop-agnostic by construction and keep the backend stateless between
+    # calls, matching the litellm backend's per-call transport pattern.
+
+  def _build_client(self) -> AsyncClient:
+    """Create a fresh ollama AsyncClient for a single call.
+
+    See the class docstring for why clients are per-call (loop-bound
+    httpx connection pools). Callers MUST close the client after use —
+    ``async with self._build_client() as client:`` is the intended
+    pattern (the SDK's async context manager closes the inner httpx
+    pool; the SDK client itself exposes only sync ``close()``).
+
+    Returns:
+      A ready-to-use, unconnected ollama AsyncClient.
+    """
+    ollama_config = cast("OllamaConfig", self.config.backend.config)
+    return AsyncClient(
       host=ollama_config.base_url,
       timeout=ollama_config.timeout_seconds,
     )
@@ -162,18 +189,20 @@ class OllamaBackend(ModelBackend):
     if not ollama_config.api_key:
       return backends
 
-    # Create web search backend if enabled
+    # Create web search backend if enabled. The web backends receive the
+    # CLIENT FACTORY (self._build_client) — like chat, web calls create a
+    # fresh client per call (loop-bound persistent pools; see
+    # _build_client's docstring).
     if self.config.tools.websearch.enabled:
       backends["websearch"] = OllamaWebSearchBackend(
-        async_client=self._client,
+        client_factory=self._build_client,
         timeout_seconds=self.config.tools.websearch.timeout_seconds,
       )
       logger.info("web_search_backend_populated", backend="ollama")
 
-    # Create web fetch backend if enabled
     if self.config.tools.webfetch.enabled:
       backends["webfetch"] = OllamaWebFetchBackend(
-        async_client=self._client,
+        client_factory=self._build_client,
         timeout_seconds=self.config.tools.webfetch.timeout_seconds,
         max_size_kb=self.config.tools.webfetch.max_size_kb,
       )
@@ -234,119 +263,125 @@ class OllamaBackend(ModelBackend):
       key: value for key, value in asdict(ollama_config.parameters).items() if value is not None
     }
 
-    # Call ollama.AsyncClient.chat with stream=True
-    stream = await self._client.chat(
-      model=model,
-      messages=messages,
-      tools=tools,
-      stream=True,
-      think=think,
-      options=options,
-    )
+    # Per-call client: created here, closed when this generator exits
+    # (async with → __aexit__ → inner httpx pool aclose). The stream is
+    # consumed and fully translated INSIDE the with block — the
+    # consumer's next() resumes this generator on the SAME loop within
+    # the turn, so the client stays alive for the whole stream.
+    async with self._build_client() as client:
+      # Call ollama.AsyncClient.chat with stream=True
+      stream = await client.chat(
+        model=model,
+        messages=messages,
+        tools=tools,
+        stream=True,
+        think=think,
+        options=options,
+      )
 
-    # Process the stream
-    async for chunk in stream:
-      # Handle thinking content
-      if chunk.message.thinking:
-        if not in_thinking:
-          in_thinking = True
-          yield ChatChunk(event=ChatChunkEvent.THINKING_START, index=0)
+      # Process the stream
+      async for chunk in stream:
+        # Handle thinking content
+        if chunk.message.thinking:
+          if not in_thinking:
+            in_thinking = True
+            yield ChatChunk(event=ChatChunkEvent.THINKING_START, index=0)
 
-        yield ChatChunk(
-          event=ChatChunkEvent.THINKING_DELTA,
-          index=0,
-          text=chunk.message.thinking,
-        )
+          yield ChatChunk(
+            event=ChatChunkEvent.THINKING_DELTA,
+            index=0,
+            text=chunk.message.thinking,
+          )
 
-      # Handle regular content
-      if chunk.message.content:
-        # Close thinking block if we were in one
-        if in_thinking:
-          yield ChatChunk(event=ChatChunkEvent.THINKING_STOP, index=0)
-          in_thinking = False
+        # Handle regular content
+        if chunk.message.content:
+          # Close thinking block if we were in one
+          if in_thinking:
+            yield ChatChunk(event=ChatChunkEvent.THINKING_STOP, index=0)
+            in_thinking = False
 
-        if not in_content:
-          in_content = True
-          yield ChatChunk(event=ChatChunkEvent.CONTENT_START, index=0)
+          if not in_content:
+            in_content = True
+            yield ChatChunk(event=ChatChunkEvent.CONTENT_START, index=0)
 
-        yield ChatChunk(
-          event=ChatChunkEvent.CONTENT_DELTA,
-          index=0,
-          text=chunk.message.content,
-        )
+          yield ChatChunk(
+            event=ChatChunkEvent.CONTENT_DELTA,
+            index=0,
+            text=chunk.message.content,
+          )
 
-      # Handle tool calls
-      if chunk.message.tool_calls:
-        for tool_call in chunk.message.tool_calls:
-          # Ollama streams tool calls as complete objects
-          # We synthesize START/DELTA/STOP boundaries
-          index = len(in_tool_call)
-          if index not in in_tool_call:
-            in_tool_call[index] = True
-            tool_call_buffer[index] = {
-              "id": getattr(tool_call, "id", None),
-              "name": tool_call.function.name,
-              # Repair degraded argument shapes (stringified nested values,
-              # string envelopes) before they reach tool binding — see
-              # _coerce_tool_arguments for the documented failure modes.
-              "arguments": _coerce_tool_arguments(
-                tool_call.function.arguments, tool_call.function.name
-              ),
-            }
-            # Emit TOOL_CALL_START
-            yield ChatChunk(
-              event=ChatChunkEvent.TOOL_CALL_START,
-              index=index,
-              tool_call=ToolCallDelta(
+        # Handle tool calls
+        if chunk.message.tool_calls:
+          for tool_call in chunk.message.tool_calls:
+            # Ollama streams tool calls as complete objects
+            # We synthesize START/DELTA/STOP boundaries
+            index = len(in_tool_call)
+            if index not in in_tool_call:
+              in_tool_call[index] = True
+              tool_call_buffer[index] = {
+                "id": getattr(tool_call, "id", None),
+                "name": tool_call.function.name,
+                # Repair degraded argument shapes (stringified nested values,
+                # string envelopes) before they reach tool binding — see
+                # _coerce_tool_arguments for the documented failure modes.
+                "arguments": _coerce_tool_arguments(
+                  tool_call.function.arguments, tool_call.function.name
+                ),
+              }
+              # Emit TOOL_CALL_START
+              yield ChatChunk(
+                event=ChatChunkEvent.TOOL_CALL_START,
                 index=index,
-                id=getattr(tool_call, "id", None),
-                name=tool_call.function.name,
-                arguments_delta=None,
-              ),
-            )
-            # Emit TOOL_CALL_DELTA with full arguments (as JSON string).
-            # Arguments were coerced to a flat dict above, so this is always
-            # a clean single-encode.
-            args_json = json.dumps(tool_call_buffer[index]["arguments"])
-            yield ChatChunk(
-              event=ChatChunkEvent.TOOL_CALL_DELTA,
-              index=index,
-              tool_call=ToolCallDelta(
+                tool_call=ToolCallDelta(
+                  index=index,
+                  id=getattr(tool_call, "id", None),
+                  name=tool_call.function.name,
+                  arguments_delta=None,
+                ),
+              )
+              # Emit TOOL_CALL_DELTA with full arguments (as JSON string).
+              # Arguments were coerced to a flat dict above, so this is always
+              # a clean single-encode.
+              args_json = json.dumps(tool_call_buffer[index]["arguments"])
+              yield ChatChunk(
+                event=ChatChunkEvent.TOOL_CALL_DELTA,
                 index=index,
-                id=getattr(tool_call, "id", None),
-                name=tool_call.function.name,
-                arguments_delta=args_json,
-              ),
-            )
-            # Emit TOOL_CALL_STOP
-            yield ChatChunk(
-              event=ChatChunkEvent.TOOL_CALL_STOP,
-              index=index,
-              tool_call=ToolCallDelta(
+                tool_call=ToolCallDelta(
+                  index=index,
+                  id=getattr(tool_call, "id", None),
+                  name=tool_call.function.name,
+                  arguments_delta=args_json,
+                ),
+              )
+              # Emit TOOL_CALL_STOP
+              yield ChatChunk(
+                event=ChatChunkEvent.TOOL_CALL_STOP,
                 index=index,
-                id=getattr(tool_call, "id", None),
-                name=tool_call.function.name,
-                arguments_delta=None,
-              ),
-            )
+                tool_call=ToolCallDelta(
+                  index=index,
+                  id=getattr(tool_call, "id", None),
+                  name=tool_call.function.name,
+                  arguments_delta=None,
+                ),
+              )
 
-      # Handle final chunk with stats
-      if chunk.done:
-        # Close any open blocks
-        if in_thinking:
-          yield ChatChunk(event=ChatChunkEvent.THINKING_STOP, index=0)
-          in_thinking = False
-        if in_content:
-          yield ChatChunk(event=ChatChunkEvent.CONTENT_STOP, index=0)
-          in_content = False
+        # Handle final chunk with stats
+        if chunk.done:
+          # Close any open blocks
+          if in_thinking:
+            yield ChatChunk(event=ChatChunkEvent.THINKING_STOP, index=0)
+            in_thinking = False
+          if in_content:
+            yield ChatChunk(event=ChatChunkEvent.CONTENT_STOP, index=0)
+            in_content = False
 
-        # Emit USAGE with stats
-        usage = UsageStats(
-          prompt_eval_count=chunk.prompt_eval_count,
-          eval_count=chunk.eval_count,
-          total_duration_ms=(chunk.total_duration or 0) // 1_000_000,
-        )
-        yield ChatChunk(event=ChatChunkEvent.USAGE, usage=usage)
+          # Emit USAGE with stats
+          usage = UsageStats(
+            prompt_eval_count=chunk.prompt_eval_count,
+            eval_count=chunk.eval_count,
+            total_duration_ms=(chunk.total_duration or 0) // 1_000_000,
+          )
+          yield ChatChunk(event=ChatChunkEvent.USAGE, usage=usage)
 
-        # Emit DONE
-        yield ChatChunk(event=ChatChunkEvent.DONE)
+          # Emit DONE
+          yield ChatChunk(event=ChatChunkEvent.DONE)

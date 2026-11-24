@@ -3,6 +3,7 @@
 Provides pluggable backend architecture for web search and web fetch.
 """
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Protocol
 
 from structlog import get_logger
@@ -56,16 +57,25 @@ class OllamaWebSearchBackend:
     - Requires backend.ollama.api_key for cloud-based search
     - Limited to 10 results
     - No domain filtering on client side
+
+  The SDK client is NOT held: it is created per search call via
+  ``client_factory`` and closed when the call completes (``async with``).
+  A persistent httpx connection pool binds to the event loop it was
+  created on and breaks sequential cross-loop agent reuse (see
+  ``OllamaBackend._build_client``).
   """
 
-  def __init__(self, async_client: "AsyncClient", timeout_seconds: int = 30) -> None:
+  def __init__(
+    self, client_factory: "Callable[[], AsyncClient]", timeout_seconds: int = 30
+  ) -> None:
     """Initialize backend.
 
     Args:
-      async_client: Authenticated Ollama AsyncClient instance.
+      client_factory: Zero-arg callable creating a fresh, authenticated
+        ollama AsyncClient per call (closed again by this backend).
       timeout_seconds: Request timeout in seconds.
     """
-    self._client = async_client
+    self._client_factory = client_factory
     self._timeout_seconds = timeout_seconds
     self._backend_name = "ollama"
 
@@ -88,9 +98,10 @@ class OllamaWebSearchBackend:
     capped_results = min(max_results, 10)
 
     try:
-      # Use client's web_search method
+      # Use client's web_search method with a PER-CALL client
       # Returns WebSearchResponse with .results attribute
-      response = await self._client.web_search(query, max_results=capped_results)
+      async with self._client_factory() as client:
+        response = await client.web_search(query, max_results=capped_results)
 
       # Parse the response into SearchResult objects
       results: list[SearchResult] = []
@@ -187,22 +198,29 @@ class OllamaWebFetchBackend:
     - Requires backend.ollama.api_key for cloud-based fetch
     - Limited control over fetch process
     - Cannot enforce all client-side guardrails
+
+  The SDK client is NOT held: it is created per fetch call via
+  ``client_factory`` and closed when the call completes (``async with``).
+  A persistent httpx connection pool binds to the event loop it was
+  created on and breaks sequential cross-loop agent reuse (see
+  ``OllamaBackend._build_client``).
   """
 
   def __init__(
     self,
-    async_client: "AsyncClient",
+    client_factory: "Callable[[], AsyncClient]",
     timeout_seconds: int = 30,
     max_size_kb: int = 2048,
   ) -> None:
     """Initialize backend.
 
     Args:
-      async_client: Authenticated Ollama AsyncClient instance.
+      client_factory: Zero-arg callable creating a fresh, authenticated
+        ollama AsyncClient per call (closed again by this backend).
       timeout_seconds: Default fetch timeout in seconds.
       max_size_kb: Default maximum content size in KB.
     """
-    self._client = async_client
+    self._client_factory = client_factory
     self._timeout_seconds = timeout_seconds
     self._max_size_kb = max_size_kb
     self._backend_name = "ollama"
@@ -235,9 +253,10 @@ class OllamaWebFetchBackend:
     timeout = timeout_seconds or self._timeout_seconds
 
     try:
-      # Use client's web_fetch method
+      # Use client's web_fetch method with a PER-CALL client
       # Returns WebFetchResponse with .content, .title attributes
-      response = await self._client.web_fetch(url)
+      async with self._client_factory() as client:
+        response = await client.web_fetch(url)
 
       # Extract content
       content = str(response.content or "")

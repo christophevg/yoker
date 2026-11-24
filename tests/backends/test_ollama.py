@@ -92,6 +92,7 @@ class TestOllamaBackend:
     # Create mock client
     mock_client = AsyncMock(spec=AsyncClient)
     mock_client.chat = AsyncMock(return_value=_async_iter(chunks))
+    mock_client.__aenter__.return_value = mock_client
 
     config = _create_mock_config()
 
@@ -150,6 +151,7 @@ class TestOllamaBackend:
 
     mock_client = AsyncMock(spec=AsyncClient)
     mock_client.chat = AsyncMock(return_value=_async_iter(chunks))
+    mock_client.__aenter__.return_value = mock_client
 
     config = _create_mock_config()
 
@@ -213,6 +215,7 @@ class TestOllamaBackend:
 
     mock_client = AsyncMock(spec=AsyncClient)
     mock_client.chat = AsyncMock(return_value=_async_iter(chunks))
+    mock_client.__aenter__.return_value = mock_client
 
     config = _create_mock_config()
 
@@ -278,6 +281,7 @@ class TestOllamaBackend:
 
     mock_client = AsyncMock(spec=AsyncClient)
     mock_client.chat = AsyncMock(return_value=_async_iter(chunks))
+    mock_client.__aenter__.return_value = mock_client
 
     config = _create_mock_config()
 
@@ -329,6 +333,7 @@ class TestOllamaBackend:
 
     mock_client = AsyncMock(spec=AsyncClient)
     mock_client.chat = AsyncMock(return_value=_async_iter(chunks))
+    mock_client.__aenter__.return_value = mock_client
 
     config = _create_mock_config()
 
@@ -380,6 +385,7 @@ class TestOllamaBackend:
 
     mock_client = AsyncMock(spec=AsyncClient)
     mock_client.chat = AsyncMock(return_value=_async_iter(chunks))
+    mock_client.__aenter__.return_value = mock_client
 
     config = _create_mock_config()
 
@@ -426,6 +432,7 @@ class TestOllamaBackend:
 
     mock_client = AsyncMock(spec=AsyncClient)
     mock_client.chat = AsyncMock(return_value=_async_iter(chunks))
+    mock_client.__aenter__.return_value = mock_client
 
     config = _create_mock_config()
 
@@ -464,6 +471,7 @@ class TestOllamaBackend:
 
     mock_client = AsyncMock(spec=AsyncClient)
     mock_client.chat = AsyncMock(return_value=_async_iter(chunks))
+    mock_client.__aenter__.return_value = mock_client
 
     config = _create_mock_config()
 
@@ -500,6 +508,7 @@ class TestOllamaBackend:
 
     mock_client = AsyncMock(spec=AsyncClient)
     mock_client.chat = AsyncMock(return_value=_async_iter(chunks))
+    mock_client.__aenter__.return_value = mock_client
 
     config = _create_mock_config()
 
@@ -554,6 +563,7 @@ class TestOllamaBackendOptions:
         [MockChunk(message=MockMessage(), done=True, prompt_eval_count=1, eval_count=1)]
       )
     )
+    mock_client.__aenter__.return_value = mock_client
     with patch("yoker.backends.ollama.AsyncClient", return_value=mock_client):
       backend = OllamaBackend(config)
       async for _ in backend.chat_stream(
